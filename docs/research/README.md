@@ -15,5 +15,12 @@ Distinguish evidence status from decision status. Record unsuccessful candidates
 when they would prevent repeated work. Preserve enough provenance to find the
 source again, including hashes for immutable inputs when available.
 
-When research begins, add a short index of relevant notes here. Summarize
-conclusions and reference detailed output rather than copying entire tool logs.
+## Current reference reviews
+
+- [Motion evidence review — 2026-10-18](motion-evidence-review-2026-10-18.md):
+  read-only review of V1 findings, a useful saved negative example, and the
+  distinction between retained evidence and reproducible analysis.
+
+Summarize conclusions and reference detailed output rather than copying entire
+tool logs. Identify the analyzer source and invocation when available; mark a
+missing replay entry point explicitly.

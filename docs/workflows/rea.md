@@ -49,10 +49,30 @@ For RiftReader2, possible uses include studying functions, references, and field
 access patterns. Live observations would still be needed to qualify proposed
 meanings. The exact integration is an open design choice.
 
+## Reuse completed analysis
+
+The installed 6.5.0 guidance already provides ways to avoid repeating expensive
+analysis. For a completed native function dossier, use its retained Evidence ID
+with `inspect_analysis_view` to request selected pseudocode, references, callers,
+or value-flow pages. Use filtered evidence summaries to find an existing record
+when its ID is unknown.
+
+A truncated preview or oversized response does not necessarily mean analysis
+failed. Retrieve a smaller view or export a portable evidence bundle instead of
+repeating the producer. Retained MCP IDs are session-specific; preserve exported
+results when they need to remain available across sessions. Reading a portable
+bundle still requires adequate local memory.
+
+Use the installed CLI help for the equivalent file-based commands. Repeat
+readiness diagnostics when a changed environment or an actual blocker warrants
+it; a healthy installation need not be rechecked before every focused query.
+These are existing tool workflows, not a new V2 evidence interface.
+
 ## Primary sources
 
 - `C:\work\tools\rea\README.md`
-- `C:\work\tools\rea\node_modules\rea-agents\skills\reverse-engineer-anything\SKILL.md`
+- `C:\work\tools\rea\node_modules\rea-agents\skills\reverse-engineer-anything\SKILL.md`, including evidence guidance at lines 251–271.
+- `C:\work\tools\rea\node_modules\rea-agents\skills\reverse-engineer-anything\references\native-and-artifacts.md`, native dossier views at lines 80–96.
 - [REA CLI guide](https://github.com/morluto/rea/blob/main/docs/cli.md)
 - [REA MCP contracts](https://github.com/morluto/rea/blob/main/docs/mcp-contracts.md)
 - [Windows Ghidra scope](https://github.com/morluto/rea/blob/main/docs/windows-ghidra-p0.md)

@@ -5,6 +5,10 @@ an architecture.
 
 ## First discussion
 
+The [first-objective comparison](first-objective-options.md) now presents three
+concrete options using the available evidence. Reproducing the saved wall-motion
+finding is the current recommendation; no option has been adopted.
+
 | Question | Why it changes the first useful increment |
 |---|---|
 | What first field or behavior should V2 discover or revalidate? | Establishes a concrete result against which to evaluate the work. |

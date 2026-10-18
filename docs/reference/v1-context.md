@@ -6,13 +6,21 @@ Reviewed: 2026-10-18. These are reference observations, not V2 validation.
 
 Existing repository: `C:\rift modding\RiftReader`.
 
-Observed branch: `codex/reliable-vm-control`.
-Observed HEAD: `a13bab171a2d86b3f5f6c3e437ccd11f13359187`
+At initial repository preparation, observed branch: `codex/reliable-vm-control`.
+Initial observed HEAD: `a13bab171a2d86b3f5f6c3e437ccd11f13359187`
 (`fix(v1): qualify guest yaw and guard movement recovery`).
 
-The working tree contained modified and untracked native-motion/observer work
-when inspected. HEAD alone does not represent all current local files. The new
-repository does not copy, freeze, or modify that working tree.
+That initial working tree contained modified and untracked native-motion/observer
+work. A later read-only check during the same day's documentation continuation
+observed commit `099ddf8bf62d3076e3f9712fd243d86cf79e86c9`
+(`feat(readback): add guarded native motion diagnostics`) and a clean working
+tree. Ignored research artifacts remain outside Git. This repository did not
+modify, copy, or freeze V1.
+
+The [motion evidence review](../research/motion-evidence-review-2026-10-18.md)
+records the newer body-yaw and component evidence, the rejected projected-velocity
+interpretation, measured sample cadence, and the limits of the saved analysis.
+The [reuse inventory](reuse-inventory.md) identifies concrete source entry points.
 
 ## Useful dated evidence
 

@@ -9,9 +9,12 @@ topic below instead of loading every document for each task.
 | Continuity | [Current status](status.md) | Latest compact handoff. |
 | Planning | [Top 20 proposals](planning/top-20-proposals.md) | Proposed ideas; no implementation order adopted. |
 | Planning | [Open questions](planning/open-questions.md) | Discussion agenda. |
+| Planning | [First objective options](planning/first-objective-options.md) | Concrete starting outcomes; current recommendation remains proposed. |
 | Decisions | [Decision register](decisions/README.md) | Agreed choices and future record convention. |
 | Reference | [V1 context](reference/v1-context.md) | Dated observations and source paths. |
+| Reference | [Reuse inventory](reference/reuse-inventory.md) | Existing capabilities, entry points, and limitations. |
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |
+| Research | [Motion evidence review](research/motion-evidence-review-2026-10-18.md) | Saved negative example, timing evidence, and reproducibility gap. |
 | Workflow | [Codex](workflows/codex.md) | Open the project and resume efficiently. |
 | Workflow | [Workbridge](workflows/workbridge.md) | Local access, edits, jobs, and Git. |
 | Workflow | [REA](workflows/rea.md) | Installed tooling and verified access limits. |

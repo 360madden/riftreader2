@@ -4,43 +4,53 @@ Updated: 2026-10-18.
 
 ## Phase
 
-Repository preparation is complete. Application design and implementation are
-awaiting discussion with Joey.
+Documentation and planning. Application architecture and code remain pending
+discussion with Joey.
 
 ## Current state
 
-- New project root: `C:\work\riftreader2`; Git branch: `main`.
-- Repository-local Git author identity reuses the existing RiftReader identity.
-- Goals and scope are recorded in [the brief](project-brief.md).
-- The [top 20](planning/top-20-proposals.md) is a proposed idea backlog.
-- [Open questions](planning/open-questions.md) define the next discussion.
-- Codex, Workbridge, REA, reference, and evidence guides are ready.
-- The repository contains 22 documentation and housekeeping files.
-- Workbridge recognizes the repository and its root `AGENTS.md`.
+- Root: `C:\work\riftreader2`; branch: `main`.
+- Initial documentation baseline: `ba857c0`.
+- [The brief](project-brief.md) records goals; the
+  [top 20](planning/top-20-proposals.md) remains proposed.
+- [First objective options](planning/first-objective-options.md) now compares
+  reproducing a saved finding, measuring restart reacquisition, and investigating
+  one new native motion field.
+- [The reuse inventory](reference/reuse-inventory.md) records existing source
+  entry points and limitations.
+- [The motion review](research/motion-evidence-review-2026-10-18.md) preserves
+  newer V1 evidence and the unresolved replay-command question.
+- [Workbridge](workflows/workbridge.md) and [REA](workflows/rea.md) guides include
+  the newer local .NET helper proof and existing evidence-reuse mechanisms.
 
-## Verification
+## Most useful new findings
 
-The documentation audit passed: saved file hashes, internal links, UTF-8/LF
-text, final newlines, whitespace, expected inventory, and six ignore-rule cases.
-Workbridge's overview found no application manifests or entry points. A separate
-review found no material conflict with the documentation-only scope.
+V1's projected motion vector was rejected as actual velocity by wall-slide
+evidence. The saved report and 100,187,956-byte capture are present; the complete
+capture was not reanalyzed or rehashed during this review. A saved command for
+reproducing that classification was not identified by the bounded search.
 
-See [the setup record](validation/repository-setup-2026-10-18.md) for tool
-evidence. Use `git log -1 --oneline` and `git status --short --branch` for
-the current commit and working-tree state.
+The current recommendation is to make one saved conclusion reproducible and
+measure the required local work and AI interactions. This remains a proposal.
 
-## Relevant existing evidence
+V1 progressed independently to `099ddf8` with guarded motion diagnostics.
+Observed cadence in its recorded batch differs from the requested interval.
+Those findings are reference evidence, not V2 runtime results.
 
-- REA 6.5.0 startup and scoped Ghidra readiness passed in the preceding session
-  checks. No RIFT target analysis was performed in those checks.
-- V1 has relevant guest qualification evidence with documented limits. See the
-  dated [V1 reference](reference/v1-context.md); it is not V2 validation.
+## Verification and continuity
 
-## Next authorized task
+The [initial setup record](validation/repository-setup-2026-10-18.md) describes
+the original documentation baseline. The continuation added source-backed
+reference and planning documents only. No V1 code or tests, live game input,
+binary analysis, or helper build was run during this review.
 
-Discuss the first discovery objective and design choices with Joey; update
-planning documents as that discussion progresses.
+Use `git log -1 --oneline` and `git status --short --branch` for the current
+commit and working-tree state. Keep startup context small and follow the
+[documentation index](README.md) for task-specific detail.
 
-No application architecture, implementation sequence, runtime schema, performance
-target, or V1 migration strategy has been adopted. Routine documentation updates
-remain within the present scope.
+## Next discussion
+
+Choose which first result matters most: reproducible saved analysis, faster
+restart reacquisition, or new-field discovery. Then discuss the smallest useful
+implementation and its success criteria. No option, technical stack, schema,
+process layout, or runtime interface has been adopted.

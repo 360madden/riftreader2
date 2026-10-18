@@ -46,10 +46,23 @@ Git inspection is available through dedicated tools. No application command
 profiles exist for RiftReader2 yet. A missing profile does not prevent using
 `terminal_run` for an authorized installed tool.
 
-Node was reachable from Workbridge during setup. REA's direct Node entry worked;
-the attempted PowerShell 7 launchers were not reachable through that route.
-This does not establish that PowerShell is absent from the machine. Resolve
-actual executable paths before depending on a shell.
+Node was reachable during setup, and REA's direct Node entry worked. The
+attempted PowerShell 7 launchers were not reachable through that route.
+
+Separate October 18 browser-chat evidence now establishes a working Windows
+`powershell.exe` route (5.1.26100.9711), .NET SDK 10.0.302, and an independently
+authored .NET 10 helper that built and ran with overall/build/helper exit codes 0.
+The retained report identifies runtime .NET 10.0.10 and marker
+`CHATGPT_AUTHORED_HELPER_OK`. These are observed prior-workflow results, not a
+helper rerun during this documentation review.
+
+Source: `C:\work\workbridge-mcp\docs\local-pc-roadmap.md`, lines 84–92 and
+150–173; retained report:
+`C:\work\workbridge-authored-helper-browser-20261018-01\report.json`.
+
+Use an observed working executable path and check native exit codes. Windows
+PowerShell 5.1 availability does not establish compatibility with scripts that
+require PowerShell 7. This capability evidence does not select a V2 language.
 
 ## Generated data and recovery
 
@@ -64,6 +77,8 @@ undo records do not provide a full backup of the project or ignored artifacts.
 
 - `C:\work\workbridge-mcp\docs\coding-workflow.md`
 - `C:\work\workbridge-mcp\docs\workspace-roots.md`
+- `C:\work\workbridge-mcp\docs\snapshots.md`
+- `C:\work\workbridge-mcp\docs\local-pc-roadmap.md`
 - Current `workspace_info` and tool descriptions.
 
 Use the live tool contracts when a later Workbridge version changes behavior.
