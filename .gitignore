@@ -1,0 +1,33 @@
+# Generated research output; the directory guide stays tracked.
+/artifacts/*
+!/artifacts/README.md
+
+# Local tool state and environment files.
+/.local/
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Common generated development files; no toolchain is selected by these rules.
+**/bin/
+**/obj/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+TestResults/
+coverage/
+.vs/
+.idea/
+*.user
+*.suo
+
+# Operating system and editor temporary files.
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~

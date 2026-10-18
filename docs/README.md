@@ -1,0 +1,32 @@
+# Documentation index
+
+Use [current status](status.md) to resume substantive work. Follow the relevant
+topic below instead of loading every document for each task.
+
+| Area | Document | Status or role |
+|---|---|---|
+| Direction | [Project brief](project-brief.md) | User goals and scope. |
+| Continuity | [Current status](status.md) | Latest compact handoff. |
+| Planning | [Top 20 proposals](planning/top-20-proposals.md) | Proposed ideas; no implementation order adopted. |
+| Planning | [Open questions](planning/open-questions.md) | Discussion agenda. |
+| Decisions | [Decision register](decisions/README.md) | Agreed choices and future record convention. |
+| Reference | [V1 context](reference/v1-context.md) | Dated observations and source paths. |
+| Research | [Research notes](research/README.md) | Evidence conventions and index. |
+| Workflow | [Codex](workflows/codex.md) | Open the project and resume efficiently. |
+| Workflow | [Workbridge](workflows/workbridge.md) | Local access, edits, jobs, and Git. |
+| Workflow | [REA](workflows/rea.md) | Installed tooling and verified access limits. |
+| Validation | [Validation index](validation/README.md) | Actual checks and their scope. |
+| Validation | [Success measures](validation/success-measures.md) | Proposed measures; targets remain open. |
+| Templates | [Decision record](templates/decision-record.md) | Optional template for a material decision. |
+| Templates | [Research note](templates/research-note.md) | Optional template for a finding or experiment. |
+| Generated output | [Artifacts guide](../artifacts/README.md) | Local output and retention. |
+
+## Document ownership
+
+Keep goals in the brief, accepted choices in the decision register, and current
+progress in the status file. Link to detailed evidence instead of repeating it.
+A proposal can have supporting evidence without becoming an accepted decision.
+
+For new findings, identify the source and verification date. Use full local
+paths for external material and repository-relative Markdown links for tracked
+files. State when an external reference can change independently of this repo.

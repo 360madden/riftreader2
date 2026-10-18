@@ -1,0 +1,6 @@
+# Normalize text while allowing Git to identify binary content.
+* text=auto eol=lf
+
+# Windows command launchers, if introduced later.
+*.cmd text eol=crlf
+*.bat text eol=crlf
