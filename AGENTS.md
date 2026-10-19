@@ -7,6 +7,13 @@ discovery speed, efficiency, durable knowledge, restart recovery, update recover
 and less repetitive AI work. Movement and turning support controlled tests.
 Dedicated navigation, combat, and player automation belong to a future program.
 
+The product is hybrid: a first-class RIFT Lua addon plus the modular external
+.NET application. Preserve addon API, native memory, and derived evidence as
+distinct sources. See [the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
+Do not assume general Lua file/network access or treat SavedVariables as live
+telemetry. The current implemented pipeline is offline; addon/transport work
+must establish producer compatibility, freshness, and reload/session identity.
+
 **Current phase: modular architecture and offline foundation implementation.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow

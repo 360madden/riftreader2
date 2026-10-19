@@ -7,6 +7,9 @@ Updated: 2026-10-18 (America/New_York).
 Modular architecture and offline foundation implementation, explicitly
 authorized by Joey. RiftReader2 is independently developed around its own goals;
 V1 remains reference evidence and lessons. See [ADR 0001](decisions/0001-modular-offline-foundation.md).
+Joey explicitly requires a hybrid Lua addon plus external .NET application;
+[ADR 0002](decisions/0002-hybrid-addon-and-reader.md) makes that product boundary
+explicit. The existing code implements the external offline half only.
 
 ## Implemented
 
@@ -27,13 +30,19 @@ The [foundation validation record](validation/foundation-2026-10-18.md) records
 checks, link checks, and deterministic CLI replay against independently
 calculated synthetic results. No live game or V1 tests were run.
 
+The hybrid correction updated architecture, scope, and roadmap documentation.
+V1 addon references were reviewed read-only; no addon code or live bridge was
+created or deployed. Documentation link and whitespace checks passed for this
+correction; the 75-test result above belongs to the unchanged code baseline.
+
 ## Next work
 
-The architecture/foundation request is implemented. Follow the
-[roadmap](planning/implementation-roadmap.md) for new increments. Recommended
-next capability: independently reproduce the saved V1 wall-motion conclusion,
-including free-travel and both wall trials, with an identified importer and
-compact output. This is not yet implemented or qualified by the synthetic demo.
+The external offline foundation is implemented. Next, establish the Lua/C#
+observation and freshness contract with a minimal producer, decoder, and shared
+fixtures, then validate one real-client transport. Follow the
+[roadmap](planning/implementation-roadmap.md). Independently reproducing the saved
+V1 wall-motion conclusion remains the next saved-evidence case; it can proceed
+without a live bridge. Neither capability is implemented by the synthetic demo.
 
 The durable field catalog, read-only native adapter, restart/update measurement,
 and experiment runner remain future increments. Start with one bounded task;

@@ -15,6 +15,12 @@ and useful techniques, not an application to copy or an architecture to inherit.
 Any selective reuse must be justified against V2's goals and validation needs.
 Joey explicitly reaffirmed this direction on 2026-10-18.
 
+Joey also explicitly requires a hybrid product: a Lua addon inside RIFT and a
+modular external .NET application. The addon gathers supported API information
+and validation references; the external side performs acquisition, native-field
+research where useful, analysis, persistence, and export. Both are first-class
+parts of V2. See [the hybrid decision](decisions/0002-hybrid-addon-and-reader.md).
+
 ## Agreed outcomes
 
 1. Gather useful information more quickly, with fewer repeated manual or AI steps.
@@ -61,7 +67,8 @@ Git author identity is repository-local: `360madden <360madden@gmail.com>`.
 ## Next discussion
 
 Use the [implementation roadmap](planning/implementation-roadmap.md) to extend
-the verified offline foundation. The saved V1 wall-motion reproduction remains
+the verified external offline foundation with the required Lua/C# contract and
+addon producer. The saved V1 wall-motion reproduction remains
 a proposed next evidence case; the synthetic fixture does not reproduce it.
 Live target collection and field qualification require their own evidence.
 

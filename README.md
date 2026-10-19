@@ -4,6 +4,11 @@ Modular RIFT research tools focused on reliable information, durable evidence,
 restart/update recovery, and less repetitive AI work. V1 supplies reference
 evidence and lessons; V2 is independently developed around these goals.
 
+The product architecture is **hybrid: an in-game Lua addon plus an external .NET
+application**. The addon and its live transport are planned; the implemented
+foundation below is the external offline half. See
+[the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
+
 The current foundation validates saved captures and computes **derived** motion
 with explicit gaps and provenance. It runs offline. The included data is
 synthetic; no V2 native field or live-game capability has been qualified.

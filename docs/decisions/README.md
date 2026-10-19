@@ -19,6 +19,8 @@ Source: Joey's instructions in the RiftReader v2 conversation.
 
 - [0001: Modular offline foundation](0001-modular-offline-foundation.md):
   selected under Joey's explicit architecture and implementation authorization.
+- [0002: Hybrid Lua addon and external reader](0002-hybrid-addon-and-reader.md):
+  Joey's explicit hybrid requirement; the addon is a first-class product part.
 
 ## Future records
 

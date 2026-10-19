@@ -2,6 +2,10 @@
 
 Status: accepted.
 
+Scope clarification: [ADR 0002](0002-hybrid-addon-and-reader.md) establishes the
+Lua addon as the other half of the hybrid product. Single-process wording here
+applies to the external .NET application only.
+
 Date: 2026-10-18.
 
 Authorized by: Joey authorized building as much of a modular, organized,

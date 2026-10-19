@@ -1,6 +1,6 @@
 # Architecture
 
-Status: selected foundation, authorized 2026-10-18.
+Status: hybrid product architecture; external offline foundation implemented.
 
 Joey authorized an improved, modular, organized, and configurable RiftReader2
 foundation. The .NET stack and project boundaries below are implementation
@@ -10,10 +10,29 @@ copy.
 
 ## Shape
 
-RiftReader2 starts as one command-line process with four production modules and
-one test project. This preserves strong boundaries without paying the operating
+RiftReader2 is a hybrid: a Lua addon inside RIFT plus an external .NET application.
+The addon is a first-class product component. The external half currently has
+one command-line process with four production modules and one test project.
+This preserves strong boundaries without paying the operating
 and debugging cost of services, plugin discovery, a custom scheduler, or a
 dependency-injection framework before any of them solve a measured problem.
+
+```mermaid
+flowchart LR
+    API[RIFT addon API] --> Lua[Lua addon: typed observations]
+    Lua --> Bridge[Validated transport adapter]
+    Bridge --> App[External application: comparison and analysis]
+    Native[Native reader adapter] --> App
+    Replay[Saved evidence adapter] --> App
+    App --> Store[Evidence storage and reports]
+```
+
+The Lua addon and live adapters in this diagram are required/planned components;
+the implemented path today is saved evidence through the external application.
+The addon gathers supported API data and diagnostics. The external application
+handles acquisition, native research, numerical work, retention, and exports.
+See [ADR 0002](decisions/0002-hybrid-addon-and-reader.md) for the hybrid boundary,
+freshness and compatibility requirements, and planned package locations.
 
 | Project | Responsibility | May reference |
 |---|---|---|
@@ -139,6 +158,8 @@ composition path.
 
 Expected later additions are:
 
+- the Lua addon producer and a corresponding .NET acquisition adapter, with
+  shared fixtures, explicit capability/availability states, and reload handling;
 - a read-only Windows capture adapter with process and build identity;
 - independent import or replay of selected V1 evidence;
 - a durable catalog for field meaning, locator, applicability, validation, and
@@ -147,9 +168,10 @@ Expected later additions are:
 - optional SQLite indexing only after file-based evidence demonstrates a query,
   scale, or integrity need that JSON artifacts cannot meet cleanly.
 
-Navigation, combat, and player automation remain outside RiftReader2. Networked
-services, runtime-loaded plugins, background scheduling, and multiple processes
-need evidence of a concrete requirement before adoption.
+Navigation, combat, and player automation remain outside RiftReader2. Additional
+external services, dynamically loaded .NET plugins, and extra external processes
+need evidence of a concrete requirement before adoption. The in-game Lua addon
+is already part of the required architecture.
 
 ## Change rules
 

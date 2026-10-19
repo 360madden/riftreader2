@@ -15,12 +15,16 @@ not open architecture questions.
 
 ## Next outcome questions
 
-The [dated first-objective comparison](first-objective-options.md) still explains
+The [hybrid requirement](../decisions/0002-hybrid-addon-and-reader.md) makes a
+minimal Lua/C# contract the next foundation increment. The
+[dated first-objective comparison](first-objective-options.md) still explains
 why reproducing the saved wall-motion conclusion is the recommended next
 evidence result. The foundation does not resolve these questions:
 
 | Question | Why it changes the next increment |
 |---|---|
+| What minimal API observation and capability states should the first Lua producer expose? | Defines the smallest interoperable Lua/C# contract. |
+| Which transport and reload/session rules can the current client support and validate? | Establishes live acquisition separately from valid payload decoding. |
 | Which exact saved V1 files form the first immutable evidence bundle? | Determines hashes, format adaptation, applicability, and reproducibility limits. |
 | Is the wall-motion rejection still the highest-value first V1 result? | Confirms whether fixed-input reproducibility remains ahead of restart or new-field work. |
 | What compact result must an independent replay preserve? | Prevents an importer from reproducing numbers while losing uncertainty or semantics. |
@@ -32,6 +36,7 @@ evidence result. The foundation does not resolve these questions:
 | Topic | Decision still needed |
 |---|---|
 | V1 import | Input bundle, conversion boundary, retained provenance, and rejection behavior. |
+| Lua addon | Current-client API subset, bounded workload/configuration, producer/schema pairing, deployment, and shared contract tests. |
 | Native capture | Process/build identification, read-only scope, timing, failure behavior, and platform test seam. |
 | Field catalog | Qualification states, confidence, contradiction, invalidation, and consumer contract. |
 | Persistence | When measured query or integrity needs justify adding SQLite indexing to retained artifacts. |
