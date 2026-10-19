@@ -127,7 +127,79 @@ the field-lab ISO selected, rather than the earlier recorded original DVD.
 Do not reuse a prior receipt as live identity or assume that observer/control
 state remains unchanged.
 
-## Resume without repeating the baseline
+## Live same-build restart and health sweep (October 19, 2026)
+
+At 08:54:02–08:54:06 UTC, the retained unmodified field-lab executable on the
+RIFT-Lab guest completed a bounded read-only health scan in the original RIFT
+process (PID `11620`). Source:
+`artifacts/field-discovery/runs/d8d0c66fdb954d6590962e529f3858a3/report.json`,
+SHA-256 `2D2120DCC8E2986BB284F3401B6EBBB7E49BBC0790E3B4AD1E3A144910B676B9`.
+The scan enumerated 9,392 regions, read exactly 1,073,741,824 bytes with zero
+recorded failures, found 126 values equal to Lua health 18,208 (119 int32,
+7 float64, 0 float32), and stopped at the 1 GiB budget. The trusted reference
+remained health/max `18208/18208` and raw power `100`; no health or power
+change was induced. The replayed health-hit review is
+`artifacts/field-discovery/health-hit-review-20261019.json`, SHA-256
+`7BFE375CDD8A3F58A73672334FC0F8257519E1919CB97F26A74C209B209E3884`.
+It reduced 126 hit addresses to 104 nearby-address groups; eight groups had
+three nearby int32 matches and some matched a user-supplied level hint 45 and
+the Lua raw power value 100. These structures are **not** qualified health
+fields: they can be replicated/cache/serialized observations.
+
+The game then exited via the visually reviewed ordinary in-game Exit Game
+dialog. The live receiver explicitly observed `riftProcessCount:0` and
+foreground Glyph at 09:10 UTC. Glyph's already authenticated Play button
+launched RIFT again, and Atank entered the world; no VM restart or forced
+process kill was used.
+
+New guest process: PID `8356`, start `2026-10-19T09:11:06.5141458Z`
+(UTC ticks `639279978665141458`), executable SHA-256 unchanged:
+`7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD`.
+Prior PID/start: `11620`/`639279813293755454`. GuestObserver's instance
+`8a948623-f4ff-4353-a0c1-80522dc312f3` survived the game restart;
+typed generation changed from `1` to `2`. Fresh typed sequences `78 -> 84`
+were captured around the native reader.
+
+At 09:13:17 UTC, the existing field-lab executable and same root RVA
+`0x32E0200` resolved to a different heap owner
+`0x220BF9406A0` (previous `0x216ECFE06A0`). A root reread remained stable.
+Native float32 XYZ at offsets `0x320/0x324/0x328` was
+`(7296.40380859,876.31890869,3054.37768555)`; fresh typed Lua gave
+`(7296.39990234,876.32000732,3054.37988281)`, all axes within 0.004.
+The new report is
+`artifacts/field-discovery/runs/4ebbe9ee91c148c4a05466ebb9049d25/report.json`,
+SHA-256 `07DB7E70D98EA102FE0939A9CD89C1153FA8A0D0318B5E431B90D3BC3766415F`.
+Its health search scanned 977,739,776 bytes, recorded zero read failures
+and 128 exact matches, stopping at the hit limit before full coverage.
+The restarted-epoch health review is
+`artifacts/field-discovery/health-hit-review-restarted-20261019.json`,
+SHA-256 `B4FFC8E98A9D63A4E9FBD1F2DCD1F1F8F4001C19F532680ED18941219D53C849`,
+with 111 clusters. Health/max and raw power were unchanged, so these matches
+cannot distinguish authoritative gameplay fields.
+
+The five-capture replay
+`artifacts/field-discovery/position-cross-epoch-candidate-20261019.json`
+(SHA-256 `FCE6D04ABAE44A6FE6689EAA434FD5DB9C3F37E2039F0776804E64BBED053ED8`)
+reports `same-build-candidate-observed`, two distinct process epochs, and
+several independent root rereads with matching Lua. The historical first
+window lacks a root stability reread, so its movement assessment remains
+`movement-consistent-stability-unverified`. All reports remain
+`candidate-only` and retain their source hashes; this does not independently
+establish semantics, update survival, or invalid-old-epoch request rejection
+for this particular field. All full-size evidence remains ignored local
+artifacts; V1 source was not changed.
+
+## Resume after the recorded restart
+
+Reacquire **current** process, VM and typed API identity before every live
+capture. First focus on distinguishing current health versus healthMax and raw
+power by genuinely changed-state references; use small saved candidate
+regions and content hashes before requesting any larger scan. Catalog
+meaning, locator, ordinary-restart, and update claims independently. A
+separate invalid-old-epoch follow-pointer negative check remains untested in
+this pass. Do not reuse any of the historical absolute heap addresses.
+
+## Original pre-restart handoff (historical)
 
 1. Inspect current Git/status and actual VM state. Launch the installed
    GuestObserver and host receiver only when needed; reacquire fresh typed Lua
@@ -158,7 +230,7 @@ and `docs\analysis\2026-04-14-post-update-anchor-drift-report.md` under that sam
 repository. The first supplied the same-build position seed; the second supplied
 the failed historical health seeds. Neither establishes V2 qualification.
 
-This handoff uses documentation, link and Git checks. The prior full application
+The original pre-restart handoff used documentation, link and Git checks. The prior full application
 gate remains the one recorded in [current status](../status.md); it was not rerun
 for this documentation-only change or used to claim completion of live discovery.
 All 201 relative documentation links and `git diff --check` passed for this handoff.

@@ -30,8 +30,8 @@ Git author remains repository-local `360madden <360madden@gmail.com>`; branch
 
 ## Latest verification
 
-The latest native-player-field discovery pass is **incomplete at Joey's handoff
-request**. One bounded live capture resolved `[rift_x64+0x32E0200]` and found
+The earlier native-player-field discovery pass was **incomplete at Joey's
+handoff request**; a subsequent live restart and field sweep is recorded below. One bounded live capture resolved `[rift_x64+0x32E0200]` and found
 float32 XYZ at owner offsets `0x320/0x324/0x328`, within 0.004 of fresh typed Lua
 values in one stationary sample. The historical nearby health offsets failed.
 A supervised 100 ms forward pulse completed with release and newer API
@@ -106,18 +106,66 @@ The resumed full repository gate passed on October 19: 238 C# tests,
 smoke, deterministic replay, formatting checks, and 208 relative links.
 Evidence: `artifacts/validation/20261019T083341Z-16701712` (ignored).
 
+## October 19 live restart and health candidate sweep
+
+An additional bounded guest capture at 08:54 UTC used the existing read-only
+field-lab executable and fresh typed Lua in game PID `11620`. The report at
+`artifacts/field-discovery/runs/d8d0c66fdb954d6590962e529f3858a3/report.json`
+(SHA-256 `2D2120DCC8E2986BB284F3401B6EBBB7E49BBC0790E3B4AD1E3A144910B676B9`)
+scanned 1,073,741,824 bytes with zero read failures and 126 matches for health
+18,208 (119 int32, 7 float64). It hit the byte limit and is not exhaustive.
+
+The guest game then exited via its ordinary in-game Exit Game menu; a fresh
+GuestObserver report showed zero game processes and foreground Glyph. Glyph
+restarted the same RIFT build without sign-in, and Atank re-entered the world.
+The new game PID `8356` started `2026-10-19T09:11:06.5141458Z`
+(UTC ticks `639279978665141458`), replacing PID `11620`
+(UTC ticks `639279813293755454`). The Lua observer stayed alive and its
+typed generation reset from 1 to 2, with fresh advancing values.
+
+A second independently bounded read-only native capture at 09:13 UTC resolved
+the same root RVA `0x32E0200` with a successful root reread, now to a
+**different** session owner `0x220BF9406A0` instead of `0x216ECFE06A0`.
+The resulting XYZ `(7296.40381, 876.31891, 3054.37769)` matched fresh
+Lua `(7296.39990, 876.32001, 3054.37988)` within 0.004. The source is
+`artifacts/field-discovery/runs/4ebbe9ee91c148c4a05466ebb9049d25/report.json`,
+SHA-256 `07DB7E70D98EA102FE0939A9CD89C1153FA8A0D0318B5E431B90D3BC3766415F`.
+This is **observed same-build cross-process-epoch locator recovery**, not
+semantic qualification or update survival. A separate invalid-old-epoch
+request was not run in this session.
+
+The new capture scanned 977,739,776 bytes with zero read failures and stopped
+at 128 exact health matches. The tracked
+[native field reviewer](reference/native-field-evidence.md) now also validates
+recorded health-hit contexts and clusters and distinguishes same-build
+cross-epoch candidate evidence from actual qualification. The health review
+produced 111 clusters and no authoritative health/resource locator. Health
+was 18,208/18,208 and raw power 100 before and after both scans; there was
+no changed-health reference to distinguish cached values. Full raw captures,
+reviews and screenshots stay under ignored `artifacts/field-discovery/`.
+See [the chronological validation record](validation/native-player-fields-2026-10-19.md).
+
+The full repository validation passed again on October 19, including **238 C#
+tests, 58 Python tests** (37 native-field reviewer tests), 108 Lua assertions,
+22 actual Lua-to-C# contract cases, locked restore, a zero-warning Release
+build, published native synthetic-process smoke, deterministic replay,
+formatting/module checks, and 210 relative links. Local gate evidence:
+`artifacts/validation/20261019T091919Z-2dba17e0` (ignored). No V1 source or
+RIFT executable was modified; the RIFT-Lab game was relaunched normally.
+
 ## Limits and next useful work
 
 No native position, health/resource, combat, cast, cooldown, or ability field is
 qualified yet. Memory hits and chains are candidates. Use Lua/API observations
 as reference, then record field meaning, units, locator/build applicability,
 contrary evidence, and restart/update checks in the [catalog](reference/field-catalog.md).
-The next authorized task is to resume native position and health/resource
-discovery: capture the changed position against fresh typed Lua, narrow health
-and resource candidates with changed-state observations, then resolve the same
-frozen chains after an ordinary RIFT restart. Reacquire all process/session
-identities; do not reuse a saved heap address as a locator. Use the resumption
-record above to avoid repeating the baseline research.
+The next task is to gather controlled **changed-state** health and raw resource
+observations, capture only relevant regions, and distinguish true fields from
+copied/cached structures. Measure reacquisition over additional restarts and
+separately check old-epoch request rejection for the specific field chain.
+Always reacquire process/session/build identity; never reuse heap addresses.
+Update survival requires a different executable build and independent evidence.
+Use the saved replay and catalog rather than repeating completed baselines.
 
 Snapshot reads are sequential, capped at 64 MiB per explicit request, and are
 not atomic. Pointer discovery searches selected bytes, 8-byte-aligned x64 slots,
@@ -132,8 +180,9 @@ Mid-hold stop, hard crash, snapshot restore, and update recovery remain unqualif
 in RIFT. Sending key-up is not proof of game key state. Dedicated navigation,
 combat, and casting automation remain outside this repository.
 
-The foundation implementation is complete; native-player-field discovery and
-restart qualification remain unfinished. Keep versioned files; there is no
+The foundation implementation is complete; the native position candidate has
+same-build restart evidence, but semantic catalog qualification, health/resource
+discovery and update recovery remain unfinished. Keep versioned files; there is no
 measured reason to add the roadmap's optional SQLite index. Routine fixtures,
 field entries, and documentation can use cheaper models with the same gate;
 identity, native IO, pointer semantics, and input control still warrant strong review.

@@ -323,6 +323,30 @@ def evaluate(paths, root_rva, offsets, tolerance=0.02):
     sessions = {
         (item["processId"], item["processStartUtcTicks"]) for item in samples
     }
+    cross_epoch_pairs = []
+    for i, first in enumerate(samples):
+        for second in samples[i + 1:]:
+            if (first["processId"], first["processStartUtcTicks"]) == (
+                second["processId"], second["processStartUtcTicks"]
+            ) or first["unitId"] != second["unitId"]:
+                continue
+            supported = all(
+                item["withinTolerance"] and item["rootWindowStability"] == "verified"
+                for item in (first, second)
+            )
+            cross_epoch_pairs.append({
+                "firstRunId": first["runId"],
+                "secondRunId": second["runId"],
+                "differentProcessEpochs": True,
+                "samePlayerAndBuild": True,
+                "ownerSessionAddressChanged": (
+                    first["ownerSessionAddress"] != second["ownerSessionAddress"]
+                ),
+                "eachRootAndLuaCheckPassed": supported,
+            })
+    restart_observed = not disagreements and any(
+        pair["eachRootAndLuaCheckPassed"] for pair in cross_epoch_pairs
+    )
     return {
         "schemaVersion": 1,
         "evidenceKind": "native-position-candidate-review/1",
@@ -336,16 +360,192 @@ def evaluate(paths, root_rva, offsets, tolerance=0.02):
         "processEpochCount": len(sessions),
         "assessment": assessment,
         "qualification": "candidate-only",
-        "restartSurvival": "not-assessed",
+        "restartSurvival": (
+            "same-build-candidate-observed" if restart_observed else "not-assessed"
+        ),
         "updateSurvival": "not-assessed",
+        "oldEpochRequestRejection": "not-tested-by-this-tool",
         "limitations": [
             "A numeric match does not establish a field's meaning.",
             "A saved heap address is not a durable locator.",
-            "Restart and update survival require separately reviewed evidence.",
+            "Cross-epoch matches are candidate restart evidence, not automatic field qualification.",
+            "Update survival and invalid-old-epoch request rejection require separate validation.",
             "Host/guest sampling is not atomic; stale or moving references are inconclusive.",
         ],
         "captures": samples,
         "withinEpochMovementComparisons": pairs,
+        "crossEpochSameBuildComparisons": cross_epoch_pairs,
+    }
+
+
+
+def _typed_numeric_field(reference, name, *, required=True):
+    typed = _object(_object(reference.get("readback"), "readback").get("typedApi"), "typedApi")
+    player = _object(_object(typed.get("snapshot"), "snapshot").get("player"), "player")
+    fields = _object(player.get("fields"), "player.fields")
+    field = _object(fields.get(name), f"player.{name}")
+    if field.get("status") != "ok":
+        if required:
+            raise EvidenceError(f"typed reference {name} is unavailable")
+        return None
+    return _integer(field.get("value"), f"typed.{name}")
+
+
+def evaluate_health_scan(path, root_rva, level_hint=None):
+    """Reduce bounded raw health hits; never imply field identity or coverage."""
+    if level_hint is not None and (type(level_hint) is not int or not 1 <= level_hint <= 255):
+        raise EvidenceError("level hint must be an integer between 1 and 255")
+    # Reuse the field-lab identity, root stability, SHA-256 and typed-Lua checks.
+    position = inspect_report(Path(path), root_rva, (0x320, 0x324, 0x328), 0.02)
+    report, report_hash = load_report(Path(path))
+    if report.get("plan", {}).get("healthScan") is not True:
+        raise EvidenceError("field-lab plan did not request a health scan")
+    before, after = report["referenceBefore"], report["referenceAfter"]
+    current = _typed_numeric_field(before, "health")
+    current_after = _typed_numeric_field(after, "health")
+    maximum = _typed_numeric_field(before, "healthMax")
+    maximum_after = _typed_numeric_field(after, "healthMax")
+    power = _typed_numeric_field(before, "power", required=False)
+    power_after = _typed_numeric_field(after, "power", required=False)
+    scan = _object(report.get("healthScan"), "healthScan")
+    if (_integer(scan.get("referenceHealth"), "healthScan.referenceHealth")
+            != current):
+        raise EvidenceError("health scan does not match typed reference health")
+    bytes_scanned = _integer(scan.get("bytesScanned"), "healthScan.bytesScanned")
+    failures = _integer(scan.get("failedChunks"), "healthScan.failedChunks")
+    seconds = _number(scan.get("seconds"), "healthScan.seconds")
+    if (bytes_scanned > 1024 ** 3 or seconds < 0 or seconds > 120
+            or type(scan.get("truncated")) is not bool):
+        raise EvidenceError("invalid health scan bounds or truncation")
+    hits = scan.get("hits")
+    if not isinstance(hits, list) or len(hits) > 128:
+        raise EvidenceError("health scan hit array exceeds documented bounds")
+    if not isinstance(scan.get("regions"), list) or len(scan["regions"]) > 32768:
+        raise EvidenceError("invalid or unbounded region count")
+
+    matched = []
+    incomplete = []
+    seen = set()
+    for index, entry in enumerate(hits):
+        hit = _object(entry, f"hit[{index}]")
+        at = _hex(hit.get("address"), f"hit[{index}].address")
+        start = _hex(hit.get("contextAddress"), f"hit[{index}].contextAddress")
+        if at in seen:
+            raise EvidenceError(f"duplicate health hit address: 0x{at:X}")
+        seen.add(at)
+        flags = {k: hit.get(k) for k in ("int32", "float32", "float64")}
+        if any(type(v) is not bool for v in flags.values()) or not any(flags.values()):
+            raise EvidenceError("hit must declare at least one typed encoding")
+        read = _object(hit.get("read"), "health hit context")
+        data = _bytes(read.get("bytes"), "health hit context bytes")
+        declared_hash = _hash(hit.get("sha256"), "health hit context hash")
+        if hashlib.sha256(data).hexdigest().upper() != declared_hash:
+            raise EvidenceError(f"health hit context SHA-256 mismatch: 0x{at:X}")
+        offset = at - start
+        if (len(data) > 256 or offset < 0 or offset >= len(data)
+                or at >= 1 << 64):
+            raise EvidenceError("health hit is outside bounded context")
+        if read.get("status") != "success":
+            incomplete.append({"address": f"0x{at:X}", "reason": "context-read-incomplete"})
+            continue
+        formats = (("int32", "<i"), ("float32", "<f"), ("float64", "<d"))
+        agreed = []
+        for kind, fmt in formats:
+            if not flags[kind]:
+                continue
+            if offset + struct.calcsize(fmt) > len(data) or struct.unpack_from(fmt, data, offset)[0] != current:
+                incomplete.append({"address": f"0x{at:X}", "reason": f"{kind}-context-value-changed"})
+            else:
+                agreed.append(kind)
+        if not agreed:
+            continue
+        matched.append({"address": at, "encodings": agreed,
+                        "contextAddress": start, "contextBytes": data,
+                        "contextSha256": declared_hash})
+    matched.sort(key=lambda x: x["address"])
+    # An address cluster merely reduces duplicates from adjacent health slots.
+    clusters = []
+    for row in matched:
+        if clusters and row["address"] - clusters[-1]["addresses"][-1] <= 32:
+            clusters[-1]["addresses"].append(row["address"])
+            clusters[-1]["rows"].append(row)
+        else:
+            clusters.append({"addresses": [row["address"]], "rows": [row]})
+    structured = []
+    for group in clusters:
+        start, end = group["addresses"][0], group["addresses"][-1]
+        nearby_power = False
+        nearby_level = False
+        for row in group["rows"]:
+            data = row["contextBytes"]
+            context_base = row["contextAddress"]
+            lower = max(context_base, start - 64)
+            upper = min(context_base + len(data) - 4, end + 64)
+            first = lower + ((4 - lower % 4) % 4)
+            for address in range(first, upper + 1, 4):
+                value = struct.unpack_from("<i", data, address - context_base)[0]
+                nearby_power = nearby_power or (power is not None and value == power)
+                nearby_level = nearby_level or (level_hint is not None and value == level_hint)
+        structured.append({
+            "firstSessionAddress": f"0x{start:X}",
+            "lastSessionAddress": f"0x{end:X}",
+            "addressCount": len(group["rows"]),
+            "encodings": sorted(set(kind for row in group["rows"] for kind in row["encodings"])),
+            "nearbyTypedPowerValue": nearby_power,
+            "nearbyLevelHintValue": nearby_level if level_hint is not None else None,
+            "contextHashes": sorted({row["contextSha256"] for row in group["rows"]}),
+        })
+    # Structural ordering, never a confidence or field-identification score.
+    structured.sort(key=lambda g: (
+        -g["addressCount"], -int(g["nearbyTypedPowerValue"]),
+        -int(g["nearbyLevelHintValue"] is True), g["firstSessionAddress"]
+    ))
+    return {
+        "schemaVersion": 1,
+        "evidenceKind": "native-health-hit-review/1",
+        "sourcePath": str(path),
+        "sourceSha256": report_hash,
+        "runId": position["runId"],
+        "buildSha256": position["buildSha256"],
+        "processId": position["processId"],
+        "processStartUtcTicks": position["processStartUtcTicks"],
+        "ownerSessionAddress": position["ownerSessionAddress"],
+        "rootWindowStability": position["rootWindowStability"],
+        "typedReference": {
+            "health": [current, current_after],
+            "healthMax": [maximum, maximum_after],
+            "rawPower": [power, power_after],
+            "levelHint": level_hint,
+            "healthChangedDuringScan": current != current_after,
+            "powerChangedDuringScan": power != power_after,
+            "sourceSequences": position["sourceSequences"],
+        },
+        "scanCoverage": {
+            "bytesScanned": bytes_scanned,
+            "failedChunks": failures,
+            "seconds": seconds,
+            "truncated": scan["truncated"],
+            "regionCount": len(scan["regions"]),
+            "recordedHitCount": len(hits),
+            "matchingHitCount": len(matched),
+            "incompleteContextCount": len(incomplete),
+            "completeMemoryCoverage": False,
+        },
+        "incompleteContexts": incomplete,
+        "candidateGroups": structured,
+        "candidateGroupCount": len(structured),
+        "qualification": "candidate-only",
+        "fieldMeaning": "unqualified",
+        "restartSurvival": "not-assessed",
+        "updateSurvival": "not-assessed",
+        "limitations": [
+            "Adjacent matches and nearby values can be cached or copied observations.",
+            "Health equal to healthMax cannot distinguish current from maximum.",
+            "Optional level hint is caller-supplied, not validated by typed Lua.",
+            "Scan regions were budget-limited and not atomically acquired.",
+            "Context reads after matches can change and are not field attestation.",
+            "Addresses are process-specific and must not be reused after restart.",
+        ],
     }
 
 
@@ -353,14 +553,23 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, action="append", required=True)
     parser.add_argument("--root-rva", required=True)
-    parser.add_argument("--xyz-offsets", nargs=3, required=True)
+    parser.add_argument("--xyz-offsets", nargs=3)
+    parser.add_argument("--health-hits", action="store_true", help="Review typed health matches from one field-lab report")
+    parser.add_argument("--level-hint", type=int, help="Optional visually observed level, not verified by typed Lua")
     parser.add_argument("--tolerance", type=float, default=0.02)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         root = _hex(args.root_rva, "root-rva")
-        offsets = [_hex(value, "xyz-offset") for value in args.xyz_offsets]
-        evaluation = evaluate(args.report, root, offsets, args.tolerance)
+        if args.health_hits:
+            if len(args.report) != 1 or args.xyz_offsets is not None:
+                raise EvidenceError("health review requires exactly one report and no XYZ arguments")
+            evaluation = evaluate_health_scan(args.report[0], root, args.level_hint)
+        else:
+            if args.xyz_offsets is None or args.level_hint is not None:
+                raise EvidenceError("position review requires three XYZ offsets without a level hint")
+            offsets = [_hex(value, "xyz-offset") for value in args.xyz_offsets]
+            evaluation = evaluate(args.report, root, offsets, args.tolerance)
         payload = (json.dumps(evaluation, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
         if args.output:
             staging_path = None

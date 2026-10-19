@@ -212,6 +212,48 @@ class NativeEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(evidence.EvidenceError, "builds differ"):
             self.review(fixture(), second)
 
+
+    def _new_epoch_fixture(self):
+        newer = fixture("b" * 32, time="2026-10-19T09:13:17Z")
+        newer["completedAtUtc"] = "2026-10-19T09:14:00Z"
+        newer["identity"]["processId"] = 8356
+        newer["identity"]["processStartUtcTicks"] = 639279978665141458
+        new_owner = OWNER + 0x101000
+        root_bytes = base64.b64encode(new_owner.to_bytes(8, "little")).decode()
+        newer["rootRead"]["bytes"] = root_bytes
+        newer["ownerAddress"] = f"0x{new_owner:X}"
+        newer["windows"][0]["address"] = f"0x{new_owner:X}"
+        newer["windows"][0]["hops"][0]["read"]["bytes"] = root_bytes
+        for which in ("referenceBefore", "referenceAfter"):
+            newer[which]["target"]["processId"] = 8356
+            newer[which]["target"]["processStartUtc"] = "2026-10-19T09:11:06.5141458Z"
+        return newer
+
+    def test_cross_epoch_evidence_preserves_candidate_and_changed_heap(self):
+        result = self.review(fixture(), self._new_epoch_fixture())
+        self.assertEqual(result["processEpochCount"], 2)
+        self.assertEqual(result["restartSurvival"], "same-build-candidate-observed")
+        self.assertEqual(result["qualification"], "candidate-only")
+        self.assertEqual(result["updateSurvival"], "not-assessed")
+        self.assertEqual(result["oldEpochRequestRejection"], "not-tested-by-this-tool")
+        self.assertTrue(result["crossEpochSameBuildComparisons"][0]["ownerSessionAddressChanged"])
+        self.assertTrue(result["crossEpochSameBuildComparisons"][0]["eachRootAndLuaCheckPassed"])
+
+    def test_cross_epoch_unstable_root_not_restart_evidence(self):
+        data = self._new_epoch_fixture()
+        data["windows"][0]["stable"] = False
+        result = self.review(fixture(), data)
+        self.assertEqual(result["restartSurvival"], "not-assessed")
+        self.assertFalse(result["crossEpochSameBuildComparisons"][0]["eachRootAndLuaCheckPassed"])
+
+    def test_cross_epoch_different_player_not_restart_evidence(self):
+        data = self._new_epoch_fixture()
+        for ref in ("referenceBefore", "referenceAfter"):
+            data[ref]["readback"]["typedApi"]["snapshot"]["player"]["unitId"] = "different-player"
+        result = self.review(fixture(), data)
+        self.assertEqual(result["restartSurvival"], "not-assessed")
+        self.assertEqual(result["crossEpochSameBuildComparisons"], [])
+
     def test_strict_json_rejects_duplicate_properties(self):
         path = self.path / "duplicate.json"
         path.write_bytes(b'{"schemaVersion":1,"schemaVersion":1}')
@@ -245,6 +287,164 @@ class NativeEvidenceTests(unittest.TestCase):
         self.assertEqual(decoded["qualification"], "candidate-only")
         self.assertEqual(decoded["captureCount"], 1)
 
+
+
+def health_fixture():
+    report = fixture()
+    report["plan"]["healthScan"] = True
+    for key in ("referenceBefore", "referenceAfter"):
+        fields = report[key]["readback"]["typedApi"]["snapshot"]["player"]["fields"]
+        fields.update({
+            "health": {"status": "ok", "value": 18208},
+            "healthMax": {"status": "ok", "value": 18208},
+            "power": {"status": "ok", "value": 100},
+        })
+    memory = bytearray(256)
+    for off, value in ((40, 45), (64, 18208), (72, 18208),
+                       (80, 18208), (104, 100)):
+        struct.pack_into("<i", memory, off, value)
+    base = 0x216A3D77000
+    encoded = base64.b64encode(memory).decode()
+    sha = hashlib.sha256(memory).hexdigest().upper()
+    report["healthScan"] = {
+        "referenceHealth": 18208,
+        "regions": [], "bytesScanned": 4096, "failedChunks": 0,
+        "seconds": 0.25, "truncated": True,
+        "hits": [
+            {
+                "address": f"0x{base + off:X}", "contextAddress": f"0x{base:X}",
+                "int32": True, "float32": False, "float64": False,
+                "read": {"status": "success", "bytes": encoded},
+                "sha256": sha,
+            } for off in (64, 72, 80)
+        ],
+    }
+    return report
+
+
+class NativeHealthEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.folder = Path(self.temp.name)
+
+    def assess(self, report, level_hint=45):
+        path = self.folder / "report.json"
+        path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+        return evidence.evaluate_health_scan(path, ROOT_RVA, level_hint)
+
+    def test_groups_adjacent_hits_without_qualifying_meaning(self):
+        report = self.assess(health_fixture())
+        self.assertEqual(report["candidateGroupCount"], 1)
+        self.assertEqual(report["scanCoverage"]["matchingHitCount"], 3)
+        self.assertEqual(report["scanCoverage"]["recordedHitCount"], 3)
+        self.assertEqual(report["typedReference"]["health"], [18208, 18208])
+        self.assertEqual(report["typedReference"]["rawPower"], [100, 100])
+        group = report["candidateGroups"][0]
+        self.assertEqual(group["addressCount"], 3)
+        self.assertTrue(group["nearbyTypedPowerValue"])
+        self.assertTrue(group["nearbyLevelHintValue"])
+        self.assertEqual(report["qualification"], "candidate-only")
+        self.assertEqual(report["restartSurvival"], "not-assessed")
+        self.assertFalse(report["scanCoverage"]["completeMemoryCoverage"])
+
+    def test_level_hint_is_optional_and_not_inferred(self):
+        group = self.assess(health_fixture(), level_hint=None)["candidateGroups"][0]
+        self.assertIsNone(group["nearbyLevelHintValue"])
+        self.assertTrue(group["nearbyTypedPowerValue"])
+
+    def test_changed_health_is_recorded_not_promoted(self):
+        data = health_fixture()
+        fields = data["referenceAfter"]["readback"]["typedApi"]["snapshot"]["player"]["fields"]
+        fields["health"]["value"] = 17000
+        result = self.assess(data)
+        self.assertTrue(result["typedReference"]["healthChangedDuringScan"])
+        self.assertEqual(result["qualification"], "candidate-only")
+
+    def test_incomplete_context_is_retained_but_not_ranked(self):
+        data = health_fixture()
+        data["healthScan"]["hits"][0]["read"]["status"] = "unavailable"
+        result = self.assess(data)
+        self.assertEqual(result["scanCoverage"]["matchingHitCount"], 2)
+        self.assertEqual(result["scanCoverage"]["incompleteContextCount"], 1)
+        self.assertEqual(result["candidateGroups"][0]["addressCount"], 2)
+
+    def test_changed_context_value_is_not_ranked(self):
+        data = health_fixture()
+        hit = data["healthScan"]["hits"][0]
+        mem = bytearray(base64.b64decode(hit["read"]["bytes"]))
+        struct.pack_into("<i", mem, 64, 17000)
+        hit["read"]["bytes"] = base64.b64encode(mem).decode()
+        hit["sha256"] = hashlib.sha256(mem).hexdigest().upper()
+        result = self.assess(data)
+        self.assertEqual(result["scanCoverage"]["matchingHitCount"], 2)
+        self.assertEqual(result["incompleteContexts"][0]["reason"], "int32-context-value-changed")
+
+    def test_tampered_context_hash_is_rejected(self):
+        data = health_fixture()
+        data["healthScan"]["hits"][0]["sha256"] = "B" * 64
+        with self.assertRaisesRegex(evidence.EvidenceError, "SHA-256 mismatch"):
+            self.assess(data)
+
+    def test_wrong_scan_health_reference_is_rejected(self):
+        data = health_fixture()
+        data["healthScan"]["referenceHealth"] = 100
+        with self.assertRaisesRegex(evidence.EvidenceError, "does not match"):
+            self.assess(data)
+
+    def test_unavailable_health_is_rejected_not_zero(self):
+        data = health_fixture()
+        f = data["referenceBefore"]["readback"]["typedApi"]["snapshot"]["player"]["fields"]
+        f["health"] = {"status": "unavailable", "value": 0}
+        with self.assertRaisesRegex(evidence.EvidenceError, "unavailable"):
+            self.assess(data)
+
+    def test_duplicate_hit_addresses_are_rejected(self):
+        data = health_fixture()
+        data["healthScan"]["hits"].append(copy.deepcopy(data["healthScan"]["hits"][0]))
+        with self.assertRaisesRegex(evidence.EvidenceError, "duplicate health"):
+            self.assess(data)
+
+    def test_excessive_raw_hit_count_is_rejected(self):
+        data = health_fixture()
+        data["healthScan"]["hits"] *= 44
+        with self.assertRaisesRegex(evidence.EvidenceError, "exceeds"):
+            self.assess(data)
+
+    def test_noninteger_level_hint_is_rejected(self):
+        with self.assertRaisesRegex(evidence.EvidenceError, "level hint"):
+            self.assess(health_fixture(), level_hint=True)
+
+    def test_missing_health_scan_plan_is_rejected(self):
+        data = health_fixture()
+        data["plan"]["healthScan"] = False
+        with self.assertRaisesRegex(evidence.EvidenceError, "did not request"):
+            self.assess(data)
+
+    def test_invalid_root_identity_is_rejected(self):
+        data = health_fixture()
+        data["referenceBefore"]["target"]["processId"] = 999
+        with self.assertRaisesRegex(evidence.EvidenceError, "identity mismatch"):
+            self.assess(data)
+
+    def test_invalid_mode_combinations_are_rejected(self):
+        data = health_fixture()
+        file = self.folder / "report.json"
+        file.write_text(json.dumps(data), encoding="utf-8")
+        result = evidence.main([
+            "--health-hits", "--report", str(file),
+            "--root-rva", "0x32E0200",
+            "--xyz-offsets", "0x320", "0x324", "0x328",
+        ])
+        self.assertEqual(result, 2)
+
+    def test_health_report_replay_deterministic(self):
+        data = health_fixture()
+        first = self.assess(data)
+        second = self.assess(data)
+        self.assertEqual(
+            json.dumps(first, sort_keys=True), json.dumps(second, sort_keys=True)
+        )
 
 if __name__ == "__main__":
     unittest.main()
