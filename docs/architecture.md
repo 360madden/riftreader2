@@ -39,6 +39,10 @@ new binding. Native-field discovery and qualification remain later
 independent V2 work. The addon gathers
 supported API data and diagnostics. External tooling handles acquisition,
 native research, numerical work, retention, and exports.
+The separate finite [native capture path](reference/native-capture.md) retains
+explicit raw ranges, process/build identity, timing, hashes, and read failures.
+Its Application session port isolates Win32 access in Live. Raw-byte acquisition
+does not promote field meanings or replace the addon contract.
 See [ADR 0002](decisions/0002-hybrid-addon-and-reader.md) for the hybrid boundary,
 freshness and compatibility requirements. [ADR 0003](decisions/0003-addon-observation-contract.md)
 and the [wire contract](../contracts/addon/README.md) define the inner boundary;

@@ -15,11 +15,15 @@ telemetry. The Lua producer and offline C# decoder have shared contract tests;
 live transport must establish freshness and reload/session identity. See the
 [addon contract](contracts/addon/README.md).
 
-**Current phase: modular hybrid foundation and minimal live transport.**
+**Current phase: modular hybrid foundation, live transport, and native capture.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow
 [the architecture](docs/architecture.md) and [development guide](docs/workflows/development.md).
 Keep later features in the roadmap until their implementation is requested.
+Joey subsequently authorized roadmap step 4's remaining bounded read-only
+native capture work and its RIFT validation. Follow the
+[native capture contract](docs/reference/native-capture.md); preserve raw
+acquisition evidence without promoting native-field meanings.
 
 ## Orientation and durable context
 

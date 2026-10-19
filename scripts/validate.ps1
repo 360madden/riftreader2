@@ -48,6 +48,10 @@ try {
     $runId = [DateTime]::UtcNow.ToString('yyyyMMddTHHmmssZ') + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8)
     $runDirectory = Join-Path 'artifacts/validation' $runId
     New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
+    $nativePublish = Join-Path $runDirectory 'native-published'
+    dotnet publish src/RiftReader2.Live/RiftReader2.Live.csproj --configuration Release --no-restore --output $nativePublish
+    if ($LASTEXITCODE -ne 0) { throw 'Native executable publication failed.' }
+    & (Join-Path $PSScriptRoot 'test-native-published.ps1') -Executable (Join-Path $nativePublish 'RiftReader2.Live.exe') -OutputDirectory (Join-Path $runDirectory 'native-smoke')
     & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
     & $LuaPython -m unittest tests.test_read_live_receipt

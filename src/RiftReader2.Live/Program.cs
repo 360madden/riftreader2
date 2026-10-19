@@ -7,8 +7,18 @@ namespace RiftReader2.Live;
 
 internal static class Program
 {
-    private static async Task<int> Main()
+    private static async Task<int> Main(string[] args)
     {
+        if (args.Length > 0)
+        {
+            using var commandCancellation = new CancellationTokenSource();
+            Console.CancelKeyPress += (_, eventArgs) =>
+            {
+                eventArgs.Cancel = true;
+                commandCancellation.Cancel();
+            };
+            return await NativeCommandRunner.RunAsync(args, Console.Out, Console.Error, commandCancellation.Token);
+        }
         if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
         {
             Console.Error.WriteLine("RiftReader2.Live requires 64-bit Windows.");

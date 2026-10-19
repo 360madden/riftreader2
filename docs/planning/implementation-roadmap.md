@@ -119,9 +119,19 @@ Acceptance evidence:
 - no write, input, debugger, or automation capability is introduced;
 - restart reacquisition is measured separately from update recovery.
 
-The current gate qualifies ordinary game-process reacquisition by a surviving
-reader and a graceful VM power cycle with manual reader/game relaunch. It does
-not add automatic startup or qualify crash, snapshot-restore, or update recovery.
+Completed for bounded raw acquisition. The native adapter preserves exact
+request, tool, process/build, timing, bytes, and failure provenance behind an
+Application-owned port. The [native runtime record](../validation/native-capture-2026-10-19.md)
+qualifies the final bundle in two process epochs: ordinary capture, unavailable
+memory, wrong identity, no overwrite, and rejection of the actual old request
+after a RIFT restart. Reacquisition requires a new explicit request; no native
+field meaning or stable locator is promoted.
+
+The earlier addon gate separately qualified ordinary game-process reacquisition
+by a surviving reader and a graceful VM power cycle with manual reader/game
+relaunch. Those results identify their own executable. The native bundle has
+not passed a VM-restart gate. Automatic startup, crash, snapshot restore, and
+update recovery remain unqualified. Continue with step 5's durable catalog.
 
 Native identity, platform I/O, timing, and concurrency require strong-model
 implementation or review.

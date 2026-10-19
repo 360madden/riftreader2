@@ -80,6 +80,11 @@ dependency-aware review.
 
 ## Exercise the offline slice
 
+For finite read-only Windows native captures, use the published Live executable
+and the [native capture guide](../reference/native-capture.md). This path has
+its own exact process/build request and preserves raw bytes and failures;
+the no-argument Live executable continues to run the addon transport.
+
 Replay the selected saved V1 wall-motion evidence:
 
 ```powershell

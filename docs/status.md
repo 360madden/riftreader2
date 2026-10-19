@@ -2,124 +2,87 @@
 
 Updated: 2026-10-19 (America/New_York).
 
-## Phase and direction
+## Direction and completed scope
 
-Modular hybrid foundation and minimal live transport, explicitly
-authorized by Joey. RiftReader2 is independently developed around its own goals;
-V1 remains reference evidence and lessons. See [ADR 0001](decisions/0001-modular-offline-foundation.md).
-Joey explicitly requires a hybrid Lua addon plus external .NET application;
-[ADR 0002](decisions/0002-hybrid-addon-and-reader.md) makes that product boundary
-explicit. Joey subsequently authorized the minimal Lua addon, C# decoder, and
-shared contract tests; that increment is complete offline under
-[ADR 0003](decisions/0003-addon-observation-contract.md). The bare addon has
-since passed one identified actual-client gate. Joey then authorized the
-nonce-bound live increment selected in
-[ADR 0004](decisions/0004-nonce-bound-addon-transport.md); its implementation,
-final-build runtime gate, game restart, and VM restart qualification are complete.
+RiftReader2 is an independently developed hybrid Lua addon plus modular .NET
+application. V1 remains read-only reference material and selected lab tooling.
+See [architecture](architecture.md), [decisions](decisions/README.md), and the
+[implementation roadmap](planning/implementation-roadmap.md).
 
-## Implemented
+Steps 0–4 are complete within their recorded evidence gates:
 
-- .NET 10 solution with Domain, Application, Infrastructure, CLI, isolated
-  Windows Live executable, and separate portable/Windows tests.
-- Strict versioned config and capture manifests; bounded UTF-8 JSONL replay with
-  SHA-256 verification, same-session checks, and explicit gaps.
-- Streaming derived motion analysis, cancellation, deterministic JSON reports,
-  and publication that preserves existing evidence.
-- Strict saved wall-motion replay with pinned V1 capture/process identity,
-  streamed input, selected trial hashes, and deterministic classification.
-- Central build/package settings, exact SDK pin, package locks, and one local
-  validation command enforcing module boundaries and behavior.
-- Lua 5.1 package with separate encoder, bounded API sampler, and event hookup;
-  typed player/position/health/combat observations, clock/lifecycle handling,
-  and a strict 4096-byte contract.
-- Typed C# decoder and `decode-addon --frame PATH [--output PATH]`, with exact
-  frame hash, `unbound` source binding, and `unverified` freshness.
-- Shared producer/consumer fixtures and a mandatory actual-Lua-to-C# gate;
-  repository-local development runtime under ignored `artifacts/tools/`.
-- Nonce-bound RR2L1 addon publication, strict selection and freshness tracking,
-  a bounded read-only Windows scanner, atomic guest receipts, optional private
-  IPv4 delivery, and a fail-closed host snapshot gate.
-- Git initialized; local author `360madden <360madden@gmail.com>`; implementation
-  branch `codex/modular-foundation`. Use Git for current commit/working-tree state.
+- Pinned .NET 10 solution: Domain, Application, Infrastructure, CLI, Windows Live,
+  separate portable/Windows tests, strict configuration, and module checks.
+- Content-pinned JSONL replay, streaming motion analysis, explicit gaps, and
+  deterministic reports with publication that preserves existing evidence.
+- First-class Lua 5.1 producer and strict C# decoder with shared contracts.
+- Nonce-bound addon transport with bounded read-only acquisition, freshness,
+  reload/session invalidation, private delivery, and a host snapshot gate.
+- Independent replay of the selected V1 wall-motion batch; its native field
+  meaning remains unqualified.
+- Finite `inspect-native` / `capture-native` commands with strict requests,
+  exact process/build identity, bounded reads, explicit failures, monotonic
+  timing, raw-byte hashes, and report/tool identity. Application owns the port;
+  Windows access remains isolated in Live. See the
+  [native capture contract](reference/native-capture.md).
 
-## Verified
+Git author is repository-local `360madden <360madden@gmail.com>`; branch
+`codex/modular-foundation`. Use Git for the current commit and worktree state.
 
-The [addon validation record](validation/addon-contract-2026-10-18.md) records
-138 passing C# tests, 85 Lua assertions, and 11 actual Lua-to-C# shared cases.
-The full gate passed locked restore, clean Release build, formatting, dependency
-checks, links, and the existing deterministic synthetic replay. The 36 rejected
-wire fixtures are included in the C# total. Earlier evidence remains in the
-[foundation record](validation/foundation-2026-10-18.md).
+## Latest verification
 
-The [actual-client record](validation/addon-live-client-2026-10-18.md) separately
-records a controlled RIFT-Lab load after `/reloadui`. Bare RR2A1 advanced from
-sequence 26 at clock 1109.16796875 to sequence 58 at clock
-1125.2628173828125. Health and maximum health were 18208, matching the visible
-UI; combat was unavailable. The guest-visible historical package contained four
-files, but guest hashes were not collected. This proves the bare producer only
-in that identified session; it does not validate RR2L1 or transport freshness.
+The final native implementation passed the full local gate: 196 C# tests
+(187 portable, 9 Windows), 108 Lua assertions, 22 actual Lua-to-C# cases,
+9 Python host-gate tests, locked restore, zero-warning Release build,
+format/dependency checks, deterministic replay, and a published executable
+smoke. Evidence: `artifacts/validation/20261019T043104Z-a6f572d3`.
+The full gate checked 158 relative links; all 160 final documentation links
+also passed. Live validation caught a single-file identity gap; the fix records
+the actual bundle hash and the published smoke now provides regression coverage.
 
-The later [live transport record](validation/live-transport-2026-10-18.md)
-records the complete RR2L1 gate in the same RIFT process: 12 consecutive fresh
-snapshots, stale-copy rejection, `/reloadui` clearing, first-reader termination,
-new reader instance/nonce remaining unbound until `/rr2bind`, old-nonce
-rejection, and eight retained fresh rebound snapshots. Delivery remained
-`gameReady: false`; host freshness is snapshot-only under an explicit 250 ms
-guest/host UTC skew bound.
+The [native runtime record](validation/native-capture-2026-10-19.md) validates
+the final published bundle in RIFT-Lab, before and after an ordinary RIFT
+restart. Two captures per session each returned 3/3 header samples. Unmapped
+memory retained an explicit unavailable range; wrong epoch/build and existing
+output were rejected. The exact pre-restart request failed after restart, and
+fresh inspection/capture succeeded. PID changed from 11884 to 11620 while the
+mapped address stayed unchanged. Raw captures remain semantically unqualified.
 
-The live-transport repository gate passed 173 C# tests (167 core and 6 Windows), 108 Lua
-assertions, 11 RR2A1 plus 11 RR2L1 actual-Lua-to-C# cases, 9 Python host-gate
-tests, a zero-warning Release build, locked restore, format and dependency
-checks, deterministic replay, and 145 relative links. Evidence is under
-`artifacts/validation/20261019T023621Z-e8a2a3f3`.
-This final gate includes a conservative cancellation/deadline check after the
-scanner's last read. The final executable, SHA-256
-`42C02CB07886D6108ED84188263E1D1CEB99DBF59D605CABA90BE8AA3A210A08`,
-subsequently passed the [restart recovery gate](validation/restart-recovery-2026-10-18.md).
-The unchanged V1 console and receiver were reused only as lab infrastructure.
+Final native bundle SHA-256:
+`7D095CCBB8826ACC62F6C788158F278DBF1ED77CE64157272D7D338C11EA6C52`.
+The native commands were exercised; the addon transport's full runtime gate
+was not repeated for this bundle. Its earlier
+[live transport](validation/live-transport-2026-10-18.md) and
+[game/VM restart](validation/restart-recovery-2026-10-18.md) evidence identifies
+its own exact executable. The
+[saved replay record](validation/wall-replay-2026-10-19.md) identifies the
+separate fixed-input conclusion. See [all validation records](validation/README.md).
 
-The recovery gate observed an ordinary RIFT process restart while the reader
-remained running, then a graceful VM power cycle followed by manual RIFT and
-reader relaunch. Each transition withheld observations, required a new nonce
-binding, and returned to fresh advancing snapshots. The addon and final reader
-persisted across the VM restart without reinstall. Delivery remains
-`gameReady: false`; host freshness remains snapshot-only under the explicit
-250 ms guest/host UTC skew bound.
+At teardown, the temporary receiver was stopped and the original VM DVD
+restored and queried. RIFT was left logged in. V1 source was unchanged.
 
-At teardown, the reader reported termination, the temporary host receiver was
-stopped, and the original VM DVD was restored. RIFT was left running and logged
-in. Full process/build identities and evidence are in the recovery record.
+## Limits and next work
 
-The [saved wall-motion replay](validation/wall-replay-2026-10-19.md) now
-independently reproduces one V1 evidence conclusion from the pinned
-100,187,956-byte, 9,598-sample batch. Free travel has about 0.79% vector error;
-wall-contact trials 2 and 3 have opposite projected/realized Z signs and about
-62.61/62.49 degree direction errors. This qualifies the fixed-input replay, not
-a native velocity field or current-build motion behavior.
+Native capture now preserves acquisition evidence; it does not establish a
+native coordinate/velocity field, durable locator, or alignment with addon
+observations. Reads are sequential. Disk executable identity is distinct from
+loaded-image verification. Delivery remains `gameReady: false`; addon host
+freshness is snapshot-only under the documented 250 ms clock-skew bound.
 
-The current full gate passed 183 C# tests (177 core and 6 Windows), 108 Lua
-assertions, 22 actual-Lua-to-C# cases, 9 Python host-gate tests, a zero-warning
-Release build, locked restore, format and dependency checks, the deterministic
-demo, and 153 relative links. Evidence is under
-`artifacts/validation/20261019T040527Z-d6abdfaf`. Two final replay reports were
-byte-identical at 7,238 bytes; the no-overwrite check preserved the existing
-report.
+A native process restart requires a fresh explicit request. Native-bundle VM
+restart, hard crash, snapshot restore, update recovery, automatic startup, and
+production remote consumption remain unqualified. Earlier addon VM recovery
+required manual relaunch and binding.
 
-## Next work
+The next roadmap increment is **step 5: durable field catalog and qualification
+workflow**. Start with a small versioned contract for meaning, units, locator,
+build/session applicability, evidence references, confidence, and invalidation.
+A saved address alone must not become qualified knowledge. Retain contradictory
+or expired evidence and require distinct restart/update evidence. No live field
+promotion or new experiment control is implied by this handoff.
 
-The RR2L1 increment is complete for the retained restart gates. The current
-package has five files because `live.lua` was added; the earlier four-file guest
-deployment remains historical evidence of the bare gate. Hard-crash recovery,
-VM snapshot restore/resume, update recovery, loaded-module byte verification,
-scan-performance optimization, and a production remote consumer remain
-unqualified. VM recovery currently requires manual relaunch and binding.
-
-Follow the [roadmap](planning/implementation-roadmap.md). The next bounded
-increment is step 4's residual read-only native capture work: preserve exact
-native capture provenance and failure behavior behind the existing I/O
-boundary. The durable field catalog follows in step 5. Native-field
-qualification, update measurement, and the experiment runner remain future
-increments. Start with one bounded task;
-use [development guidance](workflows/development.md) to hand routine work to
-cheaper models while retaining the same validation. Strong review remains
-appropriate for semantics, provenance, schemas, native access, and concurrency.
+Strong review remains appropriate for catalog semantics, schema, provenance,
+and native access. Cheaper models can handle documented entries, fixtures,
+formatting, and narrow tests once behavior is specified; retain the same
+[validation gate](workflows/development.md). Step 5 is the recommended next
+scope; this turn completed the specifically authorized step-4 remainder.

@@ -12,19 +12,20 @@ This directory records actual checks separately from proposed measurements.
 | [Nonce-bound live transport](live-transport-2026-10-18.md) | RR2L1 advancement, stale rejection, reload clearing, reader restart/rebinding, delivery, and host snapshot gate. |
 | [Restart recovery](restart-recovery-2026-10-18.md) | Final executable, RIFT process restart, graceful VM power cycle, persistence, reacquisition, rebinding, and fresh recovery. |
 | [Saved wall-motion replay](wall-replay-2026-10-19.md) | Independent V2 replay of one content-pinned V1 capture: free-travel plausibility and two decisive wall disagreements. |
+| [Native capture](native-capture-2026-10-19.md) | Final native bundle: bounded raw reads, explicit failures, exact identities, publication, and ordinary RIFT restart rejection/reacquisition. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
-The latest full gate passed 183 C# tests (177 core and 6 Windows), 108 Lua
-assertions, 11 RR2A1 plus 11 RR2L1 actual-Lua-to-C# cases, and 9 Python host-gate
-tests, with zero Release build warnings, exact SDK and locked restore checks,
-formatting/dependency checks, deterministic synthetic replay, and 153 relative
-links. A separate final check reproduced the saved wall-motion result twice.
-The live records additionally
-validate bounded end-to-end lab paths,
-including an ordinary RIFT restart and graceful VM power cycle with manual
-relaunch and rebinding. They do not establish loaded-module bytes, native-field
-meaning, hard-crash or snapshot-restore recovery, update recovery, production
-remote consumption, or general performance.
+The latest full gate passed 196 C# tests (187 portable and 9 Windows), 108 Lua
+assertions, 22 actual Lua-to-C# cases, 9 Python host-gate tests, and the published
+single-file native smoke, with zero Release warnings, locked restore,
+format/dependency checks, deterministic replay, and 158 relative links before
+final documentation. All 160 final documentation links passed separately.
+
+Runtime records identify their own exact binaries. The final native bundle
+passed bounded acquisition and an ordinary RIFT restart; the earlier addon
+transport binary passed its game/VM restart gates. These do not establish full
+loaded-module equality, native game-field meaning, hard-crash or snapshot
+recovery, update recovery, production remote consumption, or general performance.
 
 The saved wall-motion record separately establishes one repeatable offline V1
 evidence conclusion. It qualifies the replay procedure for the pinned capture,

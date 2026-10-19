@@ -17,6 +17,7 @@ topic below instead of loading every document for each task.
 | Reference | [V1 context](reference/v1-context.md) | Dated observations and source paths. |
 | Reference | [Reuse inventory](reference/reuse-inventory.md) | Existing capabilities, entry points, and limitations. |
 | Reference | [Capture format](reference/capture-format.md) | Version-1 offline inputs, output semantics, and compatibility. |
+| Reference | [Native capture](reference/native-capture.md) | Bounded read-only Windows requests, raw-byte provenance, and failure semantics. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |
 | Addon | [Lua package guide](../addon/README.md) | Modules, configuration, and offline/client validation boundary. |
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |
