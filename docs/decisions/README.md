@@ -25,6 +25,8 @@ Source: Joey's instructions in the RiftReader v2 conversation.
   minimal Lua producer, strict .NET decoder, and shared cross-language fixtures.
 - [0004: Nonce-bound addon transport](0004-nonce-bound-addon-transport.md):
   preserved RR2A1 payload, one-load reader nonce, and external freshness tracker.
+- [0005: Durable field catalog](0005-durable-field-catalog.md):
+  content-bound definitions, retained assessments, and scoped qualification.
 
 ## Future records
 

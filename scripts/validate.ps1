@@ -52,6 +52,21 @@ try {
     dotnet publish src/RiftReader2.Live/RiftReader2.Live.csproj --configuration Release --no-restore --output $nativePublish
     if ($LASTEXITCODE -ne 0) { throw 'Native executable publication failed.' }
     & (Join-Path $PSScriptRoot 'test-native-published.ps1') -Executable (Join-Path $nativePublish 'RiftReader2.Live.exe') -OutputDirectory (Join-Path $runDirectory 'native-smoke')
+    $catalogArgs = @('qualify-fields', '--catalog', 'samples/catalog/catalog.json', '--build-sha256', ('A' * 64), '--session-id', 'synthetic-session-a', '--as-of', '2026-10-19T00:00:00Z')
+    $catalogReport = Join-Path $runDirectory 'catalog.json'
+    $catalogReplay = Join-Path $runDirectory 'catalog-replay.json'
+    & dotnet $cli @catalogArgs --output $catalogReport | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Catalog qualification smoke failed.' }
+    & dotnet $cli @catalogArgs --output $catalogReplay | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw 'Catalog replay smoke failed.' }
+    if ((Get-FileHash -LiteralPath $catalogReport).Hash -ne (Get-FileHash -LiteralPath $catalogReplay).Hash) {
+        throw 'Catalog replay produced different report bytes.'
+    }
+    $catalogFields = (Get-Content -LiteralPath $catalogReport -Raw | ConvertFrom-Json).evaluation.fields
+    if ($catalogFields.Count -ne 3 -or $catalogFields[0].status -ne 'supported-by-recorded-assessment' -or
+        $catalogFields[1].status -ne 'contradicted' -or $catalogFields[2].status -ne 'unqualified') {
+        throw 'Synthetic catalog qualification differs from expected scoped outcomes.'
+    }
     & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
     & $LuaPython -m unittest tests.test_read_live_receipt

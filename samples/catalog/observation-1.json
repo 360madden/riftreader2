@@ -1,0 +1,9 @@
+{
+  "evidenceKind": "synthetic-field-observation/1",
+  "origin": "synthetic",
+  "context": {
+    "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "sessionId": "synthetic-session-a"
+  },
+  "value": 42
+}

@@ -231,6 +231,13 @@ it requires the RR2L1 contract, lifecycle tests, and live evidence to agree.
 
 ## Efficient model handoff
 
+For catalog changes, use the [catalog contract](../reference/field-catalog.md)
+and synthetic bundle under `samples/catalog/`. Keep definitions, assessments,
+and observation artifacts content-bound; preserve contradictory/expired records.
+Run `qualify-fields` twice at the same explicit context/time and compare report
+bytes. The full test gate includes that replay plus tamper and publication checks.
+No live RIFT session is required for the catalog's offline validation.
+
 Give a coding model one bounded change, the relevant file paths, acceptance
 criteria, and the exact validation command. Point it to
 [the architecture](../architecture.md), current status, and one relevant topic;

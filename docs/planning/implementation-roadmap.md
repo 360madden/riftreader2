@@ -153,6 +153,15 @@ Acceptance evidence:
 Schema and semantic changes require strong review. Routine entries with complete
 provenance can use a cheaper model plus mechanical validation.
 
+Implemented as an offline file-based catalog under
+[ADR 0005](../decisions/0005-durable-field-catalog.md). `qualify-fields` verifies
+content-pinned assessments/artifacts and evaluates all four claims at an exact
+build/session/time. Definition changes invalidate prior assessments; contrary,
+expired, and out-of-scope records remain visible. The tracked synthetic bundle
+rebuilds the same report and does not promote any real RIFT field. See the
+[workflow](../reference/field-catalog.md) and
+[validation record](../validation/field-catalog-2026-10-19.md).
+
 ## 6. Guarded experiment support
 
 Add explicit plans and safety gates for controlled movement and turning tests

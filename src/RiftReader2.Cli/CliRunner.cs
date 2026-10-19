@@ -21,18 +21,25 @@ public static class CliRunner
                     decode-addon --frame PATH [--output PATH]
                     decode-live-addon --frame PATH --session-id HEX [--output PATH]
                     replay-wall-motion --manifest PATH [--output PATH]
+                    qualify-fields --catalog PATH --build-sha256 HEX --session-id ID --as-of UTC [--output PATH]
 
                     Paths are relative to the current directory. Capture samples are beside their manifest;
                     wall replay uses the exact source path pinned in its evidence manifest.
                     Without --config, built-in schema-1 defaults apply. No environment overrides.
                     Analysis emits derived motion with provenance. An existing output is never replaced.
                     Addon decoding verifies the contract only; source binding and freshness remain unverified.
+                    Field qualification evaluates recorded assessments at an explicit build/session/time.
+                    Exit 0 for qualification means a valid report; inspect its claim statuses before use.
                     Exit codes: 0 success, 2 invalid input/IO failure, 130 canceled.
                     """);
                 return 0;
             }
 
             var command = args[0];
+            if (command == "qualify-fields")
+                return await FieldCatalogCommand.RunAsync(
+                    ParseOptions(args[1..], "--catalog", "--build-sha256", "--session-id", "--as-of", "--output"),
+                    output, cancellationToken);
             if (command == "replay-wall-motion")
             {
                 var replayOptions = ParseOptions(args[1..], "--manifest", "--output");

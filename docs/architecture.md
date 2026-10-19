@@ -1,7 +1,8 @@
 # Architecture
 
-Status: offline foundation and nonce-bound live acquisition implemented; final
-build verified across an ordinary RIFT restart and graceful RIFT-Lab VM restart.
+Status: offline foundation, nonce-bound live acquisition, bounded native capture,
+and durable field qualification implemented. Runtime validation records identify
+the exact executable and restart scope tested for each increment.
 
 Joey authorized an improved, modular, organized, and configurable RiftReader2
 foundation. The .NET stack and project boundaries below are implementation
@@ -43,6 +44,11 @@ The separate finite [native capture path](reference/native-capture.md) retains
 explicit raw ranges, process/build identity, timing, hashes, and read failures.
 Its Application session port isolates Win32 access in Live. Raw-byte acquisition
 does not promote field meanings or replace the addon contract.
+The [field catalog](reference/field-catalog.md) adds an offline qualification
+workflow. Infrastructure verifies content-pinned artifacts and assessments;
+Application evaluates separate meaning, locator, restart, and update claims at
+an explicit build/session/time. Reports preserve disagreement and expiration.
+Recorded semantic judgments remain distinct from verified file hashes.
 See [ADR 0002](decisions/0002-hybrid-addon-and-reader.md) for the hybrid boundary,
 freshness and compatibility requirements. [ADR 0003](decisions/0003-addon-observation-contract.md)
 and the [wire contract](../contracts/addon/README.md) define the inner boundary;
@@ -204,8 +210,8 @@ Current and expected additions are:
 - optional operational reuse of the unchanged V1 receiver/console in the lab,
   without importing V1 application architecture or treating it as V2 evidence;
 - independent import or replay of selected V1 evidence;
-- a durable catalog for field meaning, locator, applicability, validation, and
-  invalidation evidence;
+- real field assessments within the implemented durable catalog, preserving
+  locator, applicability, validation, and invalidation evidence;
 - guarded experiment support for controlled movement and turning tests;
 - optional SQLite indexing only after file-based evidence demonstrates a query,
   scale, or integrity need that JSON artifacts cannot meet cleanly.

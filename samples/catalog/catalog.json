@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-catalog/1",
+  "fields": [
+    {
+      "fieldId": "demo.supported",
+      "meaning": "Synthetic demonstration only; value is a fixture counter, not a RIFT field.",
+      "units": "fixture-count",
+      "sourceKind": "synthetic",
+      "locator": {
+        "kind": "synthetic-fixture",
+        "method": "Select the value property from the named synthetic observation artifact."
+      },
+      "applicability": [
+        {
+          "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "sessionId": "synthetic-session-a"
+        },
+        {
+          "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "sessionId": "synthetic-session-b"
+        },
+        {
+          "buildSha256": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "sessionId": "synthetic-session-c"
+        }
+      ],
+      "invalidationConditions": [
+        "Any meaning, locator, artifact, build, or session change requires reassessment."
+      ],
+      "requiredClaims": [
+        "meaning",
+        "locator",
+        "restart-survival",
+        "update-survival"
+      ]
+    },
+    {
+      "fieldId": "demo.disputed",
+      "meaning": "Synthetic demonstration only; value is a fixture counter, not a RIFT field.",
+      "units": "fixture-count",
+      "sourceKind": "synthetic",
+      "locator": {
+        "kind": "synthetic-fixture",
+        "method": "Select the value property from the named synthetic observation artifact."
+      },
+      "applicability": [
+        {
+          "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "sessionId": "synthetic-session-a"
+        },
+        {
+          "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "sessionId": "synthetic-session-b"
+        },
+        {
+          "buildSha256": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "sessionId": "synthetic-session-c"
+        }
+      ],
+      "invalidationConditions": [
+        "Any meaning, locator, artifact, build, or session change requires reassessment."
+      ],
+      "requiredClaims": [
+        "meaning",
+        "locator"
+      ]
+    },
+    {
+      "fieldId": "demo.address-only",
+      "meaning": "Synthetic demonstration only; value is a fixture counter, not a RIFT field.",
+      "units": "fixture-count",
+      "sourceKind": "native",
+      "locator": {
+        "kind": "absolute-session-address",
+        "method": "Demo-only saved address 0x10000 in one fabricated process; no durable locating procedure."
+      },
+      "applicability": [
+        {
+          "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "sessionId": "synthetic-session-a"
+        },
+        {
+          "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "sessionId": "synthetic-session-b"
+        },
+        {
+          "buildSha256": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "sessionId": "synthetic-session-c"
+        }
+      ],
+      "invalidationConditions": [
+        "Any meaning, locator, artifact, build, or session change requires reassessment."
+      ],
+      "requiredClaims": [
+        "meaning",
+        "locator"
+      ]
+    }
+  ],
+  "assessments": [
+    {
+      "path": "supported-a.json",
+      "byteLength": 1666,
+      "sha256": "6B03D37C14FD12DCC079D1DB500118EFFFB4F29111CC19008C0D4C96A76E450E"
+    },
+    {
+      "path": "supported-b.json",
+      "byteLength": 1214,
+      "sha256": "D953E7BF80302168E00112A4AB6FABB9BBCEFF4E83B7B63C09D8802095185F85"
+    },
+    {
+      "path": "supported-c.json",
+      "byteLength": 1213,
+      "sha256": "D4E718E763514A16A0895C39E3932FF6FBDE12DAEA9DC8CA2BEFBF8663A40B73"
+    },
+    {
+      "path": "disputed-support.json",
+      "byteLength": 1357,
+      "sha256": "11A22EFC3915084F79C94FA7692ABFA6A7B4F270EEBDB34A0D4847D433856B24"
+    },
+    {
+      "path": "disputed-negative.json",
+      "byteLength": 1217,
+      "sha256": "12F2E2DBA56B5F0ECF6A766847D7B2F5F59B7670772F88FF4ED218B29A31D81A"
+    },
+    {
+      "path": "disputed-expired.json",
+      "byteLength": 1227,
+      "sha256": "547937C9AB5A7161FAAE63211E1A3A32BA3451E423FB5EFB31BF038E5BC3D401"
+    }
+  ]
+}
