@@ -20,8 +20,10 @@ public static class CliRunner
                     validate-capture --manifest PATH [--config PATH]
                     decode-addon --frame PATH [--output PATH]
                     decode-live-addon --frame PATH --session-id HEX [--output PATH]
+                    replay-wall-motion --manifest PATH [--output PATH]
 
-                    Paths are relative to the current directory. Samples are beside their manifest.
+                    Paths are relative to the current directory. Capture samples are beside their manifest;
+                    wall replay uses the exact source path pinned in its evidence manifest.
                     Without --config, built-in schema-1 defaults apply. No environment overrides.
                     Analysis emits derived motion with provenance. An existing output is never replaced.
                     Addon decoding verifies the contract only; source binding and freshness remain unverified.
@@ -31,6 +33,53 @@ public static class CliRunner
             }
 
             var command = args[0];
+            if (command == "replay-wall-motion")
+            {
+                var replayOptions = ParseOptions(args[1..], "--manifest", "--output");
+                if (!replayOptions.TryGetValue("--manifest", out var replayManifestPath))
+                    throw new ArgumentException("--manifest is required.");
+                await using var replay = await WallMotionEvidenceReader.OpenAsync(replayManifestPath, cancellationToken);
+                var wallMotionOptions = new WallMotionReplayOptions(
+                    replay.Manifest.MaxBoundaryGapMilliseconds,
+                    replay.Manifest.MaxProjectionGapMilliseconds);
+                var replaySummary = await new WallMotionReplayAnalyzer().AnalyzeAsync(
+                    replay.ReadSamplesAsync(cancellationToken),
+                    replay.Trials,
+                    wallMotionOptions,
+                    cancellationToken);
+                var replayImplementation = ToolIdentity.FromAssemblies(
+                    typeof(CliRunner).Assembly.GetName().Version!.ToString(),
+                    typeof(CliRunner).Assembly, typeof(WallMotionReplayAnalyzer).Assembly,
+                    typeof(WallMotionSample).Assembly, typeof(WallMotionEvidenceReader).Assembly);
+                var replayReport = new WallMotionReplayReport(
+                    1,
+                    "v1-wall-motion-replay/1",
+                    "derived-negative-field-classification",
+                    replayImplementation,
+                    new(
+                        replay.ManifestSha256,
+                        replay.Manifest.SourcePath,
+                        replay.Manifest.SourceByteLength,
+                        replay.Manifest.SourceSha256.ToUpperInvariant(),
+                        "verified-on-replay-handle",
+                        replay.Manifest.ExpectedSampleCount,
+                        replay.Manifest.Identity,
+                        replay.Manifest.Trials,
+                        "verified-on-replay-handles"),
+                    wallMotionOptions,
+                    replaySummary,
+                    [
+                        "Applies only to the identified saved V1 build and process epoch.",
+                        "Trial timestamps and guest samples inherit the capture's host/guest UTC-alignment assumption.",
+                        "Each trial retains its gameResponseVerified flag; the selected saved V1 runs rely on passed input/release records plus observed coordinate evidence.",
+                        "Bracket displacement per key-hold second uses the key interval, not the elapsed interval between bracketing samples.",
+                        "The disagreement rejects this projection as realized velocity; it does not identify a native actual-velocity field or prove a positive projection semantic."
+                    ]);
+                if (replayOptions.TryGetValue("--output", out var replayReportPath))
+                    await JsonReportWriter.WriteNewAsync(replayReportPath, replayReport, cancellationToken);
+                await output.WriteLineAsync(JsonSerializer.Serialize(replayReport, JsonFormat.Options));
+                return 0;
+            }
             if (command == "decode-live-addon")
             {
                 var liveOptions = ParseOptions(args[1..], "--frame", "--session-id", "--output");

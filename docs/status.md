@@ -1,6 +1,6 @@
 # Current status
 
-Updated: 2026-10-18 (America/New_York).
+Updated: 2026-10-19 (America/New_York).
 
 ## Phase and direction
 
@@ -25,6 +25,8 @@ final-build runtime gate, game restart, and VM restart qualification are complet
   SHA-256 verification, same-session checks, and explicit gaps.
 - Streaming derived motion analysis, cancellation, deterministic JSON reports,
   and publication that preserves existing evidence.
+- Strict saved wall-motion replay with pinned V1 capture/process identity,
+  streamed input, selected trial hashes, and deterministic classification.
 - Central build/package settings, exact SDK pin, package locks, and one local
   validation command enforcing module boundaries and behavior.
 - Lua 5.1 package with separate encoder, bounded API sampler, and event hookup;
@@ -65,7 +67,7 @@ rejection, and eight retained fresh rebound snapshots. Delivery remained
 `gameReady: false`; host freshness is snapshot-only under an explicit 250 ms
 guest/host UTC skew bound.
 
-The final repository gate passed 173 C# tests (167 core and 6 Windows), 108 Lua
+The live-transport repository gate passed 173 C# tests (167 core and 6 Windows), 108 Lua
 assertions, 11 RR2A1 plus 11 RR2L1 actual-Lua-to-C# cases, 9 Python host-gate
 tests, a zero-warning Release build, locked restore, format and dependency
 checks, deterministic replay, and 145 relative links. Evidence is under
@@ -88,6 +90,21 @@ At teardown, the reader reported termination, the temporary host receiver was
 stopped, and the original VM DVD was restored. RIFT was left running and logged
 in. Full process/build identities and evidence are in the recovery record.
 
+The [saved wall-motion replay](validation/wall-replay-2026-10-19.md) now
+independently reproduces one V1 evidence conclusion from the pinned
+100,187,956-byte, 9,598-sample batch. Free travel has about 0.79% vector error;
+wall-contact trials 2 and 3 have opposite projected/realized Z signs and about
+62.61/62.49 degree direction errors. This qualifies the fixed-input replay, not
+a native velocity field or current-build motion behavior.
+
+The current full gate passed 183 C# tests (177 core and 6 Windows), 108 Lua
+assertions, 22 actual-Lua-to-C# cases, 9 Python host-gate tests, a zero-warning
+Release build, locked restore, format and dependency checks, the deterministic
+demo, and 153 relative links. Evidence is under
+`artifacts/validation/20261019T040527Z-d6abdfaf`. Two final replay reports were
+byte-identical at 7,238 bytes; the no-overwrite check preserved the existing
+report.
+
 ## Next work
 
 The RR2L1 increment is complete for the retained restart gates. The current
@@ -97,15 +114,12 @@ VM snapshot restore/resume, update recovery, loaded-module byte verification,
 scan-performance optimization, and a production remote consumer remain
 unqualified. VM recovery currently requires manual relaunch and binding.
 
-Follow the [roadmap](planning/implementation-roadmap.md). Independently
-reproducing the saved V1 wall-motion conclusion remains the next saved-evidence
-case; it can proceed without a live bridge. Neither capability is established
-by the synthetic demo.
-
-The next highest-value choices are independently reproducing the saved V1
-wall-motion result or qualifying update recovery. The durable field catalog,
-native-field qualification, update measurement, and experiment runner remain
-future increments. Start with one bounded task;
+Follow the [roadmap](planning/implementation-roadmap.md). The next bounded
+increment is step 4's residual read-only native capture work: preserve exact
+native capture provenance and failure behavior behind the existing I/O
+boundary. The durable field catalog follows in step 5. Native-field
+qualification, update measurement, and the experiment runner remain future
+increments. Start with one bounded task;
 use [development guidance](workflows/development.md) to hand routine work to
 cheaper models while retaining the same validation. Strong review remains
 appropriate for semantics, provenance, schemas, native access, and concurrency.

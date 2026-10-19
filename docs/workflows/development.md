@@ -80,6 +80,22 @@ dependency-aware review.
 
 ## Exercise the offline slice
 
+Replay the selected saved V1 wall-motion evidence:
+
+```powershell
+dotnet run --project src/RiftReader2.Cli --configuration Release -- replay-wall-motion --manifest evidence/v1-wall-motion-20261018.json
+dotnet run --project src/RiftReader2.Cli --configuration Release -- replay-wall-motion --manifest evidence/v1-wall-motion-20261018.json --output artifacts/wall-motion-replay.json
+```
+
+The tracked manifest points to the exact retained V1 capture and its sibling run
+artifacts under `C:\rift modding\RiftReader`. The command fails closed if their
+size, SHA-256, observer/process/build identity, ordering, timing, or selected
+trial evidence disagrees. It streams the capture and reports one free-travel
+control plus two decisive wall-contact trials. A successful replay rejects the
+saved projection as realized velocity for that fixed evidence; it does not
+identify a positive projection meaning or a native velocity field. The named
+output must not already exist.
+
 Decode one exact saved addon frame. The input must be ASCII, at most 4096 bytes,
 with no BOM, bytes outside the markers (including a trailing newline), or
 concatenated frame. JSON whitespace inside the markers is accepted:
@@ -162,8 +178,9 @@ dotnet run --project src/RiftReader2.Cli -- --help
 ```
 
 The demo data is synthetic. A passing demo confirms configuration, hash
-verification, streaming analysis, and result writing; it does not validate a
-RIFT field or reproduce the V1 wall-motion result.
+verification, streaming analysis, and result writing; the demo command does not
+validate a RIFT field or reproduce the V1 wall-motion result. Use the separate
+content-pinned wall replay above for that saved conclusion.
 
 ## Change discipline
 

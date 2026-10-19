@@ -95,6 +95,14 @@ Acceptance evidence:
 This increment establishes reproducibility of one saved conclusion. It does not
 qualify a native velocity field.
 
+Completed for the selected batch-6 evidence. The tracked replay manifest pins a
+100,187,956-byte, 9,598-sample V1 capture and three trial artifacts. The V2
+command independently reproduces one plausible free-travel comparison and two
+decisive wall disagreements; see the
+[validation record](../validation/wall-replay-2026-10-19.md). The first wall
+contact, V1 native-field scan, current-build behavior, and update
+recovery remain outside this fixed-input increment.
+
 ## 4. Read-only Windows capture adapter
 
 Develop a bounded V2 process scanner and read-only capture adapter independently

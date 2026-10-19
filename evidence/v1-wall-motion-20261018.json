@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "v1-wall-motion",
+  "sourcePath": "C:\\rift modding\\RiftReader\\.riftreader-local\\motion-recovery\\20261018\\batch-6-samples.jsonl",
+  "sourceByteLength": 100187956,
+  "sourceSha256": "F1B63D83B1DB09B9D06A5A7C051F5FC56235562C748554A17BFB9C68FA8A7D54",
+  "expectedSampleCount": 9598,
+  "maxLineBytes": 262144,
+  "identity": {
+    "observerInstanceId": "bcae8028-8901-49df-a434-e1cb6248903d",
+    "processId": 9540,
+    "processStartUtc": "2026-10-18T13:15:04.3406507-04:00",
+    "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "rootRva": "0x32E0200"
+  },
+  "maxBoundaryGapMilliseconds": 100,
+  "maxProjectionGapMilliseconds": 100,
+  "trials": [
+    {
+      "phase": "w6",
+      "role": "free-travel",
+      "file": "w6-run.json",
+      "byteLength": 37780,
+      "sha256": "64E2C705B41E931E887FF8AA1E958915BD9FB2E03A4E105544C35C0FDF5DA672"
+    },
+    {
+      "phase": "wall-contact2",
+      "role": "wall-contact",
+      "file": "wall-contact2-run.json",
+      "byteLength": 37843,
+      "sha256": "488B524DEACB512F726C62C4EB0C15645221B6D66380054129EC343D40313ACC"
+    },
+    {
+      "phase": "wall-contact3",
+      "role": "wall-contact",
+      "file": "wall-contact3-run.json",
+      "byteLength": 37872,
+      "sha256": "211122418319A148F25AC4FBF07568D2C1440A3C5C496E3A5C1454C9E621B648"
+    }
+  ]
+}
