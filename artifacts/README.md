@@ -2,7 +2,8 @@
 
 Use this directory for future local captures, imported binaries, large generated
 analysis output, logs, and caches. Everything here except this README is ignored
-by Git. There are no research artifacts yet.
+by Git. The validation command writes synthetic replay results under
+`validation/<run-id>/`; these are development evidence, not game measurements.
 
 Keep useful conclusions and evidence references in `docs/research/` or
 `docs/validation/`. Record full artifact paths and hashes when needed to

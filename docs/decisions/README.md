@@ -10,12 +10,15 @@ Source: Joey's instructions in the RiftReader v2 conversation.
 |---|---|
 | Create a separate `C:\work\riftreader2` folder and initialize Git. | Authorized repository preparation. |
 | Prepare folder structure, documentation, and Codex/Workbridge guidance first. | Authorized repository preparation. |
-| Discuss architecture before creating application code or a skeleton. | Current phase boundary. |
+| Discuss architecture before creating application code or a skeleton. | Initial boundary superseded by Joey's architecture/foundation implementation authorization on 2026-10-18. |
 | Prioritize faster, reliable collection and durable, reusable findings. | Project direction. |
 | Create an improved RiftReader2 guided by this repository; use V1 as reference rather than copying its application or inheriting its architecture by default. Evaluate selective reuse on its merits. | Explicitly reaffirmed by Joey on 2026-10-18; technical reuse choices remain open. |
 | Use movement/turning to support reliable testing; keep dedicated automation/navigation/combat for a separate future program. | Scope direction. |
 
-**No application architecture decision has been accepted.**
+## Implementation decisions
+
+- [0001: Modular offline foundation](0001-modular-offline-foundation.md):
+  selected under Joey's explicit architecture and implementation authorization.
 
 ## Future records
 

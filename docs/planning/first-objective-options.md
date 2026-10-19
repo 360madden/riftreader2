@@ -1,8 +1,12 @@
 # First objective: options for discussion
 
-Status: proposal, not adopted. No architecture or implementation is specified.
+Status: dated planning comparison from 2026-10-18, retained for rationale. Since
+then, the [modular offline foundation](../architecture.md) and deterministic
+synthetic analysis slice were implemented and validated. The first V1 evidence
+objective remains future work; see [current status](../status.md) and
+[the roadmap](implementation-roadmap.md).
 
-## Recommended starting objective
+## Recommended evidence objective
 
 **Make one existing motion conclusion reproducible from saved evidence, with a
 compact result and measured local/AI effort.**
@@ -13,8 +17,9 @@ input identity, and a clear incorrect interpretation to reject. The
 [reference review](../research/motion-evidence-review-2026-10-18.md) records both
 the evidence and the missing verified replay entry point.
 
-This directly tests whether prior investigation can become reusable local work.
-It does not require finding a new field to demonstrate value.
+This tests whether prior investigation can become reusable local work. The
+synthetic foundation proves the pipeline, but it does not answer this evidence
+question.
 
 ## Three practical options
 
@@ -24,40 +29,45 @@ It does not require finding a new field to demonstrate value.
 | B — Measure restart reacquisition | An existing qualified field is reacquired and behaviorally checked in a fresh process, with elapsed time and failures recorded. | V1 coordinate/body-yaw and component-chain restart evidence. | Decide the live environment, exact cases, and measurement method. |
 | C — Investigate one new native motion field | A candidate for actual velocity, speed, or signed turn rate is either qualified or rejected by meaningful evidence. | Known component relationships, static clues, and negative motion examples. | Greater uncertainty and live/static investigation cost; these fields remain unresolved. |
 
-A is the current recommendation because it provides fixed inputs and a known
-counterexample for measuring reproducibility and offloading. B addresses restart
-speed more directly. C pursues additional game knowledge. Joey's chosen priority
-can change this order.
+A remains the next recommended evidence increment because it provides fixed
+inputs and a known counterexample for measuring reproducibility and offloading.
+B addresses restart speed more directly. C pursues additional game knowledge.
 
 ## Proposed acceptance evidence for A
 
-- Identify exact inputs, build/session applicability, and missing evidence.
+- Identify exact inputs, declared build/session applicability, content hashes,
+  and missing provenance.
 - Preserve or locate a saved analysis procedure and its invocation.
 - Reproduce the important direction disagreement in both decisive wall trials,
   while also explaining why free travel initially appeared convincing.
 - Distinguish recorded field values, derived motion, and semantic hypotheses.
-- Report sample timing, gaps, and any limits of stimulus/sample alignment.
+- Report sample timing, gaps, and limits of stimulus/sample alignment.
 - Record elapsed local work, output size, and required AI interactions.
 - Repeat against the same fixed inputs and retain the result plus source identity.
 
-These are proposed checks, not adopted numeric thresholds. A passing result
-would establish a reproducible analysis of this dataset; it would not establish
-a native velocity field, lossless capture, or future-update recovery.
+These checks remain proposed, not adopted numeric thresholds. A passing result
+would establish reproducible analysis of this dataset; it would not establish a
+native velocity field, lossless capture, executable provenance, or future-update
+recovery.
 
-## What needs a decision first
+## Questions before importing V1 evidence
 
 1. Is reproducibility, restart speed, or discovery of a new field the most useful
-   first result?
-2. Is the saved wall-motion case a suitable first evidence bundle?
-3. Which existing source and artifacts should be used as references or reused?
-4. What result and effort measurement would make the first increment worthwhile?
+   next result?
+2. Is the saved wall-motion case a suitable first immutable evidence bundle?
+3. Which existing source and artifacts should be referenced or selectively
+   adapted?
+4. What result and effort measurement would make the increment worthwhile?
 
-After those choices, discuss the smallest implementation that produces that
-result. Language, storage engine, project layout, process boundaries, and
-consumer interfaces remain open.
+The language, module layout, and initial file-based boundaries are now selected.
+Implement the smallest adapter and analysis change that produces the chosen
+result without importing V1 application structure. A database and new process
+boundary remain evidence-driven later choices.
 
 ## Work already completed
 
 The repository contains a [source-backed reuse inventory](../reference/reuse-inventory.md),
-a dated evidence review, and [tool workflows](../README.md). This preparation did
-not run V1 analysis, create a replay tool, analyze a RIFT binary, or send game input.
+a dated evidence review, [tool workflows](../README.md), and a verified offline
+analysis foundation. That foundation replays only a synthetic illustrative
+capture. It has not reproduced the V1 wall-motion conclusion, analyzed a RIFT
+binary, read a live process, or sent game input.

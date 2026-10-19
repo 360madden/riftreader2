@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "buildSha256": "0AB003C76DB34A1188A544A61D0BD697D6572F4946834F0140843F0ADB2CBC8B",
+  "sessionId": "synthetic-demo-1",
+  "samplesFile": "samples.jsonl",
+  "samplesSha256": "5BD85CBE6DDCBB5C0BF29581687AF3104CF3EB1622F44D9031BDB9F1BADE0B0B",
+  "sourceKind": "synthetic",
+  "positionUnits": "synthetic-units",
+  "coordinateFrame": "xz-horizontal-y-up",
+  "clockBasis": "session-monotonic-seconds",
+  "timingUncertaintySeconds": null
+}

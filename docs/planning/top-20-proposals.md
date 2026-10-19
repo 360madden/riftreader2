@@ -4,6 +4,13 @@ Status: **proposed**, captured from the 2026-10-18 discussion.
 This order is an initial recommendation, not an approved build sequence or
 application decomposition. All designs, dependencies, and priorities can change.
 
+Current note: the later [modular offline foundation](../architecture.md) now
+provides deterministic synthetic capture validation/replay, streaming derived
+motion analysis, compact JSON results, and enforced project boundaries. That is
+infrastructure toward several proposals below, not proof that their RIFT-facing
+outcomes are complete. See [current status](../status.md) and
+[the implementation roadmap](implementation-roadmap.md).
+
 | ID | Proposal | Intended practical benefit |
 |---|---|---|
 | P01 | Local experiment runner | Complete a bounded collection and validation scenario with fewer AI round trips. |
@@ -39,5 +46,7 @@ A score or correlation supports a hypothesis; it does not establish a field's
 meaning. A configured sampling rate does not establish delivered rate. An update
 recovery method remains unproven until evaluated on the relevant changed build.
 
-Source: assistant recommendations discussed with Joey on 2026-10-18. These are
-planning ideas, not implemented capabilities or accepted architecture.
+Source: assistant recommendations discussed with Joey on 2026-10-18. The table
+remains a proposal catalog rather than an accepted build order. Architecture is
+now governed by [ADR 0001](../decisions/0001-modular-offline-foundation.md), and
+actual capability must be read from current status and validation evidence.

@@ -1,0 +1,5 @@
+{"sessionId":"synthetic-demo-1","sequence":0,"timestampSeconds":0,"x":0,"y":0,"z":0,"yawRadians":0}
+{"sessionId":"synthetic-demo-1","sequence":1,"timestampSeconds":0.1,"x":0.3,"y":0,"z":0.4,"yawRadians":0.1}
+{"sessionId":"synthetic-demo-1","sequence":2,"timestampSeconds":0.2,"x":0.6,"y":0,"z":0.8,"yawRadians":0.2}
+{"sessionId":"synthetic-demo-1","sequence":4,"timestampSeconds":0.4,"x":1.2,"y":0,"z":1.6,"yawRadians":0.4}
+{"sessionId":"synthetic-demo-1","sequence":5,"timestampSeconds":0.8,"x":1.2,"y":0,"z":1.6,"yawRadians":0.4}

@@ -1,32 +1,42 @@
 # Open questions
 
-Status: open for discussion with Joey. No default answer in this file selects
-an architecture.
+Status: revised after the modular offline foundation was authorized and built on
+2026-10-18. See [current status](../status.md),
+[ADR 0001](../decisions/0001-modular-offline-foundation.md), and
+[the roadmap](implementation-roadmap.md).
 
-## First discussion
+## Resolved foundation choices
 
-The [first-objective comparison](first-objective-options.md) now presents three
-concrete options using the available evidence. Reproducing the saved wall-motion
-finding is the current recommendation; no option has been adopted.
+The project now uses a pinned .NET 10 SDK, four enforced production modules, an
+xUnit test project, strict versioned JSON boundaries, streaming offline
+analysis, explicit CLI composition, and file-based artifacts. The initial
+synthetic slice and repository gate are implemented. These are current choices,
+not open architecture questions.
 
-| Question | Why it changes the first useful increment |
+## Next outcome questions
+
+The [dated first-objective comparison](first-objective-options.md) still explains
+why reproducing the saved wall-motion conclusion is the recommended next
+evidence result. The foundation does not resolve these questions:
+
+| Question | Why it changes the next increment |
 |---|---|
-| What first field or behavior should V2 discover or revalidate? | Establishes a concrete result against which to evaluate the work. |
-| Which delay matters most today: collection, analysis, restart recovery, update recovery, or AI interaction? | Helps choose the first measurable improvement. |
-| Should the first experiment use VMware, native RIFT, or saved captures? | Determines available evidence and operational conditions. |
-| Which existing V1 capabilities should be reused, adapted, or studied only? | Avoids both unnecessary replacement and accidental inheritance. |
-| What evidence would make the first result trustworthy? | Defines validation independently of a plausible output. |
+| Which exact saved V1 files form the first immutable evidence bundle? | Determines hashes, format adaptation, applicability, and reproducibility limits. |
+| Is the wall-motion rejection still the highest-value first V1 result? | Confirms whether fixed-input reproducibility remains ahead of restart or new-field work. |
+| What compact result must an independent replay preserve? | Prevents an importer from reproducing numbers while losing uncertainty or semantics. |
+| Which V1 capability merits selective adaptation after independent review? | Avoids duplicate work without inheriting V1 architecture or assumptions. |
+| Which effort measures should be captured during the replay increment? | Measures local work and repeated AI work removed by the foundation. |
 
-## Subsequent design choices
+## Later capability questions
 
 | Topic | Decision still needed |
 |---|---|
-| Language and runtime | Whether C#/.NET 10 and any supporting tools fit the chosen increment. |
-| Application layout | Responsibilities, process boundaries, and project structure. |
-| Persistence | Storage format or engine, indexing, retention, backup, and versioning. |
-| Resolution | Field definitions, locating operations, invalidation, and repair strategy. |
-| Experiments | Supported stimuli, observation methods, completion checks, and recovery behavior. |
-| Timing | Required sample interval, capture completeness, clock alignment, and uncertainty. |
+| V1 import | Input bundle, conversion boundary, retained provenance, and rejection behavior. |
+| Native capture | Process/build identification, read-only scope, timing, failure behavior, and platform test seam. |
+| Field catalog | Qualification states, confidence, contradiction, invalidation, and consumer contract. |
+| Persistence | When measured query or integrity needs justify adding SQLite indexing to retained artifacts. |
+| Experiments | Supported movement/turning stimuli, observation methods, completion checks, and recovery behavior. |
+| Timing | Required delivered interval, capture completeness, clock alignment, and uncertainty. |
 | REA | Tasks to delegate to the installed tool and whether persistent session access is needed. |
 | Consumer access | Which export or interaction contracts future programs actually require. |
 | Validation | Independent reference, restart cases, changed-build cases, and acceptance thresholds. |
@@ -34,9 +44,11 @@ finding is the current recommendation; no option has been adopted.
 
 ## Recording outcomes
 
-Record Joey's actual choices in [the decision register](../decisions/README.md).
-Retain alternatives as proposals when useful. An evidence-backed recommendation
-does not become a user decision without an instruction adopting it.
+Record adopted material choices in
+[the decision register](../decisions/README.md). Retain alternatives as dated
+proposals when useful. Implementation may continue within the authorized scope
+and current repository instructions; do not invent an approval requirement for
+routine work already authorized.
 
-The next discussion can resolve only the choices needed for the first useful
-increment. It need not settle every future feature.
+Resolve only the choices needed for the next measurable increment. Later
+capabilities can remain open until evidence makes the tradeoff concrete.

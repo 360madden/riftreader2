@@ -1,6 +1,6 @@
 # Project brief
 
-Status: user goals recorded on 2026-10-18. Technical design is open.
+Status: goals and modular foundation implementation authorized on 2026-10-18.
 
 ## Purpose
 
@@ -51,19 +51,18 @@ future game updates. Recovery speed and validity need separate measurements.
 
 ## Current authorized work
 
-Create this repository, its documentation structure, Git baseline, and concise
-Codex/Workbridge guidance. Preserve useful context from existing RiftReader and
-the installed REA.
-
-Application architecture, source skeletons, solution/project files, dependencies,
-storage schemas, and runtime interfaces await discussion. C#/.NET experience
-and existing V1 tools are useful context; no V2 stack is adopted here.
+Joey authorized establishing and building the modular architecture and as much
+of its useful foundation as practical, with easy upgrades, explicit
+configuration, and efficient AI use. The implementation selects .NET 10 and an
+offline evidence workflow as documented in the
+[architecture decision](decisions/0001-modular-offline-foundation.md).
+Git author identity is repository-local: `360madden <360madden@gmail.com>`.
 
 ## Next discussion
 
-Choose a small first discovery objective and its observable success criteria.
-Then evaluate reuse, environment, evidence retention, and tooling choices against
-that objective. See [open questions](planning/open-questions.md) and
-[proposed measures](validation/success-measures.md).
+Use the [implementation roadmap](planning/implementation-roadmap.md) to extend
+the verified offline foundation. The saved V1 wall-motion reproduction remains
+a proposed next evidence case; the synthetic fixture does not reproduce it.
+Live target collection and field qualification require their own evidence.
 
 Source: Joey's requests in the RiftReader v2 conversation on 2026-10-18.

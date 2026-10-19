@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../RiftReader2.Domain/RiftReader2.Domain.csproj" />
+    <ProjectReference Include="../RiftReader2.Application/RiftReader2.Application.csproj" />
+    <ProjectReference Include="../RiftReader2.Infrastructure/RiftReader2.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

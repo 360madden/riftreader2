@@ -1,5 +1,10 @@
 # Workbridge workflow
 
+For current project phase and verified foundation status, read
+[the status handoff](../status.md). Workbridge is an alternate access path for
+browser ChatGPT; it does not change RiftReader2's module boundaries or evidence
+requirements.
+
 ## Verified access
 
 On 2026-10-18, `workspace_info` reported Workbridge **0.6.0**, write access,
@@ -43,11 +48,11 @@ reads when useful; keep dependent edits, commits, and recovery sequential.
 ## Current commands
 
 Git inspection is available through dedicated tools. No application command
-profiles exist for RiftReader2 yet. A missing profile does not prevent using
-`terminal_run` for an authorized installed tool.
+profile is required: `terminal_run` can invoke an authorized installed tool with
+literal arguments and `C:\work\riftreader2` as its working directory.
 
 Node was reachable during setup, and REA's direct Node entry worked. The
-attempted PowerShell 7 launchers were not reachable through that route.
+attempted PowerShell 7 launchers were not reachable through that earlier route.
 
 Separate October 18 browser-chat evidence now establishes a working Windows
 `powershell.exe` route (5.1.26100.9711), .NET SDK 10.0.302, and an independently
@@ -60,15 +65,30 @@ Source: `C:\work\workbridge-mcp\docs\local-pc-roadmap.md`, lines 84–92 and
 150–173; retained report:
 `C:\work\workbridge-authored-helper-browser-20261018-01\report.json`.
 
-Use an observed working executable path and check native exit codes. Windows
-PowerShell 5.1 availability does not establish compatibility with scripts that
-require PowerShell 7. This capability evidence does not select a V2 language.
+RiftReader2 now selects .NET 10 and its authoritative gate requires PowerShell
+7. Use an observed working `pwsh` executable path and inspect the terminal job's
+actual exit code. Windows PowerShell 5.1 availability does not establish that
+the gate can run. If PowerShell 7 is unavailable through a particular bridge
+route, report that access limitation rather than substituting a partial check.
+
+When available, the intended terminal invocation is equivalent to:
+
+```text
+executable: pwsh
+arguments: -NoProfile, -File, scripts/validate.ps1
+cwd: C:\work\riftreader2
+```
+
+The latest local foundation gate is recorded in
+[the validation index](../validation/README.md). A historical helper result or
+a submitted Workbridge job is not evidence for the current checkout.
 
 ## Generated data and recovery
 
 Workbridge can inspect saved raw or prepared gzip snapshots. That capability
-does not itself capture a live process. Keep bulky output under `artifacts/`
-and request only relevant portions.
+does not itself capture a live process. The current RiftReader2 product also has
+no live-game reader. Keep bulky output under `artifacts/` and request only
+relevant portions.
 
 Recoverable file edits and Git history serve different purposes. Workbridge's
 undo records do not provide a full backup of the project or ignored artifacts.

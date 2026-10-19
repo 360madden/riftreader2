@@ -1,7 +1,23 @@
-# Proposed success measures
+# Success measures
 
-Status: proposed. Baselines, thresholds, sampling rates, and supported cases
-must be chosen during discussion. No V2 performance results exist.
+Status: measurement framework. The offline foundation has a verified functional
+baseline; performance thresholds, sampling rates, and live supported cases
+remain open. See [current status](../status.md) and
+[the foundation validation](foundation-2026-10-18.md).
+
+## Current foundation baseline
+
+On 2026-10-18 the full repository gate passed 75 tests in Release with zero
+build warnings, exact SDK and locked restore enforcement, formatting and module
+dependency checks, byte-identical repeated synthetic analysis, and 89 relative
+link checks. The synthetic report also matched independently stated fixture
+expectations.
+
+This establishes reproducible offline processing for the tracked illustrative
+fixture. It is not a throughput benchmark and provides no evidence of RIFT
+field semantics, native capture, restart reacquisition, or update recovery.
+
+## Measures for later capabilities
 
 | Measure | What to record | Why it matters |
 |---|---|---|
@@ -15,7 +31,7 @@ must be chosen during discussion. No V2 performance results exist.
 | AI interaction cost | Tool round trips, input/output volume, token counts when available. | Measures repetitive work removed from the AI. |
 | Reproducibility | Repeat results on fixed saved inputs and independent sessions. | Tests whether findings generalize within their claimed scope. |
 
-## Evidence principles to discuss
+## Evidence principles
 
 - Distinguish native readings, derived values, independent references, and
   intended stimuli.
@@ -26,5 +42,7 @@ must be chosen during discussion. No V2 performance results exist.
 - Record capture timing and avoid assuming different machines share a clock.
 - Include warm/cold tool startup and cache state in comparisons when relevant.
 
-These are measurement suggestions. They do not select a test runner, data schema,
-capture design, or acceptance threshold.
+The architecture now selects a test runner and versioned capture/configuration
+schemas for the offline slice. The measures above continue to govern later
+evidence; numeric acceptance thresholds should be adopted only for the
+capability and workload they claim to qualify.

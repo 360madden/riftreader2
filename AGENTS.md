@@ -7,14 +7,11 @@ discovery speed, efficiency, durable knowledge, restart recovery, update recover
 and less repetitive AI work. Movement and turning support controlled tests.
 Dedicated navigation, combat, and player automation belong to a future program.
 
-**Current phase: documentation and repository preparation.** Authorized work
-includes documentation, planning records, repository instructions, Git
-initialization, and nonfunctional repository housekeeping. Do not create
-application code, solution or project files, package manifests, executable
-scaffolding, or an application architecture during this phase. Record design
-ideas as proposals and unresolved choices as questions. Begin implementation
-when Joey authorizes the next phase; apply later instructions without adding
-confirmation steps for work they already authorize.
+**Current phase: modular architecture and offline foundation implementation.**
+Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
+configuration, offline evidence workflows, and developer foundations. Follow
+[the architecture](docs/architecture.md) and [development guide](docs/workflows/development.md).
+Keep later features in the roadmap until their implementation is requested.
 
 ## Orientation and durable context
 
@@ -25,7 +22,7 @@ confirmation steps for work they already authorize.
   [decisions](docs/decisions/README.md) own accepted choices;
   [proposals](docs/planning/top-20-proposals.md) remain ideas.
 - Treat `C:\rift modding\RiftReader` as reference. Do not modify or import it
-  as part of this setup. Reuse decisions remain open.
+  wholesale. Evaluate any selective reuse explicitly.
 - Build an improved RiftReader2 guided by this repository's goals and decisions.
   Do not copy the original application or inherit its architecture by default.
   Evaluate selective reuse against V2's goals and validation needs.
@@ -43,9 +40,14 @@ confirmation steps for work they already authorize.
   Use `rg`/`rg --files` when available or Workbridge's scoped search.
 - Keep generated captures, binaries, logs, and caches under `artifacts/`.
   Keep small useful findings and provenance in tracked documentation.
-- There are no application build or test commands yet. Verify documentation
-  through content review, link checks, and Git checks as appropriate. Do not
-  invent a test suite or run unrelated V1 tests.
+- Run `pwsh -NoProfile -File scripts/validate.ps1` for the full local gate.
+  For focused iteration, use the development guide. Keep module dependencies
+  acyclic and preserve versioned input/output contracts.
+- Keep AI context bounded: read this file, status, and the task's module only.
+  Delegate disjoint work with explicit ownership. Routine docs, fixtures, and
+  narrowly specified changes can use cheaper models with the same checks;
+  identity, native access, concurrency, schema changes, and integration need
+  stronger review. See the roadmap for concrete handoff criteria.
 
 ## Tool and Git workflow
 
@@ -56,7 +58,7 @@ confirmation steps for work they already authorize.
   Poll to a terminal state and inspect actual exit code and output.
 - Reuse the installed REA for relevant binary research; follow
   [the REA guide](docs/workflows/rea.md) and installed provider capabilities.
-- This preparation task does not include running RIFT, live inputs, debugger
+- This foundation task does not include running RIFT, live inputs, debugger
   attachment, native target analysis, or changes to other projects.
 - Keep settings repository-local. Do not change global Git/Codex settings,
   Workbridge runtime settings, or REA installation as incidental setup.
