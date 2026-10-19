@@ -9,6 +9,12 @@ build on dependable, reusable findings. Joey's priorities are speed, efficiency,
 reliability, persistence across restarts, and quick recovery when updates change
 where useful information can be found.
 
+RiftReader2 is an improved version developed around the goals and decisions in
+this repository. The original RiftReader is a reference for evidence, lessons,
+and useful techniques, not an application to copy or an architecture to inherit.
+Any selective reuse must be justified against V2's goals and validation needs.
+Joey explicitly reaffirmed this direction on 2026-10-18.
+
 ## Agreed outcomes
 
 1. Gather useful information more quickly, with fewer repeated manual or AI steps.

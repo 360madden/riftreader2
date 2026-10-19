@@ -11,6 +11,9 @@ discussion with Joey.
 
 - Root: `C:\work\riftreader2`; branch: `main`.
 - Initial documentation baseline: `ba857c0`.
+- Joey reaffirmed that V2 is an improved version guided by this repository's
+  goals, not a copy of V1. The brief, decision register, and agent instructions
+  now record that direction; selective technical reuse remains undecided.
 - [The brief](project-brief.md) records goals; the
   [top 20](planning/top-20-proposals.md) remains proposed.
 - [First objective options](planning/first-objective-options.md) now compares
@@ -47,6 +50,9 @@ binary analysis, or helper build was run during this review.
 Use `git log -1 --oneline` and `git status --short --branch` for the current
 commit and working-tree state. Keep startup context small and follow the
 [documentation index](README.md) for task-specific detail.
+
+The direction clarification changed documentation only. Content review,
+relative-link checks, and Git whitespace checks passed before its commit.
 
 ## Next discussion
 

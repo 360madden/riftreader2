@@ -12,6 +12,7 @@ Source: Joey's instructions in the RiftReader v2 conversation.
 | Prepare folder structure, documentation, and Codex/Workbridge guidance first. | Authorized repository preparation. |
 | Discuss architecture before creating application code or a skeleton. | Current phase boundary. |
 | Prioritize faster, reliable collection and durable, reusable findings. | Project direction. |
+| Create an improved RiftReader2 guided by this repository; use V1 as reference rather than copying its application or inheriting its architecture by default. Evaluate selective reuse on its merits. | Explicitly reaffirmed by Joey on 2026-10-18; technical reuse choices remain open. |
 | Use movement/turning to support reliable testing; keep dedicated automation/navigation/combat for a separate future program. | Scope direction. |
 
 **No application architecture decision has been accepted.**

@@ -26,6 +26,9 @@ confirmation steps for work they already authorize.
   [proposals](docs/planning/top-20-proposals.md) remain ideas.
 - Treat `C:\rift modding\RiftReader` as reference. Do not modify or import it
   as part of this setup. Reuse decisions remain open.
+- Build an improved RiftReader2 guided by this repository's goals and decisions.
+  Do not copy the original application or inherit its architecture by default.
+  Evaluate selective reuse against V2's goals and validation needs.
 - Keep a compact handoff in `docs/status.md`: what changed, what was actually
   verified, unresolved questions, and the next authorized task.
 
