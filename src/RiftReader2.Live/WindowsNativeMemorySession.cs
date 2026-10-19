@@ -48,18 +48,20 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         try
         {
             var startTicks = GetStartTicks(handle);
+            // Reject a stale process epoch before hashing the executable or
+            // enumerating loaded modules; a recycled PID must never be accepted.
+            if (expectedStartUtcTicks is { } expectedStart && startTicks != expectedStart)
+                throw new InvalidDataException("The process start identity does not match the capture request.");
             var executablePath = QueryExecutablePath(handle);
             var executableSha256 = await HashFileAsync(executablePath, cancellationToken);
+            if (expectedExecutableSha256 is not null &&
+                !string.Equals(executableSha256, expectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The executable SHA-256 does not match the capture request.");
             var module = FindMainModule(processId, executablePath);
             var startTicksAfter = GetStartTicks(handle);
             var pathAfter = QueryExecutablePath(handle);
             if (startTicks != startTicksAfter || !SamePath(executablePath, pathAfter))
                 throw new InvalidDataException("Process identity changed while opening the read-only native session.");
-            if (expectedStartUtcTicks is { } expectedStart && startTicks != expectedStart)
-                throw new InvalidDataException("The process start identity does not match the capture request.");
-            if (expectedExecutableSha256 is not null &&
-                !string.Equals(executableSha256, expectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("The executable SHA-256 does not match the capture request.");
             var identity = new NativeProcessIdentity(
                 processId,
                 startTicks,
