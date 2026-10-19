@@ -16,6 +16,7 @@ This directory records actual checks separately from proposed measurements.
 | [Field catalog](field-catalog-2026-10-19.md) | Offline qualification of content-bound definitions and assessments, scoped confidence, disagreement, expiration, and deterministic rebuilding. |
 | [Supervised experiments](experiments-2026-10-19.md) | Bounded RIFT pulse, API before/after samples, identity/duplicate rejection, and stop-before-input. |
 | [Memory discovery](memory-discovery-2026-10-19.md) | Published RIFT map/snapshot/pointer commands, explicit failures, and offline searches on actual captures. |
+| [Native player fields: partial handoff](native-player-fields-2026-10-19.md) | Stationary native/Lua position candidate, failed old health seeds, retained pulse evidence, and unfinished restart qualification. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua

@@ -30,6 +30,21 @@ Git author remains repository-local `360madden <360madden@gmail.com>`; branch
 
 ## Latest verification
 
+The latest native-player-field discovery pass is **incomplete at Joey's handoff
+request**. One bounded live capture resolved `[rift_x64+0x32E0200]` and found
+float32 XYZ at owner offsets `0x320/0x324/0x328`, within 0.004 of fresh typed Lua
+values in one stationary sample. The historical nearby health offsets failed.
+A supervised 100 ms forward pulse completed with release and newer API
+coordinates, but no post-movement native capture or game restart was performed.
+No gameplay field was qualified. See the [resumption record](validation/native-player-fields-2026-10-19.md)
+for exact identities, evidence, candidate paths, and the next steps.
+
+This pass changed documentation only; the temporary capture helper and raw
+evidence remain under ignored `artifacts/field-discovery/`. The original DVD is
+restored and connected; the temporary GuestObserver, host receiver, and watcher
+were stopped. RIFT remains logged in. Documentation/link/Git checks apply to
+this handoff; the full application gate below belongs to the preceding build.
+
 The final combined gate passed **238 C# tests** (225 portable, 13 Windows),
 **21 Python tests**, 108 Lua assertions, 22 actual Lua-to-C# cases, locked restore,
 zero-warning Release build, formatting/module checks, deterministic motion and
@@ -70,9 +85,12 @@ No native position, health/resource, combat, cast, cooldown, or ability field is
 qualified yet. Memory hits and chains are candidates. Use Lua/API observations
 as reference, then record field meaning, units, locator/build applicability,
 contrary evidence, and restart/update checks in the [catalog](reference/field-catalog.md).
-The next useful increment is one concrete native field family, starting with
-position and health/resource comparisons, using the new commands rather than
-adding infrastructure.
+The next authorized task is to resume native position and health/resource
+discovery: capture the changed position against fresh typed Lua, narrow health
+and resource candidates with changed-state observations, then resolve the same
+frozen chains after an ordinary RIFT restart. Reacquire all process/session
+identities; do not reuse a saved heap address as a locator. Use the resumption
+record above to avoid repeating the baseline research.
 
 Snapshot reads are sequential, capped at 64 MiB per explicit request, and are
 not atomic. Pointer discovery searches selected bytes, 8-byte-aligned x64 slots,
@@ -87,7 +105,8 @@ Mid-hold stop, hard crash, snapshot restore, and update recovery remain unqualif
 in RIFT. Sending key-up is not proof of game key state. Dedicated navigation,
 combat, and casting automation remain outside this repository.
 
-The requested implementation is complete. Keep versioned files; there is no
+The foundation implementation is complete; native-player-field discovery and
+restart qualification remain unfinished. Keep versioned files; there is no
 measured reason to add the roadmap's optional SQLite index. Routine fixtures,
 field entries, and documentation can use cheaper models with the same gate;
 identity, native IO, pointer semantics, and input control still warrant strong review.
