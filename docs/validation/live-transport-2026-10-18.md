@@ -1,7 +1,9 @@
 # Nonce-bound live transport validation
 
 Date: 2026-10-18 (America/New_York). Scope: one RIFT-Lab process, addon reload,
-guest-reader restart, nonce rebinding, delivery, and host snapshot gating.
+guest-reader restart, nonce rebinding, delivery, and host snapshot gating. This
+is the historical first live gate; the final executable and restart behavior
+were qualified later in the [restart recovery record](restart-recovery-2026-10-18.md).
 
 ## Identified path
 
@@ -80,9 +82,10 @@ or a scan deadline exceeded during the last read/candidate decode. The complete
 repository gate above passed after that change. The final published executable
 is `artifacts/live-validation/reader-final/RiftReader2.Live.exe`, SHA-256
 `42C02CB07886D6108ED84188263E1D1CEB99DBF59D605CABA90BE8AA3A210A08`.
-It was not redeployed or retested in RIFT. Live evidence in this record applies
-to the earlier executable identified above; no live deadline-overrun scenario
-was exercised.
+It was not redeployed or retested during this historical gate. Live evidence in
+this record applies to the earlier executable identified above; no live
+deadline-overrun scenario was exercised here. The final executable was later
+deployed and exercised in the separate restart recovery gate.
 
 Primary retained live artifacts are `live-fresh-receipt.json`,
 `live-fresh-gate.json`, `live-initial-timeline.jsonl`,
@@ -92,8 +95,10 @@ Primary retained live artifacts are `live-fresh-receipt.json`,
 `live-rebound-timeline.jsonl`, plus `live-terminated-second.json`, under
 `artifacts/live-validation/`.
 
-This gate did not restart RIFT, power-cycle the VM, prove loaded-module bytes,
-qualify native fields, or establish a remote production consumer.
+This historical gate did not restart RIFT, power-cycle the VM, prove
+loaded-module bytes, qualify native fields, or establish a remote production
+consumer. The first two were subsequently covered under the narrower conditions
+recorded in the restart recovery record.
 
 ## Teardown
 

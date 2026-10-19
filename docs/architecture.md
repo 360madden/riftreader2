@@ -1,7 +1,7 @@
 # Architecture
 
-Status: offline foundation and nonce-bound live acquisition implemented and
-verified in one identified RIFT-Lab process.
+Status: offline foundation and nonce-bound live acquisition implemented; final
+build verified across an ordinary RIFT restart and graceful RIFT-Lab VM restart.
 
 Joey authorized an improved, modular, organized, and configurable RiftReader2
 foundation. The .NET stack and project boundaries below are implementation
@@ -33,7 +33,9 @@ The minimal Lua addon and offline decoder are implemented and tested together.
 The bare RR2A1 producer passed an identified actual-client source gate. RR2L1
 decoding, candidate selection, tracking, read-only heap scanning, live
 composition, reload clearing, and reader restart/rebinding then passed one
-end-to-end RIFT-Lab gate. Native-field discovery and qualification remain later
+end-to-end RIFT-Lab gate. The final executable later reacquired a restarted RIFT
+process and recovered after a graceful VM power cycle with manual relaunch and
+new binding. Native-field discovery and qualification remain later
 independent V2 work. The addon gathers
 supported API data and diagnostics. External tooling handles acquisition,
 native research, numerical work, retention, and exports.
@@ -121,8 +123,9 @@ offline reports carry
 the exact input-frame SHA-256 and always mark binding as `unbound` and freshness
 as `unverified`. A local epoch/sequence is not a unique addon-load identity.
 No yaw or native provenance is fabricated. Lua 5.1 and C# execute the same
-fixtures. Actual-client evidence validates the bare RR2A1 source and one RR2L1
-runtime path, including reload clearing and reader restart/rebinding.
+fixtures. Actual-client evidence validates the bare RR2A1 source and RR2L1
+runtime paths including reload clearing, reader restart/rebinding, RIFT process
+restart, and graceful VM restart with manual relaunch and rebinding.
 
 The live scanner covers only readable, committed `MEM_PRIVATE` regions and
 reports complete only after finishing its declared domain within every budget.
@@ -189,8 +192,8 @@ composition path.
 
 Current and expected additions are:
 
-- further qualification of the live addon adapter across RIFT process restart,
-  VM power cycle, and update recovery;
+- further qualification of the live addon adapter across hard crashes, VM
+  snapshot restore/resume, and update recovery;
 - independently developed V2 native-field discovery and read-only capture with
   process/build identity; no generic offset or native-field readiness is
   currently claimed;

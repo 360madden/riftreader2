@@ -69,8 +69,11 @@ actual-Lua-to-C# cases, 9 Python host-gate tests, and a zero-warning Release
 build. One RIFT-Lab runtime gate established advancement, stale rejection,
 reload invalidation, reader restart with a new nonce, and rebinding in the same
 RIFT process. See the
-[live record](../validation/live-transport-2026-10-18.md). RIFT process restart,
-VM power cycle, loaded-module verification, and production remote consumption
+[live record](../validation/live-transport-2026-10-18.md). A later
+[recovery gate](../validation/restart-recovery-2026-10-18.md) exercised the final
+executable through an ordinary RIFT process restart and a graceful VM power
+cycle with manual relaunch and nonce rebinding. Hard-crash, VM snapshot restore,
+update recovery, loaded-module verification, and production remote consumption
 remain separate qualifications. Existing saved replay can proceed independently.
 
 ## 3. Reproduce one saved evidence conclusion
@@ -107,6 +110,10 @@ Acceptance evidence:
 - a controlled live session records provenance and failure behavior;
 - no write, input, debugger, or automation capability is introduced;
 - restart reacquisition is measured separately from update recovery.
+
+The current gate qualifies ordinary game-process reacquisition by a surviving
+reader and a graceful VM power cycle with manual reader/game relaunch. It does
+not add automatic startup or qualify crash, snapshot-restore, or update recovery.
 
 Native identity, platform I/O, timing, and concurrency require strong-model
 implementation or review.

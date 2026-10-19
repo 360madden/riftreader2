@@ -14,8 +14,8 @@ shared contract tests; that increment is complete offline under
 [ADR 0003](decisions/0003-addon-observation-contract.md). The bare addon has
 since passed one identified actual-client gate. Joey then authorized the
 nonce-bound live increment selected in
-[ADR 0004](decisions/0004-nonce-bound-addon-transport.md); its implementation
-and one-session runtime gate are complete.
+[ADR 0004](decisions/0004-nonce-bound-addon-transport.md); its implementation,
+final-build runtime gate, game restart, and VM restart qualification are complete.
 
 ## Implemented
 
@@ -71,18 +71,31 @@ tests, a zero-warning Release build, locked restore, format and dependency
 checks, deterministic replay, and 145 relative links. Evidence is under
 `artifacts/validation/20261019T023621Z-e8a2a3f3`.
 This final gate includes a conservative cancellation/deadline check after the
-scanner's last read. That small guard was added after live testing; the retained
-live record identifies the earlier tested executable separately from the final
-published executable. The final source passed the repository gate but was not
-retested in RIFT.
+scanner's last read. The final executable, SHA-256
+`42C02CB07886D6108ED84188263E1D1CEB99DBF59D605CABA90BE8AA3A210A08`,
+subsequently passed the [restart recovery gate](validation/restart-recovery-2026-10-18.md).
+The unchanged V1 console and receiver were reused only as lab infrastructure.
+
+The recovery gate observed an ordinary RIFT process restart while the reader
+remained running, then a graceful VM power cycle followed by manual RIFT and
+reader relaunch. Each transition withheld observations, required a new nonce
+binding, and returned to fresh advancing snapshots. The addon and final reader
+persisted across the VM restart without reinstall. Delivery remains
+`gameReady: false`; host freshness remains snapshot-only under the explicit
+250 ms guest/host UTC skew bound.
+
+At teardown, the reader reported termination, the temporary host receiver was
+stopped, and the original VM DVD was restored. RIFT was left running and logged
+in. Full process/build identities and evidence are in the recovery record.
 
 ## Next work
 
-The RR2L1 increment is complete for the retained one-process gate. The current
+The RR2L1 increment is complete for the retained restart gates. The current
 package has five files because `live.lua` was added; the earlier four-file guest
-deployment remains historical evidence of the bare gate. RIFT process restart,
-VM power cycle, loaded-module byte verification, scan-performance optimization,
-and a production remote consumer remain unqualified.
+deployment remains historical evidence of the bare gate. Hard-crash recovery,
+VM snapshot restore/resume, update recovery, loaded-module byte verification,
+scan-performance optimization, and a production remote consumer remain
+unqualified. VM recovery currently requires manual relaunch and binding.
 
 Follow the [roadmap](planning/implementation-roadmap.md). Independently
 reproducing the saved V1 wall-motion conclusion remains the next saved-evidence
@@ -90,7 +103,7 @@ case; it can proceed without a live bridge. Neither capability is established
 by the synthetic demo.
 
 The next highest-value choices are independently reproducing the saved V1
-wall-motion result or qualifying restart behavior. The durable field catalog,
+wall-motion result or qualifying update recovery. The durable field catalog,
 native-field qualification, update measurement, and experiment runner remain
 future increments. Start with one bounded task;
 use [development guidance](workflows/development.md) to hand routine work to
