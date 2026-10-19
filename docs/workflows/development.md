@@ -9,6 +9,8 @@ reviewable result.
 - PowerShell 7 (`pwsh`).
 - The exact .NET SDK selected by `global.json` (`10.0.302`); SDK roll-forward is
   disabled.
+- Python with `lupa==2.8` and its Lua 5.1 module for addon and cross-language
+  contract tests.
 - Repository root `C:\work\riftreader2`.
 
 Keep Git identity repository-local. The intended author is `360madden` with
@@ -27,6 +29,27 @@ Do not use a live RIFT process or V1 tests to validate this offline foundation.
 
 ## Restore, build, and test
 
+The Lua suite is mandatory. A repository-local environment keeps its dependency
+isolated and reproducible:
+
+```powershell
+python -m venv artifacts/tools/lua-python
+artifacts/tools/lua-python/Scripts/python.exe -m pip install -r requirements-lua-tests.txt
+```
+
+The validation script resolves Lua Python in this order: explicit
+`-LuaPython PATH`, environment variable `RIFTREADER2_LUA_PYTHON`,
+`artifacts/tools/lua-python/Scripts/python.exe`, then `python` on `PATH`.
+Examples:
+
+```powershell
+pwsh -NoProfile -File .\scripts\validate.ps1 -LuaPython artifacts/tools/lua-python/Scripts/python.exe
+$env:RIFTREADER2_LUA_PYTHON = 'C:\path\to\python.exe'
+pwsh -NoProfile -File .\scripts\validate.ps1
+```
+
+The repository does not depend on or hardcode a V1 addon or Python path.
+
 The authoritative repository check is:
 
 ```powershell
@@ -34,10 +57,11 @@ pwsh -NoProfile -File .\scripts\validate.ps1
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 ```
 
-The script performs a locked restore, Release build, tests, formatting
-verification, architecture dependency and documentation-link checks, and the
-CLI demo smoke test. Check `$LASTEXITCODE` because PowerShell does not turn a
-failing native command into a terminating error automatically.
+The script performs Lua producer tests, shared producer-to-decoder fixtures,
+locked restore, Release build, .NET tests, formatting verification, architecture
+dependency and documentation-link checks, and CLI smoke tests. Check
+`$LASTEXITCODE` because PowerShell does not turn a failing native command into a
+terminating error automatically.
 
 For focused development, run only the narrow command needed while iterating,
 then run the authoritative script before claiming repository validation:
@@ -54,6 +78,18 @@ Do not refresh lock files casually. An intentional package change should update
 dependency-aware review.
 
 ## Exercise the offline slice
+
+Decode one exact saved addon frame. The input must be ASCII, at most 4096 bytes,
+with no BOM, bytes outside the markers (including a trailing newline), or
+concatenated frame. JSON whitespace inside the markers is accepted:
+
+```powershell
+dotnet run --project src/RiftReader2.Cli -- decode-addon --frame PATH
+dotnet run --project src/RiftReader2.Cli -- decode-addon --frame PATH --output artifacts/addon-observation.json
+```
+
+Decoded reports remain source-unbound and freshness-unverified. This command
+does not read RIFT or turn `RiftReader2_Frame` into a transport.
 
 Validate input identity without producing an analysis result:
 
@@ -112,6 +148,12 @@ verification status.
 When adding an adapter, keep external access in Infrastructure and compose it in
 CLI. Extract a shared interface only when the new adapter creates a real seam.
 Keep Domain free of JSON, files, processes, and platform APIs.
+
+When changing the addon contract, update Lua encoding/acquisition, strict C#
+decoding, shared accepted/rejected fixtures, the contract document, and both
+language test paths together. Mocked API tests prove behavior against the mock,
+not current-client RIFT compatibility. Do not add deployment, SavedVariables,
+network/file transport, or inbound commands as incidental contract work.
 
 ## Efficient model handoff
 

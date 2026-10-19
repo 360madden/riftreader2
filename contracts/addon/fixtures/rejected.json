@@ -1,0 +1,146 @@
+[
+  {
+    "name": "empty",
+    "wire": ""
+  },
+  {
+    "name": "leading-junk",
+    "wire": "xRR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "trailing-newline",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1\n"
+  },
+  {
+    "name": "two-frames",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "bad-prefix",
+    "wire": "RR2A2|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "truncated",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A"
+  },
+  {
+    "name": "non-ascii",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-\u00e9\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "bom",
+    "wire": "\ufeffRR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "duplicate-root",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "duplicate-field",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "oversize",
+    "wire": "RR2A1|                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |ENDRR2A1"
+  },
+  {
+    "name": "comments",
+    "wire": "RR2A1|{/* no */\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "trailing-comma",
+    "wire": "RR2A1|{\"schemaVersion\":1,,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "null-root",
+    "wire": "RR2A1|null|ENDRR2A1"
+  },
+  {
+    "name": "deep-nesting",
+    "wire": "RR2A1|[[[[[[[[[[]]]]]]]]]]|ENDRR2A1"
+  },
+  {
+    "name": "unknown-root",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}},\"extra\":1}|ENDRR2A1"
+  },
+  {
+    "name": "missing-version",
+    "wire": "RR2A1|{\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "unsupported-version",
+    "wire": "RR2A1|{\"schemaVersion\":2,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "unsupported-producer",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.2.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "zero-sequence",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":0,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "unsafe-sequence",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":9007199254740992,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "fractional-epoch",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1.5,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "null-player",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":null,\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "bad-id",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"\\n\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "negative-clock",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":-1},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "status-value-mismatch",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"unavailable\",\"value\":0},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "missing-ok-value",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\"},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "unknown-status",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"stale\"},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "unknown-field",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false},\"yaw\":{\"status\":\"ok\",\"value\":1}}}|ENDRR2A1"
+  },
+  {
+    "name": "missing-field",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100}}}|ENDRR2A1"
+  },
+  {
+    "name": "wrong-number-type",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":true},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "wrong-bool-type",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":0}}}|ENDRR2A1"
+  },
+  {
+    "name": "unavailable-player-with-data",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"unavailable\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "unavailable-clock-with-player",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"unavailable\"},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "extra-nested-property",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10,\"extra\":1},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  },
+  {
+    "name": "overflow-number",
+    "wire": "RR2A1|{\"schemaVersion\":1,\"addonVersion\":\"0.1.0\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":10},\"player\":{\"status\":\"ok\",\"value\":\"player-1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":1e999},\"coordY\":{\"status\":\"ok\",\"value\":-12.5},\"coordZ\":{\"status\":\"ok\",\"value\":30.25},\"health\":{\"status\":\"ok\",\"value\":0},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"combat\":{\"status\":\"ok\",\"value\":false}}}|ENDRR2A1"
+  }
+]

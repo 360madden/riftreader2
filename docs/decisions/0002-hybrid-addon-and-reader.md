@@ -1,6 +1,9 @@
 # 0002: Hybrid Lua addon and external reader
 
-Status: accepted architectural requirement; addon and live transport not yet implemented.
+Status: accepted architectural requirement. The minimal addon/decoder was later
+implemented under [ADR 0003](0003-addon-observation-contract.md); live transport
+remains unimplemented. The implementation status below describes this decision
+when first recorded.
 
 Date: 2026-10-18.
 

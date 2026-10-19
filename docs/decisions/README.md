@@ -21,6 +21,8 @@ Source: Joey's instructions in the RiftReader v2 conversation.
   selected under Joey's explicit architecture and implementation authorization.
 - [0002: Hybrid Lua addon and external reader](0002-hybrid-addon-and-reader.md):
   Joey's explicit hybrid requirement; the addon is a first-class product part.
+- [0003: Addon observation contract](0003-addon-observation-contract.md):
+  minimal Lua producer, strict .NET decoder, and shared cross-language fixtures.
 
 ## Future records
 
@@ -32,6 +34,6 @@ State the decision, its status, date, who or what authorized it, relevant
 evidence, alternatives considered, and consequences. A later decision should
 mark an old choice superseded instead of silently rewriting history.
 
-Repository organization and text formatting are preparation choices. They do
-not select runtime components, a storage engine, an integration protocol, or
-an application technology stack.
+Numbered records above own accepted runtime and protocol choices. Unrecorded
+future storage, transport, native-access, and experiment details remain open
+until implemented or explicitly decided.

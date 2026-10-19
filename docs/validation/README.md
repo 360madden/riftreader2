@@ -6,12 +6,14 @@ This directory records actual checks separately from proposed measurements.
 |---|---|
 | [Repository setup](repository-setup-2026-10-18.md) | File, Git, and Workbridge checks for the documentation baseline. |
 | [Foundation validation](foundation-2026-10-18.md) | Full gate evidence for the modular offline foundation. |
+| [Addon contract validation](addon-contract-2026-10-18.md) | Actual Lua 5.1 producer, C# decoder, and shared contract gate. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
-The current full gate passed 75 tests in Release with zero build warnings, exact
-SDK and locked restore checks, formatting and dependency checks, deterministic
-synthetic replay, and relative-link checks. This validates the saved-input
-foundation in that checkout. It does not establish binary analysis, live-game
+The latest full gate passed 138 C# tests, 85 Lua assertions, and 11 actual
+Lua-to-C# shared cases, with zero Release build warnings, exact SDK and locked
+restore checks, formatting/dependency checks, deterministic synthetic replay,
+and relative-link checks. This validates the offline contracts in that checkout.
+It does not establish binary analysis, live-game
 capture, RIFT field meaning, restart/update recovery, or performance.
 
 For future checks, record the input/build identity, command or tool request,

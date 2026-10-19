@@ -1,0 +1,538 @@
+[
+  {
+    "name": "zero-and-false",
+    "clock": 10,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "ok",
+        "value": "player-1"
+      },
+      "fields": {
+        "coordX": {
+          "status": "ok",
+          "value": 0
+        },
+        "coordY": {
+          "status": "ok",
+          "value": -12.5
+        },
+        "coordZ": {
+          "status": "ok",
+          "value": 30.25
+        },
+        "health": {
+          "status": "ok",
+          "value": 0
+        },
+        "healthMax": {
+          "status": "ok",
+          "value": 100
+        },
+        "combat": {
+          "status": "ok",
+          "value": false
+        }
+      }
+    }
+  },
+  {
+    "name": "missing-player",
+    "clock": 10,
+    "beforePlayer": null,
+    "afterPlayer": null,
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "unavailable"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "missing-detail",
+    "clock": 10,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": null,
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "ok",
+        "value": "player-1"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "changed-player",
+    "clock": 10,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-2",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "invalid"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid-player-id",
+    "clock": 10,
+    "beforePlayer": "",
+    "afterPlayer": "",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "invalid"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "missing-clock",
+    "clock": null,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "unavailable"
+      },
+      "player": {
+        "status": "unavailable"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "invalid-clock",
+    "clock": -1,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "invalid"
+      },
+      "player": {
+        "status": "unavailable"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "nonfinite-clock",
+    "clock": {
+      "special": "nan"
+    },
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "invalid"
+      },
+      "player": {
+        "status": "unavailable"
+      },
+      "fields": {
+        "coordX": {
+          "status": "unavailable"
+        },
+        "coordY": {
+          "status": "unavailable"
+        },
+        "coordZ": {
+          "status": "unavailable"
+        },
+        "health": {
+          "status": "unavailable"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "unavailable"
+        }
+      }
+    }
+  },
+  {
+    "name": "mixed-invalid-and-unavailable",
+    "clock": 10,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": {
+      "coordX": "1",
+      "coordY": {
+        "special": "positiveInfinity"
+      },
+      "coordZ": {
+        "special": "negativeInfinity"
+      },
+      "health": true,
+      "healthMax": null,
+      "combat": 0
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "ok",
+        "value": "player-1"
+      },
+      "fields": {
+        "coordX": {
+          "status": "invalid"
+        },
+        "coordY": {
+          "status": "invalid"
+        },
+        "coordZ": {
+          "status": "invalid"
+        },
+        "health": {
+          "status": "invalid"
+        },
+        "healthMax": {
+          "status": "unavailable"
+        },
+        "combat": {
+          "status": "invalid"
+        }
+      }
+    }
+  },
+  {
+    "name": "escaped-player-id",
+    "clock": 10,
+    "beforePlayer": "player-\"\\|ENDRR2A1",
+    "afterPlayer": "player-\"\\|ENDRR2A1",
+    "detail": {
+      "coordX": 0,
+      "coordY": -12.5,
+      "coordZ": 30.25,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "ok",
+        "value": "player-\"\\|ENDRR2A1"
+      },
+      "fields": {
+        "coordX": {
+          "status": "ok",
+          "value": 0
+        },
+        "coordY": {
+          "status": "ok",
+          "value": -12.5
+        },
+        "coordZ": {
+          "status": "ok",
+          "value": 30.25
+        },
+        "health": {
+          "status": "ok",
+          "value": 0
+        },
+        "healthMax": {
+          "status": "ok",
+          "value": 100
+        },
+        "combat": {
+          "status": "ok",
+          "value": false
+        }
+      }
+    }
+  },
+  {
+    "name": "finite-double-extremes",
+    "clock": 10,
+    "beforePlayer": "player-1",
+    "afterPlayer": "player-1",
+    "detail": {
+      "coordX": 1.7976931348623157e+308,
+      "coordY": 5e-324,
+      "coordZ": -1.7976931348623157e+308,
+      "health": 0,
+      "healthMax": 100,
+      "combat": false
+    },
+    "expected": {
+      "schemaVersion": 1,
+      "addonVersion": "0.1.0",
+      "sequence": 1,
+      "epoch": 1,
+      "clock": {
+        "status": "ok",
+        "value": 10
+      },
+      "player": {
+        "status": "ok",
+        "value": "player-1"
+      },
+      "fields": {
+        "coordX": {
+          "status": "ok",
+          "value": 1.7976931348623157e+308
+        },
+        "coordY": {
+          "status": "ok",
+          "value": 5e-324
+        },
+        "coordZ": {
+          "status": "ok",
+          "value": -1.7976931348623157e+308
+        },
+        "health": {
+          "status": "ok",
+          "value": 0
+        },
+        "healthMax": {
+          "status": "ok",
+          "value": 100
+        },
+        "combat": {
+          "status": "ok",
+          "value": false
+        }
+      }
+    }
+  }
+]

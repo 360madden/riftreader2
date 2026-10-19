@@ -11,8 +11,9 @@ The product is hybrid: a first-class RIFT Lua addon plus the modular external
 .NET application. Preserve addon API, native memory, and derived evidence as
 distinct sources. See [the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
 Do not assume general Lua file/network access or treat SavedVariables as live
-telemetry. The current implemented pipeline is offline; addon/transport work
-must establish producer compatibility, freshness, and reload/session identity.
+telemetry. The Lua producer and offline C# decoder have shared contract tests;
+live transport must establish freshness and reload/session identity. See the
+[addon contract](contracts/addon/README.md).
 
 **Current phase: modular architecture and offline foundation implementation.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,

@@ -1,6 +1,6 @@
 # Architecture
 
-Status: hybrid product architecture; external offline foundation implemented.
+Status: external offline foundation and minimal Lua producer/C# decoder implemented.
 
 Joey authorized an improved, modular, organized, and configurable RiftReader2
 foundation. The .NET stack and project boundaries below are implementation
@@ -27,18 +27,19 @@ flowchart LR
     App --> Store[Evidence storage and reports]
 ```
 
-The Lua addon and live adapters in this diagram are required/planned components;
-the implemented path today is saved evidence through the external application.
+The minimal Lua addon and offline decoder are implemented and tested together.
+The live transport and native adapters in this diagram remain planned components.
 The addon gathers supported API data and diagnostics. The external application
 handles acquisition, native research, numerical work, retention, and exports.
 See [ADR 0002](decisions/0002-hybrid-addon-and-reader.md) for the hybrid boundary,
-freshness and compatibility requirements, and planned package locations.
+freshness and compatibility requirements. [ADR 0003](decisions/0003-addon-observation-contract.md)
+and the [wire contract](../contracts/addon/README.md) define the implemented boundary.
 
 | Project | Responsibility | May reference |
 |---|---|---|
-| `RiftReader2.Domain` | Sample and analysis meaning, units, options, and result concepts. | .NET base libraries only. |
+| `RiftReader2.Domain` | Samples, typed addon observations, analysis meaning, units, options, and result concepts. | .NET base libraries only. |
 | `RiftReader2.Application` | Use cases and streaming derived-motion analysis. | Domain. |
-| `RiftReader2.Infrastructure` | Strict versioned JSON configuration, capture input verification and reading, and atomic JSON result writes. | Domain. |
+| `RiftReader2.Infrastructure` | Strict addon decoding, JSON configuration, capture verification and reading, and atomic result writes. | Domain. |
 | `RiftReader2.Cli` | Argument handling, explicit composition, commands, help, and process exit behavior. | Domain, Application, Infrastructure. |
 | `RiftReader2.Tests` | Focused behavior and boundary tests. | Production projects as needed. |
 
@@ -102,6 +103,14 @@ and its contracts, not RIFT behavior.
 
 ## Versioned boundaries
 
+The addon schema is separate from complete motion captures. Three Lua modules
+separate fixed-schema encoding, bounded sampling/lifecycle state, and game event
+hookup. The decoder returns typed Domain observations; offline reports carry
+the exact input-frame SHA-256 and always mark binding as `unbound` and freshness
+as `unverified`. A local epoch/sequence is not a unique addon-load identity.
+No yaw or native provenance is fabricated. Lua 5.1 and C# execute the same
+fixtures; real game API/transport validation remains a separate step.
+
 Configuration schema version 1 contains an `analysis` object with
 `maxGapSeconds` and `maxSamples` JSON properties. Its top-level
 `maxCaptureBytes` input limit defaults to 268,435,456 and has an accepted
@@ -158,8 +167,8 @@ composition path.
 
 Expected later additions are:
 
-- the Lua addon producer and a corresponding .NET acquisition adapter, with
-  shared fixtures, explicit capability/availability states, and reload handling;
+- a live addon acquisition adapter with independently verified target/load
+  identity, freshness, and reload handling;
 - a read-only Windows capture adapter with process and build identity;
 - independent import or replay of selected V1 evidence;
 - a durable catalog for field meaning, locator, applicability, validation, and

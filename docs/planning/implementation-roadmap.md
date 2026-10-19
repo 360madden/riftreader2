@@ -54,8 +54,12 @@ Acceptance evidence:
 - transport capabilities are verified rather than assumed from general Lua;
 - live deployment/readiness is reported separately from mocked producer tests.
 
-This is the next architecture increment. Exact transport and client API support
-remain to be established. Existing saved replay can proceed independently.
+The minimal producer, strict decoder, and shared offline contract tests are now
+implemented; see [ADR 0003](../decisions/0003-addon-observation-contract.md).
+Offline frames remain unbound with unverified freshness. Real transport, client
+API support, reload detection, conflicting-copy handling, and age enforcement
+remain to be established before claiming live observations. Existing saved
+replay can proceed independently.
 
 ## 3. Reproduce one saved evidence conclusion
 

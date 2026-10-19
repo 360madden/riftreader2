@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <None Include="../../samples/demo/*.json*" Link="Fixtures/demo/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../contracts/addon/fixtures/*.json" Link="Fixtures/addon/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
