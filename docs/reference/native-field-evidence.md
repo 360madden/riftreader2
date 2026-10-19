@@ -125,6 +125,37 @@ assessment evidence. The report's `qualification` remains `candidate-only`.
 `withinEpochMovementComparisons` remains independently scoped to same-epoch
 movement; differing player identities cannot be combined as restart evidence.
 
+## Validate a field-lab old-epoch rejection
+
+The `--verify-old-epoch` replay requires **one probe report** containing
+the field-lab's explicit old-process test and an independently captured
+prior-epoch report from the same game executable build and character.
+
+```powershell
+python scripts/native-field-evidence.py --verify-old-epoch `
+  --prior-report artifacts/field-discovery/runs/PRIOR_RUN/report.json `
+  --report artifacts/field-discovery/runs/PROBE_RUN/report.json `
+  --root-rva 0x32E0200 `
+  --output artifacts/field-discovery/old-epoch-review.json
+```
+
+The verifier reuses the bounded raw-report, pointer-root stability and fresh
+Lua XYZ validation. It checks independent source file hashes, chronological
+process epochs, matching player/build, exact prior creation ticks, planned
+old PID, explicit `oldEpochRejected:true`, and the mode-specific reported
+Windows error. It distinguishes an **unopenable retired PID** from the
+stronger **current PID with a deliberately mismatched old start time**.
+Unrelated errors, omitted plan fields, stale references or unchanged
+process identity cannot produce a success report. The JSON output is
+candidate-only and is atomically published without replacing existing data.
+
+This is an audit of the field-lab's
+`WindowsNativeMemorySession.OpenAsync` test, not a direct in-game execution
+of the public `follow-pointer` command. See the
+[real live two-case record](../validation/native-field-old-epoch-live-2026-10-19.md)
+and the separate [host command regression](../validation/native-pointer-epoch-regression-2026-10-19.md).
+Neither qualifies field semantics or game-update survival.
+
 ## Retained October 19 result
 
 Three same-process captures, from 05:45:07, 05:57:46, and 06:00:00 UTC, showed

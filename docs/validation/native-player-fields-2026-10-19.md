@@ -210,15 +210,20 @@ The new [comparison procedure](../reference/native-field-evidence.md)
 is `candidate-only`, no cross-epoch health-field qualification.
 This was offline work with no new VM/game input or native capture.
 
-## Resume after the recorded restart
+## Historical resume steps after the recorded restart
 
 Reacquire **current** process, VM and typed API identity before every live
 capture. First focus on distinguishing current health versus healthMax and raw
 power by genuinely changed-state references; use small saved candidate
 regions and content hashes before requesting any larger scan. Catalog
-meaning, locator, ordinary-restart, and update claims independently. A
-separate invalid-old-epoch follow-pointer negative check remains untested in
-this pass. Do not reuse any of the historical absolute heap addresses.
+meaning, locator, ordinary-restart, and update claims independently. At this
+checkpoint the field-specific old-epoch rejection was still untested. The
+later [live field-lab negative checks](native-field-old-epoch-live-2026-10-19.md)
+confirmed both an unopenable retired PID and a mismatched old start time
+for the current PID using the common Windows native-session open primitive.
+The public follow-pointer CLI has separate host-level Windows regressions;
+a direct live CLI negative request remains untested. Never reuse a saved
+heap address across process epochs.
 
 ## Original pre-restart handoff (historical)
 

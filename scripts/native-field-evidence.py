@@ -716,6 +716,93 @@ def compare_health_structures(paths, root_rva, level_hint=None):
     }
 
 
+def review_old_epoch_probe(previous_path, probe_path, root_rva):
+    """Verify a lab's negative native-session open against a retained prior epoch.
+
+    The lab check uses WindowsNativeMemorySession.OpenAsync, not a direct
+    invocation of the public follow-pointer command.
+    """
+    offsets = (0x320, 0x324, 0x328)
+    previous = inspect_report(Path(previous_path), root_rva, offsets, 0.02)
+    current = inspect_report(Path(probe_path), root_rva, offsets, 0.02)
+    report, digest = load_report(Path(probe_path))
+    if digest != current["sourceSha256"]:
+        raise EvidenceError("probe report bytes changed during review")
+    if (previous["runId"] == current["runId"]
+            or previous["sourceSha256"] == current["sourceSha256"]):
+        raise EvidenceError("prior and probe must be independent captures")
+    if previous["buildSha256"] != current["buildSha256"]:
+        raise EvidenceError("prior and probe executable builds differ")
+    if previous["unitId"] != current["unitId"]:
+        raise EvidenceError("prior and probe character identities differ")
+    if ((previous["processId"], previous["processStartUtcTicks"])
+            == (current["processId"], current["processStartUtcTicks"])):
+        raise EvidenceError("probe must run in a different process epoch")
+    if _utc_ticks(previous["captureStartUtc"], "prior timestamp") >= _utc_ticks(
+        current["captureStartUtc"], "probe timestamp"
+    ):
+        raise EvidenceError("prior capture must precede the probe")
+    if not all(s["rootWindowStability"] == "verified" and s["withinTolerance"]
+               for s in (previous, current)):
+        raise EvidenceError("both root and typed Lua checks must be verified")
+
+    plan = _object(report.get("plan"), "probe plan")
+    old_pid = _integer(plan.get("oldPid"), "plan.oldPid", 1)
+    old_start = _integer(plan.get("oldStartTicks"), "plan.oldStartTicks", 1)
+    if old_start != previous["processStartUtcTicks"]:
+        raise EvidenceError("probe start does not match independent prior-epoch evidence")
+    if old_start == current["processStartUtcTicks"]:
+        raise EvidenceError("probe start is not stale")
+    if report.get("oldEpochRejected") is not True:
+        raise EvidenceError("field lab did not explicitly reject the old epoch")
+    reason = report.get("oldEpochError")
+    if not isinstance(reason, str) or not reason or len(reason) > 512:
+        raise EvidenceError("missing or oversized negative-check reason")
+    if old_pid == previous["processId"]:
+        mode = "retired-pid-open-rejected"
+        expected = "OpenProcess failed with Win32 error 87."
+    elif old_pid == current["processId"]:
+        mode = "live-pid-stale-start-rejected"
+        expected = "The process start identity does not match the capture request."
+    else:
+        raise EvidenceError("probe PID does not match the prior or current game process")
+    if reason != expected:
+        raise EvidenceError("the reported rejection reason does not match the planned mode")
+
+    return {
+        "schemaVersion": 1,
+        "evidenceKind": "native-field-lab-old-epoch-probe-review/1",
+        "testMode": mode,
+        "rootRva": f"0x{root_rva:X}",
+        "buildSha256": current["buildSha256"],
+        "sourceReports": [
+            {"role": "prior", "runId": previous["runId"],
+             "path": previous["sourcePath"], "sha256": previous["sourceSha256"],
+             "pid": previous["processId"],
+             "startUtcTicks": previous["processStartUtcTicks"]},
+            {"role": "probe", "runId": current["runId"],
+             "path": current["sourcePath"], "sha256": current["sourceSha256"],
+             "pid": current["processId"],
+             "startUtcTicks": current["processStartUtcTicks"]}
+        ],
+        "requestedOldPid": old_pid,
+        "requestedOldStartUtcTicks": old_start,
+        "oldEpochRejected": True,
+        "rejectionReason": reason,
+        "currentRootStability": current["rootWindowStability"],
+        "currentPositionWithinTolerance": current["withinTolerance"],
+        "currentNativeXyz": current["nativeXyz"],
+        "currentLuaXyz": current["luaBeforeXyz"],
+        "qualification": "candidate-only",
+        "updateSurvival": "not-assessed",
+        "limitations": [
+            "This is a field-lab Windows session-open rejection, not a direct live follow-pointer CLI test.",
+            "An unopenable retired PID alone does not establish PID reuse or start-time validation.",
+            "A same-build successful pointer read does not qualify field meaning or update survival."
+        ]
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, action="append", required=True)
@@ -723,24 +810,32 @@ def main(argv=None):
     parser.add_argument("--xyz-offsets", nargs=3)
     parser.add_argument("--health-hits", action="store_true", help="Review typed health matches from one field-lab report")
     parser.add_argument("--compare-health-hits", action="store_true", help="Compare bounded health marker shapes across two game epochs")
+    parser.add_argument("--verify-old-epoch", action="store_true", help="Check one lab rejection against independently retained prior-epoch evidence")
+    parser.add_argument("--prior-report", type=Path, help="Prior game epoch for --verify-old-epoch")
     parser.add_argument("--level-hint", type=int, help="Optional visually observed level, not verified by typed Lua")
     parser.add_argument("--tolerance", type=float, default=0.02)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         root = _hex(args.root_rva, "root-rva")
-        if args.health_hits and args.compare_health_hits:
-            raise EvidenceError("choose one health review mode")
-        if args.compare_health_hits:
-            if len(args.report) != 2 or args.xyz_offsets is not None:
+        if sum((args.health_hits, args.compare_health_hits, args.verify_old_epoch)) > 1:
+            raise EvidenceError("choose exactly one review mode")
+        if args.verify_old_epoch:
+            if (len(args.report) != 1 or args.prior_report is None
+                    or args.xyz_offsets is not None or args.level_hint is not None
+                    or args.tolerance != 0.02):
+                raise EvidenceError("old-epoch review requires one probe, one prior, and default tolerance")
+            evaluation = review_old_epoch_probe(args.prior_report, args.report[0], root)
+        elif args.compare_health_hits:
+            if len(args.report) != 2 or args.xyz_offsets is not None or args.prior_report is not None:
                 raise EvidenceError("health comparison requires two reports without XYZ arguments")
             evaluation = compare_health_structures(args.report, root, args.level_hint)
         elif args.health_hits:
-            if len(args.report) != 1 or args.xyz_offsets is not None:
+            if len(args.report) != 1 or args.xyz_offsets is not None or args.prior_report is not None:
                 raise EvidenceError("health review requires exactly one report and no XYZ arguments")
             evaluation = evaluate_health_scan(args.report[0], root, args.level_hint)
         else:
-            if args.xyz_offsets is None or args.level_hint is not None:
+            if args.xyz_offsets is None or args.level_hint is not None or args.prior_report is not None:
                 raise EvidenceError("position review requires three XYZ offsets without a level hint")
             offsets = [_hex(value, "xyz-offset") for value in args.xyz_offsets]
             evaluation = evaluate(args.report, root, offsets, args.tolerance)

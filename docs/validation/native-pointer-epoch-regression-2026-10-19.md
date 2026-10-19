@@ -54,16 +54,19 @@ new game update.
 
 The separate October 19 [player-field handoff](native-player-fields-2026-10-19.md)
 has already observed the position root in two real RIFT process epochs.
-Its field-specific invalid-old-epoch **live guest** attempt remains outstanding:
-a prior field-lab run had oldPid, oldStartTicks, and oldEpochRejected all missing
-in the returned report, so it cannot count as a stale-epoch check. A modified
-guest-local plan-new.json was saved in the disposable guest folder, but the
-modified plan was not proven to have been loaded by the scanner. Do not
-interpret the previous capture's success as a negative-test pass.
+An initial field-lab attempt was not evidence of old-epoch rejection:
+oldPid, oldStartTicks and oldEpochRejected were absent in its returned
+report. The modified plan had not been loaded.
 
-Before any live repeat, verify current VM/game/receiver identity, take sole
-VM-control ownership, ensure the old-epoch values appear in the **actual**
-loaded plan, and preserve a new report with requested/observed identities.
+The later [two-scenario live guest record](native-field-old-epoch-live-2026-10-19.md)
+now establishes (1) failure to open the retired PID 11620 and
+(2) an explicit process-creation-tick mismatch when using current PID 8356
+with the former process's start ticks. Both raw capture reports retained
+their exact requested and observed identities, stable native root rereads
+and advancing typed Lua references. The temporary original plan was restored
+after the tests. These exercise the common native-session open primitive,
+not a direct live follow-pointer CLI invocation, and neither qualifies
+native health/resource meaning or survival of game updates.
 
 This test file is independently owned from the concurrent
 docs/planning/movement-control-parity-roadmap.md lane. It does not modify
