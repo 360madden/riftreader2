@@ -66,8 +66,12 @@ Keep later features in the roadmap until their implementation is requested.
   Poll to a terminal state and inspect actual exit code and output.
 - Reuse the installed REA for relevant binary research; follow
   [the REA guide](docs/workflows/rea.md) and installed provider capabilities.
-- This foundation task does not include running RIFT, live inputs, debugger
-  attachment, native target analysis, or changes to other projects.
+- Joey subsequently authorized installing/validating the addon in RIFT and
+  building a minimal live transport with reliable freshness and reload/session
+  checks. This permits addon deployment and bounded read-only acquisition for
+  that task. Prompt Joey to launch RIFT when needed. Dedicated player actions,
+  debugger attachment, process writes/injection, and changes to V1 remain outside
+  this scope. Live verification must precede claims of transport readiness.
 - Keep settings repository-local. Do not change global Git/Codex settings,
   Workbridge runtime settings, or REA installation as incidental setup.
 - Commit coherent, verified local changes using explicit files. A remote, push,

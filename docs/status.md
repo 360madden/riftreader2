@@ -44,11 +44,17 @@ analysis, or V1 tests were run. Earlier evidence remains in the
 
 ## Next work
 
-The requested minimal producer/decoder increment is complete. Next, validate
-the addon against the actual client and establish one bounded acquisition
-transport with independent process/load identity, receiver timing, and freshness
-rules. These live-facing capabilities remain unimplemented; local counters
-alone cannot identify reloads or distinguish stale copies. Follow the
+Joey has now authorized actual-client addon validation followed by a minimal
+live transport with reliable freshness and reload/session checks. The four-file
+addon was installed into the host's RIFT addon folder with matching SHA-256
+hashes. RIFT was not running; Joey was prompted to launch it and log into a
+character. The launch/location answer remains pending. See the
+[live preparation record](validation/live-preparation-2026-10-18.md).
+
+Resume with the actual-client gate, then establish bounded acquisition with
+independent process/load identity, receiver timing, and freshness rules. These
+live-facing capabilities remain unimplemented; local counters alone cannot
+identify reloads or distinguish stale copies. Follow the
 [roadmap](planning/implementation-roadmap.md). Independently reproducing the saved
 V1 wall-motion conclusion remains the next saved-evidence case; it can proceed
 without a live bridge. Neither capability is implemented by the synthetic demo.

@@ -7,6 +7,7 @@ This directory records actual checks separately from proposed measurements.
 | [Repository setup](repository-setup-2026-10-18.md) | File, Git, and Workbridge checks for the documentation baseline. |
 | [Foundation validation](foundation-2026-10-18.md) | Full gate evidence for the modular offline foundation. |
 | [Addon contract validation](addon-contract-2026-10-18.md) | Actual Lua 5.1 producer, C# decoder, and shared contract gate. |
+| [Live preparation](live-preparation-2026-10-18.md) | Host addon installation verified; actual-client gate awaits RIFT launch. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The latest full gate passed 138 C# tests, 85 Lua assertions, and 11 actual
