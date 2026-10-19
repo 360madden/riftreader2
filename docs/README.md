@@ -21,6 +21,7 @@ topic below instead of loading every document for each task.
 | Reference | [Field catalog](reference/field-catalog.md) | Content-bound definitions, retained assessments, and scoped qualification workflow. |
 | Reference | [Supervised experiments](reference/guarded-experiments.md) | Single reviewed pulse, stop/release, identity, and before/after evidence. |
 | Reference | [Memory discovery](reference/memory-discovery.md) | Bounded snapshots, value/pattern comparisons, RVA pointer discovery and resolution. |
+| Reference | [Native field evidence review](reference/native-field-evidence.md) | Replay candidate XYZ comparisons without automatic field qualification. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |
 | Addon | [Lua package guide](../addon/README.md) | Modules, configuration, and offline/client validation boundary. |
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |

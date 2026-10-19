@@ -69,8 +69,8 @@ try {
     }
     & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
-    & $LuaPython -m unittest tests.test_read_live_receipt tests.test_experiment_core tests.test_experiment_adapter
-    if ($LASTEXITCODE -ne 0) { throw 'Host receipt freshness checks failed.' }
+    & $LuaPython -m unittest tests.test_read_live_receipt tests.test_experiment_core tests.test_experiment_adapter tests.test_native_field_evidence
+    if ($LASTEXITCODE -ne 0) { throw 'Host receipt, experiment, or native-field evidence tests failed.' }
     $reportPath = Join-Path $runDirectory 'analysis.json'
     $replayPath = Join-Path $runDirectory 'replay.json'
     $argsCommon = @('--manifest', 'samples/demo/capture.json', '--config', 'config/default.json')

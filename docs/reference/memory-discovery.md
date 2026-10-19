@@ -125,4 +125,8 @@ and coincidental numbers are common candidates; a scan hit alone establishes
 none of these meanings. Lua/API, native bytes, and derived conclusions retain
 separate provenance.
 
+For saved field-lab position comparisons, use the reproducible
+[native field evidence reviewer](native-field-evidence.md) rather than manually
+reinterpreting each raw capture. It does not qualify restart/update survival.
+
 See [runtime validation](../validation/memory-discovery-2026-10-19.md).

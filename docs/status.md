@@ -79,6 +79,33 @@ Earlier records separately cover [addon recovery](validation/restart-recovery-20
 [catalog semantics](validation/field-catalog-2026-10-19.md). They identify their
 own inputs/builds and do not requalify this new bundle for every recovery scenario.
 
+## October 19 resumed evidence review
+
+Two later **previously retained** native reports (05:57 and 06:00 UTC) were found
+in ignored `artifacts/field-discovery/runs/`, after the earlier 05:45 capture.
+Both independently reread the root and show post-movement XYZ within 0.004 of
+fresh typed Lua values in the same RIFT process/build as the original capture.
+A fresh 08:22 UTC host receipt confirmed the same live game process and Lua
+coordinates, but did not include a fresh native capture. No new movement or
+RIFT restart was performed in this review. The VMware CD/DVD configuration
+currently selected the field-lab ISO; this was observed, not changed.
+
+The new [native position evidence reviewer](reference/native-field-evidence.md)
+replays all three reports, pins source bytes/hashes, checks exact game/observer
+identities and root-owner bytes, measures XYZ agreement, and distinguishes the
+first capture's **unrecorded** root stability reread from the later verified
+ones. Its output is `movement-consistent-stability-unverified` with exactly one
+process epoch, `candidate-only`, and no restart/update qualification. Local
+review: `artifacts/field-discovery/candidate-review-20261019.json` (ignored).
+The reviewer has a dedicated regression suite and is included in the full
+`validate.ps1` gate. See the [updated live handoff](validation/native-player-fields-2026-10-19.md).
+
+The resumed full repository gate passed on October 19: 238 C# tests,
+40 Python tests (including 19 for the new reviewer), 108 Lua assertions,
+22 Lua-to-C# cases, zero-warning Release build, locked restore, native
+smoke, deterministic replay, formatting checks, and 208 relative links.
+Evidence: `artifacts/validation/20261019T083341Z-16701712` (ignored).
+
 ## Limits and next useful work
 
 No native position, health/resource, combat, cast, cooldown, or ability field is

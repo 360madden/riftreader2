@@ -99,6 +99,34 @@ attempts produced no accepted capture. Publishing added temporary lockfile
 changes through project references; those changes were inspected and reverted.
 No production source, dependency, V1 source or global setting changed.
 
+## Same-process evidence recovered on resumption
+
+On October 19 at 08:27 UTC, a read-only review found **two additional earlier
+completed captures** under ignored artifacts that the initial handoff did not
+summarize. They were acquired at 05:57:46 UTC and 06:00:00 UTC, after the
+supervised movement, with native float32 XYZ
+`(7296.40381, 876.31891, 3054.37769)` versus typed Lua
+`(7296.39990, 876.32001, 3054.37988)`. Both retained successful root stability
+rereads, exact process PID/start/build, and advancing Lua sequences. The earlier
+05:45 native owner window did **not** record a root stability reread. The new
+reports are under `runs/9bc1e57264794516b21a8ccb86d2f80c/` and
+`runs/dc5968ef8b634cca819cfb9919a23ad0/`; their exact SHA-256 are
+`3FA7A587035B2C4C83176EBFDC8F9ED2F913D036C87D9916100E994EC0A2B51F`
+and `D30F0CCFB1DC06647B370A487BE8DB772B5787DD8A0E1D78184F0CBF0A676FAD`.
+
+The tracked [replay workflow](../reference/native-field-evidence.md) assessed
+all three captures as `movement-consistent-stability-unverified` and
+`candidate-only`, keeping restart and update claims unassessed. Its ignored
+report is `artifacts/field-discovery/candidate-review-20261019.json` with
+SHA-256 `4EBC1409422AB97AF5C5895DBB6AEF4A3F88047F1E76A0369323ED09A34FCAC5`.
+At 08:22 UTC the live host receiver again observed the same RIFT PID/build,
+player and post-movement Lua coordinates, with a new observer instance. That
+is fresh Lua/host evidence; no new native capture, health variation, or game
+restart was performed during this review. The VMware config at 08:24 UTC had
+the field-lab ISO selected, rather than the earlier recorded original DVD.
+Do not reuse a prior receipt as live identity or assume that observer/control
+state remains unchanged.
+
 ## Resume without repeating the baseline
 
 1. Inspect current Git/status and actual VM state. Launch the installed
