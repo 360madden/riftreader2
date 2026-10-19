@@ -24,7 +24,7 @@ public static class NativeCommandRunner
                 throw new NotSupportedException("Native commands require 64-bit Windows.");
             if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             {
-                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nExisting outputs are never replaced.");
+                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nExisting outputs are never replaced.");
                 return 0;
             }
 
@@ -32,6 +32,15 @@ public static class NativeCommandRunner
                 return await InspectAsync(ParseOptions(args[1..], "--output"), output, cancellationToken);
             if (args[0] == "capture-native")
                 return await CaptureAsync(ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
+            if (args[0] == "map-native")
+                return await MemoryDiscoveryCommand.MapAsync(
+                    ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
+            if (args[0] == "snapshot-native")
+                return await MemoryDiscoveryCommand.SnapshotAsync(
+                    ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
+            if (args[0] == "follow-pointer")
+                return await MemoryDiscoveryCommand.FollowPointerAsync(
+                    ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
             throw new ArgumentException($"Unknown command '{args[0]}'.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -40,7 +49,8 @@ public static class NativeCommandRunner
             return 130;
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or InvalidDataException or
-            JsonException or UnauthorizedAccessException or NotSupportedException or OverflowException or Win32Exception)
+            JsonException or UnauthorizedAccessException or NotSupportedException or OverflowException or Win32Exception or
+            TimeoutException)
         {
             await error.WriteLineAsync(JsonSerializer.Serialize(new { error = exception.Message }, JsonFormat.Options));
             return 2;
@@ -184,7 +194,7 @@ public static class NativeCommandRunner
 
     private static string Hex(ulong value) => $"0x{value:X}";
 
-    private static NativeImplementationIdentity CreateImplementationIdentity()
+    internal static NativeImplementationIdentity CreateImplementationIdentity()
     {
         var assemblies = new[]
         {

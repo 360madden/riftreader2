@@ -19,6 +19,8 @@ topic below instead of loading every document for each task.
 | Reference | [Capture format](reference/capture-format.md) | Version-1 offline inputs, output semantics, and compatibility. |
 | Reference | [Native capture](reference/native-capture.md) | Bounded read-only Windows requests, raw-byte provenance, and failure semantics. |
 | Reference | [Field catalog](reference/field-catalog.md) | Content-bound definitions, retained assessments, and scoped qualification workflow. |
+| Reference | [Supervised experiments](reference/guarded-experiments.md) | Single reviewed pulse, stop/release, identity, and before/after evidence. |
+| Reference | [Memory discovery](reference/memory-discovery.md) | Bounded snapshots, value/pattern comparisons, RVA pointer discovery and resolution. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |
 | Addon | [Lua package guide](../addon/README.md) | Modules, configuration, and offline/client validation boundary. |
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |

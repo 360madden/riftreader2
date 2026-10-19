@@ -3,8 +3,9 @@
 The Windows Live executable supports finite raw-memory captures independently
 of the Lua-addon transport. Capture bytes remain semantically unqualified:
 successful acquisition does not establish a game field, units, or locator
-stability. Native field discovery and the durable field catalog remain later
-roadmap work.
+stability. Use [memory discovery](memory-discovery.md) for larger bounded
+snapshots, searches, and pointer chains, and the [field catalog](field-catalog.md)
+to retain qualification evidence. The original capture contract below is unchanged.
 
 ## Commands
 

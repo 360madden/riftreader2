@@ -16,6 +16,12 @@ with explicit gaps and provenance. The included replay data is synthetic.
 Live observations come from the addon API; native game fields and restart-stable
 offsets remain unqualified. See the [restart validation record](docs/validation/restart-recovery-2026-10-18.md).
 
+The [memory discovery tools](docs/reference/memory-discovery.md) add read-only
+memory maps/snapshots, typed and pattern searches, comparisons, and RVA-rooted
+pointer-chain discovery and resolution. [Supervised experiments](docs/reference/guarded-experiments.md)
+provide one reviewed movement/turning pulse with stop and release evidence.
+No new services or frameworks are required.
+
 ## Run
 
 Requires the .NET SDK pinned in `global.json` (10.0.302) and PowerShell 7.

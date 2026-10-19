@@ -22,6 +22,10 @@ public static class CliRunner
                     decode-live-addon --frame PATH --session-id HEX [--output PATH]
                     replay-wall-motion --manifest PATH [--output PATH]
                     qualify-fields --catalog PATH --build-sha256 HEX --session-id ID --as-of UTC [--output PATH]
+                    search-memory --snapshot PATH --type TYPE --value VALUE [--tolerance NUMBER] [--output PATH]
+                    find-pattern --snapshot PATH --pattern PATTERN [--output PATH]
+                    compare-memory --before PATH --after PATH --type TYPE --mode MODE [--output PATH]
+                    find-pointers --snapshot PATH --target 0xADDRESS --max-depth 1..4 --max-offset 0..4096 [--output PATH]
 
                     Paths are relative to the current directory. Capture samples are beside their manifest;
                     wall replay uses the exact source path pinned in its evidence manifest.
@@ -36,6 +40,17 @@ public static class CliRunner
             }
 
             var command = args[0];
+            if (command is "search-memory" or "find-pattern" or "compare-memory" or "find-pointers")
+            {
+                var memoryOptions = command switch
+                {
+                    "search-memory" => ParseOptions(args[1..], "--snapshot", "--type", "--value", "--tolerance", "--output"),
+                    "find-pattern" => ParseOptions(args[1..], "--snapshot", "--pattern", "--output"),
+                    "compare-memory" => ParseOptions(args[1..], "--before", "--after", "--type", "--mode", "--output"),
+                    _ => ParseOptions(args[1..], "--snapshot", "--target", "--max-depth", "--max-offset", "--output")
+                };
+                return await MemoryDiscoveryCommand.RunAsync(command, memoryOptions, output, cancellationToken);
+            }
             if (command == "qualify-fields")
                 return await FieldCatalogCommand.RunAsync(
                     ParseOptions(args[1..], "--catalog", "--build-sha256", "--session-id", "--as-of", "--output"),
@@ -151,7 +166,8 @@ public static class CliRunner
             await error.WriteLineAsync("{\"error\":\"Canceled; no completed report was published.\"}");
             return 130;
         }
-        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or JsonException or UnauthorizedAccessException or DecoderFallbackException or NotSupportedException)
+        catch (Exception ex) when (ex is ArgumentException or IOException or InvalidDataException or JsonException or
+            UnauthorizedAccessException or DecoderFallbackException or NotSupportedException or FormatException or OverflowException)
         {
             await error.WriteLineAsync(JsonSerializer.Serialize(new { error = ex.Message }, JsonFormat.Options));
             return 2;

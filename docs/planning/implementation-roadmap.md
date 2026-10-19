@@ -178,6 +178,29 @@ Acceptance evidence:
 Experiment control, timing, and live integration require strong-model design and
 review.
 
+Implemented as a small Python runner plus adapter to the unchanged original
+lab console/readback tools. It performs one 20–250 ms reviewed pulse, retains
+before/after evidence, and supports persistent stop and release recovery.
+The [live record](../validation/experiments-2026-10-19.md) covers a RIFT pulse,
+new API readback, identity/duplicate rejection, and stop-before-input. Timing
+alignment remains coarse with unmeasured clock skew; mid-hold stop and crash
+recovery have not been qualified in RIFT. See [usage](../reference/guarded-experiments.md).
+
+## 6a. Read-only memory discovery
+
+Joey additionally authorized stronger memory reading and RVA pointer discovery
+on 2026-10-19, for investigating navigation, combat, casting, stats, and abilities.
+Keep these as discovery features in the existing modules. Provide bounded
+memory maps/snapshots, typed value/pattern searches, snapshot comparisons,
+reverse pointer-chain candidates, and exact-target live resolution. Preserve
+raw failures, coverage limits, build/session identity, and candidate semantics.
+
+Implemented without new projects or dependencies. See
+[commands and limits](../reference/memory-discovery.md) and the
+[runtime record](../validation/memory-discovery-2026-10-19.md). Real game fields
+still need API comparison, semantic experiments, and separate restart/update
+evidence before catalog qualification.
+
 ## 7. Indexing only when measured
 
 Continue with versioned files until a retained-data query, scale, integrity, or

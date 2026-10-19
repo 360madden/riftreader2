@@ -14,14 +14,16 @@ This directory records actual checks separately from proposed measurements.
 | [Saved wall-motion replay](wall-replay-2026-10-19.md) | Independent V2 replay of one content-pinned V1 capture: free-travel plausibility and two decisive wall disagreements. |
 | [Native capture](native-capture-2026-10-19.md) | Final native bundle: bounded raw reads, explicit failures, exact identities, publication, and ordinary RIFT restart rejection/reacquisition. |
 | [Field catalog](field-catalog-2026-10-19.md) | Offline qualification of content-bound definitions and assessments, scoped confidence, disagreement, expiration, and deterministic rebuilding. |
+| [Supervised experiments](experiments-2026-10-19.md) | Bounded RIFT pulse, API before/after samples, identity/duplicate rejection, and stop-before-input. |
+| [Memory discovery](memory-discovery-2026-10-19.md) | Published RIFT map/snapshot/pointer commands, explicit failures, and offline searches on actual captures. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
-The latest full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua
+The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua
 assertions, 22 actual Lua-to-C# cases, 9 Python host-gate tests, and the published
 single-file native smoke, with zero Release warnings, locked restore,
 format/dependency checks, deterministic motion/catalog replay, and 174 relative
 links before final handoff edits; all 177 final documentation links passed.
-The catalog gate produced byte-identical
+See [current status](../status.md) for the latest combined gate. The catalog gate produced byte-identical
 reports from a retained synthetic bundle; it establishes no real game field.
 
 Runtime records identify their own exact binaries. The final native bundle

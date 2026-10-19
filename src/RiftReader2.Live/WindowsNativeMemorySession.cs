@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -97,6 +98,50 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         return count > 0
             ? new("partial", bytes, error, $"ReadProcessMemory returned {count} of {byteLength} requested bytes.")
             : new("unavailable", [], error, "ReadProcessMemory returned no bytes.");
+    }
+
+    public IReadOnlyList<WindowsMemoryRegion> EnumerateReadableRegions(
+        int maxRegionCount,
+        int maxDurationMilliseconds,
+        CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        if (maxRegionCount is < 1 or > 262_144)
+            throw new ArgumentOutOfRangeException(nameof(maxRegionCount));
+        if (maxDurationMilliseconds is < 1 or > 30_000)
+            throw new ArgumentOutOfRangeException(nameof(maxDurationMilliseconds));
+
+        NativeMethods.GetNativeSystemInfo(out var systemInfo);
+        var address = checked((ulong)systemInfo.MinimumApplicationAddress.ToInt64());
+        var maximum = checked((ulong)systemInfo.MaximumApplicationAddress.ToInt64());
+        if (address < 0x10000 || maximum <= address)
+            throw new InvalidDataException("GetNativeSystemInfo returned an invalid user address range.");
+
+        var stopwatch = Stopwatch.StartNew();
+        var querySize = (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>();
+        var regions = new List<WindowsMemoryRegion>();
+        while (address <= maximum)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (stopwatch.ElapsedMilliseconds > maxDurationMilliseconds)
+                throw new TimeoutException("Memory-map enumeration exceeded its declared time budget.");
+            var result = NativeMethods.VirtualQueryEx(handle, new nint(checked((long)address)), out var info, querySize);
+            if (result < querySize)
+                throw Win32("VirtualQueryEx");
+            var regionBase = checked((ulong)info.BaseAddress.ToInt64());
+            var regionSize = checked((ulong)info.RegionSize);
+            var next = checked(regionBase + regionSize);
+            if (regionSize == 0 || regionBase > address || next <= address)
+                throw new InvalidDataException($"VirtualQueryEx returned a nonadvancing region at 0x{address:X}.");
+            if (IsCommittedReadable(info))
+            {
+                if (regions.Count >= maxRegionCount)
+                    throw new InvalidDataException($"Readable memory region count exceeds the requested limit of {maxRegionCount}.");
+                regions.Add(new(regionBase, regionSize, info.Protect, info.Type));
+            }
+            address = next;
+        }
+        return regions;
     }
 
     public async ValueTask<string?> RevalidateAsync(CancellationToken cancellationToken)
@@ -214,6 +259,15 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
     private static bool SamePath(string left, string right) =>
         string.Equals(Path.GetFullPath(left), Path.GetFullPath(right), StringComparison.OrdinalIgnoreCase);
 
+    private static bool IsCommittedReadable(NativeMethods.MemoryBasicInformation info)
+    {
+        if (info.State != NativeMethods.MemCommit || (info.Protect & NativeMethods.PageGuard) != 0)
+            return false;
+        return (info.Protect & 0xff) is NativeMethods.PageReadOnly or NativeMethods.PageReadWrite or
+            NativeMethods.PageWriteCopy or NativeMethods.PageExecuteRead or NativeMethods.PageExecuteReadWrite or
+            NativeMethods.PageExecuteWriteCopy;
+    }
+
     private static Win32Exception Win32(string operation) =>
         CreateWin32Exception(operation, Marshal.GetLastWin32Error());
 
@@ -224,6 +278,14 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
 
     private static class NativeMethods
     {
+        internal const uint MemCommit = 0x1000;
+        internal const uint PageGuard = 0x100;
+        internal const uint PageReadOnly = 0x02;
+        internal const uint PageReadWrite = 0x04;
+        internal const uint PageWriteCopy = 0x08;
+        internal const uint PageExecuteRead = 0x20;
+        internal const uint PageExecuteReadWrite = 0x40;
+        internal const uint PageExecuteWriteCopy = 0x80;
         internal const uint Th32csSnapModule = 0x00000008;
         internal const uint Th32csSnapModule32 = 0x00000010;
 
@@ -258,12 +320,47 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
             [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] internal string ExePath;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct MemoryBasicInformation
+        {
+            internal nint BaseAddress;
+            internal nint AllocationBase;
+            internal uint AllocationProtect;
+            internal ushort PartitionId;
+            internal nuint RegionSize;
+            internal uint State;
+            internal uint Protect;
+            internal uint Type;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct SystemInfo
+        {
+            internal ushort ProcessorArchitecture;
+            internal ushort Reserved;
+            internal uint PageSize;
+            internal nint MinimumApplicationAddress;
+            internal nint MaximumApplicationAddress;
+            internal nuint ActiveProcessorMask;
+            internal uint NumberOfProcessors;
+            internal uint ProcessorType;
+            internal uint AllocationGranularity;
+            internal ushort ProcessorLevel;
+            internal ushort ProcessorRevision;
+        }
+
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern SafeProcessHandle OpenProcess(ProcessAccess access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int processId);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool ReadProcessMemory(SafeProcessHandle process, nint address, [Out] byte[] buffer, nuint size, out nuint read);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern nuint VirtualQueryEx(SafeProcessHandle process, nint address, out MemoryBasicInformation info, nuint size);
+
+        [DllImport("kernel32.dll")]
+        internal static extern void GetNativeSystemInfo(out SystemInfo info);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -285,3 +382,5 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         internal static extern bool Module32Next(SafeFileHandle snapshot, ref ModuleEntry32 entry);
     }
 }
+
+public sealed record WindowsMemoryRegion(ulong BaseAddress, ulong RegionSize, uint Protection, uint Type);

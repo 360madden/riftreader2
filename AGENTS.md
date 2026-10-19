@@ -27,6 +27,12 @@ acquisition evidence without promoting native-field meanings.
 Joey authorized step 5's durable field catalog and qualification workflow on
 2026-10-19. Preserve exact evidence and build/session identity; evaluate recorded
 assessments without treating raw capture success as field qualification.
+Joey authorized step 6's supervised, bounded movement/turning experiments and
+read-only memory discovery (RVA pointer chains, value/pattern searches, and
+candidate fields for navigation, combat, casting, stats, and abilities) on
+2026-10-19. These discover information; dedicated gameplay automation remains
+outside this repository. Keep this a practical personal tool: reuse existing
+modules and selected lab tools, avoid new frameworks and unnecessary process.
 
 ## Orientation and durable context
 
@@ -79,7 +85,8 @@ assessments without treating raw capture success as field qualification.
   that task. Joey also authorized operational reuse of the original VM console
   and receiver tools; keep their source unchanged. See the
   [live validation record](docs/validation/addon-live-client-2026-10-18.md).
-  Prompt Joey to launch RIFT when needed. Dedicated player actions,
+  Check the actual VMware process/guest before asking Joey to launch RIFT.
+  Supervised experiment pulses are authorized under step 6. Dedicated automation,
   debugger attachment, process writes/injection, and changes to V1 remain outside
   this scope. Live verification must precede claims of transport readiness.
 - Keep settings repository-local. Do not change global Git/Codex settings,
