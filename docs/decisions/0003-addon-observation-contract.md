@@ -1,6 +1,7 @@
 # 0003: Addon observation contract
 
-Status: accepted and implemented for offline producer/decoder validation.
+Status: accepted and implemented. Offline contract validation and a later
+actual-client source gate passed; ADR 0004 owns live binding.
 
 Date: 2026-10-18.
 
@@ -23,6 +24,9 @@ Create a modular addon package with `wire.lua`, `producer.lua`, and `main.lua`,
 loaded in that order by `RiftAddon.toc`. The manifest uses the V1-observed RIFT
 environment value 4.4 pending a current-client test. Do not add deployment or
 automatic installation.
+
+Implementation update: the current-client gate later passed with environment
+4.4. ADR 0004 added `live.lua` and the one-load binding without changing RR2A1.
 
 Freeze addon version `0.1.0` with observation schema 1. The exact contract lives
 in [the addon contract](../../contracts/addon/README.md) and shared fixtures.

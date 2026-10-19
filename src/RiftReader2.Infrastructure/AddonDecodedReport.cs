@@ -27,7 +27,7 @@ public sealed record AddonDecodedReport(
             frameSha256,
             ToWireObservation(observation));
 
-    private static IReadOnlyDictionary<string, object?> ToWireObservation(AddonObservation observation) =>
+    public static IReadOnlyDictionary<string, object?> ToWireObservation(AddonObservation observation) =>
         new Dictionary<string, object?>
         {
             ["schemaVersion"] = observation.SchemaVersion,

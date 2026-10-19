@@ -4,13 +4,14 @@ Status: prioritized plan adopted for the authorized foundation; later increments
 remain subject to their evidence and safety gates.
 
 This roadmap grows a hybrid Lua-addon/.NET product through measurable vertical
-slices. The external application remains modular and single-process. Each
+slices. Each external operation remains a standalone process: CLI for offline
+work or the isolated Windows Live executable for live acquisition. Each
 increment should leave a useful artifact and a compact handoff so a
 later model does not need to rediscover the reasoning.
 
 ## 0. Reproducible repository foundation
 
-Deliver the pinned .NET 10 solution, four production modules, one test project,
+Deliver the pinned .NET 10 solution, five production modules, two test projects,
 central build and package settings, lock files, repository-local Git identity,
 and one validation script.
 
@@ -56,10 +57,21 @@ Acceptance evidence:
 
 The minimal producer, strict decoder, and shared offline contract tests are now
 implemented; see [ADR 0003](../decisions/0003-addon-observation-contract.md).
-Offline frames remain unbound with unverified freshness. Real transport, client
-API support, reload detection, conflicting-copy handling, and age enforcement
-remain to be established before claiming live observations. Existing saved
-replay can proceed independently.
+The bare producer passed one identified actual-client source gate after
+`/reloadui`, with advancing RR2A1 sequence and clock. This establishes that
+package/API path in that session only. The nonce-bound RR2L1 increment selected
+by [ADR 0004](../decisions/0004-nonce-bound-addon-transport.md) is implemented.
+The fifth production project is a Windows-only Live adapter and composition
+executable referencing Domain, Application, and Infrastructure.
+
+The full gate passed 173 C# tests, 108 Lua assertions, 11 RR2A1 plus 11 RR2L1
+actual-Lua-to-C# cases, 9 Python host-gate tests, and a zero-warning Release
+build. One RIFT-Lab runtime gate established advancement, stale rejection,
+reload invalidation, reader restart with a new nonce, and rebinding in the same
+RIFT process. See the
+[live record](../validation/live-transport-2026-10-18.md). RIFT process restart,
+VM power cycle, loaded-module verification, and production remote consumption
+remain separate qualifications. Existing saved replay can proceed independently.
 
 ## 3. Reproduce one saved evidence conclusion
 
@@ -82,10 +94,12 @@ qualify a native velocity field.
 
 ## 4. Read-only Windows capture adapter
 
-Add bounded process discovery and read-only capture behind an Infrastructure
-adapter. Preserve executable/build identity, process and session identity,
-capture timing, failures, and exact output identity. Reuse V1 techniques only
-after reviewing their assumptions against V2 contracts.
+Develop a bounded V2 process scanner and read-only capture adapter independently
+behind the external I/O boundary. Preserve executable/build identity, process
+and session identity, capture timing, failures, and exact output identity. The
+unchanged V1 receiver/console may be reused operationally in the controlled lab,
+but its application architecture and claims do not become V2 contracts. No
+generic scanner offset or native-field readiness is established yet.
 
 Acceptance evidence:
 

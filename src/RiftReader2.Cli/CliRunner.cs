@@ -19,6 +19,7 @@ public static class CliRunner
                     analyze --manifest PATH [--config PATH] [--output PATH]
                     validate-capture --manifest PATH [--config PATH]
                     decode-addon --frame PATH [--output PATH]
+                    decode-live-addon --frame PATH --session-id HEX [--output PATH]
 
                     Paths are relative to the current directory. Samples are beside their manifest.
                     Without --config, built-in schema-1 defaults apply. No environment overrides.
@@ -30,6 +31,17 @@ public static class CliRunner
             }
 
             var command = args[0];
+            if (command == "decode-live-addon")
+            {
+                var liveOptions = ParseOptions(args[1..], "--frame", "--session-id", "--output");
+                if (!liveOptions.TryGetValue("--frame", out var livePath) || !liveOptions.TryGetValue("--session-id", out var sessionId))
+                    throw new ArgumentException("--frame and --session-id are required.");
+                var liveReport = await LiveAddonFrameFile.ReadAsync(livePath, sessionId, cancellationToken);
+                if (liveOptions.TryGetValue("--output", out var liveReportPath))
+                    await JsonReportWriter.WriteNewAsync(liveReportPath, liveReport, cancellationToken);
+                await output.WriteLineAsync(JsonSerializer.Serialize(liveReport, JsonFormat.Options));
+                return 0;
+            }
             if (command == "decode-addon")
             {
                 var addonOptions = ParseOptions(args[1..], "--frame", "--output");

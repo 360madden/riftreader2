@@ -23,6 +23,8 @@ Source: Joey's instructions in the RiftReader v2 conversation.
   Joey's explicit hybrid requirement; the addon is a first-class product part.
 - [0003: Addon observation contract](0003-addon-observation-contract.md):
   minimal Lua producer, strict .NET decoder, and shared cross-language fixtures.
+- [0004: Nonce-bound addon transport](0004-nonce-bound-addon-transport.md):
+  preserved RR2A1 payload, one-load reader nonce, and external freshness tracker.
 
 ## Future records
 

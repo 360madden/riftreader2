@@ -2,6 +2,12 @@
 
 Date: 2026-10-18 (America/New_York).
 
+Status: historical host-only preparation. The later
+[actual-client addon record](addon-live-client-2026-10-18.md) supersedes its
+waiting state and documents the successful guest RIFT-Lab gate. The four files
+and matching hashes below describe the separate host installation; they are not
+guest-deployment evidence.
+
 Joey authorized actual-client validation, then a minimal live transport with
 reliable freshness and reload/session identity. He requested a prompt if RIFT
 needs launching. This supersedes the earlier offline-only scope for this task.

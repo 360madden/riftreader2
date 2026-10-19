@@ -17,6 +17,7 @@ try {
         'RiftReader2.Application' = @('RiftReader2.Domain')
         'RiftReader2.Infrastructure' = @('RiftReader2.Domain')
         'RiftReader2.Cli' = @('RiftReader2.Domain', 'RiftReader2.Application', 'RiftReader2.Infrastructure')
+        'RiftReader2.Live' = @('RiftReader2.Domain', 'RiftReader2.Application', 'RiftReader2.Infrastructure')
     }
     $projects = @(Get-ChildItem -LiteralPath src -Filter *.csproj -Recurse)
     if ($projects.Count -ne $allowed.Count) { throw 'Update the reviewed dependency rules for new modules.' }
@@ -49,6 +50,8 @@ try {
     New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
     & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
+    & $LuaPython -m unittest tests.test_read_live_receipt
+    if ($LASTEXITCODE -ne 0) { throw 'Host receipt freshness checks failed.' }
     $reportPath = Join-Path $runDirectory 'analysis.json'
     $replayPath = Join-Path $runDirectory 'replay.json'
     $argsCommon = @('--manifest', 'samples/demo/capture.json', '--config', 'config/default.json')

@@ -2,8 +2,8 @@
 
 Status: accepted architectural requirement. The minimal addon/decoder was later
 implemented under [ADR 0003](0003-addon-observation-contract.md); live transport
-remains unimplemented. The implementation status below describes this decision
-when first recorded.
+was later implemented under [ADR 0004](0004-nonce-bound-addon-transport.md). The
+implementation status below describes this decision when first recorded.
 
 Date: 2026-10-18.
 
@@ -15,7 +15,9 @@ system and RiftReader2 must be hybrid.
 RiftReader2 consists of a first-class Lua addon running inside RIFT and the
 modular .NET application running outside it. The addon is part of the product,
 not temporary scaffolding scheduled for removal when native reads exist.
-The existing four-project .NET foundation remains the external half.
+The existing four-project .NET foundation formed the initial external half;
+ADR 0004 later added the isolated Windows Live executable as a fifth production
+project.
 
 | Part | Responsibility |
 |---|---|

@@ -1,6 +1,8 @@
 # Addon observation contract, version 1
 
-Status: implemented offline producer/decoder contract. Live transport is not selected.
+Status: implemented producer/decoder contract and verified in one actual-client
+session. The selected nonce-bound wrapper is specified separately in
+[the RR2L1 contract](live-transport-v1.md).
 
 The producer is `RiftReader2` addon version `0.1.0`, using the observed RIFT Lua
 5.1 API shape. All observations are **addon API references**, not native evidence
@@ -50,8 +52,9 @@ allows 0.05..60 seconds. Only the six declared fields are acquired in this schem
 One current frame is published in `RiftReader2_Frame`; no history, file/network
 access, SavedVariables, inbound commands, or unbounded scans are implemented.
 The event callback returns no values. API errors do not escape the callback.
-Startup/update events use the API shape observed in the V1 source, pending real
-client validation. The global is a publication surface, not a chosen transport.
+Startup/update events use the API shape observed in V1 and verified in one
+identified actual-client session on 2026-10-18. The global is a publication
+surface, not a transport by itself.
 
 Clock loss/invalidity publishes a clearing observation once per status change;
 repeated identical failure status is throttled without needing a clock. Recovery
@@ -70,11 +73,17 @@ reload identity. Offline reports always say `bindingStatus: "unbound"` and
 identifies content; it does not authenticate the producer. Frames must not enter native correlation or motion
 analysis as bound live observations.
 
-A future acquisition adapter must establish target/process lifetime and addon
+A live acquisition adapter must establish target/process lifetime and addon
 load identity independently, timestamp receipt using a receiver monotonic clock,
 invalidate binding on reload/restart/regression/conflicting sequence payloads,
 and demonstrate advancing observations and an age policy. Until it can detect
 reload reliably, it must withhold verified freshness. Epoch alone is insufficient.
+
+The selected live design preserves this version-1 frame unchanged inside RR2L1
+and adds a reader-generated, one-load nonce. RR2L1 has its own version; the inner
+addon version remains 0.1.0. The transport passed one identified RIFT-Lab gate;
+see the [RR2L1 contract](live-transport-v1.md) and
+[validation record](../../docs/validation/live-transport-2026-10-18.md).
 
 ## Shared executable fixtures
 

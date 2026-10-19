@@ -64,12 +64,38 @@ public sealed class AddonCliTests : IDisposable
         Assert.False(File.Exists(destination));
     }
 
+    [Fact]
+    public async Task SavedLiveEnvelopeRequiresExpectedNonceAndNeverClaimsLiveFreshness()
+    {
+        const string nonce = "0123456789abcdef0123456789abcdef";
+        using var cases = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Fixtures", "addon", "cases.json")));
+        var wire = "RR2L1|" + nonce + "|RR2A1|" + cases.RootElement[0].GetProperty("expected").GetRawText() + "|ENDRR2A1|ENDRR2L1";
+        var source = Path.Combine(directory, "live.wire");
+        var destination = Path.Combine(directory, "live.json");
+        await File.WriteAllTextAsync(source, wire, new UTF8Encoding(false));
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        string[] args = ["decode-live-addon", "--frame", source, "--session-id", nonce, "--output", destination];
+        Assert.Equal(0, await CliRunner.RunAsync(args, output, error));
+        using var report = JsonDocument.Parse(output.ToString());
+        Assert.Equal("unbound", report.RootElement.GetProperty("bindingStatus").GetString());
+        Assert.Equal("unverified", report.RootElement.GetProperty("freshnessStatus").GetString());
+        var saved = await File.ReadAllBytesAsync(destination);
+        Assert.Equal(2, await CliRunner.RunAsync(args, TextWriter.Null, error));
+        Assert.Equal(saved, await File.ReadAllBytesAsync(destination));
+        Assert.Equal(2, await CliRunner.RunAsync(["decode-live-addon", "--frame", source, "--session-id", new string('0', 32)], TextWriter.Null, error));
+        await File.WriteAllBytesAsync(source, new byte[4145]);
+        Assert.Equal(2, await CliRunner.RunAsync(["decode-live-addon", "--frame", source, "--session-id", nonce], TextWriter.Null, error));
+    }
+
     [Theory]
     [InlineData("decode-addon")]
     [InlineData("decode-addon", "--frame")]
     [InlineData("decode-addon", "--frame", "one", "--frame", "two")]
     [InlineData("decode-addon", "--manifest", "capture.json")]
     [InlineData("decode-addon", "--config", "config.json")]
+    [InlineData("decode-live-addon", "--frame", "one")]
+    [InlineData("decode-live-addon", "--session-id", "0123456789abcdef0123456789abcdef")]
     public async Task CommandRejectsMissingDuplicateAndForeignOptions(params string[] args)
     {
         using var error = new StringWriter();

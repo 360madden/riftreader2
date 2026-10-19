@@ -25,7 +25,8 @@ dotnet --version
 ```
 
 Preserve unrelated changes. Generated analysis belongs under `artifacts/`.
-Do not use a live RIFT process or V1 tests to validate this offline foundation.
+Use live RIFT or V1 lab tooling only for an explicitly authorized, bounded gate;
+record that evidence separately from offline repository validation.
 
 ## Restore, build, and test
 
@@ -91,6 +92,54 @@ dotnet run --project src/RiftReader2.Cli -- decode-addon --frame PATH --output a
 Decoded reports remain source-unbound and freshness-unverified. This command
 does not read RIFT or turn `RiftReader2_Frame` into a transport.
 
+Decode one saved nonce-wrapped frame against the expected reader nonce:
+
+```powershell
+dotnet run --project src/RiftReader2.Cli -- decode-live-addon --frame PATH --session-id HEX
+dotnet run --project src/RiftReader2.Cli -- decode-live-addon --frame PATH --session-id HEX --output artifacts/live-addon-observation.json
+```
+
+This is also offline validation. It checks RR2L1 framing, nonce equality, and
+the inner RR2A1 contract, but its result remains source-unbound and
+freshness-unverified.
+
+## Exercise the live reader
+
+`RiftReader2.Live` is a Windows x64 standalone process. It reads the strict
+`riftreader2-live.json` beside its executable, generates a new nonce on every
+launch, and prints the `/rr2bind` command. For a local development run:
+
+```powershell
+dotnet run --project src/RiftReader2.Live --configuration Release
+```
+
+The tracked configuration disables network delivery. Its default atomic output
+is `%LOCALAPPDATA%\RiftReader2\Live\latest.json`. A lab delivery configuration
+may target only a literal private IPv4 `/observation` endpoint and requires a
+token; keep that private configuration and token out of Git, logs, and command
+arguments. The current V1 host receiver is delivery-only and reports
+`gameReady: false`.
+
+Evaluate one delivered receipt with the fail-closed host snapshot gate:
+
+```powershell
+python scripts/read-live-receipt.py --receipt PATH --expected-nonce NONCE
+python scripts/read-live-receipt.py --receipt PATH --expected-nonce NONCE --expected-receiver RECEIVER_ID
+```
+
+The gate requires a receipt no older than two seconds, exact reader/nonce
+identity, a complete guest scan, and a bound/fresh selected observation whose
+effective last-advance age is below its timeout. Its cross-machine result assumes
+guest and host UTC differ by at most 250 ms. Success is conditional snapshot
+freshness, not a continuing feed, remote production-consumer guarantee, or game
+readiness.
+
+The reader scans only readable, committed `MEM_PRIVATE` regions and reports
+complete only when the declared domain finishes within all budgets. Read or
+budget failures are unavailable/incomplete. The target SHA-256 is for the file
+at the MainModule path after identity rechecks; it is not proof of loaded module
+bytes. Stop with Ctrl+C; a stopped reader makes prior receipts historical.
+
 Validate input identity without producing an analysis result:
 
 ```powershell
@@ -145,15 +194,18 @@ from Domain analysis options. Reports must record the effective mapped options,
 tool version, product-assembly hashes, and machine-readable sample/build
 verification status.
 
-When adding an adapter, keep external access in Infrastructure and compose it in
-CLI. Extract a shared interface only when the new adapter creates a real seam.
+When adding an adapter, keep external access in Infrastructure or an isolated
+platform project such as Live. Compose it in the appropriate CLI host.
+Extract a shared interface only when the new adapter creates a real seam.
 Keep Domain free of JSON, files, processes, and platform APIs.
 
 When changing the addon contract, update Lua encoding/acquisition, strict C#
 decoding, shared accepted/rejected fixtures, the contract document, and both
 language test paths together. Mocked API tests prove behavior against the mock,
 not current-client RIFT compatibility. Do not add deployment, SavedVariables,
-network/file transport, or inbound commands as incidental contract work.
+or network/file transport as incidental contract work. The only current inbound
+command is the explicitly selected one-load `/rr2bind` nonce lifecycle; changing
+it requires the RR2L1 contract, lifecycle tests, and live evidence to agree.
 
 ## Efficient model handoff
 

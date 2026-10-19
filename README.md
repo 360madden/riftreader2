@@ -5,13 +5,15 @@ restart/update recovery, and less repetitive AI work. V1 supplies reference
 evidence and lessons; V2 is independently developed around these goals.
 
 The product architecture is **hybrid: an in-game Lua addon plus an external .NET
-application**. The minimal addon and C# decoder share an executable contract;
-live transport and actual client validation remain future work. See
+application**. The addon and C# decoder share executable contracts. A minimal
+Windows reader now acquires nonce-bound live observations with freshness and
+reload checks, validated in RIFT-Lab. See
 [the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
 
 The current foundation validates saved captures and computes **derived** motion
-with explicit gaps and provenance. It runs offline. The included data is
-synthetic; no V2 native field or live-game capability has been qualified.
+with explicit gaps and provenance. The included replay data is synthetic.
+Live observations come from the addon API; native game fields and restart-stable
+offsets remain unqualified. See the [live validation record](docs/validation/addon-live-client-2026-10-18.md).
 
 ## Run
 
@@ -37,11 +39,12 @@ the frame hash with source binding and freshness explicitly unverified. See
 
 | Project | Responsibility |
 |---|---|
-| Lua addon | Separate encoding, bounded API sampling, and RIFT event modules. |
+| Lua addon | Separate encoding, bounded API sampling, reader binding, and RIFT event modules. |
 | Domain | Samples, typed addon observations, analysis options, and result semantics. |
-| Application | Streaming numerical analysis independent of files and UI. |
+| Application | Streaming numerical analysis and monotonic freshness rules independent of files and UI. |
 | Infrastructure | Verified captures, strict addon decoding/configuration, atomic result publication. |
 | Cli | Commands, explicit composition, output, and cancellation. |
+| Live | Isolated Windows read-only acquisition, process identity, bounded delivery, and latest snapshot. |
 | Tests | C# behavior checks, Lua lifecycle checks, and shared cross-language fixtures. |
 
 Start with [status](docs/status.md), [architecture](docs/architecture.md), and

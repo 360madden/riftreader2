@@ -36,7 +36,7 @@ def main():
     toc = read_toc((package / "RiftAddon.toc").read_text(encoding="utf-8"))
     startup_files = list(toc.RunOnStartup.values())
     if (toc.Identifier != "RiftReader2" or toc.Version != "0.1.0" or toc.Environment != "4.4"
-            or toc.Author != "360madden" or startup_files != ["wire.lua", "producer.lua", "main.lua"]):
+            or toc.Author != "360madden" or startup_files != ["wire.lua", "producer.lua", "live.lua", "main.lua"]):
         raise AssertionError("Addon metadata or startup module order differs from the supported package.")
     for module in startup_files[:-1]:
         lua.execute((repo / "addon/RiftReader2" / module).read_text(encoding="utf-8"), info, private)
@@ -103,7 +103,29 @@ def main():
             raise AssertionError(f"{case['name']}: wire provenance hash differs")
         with (args.output_directory / (case["name"] + ".json")).open("x", encoding="utf-8", newline="\n") as output:
             output.write(decoded.stdout)
-    print(f"Lua 5.1: {lua_checks} lifecycle/encoder checks; {len(cases)} real Lua -> C# shared cases passed.")
+
+        # Verify the actual Lua wrapper against the independent C# envelope decoder.
+        nonce = "0123456789abcdef0123456789abcdef"
+        live = private.Live.New()
+        bound = live.Bind(live, nonce)
+        if bound is not True:
+            raise AssertionError("Live binding failed")
+        envelope = live.Wrap(live, frame).encode("ascii", errors="strict")
+        live_path = args.output_directory / (case["name"] + ".live.wire")
+        with live_path.open("xb") as output:
+            output.write(envelope)
+        live_result = subprocess.run(
+            ["dotnet", str(args.cli.resolve()), "decode-live-addon", "--frame", str(live_path.resolve()), "--session-id", nonce],
+            text=True, encoding="utf-8", capture_output=True, check=False,
+        )
+        if live_result.returncode != 0:
+            raise AssertionError(f"{case['name']}: live decoder failed: {live_result.stderr}")
+        live_report = json.loads(live_result.stdout)
+        if (live_report["addon"] != report or live_report["sessionId"] != nonce
+                or live_report["bindingStatus"] != "unbound" or live_report["freshnessStatus"] != "unverified"
+                or live_report["envelopeSha256"].lower() != hashlib.sha256(envelope).hexdigest()):
+            raise AssertionError(f"{case['name']}: live envelope decoding differs or overstated verification")
+    print(f"Lua 5.1: {lua_checks} lifecycle/encoder checks; {len(cases)} addon + {len(cases)} live-envelope real Lua -> C# shared cases passed.")
 
 
 if __name__ == "__main__":

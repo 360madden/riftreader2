@@ -170,20 +170,37 @@ local function runTests(privateVars, mainSource)
     assertTrue(frame ~= nil, "producer did not recover from serialization failure")
     assertEqual(2, observation.sequence, "serialization retry consumed a sequence")
 
+    local live = privateVars.Live.New()
+    local nonce = "0123456789abcdef0123456789abcdef"
+    assertEqual(nil, live:Wrap(frame), "unbound live frame published")
+    for _, bad in ipairs({ "", "abc", string.rep("A", 32), string.rep("z", 32), nonce .. " ", 1, false }) do
+        assertEqual(false, live:Bind(bad), "invalid live nonce accepted")
+    end
+    assertEqual(true, live:Bind(nonce), "nonce bind failed")
+    assertEqual(true, live:Bind(nonce), "same nonce is not idempotent")
+    assertEqual(false, live:Bind(string.rep("0", 32)), "load rebound to another reader")
+    assertEqual("RR2L1|" .. nonce .. "|" .. frame .. "|ENDRR2L1", live:Wrap(frame), "live envelope differs")
+    assertEqual(nil, live:Wrap(nil), "cleared source retained live frame")
+    assertEqual(nil, live:Wrap(string.rep("a", 4097)), "oversize live source accepted")
+    assertEqual(nil, privateVars.Live.New():Wrap(frame), "new load inherited binding")
+
     assertTrue(type(mainSource) == "string", "main source missing")
     local oldInspect = Inspect
     local oldEvent = Event
     local oldCommand = Command
     local oldFrame = RiftReader2_Frame
+    local oldLiveFrame = RiftReader2_LiveFrame
     local mainSucceeded, mainError = pcall(function()
         Inspect = nil
         Event = nil
         Command = nil
         RiftReader2_Frame = "stale"
+        RiftReader2_LiveFrame = "stale"
         local missingApiMain = assert(loadstring(mainSource))
         missingApiMain({ identifier = "RiftReader2" }, privateVars)
         assertTrue(privateVars.Instance ~= nil, "main did not create missing-API producer")
         assertEqual(nil, RiftReader2_Frame, "main retained stale global on load")
+        assertEqual(nil, RiftReader2_LiveFrame, "main retained stale live global on load")
 
         local mainState = validState()
         Inspect = (newApi(mainState))
@@ -191,7 +208,12 @@ local function runTests(privateVars, mainSource)
             System = { Update = { Begin = {} } },
             Addon = { Startup = { End = {} } }
         }
+        local slashEvent = {}
         Command = {
+            Slash = { Register = function(name)
+                assertEqual("rr2bind", name, "slash command name")
+                return slashEvent
+            end },
             Event = {
                 Attach = function(event, callback, identifier)
                     table.insert(event, { callback, identifier })
@@ -205,23 +227,31 @@ local function runTests(privateVars, mainSource)
         assertEqual("RiftReader2 update", Event.System.Update.Begin[1][2], "update hook identifier")
         assertEqual(0, select("#", Event.Addon.Startup.End[1][1]()), "startup callback returned values")
         assertTrue(type(RiftReader2_Frame) == "string", "startup callback did not publish")
+        assertEqual(nil, RiftReader2_LiveFrame, "unbound main published live frame")
+        slashEvent[1][1](nonce)
+        Event.System.Update.Begin[1][1]()
+        assertEqual("RR2L1|" .. nonce .. "|" .. RiftReader2_Frame .. "|ENDRR2L1", RiftReader2_LiveFrame, "main did not wrap frame")
 
         privateVars.Instance.Sequence = 9007199254740991
         mainState.clock = 10.5
         assertEqual(0, select("#", Event.System.Update.Begin[1][1]()), "update callback returned values")
         assertEqual(nil, RiftReader2_Frame, "counter exhaustion did not clear global")
+        assertEqual(nil, RiftReader2_LiveFrame, "counter exhaustion retained live frame")
 
         local reloadChunk = assert(loadstring(mainSource))
         reloadChunk({ identifier = "RiftReader2" }, privateVars)
         assertEqual(nil, RiftReader2_Frame, "reload retained prior global")
+        assertEqual(nil, RiftReader2_LiveFrame, "reload retained prior live global")
         assertEqual(2, #Event.Addon.Startup.End, "reload startup hook count")
         Event.Addon.Startup.End[2][1]()
         assertEqual(1, privateVars.Instance.Observation.sequence, "reload did not reset sequence")
+        assertEqual(nil, RiftReader2_LiveFrame, "reload retained prior reader binding")
     end)
     Inspect = oldInspect
     Event = oldEvent
     Command = oldCommand
     RiftReader2_Frame = oldFrame
+    RiftReader2_LiveFrame = oldLiveFrame
     if not mainSucceeded then
         error(mainError)
     end

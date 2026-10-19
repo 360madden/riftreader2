@@ -4,10 +4,13 @@ namespace RiftReader2.Infrastructure;
 public static class AddonFrameFile
 {
     public static async Task<AddonDecodedReport> ReadAsync(string path, CancellationToken cancellationToken = default)
+        => AddonDecodedReport.FromFrame(await ReadBoundedAsync(path, AddonFrameDecoder.MaxFrameBytes, cancellationToken));
+
+    internal static async Task<byte[]> ReadBoundedAsync(string path, int maximumBytes, CancellationToken cancellationToken)
     {
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
             bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
-        var bytes = new byte[AddonFrameDecoder.MaxFrameBytes + 1];
+        var bytes = new byte[maximumBytes + 1];
         var length = 0;
         while (length < bytes.Length)
         {
@@ -17,6 +20,6 @@ public static class AddonFrameFile
             length += read;
         }
         cancellationToken.ThrowIfCancellationRequested();
-        return AddonDecodedReport.FromFrame(bytes.AsSpan(0, length));
+        return bytes[..length];
     }
 }

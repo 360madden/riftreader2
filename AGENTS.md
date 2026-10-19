@@ -15,7 +15,7 @@ telemetry. The Lua producer and offline C# decoder have shared contract tests;
 live transport must establish freshness and reload/session identity. See the
 [addon contract](contracts/addon/README.md).
 
-**Current phase: modular architecture and offline foundation implementation.**
+**Current phase: modular hybrid foundation and minimal live transport.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow
 [the architecture](docs/architecture.md) and [development guide](docs/workflows/development.md).
@@ -69,7 +69,10 @@ Keep later features in the roadmap until their implementation is requested.
 - Joey subsequently authorized installing/validating the addon in RIFT and
   building a minimal live transport with reliable freshness and reload/session
   checks. This permits addon deployment and bounded read-only acquisition for
-  that task. Prompt Joey to launch RIFT when needed. Dedicated player actions,
+  that task. Joey also authorized operational reuse of the original VM console
+  and receiver tools; keep their source unchanged. See the
+  [live validation record](docs/validation/addon-live-client-2026-10-18.md).
+  Prompt Joey to launch RIFT when needed. Dedicated player actions,
   debugger attachment, process writes/injection, and changes to V1 remain outside
   this scope. Live verification must precede claims of transport readiness.
 - Keep settings repository-local. Do not change global Git/Codex settings,
