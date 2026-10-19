@@ -189,6 +189,27 @@ establish semantics, update survival, or invalid-old-epoch request rejection
 for this particular field. All full-size evidence remains ignored local
 artifacts; V1 source was not changed.
 
+## Follow-up: bounded cross-epoch health shape comparison
+
+The read-only offline comparator was added after the restart capture,
+using precisely the two retained health scan reports above. It validated
+each source and selected context hash and compared only repeated marker
+layouts with typed health/max and raw power references (plus optional visual
+level hint 45). Of 104 and 111 previously reviewed health-hit groups, 10
+and 7 respectively contained informative marker layouts. One layout
+appeared **8 times in the old epoch, 5 in the new**: level 45 at -8,
+health-or-max 18,208 at 0/+8/+16 and raw power 100 at +40/+44 relative
+to the first hit. Multiple independent occurrences make these
+**potentially replicated caches/copies**, not a confirmed unique field.
+No health/power variation was observed.
+
+Replay output (ignored):
+`artifacts/field-discovery/health-cross-epoch-shapes-20261019.json`,
+SHA-256 `6C3CD09B59F34F92A78B42D85DEF677A31B5C3A595C443E0EAA37E413C9E81BD`.
+The new [comparison procedure](../reference/native-field-evidence.md)
+is `candidate-only`, no cross-epoch health-field qualification.
+This was offline work with no new VM/game input or native capture.
+
 ## Resume after the recorded restart
 
 Reacquire **current** process, VM and typed API identity before every live

@@ -69,6 +69,47 @@ byte budget, current/max health ambiguity and missing changed-state evidence.
 Reports from separate process epochs must be reviewed individually in this
 mode. Every output is `candidate-only`, with restart/update unassessed.
 
+## Compare static health structures across process restarts
+
+Use `--compare-health-hits` with exactly two previously captured
+`native-field-discovery/1` reports from distinct RIFT process epochs.
+Both must have the same executable build and player identity. The same
+root RVA and health-reference checks apply as for a single review:
+
+```powershell
+python scripts/native-field-evidence.py --compare-health-hits `
+  --report artifacts/field-discovery/runs/OLD_RUN/report.json `
+  --report artifacts/field-discovery/runs/NEW_RUN/report.json `
+  --root-rva 0x32E0200 --level-hint 45 `
+  --output artifacts/field-discovery/health-structures.json
+```
+
+The comparison verifies both reports and every retained matching context hash,
+then examines only bounded int32 marker layouts near recorded health hits.
+Markers represent available typed **health**, **health maximum** and **raw
+power** values, plus the optional independently observed level hint. A group
+needs at least three matching marker sites spanning two marker families;
+unknown integers, pointers, and address offsets are never normalized into
+game-field claims. Group addresses are process-local examples only.
+
+The tool reports how many distinct groups share each layout in each process
+epoch. Multiple groups with the same layout are explicitly labeled
+`replicatedInEitherEpoch` rather than being treated as one durable field.
+If typed values differ between epochs or change during either scan, static
+shape comparison is withheld. This comparison **does not** follow a pointer,
+prove current versus maximum health, validate health/resource changes, or
+qualify restart/update survival. Its result remains `candidate-only`.
+
+The retained October 19 replay found one shared layout with 8 copies in
+the first epoch and 5 in the second. The layout has level hint 45 at -8,
+three health-or-max matches at 0/+8/+16 and raw power 100 at +40/+44
+relative to each group's first health hit. The report is
+`artifacts/field-discovery/health-cross-epoch-shapes-20261019.json`
+(ignored), SHA-256
+`6C3CD09B59F34F92A78B42D85DEF677A31B5C3A595C443E0EAA37E413C9E81BD`.
+These repeated static copies are a useful narrow lead for changed-state
+experiments, not identified health data.
+
 ## Cross-epoch same-build observation
 
 When position reports from **different PID/start epochs** have the same

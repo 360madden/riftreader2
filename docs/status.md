@@ -153,6 +153,34 @@ formatting/module checks, and 210 relative links. Local gate evidence:
 `artifacts/validation/20261019T091919Z-2dba17e0` (ignored). No V1 source or
 RIFT executable was modified; the RIFT-Lab game was relaunched normally.
 
+## October 19 offline cross-epoch health structure comparison
+
+The new `--compare-health-hits` replay in
+[the field evidence guide](reference/native-field-evidence.md) checks the
+existing 08:54 and 09:13 raw reports against each other without touching the
+live game. Both reports have different PID/start epochs but the same build,
+player, and unchanged typed health/max `18208/18208` and power `100`.
+Only validated int32 marker layouts are compared; no absolute heap address
+is treated as a portable locator.
+
+Of 104 and 111 recorded health-hit groups, **10 and 7** respectively
+contained informative multi-marker layouts. Exactly one layout recurred:
+**8 instances before restart and 5 after** with repeated health, power and
+independently observed level `45` values at the same relative offsets.
+That multiplicity argues against assuming any instance is a unique field.
+The ignored replay report is
+`artifacts/field-discovery/health-cross-epoch-shapes-20261019.json`
+(SHA-256 `6C3CD09B59F34F92A78B42D85DEF677A31B5C3A595C443E0EAA37E413C9E81BD`).
+It records `candidate-only`, no tested changed-state values, and no
+qualified restart or update survival for health. The comparison is bounded,
+deterministic, and covered by focused tests. No live game changes occurred.
+
+The full October 19 gate passed with 238 C# tests, **73 Python tests**,
+108 Lua assertions, 22 actual Lua-to-C# contract cases, a zero-warning Release
+build, native synthetic smoke, locked restore, replay, formatting checks, and
+212 relative documentation links. Evidence:
+`artifacts/validation/20261019T120612Z-21633586` (ignored).
+
 ## Limits and next useful work
 
 No native position, health/resource, combat, cast, cooldown, or ability field is

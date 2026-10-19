@@ -446,5 +446,204 @@ class NativeHealthEvidenceTests(unittest.TestCase):
             json.dumps(first, sort_keys=True), json.dumps(second, sort_keys=True)
         )
 
+
+
+def _new_health_epoch(report):
+    """Move a synthetic report to a distinct process without altering copied bytes."""
+    newer = copy.deepcopy(report)
+    newer["runId"] = "c" * 32
+    newer["startedAtUtc"] = "2026-10-19T09:13:17Z"
+    newer["completedAtUtc"] = "2026-10-19T09:14:00Z"
+    newer["identity"]["processId"] = 8356
+    newer["identity"]["processStartUtcTicks"] = 639279978665141458
+    new_owner = OWNER + 0x101000
+    root = base64.b64encode(new_owner.to_bytes(8, "little")).decode()
+    newer["rootRead"]["bytes"] = root
+    newer["ownerAddress"] = f"0x{new_owner:X}"
+    newer["windows"][0]["address"] = f"0x{new_owner:X}"
+    newer["windows"][0]["hops"][0]["read"]["bytes"] = root
+    for name in ("referenceBefore", "referenceAfter"):
+        newer[name]["target"]["processId"] = 8356
+        newer[name]["target"]["processStartUtc"] = "2026-10-19T09:11:06.5141458Z"
+        newer[name]["readback"]["typedApi"]["generation"] = 2
+    # The raw 256-byte windows are identical, but source-session addresses differ.
+    for hit in newer["healthScan"]["hits"]:
+        for name in ("address", "contextAddress"):
+            hit[name] = f"0x{int(hit[name], 16) + 0x500000:X}"
+    return newer
+
+
+def _duplicate_health_group(report):
+    """Include another complete copy of the same three-hit structural pattern."""
+    original = copy.deepcopy(report["healthScan"]["hits"])
+    for hit in original:
+        for key in ("address", "contextAddress"):
+            hit[key] = f"0x{int(hit[key], 16) + 0x10000:X}"
+        report["healthScan"]["hits"].append(hit)
+
+
+class NativeHealthCrossEpochTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def compare(self, old, new, level_hint=45, *, reverse=False):
+        paths = [self.root / "old.json", self.root / "new.json"]
+        for path, report in zip(paths, (old, new)):
+            path.write_text(json.dumps(report) + "\n", encoding="utf-8")
+        return evidence.compare_health_structures(
+            paths[::-1] if reverse else paths, ROOT_RVA, level_hint
+        )
+
+    def test_two_distinct_epochs_share_one_static_structure(self):
+        before = health_fixture()
+        after = _new_health_epoch(before)
+        result = self.compare(before, after)
+        self.assertEqual(result["evidenceKind"], "native-health-cross-epoch-structure-review/1")
+        self.assertEqual(result["comparisonStatus"], "static-marker-layout-comparison")
+        self.assertEqual(result["sharedPatternCount"], 1)
+        self.assertEqual(result["eligibleMarkerGroupsByEpoch"], [1, 1])
+        pattern = result["sharedMarkerPatterns"][0]
+        self.assertEqual(pattern["firstEpochInstances"], 1)
+        self.assertEqual(pattern["secondEpochInstances"], 1)
+        self.assertTrue(pattern["uniqueInBothEpochs"])
+        self.assertEqual(result["qualification"], "candidate-only")
+        self.assertFalse(result["healthValueChangeValidated"])
+        self.assertFalse(result["resourceValueChangeValidated"])
+        self.assertEqual(result["restartSurvival"], "not-qualified")
+
+    def test_repeated_copy_is_reported_as_replicated_not_unique(self):
+        before = health_fixture()
+        after = _new_health_epoch(before)
+        _duplicate_health_group(before)
+        result = self.compare(before, after)
+        self.assertEqual(result["sharedPatternCount"], 1)
+        pattern = result["sharedMarkerPatterns"][0]
+        self.assertEqual(pattern["firstEpochInstances"], 2)
+        self.assertEqual(pattern["secondEpochInstances"], 1)
+        self.assertTrue(pattern["replicatedInEitherEpoch"])
+        self.assertFalse(pattern["uniqueInBothEpochs"])
+
+    def test_report_order_does_not_change_result(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        self.assertEqual(
+            self.compare(first, second),
+            self.compare(first, second, reverse=True),
+        )
+
+    def test_matching_without_optional_level_hint(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        result = self.compare(first, second, level_hint=None)
+        self.assertEqual(result["sharedPatternCount"], 1)
+        tags = [
+            value
+            for point in result["sharedMarkerPatterns"][0]["typedMarkerLayout"]
+            for value in point["tags"]
+        ]
+        self.assertNotIn("visualLevelHint", tags)
+        self.assertIn("rawPower", tags)
+
+    def test_changed_health_during_scan_blocks_static_comparison(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        second["referenceAfter"]["readback"]["typedApi"]["snapshot"]["player"]["fields"]["health"]["value"] = 17000
+        result = self.compare(first, second)
+        self.assertEqual(result["comparisonStatus"], "reference-changed-or-different-values")
+        self.assertEqual(result["sharedMarkerPatterns"], [])
+        self.assertFalse(result["healthValueChangeValidated"])
+
+    def test_distinct_reference_values_block_static_pattern_matches(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        for name in ("referenceBefore", "referenceAfter"):
+            second[name]["readback"]["typedApi"]["snapshot"]["player"]["fields"]["power"]["value"] = 88
+        result = self.compare(first, second)
+        self.assertEqual(result["comparisonStatus"], "reference-changed-or-different-values")
+        self.assertFalse(result["resourceValueChangeValidated"])
+        self.assertEqual(result["sharedPatternCount"], 0)
+
+    def test_same_epoch_is_rejected(self):
+        first = health_fixture()
+        second = copy.deepcopy(first)
+        second["runId"] = "d" * 32
+        with self.assertRaisesRegex(evidence.EvidenceError, "distinct process epochs"):
+            self.compare(first, second)
+
+    def test_duplicate_reports_are_not_two_epochs(self):
+        data = health_fixture()
+        with self.assertRaisesRegex(evidence.EvidenceError, "duplicate reports"):
+            self.compare(data, data)
+
+    def test_player_change_rejected(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        for name in ("referenceBefore", "referenceAfter"):
+            second[name]["readback"]["typedApi"]["snapshot"]["player"]["unitId"] = "other-player"
+        with self.assertRaisesRegex(evidence.EvidenceError, "different players"):
+            self.compare(first, second)
+
+    def test_build_change_rejected(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        second["plan"]["buildSha256"] = "B" * 64
+        second["identity"]["executableSha256"] = "B" * 64
+        for name in ("referenceBefore", "referenceAfter"):
+            second[name]["target"]["executableSha256"] = "B" * 64
+        with self.assertRaisesRegex(evidence.EvidenceError, "different game builds"):
+            self.compare(first, second)
+
+    def test_tampered_context_rejected_before_pattern_matching(self):
+        first = health_fixture()
+        second = _new_health_epoch(first)
+        second["healthScan"]["hits"][1]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(evidence.EvidenceError, "SHA-256 mismatch"):
+            self.compare(first, second)
+
+    def test_repeated_report_only_with_changed_filename_is_rejected(self):
+        first = health_fixture()
+        second = copy.deepcopy(first)
+        second["runId"] = "d" * 32
+        with self.assertRaisesRegex(evidence.EvidenceError, "distinct process epochs"):
+            self.compare(first, second)
+
+    def test_cli_rejects_wrong_number_of_reports(self):
+        path = self.root / "only.json"
+        path.write_text(json.dumps(health_fixture()) + "\n", encoding="utf-8")
+        result = evidence.main([
+            "--compare-health-hits", "--report", str(path),
+            "--root-rva", "0x32E0200",
+        ])
+        self.assertEqual(result, 2)
+
+    def test_cli_rejects_combined_modes(self):
+        path = self.root / "only.json"
+        path.write_text(json.dumps(health_fixture()) + "\n", encoding="utf-8")
+        result = evidence.main([
+            "--compare-health-hits", "--health-hits", "--report", str(path),
+            "--root-rva", "0x32E0200",
+        ])
+        self.assertEqual(result, 2)
+
+    def test_cli_writes_one_atomic_no_overwrite_comparison(self):
+        first, second = health_fixture(), _new_health_epoch(health_fixture())
+        paths = (self.root / "a.json", self.root / "b.json")
+        for path, data in zip(paths, (first, second)):
+            path.write_text(json.dumps(data) + "\n", encoding="utf-8")
+        output = self.root / "comparison.json"
+        arguments = [
+            "--compare-health-hits", "--report", str(paths[0]),
+            "--report", str(paths[1]), "--root-rva", "0x32E0200",
+            "--level-hint", "45", "--output", str(output),
+        ]
+        self.assertEqual(evidence.main(arguments), 0)
+        saved = json.loads(output.read_bytes())
+        self.assertEqual(saved["sharedPatternCount"], 1)
+        first_data = output.read_bytes()
+        self.assertEqual(evidence.main(arguments), 2)
+        self.assertEqual(output.read_bytes(), first_data)
+
 if __name__ == "__main__":
     unittest.main()

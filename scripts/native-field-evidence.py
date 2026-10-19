@@ -549,19 +549,193 @@ def evaluate_health_scan(path, root_rva, level_hint=None):
     }
 
 
+def _health_marker_groups(review, report):
+    """Summarize stable integer-marker layouts, not pointer relationships."""
+    refs = review["typedReference"]
+    current, maximum = refs["health"][0], refs["healthMax"][0]
+    power = refs["rawPower"][0]
+    level = refs["levelHint"]
+    values = (("currentHealth", current), ("maximumHealth", maximum),
+              ("rawPower", power), ("visualLevelHint", level))
+    hits = {
+        _hex(hit["address"], "health-hit.address"): hit
+        for hit in report["healthScan"]["hits"]
+    }
+    grouped = {}
+    eligible = 0
+    for group in review["candidateGroups"]:
+        first = _hex(group["firstSessionAddress"], "candidate group address")
+        hit = hits[first]
+        if hit.get("int32") is not True or hit["read"].get("status") != "success":
+            continue
+        raw = _bytes(hit["read"]["bytes"], "validated hit context")
+        start = _hex(hit["contextAddress"], "context start")
+        sites = []
+        families = set()
+        # Compare bounded typed reference markers only; never normalize arbitrary
+        # pointers, offsets, non-finite floats, or unknown integer constants.
+        for delta in range(-16, 65, 4):
+            index = first + delta - start
+            if index < 0 or index + 4 > len(raw):
+                continue
+            word = struct.unpack_from("<i", raw, index)[0]
+            tags = [name for name, value in values
+                    if value is not None and word == value]
+            if not tags:
+                continue
+            sites.append({"delta": delta, "tags": tags})
+            families.update("health" if tag in ("currentHealth", "maximumHealth")
+                            else "power" if tag == "rawPower" else "level"
+                            for tag in tags)
+        if len(sites) < 3 or len(families) < 2:
+            continue
+        eligible += 1
+        key = json.dumps(sites, separators=(",", ":"), sort_keys=True)
+        grouped.setdefault(key, []).append(group["firstSessionAddress"])
+    return ({key: sorted(addresses) for key, addresses in grouped.items()}, eligible)
+
+
+def compare_health_structures(paths, root_rva, level_hint=None):
+    """Compare marker-layout multiplicity across two exact process epochs.
+
+    Repeats can reveal likely copies, never an authoritative memory field.
+    """
+    if len(paths) != 2:
+        raise EvidenceError("health structure comparison requires exactly two reports")
+    sources = []
+    for path in paths:
+        review = evaluate_health_scan(Path(path), root_rva, level_hint)
+        report, digest = load_report(Path(path))
+        if digest != review["sourceSha256"]:
+            raise EvidenceError("health source changed between validation and comparison")
+        snapshot = _object(
+            report["referenceBefore"]["readback"]["typedApi"]["snapshot"], "typed snapshot"
+        )
+        player = _object(snapshot.get("player"), "player")
+        sources.append({"review": review, "report": report,
+                        "playerId": player.get("unitId")})
+    sources.sort(key=lambda item: (
+        _utc_ticks(item["report"]["startedAtUtc"], "report startedAtUtc"),
+        item["review"]["runId"],
+    ))
+    first, second = sources
+    a, b = first["review"], second["review"]
+    if (a["sourceSha256"] == b["sourceSha256"] or a["runId"] == b["runId"]):
+        raise EvidenceError("duplicate reports cannot establish independent epochs")
+    if a["buildSha256"] != b["buildSha256"]:
+        raise EvidenceError("health reports have different game builds")
+    if (a["processId"], a["processStartUtcTicks"]) == (
+        b["processId"], b["processStartUtcTicks"]
+    ):
+        raise EvidenceError("health structure comparison needs distinct process epochs")
+    if (not first["playerId"] or first["playerId"] != second["playerId"]):
+        raise EvidenceError("health observations belong to different players")
+    references = (a["typedReference"], b["typedReference"])
+    changed_during = any(
+        x["healthChangedDuringScan"] or x["powerChangedDuringScan"]
+        or x["healthMax"][0] != x["healthMax"][1]
+        for x in references
+    )
+    same_static_values = all(
+        references[0][name][0] == references[1][name][0]
+        for name in ("health", "healthMax", "rawPower")
+    )
+    comparable = not changed_during and same_static_values
+    patterns = []
+    eligible_counts = [0, 0]
+    if comparable:
+        layouts = []
+        for i, item in enumerate(sources):
+            matches, count = _health_marker_groups(item["review"], item["report"])
+            layouts.append(matches)
+            eligible_counts[i] = count
+        for shape in layouts[0].keys() & layouts[1].keys():
+            sites = json.loads(shape)
+            left, right = layouts[0][shape], layouts[1][shape]
+            patterns.append({
+                "signatureSha256": hashlib.sha256(shape.encode("utf-8")).hexdigest().upper(),
+                "typedMarkerLayout": sites,
+                "firstEpochInstances": len(left),
+                "secondEpochInstances": len(right),
+                "firstEpochExamples": left[:5],
+                "secondEpochExamples": right[:5],
+                "replicatedInEitherEpoch": len(left) > 1 or len(right) > 1,
+                "uniqueInBothEpochs": len(left) == len(right) == 1,
+            })
+        patterns.sort(key=lambda item: (
+            -min(item["firstEpochInstances"], item["secondEpochInstances"]),
+            -len(item["typedMarkerLayout"]),
+            item["signatureSha256"],
+        ))
+    source_summary = []
+    for item in sources:
+        review = item["review"]
+        source_summary.append({
+            "runId": review["runId"],
+            "reportSha256": review["sourceSha256"],
+            "reportPath": review["sourcePath"],
+            "processId": review["processId"],
+            "processStartUtcTicks": review["processStartUtcTicks"],
+            "playerId": item["playerId"],
+            "rawMatchCount": review["scanCoverage"]["recordedHitCount"],
+            "candidateGroupCount": review["candidateGroupCount"],
+            "scanTruncated": review["scanCoverage"]["truncated"],
+            "incompleteContextCount": review["scanCoverage"]["incompleteContextCount"],
+        })
+    return {
+        "schemaVersion": 1,
+        "evidenceKind": "native-health-cross-epoch-structure-review/1",
+        "rootRva": f"0x{root_rva:X}",
+        "buildSha256": a["buildSha256"],
+        "referenceValues": {
+            "health": [x["health"] for x in references],
+            "healthMax": [x["healthMax"] for x in references],
+            "rawPower": [x["rawPower"] for x in references],
+            "levelHint": level_hint,
+        },
+        "comparisonStatus": ("static-marker-layout-comparison" if comparable
+                             else "reference-changed-or-different-values"),
+        "sourceReports": source_summary,
+        "eligibleMarkerGroupsByEpoch": eligible_counts,
+        "sharedPatternCount": len(patterns),
+        "sharedMarkerPatterns": patterns,
+        "qualification": "candidate-only",
+        "healthValueChangeValidated": False,
+        "resourceValueChangeValidated": False,
+        "restartSurvival": "not-qualified",
+        "updateSurvival": "not-assessed",
+        "limitations": [
+            "The two scans are truncated and do not cover identical heap allocations.",
+            "Marker layouts match data shapes, not pointer chains or object identities.",
+            "Repeated layouts may be UI, network, serializer, or cache copies.",
+            "Health equals maximum in these observations and does not distinguish the two.",
+            "Static matches without changed values do not identify gameplay health or power.",
+            "Session addresses in examples must never be reused after a restart.",
+            "The optional visual level is a caller-provided hint, not typed API evidence.",
+        ],
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, action="append", required=True)
     parser.add_argument("--root-rva", required=True)
     parser.add_argument("--xyz-offsets", nargs=3)
     parser.add_argument("--health-hits", action="store_true", help="Review typed health matches from one field-lab report")
+    parser.add_argument("--compare-health-hits", action="store_true", help="Compare bounded health marker shapes across two game epochs")
     parser.add_argument("--level-hint", type=int, help="Optional visually observed level, not verified by typed Lua")
     parser.add_argument("--tolerance", type=float, default=0.02)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
         root = _hex(args.root_rva, "root-rva")
-        if args.health_hits:
+        if args.health_hits and args.compare_health_hits:
+            raise EvidenceError("choose one health review mode")
+        if args.compare_health_hits:
+            if len(args.report) != 2 or args.xyz_offsets is not None:
+                raise EvidenceError("health comparison requires two reports without XYZ arguments")
+            evaluation = compare_health_structures(args.report, root, args.level_hint)
+        elif args.health_hits:
             if len(args.report) != 1 or args.xyz_offsets is not None:
                 raise EvidenceError("health review requires exactly one report and no XYZ arguments")
             evaluation = evaluate_health_scan(args.report[0], root, args.level_hint)
