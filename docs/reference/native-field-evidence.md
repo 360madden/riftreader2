@@ -176,3 +176,8 @@ and no health/resource field was qualified. See the
 
 The regression suite is `python -m unittest tests.test_native_field_evidence`
 and runs with the repository-wide validation gate.
+
+The follow-on [targeted health snapshot planner](targeted-health-snapshot.md)
+uses same-epoch validated candidate layouts and a fresh Lua receipt to
+prepare a small, session-bound native snapshot request, without rescanning
+memory or promoting cached health matches to gameplay fields.
