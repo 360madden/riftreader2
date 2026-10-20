@@ -4,7 +4,9 @@ Status: implemented and exercised on RIFT-Lab-1. The
 [October 20 live record](../validation/native-vm-controls-2026-10-20.md)
 demonstrates windowed capture, movement/chords, orbit, yaw/pitch, stop, and idle
 reconnect. Wheel zoom remains unverified; sustained panel usability and
-numerical camera calibration remain open.
+numerical camera calibration remain open. The
+[follow-up record](../validation/native-vm-controls-followup-2026-10-20.md)
+adds browser-compatible camera drag, revised timing, and release feedback.
 
 This path provides supervised movement and camera experiments for RIFT-Lab-1
 without importing or running original RiftReader source. It is intentionally
@@ -94,7 +96,10 @@ The executor validates the complete action before consulting the target or
 sending input. It checks cancellation and exact target state before every new
 press/move/wheel operation, checks the target at intervals no longer than the
 requested 10 milliseconds during a hold, and uses a monotonic deadline rather
-than accumulating timer requests. Its result distinguishes delivery, release,
+than accumulating timer requests. The hold budget starts after the first
+successful press; subsequent chord/button/move setup consumes that same budget.
+Expired setup rejects further presses or motion and still attempts release.
+Its result distinguishes delivery, release,
 cancellation, target loss, uncertain state, and the need for caller disarm.
 `responseVerified` remains false: successful `SendInput` insertion is not proof
 that RIFT moved or changed its camera.
@@ -105,7 +110,7 @@ attempts. It therefore includes input calls, repeated process/window checks,
 the requested hold, timer overrun, and release calls; it is not a measured hold
 duration. The guest action envelope's separate `elapsedMilliseconds` begins
 earlier in the action handler and also includes guest preparation through result
-assembly, but it is recorded before cursor restoration and response persistence.
+assembly, but it is recorded before response persistence.
 
 The guest also returns `inputEvents` in call order. Each successfully inserted
 key-down, key-up, button-down, button-up, relative move, or wheel event records
@@ -123,15 +128,20 @@ new press, mouse move, wheel event, focus steal, or automatic focus recovery.
 There is an unavoidable small check-to-send race at the Windows API boundary;
 the stop response waits for the active action and its release attempts.
 
-Before a mouse-button or wheel action, the guest records the desktop cursor and
-centers it in the still-matching RIFT client rectangle. On exit it attempts to
-restore the original cursor only when the exact reviewed target still matches
-and that original point was inside the same client rectangle. If the original
-point was outside the RIFT client, the guest deliberately leaves the cursor at
-the client center so later wheel input remains routed to RIFT. This cursor
-placement is operational routing, not relative camera input or camera-state
-restoration. The response retains `originalCursor`, but it currently has no
-field attesting that a restoration attempt succeeded.
+Before a mouse-button or wheel action, the guest preserves an in-client cursor
+with at least `32 + max(abs(deltaX), abs(deltaY))` pixels of edge clearance.
+Otherwise it centers and verifies the cursor, rejects repositioning when a
+mouse button is already down, and waits at least 50 ms before pressing, checking
+cancellation and target identity between short waits. Preparation is outside
+the hold budget. `cursorPreparation` records the original/prepared positions
+and whether repositioning occurred.
+
+The agent never restores the cursor after an action. This avoids extra warps
+and, especially, moving the cursor after an unsuccessful button release.
+The game retains cursor control. Placement is operational routing, not camera
+orientation restoration. Status includes `desktopInputsDown`, a read-only
+sample of Windows key/button high-bit state; it proves neither RIFT consumption
+nor which person/process owns a held input.
 
 ## Build and guest deployment
 
@@ -311,8 +321,22 @@ The normal sequence is:
 The browser control surface can issue repeated finite actions while the operator
 physically holds a supported key and the 15-second arm remains valid. For a
 first qualification pulse, submit one action rather than relying on repetition.
-Pointer Lock loss and browser blur request stop. They do not prove that a guest
-hard crash received key-up.
+Review has a visible 45-second countdown and requires a confirmation checkbox
+plus a note of at least 12 characters. Arming consumes that review.
+
+Select Right yaw/pitch or Left orbit, then hold the left mouse button on the
+control surface and drag. This default uses browser pointer capture and works
+without Pointer Lock. Camera and movement pulses use 100 ms; pointer deltas
+coalesce for 16 ms and remain bounded to ±200. Releasing or losing the captured
+pointer clears queued deltas and requests release. Camera mode Off keeps
+movement available without adding a mouse-button press.
+
+Pointer Lock is optional for compatible browsers. The Codex in-app browser
+rejected it during the October 20 follow-up; use bounded drag there. Changing
+mode during a drag/lock stops and disarms. Pointer Lock loss, browser blur,
+page hiding, and arm expiry request stop. They do not prove that a guest hard
+crash received key-up. The panel displays the last action outcome separately
+from release/disarm status; successful insertion still does not prove game response.
 
 ## Recovery and evidence meaning
 

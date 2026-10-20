@@ -42,6 +42,8 @@ public sealed class BoundedControlExecutor
         var cancelled = false;
         var targetLost = false;
         var releaseRequired = false;
+        var holdDuration = TimeSpan.FromMilliseconds(action.HoldMilliseconds);
+        long? holdStartedAt = null;
         string? deliveryError = null;
         List<string> releaseErrors = [];
 
@@ -57,21 +59,27 @@ public sealed class BoundedControlExecutor
             {
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed before all keys were pressed.");
+                ThrowIfHoldBudgetExpired("all keys were pressed");
                 input.KeyDown(key);
+                holdStartedAt ??= timeProvider.GetTimestamp();
             }
 
             if (action.MouseButton is not null)
             {
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed before the mouse button was pressed.");
+                ThrowIfHoldBudgetExpired("the mouse button was pressed");
                 input.ButtonDown(action.MouseButton);
+                holdStartedAt ??= timeProvider.GetTimestamp();
             }
 
             if (action.DeltaX != 0 || action.DeltaY != 0)
             {
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed before relative mouse movement.");
+                ThrowIfHoldBudgetExpired("relative mouse movement was delivered");
                 input.MoveRelative(action.DeltaX, action.DeltaY);
+                holdStartedAt ??= timeProvider.GetTimestamp();
             }
 
             if (action.WheelNotches != 0)
@@ -81,14 +89,16 @@ public sealed class BoundedControlExecutor
                 input.Wheel(action.WheelNotches);
             }
 
-            var holdDuration = TimeSpan.FromMilliseconds(action.HoldMilliseconds);
-            var holdStartedAt = timeProvider.GetTimestamp();
-            while (timeProvider.GetElapsedTime(holdStartedAt) < holdDuration)
+            if (holdStartedAt is not null && !CheckTarget())
+                throw new TargetChangedException("The selected target changed during input setup.");
+
+            while (holdStartedAt is not null
+                && timeProvider.GetElapsedTime(holdStartedAt.Value) < holdDuration)
             {
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed during the bounded hold.");
 
-                var remaining = holdDuration - timeProvider.GetElapsedTime(holdStartedAt);
+                var remaining = holdDuration - timeProvider.GetElapsedTime(holdStartedAt.Value);
                 if (remaining <= TimeSpan.Zero)
                     break;
                 var interval = remaining < MaximumTargetCheckInterval
@@ -138,6 +148,16 @@ public sealed class BoundedControlExecutor
         {
             cancellationToken.ThrowIfCancellationRequested();
             return input.IsTargetCurrent();
+        }
+
+        void ThrowIfHoldBudgetExpired(string pendingWork)
+        {
+            if (holdStartedAt is not null
+                && timeProvider.GetElapsedTime(holdStartedAt.Value) >= holdDuration)
+            {
+                throw new TimeoutException(
+                    $"The bounded hold elapsed before {pendingWork}.");
+            }
         }
 
         void TryRelease(Action release, string control)

@@ -184,9 +184,11 @@ public sealed class ControlAgent
                         instanceId,
                         target = Inspect(),
                         armed = IsArmed(),
-                        expiresInSeconds = Math.Max(0, 15 - Stopwatch.GetElapsedTime(armedAt).TotalSeconds),
+                        expiresInSeconds = IsArmed() ? Math.Max(0, 15 - Stopwatch.GetElapsedTime(armedAt).TotalSeconds) : 0,
                         busy = activeAction is { IsCompleted: false },
                         recoveryRequired = File.Exists(PendingPath),
+                        desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
+                        desktopInputEvidence = "Sampled Windows key/button state, not RIFT consumption or ownership.",
                         nativeTextEntryState = "unknown",
                         responseVerified = false
                     };
@@ -270,7 +272,7 @@ public sealed class ControlAgent
         // Yield before taking the state lock so dispatch can publish activeAction first.
         await Task.Yield();
         object response;
-        DesktopPoint? originalCursor = null;
+        object? cursorPreparation = null;
         var started = Stopwatch.GetTimestamp();
         try
         {
@@ -288,7 +290,24 @@ public sealed class ControlAgent
             if (!IsArmed() || target != Inspect())
                 throw new InvalidOperationException("Control target changed before cursor setup.");
             if (request.Action.MouseButton is not null || request.Action.WheelNotches != 0)
-                originalCursor = WindowsControlDesktop.CenterCursor(target);
+            {
+                var placement = WindowsControlDesktop.PrepareCursor(
+                    target, request.Action.DeltaX, request.Action.DeltaY);
+                cursorPreparation = placement;
+                if (placement.Repositioned)
+                {
+                    // Let the game consume positioning before a drag starts.
+                    // This is outside the input hold and remains cancellable.
+                    var settledAt = Stopwatch.GetTimestamp();
+                    while (Stopwatch.GetElapsedTime(settledAt).TotalMilliseconds < 50)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (!IsArmed() || target != Inspect())
+                            throw new InvalidOperationException("Control target changed during cursor preparation.");
+                        await Task.Delay(10, token);
+                    }
+                }
+            }
             token.ThrowIfCancellationRequested();
             var input = new BoundInput(this, target);
             var result = await new BoundedControlExecutor(input).ExecuteAsync(request.Action, token);
@@ -302,7 +321,8 @@ public sealed class ControlAgent
                 target,
                 action = request.Action,
                 inputEvents = input.Events,
-                originalCursor,
+                cursorPreparation,
+                cursorRestoration = "none; cursor remains under game control",
                 startedAtUtc = DateTimeOffset.UtcNow - Stopwatch.GetElapsedTime(started),
                 completedAtUtc = DateTimeOffset.UtcNow,
                 elapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
@@ -314,22 +334,6 @@ public sealed class ControlAgent
         {
             Disarm();
             response = new { error = exception.Message, errorType = exception.GetType().Name, recoveryRequired = File.Exists(PendingPath) };
-        }
-        finally
-        {
-            if (originalCursor is not null)
-            {
-                try
-                {
-                    if (reviewedTarget == Inspect() && reviewedTarget is { } current
-                        && originalCursor.Value.X >= current.ClientX
-                        && originalCursor.Value.X < current.ClientX + current.ClientWidth
-                        && originalCursor.Value.Y >= current.ClientY
-                        && originalCursor.Value.Y < current.ClientY + current.ClientHeight)
-                        WindowsControlDesktop.SetCursorPosition(originalCursor.Value.X, originalCursor.Value.Y);
-                }
-                catch (Exception) { /* Cursor restoration is not input release or camera restoration. */ }
-            }
         }
         // Cancellation must not erase the release outcome from disk.
         await ReplyAsync(stream, command, response, CancellationToken.None);

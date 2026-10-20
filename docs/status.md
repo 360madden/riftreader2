@@ -2,7 +2,38 @@
 
 Updated: 2026-10-20 (America/New_York).
 
-## Native supervised movement and camera controls
+## Native control follow-up: browser drag and timing
+
+The [follow-up record](validation/native-vm-controls-followup-2026-10-20.md)
+documents the latest improvement set. The Codex browser rejected Pointer Lock;
+the panel now defaults to bounded click-and-drag camera input, which reached
+the guest and visibly changed the view. Pointer release cancelled the final
+pulse, released the button, and left its result visible alongside release
+feedback. Camera modes, review countdown, expiry feedback, and mode-change
+stops are explicit.
+
+The hold budget now includes setup after the first press. Completed 100 ms
+trials measured 101.97–113.96 ms button intervals in this small sample.
+Cursor preparation avoids unnecessary warps, rejects existing button-down
+state or insufficient client space, and never restores the cursor after input.
+Status includes read-only Windows input-state diagnostics.
+
+Final full gate: **336 C# tests** (274 portable, 62 Windows), **172 Python
+tests**, 108 Lua assertions, 22 Lua/C# cases, zero-warning Release build, native
+smoke, locked restore, deterministic replay, formatting and module checks.
+Evidence: `artifacts/validation/20261020T125211Z-934ab6e9`; 251 links checked.
+The final deployed executable matches the full-gate published binary.
+Native host/guest remain connected and disarmed, with no pending release or
+sampled input down. Temporary bootstrap service is stopped.
+
+**Next useful check:** establish whether physical mouse-wheel zoom works in
+VMware. Native wheel insertion and a single VMware-console wheel comparison
+produced no visible zoom; inspected settings did not explain it. Wheel zoom
+remains unresolved. Sustained human usability, optional Pointer Lock outside
+Codex, numerical camera calibration, fullscreen capture, and hard-crash cleanup
+remain unqualified. Do not repeat completed S/A/D baselines.
+
+## Initial native supervised movement and camera controls
 
 The [native control roadmap](planning/native-vm-control-roadmap.md) is
 implemented with recorded validation limits. The repository now owns its

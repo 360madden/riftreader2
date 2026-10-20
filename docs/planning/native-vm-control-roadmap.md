@@ -29,16 +29,23 @@ owns setup and operation; [status](../status.md) owns the final gate and handoff
 The native workflow has zero V1 runtime source imports. The old experiment
 adapter remains available for its historical evidence workflows.
 
-Follow-up priorities are:
+The [October 20 follow-up](../validation/native-vm-controls-followup-2026-10-20.md)
+implemented bounded browser drag after Codex rejected Pointer Lock, explicit
+camera modes, countdowns, preserved release/action feedback, and a safer cursor
+policy. The hold budget now includes setup after the first press. Three completed
+100 ms button trials measured 101.97–113.96 ms; the final browser drag also
+demonstrated cancellation on pointer release. These are small samples.
 
-1. Human usability pass with the panel beside VMware: sustained keyboard
-   control, Pointer Lock drag, blur, expiry, and clear feedback. CLI actions
-   already exercise the same guest executor; avoid repeating basic S/A/D.
-2. Inspect actual zoom bindings/input consumption and resolve wheel behavior.
-   Both directions inserted successfully but produced no clear visual zoom.
-3. Measure camera-button timing across a larger sample before tuning it.
-   Current 100 ms samples were 115.83 and 127.60 ms from insertion to release;
-   the latter missed the proposed ±20 ms target.
+Remaining priorities are:
+
+1. Establish a direct physical-wheel baseline in VMware, then resolve zoom.
+   Native and VMware-console wheel input produced no visible zoom. Inspected
+   bindings/settings did not explain the result; they were not changed.
+2. Human usability pass with the panel beside VMware: sustained keyboard and
+   bounded drag, blur, and precision. Optional Pointer Lock needs a compatible
+   browser; bounded drag was exercised in Codex. Avoid repeating basic S/A/D.
+3. Measure timing across a larger sample only when needed for further tuning;
+   the small passing follow-up sample does not establish a distribution.
 4. Resume information discovery using the new bounded native controls.
    Numerical camera fields and dedicated gameplay automation remain separate.
 

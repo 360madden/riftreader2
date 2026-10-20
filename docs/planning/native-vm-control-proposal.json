@@ -66,6 +66,14 @@
       "kind": "retained_run",
       "supports": "Native movement/chord, orbit, yaw/pitch, bounded stop, host restart/reconnect, 35-second idle review, and brief panel keyboard/release demonstrated.",
       "limitations": "Zoom unverified; one mouse timing sample exceeds proposed tolerance; sustained Pointer Lock usability and hard-crash cleanup unqualified."
+    },
+    {
+      "id": "E09",
+      "source": "docs/validation/native-vm-controls-followup-2026-10-20.md",
+      "locator": "Live observations; Wheel diagnosis and limitations",
+      "kind": "retained_run",
+      "supports": "Bounded browser drag, cancellation/release feedback, revised timing and cursor policy verified within recorded limits.",
+      "limitations": "Codex Pointer Lock rejected; default drag works. Wheel zoom remains unresolved; no numerical camera calibration."
     }
   ],
   "findings": [
@@ -133,7 +141,7 @@
         "Explicit reviewed in-world frame"
       ],
       "movementSupport": "Scan-code chords with guest-local bounded timing, cancellation and durable release intent.",
-      "cameraSupport": "Relative mouse, left/right drag and wheel; Pointer Lock operator surface.",
+      "cameraSupport": "Relative mouse and left/right drag; default bounded browser drag with optional Pointer Lock. Wheel insertion implemented but visible zoom unverified.",
       "latencyEvidence": null,
       "failureModes": [
         "UIPI rejection",
@@ -242,8 +250,8 @@
     ],
     "operatorInterface": {
       "binding": "127.0.0.1 only, bearer token",
-      "controls": "Reviewed arm, movement keys/chords, relative camera drag, wheel, stop/recover",
-      "deadman": "Finite actions and arm expiry; blur and Pointer Lock loss stop",
+      "controls": "Reviewed arm with countdown, movement keys/chords, default bounded pointer-capture drag, optional Pointer Lock, wheel, stop/recover",
+      "deadman": "Finite actions and arm expiry; drag release cancels; blur, mode change and Pointer Lock loss stop",
       "state": "Target identity, foreground, pending recovery, result and errors"
     }
   },

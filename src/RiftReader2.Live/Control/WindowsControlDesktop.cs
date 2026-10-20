@@ -22,6 +22,11 @@ public sealed record DesktopTarget(
 
 public readonly record struct DesktopPoint(int X, int Y);
 
+public readonly record struct CursorPreparation(
+    DesktopPoint OriginalPosition,
+    DesktopPoint PreparedPosition,
+    bool Repositioned);
+
 public enum MouseButton
 {
     Left,
@@ -50,6 +55,34 @@ public static class WindowsControlDesktop
     private const uint MouseEventRightUp = 0x0010;
     private const uint MouseEventWheel = 0x0800;
     private const int WheelDelta = 120;
+    private const int VirtualKeyLeftMouse = 0x01;
+    private const int VirtualKeyRightMouse = 0x02;
+    private const int VirtualKeyMiddleMouse = 0x04;
+    private const int VirtualKeyShift = 0x10;
+    private const int VirtualKeyControl = 0x11;
+    private const int VirtualKeyAlt = 0x12;
+    private const int VirtualKeyLeftWindows = 0x5B;
+    private const int VirtualKeyRightWindows = 0x5C;
+    private const int KeyStateDownMask = 0x8000;
+    private const int CursorSafetyPixels = 32;
+
+    private static readonly (int VirtualKey, string Name)[] DiagnosticInputs =
+    [
+        (VirtualKeyShift, "shift"),
+        (VirtualKeyControl, "control"),
+        (VirtualKeyAlt, "alt"),
+        (VirtualKeyLeftWindows, "left-win"),
+        (VirtualKeyRightWindows, "right-win"),
+        (VirtualKeyLeftMouse, "mouse-left"),
+        (VirtualKeyRightMouse, "mouse-right"),
+        (VirtualKeyMiddleMouse, "mouse-middle"),
+        ('W', "w"),
+        ('A', "a"),
+        ('S', "s"),
+        ('D', "d"),
+        ('Q', "q"),
+        ('E', "e")
+    ];
 
     private static readonly ConcurrentDictionary<ExecutableCacheKey, string> ExecutableHashes = new();
 
@@ -216,6 +249,16 @@ public static class WindowsControlDesktop
         return new DesktopPoint(point.X, point.Y);
     }
 
+    /// <summary>
+    /// Samples the Windows asynchronous high-bit state for the bounded control inputs.
+    /// This is an operator diagnostic, not attestation of RIFT's internal key state.
+    /// </summary>
+    public static string[] ReadPressedInputs()
+    {
+        EnsureWindows();
+        return DecodePressedInputs(NativeMethods.GetAsyncKeyState);
+    }
+
     public static void SetCursorPosition(int x, int y)
     {
         EnsureWindows();
@@ -234,6 +277,40 @@ public static class WindowsControlDesktop
         var previous = GetCursorPosition();
         SetCursorPosition(center.X, center.Y);
         return previous;
+    }
+
+    public static CursorPreparation PrepareCursor(DesktopTarget target, int deltaX, int deltaY)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        EnsureWindows();
+        var window = ParseWindowHandle(target.WindowHandle);
+        RevalidateTarget(target, window);
+        if (!IsTargetForeground(window))
+            throw new InvalidOperationException("The desktop target must be foreground before preparing the cursor.");
+
+        var geometry = GetClientGeometry(window);
+        var original = GetCursorPosition();
+        var plan = PlanCursorPreparation(
+            original,
+            geometry.X,
+            geometry.Y,
+            geometry.Width,
+            geometry.Height,
+            deltaX,
+            deltaY);
+        EnsureNoMouseButtonDown(NativeMethods.GetAsyncKeyState);
+        if (!plan.Repositioned)
+            return plan;
+
+        SetCursorPosition(plan.PreparedPosition.X, plan.PreparedPosition.Y);
+        var actual = GetCursorPosition();
+        if (actual != plan.PreparedPosition)
+            throw new InvalidOperationException(
+                $"Cursor placement verification failed. Expected {plan.PreparedPosition}, found {actual}.");
+        RevalidateTarget(target, window);
+        if (!IsTargetForeground(window))
+            throw new InvalidOperationException("The desktop target lost foreground during cursor preparation.");
+        return plan;
     }
 
     public static ushort ScanCodeFor(char key) => char.ToLowerInvariant(key) switch
@@ -323,6 +400,71 @@ public static class WindowsControlDesktop
         if (width <= 0 || height <= 0)
             throw new InvalidOperationException("The target client area is empty.");
         return new DesktopPoint(checked(x + (width / 2)), checked(y + (height / 2)));
+    }
+
+    private static CursorPreparation PlanCursorPreparation(
+        DesktopPoint cursor,
+        int clientX,
+        int clientY,
+        int clientWidth,
+        int clientHeight,
+        int deltaX,
+        int deltaY)
+    {
+        ValidateCaptureDimensions(clientWidth, clientHeight);
+        var right = checked((long)clientX + clientWidth - 1);
+        var bottom = checked((long)clientY + clientHeight - 1);
+        if (right is < int.MinValue or > int.MaxValue || bottom is < int.MinValue or > int.MaxValue)
+            throw new InvalidOperationException("The target client geometry exceeds desktop coordinate bounds.");
+
+        var maximumDelta = Math.Max(Math.Abs((long)deltaX), Math.Abs((long)deltaY));
+        var requiredHeadroom = CursorSafetyPixels + maximumDelta;
+        var hasHeadroom = HasRequiredHeadroom(
+            cursor, clientX, clientY, right, bottom, requiredHeadroom);
+        if (hasHeadroom)
+            return new CursorPreparation(cursor, cursor, Repositioned: false);
+
+        var center = GetClientCenter(clientX, clientY, clientWidth, clientHeight);
+        if (!HasRequiredHeadroom(center, clientX, clientY, right, bottom, requiredHeadroom))
+            throw new InvalidOperationException(
+                $"The target client area cannot provide {requiredHeadroom} pixels of cursor headroom.");
+        return new CursorPreparation(cursor, center, Repositioned: true);
+    }
+
+    private static bool HasRequiredHeadroom(
+        DesktopPoint point,
+        int clientX,
+        int clientY,
+        long right,
+        long bottom,
+        long requiredHeadroom) =>
+        (long)point.X - clientX >= requiredHeadroom &&
+        right - point.X >= requiredHeadroom &&
+        (long)point.Y - clientY >= requiredHeadroom &&
+        bottom - point.Y >= requiredHeadroom;
+
+    private static string[] DecodePressedInputs(Func<int, short> getState)
+    {
+        ArgumentNullException.ThrowIfNull(getState);
+        return DiagnosticInputs
+            .Where(input => (getState(input.VirtualKey) & KeyStateDownMask) != 0)
+            .Select(input => input.Name)
+            .ToArray();
+    }
+
+    private static bool IsAnyMouseButtonDown(Func<int, short> getState)
+    {
+        ArgumentNullException.ThrowIfNull(getState);
+        return (getState(VirtualKeyLeftMouse) & KeyStateDownMask) != 0 ||
+            (getState(VirtualKeyRightMouse) & KeyStateDownMask) != 0 ||
+            (getState(VirtualKeyMiddleMouse) & KeyStateDownMask) != 0;
+    }
+
+    private static void EnsureNoMouseButtonDown(Func<int, short> getState)
+    {
+        if (IsAnyMouseButtonDown(getState))
+            throw new InvalidOperationException(
+                "Cursor preparation is blocked while Windows reports a mouse button down.");
     }
 
     private static bool IsTargetForeground(IntPtr targetWindow)
@@ -605,6 +747,9 @@ public static class WindowsControlDesktop
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool SetCursorPos(int x, int y);
+
+        [DllImport("user32.dll")]
+        internal static extern short GetAsyncKeyState(int virtualKey);
 
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern IntPtr GetDC(IntPtr window);

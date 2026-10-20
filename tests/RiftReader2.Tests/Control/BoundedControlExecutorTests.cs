@@ -108,6 +108,90 @@ public sealed class BoundedControlExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_CountsCameraSetupAgainstHoldFromFirstSuccessfulPress()
+    {
+        var input = new RecordingInput();
+        var clock = new ManualTimeProvider();
+        var delays = new List<TimeSpan>();
+        var buttonDownAt = TimeSpan.Zero;
+        var buttonUpAt = TimeSpan.Zero;
+        input.OperationRecorded = operation =>
+        {
+            if (operation == "ButtonDown:right")
+                buttonDownAt = clock.GetElapsedTime(0);
+            else if (operation == "MoveRelative:10,-15")
+                clock.Advance(TimeSpan.FromMilliseconds(27));
+            else if (operation == "ButtonUp:right")
+                buttonUpAt = clock.GetElapsedTime(0);
+        };
+        var executor = Executor(input, clock, delay => delays.Add(delay));
+
+        var result = await executor.ExecuteAsync(
+            new([], 100, "right", DeltaX: 10, DeltaY: -15));
+
+        Assert.True(result.DeliverySucceeded);
+        Assert.Equal(TimeSpan.FromMilliseconds(73), delays.Aggregate(TimeSpan.Zero, (sum, delay) => sum + delay));
+        Assert.Equal(TimeSpan.FromMilliseconds(100), buttonUpAt - buttonDownAt);
+        Assert.Equal(TimeSpan.FromMilliseconds(100), result.ObservedDuration);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ExhaustedHoldBudgetDoesNotPressAnotherChordKey()
+    {
+        var input = new RecordingInput();
+        var clock = new ManualTimeProvider();
+        var advanced = false;
+        var delayCalled = false;
+        input.OperationRecorded = operation =>
+        {
+            if (operation == "IsTargetCurrent"
+                && input.ControlOperations.Contains("KeyDown:w", StringComparer.Ordinal)
+                && !advanced)
+            {
+                advanced = true;
+                clock.Advance(TimeSpan.FromMilliseconds(20));
+            }
+        };
+        var executor = new BoundedControlExecutor(
+            input,
+            clock,
+            (_, _) =>
+            {
+                delayCalled = true;
+                return Task.CompletedTask;
+            });
+
+        var result = await executor.ExecuteAsync(new(["w", "a"], 20));
+
+        Assert.False(result.DeliverySucceeded);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Contains("bounded hold elapsed", result.Error, StringComparison.Ordinal);
+        Assert.False(delayCalled);
+        Assert.Equal(["KeyDown:w", "KeyUp:a", "KeyUp:w"], input.ControlOperations);
+        Assert.Equal(TimeSpan.FromMilliseconds(20), result.ObservedDuration);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CancellationAfterFirstPressPreventsRemainingChordPresses()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var input = new RecordingInput();
+        input.OperationRecorded = operation =>
+        {
+            if (operation == "KeyDown:w")
+                cancellation.Cancel();
+        };
+
+        var result = await Executor(input)
+            .ExecuteAsync(new(["w", "a"], 20), cancellation.Token);
+
+        Assert.True(result.Cancelled);
+        Assert.False(result.DeliverySucceeded);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Equal(["KeyDown:w", "KeyUp:a", "KeyUp:w"], input.ControlOperations);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_RechecksTargetAfterTheFinalDelayBeforeReportingDelivery()
     {
         var input = new RecordingInput();
@@ -293,6 +377,8 @@ public sealed class BoundedControlExecutorTests
 
         internal List<string> Operations { get; } = [];
 
+        internal Action<string>? OperationRecorded { get; set; }
+
         internal string[] ControlOperations => Operations
             .Where(static operation => operation != "IsTargetCurrent")
             .ToArray();
@@ -318,6 +404,7 @@ public sealed class BoundedControlExecutorTests
         private void Record(string operation)
         {
             Operations.Add(operation);
+            OperationRecorded?.Invoke(operation);
             if (failures.Contains(operation))
                 throw new InvalidOperationException($"synthetic failure: {operation}");
         }

@@ -4,7 +4,10 @@ import http.client
 import importlib.util
 import json
 from pathlib import Path
+import re
+import shutil
 import socket
+import subprocess
 import sys
 import tempfile
 import threading
@@ -323,6 +326,80 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("outcome && outcome.cancelled === true", panel)
         self.assertGreaterEqual(panel.count("generation === controlGeneration"), 8)
 
+    def test_release_preserves_same_session_action_result_without_overwriting_release_state(self):
+        panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
+            encoding="utf-8")
+        release = panel[panel.index("async function releaseCurrent"):
+                        panel.index("async function pump")]
+        self.assertIn("const generation = controlGeneration;", release)
+        self.assertNotIn("++controlGeneration", release)
+        self.assertLess(release.index("releaseSequence += 1;"),
+                        release.index("await api('/api/release'"))
+
+        pump = panel[panel.index("async function pump"):
+                     panel.index("$('statusButton').onclick")]
+        self.assertIn("const actionReleaseSequence = releaseSequence;", pump)
+        self.assertIn("releaseOccurredAfter(actionReleaseSequence, releaseSequence)", pump)
+        self.assertIn("if (!preserveOperational)", panel)
+        self.assertGreaterEqual(panel.count("const generation = ++controlGeneration;"), 3)
+
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is unavailable for the panel timing-policy check")
+        helper = re.search(
+            r"function releaseOccurredAfter\(actionReleaseSequence, currentReleaseSequence\) \{.*?\n  \}",
+            panel, re.DOTALL)
+        self.assertIsNotNone(helper)
+        probe = helper.group(0) + "\nconsole.log(JSON.stringify([" \
+            "releaseOccurredAfter(7, 7), releaseOccurredAfter(7, 8)]));"
+        completed = subprocess.run(
+            [node, "-e", probe], capture_output=True, text=True, check=False, timeout=5)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), [False, True])
+
+    def test_cancelled_result_requires_confirmed_release_and_clears_uncertain_state(self):
+        panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
+            encoding="utf-8")
+        helper = re.search(
+            r"function resultRequiresLocalDisarm\(value, outcome\) \{.*?\n  \}",
+            panel, re.DOTALL)
+        self.assertIsNotNone(helper)
+        self.assertIn("clearLocalControlState(", panel)
+        self.assertIn("held.clear();", panel)
+        self.assertIn("setArmed(null);", panel)
+        self.assertIn("requireFreshCapture(message);", panel)
+        self.assertIn("Input cancelled; release succeeded.", panel)
+        self.assertIn("Input cancelled, but release or control state is uncertain.", panel)
+        self.assertNotIn("cancelled and released", panel)
+
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is unavailable for the panel result-policy check")
+        cases = [
+            ({"recoveryRequired": False}, {
+                "deliverySucceeded": True, "releaseSucceeded": True, "cancelled": True}),
+            ({"recoveryRequired": False}, {
+                "deliverySucceeded": True, "releaseSucceeded": False, "cancelled": True}),
+            ({"recoveryRequired": True}, {
+                "deliverySucceeded": True, "releaseSucceeded": True, "cancelled": True}),
+            ({"recoveryRequired": False}, {
+                "deliverySucceeded": True, "releaseSucceeded": True, "cancelled": False,
+                "requiresCallerDisarm": True}),
+            ({"recoveryRequired": False}, {
+                "deliverySucceeded": True, "releaseSucceeded": True, "cancelled": False,
+                "stateUncertain": True}),
+            ({"recoveryRequired": False}, {
+                "deliverySucceeded": True, "releaseSucceeded": True, "cancelled": False,
+                "targetLost": True}),
+        ]
+        probe = helper.group(0) + "\nconst cases = " + json.dumps(cases) + ";\n" \
+            "console.log(JSON.stringify(cases.map(([value, outcome]) => " \
+            "resultRequiresLocalDisarm(value, outcome))));"
+        completed = subprocess.run(
+            [node, "-e", probe], capture_output=True, text=True, check=False, timeout=5)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), [False, True, True, True, True, True])
+
     def test_browser_diagnostics_mark_unsafe_integers_and_capture_state(self):
         panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
             encoding="utf-8")
@@ -332,6 +409,59 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("screen.removeAttribute('src')", panel)
         self.assertIn("screen.alt = 'No current reviewed capture'", panel)
         self.assertIn("screen.alt = 'Fresh control capture awaiting operator review'", panel)
+
+    def test_supervised_panel_exposes_bounded_camera_and_release_feedback(self):
+        panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
+            encoding="utf-8")
+        self.assertIn("Off — movement keys only", panel)
+        self.assertIn("Right button — yaw / pitch", panel)
+        self.assertIn("Left button — orbit", panel)
+        self.assertIn("const pending = surface.requestPointerLock()", panel)
+        self.assertIn("Pointer lock failed:", panel)
+        self.assertIn("document.addEventListener('keyup'", panel)
+        self.assertIn("!held.has(key)", panel)
+        self.assertIn("document.addEventListener('visibilitychange'", panel)
+        self.assertIn("if (stopActive) return", panel)
+        self.assertIn("if (armToken === expectedToken) void stop('arm expired')", panel)
+        self.assertIn("Screenshot review expires in ${seconds}s.", panel)
+        self.assertIn("Controls released; reviewed session remains armed.", panel)
+        self.assertIn("Input inserted and released; RIFT response is not verified.", panel)
+        self.assertIn("(dx !== 0 || dy !== 0) ? ($('mouseButton').value || null) : null", panel)
+        self.assertIn("holdMilliseconds:(keys.length || mouseButton) ? 100 : 20", panel)
+        self.assertIn("captureId = null;\n      captureDeadline = 0;", panel)
+        self.assertIn("document.pointerLockElement === surface || dragPointerId !== null", panel)
+
+    def test_bounded_drag_is_default_and_releases_every_active_transition(self):
+        panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
+            encoding="utf-8")
+        self.assertLess(
+            panel.index('<option value="drag">'),
+            panel.index('<option value="lock">'))
+        self.assertIn("Default: hold the left mouse button here and drag", panel)
+        self.assertIn("surface.addEventListener('pointerdown'", panel)
+        self.assertIn("if (event.button !== 0 || dragPointerId !== null) return", panel)
+        self.assertIn("surface.setPointerCapture(event.pointerId)", panel)
+        self.assertIn("Pointer capture failed:", panel)
+        self.assertIn("surface.addEventListener('pointermove'", panel)
+        self.assertIn("dragPointerId !== event.pointerId", panel)
+        self.assertIn("(event.buttons & 1) === 0", panel)
+        self.assertIn("event.clientX - dragLastX", panel)
+        self.assertIn("event.clientY - dragLastY", panel)
+        self.assertIn("schedulePointerPump()", panel)
+        self.assertIn("setTimeout(() => { pointerTimer = null; requestPump(); }, 16)", panel)
+        self.assertIn("surface.addEventListener('pointerup'", panel)
+        self.assertIn("surface.addEventListener('pointercancel'", panel)
+        self.assertIn("surface.addEventListener('lostpointercapture'", panel)
+        self.assertNotIn("surface.addEventListener('click'", panel)
+        self.assertIn("$('pointerMode').value === 'lock'", panel)
+        self.assertIn("void stop(reason);", panel)
+
+        finish = panel[panel.index("function finishBoundedDrag"):
+                       panel.index("surface.addEventListener('pointerup'")]
+        self.assertLess(finish.index("clearDragCapture();"),
+                        finish.index("void releaseCurrent(reason);"))
+        self.assertLess(finish.index("deltaX = 0;"),
+                        finish.index("void releaseCurrent(reason);"))
 
 
 if __name__ == "__main__":

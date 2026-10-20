@@ -17,7 +17,7 @@
     button:disabled { opacity:.45; cursor:not-allowed; }
     textarea { width:100%; box-sizing:border-box; min-height:56px; background:#0f1319; color:#e8edf5; border:1px solid #3a4556; }
     #screen { display:block; width:100%; min-height:240px; object-fit:contain; background:#07090d; border:1px solid #303948; }
-    #surface { min-height:170px; display:grid; place-items:center; margin-top:12px; border:2px dashed #4d6078; border-radius:7px; outline:none; user-select:none; }
+    #surface { min-height:170px; display:grid; place-items:center; margin-top:12px; border:2px dashed #4d6078; border-radius:7px; outline:none; user-select:none; touch-action:none; }
     #surface:focus { border-color:#72a7ea; background:#111a25; }
     .row { margin:8px 0; }
     .state { font-weight:650; }
@@ -43,17 +43,22 @@
       <label><input id="reviewCheck" type="checkbox"> I reviewed this fresh screenshot: RIFT is in-world and chat/text entry is closed.</label>
       <textarea id="reviewNote" maxlength="512" placeholder="Review note (at least 12 characters)"></textarea>
       <button id="armButton" disabled>Arm for 15 seconds</button>
+      <div id="reviewState" class="state neutral" aria-live="polite">Fresh screenshot required.</div>
       <div id="surface" tabindex="0">
         <div>
           <strong>Focused control surface</strong><br>
           Hold W/A/S/D/Q/E for bounded 100 ms actions.<br>
-          Click to lock pointer; mouse deltas are bounded to ±200.<br>
-          Key release cancels the current pulse. Blur or pointer-lock exit sends STOP.
+          Default: hold the left mouse button here and drag; mouse deltas are bounded to ±200.<br>
+          Drag release sends RELEASE. Blur or pointer-lock exit sends STOP.
         </div>
       </div>
-      <label>Mouse drag button
-        <select id="mouseButton"><option value="">None</option><option value="right">Right (camera)</option><option value="left">Left</option></select>
+      <label>Camera drag mode
+        <select id="mouseButton"><option value="">Off — movement keys only</option><option value="right">Right button — yaw / pitch</option><option value="left">Left button — orbit</option></select>
       </label>
+      <label>Pointer input mode
+        <select id="pointerMode"><option value="drag">Bounded drag — browser compatible</option><option value="lock">Pointer Lock — compatible browsers only</option></select>
+      </label>
+      <div id="operatorState" class="state neutral" aria-live="polite">Disarmed; capture and review before input.</div>
     </section>
     <section class="card">
       <div id="summary" class="state">Token required from launch URL fragment.</div>
@@ -65,13 +70,17 @@
   'use strict';
   let token = decodeURIComponent(location.hash.slice(1));
   if (location.hash) history.replaceState(null, '', location.pathname);
-  let captureId = null, armToken = null, armDeadline = 0;
-  let requestActive = false, releaseActive = false, pumpRequested = false, pointerWasLocked = false;
-  let controlGeneration = 0, pointerTimer = null;
+  let captureId = null, captureDeadline = 0, armToken = null, armDeadline = 0;
+  let requestActive = false, releaseActive = false, stopActive = false;
+  let pumpRequested = false, pointerWasLocked = false;
+  let controlGeneration = 0, releaseSequence = 0;
+  let pointerTimer = null, armExpiryTimer = null, reviewTimer = null;
+  let dragPointerId = null, dragLastX = 0, dragLastY = 0;
   const held = new Set();
   let deltaX = 0, deltaY = 0, wheelNotches = 0;
   const $ = id => document.getElementById(id);
   const result = $('result'), summary = $('summary'), surface = $('surface'), screen = $('screen');
+  const operatorState = $('operatorState'), reviewState = $('reviewState');
   const allowed = new Set(['w','a','s','d','q','e']);
 
   function printableDiagnostic(value) {
@@ -93,28 +102,130 @@
       : (tone === 'neutral' ? 'No successful input delivery claimed.' : 'Request failed.');
     summary.className = 'state ' + tone;
   }
-  function showControlResult(value) {
+  function releaseOccurredAfter(actionReleaseSequence, currentReleaseSequence) {
+    return currentReleaseSequence !== actionReleaseSequence;
+  }
+  function resultRequiresLocalDisarm(value, outcome) {
+    return outcome === null || value.recoveryRequired === true
+      || outcome.releaseSucceeded !== true
+      || outcome.requiresCallerDisarm === true
+      || outcome.stateUncertain === true
+      || outcome.targetLost === true
+      || (outcome.deliverySucceeded !== true && outcome.cancelled !== true);
+  }
+  function clearLocalControlState(message) {
+    held.clear();
+    deltaX = 0;
+    deltaY = 0;
+    wheelNotches = 0;
+    pumpRequested = false;
+    if (pointerTimer !== null) clearTimeout(pointerTimer);
+    pointerTimer = null;
+    clearDragCapture();
+    if (document.pointerLockElement === surface) {
+      pointerWasLocked = false;
+      document.exitPointerLock();
+    }
+    setArmed(null);
+    requireFreshCapture(message);
+  }
+  function showControlResult(value, preserveOperational=false) {
     const outcome = value && typeof value.result === 'object' ? value.result : null;
-    if (outcome && outcome.cancelled === true) { show(value, 'neutral'); return; }
+    const requiresDisarm = resultRequiresLocalDisarm(value, outcome);
+    if (outcome && outcome.cancelled === true) {
+      if (!requiresDisarm) {
+        show(value, 'neutral');
+        summary.textContent = 'Input cancelled; release succeeded.';
+        if (!preserveOperational)
+          setOperational('Current input pulse was cancelled and safely released.', 'neutral');
+      } else {
+        clearLocalControlState(
+          'Cancelled input did not confirm a safe release; recover if required, then capture again.');
+        show(value, false);
+        summary.textContent = 'Input cancelled, but release or control state is uncertain.';
+        setOperational(
+          'Cancellation did not confirm a safe release. Controls disarmed; inspect the result and recover if required.',
+          'bad');
+      }
+      return;
+    }
     const succeeded = outcome !== null && outcome.deliverySucceeded === true
-      && outcome.releaseSucceeded === true && value.recoveryRequired === false;
+      && outcome.releaseSucceeded === true && value.recoveryRequired === false
+      && !requiresDisarm;
+    if (requiresDisarm) clearLocalControlState(
+      'Input result left control state uncertain; recover if required, then capture again.');
     show(value, succeeded);
+    summary.textContent = succeeded
+      ? 'Input inserted and released; RIFT response is not verified.'
+      : (requiresDisarm ? 'Control state is uncertain; local controls were disarmed.'
+        : 'Input delivery or release was not confirmed.');
+    if (requiresDisarm) {
+      setOperational(
+        'Input delivery or release was not confirmed. Controls disarmed; inspect the result and recover if required.',
+        'bad');
+    } else if (!preserveOperational) {
+      if (succeeded) setOperational('Input inserted and released; RIFT response is not verified.', 'good');
+      else setOperational('Input delivery or release was not confirmed. Review the result.', 'bad');
+    }
+  }
+  function setOperational(message, tone='neutral') {
+    operatorState.textContent = message;
+    operatorState.className = 'state ' + tone;
   }
   function setArmed(value, seconds=0) {
+    if (armExpiryTimer !== null) clearTimeout(armExpiryTimer);
+    armExpiryTimer = null;
     armToken = value;
     armDeadline = value ? Date.now() + seconds * 1000 : 0;
     $('armedState').textContent = value ? `Armed (${seconds}s maximum)` : 'Disarmed';
     $('armedState').className = 'state ' + (value ? 'good' : 'bad');
+    if (value) {
+      const expectedToken = value;
+      armExpiryTimer = setTimeout(() => {
+        if (armToken === expectedToken) void stop('arm expired');
+      }, seconds * 1000);
+    }
   }
-  function requireFreshCapture() {
+  function updateReviewFeedback() {
+    if (!captureId || captureDeadline <= Date.now()) {
+      if (captureId) requireFreshCapture('Screenshot review expired; request a fresh screenshot.');
+      return;
+    }
+    const seconds = Math.max(1, Math.ceil((captureDeadline - Date.now()) / 1000));
+    reviewState.textContent = `Screenshot review expires in ${seconds}s.`;
+    reviewState.className = 'state neutral';
+    updateArmAvailability();
+  }
+  function updateArmAvailability() {
+    const noteLength = $('reviewNote').value.trim().length;
+    const noteReady = noteLength >= 12 && noteLength <= 512;
+    $('armButton').disabled = !captureId || captureDeadline <= Date.now()
+      || !$('reviewCheck').checked || !noteReady;
+  }
+  function startReviewWindow(seconds) {
+    if (reviewTimer !== null) clearInterval(reviewTimer);
+    captureDeadline = Date.now() + seconds * 1000;
+    updateReviewFeedback();
+    reviewTimer = setInterval(updateReviewFeedback, 1000);
+  }
+  function requireFreshCapture(message='Fresh screenshot required.') {
+    if (reviewTimer !== null) clearInterval(reviewTimer);
+    reviewTimer = null;
     captureId = null;
+    captureDeadline = 0;
     screen.removeAttribute('src');
     screen.alt = 'No current reviewed capture';
     $('reviewCheck').checked = false;
     $('armButton').disabled = true;
+    reviewState.textContent = message;
+    reviewState.className = 'state neutral';
   }
   function authorized() {
-    if (!token) { show('Missing operator token. Open the exact launch URL printed by control_host.py.', false); return false; }
+    if (!token) {
+      show('Missing operator token. Open the exact launch URL printed by control_host.py.', false);
+      setOperational('Operator token missing; controls are unavailable.', 'bad');
+      return false;
+    }
     return true;
   }
   async function api(path, method='GET', body=null) {
@@ -129,19 +240,45 @@
     if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
     return value;
   }
+  function clearDragCapture() {
+    const pointerId = dragPointerId;
+    dragPointerId = null;
+    dragLastX = 0;
+    dragLastY = 0;
+    if (pointerId !== null && typeof surface.hasPointerCapture === 'function'
+        && surface.hasPointerCapture(pointerId)
+        && typeof surface.releasePointerCapture === 'function') {
+      try { surface.releasePointerCapture(pointerId); }
+      catch (_) { /* Capture may already have been lost by the browser. */ }
+    }
+  }
   async function stop(reason) {
+    if (stopActive) return;
+    stopActive = true;
     const generation = ++controlGeneration;
+    if (document.pointerLockElement === surface) {
+      pointerWasLocked = false;
+      document.exitPointerLock();
+    }
+    clearDragCapture();
     held.clear(); deltaX = 0; deltaY = 0; wheelNotches = 0; setArmed(null); requireFreshCapture();
+    setOperational(`${reason}: releasing controls and disarming.`, 'neutral');
     try {
       const value = await api('/api/stop', 'POST', {});
-      if (generation === controlGeneration) show(value, 'neutral');
+      if (generation === controlGeneration) {
+        setOperational(value.recoveryRequired
+          ? `${reason}: recovery is required.` : `${reason}: controls released; disarmed.`,
+          value.recoveryRequired ? 'bad' : 'neutral');
+      }
     } catch (error) {
-      if (generation === controlGeneration) show(`${reason}: ${error.message}`, false);
+      if (generation === controlGeneration) setOperational(`${reason}: ${error.message}`, 'bad');
+    } finally {
+      stopActive = false;
     }
   }
   function stillArmed() {
     if (!armToken || Date.now() >= armDeadline) {
-      if (armToken) { setArmed(null); requireFreshCapture(); }
+      if (armToken) void stop('arm expired');
       return false;
     }
     return true;
@@ -160,16 +297,21 @@
     deltaX = 0; deltaY = 0; wheelNotches = 0; pumpRequested = false;
     if (releaseActive || !stillArmed()) return;
     releaseActive = true;
-    const generation = ++controlGeneration;
+    const generation = controlGeneration;
+    releaseSequence += 1;
     try {
       const value = await api('/api/release', 'POST', {});
       if (value.recoveryRequired || value.armed === false) {
         held.clear(); setArmed(null); requireFreshCapture();
       }
-      if (generation === controlGeneration) show(value, 'neutral');
+      if (generation === controlGeneration) setOperational(
+        value.recoveryRequired ? 'Release incomplete; recovery is required.'
+          : (value.armed === false ? 'Controls released; session is disarmed.'
+            : 'Controls released; reviewed session remains armed.'),
+        value.recoveryRequired ? 'bad' : 'neutral');
     } catch (error) {
       held.clear(); setArmed(null); requireFreshCapture();
-      if (generation === controlGeneration) show(`${reason}: ${error.message}`, false);
+      if (generation === controlGeneration) setOperational(`${reason}: ${error.message}`, 'bad');
     } finally {
       releaseActive = false;
       if (held.size && stillArmed()) requestPump();
@@ -182,6 +324,7 @@
     if (!keys.length && dx === 0 && dy === 0 && wheel === 0) { pumpRequested = false; return; }
     pumpRequested = false; requestActive = true;
     const generation = controlGeneration;
+    const actionReleaseSequence = releaseSequence;
     try {
       let action;
       if (wheel !== 0) {
@@ -190,17 +333,19 @@
           deltaX:0, deltaY:0, wheelNotches:wheel};
       } else {
         deltaX -= dx; deltaY -= dy;
-        const mouseButton = $('mouseButton').value || null;
-        action = {keys, holdMilliseconds:keys.length ? 100 : 20, mouseButton,
+        const mouseButton = (dx !== 0 || dy !== 0) ? ($('mouseButton').value || null) : null;
+        action = {keys, holdMilliseconds:(keys.length || mouseButton) ? 100 : 20, mouseButton,
           deltaX:dx, deltaY:dy, wheelNotches:0};
       }
       const value = await api('/api/action', 'POST', {armToken, action:{
         ...action
       }});
-      if (generation === controlGeneration) showControlResult(value);
+      if (generation === controlGeneration) showControlResult(
+        value, releaseOccurredAfter(actionReleaseSequence, releaseSequence));
     } catch (error) {
       if (generation === controlGeneration) {
-        show(error.message, false); setArmed(null); requireFreshCapture(); held.clear();
+        show(error.message, false); setOperational(`Action failed: ${error.message}`, 'bad');
+        setArmed(null); requireFreshCapture(); held.clear();
       }
     } finally {
       requestActive = false;
@@ -215,32 +360,61 @@
     try {
       const value = await api('/api/status');
       if (generation === controlGeneration) show(value);
-    } catch (e) { if (generation === controlGeneration) show(e.message, false); }
+    } catch (e) {
+      if (generation === controlGeneration) {
+        show(e.message, false); setOperational(`Status failed: ${e.message}`, 'bad');
+      }
+    }
   };
   $('captureButton').onclick = async () => {
-    const generation = controlGeneration;
-    setArmed(null); requireFreshCapture();
+    const generation = ++controlGeneration;
+    setArmed(null); requireFreshCapture('Requesting fresh screenshot…');
+    setOperational('Waiting for a fresh in-world screenshot.', 'neutral');
     try {
       const value = await api('/api/capture', 'POST', {});
       if (generation !== controlGeneration) return;
       captureId = value.captureId;
       screen.src = `data:image/bmp;base64,${value.imageBase64}`;
       screen.alt = 'Fresh control capture awaiting operator review';
-      $('armButton').disabled = false;
+      const reviewSeconds = Number.isInteger(value.reviewExpiresInSeconds)
+        && value.reviewExpiresInSeconds > 0 ? value.reviewExpiresInSeconds : 45;
+      startReviewWindow(reviewSeconds);
+      setOperational('Review the screenshot, confirm chat is closed, and enter a review note.', 'neutral');
       show({...value, imageBase64:`[${value.imageBase64.length} encoded characters]`});
-    } catch (e) { if (generation === controlGeneration) show(e.message, false); }
+    } catch (e) {
+      if (generation === controlGeneration) {
+        show(e.message, false); setOperational(`Capture failed: ${e.message}`, 'bad');
+        requireFreshCapture('Capture failed; request a fresh screenshot.');
+      }
+    }
   };
   $('armButton').onclick = async () => {
-    if (!captureId || !$('reviewCheck').checked) { show('Review checkbox is required.', false); return; }
-    const generation = controlGeneration;
+    updateReviewFeedback();
+    if (!captureId || captureDeadline <= Date.now()) {
+      setOperational('Screenshot review expired; request a fresh screenshot.', 'bad'); return;
+    }
+    if (!$('reviewCheck').checked || $('reviewNote').value.trim().length < 12) {
+      setOperational('Confirm the screenshot and enter a review note of at least 12 characters.', 'bad'); return;
+    }
+    const generation = ++controlGeneration;
     try {
       const value = await api('/api/arm', 'POST', {captureId, reviewNote:$('reviewNote').value});
       if (generation !== controlGeneration) return;
       if (!value.armToken || value.expiresInSeconds !== 15) throw new Error('guest returned an invalid arm result');
       setArmed(value.armToken, value.expiresInSeconds); $('armButton').disabled = true;
+      captureId = null;
+      captureDeadline = 0;
+      if (reviewTimer !== null) clearInterval(reviewTimer);
+      reviewTimer = null;
+      reviewState.textContent = 'Screenshot reviewed; 15-second control session active.';
+      screen.alt = 'Reviewed control capture for active session';
+      setOperational('Armed for 15 seconds. Hold movement keys or select a camera mode.', 'neutral');
       show({...value, armToken:'[redacted]'}); surface.focus();
     } catch (e) {
-      if (generation === controlGeneration) { setArmed(null); show(e.message, false); }
+      if (generation === controlGeneration) {
+        setArmed(null); requireFreshCapture('Arm failed; request and review a fresh screenshot.');
+        show(e.message, false); setOperational(`Arm failed: ${e.message}`, 'bad');
+      }
     }
   };
   $('stopButton').onclick = () => void stop('operator stop');
@@ -249,24 +423,109 @@
     held.clear(); deltaX = 0; deltaY = 0; wheelNotches = 0; setArmed(null); requireFreshCapture();
     try {
       const value = await api('/api/recover', 'POST', {});
-      if (generation === controlGeneration) show(value, 'neutral');
+      if (generation === controlGeneration) {
+        show(value, 'neutral');
+        setOperational(value.recoveryRequired ? 'Recovery incomplete; manual review required.'
+          : 'Recovery completed; capture again before input.', value.recoveryRequired ? 'bad' : 'neutral');
+      }
     } catch (error) {
-      if (generation === controlGeneration) show(error.message, false);
+      if (generation === controlGeneration) {
+        show(error.message, false); setOperational(`Recovery failed: ${error.message}`, 'bad');
+      }
     }
   };
-  surface.addEventListener('click', () => { if (stillArmed()) surface.requestPointerLock(); });
+  $('reviewCheck').addEventListener('change', updateArmAvailability);
+  $('reviewNote').addEventListener('input', updateArmAvailability);
+  function pointerModeChanged(reason) {
+    deltaX = 0;
+    deltaY = 0;
+    if (pointerTimer !== null) clearTimeout(pointerTimer);
+    pointerTimer = null;
+    if (document.pointerLockElement === surface || dragPointerId !== null) {
+      void stop(reason);
+      return;
+    }
+    if (!$('mouseButton').value)
+      setOperational('Camera mode off; movement keys remain available.', 'neutral');
+    else if ($('pointerMode').value === 'drag')
+      setOperational('Camera mode selected; hold left mouse on the control surface and drag.', 'neutral');
+    else
+      setOperational('Camera mode selected; press the control surface to request Pointer Lock.', 'neutral');
+  }
+  $('mouseButton').addEventListener('change', () => pointerModeChanged('camera mode changed'));
+  $('pointerMode').addEventListener('change', () => pointerModeChanged('pointer input mode changed'));
+  surface.addEventListener('pointerdown', event => {
+    surface.focus();
+    if (event.button !== 0 || dragPointerId !== null) return;
+    if (!stillArmed()) { setOperational('Capture, review, and arm before input.', 'bad'); return; }
+    if (!$('mouseButton').value) {
+      setOperational('Movement keys ready. Select Right yaw/pitch or Left orbit for camera control.', 'neutral');
+      return;
+    }
+    event.preventDefault();
+    if ($('pointerMode').value === 'lock') {
+      try {
+        const pending = surface.requestPointerLock();
+        if (pending && typeof pending.catch === 'function')
+          pending.catch(error => setOperational(`Pointer lock failed: ${error.message}`, 'bad'));
+      } catch (error) {
+        setOperational(`Pointer lock failed: ${error.message}`, 'bad');
+      }
+      return;
+    }
+    try {
+      surface.setPointerCapture(event.pointerId);
+      dragPointerId = event.pointerId;
+      dragLastX = event.clientX;
+      dragLastY = event.clientY;
+    } catch (error) {
+      clearDragCapture();
+      setOperational(`Pointer capture failed: ${error.message}`, 'bad');
+      return;
+    }
+    setOperational('Bounded drag active; release left mouse to release camera input.', 'neutral');
+  });
+  surface.addEventListener('pointermove', event => {
+    if (dragPointerId !== event.pointerId || !$('mouseButton').value || !stillArmed()) return;
+    if ((event.buttons & 1) === 0) {
+      finishBoundedDrag(event, 'pointer drag ended');
+      return;
+    }
+    const movementX = event.clientX - dragLastX;
+    const movementY = event.clientY - dragLastY;
+    dragLastX = event.clientX;
+    dragLastY = event.clientY;
+    if (movementX === 0 && movementY === 0) return;
+    event.preventDefault();
+    deltaX += movementX;
+    deltaY += movementY;
+    schedulePointerPump();
+  });
+  function finishBoundedDrag(event, reason) {
+    if (dragPointerId !== event.pointerId) return;
+    clearDragCapture();
+    deltaX = 0;
+    deltaY = 0;
+    if (pointerTimer !== null) clearTimeout(pointerTimer);
+    pointerTimer = null;
+    void releaseCurrent(reason);
+  }
+  surface.addEventListener('pointerup', event => finishBoundedDrag(event, 'pointer drag ended'));
+  surface.addEventListener('pointercancel', event => finishBoundedDrag(event, 'pointer drag cancelled'));
+  surface.addEventListener('lostpointercapture', event => finishBoundedDrag(event, 'pointer capture lost'));
   surface.addEventListener('keydown', event => {
     const key = event.key.toLowerCase();
     if (!allowed.has(key) || event.repeat || !stillArmed()) return;
     event.preventDefault(); held.add(key); requestPump();
   });
-  surface.addEventListener('keyup', event => {
+  document.addEventListener('keyup', event => {
     const key = event.key.toLowerCase();
-    if (!allowed.has(key)) return;
+    if (!allowed.has(key) || !held.has(key)) return;
     event.preventDefault(); held.delete(key); void releaseCurrent('key release');
   });
   document.addEventListener('mousemove', event => {
-    if (document.pointerLockElement !== surface || !stillArmed()) return;
+    if ($('pointerMode').value !== 'lock' || document.pointerLockElement !== surface
+        || !stillArmed() || !$('mouseButton').value) return;
     deltaX += event.movementX; deltaY += event.movementY; schedulePointerPump();
   });
   surface.addEventListener('wheel', event => {
@@ -276,10 +535,22 @@
   document.addEventListener('pointerlockchange', () => {
     const locked = document.pointerLockElement === surface;
     if (!locked && pointerWasLocked) void stop('pointer lock exited');
+    else if (locked) setOperational('Pointer locked; move mouse for bounded camera pulses. Esc stops and disarms.', 'neutral');
     pointerWasLocked = locked;
   });
-  window.addEventListener('blur', () => void stop('window blur'));
-  if (token) { summary.textContent = 'Operator token loaded from fragment and removed from the address bar.'; summary.className='state good'; }
+  window.addEventListener('blur', () => {
+    if (armToken || held.size || requestActive || releaseActive || pointerWasLocked || dragPointerId !== null)
+      void stop('window blur');
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && (armToken || held.size || requestActive || releaseActive
+        || pointerWasLocked || dragPointerId !== null))
+      void stop('page hidden');
+  });
+  if (token) {
+    summary.textContent = 'Operator token loaded from fragment and removed from the address bar.';
+    summary.className='state neutral';
+  }
 })();
 </script>
 </body>

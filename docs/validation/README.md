@@ -18,6 +18,7 @@ This directory records actual checks separately from proposed measurements.
 | [Memory discovery](memory-discovery-2026-10-19.md) | Published RIFT map/snapshot/pointer commands, explicit failures, and offline searches on actual captures. |
 | [Native player fields: partial handoff](native-player-fields-2026-10-19.md) | Stationary native/Lua position candidate, failed old health seeds, retained pulse evidence, and unfinished restart qualification. |
 | [Native VM controls](native-vm-controls-2026-10-20.md) | Live movement/chord/camera, stop timing, reconnect, operator panel, and unverified zoom. |
+| [Native controls follow-up](native-vm-controls-followup-2026-10-20.md) | Browser-compatible camera drag, hold timing, cursor policy, release feedback, and wheel diagnosis. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua
