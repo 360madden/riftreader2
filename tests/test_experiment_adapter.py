@@ -5,6 +5,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).parents[1] / "scripts"
@@ -74,6 +75,41 @@ class ExperimentAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Player data unavailable"):
             adapter.sample(after=False)
         self.assertEqual(adapter.readback.calls, 1)
+
+    def test_nonadvancing_or_pre_release_sample_times_out_without_sleeping(self):
+        for sequence, source_time, acquisition in (
+            (1, 11.0, "2026-10-19T12:00:01+00:00"),
+            (2, 10.0, "2026-10-19T12:00:01+00:00"),
+            (2, 11.0, "2026-10-19T12:00:00+00:00"),
+        ):
+            with self.subTest(sequence=sequence, source_time=source_time,
+                              acquisition=acquisition):
+                adapter = self.make_adapter([{
+                    "playerDataUsable": True,
+                    "scanSequence": sequence,
+                    "sourceSampledAt": source_time,
+                    "acquisitionStartedAtUtc": acquisition,
+                }])
+                with patch.object(adapter_module.time, "monotonic", side_effect=[0, 12]), \
+                        patch.object(adapter_module.time, "sleep") as sleep:
+                    with self.assertRaisesRegex(ValueError, "No new post-release"):
+                        adapter.sample(after=True)
+                    sleep.assert_not_called()
+
+    def test_wrong_epoch_or_stale_game_receipt_is_not_retried(self):
+        adapter = self.make_adapter([])
+        adapter.game.sample = lambda config: (_ for _ in ()).throw(
+            Blocked("wrong epoch or stale receipt"))
+        with self.assertRaises(Blocked):
+            adapter.sample(after=True)
+        self.assertEqual(adapter.readback.calls, 0)
+
+    def test_stop_latch_prevents_readback(self):
+        adapter = self.make_adapter([])
+        adapter.stop_path.touch()
+        with self.assertRaises(InterruptedError):
+            adapter.sample(after=True)
+        self.assertEqual(adapter.readback.calls, 0)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ topic below instead of loading every document for each task.
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
+| Active task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | W/S/A/D validation phases, checkpoints, and interruption-safe resumption. |
 | Continuity | [Current status](status.md) | Latest compact handoff. |
 | Planning | [Top 20 proposals](planning/top-20-proposals.md) | Proposed ideas; no implementation order adopted. |
 | Planning | [Open questions](planning/open-questions.md) | Discussion agenda. |

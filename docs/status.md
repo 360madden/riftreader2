@@ -1,6 +1,25 @@
 # Current status
 
-Updated: 2026-10-19 (America/New_York).
+Updated: 2026-10-20 (America/New_York).
+
+## Active supervised movement-control parity work
+
+The [movement-control parity roadmap](planning/movement-control-parity-roadmap.md)
+now has separate successful 100 ms S/A/D trials on Joey's selected RIFT-Lab-1,
+with fresh receiver/observer identity, reviewed screenshots, release delivery,
+and advancing independent API samples. S changed position; A/D produced opposite
+visual viewpoint rotations with unchanged XYZ and confirmed turn bindings.
+Heading/angle remains unmeasured. The controller is stopped with no pending
+release. See the [October 20 record](validation/movement-parity-2026-10-20.md).
+Do not repeat these baselines on resumption; reacquire current identity for any
+new experiment. Next useful discovery remains changed-state health/resource
+capture using the completed targeted-audit tools.
+
+October 20 full gate passed: 273 C# tests, 121 Python tests, 108 Lua assertions,
+22 Lua/C# cases, zero-warning Release build, native synthetic smoke, locked
+restore, replay, formatting/module checks and 229 links. Evidence:
+`artifacts/validation/20261020T105058Z-83f84b40`. Older verification sections
+below describe their own earlier milestones.
 
 ## Direction and completed scope
 

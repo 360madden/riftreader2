@@ -85,6 +85,54 @@ class ExperimentCoreTests(unittest.TestCase):
         self.assertIn("capture_after", adapter.calls)
         self.assertTrue(any("does not verify" in item for item in result["uncertainties"]))
 
+    def test_all_direction_keys_preserve_exact_pulse_at_both_bounds(self):
+        for key in ("w", "s", "a", "d"):
+            for hold in (20, 250):
+                with self.subTest(key=key, hold=hold):
+                    plan = valid_plan()
+                    plan.update(key=key, holdMilliseconds=hold)
+                    adapter = FakeAdapter()
+                    result, _ = self.run_once(adapter, plan)
+                    self.assertEqual(result["status"], "completed")
+                    pulses = [call for call in adapter.calls if isinstance(call, tuple)]
+                    self.assertEqual(pulses, [("pulse", key, hold, "capture-123")])
+                    self.assertLess(adapter.calls.index("capture_before"),
+                                    adapter.calls.index(pulses[0]))
+                    self.assertLess(adapter.calls.index(pulses[0]),
+                                    adapter.calls.index("capture_after"))
+
+    def test_unsupported_keys_fail_before_any_adapter_io(self):
+        for key in ("W", "q", "w+s", "", None, True):
+            with self.subTest(key=key):
+                plan = valid_plan()
+                plan["key"] = key
+                adapter = FakeAdapter()
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / "experiment"
+                    with self.assertRaises(core.ExperimentError):
+                        core.run_experiment(plan, adapter, output)
+                    self.assertFalse(output.exists())
+                self.assertEqual(adapter.calls, [])
+
+    def test_existing_stop_prevents_capture_and_input_for_every_key(self):
+        for key in ("w", "s", "a", "d"):
+            with self.subTest(key=key):
+                plan = valid_plan()
+                plan["key"] = key
+                adapter = FakeAdapter()
+                result, _ = self.run_once(adapter, plan, stop_requested=lambda: True)
+                self.assertEqual(result["status"], "cancelled")
+                self.assertEqual(adapter.calls, ["identity"])
+
+    def test_changed_epoch_after_input_cannot_complete_and_requests_recovery(self):
+        changed = dict(GAME, startTicks=790)
+        adapter = FakeAdapter(identities=[(VM, GAME), (VM, GAME), (VM, changed)])
+        result, _ = self.run_once(adapter)
+        self.assertEqual(result["status"], "failed")
+        self.assertFalse(result["identityChecks"][-1]["matchesExpected"])
+        self.assertIn("stop", adapter.calls)
+        self.assertIn("recover", adapter.calls)
+
     def test_identity_drift_before_pulse_sends_zero_input(self):
         changed = dict(GAME, processId=999)
         adapter = FakeAdapter(identities=[(VM, GAME), (VM, changed)])
