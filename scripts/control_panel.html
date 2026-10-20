@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RiftReader2 supervised control</title>
+  <style>
+    :root { color-scheme: dark; font: 15px/1.45 system-ui, sans-serif; background:#101318; color:#e8edf5; }
+    body { max-width:1100px; margin:0 auto; padding:20px; }
+    h1 { font-size:1.35rem; margin:0 0 8px; }
+    .notice { color:#b8c4d8; margin:0 0 16px; }
+    .grid { display:grid; grid-template-columns:minmax(380px,2fr) minmax(280px,1fr); gap:16px; }
+    .card { background:#181d25; border:1px solid #303948; border-radius:8px; padding:14px; }
+    button, select, input, textarea { font:inherit; }
+    button { background:#2a68b8; color:white; border:0; border-radius:5px; padding:8px 12px; margin:3px; cursor:pointer; }
+    button.danger { background:#b73535; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    textarea { width:100%; box-sizing:border-box; min-height:56px; background:#0f1319; color:#e8edf5; border:1px solid #3a4556; }
+    #screen { display:block; width:100%; min-height:240px; object-fit:contain; background:#07090d; border:1px solid #303948; }
+    #surface { min-height:170px; display:grid; place-items:center; margin-top:12px; border:2px dashed #4d6078; border-radius:7px; outline:none; user-select:none; }
+    #surface:focus { border-color:#72a7ea; background:#111a25; }
+    .row { margin:8px 0; }
+    .state { font-weight:650; }
+    .good { color:#75d69b; } .bad { color:#ff8686; } .neutral { color:#b8c4d8; }
+    pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; background:#0d1117; padding:10px; border-radius:5px; }
+    label { display:block; margin:7px 0; }
+    @media (max-width:800px) { .grid { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <h1>RiftReader2 supervised control</h1>
+  <p class="notice">This panel reports requested input and transport results. It does not claim that RIFT acted on an input.</p>
+  <div class="grid">
+    <section class="card">
+      <div class="row">
+        <button id="statusButton">Status</button>
+        <button id="captureButton">Fresh screenshot</button>
+        <button id="stopButton" class="danger">STOP / release all</button>
+        <button id="recoverButton" class="danger">Recover pending release</button>
+        <span id="armedState" class="state bad">Disarmed</span>
+      </div>
+      <img id="screen" alt="No current reviewed capture">
+      <label><input id="reviewCheck" type="checkbox"> I reviewed this fresh screenshot: RIFT is in-world and chat/text entry is closed.</label>
+      <textarea id="reviewNote" maxlength="512" placeholder="Review note (at least 12 characters)"></textarea>
+      <button id="armButton" disabled>Arm for 15 seconds</button>
+      <div id="surface" tabindex="0">
+        <div>
+          <strong>Focused control surface</strong><br>
+          Hold W/A/S/D/Q/E for bounded 100 ms actions.<br>
+          Click to lock pointer; mouse deltas are bounded to ±200.<br>
+          Key release cancels the current pulse. Blur or pointer-lock exit sends STOP.
+        </div>
+      </div>
+      <label>Mouse drag button
+        <select id="mouseButton"><option value="">None</option><option value="right">Right (camera)</option><option value="left">Left</option></select>
+      </label>
+    </section>
+    <section class="card">
+      <div id="summary" class="state">Token required from launch URL fragment.</div>
+      <pre id="result">No request yet.</pre>
+    </section>
+  </div>
+<script>
+(() => {
+  'use strict';
+  let token = decodeURIComponent(location.hash.slice(1));
+  if (location.hash) history.replaceState(null, '', location.pathname);
+  let captureId = null, armToken = null, armDeadline = 0;
+  let requestActive = false, releaseActive = false, pumpRequested = false, pointerWasLocked = false;
+  let controlGeneration = 0, pointerTimer = null;
+  const held = new Set();
+  let deltaX = 0, deltaY = 0, wheelNotches = 0;
+  const $ = id => document.getElementById(id);
+  const result = $('result'), summary = $('summary'), surface = $('surface'), screen = $('screen');
+  const allowed = new Set(['w','a','s','d','q','e']);
+
+  function printableDiagnostic(value) {
+    if (typeof value === 'number' && Number.isInteger(value) && !Number.isSafeInteger(value))
+      return '[unsafe integer in browser; use retained JSON evidence]';
+    if (Array.isArray(value)) return value.map(printableDiagnostic);
+    if (value !== null && typeof value === 'object') {
+      const copy = Object.create(null);
+      for (const [key, item] of Object.entries(value)) copy[key] = printableDiagnostic(item);
+      return copy;
+    }
+    return value;
+  }
+  function show(value, state='neutral') {
+    const tone = state === 'neutral' ? 'neutral' : (state ? 'good' : 'bad');
+    result.textContent = typeof value === 'string'
+      ? value : JSON.stringify(printableDiagnostic(value), null, 2);
+    summary.textContent = tone === 'good' ? 'Last request completed.'
+      : (tone === 'neutral' ? 'No successful input delivery claimed.' : 'Request failed.');
+    summary.className = 'state ' + tone;
+  }
+  function showControlResult(value) {
+    const outcome = value && typeof value.result === 'object' ? value.result : null;
+    if (outcome && outcome.cancelled === true) { show(value, 'neutral'); return; }
+    const succeeded = outcome !== null && outcome.deliverySucceeded === true
+      && outcome.releaseSucceeded === true && value.recoveryRequired === false;
+    show(value, succeeded);
+  }
+  function setArmed(value, seconds=0) {
+    armToken = value;
+    armDeadline = value ? Date.now() + seconds * 1000 : 0;
+    $('armedState').textContent = value ? `Armed (${seconds}s maximum)` : 'Disarmed';
+    $('armedState').className = 'state ' + (value ? 'good' : 'bad');
+  }
+  function requireFreshCapture() {
+    captureId = null;
+    screen.removeAttribute('src');
+    screen.alt = 'No current reviewed capture';
+    $('reviewCheck').checked = false;
+    $('armButton').disabled = true;
+  }
+  function authorized() {
+    if (!token) { show('Missing operator token. Open the exact launch URL printed by control_host.py.', false); return false; }
+    return true;
+  }
+  async function api(path, method='GET', body=null) {
+    if (!authorized()) throw new Error('operator token missing');
+    const response = await fetch(path, {
+      method,
+      headers: {'Authorization': `Bearer ${token}`, ...(body === null ? {} : {'Content-Type':'application/json'})},
+      body: body === null ? null : JSON.stringify(body),
+      cache: 'no-store'
+    });
+    const value = await response.json();
+    if (!response.ok) throw new Error(value.error || `HTTP ${response.status}`);
+    return value;
+  }
+  async function stop(reason) {
+    const generation = ++controlGeneration;
+    held.clear(); deltaX = 0; deltaY = 0; wheelNotches = 0; setArmed(null); requireFreshCapture();
+    try {
+      const value = await api('/api/stop', 'POST', {});
+      if (generation === controlGeneration) show(value, 'neutral');
+    } catch (error) {
+      if (generation === controlGeneration) show(`${reason}: ${error.message}`, false);
+    }
+  }
+  function stillArmed() {
+    if (!armToken || Date.now() >= armDeadline) {
+      if (armToken) { setArmed(null); requireFreshCapture(); }
+      return false;
+    }
+    return true;
+  }
+  function bounded(value) { return Math.max(-200, Math.min(200, Math.trunc(value))); }
+  function requestPump() {
+    if (!stillArmed()) return;
+    pumpRequested = true;
+    if (!requestActive && !releaseActive) void pump();
+  }
+  function schedulePointerPump() {
+    if (pointerTimer !== null) return;
+    pointerTimer = setTimeout(() => { pointerTimer = null; requestPump(); }, 16);
+  }
+  async function releaseCurrent(reason) {
+    deltaX = 0; deltaY = 0; wheelNotches = 0; pumpRequested = false;
+    if (releaseActive || !stillArmed()) return;
+    releaseActive = true;
+    const generation = ++controlGeneration;
+    try {
+      const value = await api('/api/release', 'POST', {});
+      if (value.recoveryRequired || value.armed === false) {
+        held.clear(); setArmed(null); requireFreshCapture();
+      }
+      if (generation === controlGeneration) show(value, 'neutral');
+    } catch (error) {
+      held.clear(); setArmed(null); requireFreshCapture();
+      if (generation === controlGeneration) show(`${reason}: ${error.message}`, false);
+    } finally {
+      releaseActive = false;
+      if (held.size && stillArmed()) requestPump();
+    }
+  }
+  async function pump() {
+    if (requestActive || releaseActive || !pumpRequested || !stillArmed()) return;
+    const dx = bounded(deltaX), dy = bounded(deltaY), wheel = Math.max(-1, Math.min(1, wheelNotches));
+    const keys = [...held].sort();
+    if (!keys.length && dx === 0 && dy === 0 && wheel === 0) { pumpRequested = false; return; }
+    pumpRequested = false; requestActive = true;
+    const generation = controlGeneration;
+    try {
+      let action;
+      if (wheel !== 0) {
+        wheelNotches -= wheel;
+        action = {keys:[], holdMilliseconds:0, mouseButton:null,
+          deltaX:0, deltaY:0, wheelNotches:wheel};
+      } else {
+        deltaX -= dx; deltaY -= dy;
+        const mouseButton = $('mouseButton').value || null;
+        action = {keys, holdMilliseconds:keys.length ? 100 : 20, mouseButton,
+          deltaX:dx, deltaY:dy, wheelNotches:0};
+      }
+      const value = await api('/api/action', 'POST', {armToken, action:{
+        ...action
+      }});
+      if (generation === controlGeneration) showControlResult(value);
+    } catch (error) {
+      if (generation === controlGeneration) {
+        show(error.message, false); setArmed(null); requireFreshCapture(); held.clear();
+      }
+    } finally {
+      requestActive = false;
+      if (!releaseActive && (held.size || deltaX || deltaY || wheelNotches)) {
+        pumpRequested = true; setTimeout(pump, 0);
+      }
+    }
+  }
+
+  $('statusButton').onclick = async () => {
+    const generation = controlGeneration;
+    try {
+      const value = await api('/api/status');
+      if (generation === controlGeneration) show(value);
+    } catch (e) { if (generation === controlGeneration) show(e.message, false); }
+  };
+  $('captureButton').onclick = async () => {
+    const generation = controlGeneration;
+    setArmed(null); requireFreshCapture();
+    try {
+      const value = await api('/api/capture', 'POST', {});
+      if (generation !== controlGeneration) return;
+      captureId = value.captureId;
+      screen.src = `data:image/bmp;base64,${value.imageBase64}`;
+      screen.alt = 'Fresh control capture awaiting operator review';
+      $('armButton').disabled = false;
+      show({...value, imageBase64:`[${value.imageBase64.length} encoded characters]`});
+    } catch (e) { if (generation === controlGeneration) show(e.message, false); }
+  };
+  $('armButton').onclick = async () => {
+    if (!captureId || !$('reviewCheck').checked) { show('Review checkbox is required.', false); return; }
+    const generation = controlGeneration;
+    try {
+      const value = await api('/api/arm', 'POST', {captureId, reviewNote:$('reviewNote').value});
+      if (generation !== controlGeneration) return;
+      if (!value.armToken || value.expiresInSeconds !== 15) throw new Error('guest returned an invalid arm result');
+      setArmed(value.armToken, value.expiresInSeconds); $('armButton').disabled = true;
+      show({...value, armToken:'[redacted]'}); surface.focus();
+    } catch (e) {
+      if (generation === controlGeneration) { setArmed(null); show(e.message, false); }
+    }
+  };
+  $('stopButton').onclick = () => void stop('operator stop');
+  $('recoverButton').onclick = async () => {
+    const generation = ++controlGeneration;
+    held.clear(); deltaX = 0; deltaY = 0; wheelNotches = 0; setArmed(null); requireFreshCapture();
+    try {
+      const value = await api('/api/recover', 'POST', {});
+      if (generation === controlGeneration) show(value, 'neutral');
+    } catch (error) {
+      if (generation === controlGeneration) show(error.message, false);
+    }
+  };
+  surface.addEventListener('click', () => { if (stillArmed()) surface.requestPointerLock(); });
+  surface.addEventListener('keydown', event => {
+    const key = event.key.toLowerCase();
+    if (!allowed.has(key) || event.repeat || !stillArmed()) return;
+    event.preventDefault(); held.add(key); requestPump();
+  });
+  surface.addEventListener('keyup', event => {
+    const key = event.key.toLowerCase();
+    if (!allowed.has(key)) return;
+    event.preventDefault(); held.delete(key); void releaseCurrent('key release');
+  });
+  document.addEventListener('mousemove', event => {
+    if (document.pointerLockElement !== surface || !stillArmed()) return;
+    deltaX += event.movementX; deltaY += event.movementY; schedulePointerPump();
+  });
+  surface.addEventListener('wheel', event => {
+    if (!stillArmed()) return;
+    event.preventDefault(); wheelNotches += event.deltaY < 0 ? 1 : -1; requestPump();
+  }, {passive:false});
+  document.addEventListener('pointerlockchange', () => {
+    const locked = document.pointerLockElement === surface;
+    if (!locked && pointerWasLocked) void stop('pointer lock exited');
+    pointerWasLocked = locked;
+  });
+  window.addEventListener('blur', () => void stop('window blur'));
+  if (token) { summary.textContent = 'Operator token loaded from fragment and removed from the address bar.'; summary.className='state good'; }
+})();
+</script>
+</body>
+</html>

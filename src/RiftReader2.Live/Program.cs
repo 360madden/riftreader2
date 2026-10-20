@@ -17,6 +17,8 @@ internal static class Program
                 eventArgs.Cancel = true;
                 commandCancellation.Cancel();
             };
+            if (args[0] == "control-agent")
+                return await Control.ControlAgent.RunAsync(args, commandCancellation.Token);
             return await NativeCommandRunner.RunAsync(args, Console.Out, Console.Error, commandCancellation.Token);
         }
         if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)

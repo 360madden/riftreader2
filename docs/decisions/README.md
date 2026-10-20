@@ -27,6 +27,9 @@ Source: Joey's instructions in the RiftReader v2 conversation.
   preserved RR2A1 payload, one-load reader nonce, and external freshness tracker.
 - [0005: Durable field catalog](0005-durable-field-catalog.md):
   content-bound definitions, retained assessments, and scoped qualification.
+- [0006: Native supervised VM controls](0006-native-supervised-vm-controls.md):
+  guest-local bounded input, authenticated outbound connection, and native
+  operator workflow independent of V1 source.
 
 ## Future records
 

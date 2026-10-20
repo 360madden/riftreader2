@@ -1,44 +1,379 @@
 {
   "schemaVersion": 1,
-  "status": "implementation-authorized",
+  "status": "implemented-with-recorded-validation-limits",
   "objective": "Make supervised movement and camera control responsive and independent of V1 source, while preserving bounded input, exact identity and honest response evidence.",
   "evidence": [
-    {"id":"E01","source":"scripts/rift-experiment.py","locator":"LabAdapter.__init__, prepare, pulse","kind":"code","supports":"Current runtime imports V1 modules, permits only single W/A/S/D pulses and repeatedly captures/reconnects.","limitations":"Does not establish that all latency comes from VNC."},
-    {"id":"E02","source":"docs/validation/movement-parity-2026-10-20.md","locator":"Individual trials","kind":"retained_run","supports":"S/A/D delivery, release and coarse API/visual response worked.","limitations":"No numerical heading, camera or responsiveness qualification."},
-    {"id":"E03","source":"https://www.rfc-editor.org/rfc/rfc6143#section-7.5.5","locator":"PointerEvent","kind":"official_documentation","supports":"Standard RFB pointer events carry absolute positions.","limitations":"Does not rule out vendor extensions."},
-    {"id":"E04","source":"https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput","locator":"Remarks","kind":"official_documentation","supports":"SendInput inserts keyboard/mouse events; UIPI constrains permitted integrity levels.","limitations":"Insertion is not proof that RIFT responds."},
-    {"id":"E05","source":"https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput","locator":"Remarks","kind":"official_documentation","supports":"Relative motion and wheel events are supported; Windows acceleration can affect motion.","limitations":"No pixel-to-angle calibration is implied."},
-    {"id":"E06","source":"https://www.w3.org/TR/pointerlock-2/","locator":"Pointer Lock","kind":"official_documentation","supports":"A browser control surface can collect relative deltas without screen-edge constraints.","limitations":"Requires user gesture and browser support."},
-    {"id":"E07","source":"user request, 2026-10-20","locator":"commit as needed, when ready produce optimal roadmap then follow it to completion","kind":"user_report","supports":"Authorizes implementation and verification after the proposal, superseding design-only restrictions.","limitations":"No autonomous gameplay, process writes/injection, V1 changes or incidental global configuration changes."}
+    {
+      "id": "E01",
+      "source": "scripts/rift-experiment.py",
+      "locator": "LabAdapter.__init__, prepare, pulse",
+      "kind": "code",
+      "supports": "Current runtime imports V1 modules, permits only single W/A/S/D pulses and repeatedly captures/reconnects.",
+      "limitations": "Does not establish that all latency comes from VNC."
+    },
+    {
+      "id": "E02",
+      "source": "docs/validation/movement-parity-2026-10-20.md",
+      "locator": "Individual trials",
+      "kind": "retained_run",
+      "supports": "S/A/D delivery, release and coarse API/visual response worked.",
+      "limitations": "No numerical heading, camera or responsiveness qualification."
+    },
+    {
+      "id": "E03",
+      "source": "https://www.rfc-editor.org/rfc/rfc6143#section-7.5.5",
+      "locator": "PointerEvent",
+      "kind": "official_documentation",
+      "supports": "Standard RFB pointer events carry absolute positions.",
+      "limitations": "Does not rule out vendor extensions."
+    },
+    {
+      "id": "E04",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendinput",
+      "locator": "Remarks",
+      "kind": "official_documentation",
+      "supports": "SendInput inserts keyboard/mouse events; UIPI constrains permitted integrity levels.",
+      "limitations": "Insertion is not proof that RIFT responds."
+    },
+    {
+      "id": "E05",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-mouseinput",
+      "locator": "Remarks",
+      "kind": "official_documentation",
+      "supports": "Relative motion and wheel events are supported; Windows acceleration can affect motion.",
+      "limitations": "No pixel-to-angle calibration is implied."
+    },
+    {
+      "id": "E06",
+      "source": "https://www.w3.org/TR/pointerlock-2/",
+      "locator": "Pointer Lock",
+      "kind": "official_documentation",
+      "supports": "A browser control surface can collect relative deltas without screen-edge constraints.",
+      "limitations": "Requires user gesture and browser support."
+    },
+    {
+      "id": "E07",
+      "source": "user request, 2026-10-20",
+      "locator": "commit as needed, when ready produce optimal roadmap then follow it to completion",
+      "kind": "user_report",
+      "supports": "Authorizes implementation and verification after the proposal, superseding design-only restrictions.",
+      "limitations": "No autonomous gameplay, process writes/injection, V1 changes or incidental global configuration changes."
+    },
+    {
+      "id": "E08",
+      "source": "docs/validation/native-vm-controls-2026-10-20.md",
+      "locator": "Individual trials; Timing and interruption",
+      "kind": "retained_run",
+      "supports": "Native movement/chord, orbit, yaw/pitch, bounded stop, host restart/reconnect, 35-second idle review, and brief panel keyboard/release demonstrated.",
+      "limitations": "Zoom unverified; one mouse timing sample exceeds proposed tolerance; sustained Pointer Lock usability and hard-crash cleanup unqualified."
+    }
   ],
   "findings": [
-    {"id":"F01","claim":"V1 runtime imports and per-pulse setup make the current path unsuitable as the native interactive interface.","confidence":"verified","evidenceIds":["E01"],"impact":"Replace the control path; keep historical evidence."},
-    {"id":"F02","claim":"Guest-local scan codes and relative mouse input are a better fit for movement/camera than absolute host pointer control.","confidence":"inferred","evidenceIds":["E03","E04","E05"],"impact":"Validate real game behavior before claiming camera readiness."},
-    {"id":"F03","claim":"Numeric heading/pitch/zoom and hard-crash key-state recovery remain unqualified.","confidence":"verified","evidenceIds":["E02"],"impact":"Separate transport acknowledgements, visual observations and future semantic measurements."}
+    {
+      "id": "F01",
+      "claim": "V1 runtime imports and per-pulse setup make the current path unsuitable as the native interactive interface.",
+      "confidence": "verified",
+      "evidenceIds": [
+        "E01"
+      ],
+      "impact": "Replace the control path; keep historical evidence."
+    },
+    {
+      "id": "F02",
+      "claim": "Guest-local scan codes and relative mouse input are a better fit for movement/camera than absolute host pointer control.",
+      "confidence": "inferred",
+      "evidenceIds": [
+        "E03",
+        "E04",
+        "E05"
+      ],
+      "impact": "Validate real game behavior before claiming camera readiness."
+    },
+    {
+      "id": "F03",
+      "claim": "Numeric heading/pitch/zoom and hard-crash key-state recovery remain unqualified.",
+      "confidence": "verified",
+      "evidenceIds": [
+        "E02"
+      ],
+      "impact": "Separate transport acknowledgements, visual observations and future semantic measurements."
+    }
   ],
   "options": [
-    {"id":"O01","approach":"Repository-owned VNC input and capture","prerequisites":["VMware loopback VNC","vncdotool"],"movementSupport":"Keyboard chords possible; host owns timing and release.","cameraSupport":"Standard absolute pointer path; relative game camera behavior uncertain.","latencyEvidence":null,"failureModes":["Host disconnect during hold","Pointer capture/warp mismatch"],"implementationCost":"low","decision":"fallback","rationale":"Useful bootstrap and screenshot fallback, not the primary camera path.","evidenceIds":["E01","E02","E03"]},
-    {"id":"O02","approach":"Guest-local .NET input agent with outbound authenticated persistent connection and loopback host UI","prerequisites":["Interactive guest Windows session","Same or greater integrity as RIFT","Existing host-only receiver port","Explicit reviewed in-world frame"],"movementSupport":"Scan-code chords with guest-local bounded timing, cancellation and durable release intent.","cameraSupport":"Relative mouse, left/right drag and wheel; Pointer Lock operator surface.","latencyEvidence":null,"failureModes":["UIPI rejection","Game ignores synthetic input","Lost foreground","Black guest capture","Agent hard termination"],"implementationCost":"medium","decision":"recommended","rationale":"Moves timing and release checks next to the game while avoiding guest inbound listeners and new services.","evidenceIds":["E04","E05","E06"]},
-    {"id":"O03","approach":"Host SendInput into VMware console window","prerequisites":["Host console focus and stable geometry"],"movementSupport":"Indirect focus-dependent routing.","cameraSupport":"Two pointer-capture layers and uncertain relative behavior.","latencyEvidence":null,"failureModes":["Input reaches host application","Host focus or scaling drift"],"implementationCost":"medium","decision":"rejected","rationale":"Weaker target binding and more geometry dependence than guest-local input.","evidenceIds":["E04"]}
+    {
+      "id": "O01",
+      "approach": "Repository-owned VNC input and capture",
+      "prerequisites": [
+        "VMware loopback VNC",
+        "vncdotool"
+      ],
+      "movementSupport": "Keyboard chords possible; host owns timing and release.",
+      "cameraSupport": "Standard absolute pointer path; relative game camera behavior uncertain.",
+      "latencyEvidence": null,
+      "failureModes": [
+        "Host disconnect during hold",
+        "Pointer capture/warp mismatch"
+      ],
+      "implementationCost": "low",
+      "decision": "fallback",
+      "rationale": "Useful bootstrap and screenshot fallback, not the primary camera path.",
+      "evidenceIds": [
+        "E01",
+        "E02",
+        "E03"
+      ]
+    },
+    {
+      "id": "O02",
+      "approach": "Guest-local .NET input agent with outbound authenticated persistent connection and loopback host UI",
+      "prerequisites": [
+        "Interactive guest Windows session",
+        "Same or greater integrity as RIFT",
+        "Existing host-only receiver port",
+        "Explicit reviewed in-world frame"
+      ],
+      "movementSupport": "Scan-code chords with guest-local bounded timing, cancellation and durable release intent.",
+      "cameraSupport": "Relative mouse, left/right drag and wheel; Pointer Lock operator surface.",
+      "latencyEvidence": null,
+      "failureModes": [
+        "UIPI rejection",
+        "Game ignores synthetic input",
+        "Lost foreground",
+        "Black guest capture",
+        "Agent hard termination"
+      ],
+      "implementationCost": "medium",
+      "decision": "recommended",
+      "rationale": "Moves timing and release checks next to the game while avoiding guest inbound listeners and new services.",
+      "evidenceIds": [
+        "E04",
+        "E05",
+        "E06"
+      ]
+    },
+    {
+      "id": "O03",
+      "approach": "Host SendInput into VMware console window",
+      "prerequisites": [
+        "Host console focus and stable geometry"
+      ],
+      "movementSupport": "Indirect focus-dependent routing.",
+      "cameraSupport": "Two pointer-capture layers and uncertain relative behavior.",
+      "latencyEvidence": null,
+      "failureModes": [
+        "Input reaches host application",
+        "Host focus or scaling drift"
+      ],
+      "implementationCost": "medium",
+      "decision": "rejected",
+      "rationale": "Weaker target binding and more geometry dependence than guest-local input.",
+      "evidenceIds": [
+        "E04"
+      ]
+    }
   ],
   "recommendation": {
-    "optionId":"O02",
-    "components":["Domain ControlAction/results","Application bounded executor and input port","Live Windows adapter and control-agent command","Python standard-library host hub and static operator panel","Repository-owned VNC bootstrap/capture helper"],
-    "controlContract":{"schemaVersion":1,"keys":["w","a","s","d","q","e"],"holdMilliseconds":[20,250],"mouseButtons":["left","right"],"maximumRelativeDeltaPerAxis":200,"maximumWheelNotches":3,"reviewLifetimeSeconds":45,"armLifetimeSeconds":15,"automaticReplay":false},
-    "inputLifecycle":["Inspect exact target and foreground","Capture and explicitly review frame","Arm a short session bound to target and geometry","Validate one sequenced action and persist release intent","Execute locally with frequent target/cancellation checks","Release every intended input in finally","Record outcome and retain failed-release intent","Disarm on stop, disconnect, expiry or failure"],
-    "feedbackContract":{"inputIntent":"Host request plus guest action record","delivery":"SendInput insertion result","release":"Attempt and success per input, not game key-state attestation","visual":"Fresh frame before/after; screenshot backend must be visually validated","addon":"Existing RR2 live path remains an independent optional source","native":"No field meaning inferred","cameraOrientation":null},
-    "failureHandling":["Reject stale/replayed commands and changed target/geometry","Never queue or retry ambiguous actions","Stop can cancel an active action without waiting for its normal duration","Restart disarmed; recover retained release intent only for the same exact target","Do not steal foreground","Never claim cleanup after OS/agent hard failure without evidence"],
-    "v1DependencyMigration":["Leave V1 source unchanged","Use its credential derivation only as a documented existing-VM compatibility detail","Deploy a self-contained RR2 Live bundle","Replace the legacy host receiver on its existing allowed port for this task","Remove V1 imports from the recommended runtime path; retain old experiment adapter as explicitly legacy evidence tooling"],
-    "operatorInterface":{"binding":"127.0.0.1 only, bearer token","controls":"Reviewed arm, movement keys/chords, relative camera drag, wheel, stop/recover","deadman":"Finite actions and arm expiry; blur and Pointer Lock loss stop","state":"Target identity, foreground, pending recovery, result and errors"}
+    "optionId": "O02",
+    "components": [
+      "Domain ControlAction/results",
+      "Application bounded executor and input port",
+      "Live Windows adapter and control-agent command",
+      "Python standard-library host hub and static operator panel",
+      "Repository-owned VNC bootstrap/capture helper"
+    ],
+    "controlContract": {
+      "schemaVersion": 1,
+      "keys": [
+        "w",
+        "a",
+        "s",
+        "d",
+        "q",
+        "e"
+      ],
+      "holdMilliseconds": [
+        20,
+        250
+      ],
+      "mouseButtons": [
+        "left",
+        "right"
+      ],
+      "maximumRelativeDeltaPerAxis": 200,
+      "maximumWheelNotches": 3,
+      "reviewLifetimeSeconds": 45,
+      "armLifetimeSeconds": 15,
+      "automaticReplay": false,
+      "maximumHostWheelNotches": 1
+    },
+    "inputLifecycle": [
+      "Inspect exact target and foreground",
+      "Capture and explicitly review frame",
+      "Arm a short session bound to target and geometry",
+      "Validate one sequenced action and persist release intent",
+      "Execute locally with frequent target/cancellation checks",
+      "Release every intended input in finally",
+      "Record outcome and retain failed-release intent",
+      "Disarm on stop, disconnect, expiry or failure"
+    ],
+    "feedbackContract": {
+      "inputIntent": "Host request plus guest action record",
+      "delivery": "SendInput insertion result",
+      "release": "Attempt and success per input, not game key-state attestation",
+      "visual": "Fresh frame before/after; screenshot backend must be visually validated",
+      "addon": "Existing RR2 live path remains an independent optional source",
+      "native": "No field meaning inferred",
+      "cameraOrientation": null
+    },
+    "failureHandling": [
+      "Reject stale/replayed commands and changed target/geometry",
+      "Never queue or retry ambiguous actions",
+      "Stop can cancel an active action without waiting for its normal duration",
+      "Restart disarmed; recover retained release intent only for the same exact target",
+      "Do not steal foreground",
+      "Never claim cleanup after OS/agent hard failure without evidence"
+    ],
+    "v1DependencyMigration": [
+      "Leave V1 source unchanged",
+      "Use its credential derivation only as a documented existing-VM compatibility detail",
+      "Deploy a self-contained RR2 Live bundle",
+      "Replace the legacy host receiver on its existing allowed port for this task",
+      "Remove V1 imports from the recommended runtime path; retain old experiment adapter as explicitly legacy evidence tooling"
+    ],
+    "operatorInterface": {
+      "binding": "127.0.0.1 only, bearer token",
+      "controls": "Reviewed arm, movement keys/chords, relative camera drag, wheel, stop/recover",
+      "deadman": "Finite actions and arm expiry; blur and Pointer Lock loss stop",
+      "state": "Target identity, foreground, pending recovery, result and errors"
+    }
   },
   "phases": [
-    {"id":"P01","outcome":"Native bounded execution and Windows adapters","dependencies":[],"changes":["Control contract","Executor with cleanup","Exact target and input adapter","Guest protocol and durable recovery"],"acceptanceTests":[{"behavior":"Invalid/stale input never executes; all partial-send paths release intended inputs","method":"Injected-port regression suite","metric":"Passing tests","proposedTarget":"All required cases pass","requiresLiveInput":false}],"completionEvidence":[]},
-    {"id":"P02","outcome":"Native host/guest connection and usable operator controls","dependencies":["P01"],"changes":["Authenticated host hub","Strict sequenced protocol","Screenshot review and short arm","Keyboard/Pointer Lock UI","Native bootstrap helper"],"acceptanceTests":[{"behavior":"Unauthorized/replayed/busy requests rejected; stop and disconnect cancel; UI cannot continue unattended","method":"Protocol regression tests and UI inspection","metric":"Passing cases","proposedTarget":"No input on rejection","requiresLiveInput":false}],"completionEvidence":[]},
-    {"id":"P03","outcome":"Bounded live movement/camera and recovery evidence","dependencies":["P02"],"changes":["Deploy exact published bundle without VM configuration changes","Visually verify screenshots","Individually review movement/chord/strafe, orbit/mouse-look, pitch and wheel actions","Exercise stop/disconnect/reconnect where safe"],"acceptanceTests":[{"behavior":"Movement and camera commands produce attributable visible changes","method":"Individual reviewed trials with before/after frames","metric":"Observed response classification","proposedTarget":"Record each supported behavior or explicit limitation","requiresLiveInput":true},{"behavior":"Local timing and stop remain bounded","method":"Guest monotonic timings and host round trips","metric":"Hold error and stop acknowledgement milliseconds","proposedTarget":"Hold error <=20 ms; connected stop acknowledgement <=250 ms","requiresLiveInput":true}],"completionEvidence":[]},
-    {"id":"P04","outcome":"Verified native workflow, durable roadmap and coherent commits","dependencies":["P03"],"changes":["Full repository gate","Dependency audit","Usage/configuration guide","Status and evidence handoff"],"acceptanceTests":[{"behavior":"Recommended runtime works without original RiftReader source","method":"Import/path audit and live native-agent operation","metric":"V1 runtime source dependencies","proposedTarget":"Zero","requiresLiveInput":false}],"completionEvidence":[]}
+    {
+      "id": "P01",
+      "outcome": "Native bounded execution and Windows adapters",
+      "dependencies": [],
+      "changes": [
+        "Control contract",
+        "Executor with cleanup",
+        "Exact target and input adapter",
+        "Guest protocol and durable recovery"
+      ],
+      "acceptanceTests": [
+        {
+          "behavior": "Invalid/stale input never executes; all partial-send paths release intended inputs",
+          "method": "Injected-port regression suite",
+          "metric": "Passing tests",
+          "proposedTarget": "All required cases pass",
+          "requiresLiveInput": false
+        }
+      ],
+      "completionEvidence": [
+        "docs/validation/native-vm-controls-2026-10-20.md",
+        "docs/status.md"
+      ],
+      "status": "complete"
+    },
+    {
+      "id": "P02",
+      "outcome": "Functional operator workflow and native bootstrap",
+      "dependencies": [
+        "P01"
+      ],
+      "changes": [
+        "Authenticated host hub",
+        "Strict sequenced protocol",
+        "Screenshot review and short arm",
+        "Keyboard/Pointer Lock UI",
+        "Native bootstrap helper"
+      ],
+      "acceptanceTests": [
+        {
+          "behavior": "Unauthorized/replayed/busy requests rejected; stop and disconnect cancel; UI cannot continue unattended",
+          "method": "Protocol regression tests and UI inspection",
+          "metric": "Passing cases",
+          "proposedTarget": "No input on rejection",
+          "requiresLiveInput": false
+        }
+      ],
+      "completionEvidence": [
+        "docs/validation/native-vm-controls-2026-10-20.md",
+        "docs/status.md"
+      ],
+      "status": "complete"
+    },
+    {
+      "id": "P03",
+      "outcome": "Bounded live movement/camera and recovery evidence",
+      "dependencies": [
+        "P02"
+      ],
+      "changes": [
+        "Deploy exact published bundle without VM configuration changes",
+        "Visually verify screenshots",
+        "Individually review movement/chord/strafe, orbit/mouse-look, pitch and wheel actions",
+        "Exercise stop/disconnect/reconnect where safe"
+      ],
+      "acceptanceTests": [
+        {
+          "behavior": "Movement and camera commands produce attributable visible changes",
+          "method": "Individual reviewed trials with before/after frames",
+          "metric": "Observed response classification",
+          "proposedTarget": "Record each supported behavior or explicit limitation",
+          "requiresLiveInput": true
+        },
+        {
+          "behavior": "Local timing and stop remain bounded",
+          "method": "Guest monotonic timings and host round trips",
+          "metric": "Hold error and stop acknowledgement milliseconds",
+          "proposedTarget": "Hold error <=20 ms; connected stop acknowledgement <=250 ms",
+          "requiresLiveInput": true
+        }
+      ],
+      "completionEvidence": [
+        "docs/validation/native-vm-controls-2026-10-20.md",
+        "docs/status.md"
+      ],
+      "status": "complete-with-limits"
+    },
+    {
+      "id": "P04",
+      "outcome": "Verified native workflow, durable roadmap and coherent commits",
+      "dependencies": [
+        "P03"
+      ],
+      "changes": [
+        "Full repository gate",
+        "Dependency audit",
+        "Usage/configuration guide",
+        "Status and evidence handoff"
+      ],
+      "acceptanceTests": [
+        {
+          "behavior": "Recommended runtime works without original RiftReader source",
+          "method": "Import/path audit and live native-agent operation",
+          "metric": "V1 runtime source dependencies",
+          "proposedTarget": "Zero",
+          "requiresLiveInput": false
+        }
+      ],
+      "completionEvidence": [
+        "docs/validation/native-vm-controls-2026-10-20.md",
+        "docs/status.md"
+      ],
+      "status": "complete"
+    }
   ],
-  "assumptions":["The selected game runs in the logged-in interactive guest session.","The existing private receiver port can be reused; no firewall changes are incidental.","Guest GDI capture is provisional for this windowed client; black/incorrect captures block review and require VNC fallback."],
-  "openQuestions":["How RIFT interprets left/right relative drag, pitch and wheel in this session.","Measured control responsiveness and synthetic input acceptance.","Whether future numerical camera feedback is available through supported API."],
-  "authorizationNeeded":[],
-  "nextAction":"Implement P01 and P02, then perform individually reviewed bounded P03 trials and finish P04."
+  "assumptions": [
+    "The selected game runs in the logged-in interactive guest session.",
+    "The existing private receiver port can be reused; no firewall changes are incidental.",
+    "Guest GDI capture is provisional for this windowed client; black/incorrect captures block review and require VNC fallback."
+  ],
+  "openQuestions": [
+    "Why standalone wheel insertion did not visibly zoom RIFT; inspect actual bindings and input consumption.",
+    "Whether sustained human Pointer Lock and keyboard operation feels responsive enough.",
+    "How to measure and reduce mouse-button timing overrun without weakening target checks.",
+    "Whether numerical camera feedback is available through a supported API."
+  ],
+  "authorizationNeeded": [],
+  "nextAction": "Use the native supervised workflow; prioritize a human panel usability pass and binding-aware wheel diagnosis before numerical camera qualification. Do not repeat completed S/A/D baselines."
 }

@@ -17,6 +17,7 @@ This directory records actual checks separately from proposed measurements.
 | [Supervised experiments](experiments-2026-10-19.md) | Bounded RIFT pulse, API before/after samples, identity/duplicate rejection, and stop-before-input. |
 | [Memory discovery](memory-discovery-2026-10-19.md) | Published RIFT map/snapshot/pointer commands, explicit failures, and offline searches on actual captures. |
 | [Native player fields: partial handoff](native-player-fields-2026-10-19.md) | Stationary native/Lua position candidate, failed old health seeds, retained pulse evidence, and unfinished restart qualification. |
+| [Native VM controls](native-vm-controls-2026-10-20.md) | Live movement/chord/camera, stop timing, reconnect, operator panel, and unverified zoom. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua

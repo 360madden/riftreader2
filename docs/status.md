@@ -2,7 +2,38 @@
 
 Updated: 2026-10-20 (America/New_York).
 
-## Active supervised movement-control parity work
+## Native supervised movement and camera controls
+
+The [native control roadmap](planning/native-vm-control-roadmap.md) is
+implemented with recorded validation limits. The repository now owns its
+guest-local input agent, persistent host connection, operator panel, CLI,
+bounded executor, and VM bootstrap/capture helper. The recommended control path
+does not import or run original RiftReader source. See
+[usage](reference/native-vm-controls.md) and the
+[live record](validation/native-vm-controls-2026-10-20.md).
+
+On RIFT-Lab-1, reviewed trials demonstrated S/A/D, W+Q, left camera orbit, and
+right yaw/pitch; an earlier native trial demonstrated W. Emergency stop
+interrupted a 250 ms action, acknowledged in 39.19 ms, and released the key.
+Idle host reconnect cleared an armed session. The final host/guest remain
+available, disarmed, with no pending release. The panel was opened for review.
+V1 receiver/observer and the temporary bootstrap server are stopped.
+
+Wheel zoom remains unverified despite successful insertion in both directions.
+One camera-button interval missed the proposed ±20 ms timing target.
+Numerical camera calibration, fullscreen capture, sustained human Pointer Lock
+usability, and hard-crash cleanup are unqualified. Next priority is a human
+panel usability pass and binding-aware wheel diagnosis, then further field
+discovery. Do not repeat the completed S/A/D baselines as discovery.
+
+Final full gate passed: **315 C# tests** (271 portable, 44 Windows), **168 Python
+tests**, 108 Lua assertions, 22 Lua/C# cases, zero-warning Release build, native
+smoke, locked restore, deterministic replay, formatting/module checks, and
+246 relative links. Evidence: `artifacts/validation/20261020T121433Z-4e11a754`.
+The final published hash matches the guest timeout-fix binary. A 35-second idle
+review and brief panel keyboard/release test passed after deployment.
+
+## Earlier supervised movement-control parity work
 
 The [movement-control parity roadmap](planning/movement-control-parity-roadmap.md)
 now has separate successful 100 ms S/A/D trials on Joey's selected RIFT-Lab-1,

@@ -9,7 +9,8 @@ topic below instead of loading every document for each task.
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
-| Active task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | W/S/A/D validation phases, checkpoints, and interruption-safe resumption. |
+| Completed task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | Historical W/S/A/D validation phases and evidence. |
+| Native controls | [Native VM control roadmap](planning/native-vm-control-roadmap.md) | Repository-owned movement/camera implementation and explicit live limits. |
 | Continuity | [Current status](status.md) | Latest compact handoff. |
 | Planning | [Top 20 proposals](planning/top-20-proposals.md) | Proposed ideas; no implementation order adopted. |
 | Planning | [Open questions](planning/open-questions.md) | Discussion agenda. |
@@ -21,6 +22,7 @@ topic below instead of loading every document for each task.
 | Reference | [Native capture](reference/native-capture.md) | Bounded read-only Windows requests, raw-byte provenance, and failure semantics. |
 | Reference | [Field catalog](reference/field-catalog.md) | Content-bound definitions, retained assessments, and scoped qualification workflow. |
 | Reference | [Supervised experiments](reference/guarded-experiments.md) | Single reviewed pulse, stop/release, identity, and before/after evidence. |
+| Reference | [Native VM controls](reference/native-vm-controls.md) | Native host/guest setup, operator panel, CLI, bounded input, and recovery. |
 | Reference | [Memory discovery](reference/memory-discovery.md) | Bounded snapshots, value/pattern comparisons, RVA pointer discovery and resolution. |
 | Reference | [Native field evidence review](reference/native-field-evidence.md) | Replay candidate XYZ comparisons without automatic field qualification. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |
