@@ -20,6 +20,7 @@ This directory records actual checks separately from proposed measurements.
 | [Native VM controls](native-vm-controls-2026-10-20.md) | Live movement/chord/camera, stop timing, reconnect, operator panel, and unverified zoom. |
 | [Native controls follow-up](native-vm-controls-followup-2026-10-20.md) | Browser-compatible camera drag, hold timing, cursor policy, release feedback, and wheel diagnosis. |
 | [Native wheel zoom](native-zoom-2026-10-20.md) | Targeted wheel-message fix, panel dispatch, and reversible visual zoom on the final binary. |
+| [Native control usability](native-control-usability-2026-10-20.md) | Inspected bindings, panel lifecycle fixes, native review invalidation, drag/zoom/release evidence, and corrected page-exit STOP. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua

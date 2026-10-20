@@ -194,26 +194,26 @@ public sealed class ControlAgent
                     };
                     break;
                 case "stop":
-                    Disarm();
+                    StopSession();
                     if (activeAction is not null)
                         await activeAction;
                     response = new { stopped = true, recoveryRequired = File.Exists(PendingPath) };
                     break;
                 case "release":
-                    actionCancellation?.Cancel();
+                    CancelActiveAction();
                     if (activeAction is not null)
                         await activeAction;
                     response = new { released = true, armed = IsArmed(), recoveryRequired = File.Exists(PendingPath) };
                     break;
                 case "recover":
-                    Disarm();
+                    BeginRecovery();
                     if (activeAction is not null)
                         await activeAction;
                     response = await RecoverAsync(token);
                     break;
                 case "capture":
                     RequireIdle();
-                    Disarm();
+                    BeginCapture();
                     var target = Inspect();
                     if (!target.IsForeground)
                         throw new InvalidOperationException("RIFT must already be foreground.");
@@ -246,10 +246,7 @@ public sealed class ControlAgent
                         ?? throw new InvalidDataException("Missing arm request.");
                     if (File.Exists(PendingPath))
                         throw new InvalidOperationException("Recover pending release intent before arming.");
-                    if (request.CaptureId != captureId || captureId is null
-                        || Stopwatch.GetElapsedTime(capturedAt).TotalSeconds > 45
-                        || request.ReviewNote.Trim().Length is < 12 or > 1024
-                        || reviewedTarget != Inspect())
+                    if (!CanArm(request, Inspect()))
                         throw new InvalidOperationException("Review missing, stale or target changed.");
                     armToken = Guid.NewGuid().ToString("N");
                     armedAt = Stopwatch.GetTimestamp();
@@ -379,6 +376,21 @@ public sealed class ControlAgent
         armToken = null;
         actionCancellation?.Cancel();
     }
+    private void CancelActiveAction() => actionCancellation?.Cancel();
+    private void BeginRecovery() => StopSession();
+    private void BeginCapture() => StopSession();
+    private void StopSession()
+    {
+        Disarm();
+        captureId = null;
+        reviewedTarget = null;
+        capturedAt = 0;
+    }
+    private bool CanArm(ControlArmRequest request, DesktopTarget currentTarget) =>
+        request.CaptureId == captureId && captureId is not null
+        && Stopwatch.GetElapsedTime(capturedAt).TotalSeconds <= 45
+        && request.ReviewNote.Trim().Length is >= 12 and <= 1024
+        && reviewedTarget == currentTarget;
     private static bool SameProcess(DesktopTarget a, DesktopTarget b) =>
         a.MachineName == b.MachineName && a.ProcessId == b.ProcessId
         && a.ProcessStartUtcTicks == b.ProcessStartUtcTicks && a.WindowHandle == b.WindowHandle

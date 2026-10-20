@@ -341,7 +341,7 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("const actionReleaseSequence = releaseSequence;", pump)
         self.assertIn("releaseOccurredAfter(actionReleaseSequence, releaseSequence)", pump)
         self.assertIn("if (!preserveOperational)", panel)
-        self.assertGreaterEqual(panel.count("const generation = ++controlGeneration;"), 3)
+        self.assertGreaterEqual(panel.count("++controlGeneration"), 4)
 
         node = shutil.which("node")
         if node is None:
@@ -436,10 +436,22 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("screen.alt = 'No current reviewed capture'", panel)
         self.assertIn("screen.alt = 'Fresh control capture awaiting operator review'", panel)
 
+    def test_panel_async_lifecycle_regressions(self):
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is unavailable for the panel lifecycle checks")
+        root = Path(__file__).parents[1]
+        completed = subprocess.run(
+            [node, str(root / "tests" / "control_panel_async.js"),
+             str(root / "scripts" / "control_panel.html")],
+            capture_output=True, text=True, check=False, timeout=15)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("control panel async regressions passed", completed.stdout)
+
     def test_supervised_panel_exposes_bounded_camera_and_release_feedback(self):
         panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
             encoding="utf-8")
-        self.assertIn("Off — movement keys only", panel)
+        self.assertIn("Off — keys and zoom", panel)
         self.assertIn("Right button — yaw / pitch", panel)
         self.assertIn("Left button — orbit", panel)
         self.assertIn("const pending = surface.requestPointerLock()", panel)
@@ -447,7 +459,7 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("document.addEventListener('keyup'", panel)
         self.assertIn("!held.has(key)", panel)
         self.assertIn("document.addEventListener('visibilitychange'", panel)
-        self.assertIn("if (stopActive) return", panel)
+        self.assertIn("if (stopPromise !== null) return stopPromise", panel)
         self.assertIn("if (armToken === expectedToken) void stop('arm expired')", panel)
         self.assertIn("Screenshot review expires in ${seconds}s.", panel)
         self.assertIn("Controls released; reviewed session remains armed.", panel)

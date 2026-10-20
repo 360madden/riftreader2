@@ -2,6 +2,37 @@
 
 Updated: 2026-10-20 (America/New_York).
 
+## Native control usability and session cleanup
+
+The [usability pass](validation/native-control-usability-2026-10-20.md)
+inspected the actual RIFT bindings and camera settings without changing them.
+Browser trials demonstrated strafe, both camera drag modes, reversible zoom,
+release cleanup, horizontal-wheel suppression, and preserved action feedback.
+Computer Use could inspect VMware but did not reliably deliver menu input;
+the repository-owned VM-specific console helper completed that inspection.
+
+Fixed pending ARM/STOP races, duplicate arm submission, stale queued input and
+responses, late Pointer Lock grants, surface-focus release, shortcut handling,
+and status overwriting action evidence. The guest now invalidates old review
+authorization on STOP, recovery, and replacement capture. A live page-exit
+failure led to keepalive on every STOP; the corrected trial acknowledged STOP
+0.481 seconds after ARM and left the guest disarmed with no sampled input down.
+
+Full gate passed: **364 C# tests**, **174 Python tests** including 14 executable
+async panel scenarios, 108 Lua assertions, 22 Lua/C# cases, zero-warning Release,
+native smoke, locked restore, formatting/module checks, and deterministic
+replay. Evidence: `artifacts/validation/20261020T161445Z-98004030`.
+The deployed native executable matches that gate. Active configuration:
+`artifacts/native-usability-20261020/host.json`; receiver
+`d26484f41ed34c9da6911d465530bdf9`. Final status: connected, disarmed, idle,
+no recovery or sampled input down. Temporary bootstrap stopped.
+
+Next authorized work can resume information discovery. Longer human usability,
+live window-blur qualification outside the in-app tab-switch behavior, smooth
+continuous camera tracking, numerical camera calibration, other builds, and
+fullscreen remain open. Do not repeat completed basic movement/zoom trials
+without a new reason.
+
 ## Native wheel zoom fixed and verified
 
 The [zoom validation record](validation/native-zoom-2026-10-20.md) closes the

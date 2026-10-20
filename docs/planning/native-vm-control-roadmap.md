@@ -43,9 +43,12 @@ showed no zoom despite the user's working physical-wheel baseline.
 
 Remaining priorities are:
 
-1. Human usability pass with the panel beside VMware: sustained keyboard and
-   bounded drag, blur, and precision. Optional Pointer Lock needs a compatible
-   browser; bounded drag was exercised in Codex. Avoid repeating basic S/A/D.
+1. The [bounded usability pass](../validation/native-control-usability-2026-10-20.md)
+   completed binding inspection, drag/zoom/release checks, and panel/native
+   authorization fixes. Live page-exit STOP now passes. Longer human sessions,
+   smooth continuous camera tracking, and live window-blur behavior outside
+   the in-app tab-switch environment remain open. Optional Pointer Lock needs
+   a compatible browser. Avoid repeating basic S/A/D.
 2. Measure timing across a larger sample only when needed for further tuning;
    the small passing follow-up sample does not establish a distribution.
 3. Resume information discovery using the new bounded native controls.

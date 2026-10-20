@@ -90,6 +90,14 @@
       "kind": "retained_run",
       "supports": "Targeted wheel messages produce reversible visual zoom on the identified final binary; the panel sends one bounded notch.",
       "limitations": "Single windowed build/session, no numerical camera calibration or hardware-input equivalence."
+    },
+    {
+      "id": "E12",
+      "source": "docs/validation/native-control-usability-2026-10-20.md",
+      "locator": "Final live checks; Validation and handoff",
+      "kind": "retained_run",
+      "supports": "Actual bindings inspected; bounded panel strafe, both drag modes, reversible zoom, release, status preservation, and corrected keepalive page-exit STOP verified. Native STOP revokes old review authorization.",
+      "limitations": "Single windowed session; in-app tab creation did not establish blur. Async regressions cover focus races; long human sessions and continuous camera tracking remain unqualified."
     }
   ],
   "findings": [
@@ -407,5 +415,5 @@
     "Whether numerical camera feedback is available through a supported API."
   ],
   "authorizationNeeded": [],
-  "nextAction": "Use the native supervised workflow. Wheel zoom and bounded camera drag now have live evidence; continue sustained human usability or information discovery without repeating completed baselines."
+  "nextAction": "Resume information discovery using the native supervised controls, or evaluate longer human usability and live window blur in a compatible browser. Keep completed movement/zoom baselines as evidence rather than repeating them without cause."
 }

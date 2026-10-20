@@ -314,7 +314,7 @@ The helper API is JSON over loopback HTTP:
 | `POST /api/arm` | Accept `captureId` plus a 12-512 character `reviewNote`; issue a 15-second token only while the exact reviewed target still matches. |
 | `POST /api/action` | Submit one validated action with that arm token. |
 | `POST /api/release` with `{}` | Cancel the active action and wait for its `finally` releases. It does not disarm a still-valid session by itself. |
-| `POST /api/stop` with `{}` | Disarm, cancel the active action, and wait for release attempts. It does not silently recover a journal left by a hard crash. |
+| `POST /api/stop` with `{}` | Disarm, invalidate the reviewed capture, cancel the active action, and wait for release attempts. It does not silently recover a journal left by a hard crash. |
 | `POST /api/recover` with `{}` | Disarm and explicitly send only retained key-up/button-up intent when the recorded process epoch still matches. |
 
 All POST bodies are strict JSON. Capture, release, stop, and recover accept only
@@ -344,6 +344,8 @@ physically holds a supported key and the 15-second arm remains valid. For a
 first qualification pulse, submit one action rather than relying on repetition.
 Review has a visible 45-second countdown and requires a confirmation checkbox
 plus a note of at least 12 characters. Arming consumes that review.
+The default game bindings are W/S move, A/D turn, and Q/E strafe; inspect the
+current game's bindings before attributing a different response to the transport.
 
 Select Right yaw/pitch or Left orbit, then hold the left mouse button on the
 control surface and drag. This default uses browser pointer capture and works
@@ -353,6 +355,7 @@ pointer clears queued deltas and requests release. Camera mode Off keeps
 movement available without adding a mouse-button press.
 For zoom, scroll over the focused control surface while armed. Camera drag
 mode may remain Off; each wheel event requests one standalone notch.
+Horizontal-only wheel events do not request zoom.
 
 Pointer Lock is optional for compatible browsers. The Codex in-app browser
 rejected it during the October 20 follow-up; use bounded drag there. Changing
@@ -360,6 +363,20 @@ mode during a drag/lock stops and disarms. Pointer Lock loss, browser blur,
 page hiding, and arm expiry request stop. They do not prove that a guest hard
 crash received key-up. The panel displays the last action outcome separately
 from release/disarm status; successful insertion still does not prove game response.
+
+The [usability pass](../validation/native-control-usability-2026-10-20.md)
+adds serialized capture/arm/recovery transitions. A new screenshot from an
+active session first stops it and clears held keys, queued deltas, wheel input,
+timers, and pointer capture. Leaving the control surface releases active input;
+Ctrl/Alt/Meta shortcuts do not become movement commands. Status has a separate
+display and cannot replace the last action result.
+
+Focus loss during a pending arm invalidates the local request and requests STOP
+both immediately and after the pending arm settles. Guest STOP invalidates the
+old reviewed capture, so an ARM sequenced after STOP cannot reuse it even if the
+browser closes before sending its second STOP. Page exit makes a best-effort
+keepalive STOP request; browser/network/OS failure can still prevent delivery.
+The guest's bounded actions and arm expiry remain independent limits.
 
 ## Recovery and evidence meaning
 
