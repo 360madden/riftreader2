@@ -25,7 +25,9 @@ public static class CliRunner
                     search-memory --snapshot PATH --type TYPE --value VALUE [--tolerance NUMBER] [--output PATH]
                     find-pattern --snapshot PATH --pattern PATTERN [--output PATH]
                     compare-memory --before PATH --after PATH --type TYPE --mode MODE [--output PATH]
-                    find-pointers --snapshot PATH --target 0xADDRESS --max-depth 1..4 --max-offset 0..4096 [--output PATH]
+                    audit-targeted-health --request PATH --manifest PATH --receipt PATH --snapshot PATH [--output PATH]
+                     compare-targeted-health --before PATH --after PATH [--output PATH]
+                     find-pointers --snapshot PATH --target 0xADDRESS --max-depth 1..4 --max-offset 0..4096 [--output PATH]
 
                     Paths are relative to the current directory. Capture samples are beside their manifest;
                     wall replay uses the exact source path pinned in its evidence manifest.
@@ -51,6 +53,13 @@ public static class CliRunner
                 };
                 return await MemoryDiscoveryCommand.RunAsync(command, memoryOptions, output, cancellationToken);
             }
+            if (command == "compare-targeted-health")
+                return await TargetedHealthAuditCommand.CompareAsync(
+                    ParseOptions(args[1..], "--before", "--after", "--output"), output, cancellationToken);
+            if (command == "audit-targeted-health")
+                return await TargetedHealthAuditCommand.RunAsync(
+                    ParseOptions(args[1..], "--request", "--manifest", "--receipt", "--snapshot", "--output"),
+                    output, cancellationToken);
             if (command == "qualify-fields")
                 return await FieldCatalogCommand.RunAsync(
                     ParseOptions(args[1..], "--catalog", "--build-sha256", "--session-id", "--as-of", "--output"),

@@ -61,3 +61,9 @@ for the exact generated request, test counts, VM optical-disc limitation and
 restoration evidence. The disposable guest ISO and an **unexecuted** PowerShell
 lab runner remain under ignored artifacts/field-discovery/targeted-snapshot/;
 they are not validated runtime deployment components.
+
+When genuine guest snapshot reports become available, the existing .NET CLI
+can now [audit individual targeted windows and compare two changed-state
+audits](targeted-health-audit.md). This analysis reuses the strict native
+snapshot loader, retains process/receipt hashes and missing-byte coverage,
+and does not automatically qualify cached or replicated fields.
