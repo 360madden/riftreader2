@@ -8,6 +8,13 @@ demonstrates wheel zoom in both directions in the identified windowed session.
 Sustained panel usability and numerical camera calibration remain open. The
 [follow-up record](../validation/native-vm-controls-followup-2026-10-20.md)
 adds browser-compatible camera drag, revised timing, and release feedback.
+The [camera/focus pass](../validation/camera-tracking-focus-2026-10-20.md)
+adds 20 ms camera-only pulses and real browser window-blur verification.
+Key-bearing actions remain 100 ms. Pending camera motion is capped at one
+±200 action per axis and discarded on release or focus loss. Fast gestures
+can intentionally lose their unsent tail; this is not one-to-one tracking.
+Restart the host and reload the panel when changing its HTML: the host loads
+the file once at startup.
 
 This path provides supervised movement and camera experiments for RIFT-Lab-1
 without importing or running original RiftReader source. It is intentionally

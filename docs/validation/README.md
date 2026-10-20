@@ -2,6 +2,10 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest: [Camera tracking and real browser focus loss](camera-tracking-focus-2026-10-20.md)
+records 20 ms camera pulses, bounded pending movement, physical Edge Alt-Tab
+STOP, and the full gate including native-capture process-exit hardening.
+
 | Record | Meaning |
 |---|---|
 | [Repository setup](repository-setup-2026-10-18.md) | File, Git, and Workbridge checks for the documentation baseline. |

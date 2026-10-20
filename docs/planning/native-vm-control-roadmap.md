@@ -45,9 +45,11 @@ Remaining priorities are:
 
 1. The [bounded usability pass](../validation/native-control-usability-2026-10-20.md)
    completed binding inspection, drag/zoom/release checks, and panel/native
-   authorization fixes. Live page-exit STOP now passes. Longer human sessions,
-   smooth continuous camera tracking, and live window-blur behavior outside
-   the in-app tab-switch environment remain open. Optional Pointer Lock needs
+   authorization fixes. Live page-exit STOP now passes. The
+   [camera/focus pass](../validation/camera-tracking-focus-2026-10-20.md)
+   shortened camera-only pulses to 20 ms and verified actual Edge window-blur
+   STOP, including a held browser drag. Longer human sessions and continuous
+   frame-by-frame tracking remain open. Optional Pointer Lock needs
    a compatible browser. Avoid repeating basic S/A/D.
 2. Measure timing across a larger sample only when needed for further tuning;
    the small passing follow-up sample does not establish a distribution.

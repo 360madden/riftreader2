@@ -49,7 +49,7 @@
           <strong>Focused control surface</strong><br>
           Default bindings: W/S move, A/D turn, Q/E strafe; hold for bounded 100 ms actions.<br>
           Scroll here to zoom in or out, one notch per wheel event.<br>
-          Default: hold the left mouse button here and drag; mouse deltas are bounded to ±200.<br>
+          Default: hold the left mouse button here and drag; camera-only pulses use 20 ms and pending deltas are bounded to ±200.<br>
           Drag release sends RELEASE. Blur or pointer-lock exit sends STOP.
         </div>
       </div>
@@ -91,6 +91,8 @@
   const surface = $('surface'), screen = $('screen');
   const operatorState = $('operatorState'), reviewState = $('reviewState');
   const allowed = new Set(['w','a','s','d','q','e']);
+  const movementHoldMilliseconds = 100;
+  const cameraHoldMilliseconds = 20;
 
   function printableDiagnostic(value) {
     if (typeof value === 'number' && Number.isInteger(value) && !Number.isSafeInteger(value))
@@ -342,6 +344,10 @@
     return true;
   }
   function bounded(value) { return Math.max(-200, Math.min(200, Math.trunc(value))); }
+  function queueCameraDelta(movementX, movementY) {
+    deltaX = Math.max(-200, Math.min(200, deltaX + movementX));
+    deltaY = Math.max(-200, Math.min(200, deltaY + movementY));
+  }
   function requestPump() {
     if (!stillArmed()) return;
     pumpRequested = true;
@@ -400,7 +406,8 @@
       } else {
         deltaX -= dx; deltaY -= dy;
         const mouseButton = (dx !== 0 || dy !== 0) ? ($('mouseButton').value || null) : null;
-        action = {keys, holdMilliseconds:(keys.length || mouseButton) ? 100 : 20, mouseButton,
+        action = {keys, holdMilliseconds:keys.length
+          ? movementHoldMilliseconds : cameraHoldMilliseconds, mouseButton,
           deltaX:dx, deltaY:dy, wheelNotches:0};
       }
       const value = await api('/api/action', 'POST', {armToken, action:{
@@ -612,8 +619,7 @@
     dragLastY = event.clientY;
     if (movementX === 0 && movementY === 0) return;
     event.preventDefault();
-    deltaX += movementX;
-    deltaY += movementY;
+    queueCameraDelta(movementX, movementY);
     schedulePointerPump();
   });
   function finishBoundedDrag(event, reason) {
@@ -658,7 +664,7 @@
   document.addEventListener('mousemove', event => {
     if ($('pointerMode').value !== 'lock' || document.pointerLockElement !== surface
         || !stillArmed() || !$('mouseButton').value) return;
-    deltaX += event.movementX; deltaY += event.movementY; schedulePointerPump();
+    queueCameraDelta(event.movementX, event.movementY); schedulePointerPump();
   });
   surface.addEventListener('wheel', event => {
     if (!stillArmed() || event.deltaY === 0) return;

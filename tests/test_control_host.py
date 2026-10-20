@@ -465,7 +465,11 @@ class PanelContractTests(unittest.TestCase):
         self.assertIn("Controls released; reviewed session remains armed.", panel)
         self.assertIn("Input inserted and released; RIFT response is not verified.", panel)
         self.assertIn("(dx !== 0 || dy !== 0) ? ($('mouseButton').value || null) : null", panel)
-        self.assertIn("holdMilliseconds:(keys.length || mouseButton) ? 100 : 20", panel)
+        self.assertIn("const movementHoldMilliseconds = 100", panel)
+        self.assertIn("const cameraHoldMilliseconds = 20", panel)
+        self.assertIn("holdMilliseconds:keys.length", panel)
+        self.assertIn("? movementHoldMilliseconds : cameraHoldMilliseconds", panel)
+        self.assertIn("deltaX = Math.max(-200, Math.min(200, deltaX + movementX))", panel)
         self.assertIn("captureId = null;\n      captureDeadline = 0;", panel)
         self.assertIn("document.pointerLockElement === surface || dragPointerId !== null", panel)
 

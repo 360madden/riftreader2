@@ -2,6 +2,33 @@
 
 Updated: 2026-10-20 (America/New_York).
 
+## Camera responsiveness and actual window blur
+
+The [camera/focus pass](validation/camera-tracking-focus-2026-10-20.md)
+reduced camera-only pulses to 20 ms, retained 100 ms movement, and limited
+pending camera motion to one bounded action. Release/blur discard it immediately.
+Nine actions per camera mode visibly changed the view; measured button intervals
+were 21.84–38.73 ms. This improves pulse cadence, not a claim of continuous
+frame-by-frame tracking or one-to-one camera mapping.
+
+Actual physical Edge Alt-Tab tests now verify window-blur STOP, both while
+armed and with a browser drag held. Visible feedback and native logs agree:
+disarmed, idle, no recovery, no sampled input down. The native pulse completed
+before blur; guest foreground loss mid-pulse remains unqualified live.
+
+Full gate passed: 364 C# tests, 174 Python tests including 18 async panel
+scenarios, Lua contracts, zero-warning Release, native smoke and repository
+checks. Evidence: `artifacts/validation/20261020T173733Z-c655e828`.
+Two gate failures also led to narrow native-capture process-exit hardening and
+a disposable-process initialization fix. The deployed control agent is unchanged;
+the restarted host (PID 43936) serves the revised panel using
+`artifacts/native-usability-20261020/host.json`.
+
+Next useful work: longer human comfort checks if needed, then information
+discovery. Do not repeat the basic camera/zoom or real window-blur baselines
+without a new reason. Continuous guest-held camera streaming would require a
+separate bounded lifecycle design; it is not necessary for the current trials.
+
 ## Native control usability and session cleanup
 
 The [usability pass](validation/native-control-usability-2026-10-20.md)

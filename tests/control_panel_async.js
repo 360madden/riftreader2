@@ -256,6 +256,119 @@ async function testActionFailureClearsQueuedDragAndCapture() {
   assert.strictEqual(action.deltaX, 1);
 }
 
+async function testCameraUsesMinimumHoldAndBoundsPendingBacklog() {
+  const panel = createPanel();
+  await arm(panel);
+  panel.elements.mouseButton.value = 'right';
+  panel.elements.mouseButton.dispatch('change');
+  const firstAction = panel.enqueue('/api/action');
+  panel.elements.surface.dispatch('pointerdown', {
+    pointerId:30, button:0, buttons:1, clientX:0, clientY:0,
+  });
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:30, buttons:1, clientX:0.6, clientY:0.6,
+  });
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:30, buttons:1, clientX:1.2, clientY:1.2,
+  });
+  await panel.runTimers(20);
+  const first = callsFor(panel, '/api/action')[0].body.action;
+  assert.strictEqual(first.holdMilliseconds, 20);
+  assert.strictEqual(first.deltaX, 1);
+  assert.strictEqual(first.deltaY, 1);
+
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:30, buttons:1, clientX:410, clientY:402,
+  });
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:30, buttons:1, clientX:810, clientY:802,
+  });
+  firstAction.resolve({
+    result:{deliverySucceeded:true, releaseSucceeded:true, cancelled:false},
+    recoveryRequired:false, action:first,
+  });
+  await flush();
+  await panel.runTimers(0);
+  await flush();
+  const actions = callsFor(panel, '/api/action');
+  assert.strictEqual(actions.length, 2);
+  assert.strictEqual(actions[1].body.action.deltaX, 200);
+  assert.strictEqual(actions[1].body.action.deltaY, 200);
+  assert.strictEqual(actions[1].body.action.holdMilliseconds, 20);
+}
+
+async function testMovementKeepsHundredMillisecondHold() {
+  const panel = createPanel();
+  await arm(panel);
+  panel.elements.surface.dispatch('keydown', {key:'w'});
+  await flush();
+  const action = callsFor(panel, '/api/action')[0].body.action;
+  assert.deepStrictEqual(action.keys, ['w']);
+  assert.strictEqual(action.holdMilliseconds, 100);
+}
+
+async function testDragReleaseDropsPendingCameraBacklog() {
+  const panel = createPanel();
+  await arm(panel);
+  panel.elements.mouseButton.value = 'right';
+  panel.elements.mouseButton.dispatch('change');
+  const firstAction = panel.enqueue('/api/action');
+  panel.elements.surface.dispatch('pointerdown', {
+    pointerId:31, button:0, buttons:1, clientX:0, clientY:0,
+  });
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:31, buttons:1, clientX:20, clientY:0,
+  });
+  await panel.runTimers(20);
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:31, buttons:1, clientX:180, clientY:0,
+  });
+  panel.elements.surface.dispatch('pointerup', {
+    pointerId:31, button:0, buttons:0, clientX:180, clientY:0,
+  });
+  await flush();
+  assert.strictEqual(callsFor(panel, '/api/release').length, 1);
+  firstAction.resolve({
+    result:{deliverySucceeded:true, releaseSucceeded:true, cancelled:true},
+    recoveryRequired:false, action:{mouseButton:'right', deltaX:20, deltaY:0},
+  });
+  await flush();
+  await panel.runTimers(100);
+  assert.strictEqual(callsFor(panel, '/api/action').length, 1);
+}
+
+async function testWindowBlurStopsAndDropsPendingCameraBacklog() {
+  const panel = createPanel();
+  await arm(panel);
+  panel.elements.mouseButton.value = 'right';
+  panel.elements.mouseButton.dispatch('change');
+  const firstAction = panel.enqueue('/api/action');
+  panel.elements.surface.dispatch('pointerdown', {
+    pointerId:32, button:0, buttons:1, clientX:0, clientY:0,
+  });
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:32, buttons:1, clientX:20, clientY:0,
+  });
+  await panel.runTimers(20);
+  panel.elements.surface.dispatch('pointermove', {
+    pointerId:32, buttons:1, clientX:180, clientY:0,
+  });
+  panel.document.focused = false;
+  panel.window.dispatch('blur');
+  await flush();
+  const stops = callsFor(panel, '/api/stop');
+  assert.strictEqual(stops.length, 1);
+  assert.strictEqual(stops[0].options.keepalive, true);
+  assert.strictEqual(panel.elements.armedState.textContent, 'Disarmed');
+  firstAction.resolve({
+    result:{deliverySucceeded:true, releaseSucceeded:true, cancelled:true},
+    recoveryRequired:false, action:{mouseButton:'right', deltaX:20, deltaY:0},
+  });
+  await flush();
+  await panel.runTimers(100);
+  assert.strictEqual(callsFor(panel, '/api/action').length, 1);
+}
+
 async function testKeyReleaseResumesOnlyKeysStillHeld() {
   const panel = createPanel();
   await arm(panel);
@@ -496,6 +609,10 @@ async function testZeroWheelDoesNothing() {
   await testUncertainArmOutcomeGetsCompensatingStop();
   await testCaptureStopsAndDropsStaleHeldKey();
   await testActionFailureClearsQueuedDragAndCapture();
+  await testCameraUsesMinimumHoldAndBoundsPendingBacklog();
+  await testMovementKeepsHundredMillisecondHold();
+  await testDragReleaseDropsPendingCameraBacklog();
+  await testWindowBlurStopsAndDropsPendingCameraBacklog();
   await testKeyReleaseResumesOnlyKeysStillHeld();
   await testReleaseFailureClearsPointerLockAndArm();
   await testStaleReleaseCannotDisarmNewSession();
