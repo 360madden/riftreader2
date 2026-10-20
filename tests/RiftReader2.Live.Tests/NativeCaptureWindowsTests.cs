@@ -90,6 +90,7 @@ public sealed class NativeCaptureWindowsTests
             await using var session = await WindowsNativeMemorySession.OpenAsync(process.Id, null, null, CancellationToken.None);
             process.Kill(entireProcessTree: true);
             await process.WaitForExitAsync();
+            Assert.True(process.HasExited);
 
             var failure = await session.RevalidateAsync(CancellationToken.None);
 

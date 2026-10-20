@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.Json;
 using RiftReader2.Infrastructure;
@@ -124,8 +125,7 @@ public sealed class PointerFollowEpochTests
                 ?? throw new InvalidOperationException("Could not start disposable test process.");
             try
             {
-                await using var session = await WindowsNativeMemorySession.OpenAsync(
-                    child.Id, null, null, CancellationToken.None);
+                await using var session = await OpenDisposableProcessAsync(child);
                 var request = Path.Combine(directory, "exited-epoch.json");
                 var output = Path.Combine(directory, "should-not-exist.json");
                 await File.WriteAllTextAsync(request, RequestJson(
@@ -155,6 +155,29 @@ public sealed class PointerFollowEpochTests
         finally
         {
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static async Task<WindowsNativeMemorySession> OpenDisposableProcessAsync(Process process)
+    {
+        var started = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            try
+            {
+                return await WindowsNativeMemorySession.OpenAsync(
+                    process.Id, null, null, CancellationToken.None);
+            }
+            catch (Win32Exception exception) when (
+                exception.NativeErrorCode == 18 &&
+                !process.HasExited &&
+                Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(5))
+            {
+                // A newly created process can exist briefly before Toolhelp exposes
+                // its first module. Production epoch opening remains fail-fast; only
+                // this disposable test fixture waits for process initialization.
+                await Task.Delay(20);
+            }
         }
     }
 

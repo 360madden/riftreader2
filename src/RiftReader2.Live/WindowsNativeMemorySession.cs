@@ -35,7 +35,8 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         var handle = NativeMethods.OpenProcess(
             NativeMethods.ProcessAccess.VirtualMemoryRead |
             NativeMethods.ProcessAccess.QueryInformation |
-            NativeMethods.ProcessAccess.QueryLimitedInformation,
+            NativeMethods.ProcessAccess.QueryLimitedInformation |
+            NativeMethods.ProcessAccess.Synchronize,
             false,
             processId);
         if (handle.IsInvalid)
@@ -193,11 +194,23 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
 
     private static long GetStartTicks(SafeProcessHandle process)
     {
+        EnsureProcessRunning(process);
         if (!NativeMethods.GetProcessTimes(process, out var created, out var exited, out _, out _))
             throw Win32("GetProcessTimes");
         if (exited.ToLong() != 0)
             throw new InvalidDataException("The identified process has exited.");
         return DateTime.FromFileTimeUtc(created.ToLong()).Ticks;
+    }
+
+    private static void EnsureProcessRunning(SafeProcessHandle process)
+    {
+        var result = NativeMethods.WaitForSingleObject(process, 0);
+        if (result == NativeMethods.WaitObject0)
+            throw new InvalidDataException("The identified process has exited.");
+        if (result == NativeMethods.WaitFailed)
+            throw Win32("WaitForSingleObject");
+        if (result != NativeMethods.WaitTimeout)
+            throw new InvalidDataException($"WaitForSingleObject returned unexpected status 0x{result:X8}.");
     }
 
     private static string QueryExecutablePath(SafeProcessHandle process)
@@ -290,13 +303,17 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         internal const uint PageExecuteWriteCopy = 0x80;
         internal const uint Th32csSnapModule = 0x00000008;
         internal const uint Th32csSnapModule32 = 0x00000010;
+        internal const uint WaitObject0 = 0x00000000;
+        internal const uint WaitTimeout = 0x00000102;
+        internal const uint WaitFailed = 0xFFFFFFFF;
 
         [Flags]
         internal enum ProcessAccess : uint
         {
             VirtualMemoryRead = 0x0010,
             QueryInformation = 0x0400,
-            QueryLimitedInformation = 0x1000
+            QueryLimitedInformation = 0x1000,
+            Synchronize = 0x00100000
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -367,6 +384,9 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         [DllImport("kernel32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
         internal static extern bool GetProcessTimes(SafeProcessHandle process, out FileTime creation, out FileTime exit, out FileTime kernel, out FileTime user);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern uint WaitForSingleObject(SafeProcessHandle handle, uint milliseconds);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]

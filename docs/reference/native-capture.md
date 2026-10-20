@@ -64,9 +64,11 @@ read-only session port; Infrastructure handles request/report JSON; Live owns
 Win32 access and command composition. No process write, injected code,
 debugger, or player-input capability is introduced.
 
-The native session uses one process handle opened with query and VM-read
-rights. Process creation time, exit state, image path, executable file hash,
-and main-module mapping are checked around acquisition. The executable hash
+The native session uses one process handle opened with query, VM-read, and
+non-mutating synchronization rights. A zero-time handle-state check rejects a
+signaled, exited process even when its exit timestamp has not yet become visible.
+Process creation time, exit state, image path, executable file hash, and
+main-module mapping are checked around acquisition. The executable hash
 identifies the on-disk file. It does not establish that every loaded module
 byte matches that file.
 
