@@ -3,8 +3,9 @@
 Status: implemented and exercised on RIFT-Lab-1. The
 [October 20 live record](../validation/native-vm-controls-2026-10-20.md)
 demonstrates windowed capture, movement/chords, orbit, yaw/pitch, stop, and idle
-reconnect. Wheel zoom remains unverified; sustained panel usability and
-numerical camera calibration remain open. The
+reconnect. The [native zoom record](../validation/native-zoom-2026-10-20.md)
+demonstrates wheel zoom in both directions in the identified windowed session.
+Sustained panel usability and numerical camera calibration remain open. The
 [follow-up record](../validation/native-vm-controls-followup-2026-10-20.md)
 adds browser-compatible camera drag, revised timing, and release feedback.
 
@@ -113,13 +114,33 @@ earlier in the action handler and also includes guest preparation through result
 assembly, but it is recorded before response persistence.
 
 The guest also returns `inputEvents` in call order. Each successfully inserted
-key-down, key-up, button-down, button-up, relative move, or wheel event records
+key-down, key-up, button-down, button-up, or relative move records
 its stable `kind`, the value, guest `timestampUtc`, and monotonic
 `elapsedMilliseconds` relative to creation of that action's Windows input
 adapter. The record is appended after `SendInput` reports complete insertion.
 It is insertion evidence with guest timing, not the exact kernel event time and
 not proof that RIFT consumed the event. A failed insertion has no success event;
 use the executor error and release result as well.
+
+Wheel actions use one targeted `WM_MOUSEWHEEL` message rather than `SendInput`.
+The tested RIFT session ignored the latter wheel path despite successful
+insertion. The adapter revalidates the reviewed process, HWND, foreground, and
+client geometry immediately before dispatch. It requires the cursor inside
+the client and rejects sampled held control keys, modifiers, or buttons.
+It encodes signed wheel delta and screen coordinates according to Microsoft's
+[message contract](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-mousewheel).
+The host still caps each action at one notch.
+
+`SendMessageTimeoutW` uses a 100 ms timeout with BLOCK, ABORTIFHUNG, and
+ERRORONEXIT. It sends once, with no retry or alternate backend. Failure or timeout
+means delivery is unknown and disarms the session; a wheel has no held state to
+release. See the [Windows dispatch semantics](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw).
+A successful `wheelMessageDispatched` event records `notches`, backend
+`WM_MOUSEWHEEL`, and `timeoutMilliseconds: 100`. This proves dispatch, not that
+RIFT zoomed; `responseVerified` stays false in the transport result. Later visual
+evidence is recorded separately.
+The synchronous dispatch cannot be cancelled mid-call, but has no pressed key or
+button and is bounded by its timeout.
 
 Every intended key and mouse-button release is attempted individually in
 `finally`, including after partial input failure, cancellation, or loss of
@@ -330,6 +351,8 @@ without Pointer Lock. Camera and movement pulses use 100 ms; pointer deltas
 coalesce for 16 ms and remain bounded to ±200. Releasing or losing the captured
 pointer clears queued deltas and requests release. Camera mode Off keeps
 movement available without adding a mouse-button press.
+For zoom, scroll over the focused control surface while armed. Camera drag
+mode may remain Off; each wheel event requests one standalone notch.
 
 Pointer Lock is optional for compatible browsers. The Codex in-app browser
 rejected it during the October 20 follow-up; use bounded drag there. Changing
@@ -357,8 +380,8 @@ Keep evidence sources distinct:
 - the reviewed BMP is visual evidence from a provisional GDI client capture;
 - command/request, timing, and `ControlExecutionResult` fields are input intent,
   transport, insertion, and release evidence;
-- guest `inputEvents` provide post-insertion UTC and monotonic timestamps for
-  each successful Windows input call; they do not show game consumption;
+- guest `inputEvents` provide UTC and monotonic timestamps after successful
+  input insertion or wheel-message dispatch; they do not show game consumption;
 - a later screenshot may support a visible-response observation but supplies no
   numerical heading, pitch, or zoom by itself;
 - addon/API observations require their own nonce, process/reload generation,

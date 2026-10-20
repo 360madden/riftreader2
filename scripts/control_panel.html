@@ -48,6 +48,7 @@
         <div>
           <strong>Focused control surface</strong><br>
           Hold W/A/S/D/Q/E for bounded 100 ms actions.<br>
+          Scroll here to zoom in or out, one notch per wheel event.<br>
           Default: hold the left mouse button here and drag; mouse deltas are bounded to ±200.<br>
           Drag release sends RELEASE. Blur or pointer-lock exit sends STOP.
         </div>
@@ -113,6 +114,12 @@
       || outcome.targetLost === true
       || (outcome.deliverySucceeded !== true && outcome.cancelled !== true);
   }
+  function isWheelAction(value) {
+    return value !== null && typeof value === 'object'
+      && value.action !== null && typeof value.action === 'object'
+      && Number.isInteger(value.action.wheelNotches)
+      && value.action.wheelNotches !== 0;
+  }
   function clearLocalControlState(message) {
     held.clear();
     deltaX = 0;
@@ -152,11 +159,14 @@
     const succeeded = outcome !== null && outcome.deliverySucceeded === true
       && outcome.releaseSucceeded === true && value.recoveryRequired === false
       && !requiresDisarm;
+    const successMessage = isWheelAction(value)
+      ? 'Wheel message dispatched; RIFT zoom is not verified.'
+      : 'Input inserted and released; RIFT response is not verified.';
     if (requiresDisarm) clearLocalControlState(
       'Input result left control state uncertain; recover if required, then capture again.');
     show(value, succeeded);
     summary.textContent = succeeded
-      ? 'Input inserted and released; RIFT response is not verified.'
+      ? successMessage
       : (requiresDisarm ? 'Control state is uncertain; local controls were disarmed.'
         : 'Input delivery or release was not confirmed.');
     if (requiresDisarm) {
@@ -164,7 +174,7 @@
         'Input delivery or release was not confirmed. Controls disarmed; inspect the result and recover if required.',
         'bad');
     } else if (!preserveOperational) {
-      if (succeeded) setOperational('Input inserted and released; RIFT response is not verified.', 'good');
+      if (succeeded) setOperational(successMessage, 'good');
       else setOperational('Input delivery or release was not confirmed. Review the result.', 'bad');
     }
   }

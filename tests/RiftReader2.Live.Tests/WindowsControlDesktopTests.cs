@@ -217,6 +217,132 @@ public sealed class WindowsControlDesktopTests
         Assert.Equal(40, SizeOfNested("BitmapInfoHeader"));
     }
 
+    [Theory]
+    [InlineData(-3, 0xFE980000u)]
+    [InlineData(-1, 0xFF880000u)]
+    [InlineData(1, 0x00780000u)]
+    [InlineData(3, 0x01680000u)]
+    public void TargetedWheel_EncodesSignedDeltaInHighWord(int notches, uint expected)
+    {
+        Assert.Equal(expected, EncodeWheelWParam(notches).ToUInt64());
+    }
+
+    [Theory]
+    [InlineData(-4)]
+    [InlineData(0)]
+    [InlineData(4)]
+    public void TargetedWheel_RejectsZeroAndOutOfBoundsNotches(int notches)
+    {
+        var error = Assert.Throws<TargetInvocationException>(() => EncodeWheelWParam(notches));
+
+        Assert.IsType<ArgumentOutOfRangeException>(error.InnerException);
+    }
+
+    [Theory]
+    [InlineData(0, 0, 0x00000000u)]
+    [InlineData(32767, 32767, 0x7FFF7FFFu)]
+    [InlineData(-32768, -32768, 0x80008000u)]
+    [InlineData(-1, 1, 0x0001FFFFu)]
+    public void TargetedWheel_PacksSignedScreenCoordinates(int x, int y, uint expected)
+    {
+        var packed = unchecked((uint)EncodeScreenPointLParam(new DesktopPoint(x, y)).ToInt64());
+
+        Assert.Equal(expected, packed);
+    }
+
+    [Theory]
+    [InlineData(-32769, 0)]
+    [InlineData(32768, 0)]
+    [InlineData(0, -32769)]
+    [InlineData(0, 32768)]
+    public void TargetedWheel_RejectsCoordinatesOutsideSignedWords(int x, int y)
+    {
+        var error = Assert.Throws<TargetInvocationException>(() =>
+            EncodeScreenPointLParam(new DesktopPoint(x, y)));
+
+        Assert.IsType<InvalidOperationException>(error.InnerException);
+    }
+
+    [Fact]
+    public void TargetedWheel_DispatchesExactlyOnceWithBoundedTimeoutFlags()
+    {
+        var calls = 0;
+        (IntPtr ReturnValue, int Error) Sender(
+            IntPtr window,
+            uint message,
+            UIntPtr wParam,
+            IntPtr lParam,
+            uint flags,
+            uint timeout)
+        {
+            calls++;
+            Assert.Equal(new IntPtr(0x123), window);
+            Assert.Equal(0x020Au, message);
+            Assert.Equal(0x00780000u, wParam.ToUInt64());
+            Assert.Equal(new IntPtr(0x00640032), lParam);
+            Assert.Equal(0x0023u, flags);
+            Assert.Equal(100u, timeout);
+            return (new IntPtr(1), 0);
+        }
+
+        SendWheelMessage(
+            new IntPtr(0x123),
+            new UIntPtr(0x00780000u),
+            new IntPtr(0x00640032),
+            Sender);
+
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public void TargetedWheel_FailureIsNotRetriedAndReportsUnknownOutcome()
+    {
+        var calls = 0;
+        (IntPtr ReturnValue, int Error) Sender(
+            IntPtr window,
+            uint message,
+            UIntPtr wParam,
+            IntPtr lParam,
+            uint flags,
+            uint timeout)
+        {
+            _ = window;
+            _ = message;
+            _ = wParam;
+            _ = lParam;
+            _ = flags;
+            _ = timeout;
+            calls++;
+            return (IntPtr.Zero, 0);
+        }
+
+        var error = Assert.Throws<TargetInvocationException>(() => SendWheelMessage(
+            new IntPtr(0x123), UIntPtr.Zero, IntPtr.Zero, Sender));
+
+        Assert.Equal(1, calls);
+        Assert.Contains("outcome is unknown", error.InnerException!.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(100, 200, 800, 600, true)]
+    [InlineData(99, 200, 800, 600, false)]
+    [InlineData(100, 199, 800, 600, false)]
+    [InlineData(100, 200, 799, 600, false)]
+    [InlineData(100, 200, 800, 599, false)]
+    public void TargetedWheel_BindsReviewedClientGeometry(
+        int clientX,
+        int clientY,
+        int clientWidth,
+        int clientHeight,
+        bool expected)
+    {
+        var target = new DesktopTarget(
+            "machine", 1, 2, "0x3", @"C:\rift_x64.exe", new string('A', 64),
+            true, 100, 200, 800, 600);
+
+        Assert.Equal(expected, HasReviewedGeometry(target, clientX, clientY, clientWidth, clientHeight));
+    }
+
     private static int SizeOfNested(string name)
     {
         var type = typeof(WindowsControlDesktop).GetNestedType(name, BindingFlags.NonPublic);
@@ -263,5 +389,48 @@ public sealed class WindowsControlDesktopTests
             "EnsureNoMouseButtonDown", BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(method);
         _ = method.Invoke(null, [getState]);
+    }
+
+    private static UIntPtr EncodeWheelWParam(int notches)
+    {
+        var method = typeof(WindowsControlDesktop).GetMethod(
+            "EncodeWheelWParam", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return Assert.IsType<UIntPtr>(method.Invoke(null, [notches]));
+    }
+
+    private static IntPtr EncodeScreenPointLParam(DesktopPoint point)
+    {
+        var method = typeof(WindowsControlDesktop).GetMethod(
+            "EncodeScreenPointLParam", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return Assert.IsType<IntPtr>(method.Invoke(null, [point]));
+    }
+
+    private static void SendWheelMessage(
+        IntPtr window,
+        UIntPtr wheelParameter,
+        IntPtr pointParameter,
+        Func<IntPtr, uint, UIntPtr, IntPtr, uint, uint, (IntPtr ReturnValue, int Error)> sender)
+    {
+        var method = typeof(WindowsControlDesktop).GetMethod(
+            "SendWheelMessage", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        _ = method.Invoke(null, [window, wheelParameter, pointParameter, sender]);
+    }
+
+    private static bool HasReviewedGeometry(
+        DesktopTarget target,
+        int clientX,
+        int clientY,
+        int clientWidth,
+        int clientHeight)
+    {
+        var method = typeof(WindowsControlDesktop).GetMethod(
+            "HasReviewedGeometry", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(method);
+        return Assert.IsType<bool>(method.Invoke(
+            null,
+            [target, clientX, clientY, clientWidth, clientHeight]));
     }
 }

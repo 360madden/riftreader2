@@ -65,6 +65,13 @@ public static class WindowsControlDesktop
     private const int VirtualKeyRightWindows = 0x5C;
     private const int KeyStateDownMask = 0x8000;
     private const int CursorSafetyPixels = 32;
+    private const uint WindowMessageMouseWheel = 0x020A;
+    private const uint SendMessageTimeoutBlock = 0x0001;
+    private const uint SendMessageTimeoutAbortIfHung = 0x0002;
+    private const uint SendMessageTimeoutErrorOnExit = 0x0020;
+    private const uint WheelMessageTimeoutFlags =
+        SendMessageTimeoutBlock | SendMessageTimeoutAbortIfHung | SendMessageTimeoutErrorOnExit;
+    private const uint WheelMessageTimeoutMilliseconds = 100;
 
     private static readonly (int VirtualKey, string Name)[] DiagnosticInputs =
     [
@@ -239,6 +246,39 @@ public static class WindowsControlDesktop
             return;
         var wheelData = checked(notches * WheelDelta);
         Send([Mouse(mouseData: unchecked((uint)wheelData), flags: MouseEventWheel)], "mouse wheel");
+    }
+
+    public static void WheelToWindow(DesktopTarget target, int notches)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        EnsureWindows();
+        var wheelParameter = EncodeWheelWParam(notches);
+        var window = ParseWindowHandle(target.WindowHandle);
+        ValidateWheelWindowTarget(target, window);
+        if (ReadPressedInputs().Length != 0)
+            throw new InvalidOperationException(
+                "Targeted wheel dispatch is blocked while Windows reports a bounded input down.");
+        var cursor = GetCursorPosition();
+        EnsureCursorWithinClient(window, cursor);
+        var pointParameter = EncodeScreenPointLParam(cursor);
+        ValidateWheelWindowTarget(target, window);
+
+        SendWheelMessage(
+            window,
+            wheelParameter,
+            pointParameter,
+            static (targetWindow, message, wParam, lParam, flags, timeout) =>
+            {
+                var dispatch = NativeMethods.SendMessageTimeout(
+                    targetWindow,
+                    message,
+                    wParam,
+                    lParam,
+                    flags,
+                    timeout,
+                    out _);
+                return (dispatch, Marshal.GetLastWin32Error());
+            });
     }
 
     public static DesktopPoint GetCursorPosition()
@@ -465,6 +505,86 @@ public static class WindowsControlDesktop
         if (IsAnyMouseButtonDown(getState))
             throw new InvalidOperationException(
                 "Cursor preparation is blocked while Windows reports a mouse button down.");
+    }
+
+    private static UIntPtr EncodeWheelWParam(int notches)
+    {
+        if (notches is < -3 or > 3 or 0)
+            throw new ArgumentOutOfRangeException(
+                nameof(notches), notches, "Targeted wheel notches must be from -3 through -1 or 1 through 3.");
+        var delta = checked((short)(notches * WheelDelta));
+        var packed = (uint)(ushort)delta << 16;
+        return new UIntPtr(packed);
+    }
+
+    private static IntPtr EncodeScreenPointLParam(DesktopPoint point)
+    {
+        if (point.X is < short.MinValue or > short.MaxValue ||
+            point.Y is < short.MinValue or > short.MaxValue)
+            throw new InvalidOperationException(
+                "The cursor screen coordinates cannot be represented in a WM_MOUSEWHEEL message.");
+        var packed = (uint)(ushort)(short)point.X | ((uint)(ushort)(short)point.Y << 16);
+        return new IntPtr(unchecked((int)packed));
+    }
+
+    private static void ValidateWheelWindowTarget(DesktopTarget target, IntPtr window)
+    {
+        RevalidateTarget(target, window);
+        if (!IsTargetForeground(window))
+            throw new InvalidOperationException(
+                "The exact desktop target must be foreground before targeted wheel dispatch.");
+        var geometry = GetClientGeometry(window);
+        if (!HasReviewedGeometry(
+                target,
+                geometry.X,
+                geometry.Y,
+                geometry.Width,
+                geometry.Height))
+            throw new InvalidOperationException(
+                "The target client geometry changed after visual review.");
+    }
+
+    private static bool HasReviewedGeometry(
+        DesktopTarget target,
+        int clientX,
+        int clientY,
+        int clientWidth,
+        int clientHeight) =>
+        target.ClientX == clientX &&
+        target.ClientY == clientY &&
+        target.ClientWidth == clientWidth &&
+        target.ClientHeight == clientHeight;
+
+    private static void EnsureCursorWithinClient(IntPtr window, DesktopPoint cursor)
+    {
+        var geometry = GetClientGeometry(window);
+        var right = checked((long)geometry.X + geometry.Width);
+        var bottom = checked((long)geometry.Y + geometry.Height);
+        if (geometry.Width <= 0 || geometry.Height <= 0 ||
+            cursor.X < geometry.X || cursor.X >= right ||
+            cursor.Y < geometry.Y || cursor.Y >= bottom)
+            throw new InvalidOperationException(
+                "The cursor must be inside the target client area before targeted wheel dispatch.");
+    }
+
+    private static void SendWheelMessage(
+        IntPtr window,
+        UIntPtr wheelParameter,
+        IntPtr pointParameter,
+        Func<IntPtr, uint, UIntPtr, IntPtr, uint, uint, (IntPtr ReturnValue, int Error)> sender)
+    {
+        ArgumentNullException.ThrowIfNull(sender);
+        var outcome = sender(
+            window,
+            WindowMessageMouseWheel,
+            wheelParameter,
+            pointParameter,
+            WheelMessageTimeoutFlags,
+            WheelMessageTimeoutMilliseconds);
+        if (outcome.ReturnValue == IntPtr.Zero)
+            throw new Win32Exception(
+                outcome.Error,
+                "Targeted wheel dispatch failed or timed out; dispatch outcome is unknown and must not be retried automatically.");
     }
 
     private static bool IsTargetForeground(IntPtr targetWindow)
@@ -750,6 +870,16 @@ public static class WindowsControlDesktop
 
         [DllImport("user32.dll")]
         internal static extern short GetAsyncKeyState(int virtualKey);
+
+        [DllImport("user32.dll", EntryPoint = "SendMessageTimeoutW", SetLastError = true)]
+        internal static extern IntPtr SendMessageTimeout(
+            IntPtr window,
+            uint message,
+            UIntPtr wParam,
+            IntPtr lParam,
+            uint flags,
+            uint timeoutMilliseconds,
+            out UIntPtr result);
 
         [DllImport("user32.dll", SetLastError = true)]
         internal static extern IntPtr GetDC(IntPtr window);

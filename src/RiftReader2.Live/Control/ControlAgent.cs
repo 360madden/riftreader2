@@ -327,7 +327,9 @@ public sealed class ControlAgent
                 completedAtUtc = DateTimeOffset.UtcNow,
                 elapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
                 recoveryRequired = File.Exists(PendingPath),
-                responseEvidence = "Windows input insertion and release only; compare a later independent frame/API observation."
+                responseEvidence = request.Action.WheelNotches != 0
+                    ? "Wheel window-message dispatch only; compare a later independent frame to establish zoom."
+                    : "Windows input insertion and release only; compare a later independent frame/API observation."
             };
         }
         catch (Exception exception)
@@ -433,8 +435,13 @@ public sealed class ControlAgent
         public void Wheel(int notches)
         {
             RequireTarget();
-            WindowsControlDesktop.Wheel(notches);
-            Record("wheelInserted", notches);
+            WindowsControlDesktop.WheelToWindow(target, notches);
+            Record("wheelMessageDispatched", new
+            {
+                notches,
+                backend = "WM_MOUSEWHEEL",
+                timeoutMilliseconds = 100
+            });
         }
     }
 

@@ -2,7 +2,33 @@
 
 Updated: 2026-10-20 (America/New_York).
 
-## Native control follow-up: browser drag and timing
+## Native wheel zoom fixed and verified
+
+The [zoom validation record](validation/native-zoom-2026-10-20.md) closes the
+remaining wheel-control gap in the identified RIFT-Lab-1 windowed session.
+Joey confirmed physical-wheel zoom works. The old native insertion path still
+produced no visible zoom; targeted `WM_MOUSEWHEEL` dispatch produced reversible
+zoom out/in on the final deployed binary. Four static ground patches returned
+to their original pixel positions after the opposite notch.
+
+The native agent checks exact process/window/foreground/client geometry,
+dispatches once with a 100 ms timeout, and never retries an unknown result.
+The panel reports dispatch separately from observed zoom. Existing movement,
+camera drag, review/arm, and release behavior remain intact.
+
+Full gate passed: **358 C# tests**, **173 Python tests**, 108 Lua assertions,
+22 Lua/C# cases, zero-warning Release build, native smoke, locked restore,
+deterministic replay, formatting and module checks. Evidence:
+`artifacts/validation/20261020T131932Z-22b4af08`. The deployed executable is the
+exact full-gate published binary. Native host/guest remain connected, disarmed,
+idle, with no pending release or sampled input down; bootstrap server stopped.
+
+Next useful work is sustained human panel usability and further information
+discovery. Numerical camera calibration, other builds/fullscreen, optional
+Pointer Lock outside Codex, and hard-crash cleanup remain unqualified. Do not
+repeat completed S/A/D or wheel baselines without a new reason.
+
+## Earlier native control follow-up: browser drag and timing
 
 The [follow-up record](validation/native-vm-controls-followup-2026-10-20.md)
 documents the latest improvement set. The Codex browser rejected Pointer Lock;
@@ -26,12 +52,9 @@ The final deployed executable matches the full-gate published binary.
 Native host/guest remain connected and disarmed, with no pending release or
 sampled input down. Temporary bootstrap service is stopped.
 
-**Next useful check:** establish whether physical mouse-wheel zoom works in
-VMware. Native wheel insertion and a single VMware-console wheel comparison
-produced no visible zoom; inspected settings did not explain it. Wheel zoom
-remains unresolved. Sustained human usability, optional Pointer Lock outside
-Codex, numerical camera calibration, fullscreen capture, and hard-crash cleanup
-remain unqualified. Do not repeat completed S/A/D baselines.
+At this earlier checkpoint, wheel zoom was unresolved. The subsequent physical
+baseline and native message-path fix are recorded above. The historical
+follow-up record preserves the earlier negative observations.
 
 ## Initial native supervised movement and camera controls
 

@@ -400,6 +400,32 @@ class PanelContractTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(json.loads(completed.stdout), [False, True, True, True, True, True])
 
+    def test_wheel_success_reports_dispatch_without_claiming_zoom(self):
+        panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
+            encoding="utf-8")
+        helper = re.search(
+            r"function isWheelAction\(value\) \{.*?\n  \}", panel, re.DOTALL)
+        self.assertIsNotNone(helper)
+        self.assertIn("Wheel message dispatched; RIFT zoom is not verified.", panel)
+        self.assertIn("const successMessage = isWheelAction(value)", panel)
+
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is unavailable for the wheel-result policy check")
+        cases = [
+            {"action": {"wheelNotches": 1}},
+            {"action": {"wheelNotches": -1}},
+            {"action": {"wheelNotches": 0}},
+            {"action": {"deltaX": 3, "deltaY": 1}},
+            {},
+        ]
+        probe = helper.group(0) + "\nconst cases = " + json.dumps(cases) + ";\n" \
+            "console.log(JSON.stringify(cases.map(isWheelAction)));"
+        completed = subprocess.run(
+            [node, "-e", probe], capture_output=True, text=True, check=False, timeout=5)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout), [True, True, False, False, False])
+
     def test_browser_diagnostics_mark_unsafe_integers_and_capture_state(self):
         panel = (Path(__file__).parents[1] / "scripts" / "control_panel.html").read_text(
             encoding="utf-8")

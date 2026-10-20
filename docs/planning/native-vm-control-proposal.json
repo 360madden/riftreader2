@@ -74,6 +74,22 @@
       "kind": "retained_run",
       "supports": "Bounded browser drag, cancellation/release feedback, revised timing and cursor policy verified within recorded limits.",
       "limitations": "Codex Pointer Lock rejected; default drag works. Wheel zoom remains unresolved; no numerical camera calibration."
+    },
+    {
+      "id": "E10",
+      "source": "user request, 2026-10-20",
+      "locator": "the physical mouse wheel zoom works in vmware",
+      "kind": "user_report",
+      "supports": "Physical wheel zoom works when the user directly controls RIFT-Lab-1.",
+      "limitations": "User-reported baseline; not agent-measured physical input."
+    },
+    {
+      "id": "E11",
+      "source": "docs/validation/native-zoom-2026-10-20.md",
+      "locator": "Live checks; Gate and handoff",
+      "kind": "retained_run",
+      "supports": "Targeted wheel messages produce reversible visual zoom on the identified final binary; the panel sends one bounded notch.",
+      "limitations": "Single windowed build/session, no numerical camera calibration or hardware-input equivalence."
     }
   ],
   "findings": [
@@ -141,7 +157,7 @@
         "Explicit reviewed in-world frame"
       ],
       "movementSupport": "Scan-code chords with guest-local bounded timing, cancellation and durable release intent.",
-      "cameraSupport": "Relative mouse and left/right drag; default bounded browser drag with optional Pointer Lock. Wheel insertion implemented but visible zoom unverified.",
+      "cameraSupport": "Relative mouse and left/right drag; default bounded browser drag with optional Pointer Lock. Targeted wheel messages visually verified to zoom both directions in one windowed RIFT session.",
       "latencyEvidence": null,
       "failureModes": [
         "UIPI rejection",
@@ -212,7 +228,14 @@
       "reviewLifetimeSeconds": 45,
       "armLifetimeSeconds": 15,
       "automaticReplay": false,
-      "maximumHostWheelNotches": 1
+      "maximumHostWheelNotches": 1,
+      "wheelBackend": {
+        "name": "WM_MOUSEWHEEL",
+        "dispatch": "SendMessageTimeoutW",
+        "timeoutMilliseconds": 100,
+        "automaticRetry": false,
+        "evidence": "Message dispatch is distinct from independent visual zoom observation."
+      }
     },
     "inputLifecycle": [
       "Inspect exact target and foreground",
@@ -339,7 +362,8 @@
       ],
       "completionEvidence": [
         "docs/validation/native-vm-controls-2026-10-20.md",
-        "docs/status.md"
+        "docs/status.md",
+        "docs/validation/native-zoom-2026-10-20.md"
       ],
       "status": "complete-with-limits"
     },
@@ -377,11 +401,11 @@
     "Guest GDI capture is provisional for this windowed client; black/incorrect captures block review and require VNC fallback."
   ],
   "openQuestions": [
-    "Why standalone wheel insertion did not visibly zoom RIFT; inspect actual bindings and input consumption.",
+    "Why this RIFT input path ignores SendInput wheel while targeted wheel messages zoom; the operational fix is verified without claiming the internal cause.",
     "Whether sustained human Pointer Lock and keyboard operation feels responsive enough.",
     "How to measure and reduce mouse-button timing overrun without weakening target checks.",
     "Whether numerical camera feedback is available through a supported API."
   ],
   "authorizationNeeded": [],
-  "nextAction": "Use the native supervised workflow; prioritize a human panel usability pass and binding-aware wheel diagnosis before numerical camera qualification. Do not repeat completed S/A/D baselines."
+  "nextAction": "Use the native supervised workflow. Wheel zoom and bounded camera drag now have live evidence; continue sustained human usability or information discovery without repeating completed baselines."
 }
