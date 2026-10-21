@@ -11,6 +11,7 @@ topic below instead of loading every document for each task.
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
 | Completed task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | Historical W/S/A/D validation phases and evidence. |
 | Native controls | [Native VM control roadmap](planning/native-vm-control-roadmap.md) | Repository-owned movement/camera implementation and explicit live limits. |
+| Navigation coordination | [NAV-SCHED-01 access queue](planning/navigation-access-queue.md) | Offline durable scheduling and recovery; native gateway enforcement pending. |
 | Continuity | [Current status](status.md) | Latest compact handoff. |
 | Planning | [Top 20 proposals](planning/top-20-proposals.md) | Proposed ideas; no implementation order adopted. |
 | Planning | [Open questions](planning/open-questions.md) | Discussion agenda. |

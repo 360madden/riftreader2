@@ -69,8 +69,8 @@ try {
     }
     & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
-    & $LuaPython -m unittest tests.test_read_live_receipt tests.test_experiment_core tests.test_experiment_adapter tests.test_native_field_evidence tests.test_native_old_epoch tests.test_targeted_health_snapshot tests.test_control_host tests.test_control_client tests.test_vm_console_native
-    if ($LASTEXITCODE -ne 0) { throw 'Host receipt, experiment, native-field evidence, targeted snapshot, or native control tests failed.' }
+    & $LuaPython -m unittest tests.test_read_live_receipt tests.test_experiment_core tests.test_experiment_adapter tests.test_native_field_evidence tests.test_native_old_epoch tests.test_targeted_health_snapshot tests.test_control_host tests.test_control_client tests.test_vm_console_native tests.test_nav_access_queue
+    if ($LASTEXITCODE -ne 0) { throw 'Host receipt, experiment, native-field evidence, targeted snapshot, native control, or navigation access queue tests failed.' }
     $reportPath = Join-Path $runDirectory 'analysis.json'
     $replayPath = Join-Path $runDirectory 'replay.json'
     $argsCommon = @('--manifest', 'samples/demo/capture.json', '--config', 'config/default.json')

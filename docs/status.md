@@ -1,6 +1,34 @@
 # Current status
 
-Updated: 2026-10-20 (America/New_York).
+Updated: 2026-10-21 (America/New_York).
+
+## NAV-SCHED-01: offline experiment access queue
+
+Joey requested concurrent A/B/C navigation research with intelligent queuing for
+conflicting live-client access. The [access queue roadmap](planning/navigation-access-queue.md)
+now has a standard-library Python/SQLite core and CLI, durable requests and audit
+records, priority aging, dependencies, atomic multi-resource reservations, bounded
+leases, stale-token rejection, and cleanup-required handoff. This is experiment
+coordination, not a new gameplay controller or a claim of native pathfinding.
+
+Focused validation passed: 42 queue tests plus 53 existing native host/client/VM
+helper tests (95 total). Tests include eight competing threads, six independent
+processes, abrupt worker exit, transaction interruption/rollback, restart, stale
+epochs, negative cleanup evidence, and heartbeat hard deadlines. These are offline
+fixtures, not AI agents or live game trials.
+
+Full repository validation passed: 364 C# tests, 216 Python tests (including the
+42 new queue cases), 108 Lua checks, 22 Lua/C# cases, zero-warning Release, locked
+restore, native synthetic smoke, formatting, deterministic replay, and 266 relative
+links. Log: `artifacts/navsched-20261021/full-gate-01.log`; generated evidence:
+`artifacts/validation/20261021T133445Z-4c3b1dd5`. Final documentation-only updates
+receive separate link/whitespace checks; source/test bytes match the full gate.
+
+Next: enforce leases in the actual native control gateway and every conflicting
+control path, with an immediate STOP/release path and fake-guest acceptance before
+any separately approved bounded live experiment. The queue currently cannot stop
+or fence a caller bypassing it. No host restart, guest deployment, VM operation,
+live game input, RRE edit, or independent worker launch occurred in this increment.
 
 ## Camera responsiveness and actual window blur
 
