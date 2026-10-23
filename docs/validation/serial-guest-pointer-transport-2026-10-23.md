@@ -115,8 +115,56 @@ it was not added to the concurrently edited scripts/validate.ps1.
 The ignored gate evidence is
 artifacts/validation/20261023T231129Z-141ee7c0.
 
-The recovered V4 host stayed live and connected after this offline pass,
+The recovered V4 host was live and connected after the offline pass,
 under Windows session 2 (host PID 48724), with the coordinator ready and
 guest disarmed. No new native XYZ pointer read was accepted or field
 qualified. The historical absolute heap addresses were never reused.
 
+## Live single-step follow-up: dispatch still blocked
+
+After committing the host-side planner, a later supervised live
+trial used **only step-01** from the pinned 10-step plan, under the
+exclusive VM-console maintenance lock and with the coordinator
+gracefully stopped. The bootstrap returned a *control-script*
+"completed" response, but its screenshot showed the Windows Run
+dialog still open with the typed first Base64 command selected.
+A separately verified Enter keypress then produced an ordinary
+Windows dialog: "Windows cannot find '/c'." The screen image is
+retained at
+artifacts/update-recovery-20261023-01/serial-guest-step01-enter/screen.png
+(SHA-256
+27AB504583E1F3D8FDA63CA1D5F2207F9625787D10E6D2B22CAC975123FFB05A).
+
+**Interpretation:** the tested guest-input/Run invocation path did
+not correctly dispatch even the first short Windows CMD command.
+The guest did not prove a completed Base64 fragment, decoded JSON,
+checksum verification or invocation of the native follow-pointer
+reader. **No RIFT pointer/XYZ result was acquired.** This is a
+guest-command transport failure, not evidence of a changed pointer
+layout. Do not retry the remaining numbered steps without a
+different, independently qualified guest command-execution channel.
+
+The dialog and test console were dismissed through bounded
+VM-console actions. The original coordinated host was then
+restored with a fresh, independently pinned V5 wrapper and
+shutdown marker, not by clearing or reusing the V4 maintenance
+marker. Live native host PID **24020** in Windows session 2
+reconnected to guest PID **2768** and reported coordinator ready,
+supervisor running, recoveryRequired false, armed false and no
+held inputs. It remained safe/disarmed; RIFT was not foreground.
+
+The final read-only recovery gate passed with exit 0:
+artifacts/update-recovery-20261023-01/v5-readiness-baseline.json,
+SHA-256
+34F9BC1FE900E4F875F128CB174804C8C71A992CBF992C0DA7B6967F942BF29A,
+and nativeReady true. No game movement, game process restart,
+VM settings change, memory write, or source modification was used.
+The pre-existing navigation/control changes remain excluded from
+this record and its commit.
+
+Next: research and qualify a **non-Run-dialog** guest execution
+transport, reusing existing VMware Tools or the guest's installed
+RiftReader2 agent where feasible. Verify request SHA-256 and PID/
+start/build in the actual guest before executing the native reader;
+retain a complete report and fresh Lua XYZ before claiming that the
+old RVA still resolves.
