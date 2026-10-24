@@ -66,6 +66,119 @@ internal static class MemoryDiscoveryCommand
         return status == "complete" ? 0 : 3;
     }
 
+    internal static async Task<int> ScoutTypedAsync(
+        IReadOnlyDictionary<string, string> options,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        var paths = RequirePaths(options);
+        var loaded = await LoadAsync<TypedPrefixScoutRequest>(paths.Request, cancellationToken);
+        var request = loaded.Value;
+        if (request.SchemaVersion != 1 ||
+            request.EvidenceKind != "native-typed-prefix-scout-request/1")
+            throw new InvalidDataException("Only native-typed-prefix-scout-request/1 schema version 1 is supported.");
+        ValidateTarget(request.Target);
+        ValidateDuration(request.MaxDurationMilliseconds);
+        if (request.MaxRegionCount is < 1 or > 32_768)
+            throw new InvalidDataException("maxRegionCount must be between 1 and 32768.");
+        if (request.MaxMatchCount is < 1 or > TypedApiPrefixMatcher.MaxSupportedMatches)
+            throw new InvalidDataException("maxMatchCount must be between 1 and 128.");
+        if (request.MaxScanBytes is < TypedApiPrefixScout.ChunkBytes or > TypedApiPrefixScout.MaxScanBytes)
+            throw new InvalidDataException("maxScanBytes must be between 65536 and 536870912.");
+        var startAddress = ParseHex(request.StartAddress, "startAddress");
+        if (startAddress < TypedApiPrefixScout.MinUserAddress ||
+            startAddress >= TypedApiPrefixScout.MaxUserEnd)
+            throw new InvalidDataException("startAddress is outside the supported 64-bit user address range.");
+
+        await using var session = await OpenAsync(request.Target, cancellationToken);
+        var startedAtUtc = UtcNow();
+        var timer = Stopwatch.StartNew();
+        var regions = session.EnumerateReadableRegions(
+            request.MaxRegionCount, request.MaxDurationMilliseconds, cancellationToken);
+        var scan = TypedApiPrefixScout.Scan(
+            regions, startAddress, request.MaxScanBytes, request.MaxMatchCount,
+            session.ReadScanChunk, () => timer.ElapsedMilliseconds >= request.MaxDurationMilliseconds,
+            cancellationToken);
+
+        var identityFailure = await session.RevalidateAsync(cancellationToken);
+        var completedAtUtc = UtcNow();
+        var status = identityFailure is not null ? "identity-invalidated" :
+            timer.ElapsedMilliseconds > request.MaxDurationMilliseconds ? "partial" : scan.Status;
+        var reason = identityFailure ??
+            (status == "partial" && scan.Reason is null
+                ? "time-budget-exceeded-during-revalidation"
+                : scan.Reason);
+        // An invalidated process must not expose a usable resume cursor.
+        var nextAddress = status == "identity-invalidated" ? null :
+            scan.NextAddress is { } next ? Hex(next) :
+            status == "partial" ? Hex(startAddress) : null;
+        var matches = scan.PrefixAddresses.Select(Hex).ToArray();
+        var coverage = scan.CoveredSpans
+            .Select(span => new TypedPrefixScoutSpanReport(Hex(span.BaseAddress), span.ByteLength)).ToArray();
+        var holes = scan.Holes
+            .Select(hole => new TypedPrefixScoutHoleReport(
+                Hex(hole.BaseAddress), hole.ByteLength, hole.Reason, hole.Win32Error)).ToArray();
+        var content = JsonSerializer.SerializeToUtf8Bytes(new
+        {
+            loaded.Sha256,
+            session.Identity,
+            startedAtUtc,
+            completedAtUtc,
+            status,
+            reason,
+            scan
+        }, JsonFormat.Options);
+        var report = new TypedPrefixScoutReport(
+            1,
+            "native-typed-prefix-scout/1",
+            loaded.Sha256,
+            Convert.ToHexString(SHA256.HashData(content)),
+            NativeCommandRunner.CreateImplementationIdentity(),
+            request,
+            session.Identity,
+            startedAtUtc,
+            completedAtUtc,
+            status,
+            reason,
+            "committed-readable-nonguard-MEM_PRIVATE-at-or-after-startAddress",
+            TypedApiPrefixMatcher.MarkerText,
+            request.StartAddress,
+            nextAddress,
+            scan.EligiblePrivateBytes,
+            scan.AttemptedBytes,
+            scan.ExaminedBytes,
+            scan.EligiblePrivateRegionCount,
+            scan.TouchedPrivateRegionCount,
+            matches,
+            coverage,
+            holes,
+            [
+                "The requested cursor bounds one pass over committed, readable, non-guard private memory; image and mapped regions are excluded.",
+                "A prefix match is not a complete or valid typed frame. Recheck exact process identity and decode targeted independent snapshots.",
+                "On a partial pass, unexamined private bytes or recorded read holes prohibit global absence and uniqueness claims.",
+                "The resume cursor may overlap previously examined bytes to avoid missing a marker split between passes; deduplicate by exact process epoch and address.",
+                "ReadProcessMemory never writes target memory. Executable SHA-256 covers the on-disk file, not loaded module bytes.",
+                "CoverageContentSha256 binds request digest, exact process identity, timestamps, status, reason and raw scan-result structure under repository JSON settings."
+            ]);
+        await WriteNewAsync(paths.Output, report, cancellationToken);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            report.SchemaVersion,
+            report.EvidenceKind,
+            report.Status,
+            report.Reason,
+            report.StartAddress,
+            report.NextAddress,
+            report.EligiblePrivateBytes,
+            report.AttemptedBytes,
+            report.ExaminedBytes,
+            MatchCount = report.PrefixAddresses.Count,
+            HoleCount = report.Holes.Count,
+            Output = Path.GetFullPath(paths.Output)
+        }, JsonFormat.Options));
+        return status == "complete" ? 0 : 3;
+    }
+
     internal static async Task<int> SnapshotAsync(
         IReadOnlyDictionary<string, string> options,
         TextWriter output,
@@ -381,6 +494,47 @@ internal sealed record MemoryMapReport(
     string? Reason,
     NativeProcessIdentity Identity,
     IReadOnlyList<MemoryMapRegion> Regions,
+    IReadOnlyList<string> Limitations);
+
+internal sealed record TypedPrefixScoutRequest(
+    int SchemaVersion,
+    string EvidenceKind,
+    NativeCaptureTarget Target,
+    string StartAddress,
+    long MaxScanBytes,
+    int MaxDurationMilliseconds,
+    int MaxRegionCount,
+    int MaxMatchCount);
+
+internal sealed record TypedPrefixScoutSpanReport(string BaseAddress, long ByteLength);
+
+internal sealed record TypedPrefixScoutHoleReport(
+    string BaseAddress, int ByteLength, string Reason, int? Win32Error);
+
+internal sealed record TypedPrefixScoutReport(
+    int SchemaVersion,
+    string EvidenceKind,
+    string RequestSha256,
+    string CoverageContentSha256,
+    NativeImplementationIdentity Implementation,
+    TypedPrefixScoutRequest Request,
+    NativeProcessIdentity Identity,
+    string StartedAtUtc,
+    string CompletedAtUtc,
+    string Status,
+    string? Reason,
+    string Scope,
+    string Marker,
+    string StartAddress,
+    string? NextAddress,
+    long EligiblePrivateBytes,
+    long AttemptedBytes,
+    long ExaminedBytes,
+    int EligiblePrivateRegionCount,
+    int TouchedPrivateRegionCount,
+    IReadOnlyList<string> PrefixAddresses,
+    IReadOnlyList<TypedPrefixScoutSpanReport> CoveredSpans,
+    IReadOnlyList<TypedPrefixScoutHoleReport> Holes,
     IReadOnlyList<string> Limitations);
 
 internal sealed record MemorySnapshotRequest(
