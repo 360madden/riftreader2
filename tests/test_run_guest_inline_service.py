@@ -115,14 +115,18 @@ class GuardedServiceTests(unittest.TestCase):
             service.upload_digest()
 
     def test_tracked_sources_sha_pinned(self):
-        for phase in ("download", "claim"):
-            with self.subTest(phase=phase):
-                path, args = service.server_args(phase)
-                self.assertTrue(path.is_file())
-                self.assertIn("--serve", args)
-                self.assertIn("--seconds", args)
-        with self.assertRaisesRegex(Blocked, "claim-receipt-missing"):
-            service.server_args("upload")
+        # Live one-use claims now exist on the actual host; isolate test state.
+        with patch.object(service, "CLAIM_RECEIPT", self.home / "claim.json"), patch.object(
+                service, "UPLOAD_ARCHIVE", self.home / "archive.zip"), patch.object(
+                service, "UPLOAD_RECEIPT", self.home / "upload.json"):
+            for phase in ("download", "claim"):
+                with self.subTest(phase=phase):
+                    path, args = service.server_args(phase)
+                    self.assertTrue(path.is_file())
+                    self.assertIn("--serve", args)
+                    self.assertIn("--seconds", args)
+            with self.assertRaisesRegex(Blocked, "claim-receipt-missing"):
+                service.server_args("upload")
 
     def test_no_in_job_terminal_service(self):
         with self.assertRaisesRegex(Blocked, "independent-signed-in"):

@@ -123,6 +123,51 @@ def maintenance() -> dict:
     return plan
 
 
+def require_download_delivered(plan: dict) -> None:
+    """Prove the one-use full transfer completed, not merely that GET was typed."""
+    receipt = HOME / "rr2-inline-download-process.json"
+    finished = HOME / "rr2-inline-download-exited.json"
+    events = ROOT / "artifacts" / "validation" / (
+        "rr2-scout-copy-publish-oct24-01") / "transfer-events"
+    if not (receipt.is_file() and finished.is_file()
+            and events.is_dir() and not events.is_symlink()):
+        raise Blocked("guest-executable-download-not-independently-completed")
+    running = json.loads(receipt.read_text("utf-8"))
+    exited = json.loads(finished.read_text("utf-8"))
+    pid = running.get("pid")
+    if (type(pid) is not int or pid < 1
+            or running.get("purpose") != "one-use-typed-inline-download"
+            or running.get("vmIdentity") != plan.get("vmIdentity")
+            or running.get("windowsSessionId") != 2 or running.get("inJob") is not False
+            or exited.get("pid") != pid or exited.get("phase") != "download"):
+        raise Blocked("guest-executable-download-owner-differs")
+    records = list(events.glob("*.json"))
+    if not 1 <= len(records) <= 64 or any(p.is_symlink() for p in records):
+        raise Blocked("guest-executable-download-event-scope-invalid")
+    delivered = [
+        json.loads(p.read_text("utf-8")) for p in records
+    ]
+    matching = [r for r in delivered if r.get("serverPid") == pid]
+    if (len(matching) != 1 or matching[0].get("state") != "delivered"
+            or matching[0].get("bundle") != "typed-inline"
+            or matching[0].get("path") != "/rr2-typed-inline-oct24-01.exe"
+            or matching[0].get("sha256", "").upper() != BUNDLE_SHA
+            or matching[0].get("bytes") != BUNDLE_BYTES
+            or matching[0].get("deliveredBytes") != BUNDLE_BYTES
+            or matching[0].get("incompleteResponses") != 0
+            or matching[0].get("host") != "192.168.56.1"
+            or matching[0].get("guest") != "192.168.56.128"):
+        raise Blocked("guest-executable-download-not-independently-completed")
+
+
+def require_claim_received() -> None:
+    """Require server exit and exact claimed ZIP context before upload steps."""
+    if not (HOME / "rr2-inline-claim-exited.json").is_file():
+        raise Blocked("guest-zip-claim-server-not-exited")
+    from scripts.run_guest_inline_service import upload_digest
+    upload_digest()
+
+
 def shell_foreground(path: Path) -> bool:
     """Conservative image gate calibrated on prior exact RIFT guest desktop."""
     from PIL import Image
@@ -144,6 +189,10 @@ def execute(step_number: int | None, close: bool = False) -> dict:
         if (not previous.is_file()
                 or json.loads(previous.read_text("utf-8")).get("status") != "completed"):
             raise Blocked("previous-step-not-receipted")
+    if not close and step_number is not None and step_number >= 4:
+        require_download_delivered(plan)
+    if not close and step_number is not None and step_number >= 30:
+        require_claim_received()
     folder_name = "rr2-inline-guest-close-01" if close else PREFIX + f"{step_number:02}"
     output = HOME / folder_name
     output.mkdir(exist_ok=False)
@@ -176,7 +225,7 @@ def execute(step_number: int | None, close: bool = False) -> dict:
                 _type_text(client, command)
                 client.keyPress("enter")
                 delay = 47 if "scout-copy-typed-native" in command else (
-                    42 if "Invoke-WebRequest" in command and stage == "download"
+                    3 if "Invoke-WebRequest" in command and stage == "download"
                     else (20 if stage in ("claim", "upload") and "Invoke-WebRequest" in command
                           else (7 if "Compress-Archive" in command else 1.3)))
                 time.sleep(delay)
@@ -197,13 +246,16 @@ def execute(step_number: int | None, close: bool = False) -> dict:
         "requestSha256": REQUEST_SHA, "atUtc": datetime.now(timezone.utc).isoformat(),
         "vmIdentity": vm, "consoleMutexExclusive": True,
         "shellForegroundBeforeCommand": step_number != 0 or close,
+        "consoleActionCompleted": True,
+        "guestCommandCompletionVerified": False,
     }
     with (output / "receipt.json").open("x", encoding="utf-8") as file:
         json.dump(record, file, indent=2)
         file.write("\n")
     return {"status": "completed", "step": record["step"],
             "stage": record["stage"], "totalCommands": len(entries),
-            "receipt": str(output / "receipt.json")}
+            "receipt": str(output / "receipt.json"),
+            "guestCommandCompletionVerified": False}
 
 
 def main() -> int:
@@ -223,6 +275,7 @@ def main() -> int:
                            for n, (stage, _) in enumerate(cmds)],
                 "requestSha256": REQUEST_SHA, "requestExactTicks": TICKS,
                 "requiresV14NormalExit": True, "guestInputSent": False,
+                "guestCommandCompletionVerified": False,
             }
         else:
             result = execute(args.step, close=args.close)

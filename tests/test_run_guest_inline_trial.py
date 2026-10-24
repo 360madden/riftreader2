@@ -128,5 +128,109 @@ class InlineGuestTrialTests(unittest.TestCase):
                 self.assertEqual(trial.maintenance(), plan)
 
 
+    def create_delivery_evidence(self):
+        """Host-side receipts with a mock exact-VM handover identity."""
+        plan = {"vmIdentity": {"vmx": "pinned-test-vmx", "epoch": 17}}
+        events = (self.root / "artifacts" / "validation"
+                  / "rr2-scout-copy-publish-oct24-01" / "transfer-events")
+        events.mkdir(parents=True)
+        process = {
+            "pid": 31415, "purpose": "one-use-typed-inline-download",
+            "vmIdentity": plan["vmIdentity"], "windowsSessionId": 2,
+            "inJob": False,
+        }
+        exited = {"pid": 31415, "phase": "download"}
+        delivered = {
+            "serverPid": 31415, "state": "delivered", "bundle": "typed-inline",
+            "path": "/rr2-typed-inline-oct24-01.exe",
+            "sha256": trial.BUNDLE_SHA, "bytes": trial.BUNDLE_BYTES,
+            "deliveredBytes": trial.BUNDLE_BYTES, "incompleteResponses": 0,
+            "host": "192.168.56.1", "guest": "192.168.56.128",
+        }
+        process_path = self.root / "rr2-inline-download-process.json"
+        exit_path = self.root / "rr2-inline-download-exited.json"
+        event_path = events / "transfer.json"
+        process_path.write_text(json.dumps(process))
+        exit_path.write_text(json.dumps(exited))
+        event_path.write_text(json.dumps(delivered))
+        return plan, process_path, exit_path, event_path, process, exited, delivered
+
+    def test_download_completion_accepts_exact_delivered_bundle_only(self):
+        plan, *_ = self.create_delivery_evidence()
+        with patch.object(trial, "ROOT", self.root), patch.object(
+                trial, "HOME", self.root):
+            trial.require_download_delivered(plan)
+
+    def test_download_completion_blocks_missing_receipts_or_transfer_event(self):
+        plan, process_path, exit_path, event_path, process, exited, delivered = (
+            self.create_delivery_evidence())
+        with patch.object(trial, "ROOT", self.root), patch.object(
+                trial, "HOME", self.root):
+            for file, value in ((event_path, delivered), (exit_path, exited),
+                                (process_path, process)):
+                with self.subTest(missing=file.name):
+                    file.unlink()
+                    with self.assertRaises(Blocked):
+                        trial.require_download_delivered(plan)
+                    file.write_text(json.dumps(value))
+
+    def test_download_completion_rejects_partial_or_wrong_transfer(self):
+        plan, process_path, exit_path, event_path, process, exited, delivered = (
+            self.create_delivery_evidence())
+        invalid = [
+            (event_path, delivered, "state", "sending"),
+            (event_path, delivered, "deliveredBytes", trial.BUNDLE_BYTES - 1),
+            (event_path, delivered, "incompleteResponses", 1),
+            (event_path, delivered, "sha256", "F" * 64),
+            (event_path, delivered, "guest", "192.168.56.200"),
+            (event_path, delivered, "serverPid", 31416),
+            (process_path, process, "inJob", True),
+            (process_path, process, "windowsSessionId", 0),
+            (process_path, process, "vmIdentity", {"epoch": 18}),
+            (exit_path, exited, "phase", "claim"),
+        ]
+        with patch.object(trial, "ROOT", self.root), patch.object(
+                trial, "HOME", self.root):
+            for file, baseline, key, bad in invalid:
+                with self.subTest(file=file.name, key=key):
+                    changed = dict(baseline)
+                    changed[key] = bad
+                    file.write_text(json.dumps(changed))
+                    with self.assertRaises(Blocked):
+                        trial.require_download_delivered(plan)
+                    file.write_text(json.dumps(baseline))
+
+    def test_step_four_cannot_issue_input_before_real_bundle_delivery(self):
+        plan, *_ = self.create_delivery_evidence()
+        event = (self.root / "artifacts" / "validation"
+                 / "rr2-scout-copy-publish-oct24-01" / "transfer-events"
+                 / "transfer.json")
+        event.unlink()
+        previous = self.root / (trial.PREFIX + "03")
+        previous.mkdir()
+        (previous / "receipt.json").write_text('{"status":"completed"}')
+        with patch.object(trial, "HOME", self.root), patch.object(
+                trial, "ROOT", self.root), patch.object(
+                trial, "maintenance", return_value=plan), patch.object(
+                trial, "commands", return_value=[("test", "Write-Output 1")] * 4):
+            with self.assertRaisesRegex(Blocked, "guest-executable-download-event-scope-invalid"):
+                trial.execute(4)
+        self.assertFalse((self.root / (trial.PREFIX + "04")).exists())
+
+    def test_upload_transition_requires_claim_exit_and_exact_claim(self):
+        with patch.object(trial, "HOME", self.root):
+            with self.assertRaisesRegex(Blocked, "claim-server-not-exited"):
+                trial.require_claim_received()
+            (self.root / "rr2-inline-claim-exited.json").write_text("{}")
+            from scripts import run_guest_inline_service as service
+            with patch.object(service, "upload_digest", return_value="A" * 64) as verified:
+                trial.require_claim_received()
+                verified.assert_called_once_with()
+            with patch.object(service, "upload_digest",
+                              side_effect=Blocked("claim-provenance-invalid")):
+                with self.assertRaisesRegex(Blocked, "claim-provenance-invalid"):
+                    trial.require_claim_received()
+
+
 if __name__ == "__main__":
     unittest.main()
