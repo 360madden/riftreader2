@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest **full host-only native+ZIP+strict offline proof**: [two real self-process capture runs, eight recovered original files, verified ZIP/epoch/chunk hashes and properly blocked synthetic wire](typed-inline-archive-two-run-host-2026-10-24.md). New archive verifier **13/13** focused and full Python **562/562** pass. **No RIFT guest transfer, read or handover yet**.
+
 Latest **HOST-ONLY bundled transfer readiness**: [both approved 74 MB executables SHA-checked with no listener; distinct exact routes; Windows receiver test flake corrected without touching production](typed-inline-bundle-transfer-host-2026-10-24.md). **14/14 sender, 26/26 combined, 549/549 full Python tests passed**; actual VM transfer and handover pending.
 
 Latest **live read-only owner check**: [V14 healthy but RIFT not foreground; V15 handover prepared, not executed](typed-inline-capture-v15-preflight-2026-10-24.md). Same VMware/game epoch, clean queue, no STOP, no guest access. Host-validated published capture CLI is ready for a future guarded maintenance window.

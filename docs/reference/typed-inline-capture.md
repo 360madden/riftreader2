@@ -53,6 +53,8 @@ Exit **0** means the command published a `complete` scan/copy diagnostic; **3** 
 
 Two separate, identity-matched, time-separated command invocations can supply candidate `capture-NN.snapshot.json` reports to the existing strict `inspect-typed-wire --before ... --after ...` analyzer. Candidate numbering/address can change between passes. Require actual complete, producer-valid **advancing** frames and stable source player before any same-epoch native XYZ comparison.
 
+A two-run guest trial can return one exactly SHA-pinned ZIP rather than transfer many JSON files separately: preserve each original input request, generated index and all referenced request/snapshot pairs in two run folders. The bounded [offline archive verifier and actual Windows host end-to-end proof](../validation/typed-inline-archive-two-run-host-2026-10-24.md) preserve complete originals and invoke the existing strict typed-wire gate separately. This is a host-only success, not an in-guest observation.
+
 ## Validation status and live preflight
 
 [Windows self-process CLI tests](../validation/typed-inline-capture-cli-host-2026-10-24.md) actually exercise read-only memory scan, SHA-linked request and full snapshot report publication, strict loader recovery, and replay overwrite rejection. Another test rejects wrong process start before any output directory is created. No current game RIFT memory has been read with this newly added command.

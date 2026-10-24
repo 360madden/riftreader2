@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: TWO native self-process captures archived and recovered — full host path proved
+
+- **Actual host execution:** The published single-file V2 capture ran **twice** against a controlled live Windows test-process allocation, each copying seven 4 KiB pages byte-for-byte. A real PowerShell ZIP archived both distinct reports. New bounded host verifier rechecked exact archive/game/bundle/provenance/chunk hashes and restored **8 originals / 92,272 bytes** with a no-overwrite receipt. ZIP **7,575 bytes**, SHA **A5CE12ECD37AADD90CBB6D210C9A719A5B5B263ACD672B5BB9890159CFD71A7A**.
+- **Strict independent diagnostic:** C# inspect-typed-wire opened both recovered complete snapshots and correctly returned **blocked: incomplete-typed-fragment-in-covered-scope** for the deliberate test-only prefix. Focused archive tests **13/13**, full Python **562/562**, diff check pass. **This is a test-process proof, not in-game Lua/XYZ.** No VM interaction, V14 STOP or guest file upload. [Two-run archived evidence and live gate](validation/typed-inline-archive-two-run-host-2026-10-24.md).
+
 ## October 24: new published typed-capture bundle now allowed by guarded one-use transport — HOST ONLY
 
 - **Reuse-first delivery improvement:** `scripts/serve_guest_native_scout.py` now supports explicit `--bundle typed-inline`, with a distinct exact URL and the SHA-pinned 74,254,755-byte single-file executable, while the existing `scout` default, one-use, exact-peer, expiry and no arbitrary-file serving remain. Both original and new ~74 MB sources passed **real full-file SHA preflights without opening a socket**.
