@@ -103,6 +103,32 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
             : new("unavailable", [], error, "ReadProcessMemory returned no bytes.");
     }
 
+    /// <summary>
+    /// Reads at most one reusable 64 KiB buffer for a bounded prefix scout.
+    /// This does not change the 4 KiB snapshot/pointer Read contract.
+    /// </summary>
+    public TypedApiScanReadResult ReadScanChunk(ulong address, byte[] buffer, int byteLength)
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+        ArgumentNullException.ThrowIfNull(buffer);
+        if (byteLength is < 1 or > TypedApiPrefixScout.ChunkBytes || byteLength > buffer.Length)
+            throw new ArgumentOutOfRangeException(nameof(byteLength));
+        if (address < 0x10000 || checked(address + (ulong)byteLength) > 0x00007FFF_FFFF_FFFF)
+            throw new ArgumentOutOfRangeException(nameof(address));
+
+        var succeeded = NativeMethods.ReadProcessMemory(
+            handle,
+            new nint(checked((long)address)),
+            buffer,
+            (nuint)byteLength,
+            out var read);
+        if (read > (nuint)byteLength)
+            throw new InvalidDataException("ReadProcessMemory returned more bytes than requested.");
+        var count = checked((int)read);
+        return new(succeeded && count == byteLength, count,
+            succeeded ? null : Marshal.GetLastWin32Error());
+    }
+
     public IReadOnlyList<WindowsMemoryRegion> EnumerateReadableRegions(
         int maxRegionCount,
         int maxDurationMilliseconds,

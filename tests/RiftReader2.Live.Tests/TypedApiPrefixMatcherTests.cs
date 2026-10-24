@@ -113,6 +113,7 @@ public sealed class TypedApiPrefixMatcherTests
         matcher.Feed(0x2000, Marker);
 
         Assert.True(matcher.MatchBudgetExceeded);
+        Assert.Equal(0x1000UL + 2 * (ulong)Marker.Length, matcher.FirstUnretainedAddress);
         Assert.Equal(new ulong[] { 0x1000, 0x1000 + (ulong)Marker.Length }, matcher.Addresses);
     }
 

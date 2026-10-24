@@ -31,6 +31,9 @@ public sealed class TypedApiPrefixMatcher
     /// <summary>True only after an additional match would exceed the retained-address limit.</summary>
     public bool MatchBudgetExceeded { get; private set; }
 
+    /// <summary>Address of the first complete marker that could not be retained.</summary>
+    public ulong? FirstUnretainedAddress { get; private set; }
+
     /// <summary>Breaks prefix carry-over across holes, failed reads or unrelated regions.</summary>
     public void ResetMemoryBoundary()
     {
@@ -62,6 +65,7 @@ public sealed class TypedApiPrefixMatcher
 
             if (_addresses.Count == _maxMatches)
             {
+                FirstUnretainedAddress = checked(baseAddress + (ulong)i - (ulong)(MarkerBytes.Length - 1));
                 MatchBudgetExceeded = true;
                 _matchedLength = FailureTable[_matchedLength - 1];
                 return;
