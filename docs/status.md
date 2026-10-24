@@ -2,11 +2,17 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: current-epoch guest map succeeded; native coordinator V11 restored
+
+- **Read-only guest acquisition succeeded (09:53 EDT):** Under exclusive VNC maintenance after a genuine V10 STOP/release, guest `RiftReader2.Live.exe map-native` returned `MAP_EXIT=0`, `MAP_STATUS=complete`, and **20,838** regions for exact RIFT PID **6940**, start ticks **639284177321390013**, unchanged executable SHA-256. The 276-byte request's guest SHA matched `F1C41A5F...`; guest report SHA-256 is `5A5F74EB80F81FBE86F7D04E9F2CCEA35D09709E18CDE959F2321DF9F04D9B3B`. The full JSON remains **guest-local**, not yet transferred to host; screenshots and one-use receipts are preserved under ignored artifacts. No Lua frame, native XYZ match, game movement or memory write was claimed.
+- **Verified safe restoration (09:58 EDT):** Guest PowerShell was closed and Rift foreground verified. Independent V11 `pythonw.exe` PID **60420**, Windows session **2**, outside the Workbridge job, started from the exact VM/config/runtime-hash-pinned plan. Authenticated status: connected, coordination ready, owned supervisor running with `initialCleanupVerified=true`, guest idle/disarmed and foreground. Its normal startup reconciliation returned the canonical SQLite queue to **blocked=0**, no holder, zero pending, with new cleanup receipt. **No manual queue reset.** Earlier V10/V11 preparation statements below are historical snapshots, superseded by this V11 live state.
+- **Next bottleneck:** Transfer the intact guest map report with full SHA verification through a narrowly scoped channel, select bounded live regions, acquire two advancing `snapshot-native` reports, run the new `inspect-typed-wire`, and only then compare same-epoch Lua and native XYZ. See [current-epoch live map and handover evidence](validation/current-epoch-native-map-2026-10-24.md).
+
 ## October 24: typed Lua wire — offline inspector verified; live acquisition pending
 
 - **V2 bounded analyzer now exists:** Added `inspect-typed-wire` for two existing `native-memory-snapshot/1` files. It reuses the strict hash-verified snapshot loader, never bridges unavailable chunks, searches complete `RRAPIVAL2|` v0.6.0 strings, rejects malformed/incomplete/conflicting copies, and requires same game process, source player, advancing sequence and `Inspect.Time.Frame`. It reports XYZ as `advanced-in-covered-scope` only, not globally unique/fresh or native-field qualified. This does not interact with VMware or V1.
 - **Validation:** 19/19 focused .NET tests, **383/383 full .NET 10** (293 core + 90 Live), clean scoped `dotnet format --verify-no-changes`, and CLI help smoke. The prior full Python suite was **502/502**; the PowerShell 7 composite runner remains unavailable through Workbridge. See [offline typed-wire validation](validation/typed-wire-offline-inspector-2026-10-24.md) and [usage contract](reference/typed-wire-snapshot.md).
-- **Next true blocker:** safely obtain the exact current RIFT PID 6940 `map-native` and two bounded `snapshot-native` reports inside the guest, retaining original report hashes under the authorized exclusive console/coordinator handover. No current-epoch typed frame or Lua/native XYZ agreement has yet been observed.
+- **Status after the subsequent live map milestone:** This offline checkpoint's `map-native` blocker is now resolved for current RIFT PID 6940; two bounded `snapshot-native` reports, host retention of the full map, fresh typed frames, and Lua/native XYZ agreement are still pending. See the newer section above.
 
 ## October 24: verified three-frame visual baseline
 
