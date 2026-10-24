@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest **Windows-host-only scan→immediate-copy proof**: [bounded inline typed-marker neighborhood capture](typed-inline-neighborhood-host-proof-2026-10-24.md). Newly implemented 11 tests plus real same-handle Windows **self-process** scanner→callback→28 KiB copied-byte proof, strict snapshot-loader round-trip, 424/424 .NET full solution, formatting passed. **Not yet a guest CLI or new RIFT observation.**
+
 Latest **real live acquisition and recovery**: [two intact exact-epoch typed-prefix neighborhood snapshots and normal V14 restoration](typed-snapshot-first-live-pair-2026-10-24.md). Both 86,016-byte scopes have zero holes and verified hashes, but **strict typed-wire inspection found zero complete frames**. Of the three earlier marker addresses, one persisted with binary following the prefix and two moved/changed. V14, not V13, is the verified current native-console owner. Next gate is bounded same-operation scan-to-snapshot, after host-only validation.
 
 Historical **guarded live-gate preparation**: [V13 healthy and V14 successor prepared](typed-snapshot-v14-preflight-2026-10-24.md). Exact game and VMware epoch still matched; no STOP or guest input occurred. New one-use two-digest intake passed 8 focused and 545 full Python tests; actual two report acquisitions/transfers remain pending.
@@ -51,6 +53,7 @@ record independent leased screenshots and ROI-level pixel changes, without claim
 | [Offline two-snapshot scout follow-up plan](typed-scout-snapshot-followup-plan-2026-10-24.md) | Reproducible SHA-pinned exact-process three-window plan and two future capture requests, no-overwrite artifacts, 13 focused and 537 full Python checks; no live snapshots yet. |
 | [V13 live preflight and V14 recovery preparation](typed-snapshot-v14-preflight-2026-10-24.md) | Historical prior checkpoint: healthy V13, prepared successor and guest PowerShell stepper; execution followed in the newer real-pair record. |
 | [First live pair of typed-prefix snapshots and V14 recovery](typed-snapshot-first-live-pair-2026-10-24.md) | Two actual 86,016-byte exact-game-epoch captures, original SHA receipts/chunk integrity, strict unavailable typed frames, volatility diagnosis and independent healthy V14. |
+| [Inline neighborhood host proof](typed-inline-neighborhood-host-proof-2026-10-24.md) | New strict prefix-recheck and seven-page read-only copier, 11 host tests, real self-process scanner callback and byte-exact capture, 424/424 .NET; guest CLI integration pending. |
 | [Current-epoch map transfer and V12 recovery](guest-map-report-transfer-2026-10-24.md) | Actual full game memory map retained on host, SHA-256 match and normal coordinator restoration. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 

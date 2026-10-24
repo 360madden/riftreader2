@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: tested immediate prefix→memory-copy primitive — host only
+
+- **Substantial V2 code milestone, no guest deployment:** New `TypedApiImmediateNeighborhood.Capture` is a bounded synchronous consumer for the previously committed `onMatch` hook. It rechecks exact `RRAPIVAL2|{` in the same process handle, rejects NUL/binary/stale markers without dumping memory, then retains **7 × 4 KiB pages / 28,672 actual bytes** centered on a plausible candidate, with per-chunk SHA-256, partial/unavailable failures, strict time gate and safe `native-memory-snapshot/1` wrapping. This avoids assuming the earlier hour-stale addresses are still valid.
+- **Actual Windows host proof:** Added **11 focused tests**, including a real Windows self-process allocation: the true 64 KiB read-only native scanner called the inline hook, which used the true Windows 4 KiB memory reader to copy 28 KiB from the **test process**, byte-for-byte verified with process identity revalidation. Full .NET **424/424 tests pass** (131 Live + 293 core), targeted `dotnet format --verify-no-changes` and `git diff --check` pass. This is not proof of a RIFT typed Lua frame or a new guest command. [Detailed host validation and next gates](validation/typed-inline-neighborhood-host-proof-2026-10-24.md).
+- **Next:** wire the collector into a bounded, versioned no-overwrite live CLI with exact target/request proof, capture limits and process invalidation handling; obtain independent samples using newly found positions. **V14 remains exclusive console owner; no new VM action.**
+
 ## October 24: immediate post-match capture hook — host-only implementation
 
 - **V2 pure scanner improvement, NOT YET A LIVE FEATURE:** `TypedApiPrefixScout.Scan` now accepts an optional, synchronous `onMatch` observer notified of **retained matches in the current 64 KiB scan block before the next read**. The observer cannot receive cross-hole matches or candidate-overflow entries; existing `scout-typed-native` CLI and scan request/report remain unchanged and do not install an observer. This provides a tested seam for future **same-operation read-only neighborhood capture**, avoiding the roughly hour-long stale-address lag of the first live scout/snapshot follow-up. New focused tests cover prompt notification, overflow and split/hole cases. **No guest bundle deployed, VM console input or game read issued as part of this code change.**
