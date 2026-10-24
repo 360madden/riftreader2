@@ -2,6 +2,8 @@
 
 Date: October 24, 2026 (America/New_York). Actual guest work: approximately 09:48–09:56 EDT; V11 normal recovery verified at 09:58 EDT. This is **live read-only process evidence**, not a field qualification or a navigation/movement trial.
 
+**Later 10:23 EDT follow-up:** The complete 2,831,071-byte report has since been transferred to the host with the identical SHA-256, analyzed offline, and the coordinator advanced cleanly to V12. See [verified full-map transfer and V12 recovery](guest-map-report-transfer-2026-10-24.md). Statements below about missing host report or V11 being current are historical **09:58 EDT checkpoint** observations.
+
 ## Exact identity and scope
 
 - VMware VMX: `C:\rift modding\VMs\RIFT-Lab\RIFT-Lab.vmx`, VNC port 5905, `vmware-vmx.exe` PID **38044**, log epoch `2026-10-24T05:41:51.833Z`, exact Windows start ticks **134372941117887852**.
@@ -14,7 +16,7 @@ Date: October 24, 2026 (America/New_York). Actual guest work: approximately 09:4
 - Read-only guest CLI command `map-native --request %TEMP%\rr2-map-oct24-01.json --output %TEMP%\rr2-map-oct24-01-report.json` completed with **`MAP_EXIT=0`**.
 - The guest parsed the retained JSON report and printed **`MAP_STATUS=complete COUNT=20838`**: 20,838 mapped committed/readable regions from this exact game process. The largest displayed `type=0x20000` private region starts at **`0xD2F0000`** with **536,870,912 bytes (512 MiB)**. Other displayed private regions were tens of MiB; these are only search-space candidates, **not** proof of typed Lua data or player XYZ.
 - **Guest-computed report SHA-256:** `5A5F74EB80F81FBE86F7D04E9F2CCEA35D09709E18CDE959F2321DF9F04D9B3B`.
-- Full JSON report is **still guest-local** at `$env:TEMP\rr2-map-oct24-01-report.json` for the guest user's PowerShell environment; it has **not** been copied to the host or parsed offline. Its guest SHA and screenshots should be used to verify any eventual lossless transfer. The host does **not** yet possess usable raw map rows for selecting snapshot ranges.
+- **At this 09:58 EDT checkpoint**, the full JSON was still guest-local at `$env:TEMP\rr2-map-oct24-01-report.json`, with the host not yet holding raw map rows. The later **10:23 EDT transfer has resolved that gap**; see the follow-up link above.
 
 ## Exclusive console and restart sequence
 
