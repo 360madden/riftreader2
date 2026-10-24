@@ -23,6 +23,12 @@ Date: October 24, 2026 (America/New_York). Status: **host-side ISO verified; gue
   The receipt is alongside it. Independent read-only Joliet parsing confirmed both file records; embedded ZIP bytes were identical to the original. New focused test suite passed **4/4**, including repeat-run overwrite refusal.
 - **Not done:** VM power/config change, CD-media swap, guest installer run, host restart, guest input, game input, queue write, firewall modification or credential change. VMware SATA0:1 still names the original artifacts/field-discovery/rr2-fields.iso.
 
+## Versioned native-host handover prepared (October 24)
+
+- New tracked `scripts/prepare_native_host_handover.py` verifies the prior V7 launcher/process epoch, unchanged runtime/config hashes, canonical queue quarantine with no outstanding work, and read-only current VMware process/log/listener identity. It intentionally uses the console-free identity collector: `VmEpochGuard.collect()` initially failed `controller-busy` because the live V7 host still legitimately owns the console mutex.
+- Prepared **V8**, with the exact new VM process PID 38044/log epoch `2026-10-24T05:41:51.833Z`, a distinct absent shutdown marker and the identical existing queue/config/source pins. Local ignored artifacts are `artifacts/update-recovery-20261023-01/coordinated-host-plan-v8.json` and `run-coordinated-host-v8.py`. The previous V7 PID 34352 was revalidated by its process-creation identity; it has **not** been stopped.
+- The preparation did **not** create either shutdown marker, take the mutex, modify the SQLite queue, launch V8, mount media or send guest input. The generated V8 launcher still independently revalidates its epoch/config and must obtain the lock normally. Handover-script tests passed 3/3.
+
 ## Safe completion roadmap
 
 1. **Ownership handover:** recheck actual VM epoch, host PID/ports/status, blocked queue, and current V7 stop marker. Review/test the existing orderly shutdown path; release console reservation only by that path and verify it has actually released. Prepare a new one-use host wrapper with a fresh VM-epoch identity, unchanged checked runtime/config hashes, fresh shutdown marker and the **same canonical queue**. Do not wipe the blocked authority.
