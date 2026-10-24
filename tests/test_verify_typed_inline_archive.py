@@ -305,5 +305,71 @@ class TypedInlineArchiveTests(unittest.TestCase):
                 verify(archive, digest(archive.read_bytes()))
 
 
+    def test_real_guest_claim_and_upload_receipts_must_match_every_byte(self):
+        def receipts(base, path, sha):
+            size = path.stat().st_size
+            claim = {
+                "schemaVersion": 1,
+                "evidenceKind": "guest-typed-inline-zip-claim/1",
+                "source": "guest-declared-only",
+                "guest": "192.168.56.128",
+                "zipSha256": sha,
+                "zipBytes": size,
+                "target": request()["target"],
+                "bundleSha256": BUNDLE,
+            }
+            upload = {
+                "schemaVersion": 1,
+                "purpose": "content-addressed-guest-map-transfer",
+                "state": "received",
+                "destination": str(path),
+                "bytes": size,
+                "sha256": sha.lower(),
+                "guest": "192.168.56.128",
+            }
+            return claim, upload
+
+        mutations = (
+            ("claim-size", lambda a, b: a.update(zipBytes=a["zipBytes"] + 1)),
+            ("received-size", lambda a, b: b.update(bytes=b["bytes"] + 1)),
+            ("wrong-receiver-peer", lambda a, b: b.update(guest="192.0.2.33")),
+            ("wrong-source-bundle", lambda a, b: a.update(bundleSha256="C" * 64)),
+            ("wrong-zip-path", lambda a, b: b.update(destination=str(Path(b["destination"]).with_name("other.zip")))),
+        )
+        for case, mutate in (*mutations, ("valid", lambda a, b: None)):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temporary:
+                base = Path(temporary)
+                original, sha = archive_file(base, members())
+                claim, upload = receipts(base, original, sha)
+                mutate(claim, upload)
+                claim_path = base / "claim.json"
+                upload_path = base / "upload.json"
+                claim_path.write_text(json.dumps(claim), encoding="utf-8")
+                upload_path.write_text(json.dumps(upload), encoding="utf-8")
+                output = base / "recover"
+                kwargs = dict(pid=PID, ticks=TICKS, game_sha=GAME, bundle_sha=BUNDLE,
+                              claim_path=claim_path, upload_path=upload_path)
+                if case == "valid":
+                    result = verify_and_publish(original, sha, output, **kwargs)
+                    self.assertEqual(result["guestTransfer"]["zipBytes"], original.stat().st_size)
+                    self.assertEqual(result["guestTransfer"]["guest"], "192.168.56.128")
+                    self.assertEqual(result["guestTransfer"]["state"],
+                                     "claim-upload-and-extracted-bytes-agree")
+                else:
+                    with self.assertRaises((ArchiveError, OSError)):
+                        verify_and_publish(original, sha, output, **kwargs)
+                    self.assertFalse(output.exists())
+
+    def test_partial_guest_transfer_receipts_refused(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            archive, sha = archive_file(base, members())
+            fake = base / "claim.json"
+            fake.write_text("{}", encoding="utf-8")
+            with self.assertRaisesRegex(ArchiveError, "both claim and upload"):
+                verify_and_publish(archive, sha, base / "out",
+                                   pid=PID, ticks=TICKS, game_sha=GAME, bundle_sha=BUNDLE,
+                                   claim_path=fake)
+
 if __name__ == "__main__":
     unittest.main()

@@ -283,15 +283,82 @@ def verify_archive(archive: Path, archive_sha: str, *, pid: int, ticks: int,
     return files, receipt
 
 
+def _read_small_receipt(path: Path, label: str) -> tuple[dict, str]:
+    if (not path.is_file() or path.is_symlink()
+            or not 0 < path.stat().st_size <= 8192):
+        raise ArchiveError(f"{label}: receipt must be a bounded original file")
+    with path.open("rb") as source:
+        raw = source.read(8193)
+    if len(raw) > 8192:
+        raise ArchiveError(f"{label}: receipt too large")
+    return _json(raw, label), _sha(raw)
+
+
+def _transfer_proof(archive: Path, archive_sha: str, archive_bytes: int, *,
+                    claim_path: Path | None, upload_path: Path | None,
+                    pid: int, ticks: int, game_sha: str, bundle_sha: str,
+                    expected_guest: str) -> dict | None:
+    """Bind a guest-declared ZIP claim to the existing receiver's actual receipt."""
+    if claim_path is None and upload_path is None:
+        return None  # Host-only synthetic fixture; do not invent guest attribution.
+    if claim_path is None or upload_path is None:
+        raise ArchiveError("guest archive needs both claim and upload receipts")
+    claim, claim_hash = _read_small_receipt(claim_path, "guest ZIP claim")
+    delivered, upload_hash = _read_small_receipt(upload_path, "guest ZIP upload receipt")
+    if (type(claim.get("schemaVersion")) is not int
+            or claim["schemaVersion"] != 1
+            or claim.get("evidenceKind") != "guest-typed-inline-zip-claim/1"
+            or claim.get("source") != "guest-declared-only"
+            or claim.get("guest") != expected_guest):
+        raise ArchiveError("guest ZIP claim has wrong schema or peer")
+    _epoch(claim.get("target"), pid, ticks, game_sha.upper(), "guest ZIP claim")
+    if (not _sha_match(claim.get("bundleSha256"), bundle_sha.upper())
+            or not _sha_match(claim.get("zipSha256"), archive_sha.upper())
+            or type(claim.get("zipBytes")) is not int
+            or claim["zipBytes"] != archive_bytes):
+        raise ArchiveError("guest ZIP claim differs from exact original bytes")
+    if (type(delivered.get("schemaVersion")) is not int
+            or delivered["schemaVersion"] != 1
+            or delivered.get("purpose") != "content-addressed-guest-map-transfer"
+            or delivered.get("state") != "received"
+            or delivered.get("guest") != claim["guest"]
+            or type(delivered.get("bytes")) is not int
+            or delivered["bytes"] != archive_bytes
+            or not _sha_match(delivered.get("sha256"), archive_sha.upper())):
+        raise ArchiveError("guest upload receipt differs from exact ZIP claim/bytes")
+    original_path = delivered.get("destination")
+    if (not isinstance(original_path, str)
+            or Path(original_path).resolve(strict=True) != archive.resolve(strict=True)):
+        raise ArchiveError("guest upload receipt points at a different ZIP")
+    return {
+        "state": "claim-upload-and-extracted-bytes-agree",
+        "guest": claim["guest"],
+        "claimReceiptSha256": claim_hash,
+        "uploadReceiptSha256": upload_hash,
+        "zipSha256": archive_sha.upper(),
+        "zipBytes": archive_bytes,
+    }
+
+
 def verify_and_publish(archive: Path, archive_sha: str, output: Path, *,
                        pid: int, ticks: int, game_sha: str, bundle_sha: str,
-                       min_separation_seconds: float = 1.0) -> dict:
+                       min_separation_seconds: float = 1.0,
+                       claim_path: Path | None = None,
+                       upload_path: Path | None = None,
+                       expected_guest: str = "192.168.56.128") -> dict:
     """Publish originals atomically to a new folder, never modifying an existing report."""
     if output.exists() or output.is_symlink() or not output.parent.is_dir():
         raise ArchiveError("output must be absent and parent directory must already exist")
     files, receipt = verify_archive(
         archive, archive_sha, pid=pid, ticks=ticks, game_sha=game_sha,
         bundle_sha=bundle_sha, min_separation_seconds=min_separation_seconds)
+    transfer = _transfer_proof(
+        archive, receipt["archiveSha256"], receipt["archiveBytes"],
+        claim_path=claim_path, upload_path=upload_path,
+        pid=pid, ticks=ticks, game_sha=game_sha, bundle_sha=bundle_sha,
+        expected_guest=expected_guest)
+    if transfer is not None:
+        receipt["guestTransfer"] = transfer
     with tempfile.TemporaryDirectory(prefix=".rr2-inline-stage-", dir=output.parent) as staging:
         stage = Path(staging)
         for name, raw in sorted(files.items()):
@@ -321,12 +388,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--process-start-ticks", required=True, type=int)
     parser.add_argument("--game-sha256", required=True)
     parser.add_argument("--bundle-sha256", required=True)
+    parser.add_argument("--claim-receipt", type=Path)
+    parser.add_argument("--upload-receipt", type=Path)
     args = parser.parse_args(argv)
     try:
         result = verify_and_publish(
             args.archive, args.expected_sha256, args.output,
             pid=args.process_id, ticks=args.process_start_ticks,
-            game_sha=args.game_sha256, bundle_sha=args.bundle_sha256)
+            game_sha=args.game_sha256, bundle_sha=args.bundle_sha256,
+            claim_path=args.claim_receipt, upload_path=args.upload_receipt)
     except (ArchiveError, BadZipFile, OSError) as exc:
         print(json.dumps({"state": "blocked", "reason": str(exc)}), file=sys.stderr)
         return 2

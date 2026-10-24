@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest **guest ZIP checksum-to-byte-identity path (loopback only)**: [one-use exact-game/bundle ZIP SHA/length declaration, unchanged pinned ZIP receiver and strict two-receipt archive gate](typed-inline-zip-claim-host-2026-10-24.md). Real HTTP localhost chain and 24/24 focused, **573/573 full Python** checks pass; no guest listener or VM access yet.
+
 Latest **full host-only native+ZIP+strict offline proof**: [two real self-process capture runs, eight recovered original files, verified ZIP/epoch/chunk hashes and properly blocked synthetic wire](typed-inline-archive-two-run-host-2026-10-24.md). New archive verifier **13/13** focused and full Python **562/562** pass. **No RIFT guest transfer, read or handover yet**.
 
 Latest **HOST-ONLY bundled transfer readiness**: [both approved 74 MB executables SHA-checked with no listener; distinct exact routes; Windows receiver test flake corrected without touching production](typed-inline-bundle-transfer-host-2026-10-24.md). **14/14 sender, 26/26 combined, 549/549 full Python tests passed**; actual VM transfer and handover pending.

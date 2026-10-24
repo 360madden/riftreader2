@@ -53,7 +53,7 @@ Exit **0** means the command published a `complete` scan/copy diagnostic; **3** 
 
 Two separate, identity-matched, time-separated command invocations can supply candidate `capture-NN.snapshot.json` reports to the existing strict `inspect-typed-wire --before ... --after ...` analyzer. Candidate numbering/address can change between passes. Require actual complete, producer-valid **advancing** frames and stable source player before any same-epoch native XYZ comparison.
 
-A two-run guest trial can return one exactly SHA-pinned ZIP rather than transfer many JSON files separately: preserve each original input request, generated index and all referenced request/snapshot pairs in two run folders. The bounded [offline archive verifier and actual Windows host end-to-end proof](../validation/typed-inline-archive-two-run-host-2026-10-24.md) preserve complete originals and invoke the existing strict typed-wire gate separately. This is a host-only success, not an in-guest observation.
+A two-run guest trial can return one exactly SHA-pinned ZIP rather than transfer many JSON files separately: preserve each original input request, generated index and all referenced request/snapshot pairs in two run folders. The bounded [offline archive verifier and actual Windows host end-to-end proof](../validation/typed-inline-archive-two-run-host-2026-10-24.md) preserve complete originals and invoke the existing strict typed-wire gate separately. This is a host-only success, not an in-guest observation. For an actual guest ZIP transfer, the [separate one-use exact-epoch SHA/length claim and two-receipt verifier](../validation/typed-inline-zip-claim-host-2026-10-24.md) must be used before any source provenance is accepted.
 
 ## Validation status and live preflight
 

@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: closed guest ZIP checksum/receipt gap — HOST LOOPBACK VERIFIED
+
+- **One-use receiver reuse:** New bounded guest ZIP declaration receives only fixed-IP, exact-epoch **SHA + byte count**; existing one-use exact-digest ZIP upload receiver is unchanged. The archive verifier now binds *both* original receipts to actual ZIP SHA/length, path, guest peer, game process and bundle before publishing; it refuses mismatches and marks host fixtures separately. No new VM listener opened.
+- **Proven host path:** Actual loopback claim → original ZIP upload → exact-receipt crosscheck → eight recovered originals passes. New claim tests 9, added receipt-crosscheck tests 2, combined 24 focused pass; full Python **573/573** pass. Normal no-listener Windows preflight pinned latest-known game/build and reported guestZipReceived=false. [Strict claim and transport proof](validation/typed-inline-zip-claim-host-2026-10-24.md).
+
 ## October 24: TWO native self-process captures archived and recovered — full host path proved
 
 - **Actual host execution:** The published single-file V2 capture ran **twice** against a controlled live Windows test-process allocation, each copying seven 4 KiB pages byte-for-byte. A real PowerShell ZIP archived both distinct reports. New bounded host verifier rechecked exact archive/game/bundle/provenance/chunk hashes and restored **8 originals / 92,272 bytes** with a no-overwrite receipt. ZIP **7,575 bytes**, SHA **A5CE12ECD37AADD90CBB6D210C9A719A5B5B263ACD672B5BB9890159CFD71A7A**.
