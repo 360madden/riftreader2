@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: typed Lua readback blocker — targeted repair research
+
+- **Source-level cause confirmed, live fix still pending:** The V1 observer’s default 4 GiB/10 s broad private-memory scan stops with `scan-byte-budget-exceeded`; its incomplete pass deliberately prevents typed freshness evaluation. No evidence shows a missing Lua frame or changed game binary. The last blocked observation belonged to the older October 23 game epoch, **not yet remeasured** for current PID 6940.
+- **Positive reuse evidence found:** An actual October 16 two-sample typed addon capture (same executable SHA-256) reported advancing source sequences **5603→5608** and frame clocks **5302.787→5305.596**, with **5→3** candidate copies. The selected heap address changed within the same process; old absolute locations are invalid for today’s process. Source/parser/producer hashes, exact frame contract and a bounded-scanning acceptance design are captured in [typed API recovery research](research/typed-api-bounded-recovery-2026-10-24.md).
+- **Next core milestone:** obtain an exact-current-process bounded map/snapshot in the guest, locate complete typed wire frame(s) without budget expansion, require independent source advancement, and compare same-epoch Lua XYZ with native root RVA `0x32E0200`. No V1 edits, VM settings changes, additional network port or gameplay input were made by this research.
+
 ## October 24: guarded same-VM-epoch coordinator preparation
 
 - **Prepared but did not launch V11 (12:33Z):** Added explicit `--same-epoch` to `scripts/prepare_native_host_handover.py`. It demands the exact unchanged VMware identity, a live V10 owner, matching config/runtime hashes, and read-only SQLite proof of `blocked=0`, no holder/pending requests, and a cleanup receipt. The existing restarted-VM mode still requires queue quarantine and a changed VM epoch. Python-only plan creation prevents JavaScript rounding of Windows 64-bit `startTicks`.
