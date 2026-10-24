@@ -79,4 +79,6 @@ The partial `nextAddress` normally backs up **10 bytes** (marker length minus on
 4. For positive prefix candidates, use `snapshot-native` to save narrow complete byte neighborhoods in at least **two independent acquisition windows**, then run [strict `inspect-typed-wire`](typed-wire-snapshot.md). An address hit alone is **not** a Lua frame or current XYZ.
 5. Only when a complete typed source advances independently, compare with the same-epoch native pointer chain rooted at RVA `0x32E0200`; retain the raw evidence and do not promote unverified field meaning.
 
+The [host→guest streaming transfer readiness](../validation/typed-prefix-scout-transfer-2026-10-24.md) describes the prepared SHA-pinned 74 MB endpoint, its test scope, and V13 recovery preflight. **It is not evidence of guest delivery or a live scan.**
+
 See the [scout reuse-first rationale](../research/typed-prefix-scout-reuse-2026-10-24.md), [actual live map and V12 restoration](../validation/guest-map-report-transfer-2026-10-24.md) and [current status](../status.md).

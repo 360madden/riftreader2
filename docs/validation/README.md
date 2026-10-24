@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest scoped host→guest transport: [typed-prefix scout transfer readiness](typed-prefix-scout-transfer-2026-10-24.md) — 74 MB pinned stream, 10 focused tests, 524 Python suite, V13 successor prepared but neither console released nor guest touched.
+
 Latest V2 Windows-host development: [typed-prefix scout and CLI](typed-prefix-scout-host-validation-2026-10-24.md),
 validated with synthetic cases and a real read of the Windows test process;
 **not yet deployed to RIFT**. The earlier [typed-wire inspector](typed-wire-offline-inspector-2026-10-24.md)
@@ -36,6 +38,7 @@ record independent leased screenshots and ROI-level pixel changes, without claim
 | [V10 temporal native frames](native-v10-temporal-frames-2026-10-24.md) | Three same-epoch native frames, time-separated pixel/ROI QA and no gameplay input. |
 | [V2 typed-wire offline inspector](typed-wire-offline-inspector-2026-10-24.md) | 19 focused synthetic tests, 383 full .NET tests, scoped analyzer and live limitations. |
 | [Typed-prefix scout Windows validation](typed-prefix-scout-host-validation-2026-10-24.md) | 410 .NET, 514 Python, Lua shared contract and pinned published-bundle smoke; no game-VM scout yet. |
+| [Typed-prefix scout host→guest transfer readiness](typed-prefix-scout-transfer-2026-10-24.md) | 74 MB pinned streaming GET, 10 focused and 524 full Python tests, V13 successor plan staged; no guest scout yet. |
 | [Current-epoch map transfer and V12 recovery](guest-map-report-transfer-2026-10-24.md) | Actual full game memory map retained on host, SHA-256 match and normal coordinator restoration. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 

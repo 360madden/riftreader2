@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: pinned native-scout transfer preflight and V13 plan (guest pending)
+
+- **Reuse-first host→guest transfer ready, not launched:** New `scripts/serve_guest_native_scout.py` streams the exact **74,209,699-byte** hash-pinned V2 executable in 64 KiB blocks to only the existing VMnet8 guest IP and one route; it expires after one verified transfer or 600 seconds. Wrong peer, method, path, truncated content, and hash drift cannot count as success. **10/10 focused tests, 524/524 full Python suite passed**; actual Windows source-hash/size preflight passed without opening a listener. See [host-only transfer readiness](validation/typed-prefix-scout-transfer-2026-10-24.md).
+- **V13 continuity prepared, not executed:** The existing same-epoch handover procedure pinned VMX PID **38044** and its unchanged log epoch, confirmed free canonical authority and V12 PID **15336** alive, and produced ignored V13 plan/launcher. V12 remains the live exclusive console owner; **no shutdown marker, guest input or transfer listener was issued**. Guest download, bounded scout, report return and normal V13 restoration are the next controlled acceptance gates.
+
 ## October 24: bounded typed-prefix scout CLI host-validated; guest trial pending
 
 - **V2 implementation committed:** `c6908c8` adds the read-only, 64 KiB streaming `RRAPIVAL2|` scanner with coverage, holes, byte/time/match limits and overlap-safe resume cursor; `2e73b9a` adds `scout-typed-native`, exact process-epoch request validation, versioned hash-bound no-overwrite reports, and identity-invalidated status. Existing 4 KiB `snapshot-native` contract and V1 source were preserved.
