@@ -1,6 +1,454 @@
 # Current status
 
-Updated: 2026-10-21 (America/New_York).
+Updated: 2026-10-24 (America/New_York; Windows host clock).
+
+## October 24: VM epoch changed; coordinator stopped, receiver recovery pending
+
+- A fresh host read-only check at 2026-10-24T10:30:44Z confirmed vmware-vmx PID 38044 and its VNC listener on port 5905, with no native listeners on 49712/49715; old V7 coordinator PID 34352 no longer exists. V7 had first refused orderly shutdown (`shutdown-release-unverified`) and was terminated only after exact-process/no-in-flight checks. **This was not a guest STOP/release or cleanup receipt.** The prepared V8 coordinator has not been launched; its plan must be rechecked against the current VM epoch.
+- The last documented read-only canonical SQLite snapshot for `vm:rift-lab-1` recorded **blocked=1**, holder absent, no cleanup receipt, and zero pending work. That queue was not queried in this follow-up process/port check. Preserve its database/journal/history; never infer that the emergency host exit unblocked it. RIFT pixels were visible through a separate host screenshot route, but authenticated guest-receiver readiness and unattended startup are still unverified.
+- The intact and SHA-256-verified six-file v2 guest installer ZIP has been placed into a new one-click Windows IMAPI2 ISO (63,488 bytes; SHA-256 507002784F251628E05DA12AEAD4F70391C6F88CFC3D6D3180D8A1C5174F25A1). Independent Joliet extraction confirmed the embedded ZIP byte-for-byte; 4/4 focused tests passed. **This is host media only:** the VM optical image remains unchanged, no guest installer ran, and no guest input was sent.
+- Next: freshly verify the VM epoch, native listeners, and quarantined queue; use the prepared bounded private guest-ZIP transfer with visually verified guest interaction, or the already validated ISO if its VMware media handover is verified. Confirm guest installation, then launch a fresh epoch-pinned coordinator and require authenticated receiver, exact identity, supervisor readiness, real STOP/release and a new queue cleanup receipt before any navigation work. Separately test sign-in/reboot autostart. See [October 24 ISO/recovery record](validation/receiver-iso-host-prep-2026-10-24.md).
+
+## Receiver transfer — existing Pythonw firewall exception reused
+
+**A limited-duration native Windows transfer endpoint was deployed on the host,
+not inside guest Windows.** The existing Python 3.14 `pythonw.exe` had an enabled
+Windows Firewall inbound TCP Allow rule (Public profile), unlike `python.exe`.
+Using Python's standard HTTP server with a thin single-file/IP restriction, a
+normal session-1 Pythonw process was launched independently of Workbridge and
+verified still listening after the Workbridge job exited.
+
+Observed launch: **2026-10-22T09:39:42.901691Z / 5:39:42 a.m. EDT**, PID 39644,
+bind `192.168.56.1:8765`, allowed guest source `192.168.56.128`,
+one pinned ZIP, and automatic stop after one download or ten minutes. **Do not
+treat the historical PID or listener as permanently current.** Last checked
+2026-10-22T09:42:04Z: running, zero downloads, guest installation unverified.
+The existing native coordinator remained connected/ready, RIFT was not foreground.
+
+Seven isolated HTTP tests passed, including an actual Pythonw.exe process,
+exact file/host limits, HTTP 403/404/501 refusal, checksum, and automatic exit.
+The real PowerShell launcher preflight passed; a simultaneous second launch was
+correctly refused because port 8765 was already owned. No Windows Firewall,
+VMware isolation, administrator rights, game input or guest credentials changed.
+A valid package was also copied non-destructively to the existing configured
+host media folder `C:\RIFT MODDING\Media\RR2-Guest-Startup-v2-20261022.zip`,
+but guest HGFS remains explicitly disabled and guest read access is NOT proved.
+
+If the live listener has expired, the physical-host launcher is
+`artifacts/receiver-milestones-20261022-01/START-RECEIVER-TRANSFER-PYTHONW.cmd`.
+In signed-in guest Windows, open
+`http://192.168.56.1:8765/RR2-Guest-Startup-v2.zip`, verify ZIP SHA-256,
+extract, and run `INSTALL-ONCE.cmd`. Host
+`CHECK-RECEIVER-TRANSFER.cmd` reports a transfer receipt. No guest download
+or startup installation has been established; GuestInfo remained empty.
+Next acceptance still requires the one-time guest installation, then a
+receiver restart and separate Windows guest login/reboot qualification.
+See [the transfer investigation](validation/receiver-transfer-pythonw-2026-10-22.md).
+Artifacts: `artifacts/receiver-milestones-20261022-01/`.
+
+## Historical three receiver deployment milestones — host-side work complete
+
+**Scope: host delivery and verification; the guest Startup shortcut is NOT yet installed.**
+M1: standard-library Python HTTP transfer bound to private VMware **VMnet8 NAT-side**
+address `192.168.56.1` was proven locally, with a
+SHA-256-matching download and no VMware isolation/firewall changes. The server
+was shut down; no guest-initiated download was claimed.
+
+M2: six-file **v2** guest package adds launcher SHA-256 verification before
+installation, status, or removal. Thirteen real Windows CMD/disposable checks
+passed, including tamper, missing file and wrong-machine rejection. New ZIP:
+`artifacts/receiver-milestones-20261022-01/host-only-download/RR2-Guest-Startup-v2.zip`
+SHA-256 `ab5242d0317257dc2b2328f0bc1da98cc24088a2140ea4d968a29c86c23f708f`.
+Recommended host launcher: `artifacts/receiver-milestones-20261022-01/START-HOST-ONLY-TRANSFER-v2.cmd`.
+The old v1 package and launch script are retained only as prior evidence.
+
+M3: `scripts/verify_guest_recovery.py` provides read-only, exact-VM/host/
+receiver/game and durable-queue baseline-and-compare checks. **18 focused tests
+passed**. The live baseline succeeded while RIFT was **not foreground**;
+an immediate no-restart comparison was correctly refused. A positive future
+comparison by itself does NOT establish an actual Windows reboot or unattended
+shortcut launch. Full main-repository gate: **364 C# / 462 Python**, 108 Lua and
+22 shared Lua/C# checks, zero-warning Release. Totals overlap the focused tests.
+
+The current coordinated native host and canonical authority were left running.
+No guest install, receiver restart, VM reboot or movement trial was attempted.
+Guest-side package transfer, a one-time normal-user installation and the actual
+logon/restart trial remain required. Do not claim autonomous reboot recovery yet.
+Read [the three-milestone evidence](validation/receiver-deployment-reuse-first-2026-10-22.md).
+Ignored artifact root: `artifacts/receiver-milestones-20261022-01/`.
+Previous dirty work/Git history and private config were preserved; no commit/push.
+
+## Historical receiver deployment — original Windows Startup package
+
+**Guest installation still pending.** Reuse-first verification selected Windows'
+current-user Startup folder and the already tested RiftReader2 PowerShell launcher
+rather than building another service, credential store, execution channel, or
+privileged scheduled task. Microsoft documents the Startup folder; VMware's
+supported guest-execution commands require separate guest Windows credentials.
+
+Host-side package:
+`artifacts/receiver-reuse-20261022-01/RR2-Guest-Startup.zip`
+(SHA-256 `b219c79b52e70bf2fbbcfa06f0e0d3793174bf9a0f9f1b40c19a49a37f547712`).
+It includes the unchanged launcher, an interactive one-time installer, status
+checker, removal shortcut and instructions. Five packaged entries were verified,
+and the existing launcher tests passed 3/3 (including its disposable 38-check
+PowerShell contract). No guest binary, configuration or credential is included.
+
+Read-only detection first confirmed the exact VM (PID 52872), then a connected
+and ready native host; RIFT PID 5076 was disarmed but **not foreground**.
+Guest management endpoints WinRM 5985/5986, SMB 445, and RDP 3389 were not
+listening. The coordinated console mutex remained held; it was not bypassed.
+No VM input, host restart or source/runtime modification occurred.
+
+**Next:** a single installation while logged in to guest Windows: transfer
+the package with an existing authorized VMware/USB file-copy method, extract it,
+run `INSTALL-ONCE.cmd`, verify `shell:startup` and `CHECK-STATUS.cmd`.
+Only after the actual shortcut works should the guest logon/restart test be
+declared complete. Until then, autonomous reboot recovery remains **unproved**.
+See `artifacts/receiver-reuse-20261022-01/PLAN.md`. Do not rerun the
+previous blocked guest-console diagnostics or old single-use maintenance helpers.
+
+## Historical receiver restart recovery — tested launcher; guest installation blocked
+
+**The restart problem is still open. No guest Startup entry was installed.**
+The current-user receiver launcher and installer/removal tests are integrated,
+not deployed. The final isolated gate passed **364 C# / 444 Python** and existing
+Lua contracts; three main focused cases passed, including 38 PowerShell contract
+checks in temporary directories. These are not guest reboot/recovery evidence.
+
+Two guest transfer attempts did not return the required acknowledgment and stopped
+before installation. Each restored the coordinated host and original queue. A
+separate Run-dialog diagnostic confirmed that shortcut visually but typed no
+command text. A subsequent visible diagnostic was blocked by the tool safety
+check and did not execute; it was not rerouted around the block.
+
+At **2026-10-22T07:33:00.941243Z / 3:33 a.m. EDT**, the restored native host was
+**PID 6560** (start ticks 134371277545443317), connected/ready with its watchdog
+running. VMware 52872, RIFT 5076 and receiver 8b9468f7712941f487a232b6cf7c5329
+retained their identities. Guest state: idle, disarmed, no recovery or sampled
+held input. **RIFT was not foreground**; do not claim movement readiness.
+The canonical queue had no active, queued or cleanup requests and kept its history.
+
+Current process receipt and wrapper:
+`artifacts/receiver-startup-20261022-01/evidence-a03/restored-host-process.json`
+and `artifacts/receiver-startup-20261022-01/run_restored_host_a03.py`.
+Current absent shutdown marker:
+`artifacts/receiver-startup-20261022-01/STOP-NATIVE-HOST-A03`.
+The prior host PID 54952 and shutdown markers below are historical. Re-detect the
+actual host before maintenance; do not reuse old activation or reset the queue.
+No VM, game or guest-receiver restart occurred in this task; three native-host
+maintenance restarts used verified orderly shutdown, not forced termination.
+
+Next: resolve the observable/permitted guest setup channel, install the tested
+startup helper, prove receiver restoration via the actual shortcut, then qualify
+one real guest logon/restart. Do not add more control-framework milestones instead.
+See [the partial recovery report](validation/receiver-startup-recovery-2026-10-22.md).
+Evidence: `artifacts/receiver-startup-20261022-01/`. Native runtime source, original
+config, prior source work, Git index and HEAD were preserved; no commit or push.
+
+## Historical NAV-SCHED-02I: coordinated host active and live-verified
+
+**The production ownership system is now enabled on recovered RIFT-Lab-1.**
+Native host PID 54952 replaced the older host after verified
+STOP/idle release, without restarting VMware, RIFT or the guest receiver. The
+original configuration/ports/credentials are unchanged. Fresh VM detection
+preceded access. Activation: 2026-10-22T05:39:31.854007+00:00.
+
+Actual host startup now owns one durable queue, the known console mutex, and a
+verified supervisor for every guest connection. Reconnect joins the previous
+supervisor and invalidates old grants/queued work using exact-row reconciliation
+before fresh cleanup. Existing authority on process restart requires explicit
+reconciliation; never delete/reset the queue to make a blocked state disappear.
+
+Live no-movement acceptance passed: unleased capture refused, issued-lease capture
+saved and hash-checked, request finished after verified cleanup, completed token
+refused, known console contender excluded. After 135 seconds idle, **1
+automatic reconnect(s)** returned the same host to ready, with no outstanding
+requests. No ARM/action/movement was sent; cleanup STOP was sent and verified.
+The capture was not visually reviewed, so it is not a fresh movement review gate.
+
+Both final candidate and main gates passed **364 C# / 441 Python**, **108 Lua /
+22 shared cases**, zero-warning Release, synthetic smoke and deterministic replay.
+34 new Python cases are included. The failed fixture run and shutdown-journal
+regression remain retained; diagnostics cannot unlock a blocked shutdown on write
+failure. Code review was by the implementing assistant, not independent review.
+
+Authority: `artifacts/native-coordination-live/queue.sqlite3`, resource
+`vm:rift-lab-1`. Process receipt and launch/shutdown details are in
+[the activation report](validation/navigation-coordinated-host-2026-10-22.md).
+Evidence: `artifacts/navsched02i-20261022-01/evidence/`.
+**Do not repeat the single-use activation or reuse old process IDs.** No OS
+autostart/service was installed. Preserve queue/history and re-detect on resume.
+
+Next: return to field-discovery/navigation experiments using the live ownership
+system, with fresh screenshot/keybinding review before any bounded input. Known
+cooperative console exclusion does not cover manual VMware UI or arbitrary bypass
+clients. Git staging/HEAD, earlier source work and original config were preserved;
+no commits, pushes, dependency or external-repository changes.
+
+## Historical NAV-SCHED-02H: shared console exclusion qualified offline
+
+The coordinated gateway can now reserve the existing per-VM Windows console
+mutex for its lifetime, including idle periods and guest reconnects. Known V1/V2
+console capture/bootstrap and legacy experiment entry points are blocked while
+reserved. Native requests on other threads borrow that ownership but retain VM
+identity, lease and supervisor checks. Native STOP/status/release remain usable.
+
+Acquisition requires denied-first supervision and an exact configured VM. A
+pending release keeps the lock until an explicit same-thread retry; another
+thread cannot close the owned handle. Identity drift blocks native admission
+without silently unlocking the console. Local lock release is not proof of guest
+input cleanup, and production teardown must stop/join supervisors first.
+
+The full isolated gate passed **364 C# / 407 Python**, **108 Lua checks / 22 shared
+cases**, zero-warning Release, synthetic native smoke and deterministic replay.
+There are **27 new reservation tests**; focused regression contains 286 cases.
+The installed legacy mutex/observe tool and fake-adapter experiment entry paths
+were verified against disposable VM paths with external sources unchanged.
+Final promoted-checkout and preservation results are saved in
+`artifacts/navsched02h-20261021-01/evidence/milestone-complete.json`.
+
+**Not activated on the recovered host.** This adds an internal construction
+option, not a new live config or automatic restart. The existing connection was
+freshly identified before guest status; no live input, capture, ARM, STOP or
+console reservation was sent. Prior source changes, config, Git index and HEAD
+are preserved; no external-repository edits, commit or push.
+
+Next: production per-session supervisor startup and explicit existing-resource /
+reconnect reconciliation, then reviewed activation and one bounded live trial.
+Known lock-participating legacy callers are excluded when ownership is enabled;
+manual VMware UI and arbitrary bypass callers are not covered. See
+[shared console evidence](validation/navigation-console-exclusion-2026-10-22.md).
+
+## Historical NAV-SCHED-02G: native caller ownership and denied-first reconnects
+
+HTTP, CLI and the browser panel now carry explicit ownership credentials to the
+existing send-boundary queue check. Private lease files are bounded to 8 KiB;
+only request ID/token are forwarded out-of-band, never to the guest or journal.
+Older hosts reject the envelope and callers never silently retry without it.
+STOP/release/status remain usable without a lease file. Panel import, replacement
+and clearing invalidate prior reviews and prevent an accidental unleased fallback.
+The panel no longer labels Q/E as guaranteed strafing bindings.
+
+An explicit `require_supervisor=True` gateway construction option starts every
+newly authenticated session suspended before publication. Reconnects cannot
+inherit the former policy/lease. This is a composition option, not a new live
+configuration switch; the recovered host remains unchanged and uncoordinated.
+
+Focused tests passed **259** (22 new Python cases); the panel harness includes
+eight additional ownership scenarios. The full gate passed **364 C# / 380 Python**,
+**108 Lua checks / 22 shared cases**, zero-warning Release, native smoke,
+formatting and deterministic replay. These counts overlap. Final hashes and
+main-checkout acceptance are recorded under `artifacts/navsched02g-20261021-01/evidence/`.
+
+The recovered VM was identified before guest status and was connected, foreground,
+idle/disarmed and recovery-free. Re-detect rather than reuse those observations.
+No live input, capture, ARM, STOP, host restart, new guest binary or configuration
+change occurred. No staging, commit or push. Prior source changes remain preserved.
+
+Next: reconcile VM-console/bootstrap/legacy ownership, wire per-session owned
+supervision and explicit reconnect reconciliation into production startup, then
+review activation and a bounded live trial. Manual callers can transport issued
+grants; grant issuance/heartbeat/finish still belong to the coordinator. Full
+live multi-controller exclusion is not claimed. See
+[native caller verification](validation/navigation-native-callers-2026-10-21.md).
+
+## Historical NAV-SCHED-02F: owned supervisor lifecycle complete offline
+
+The recovered VM/control connection was freshly verified before guest status:
+VM PID 52872, RIFT PID 11748, same receiver instance, foreground, idle/disarmed,
+no recovery and no sampled held input. The live host is not restarted or
+hot-reloaded by this source increment. Refresh identities and status on resume.
+
+The new `OwnedSupervisor` explicitly owns startup, one joinable watchdog thread,
+lease-expiry cleanup and shutdown. Readiness requires saved identity-bound cleanup
+and the active runner; delayed start/stop never silently enables actions or claims
+finished cleanup. Concurrent stop callers share one shutdown. Failed or stopped
+supervision keeps the resource blocked and does not replay work or rebind targets.
+
+A reproduced startup registration race is fixed: `require_absent=True` rejects an
+existing resource inside the registration transaction. Session preparation also
+excludes competing composition/cleanup without suspending an already running
+owner. Six test processes produced exactly one new authority owner.
+
+The expanded focused suite passed **237 tests** (25 new), and the isolated full
+gate passed **364 C# / 358 Python**, **108 Lua checks / 22 shared cases**, zero-warning
+Release, native synthetic smoke, formatting and deterministic replay. Focused and
+repeated counts overlap. Final source hashes, full-gate and main regression results
+are retained in `artifacts/navsched02f-20261021-01/evidence/`.
+
+**Not live-enabled.** The ordinary native host still does not construct the
+supervisor. Next: route manual panel/CLI and VM-console/legacy controllers through
+one ownership contract, publish authenticated sessions only after deny-first
+startup, then review activation. No movement, ARM, STOP, new guest binary,
+configuration change, live queue creation, service restart, Git staging or commit.
+See [owned lifecycle validation](validation/navigation-owned-supervisor-2026-10-21.md).
+
+## Historical native connection recovery — October 21, 2026, evening
+
+**The missing native host/receiver connection is restored and live-tested.**
+Exact VMX/log/process-start/listener checks identified recovered RIFT-Lab-1
+before any console access. The existing host was restored as a normal user
+process that survives its bounded launcher; the existing hash-verified guest
+receiver was started without a new binary or configuration change.
+
+Observed identities for this recovery (refresh them on resume): VM PID **52872**,
+host PID **49956**, RIFT PID **11748**, guest instance
+`ad6bffc45e804a879a00d6f2a4c299df`, machine `DESKTOP-8632QPL`.
+Native agent/UI ports **49712/49715** are restored. Fresh authenticated status
+reports RIFT foreground, disarmed, idle, no recovery and no sampled held input.
+Native screenshot capture and release-only STOP passed. A **135-second idle
+reconnect test** recorded actual disconnect/reconnect journal events and returned
+the same receiver/VM/game, still idle/disarmed, at **9:33 p.m. EDT**.
+
+Windows bootstrap keyboard input was used to inspect/start the receiver and
+restore game foreground. No native ARM or character-movement command was sent.
+The first transient host launch and unsuccessful guest command launches are
+retained as failed evidence, not successful deployments. No host/VM reboot,
+credential, firewall, dependency, Git staging, commit or push was performed.
+Implementation source and host configuration matched their baseline hashes.
+
+**Do not repeat recovery merely because older sections say disconnected.**
+First use fresh host/VM detection and native status. Normal host/guest processes
+are running; no automatic Windows-startup service/task was installed. The
+current bounded transport is now running in the restored host. NAV-SCHED
+policy/watchdog/manual-path integration remains a separate unfinished rollout;
+this restoration does not claim multi-worker exclusion or navigation success.
+
+Report: [native connection recovery](validation/native-control-recovery-2026-10-21.md).
+Evidence: `artifacts/native-recovery-20261021-01/evidence/`.
+Before further live experiments, verify current game identity, foreground,
+text-entry state and fresh visual evidence; do not reuse old review/arm tokens.
+
+## Historical NAV-SCHED-02E: recovered VM verified; guarded bootstrap offline
+
+Read-only detection at 9:01 p.m. EDT found exactly one VMware VM, matching
+`C:\\rift modding\\VMs\\RIFT-Lab\\RIFT-Lab.vmx`, and VM process PID 52872
+owning port 5905. The configured native control ports had no listener and the
+status call returned WinError 10061. **VMware is running, but the RIFT guest
+receiver and control host are not verified.** Do not send actions or use old
+VM/guest process identities; detect everything again on reconnect.
+
+`nav_supervisor_bootstrap.py` now prepares a new single-resource authority from
+a qualified guest session and existing durable queue, initially **blocked**.
+It suspends controls before read-only startup qualification, rejects reused
+resource records, installs exact-resource admission, and constructs—but does not
+start—the watchdog. Failures leave the session blocked. Six fake-guest integration
+checks passed. The full repository gate passed **364 C# and 333 Python tests**,
+108 Lua checks, 22 shared cases, and 291 relative documentation links; the
+Release build had zero warnings. Closing host inspection still found only the
+VM port 5905, without native control listeners. It is **not wired into the live host**; manual and legacy control
+ownership, supervised runner startup and final release gates remain.
+
+See [recovery and bootstrap report](validation/navigation-recovered-vm-bootstrap-2026-10-21.md).
+
+## Historical NAV-SCHED-02D: startup identity preflight, offline
+
+A new read-only `qualify_startup` helper collects two fresh status responses
+from the same authenticated session and verifies durable VM/guest/RIFT identity,
+idle/disarmed state, no recovery, and no sampled held inputs. It produces a
+proposed resource epoch but **does not register an authority, install a policy,
+start a watchdog, or enable gameplay control**. Changing command sequence
+numbers are intentionally ignored; missing identity or unsafe state fails closed.
+
+Eleven preflight checks, including real disposable guest framing, passed.
+The final full gate passed **364 C# and 327 Python tests**, 108 Lua checks,
+22 shared cases, zero-warning Release and 288 relative links. Evidence:
+`artifacts/validation/20261021T225624Z-3ed013d8`.
+The native endpoint refused the connection (WinError 10061), and read-only
+host inspection found no VMware VMX process or matching control-port listener.
+Current RIFT-Lab-1 connectivity is **not confirmed**. No restart, arming,
+movement, or screenshot replacement was attempted.
+
+Next: trusted startup authority/policy/watchdog composition, and manual/legacy
+ownership reconciliation, before any reviewed activation. See the
+[startup qualification report](validation/navigation-startup-preflight-2026-10-21.md).
+
+## Historical NAV-SCHED-02C: stalled-send handling qualified offline
+
+Authenticated-session frame writes now use nonblocking I/O with a two-second
+whole-frame budget, a bounded send-lock wait, and a bounded-buffer reader.
+Partial progress cannot extend the deadline. Failed/partial sends close the
+session and fail pending requests without replay or a fabricated STOP/release.
+The watchdog integration test confirms the resource stays blocked afterward.
+
+Focused validation passed **195/195** (32 new transport cases). The isolated full
+gate passed **364 C# tests, 316 Python tests, 108 Lua checks and 22 shared cases**,
+zero-warning Release, locked restore, format, synthetic native smoke and replay.
+Three additional runs passed all 96 executions of the same 32 transport tests;
+these are repetitions, not extra unique tests. Full job:
+`navsched02c-full-gate-20261021-01`. Main regression and preservation are recorded
+in `artifacts/navsched02c-20261021-01/evidence/milestone-complete.json`.
+
+**Not activated on the live host.** No game input, ARM, runtime restart, guest
+installation, configuration change, Git staging, commit or push occurred.
+Prior uncommitted work is preserved. See [transport validation](validation/navigation-bounded-transport-2026-10-21.md).
+The two-second budget is for sending, not an end-to-end or hard real-time promise.
+
+Next: fresh trusted startup identity/authority binding and policy/watchdog
+lifecycle composition, then manual panel/CLI and competing VM-console/legacy
+ownership participation. Activation and a bounded live trial still require fresh
+visual review and independent observations. Do not repeat this completed slice.
+
+## Historical NAV-SCHED-02B: expiry watchdog and verified cleanup, offline
+
+The next integration slice adds a pinned-session LeaseWatchdog and a local
+cleanup exclusion/drain boundary. Expiry now drives STOP in the fake-guest tests;
+cleanup is published only after exact identity checks, successful STOP, drained
+requests, fresh idle/disarmed/recovery-free status, no sampled held inputs and a
+saved receipt. Uncertainty latches access blocked; an explicit cleanup retry does
+not replay the original action. Shutdown stops but does not free the resource.
+
+Focused validation passed **163 tests**, including **41 new cases**. The isolated
+full gate passed **364 C# tests, 284 Python tests, 108 Lua checks and 22 shared
+Lua/C# cases**, zero-warning Release, locked restore, format, native synthetic
+smoke and deterministic replay. Full job: navsched02b-full-gate-20261021-01.
+The first focused run exposed delayed waiter settlement on disconnect; close now
+fails pending local waiters directly. The failure and diagnostic remain retained.
+
+**Still not live-enabled.** Construction starts no process/thread; the explicit
+watchdog loop ran only in disposable tests. The running RIFT-Lab-1 host, guest and
+configuration were not restarted or armed, and no game input or screenshot
+replacement was sent. The nine prior NAV-SCHED-02A source changes were preserved.
+
+Next: bound stalled transport sends, wire fresh live identity/policy/watchdog
+startup, and reconcile manual panel/CLI plus VM-console/bootstrap/legacy access.
+Then perform reviewed activation and a bounded live experiment with current
+screenshots and independent observation. Do not claim the active VM is already
+protected by the new queue/watchdog. See
+[watchdog validation](validation/navigation-watchdog-cleanup-2026-10-21.md).
+Evidence: artifacts/navsched02b-20261021-01/evidence/. No independent reviewer,
+commit, push, global settings or unrelated-project edits are claimed.
+
+## Historical NAV-SCHED-02A: dispatch admission implemented offline
+
+Joey approved starting the next integration after the live RIFT-Lab-1 status
+check. The queue now has cooperative cross-process dispatch fencing and the
+native gateway/session has an optional startup admission policy. Checks occur
+at the actual send point, after queued-action/send-lock waits. STOP/release and
+status bypass experiment admission; STOP/release invalidate older queued work.
+No SQLite transaction remains open during transport send/reply waiting.
+
+Focused acceptance passed **122 tests**, including **27 new fake-guest/fence
+cases**. The isolated full gate passed **364 C# tests, 243 Python tests, 108 Lua
+checks and 22 Lua/C# cases**, with a zero-warning Release build, native synthetic
+smoke, deterministic replay and 269 relative links. Full-gate job:
+`navsched02-full-gate-v2-20261021-01`. Source/test changes are preserved with
+hash guards; final documentation additions receive separate link checks.
+
+**Not live-enabled.** The current host/guest/configuration were not restarted,
+deployed or armed, and no game input was sent. The native target baseline was
+connected, foreground, idle/disarmed, with no recovery or sampled held input.
+That is not a screenshot review or a new movement/navigation result.
+
+Next: bind policy to fresh exact live identities; implement watchdog-driven
+STOP, in-flight release reconciliation and evidence-backed cleanup; reconcile
+manual panel/CLI and VM-console/bootstrap/legacy paths; qualify stalled sends.
+Only then enable and validate one bounded live experiment. Do not treat the
+admission seam alone as completed live coordination. See the
+[dispatch validation and remaining gates](validation/navigation-dispatch-fence-2026-10-21.md).
+Evidence: `artifacts/navsched02-20261021-01/evidence/`. No independent workers
+or reviewers were launched; no commits, pushes or unrelated-project edits.
 
 ## NAV-SCHED-01: offline experiment access queue
 
