@@ -24,7 +24,13 @@ roadmap, native control transport, deployed runtime, or unrelated research files
 2. Durable queue core and offline contention/recovery tests: implemented; 42 new
    tests passed, with 53 existing control-path regressions (95 focused tests).
 3. Connect lease enforcement to the native host and all conflicting control paths:
-   pending. A queue alone cannot prevent a caller bypassing it.
+   **partially implemented offline as NAV-SCHED-02A**. The send-boundary fence,
+   optional gateway policy and STOP/release queue bypass pass fake-guest tests.
+   NAV-SCHED-02B now adds offline-tested pinned-session watchdog and receipt-based
+   cleanup. NAV-SCHED-02C now qualifies bounded frame sends and uncertain-delivery
+   handling offline. Live startup identity collection and manual/legacy adapters
+   remain pending. No runtime enable flag is exposed;
+   the running host is unchanged. See [dispatch evidence](../validation/navigation-dispatch-fence-2026-10-21.md).
 4. Offline host acceptance: stale tokens, STOP bypass, interrupted action, release
    failure, reconnect, manual operator, and concurrent worker requests: pending.
 5. Separately approved bounded live acceptance with fresh identity and screenshot
@@ -151,17 +157,126 @@ exact current epoch/generation, explicit true stop/release and false in-flight
 flags, and an observation no older than 5 seconds that does not predate quarantine.
 Tokens and generation checks are necessary but not sufficient for live fencing.
 
-## Next integration task (no automatic live deployment)
+## NAV-SCHED-02A checkpoint — 2026-10-21
 
-Read the native host/client control contract and implement gateway enforcement in
-a separate narrowly owned change. Serialize lease validation and actual command
-dispatch against revocation; a check-then-send gap must not admit stale commands.
-Do not hold a scheduler database transaction open while waiting for network I/O.
-Require a lease for every state-changing path, including review/capture/arm where
-they invalidate another worker's authorization. Reconcile manual panel ownership,
-VM console/bootstrap access, and legacy tooling rather than assuming they already
-participate. Passive observation is shareable only where its actual effect is
-verified non-disruptive; analyzing saved evidence needs no live slot.
+The first send-admission slice is implemented and tested offline. All cooperative
+queue API transactions share a canonical-path OS fence with send admission.
+`QueueDispatchPolicy` checks the exact required resources and current token/epoch/
+generation after action/send-lock waits. Guest replies do not hold the fence or a
+SQLite transaction. STOP/release bypass lease validation and invalidate older
+local queued commands. Direct session and unleased HTTP paths are tested.
+
+The focused gate passed 122 tests (27 new); the full gate passed 364 C#, 243 Python,
+108 Lua checks and 22 Lua/C# cases. Same-authority cross-process cancellation,
+worker death and existing eight-thread/six-process queue tests passed. These are
+fake agents/guests, not live players or AI workers. The full report records
+cooperative/mixed-version limits and the unqualified stalled-send boundary.
+
+The optional policy is not wired into production configuration or enabled on the
+current host. No real queue database, live cleanup attestation, input pulse,
+reconnect or runtime deployment was manufactured to declare readiness.
+
+## NAV-SCHED-02B checkpoint — watchdog cleanup, offline
+
+A pinned one-VM/session watchdog now reconciles expiry, requests STOP, drains
+protected calls and verifies fresh matching guest release state before publishing
+cleanup with a saved receipt. Failures and shutdown retain blocked ownership.
+Shared host/other VM resources cannot be freed using this guest's evidence.
+Construction is inert; the explicitly owned stoppable loop is tested only with
+fake guests. See [watchdog evidence](../validation/navigation-watchdog-cleanup-2026-10-21.md).
+
+Focused tests passed 163 (41 new); the full gate passed 364 C#, 284 Python, 108 Lua
+checks and 22 shared cases. No running host was restarted or live input sent.
+The production composition root still enables neither admission nor watchdog.
+Remaining deployment prerequisites are bounded transport sends, fresh startup
+identity/authority registration, and manual/VM-console/legacy path coordination.
+
+## NAV-SCHED-02C checkpoint — bounded transport, offline
+
+Frame-send progress and send-lock contention are now bounded. Nonblocking receive
+framing preserves partial/coalesced responses. Partial/failed writes close the
+session, fail pending callers and are not replayed. The watchdog keeps cleanup
+blocked when delivery is uncertain. Focused tests passed 195 (32 new), the full
+Python gate passed 316, and repeated transport runs passed 96/96 executions.
+See [transport evidence](../validation/navigation-bounded-transport-2026-10-21.md).
+This closes the offline stalled-send qualification task, not all deployment gates.
+
+## NAV-SCHED-02F checkpoint — owned supervision, offline
+
+The startup preflight/prepared-authority components now feed one explicit owned
+supervisor lifecycle. `start()` waits for saved verified cleanup and a running
+watchdog before admitting protected sends. `stop()` retains ownership until its
+join completes; pending shutdown and unverified release are not called success.
+Failure/expiry uses the existing watchdog and never replays experiments.
+
+Startup registration requires an absent row atomically, closing a reproduced
+check-then-register race. Same-session preparation excludes competing cleanup;
+a refused new supervisor cannot disable the old owner. New tests cover actual
+six-process contention, worker handoff, timeouts, faults and shared shutdown.
+See [owned supervisor evidence](../validation/navigation-owned-supervisor-2026-10-21.md).
+The recovered live native host remains healthy and unchanged; no scheduler
+runtime activation occurred as part of this source increment.
+
+## NAV-SCHED-02G checkpoint - native caller ownership, offline
+
+HTTP, CLI and browser callers now forward an explicit lease envelope to the
+existing send-time policy. Invalid/missing/stale credentials are rejected by
+coordinated sessions; older hosts reject the envelope instead of ignoring it.
+STOP/release/status stay credential-free. Private panel imports cannot silently
+fall back to unleased mode, and ownership changes invalidate capture review.
+An internal denied-first gateway option suspends each new/reconnected session
+before publication, with no inherited policy or implicit resource reset.
+
+Focused validation passed 259 tests and eight added panel scenarios; the full
+gate passed 364 C# / 380 Python plus Lua contracts. See
+[native caller evidence](../validation/navigation-native-callers-2026-10-21.md).
+No production activation or new live queue occurred. Credential transport is not
+lease acquisition/renewal; the coordinator remains responsible for those operations.
+
+## NAV-SCHED-02H checkpoint - shared console exclusion
+
+The coordinated gateway can hold the established Windows per-VM console mutex
+for its lifetime. Native requests borrow it across threads while retaining all
+lease/VM checks; known V1/V2 console/bootstrap and legacy experiment callers
+cannot interleave, including between native requests or after guest reconnect.
+Native STOP remains available. Pending local lock release is reported honestly,
+and wrong-thread release is refused. The actual installed legacy entrypoints
+were checked on disposable paths without modifying their source.
+See [console exclusion evidence](../validation/navigation-console-exclusion-2026-10-22.md).
+This is cooperative exclusion, not interception of manual VMware UI input.
+
+## NAV-SCHED-02I — Production startup and live acceptance complete
+
+The production entrypoint now composes denied-first sessions, one existing durable
+authority, exact-target owned supervisors and the lifetime console reservation.
+Same-target reconnect revokes prior tokens and queued work before verified cleanup;
+process restart requires explicit existing-authority reconciliation. Shutdown
+retains ownership when pending/unverified, even if diagnostic writes fail.
+
+The recovered host is activated and a leased native capture plus rejection,
+cleanup and idle-reconnect trial passed without ARM or gameplay movement. Both
+full gates passed 364 C# / 441 Python and the Lua contracts. See
+[activation and actual limits](../validation/navigation-coordinated-host-2026-10-22.md).
+
+The ownership integration below is now historical. Future research should use the
+existing live system, not repeat its construction or reset its durable database.
+Visual review, bindings and movement-response qualification are separate gates.
+
+## Historical pre-activation integration requirements
+
+Gateway send admission, bounded transport, startup qualification and owned watchdog
+lifecycle now have offline integration tests. The remaining composition must
+install that lifecycle on every authenticated session before exposing it to
+clients, without an uncoordinated reconnect window. Keep the existing send fence
+and short database transactions; do not move network waiting into a transaction.
+Native panel/CLI credential transport is tested, and the existing shared console
+mutex now excludes known cooperating bootstrap/legacy entrypoints throughout
+coordinated host ownership. Complete production per-session owner/reconnect
+lifecycle and explicit maintenance handoff; never bypass the mutex to bootstrap a
+missing guest. Unsupported/manual controllers remain outside this contract.
+Saved-evidence analysis needs no live slot; passive live observations need their
+actual effects reviewed. Only after this reconciliation should a separately
+reviewed runtime activation and bounded live experiment take place.
 
 STOP and release must bypass queued experiments. A watchdog must revoke expired
 owners, stop/disarm the corresponding control session, await in-flight release,

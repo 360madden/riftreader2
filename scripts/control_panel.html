@@ -39,6 +39,13 @@
         <button id="recoverButton" class="danger">Recover pending release</button>
         <span id="armedState" class="state bad">Disarmed</span>
       </div>
+      <div class="row">
+        <label>Private ownership grant (optional on the legacy host)
+          <input id="leaseFile" type="file" accept=".json,application/json">
+        </label>
+        <button id="clearLeaseButton">Clear ownership credentials</button>
+        <div id="leaseState" class="state neutral" aria-live="polite">No lease loaded; the host decides whether ownership is required.</div>
+      </div>
       <img id="screen" alt="No current reviewed capture">
       <label><input id="reviewCheck" type="checkbox"> I reviewed this fresh screenshot: RIFT is in-world and chat/text entry is closed.</label>
       <textarea id="reviewNote" maxlength="512" placeholder="Review note (at least 12 characters)"></textarea>
@@ -47,7 +54,7 @@
       <div id="surface" tabindex="0">
         <div>
           <strong>Focused control surface</strong><br>
-          Default bindings: W/S move, A/D turn, Q/E strafe; hold for bounded 100 ms actions.<br>
+          Keys W/S, A/D and Q/E use this guest's current bindings; verify them before bounded 100 ms actions.<br>
           Scroll here to zoom in or out, one notch per wheel event.<br>
           Default: hold the left mouse button here and drag; camera-only pulses use 20 ms and pending deltas are bounded to ±200.<br>
           Drag release sends RELEASE. Blur or pointer-lock exit sends STOP.
@@ -72,6 +79,7 @@
 (() => {
   'use strict';
   let token = decodeURIComponent(location.hash.slice(1));
+  let leaseAccess = null, leaseRequired = false, leaseLoadActive = false;
   if (location.hash) history.replaceState(null, '', location.pathname);
   let captureId = null, captureDeadline = 0, armToken = null, armDeadline = 0;
   let requestActive = false, releaseActive = false, stopActive = false;
@@ -100,7 +108,8 @@
     if (Array.isArray(value)) return value.map(printableDiagnostic);
     if (value !== null && typeof value === 'object') {
       const copy = Object.create(null);
-      for (const [key, item] of Object.entries(value)) copy[key] = printableDiagnostic(item);
+      for (const [key, item] of Object.entries(value))
+        copy[key] = key.toLowerCase().includes('token') ? '[redacted]' : printableDiagnostic(item);
       return copy;
     }
     return value;
@@ -229,7 +238,7 @@
       || !$('reviewCheck').checked || !noteReady;
   }
   function lifecycleBusy() {
-    return stopActive || captureRequestActive || armRequestActive || recoverActive
+    return leaseLoadActive || stopActive || captureRequestActive || armRequestActive || recoverActive
       || pendingArmStopPromise !== null;
   }
   function controlSessionActive() {
@@ -241,6 +250,8 @@
     $('captureButton').disabled = busy;
     $('recoverButton').disabled = busy;
     $('stopButton').disabled = stopActive;
+    $('leaseFile').disabled = busy || controlSessionActive();
+    $('clearLeaseButton').disabled = busy || controlSessionActive();
     updateArmAvailability();
   }
   function startReviewWindow(seconds) {
@@ -269,8 +280,74 @@
     }
     return true;
   }
+  function parseLeaseCredential(value) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+      throw new Error('Invalid private ownership file.');
+    const keys = Object.keys(value).sort().join(',');
+    const pair = 'request_id,token';
+    const grant = 'deadline_ms,expires_ms,lease,owner,request_id,token,track';
+    if ((keys !== pair && keys !== grant)
+        || typeof value.request_id !== 'string'
+        || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value.request_id)
+        || value.request_id.includes('\n') || value.request_id.includes('\r')
+        || typeof value.token !== 'string' || !/^[a-f0-9]{64}$/.test(value.token)
+        || value.token.length !== 64)
+      throw new Error('Invalid private ownership file.');
+    return {request_id:value.request_id, token:value.token};
+  }
+  function clearLeaseCredentials(message) {
+    leaseRequired = true; // Never silently fall back to legacy/unleased requests.
+    leaseAccess = null;
+    controlGeneration += 1;
+    requireFreshCapture('Ownership changed; a new screenshot and review are required.');
+    $('leaseState').textContent = message;
+    updateLifecycleButtons();
+  }
+  $('leaseFile').addEventListener('change', async () => {
+    if (lifecycleBusy() || controlSessionActive()) {
+      $('leaseState').textContent = 'STOP and finish pending requests before changing ownership.';
+      $('leaseFile').value = '';
+      return;
+    }
+    const file = $('leaseFile').files && $('leaseFile').files[0];
+    if (!file) return;
+    clearLeaseCredentials('Reading private ownership file; protected requests are blocked.');
+    leaseLoadActive = true;
+    updateLifecycleButtons();
+    const generation = controlGeneration;
+    try {
+      if (!Number.isSafeInteger(file.size) || file.size < 1 || file.size > 8192)
+        throw new Error('Invalid private ownership file.');
+      const text = await file.text();
+      if (text.length > 8192) throw new Error('Invalid private ownership file.');
+      const access = parseLeaseCredential(JSON.parse(text.replace(/^\uFEFF/, '')));
+      if (generation !== controlGeneration || controlSessionActive())
+        throw new Error('Ownership load superseded.');
+      leaseAccess = access;
+      $('leaseState').textContent = `Credential loaded for ${access.request_id}; the host still checks validity.`;
+    } catch (_) {
+      leaseAccess = null;
+      $('leaseState').textContent = 'Ownership file rejected or superseded. Protected requests remain blocked.';
+    } finally {
+      leaseLoadActive = false;
+      $('leaseFile').value = '';
+      updateLifecycleButtons();
+    }
+  });
+  $('clearLeaseButton').onclick = () => {
+    if (lifecycleBusy() || controlSessionActive()) {
+      $('leaseState').textContent = 'STOP and finish pending requests before clearing ownership.';
+      return;
+    }
+    clearLeaseCredentials('Credentials cleared. Load a valid grant before protected requests.');
+  };
   async function api(path, method='GET', body=null, keepalive=false) {
     if (!authorized()) throw new Error('operator token missing');
+    if (method === 'POST' && ['/api/capture','/api/arm','/api/action','/api/recover'].includes(path)
+        && leaseRequired) {
+      if (!leaseAccess || leaseLoadActive) throw new Error('Valid ownership credentials are required.');
+      body = {access:{...leaseAccess}, payload:body};
+    }
     const response = await fetch(path, {
       method,
       headers: {'Authorization': `Bearer ${token}`, ...(body === null ? {} : {'Content-Type':'application/json'})},

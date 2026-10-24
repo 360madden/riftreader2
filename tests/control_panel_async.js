@@ -53,7 +53,7 @@ function createPanel() {
   const ids = [
     'result','summary','statusResult','surface','screen','operatorState','reviewState',
     'armedState','reviewNote','reviewCheck','armButton','captureButton','recoverButton',
-    'stopButton','statusButton','mouseButton','pointerMode',
+    'stopButton','statusButton','mouseButton','pointerMode','leaseFile','clearLeaseButton','leaseState',
   ];
   const elements = Object.fromEntries(ids.map(id => [id, new EventTarget(id)]));
   elements.pointerMode.value = 'drag';
@@ -110,6 +110,7 @@ function createPanel() {
     if (path === '/api/stop') return {recoveryRequired:false};
     if (path === '/api/release') return {recoveryRequired:false, armed:true};
     if (path === '/api/recover') return {recoveryRequired:false};
+    if (body && body.access && body.payload) body = body.payload;
     if (path === '/api/action') return {
       result:{deliverySucceeded:true, releaseSucceeded:true, cancelled:false,
         targetLost:false, stateUncertain:false, requiresCallerDisarm:false},
@@ -604,6 +605,106 @@ async function testZeroWheelDoesNothing() {
     callsFor(panel, '/api/action').map(call => call.body.action.wheelNotches), [1, -1]);
 }
 
+const testLease = {request_id:'panel:owned-1', token:'a'.repeat(64)};
+async function loadLease(panel, value=testLease, size=null) {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  panel.elements.leaseFile.files = [{size:size === null ? Buffer.byteLength(text) : size,
+                                   async text() { return text; }}];
+  panel.elements.leaseFile.dispatch('change');
+  await flush();
+}
+function displayed(panel) { return Object.values(panel.elements).map(e => e.textContent).join(' '); }
+async function testLeaseWrapsProtectedRoutesAndNeverDisplaysSecret() {
+  const panel = createPanel(); await loadLease(panel); await arm(panel);
+  panel.elements.surface.dispatch('keydown', {key:'w'}); await flush();
+  for (const path of ['/api/capture','/api/arm','/api/action']) {
+    const call = callsFor(panel, path).at(-1);
+    assert.deepStrictEqual(call.body.access, testLease);
+    assert.ok(call.body.payload !== undefined);
+    assert.deepStrictEqual(Object.keys(call.body).sort(), ['access','payload']);
+  }
+  panel.elements.stopButton.onclick(); await flush();
+  await panel.elements.recoverButton.onclick();
+  assert.deepStrictEqual(callsFor(panel, '/api/recover').at(-1).body.access, testLease);
+  assert.ok(!displayed(panel).includes(testLease.token));
+}
+async function testGrantMetadataNeverForwardedAndStopStaysCredentialFree() {
+  const panel = createPanel();
+  await loadLease(panel, {...testLease, owner:'operator', track:'A', lease:{'vm:lab-1':{epoch:'opaque',generation:1}},
+                          expires_ms:123, deadline_ms:456});
+  await arm(panel);
+  panel.elements.surface.dispatch('keydown', {key:'w'}); await flush();
+  panel.document.dispatch('keyup', {key:'w'}); await flush();
+  await panel.elements.statusButton.onclick();
+  panel.elements.stopButton.onclick(); await flush();
+  assert.deepStrictEqual(callsFor(panel, '/api/release').at(-1).body, {});
+  assert.deepStrictEqual(callsFor(panel, '/api/stop').at(-1).body, {});
+  assert.strictEqual(callsFor(panel, '/api/status').at(-1).body, null);
+  assert.deepStrictEqual(callsFor(panel, '/api/capture').at(-1).body.access, testLease);
+}
+async function testBadLeaseCannotFallBackToUnleasedMode() {
+  for (const [value,size] of [['not json',null], [{...testLease,token:'PRIVATE'},null],
+                            [{...testLease,extra:true},null], [testLease,8193]]) {
+    const panel = createPanel(); await loadLease(panel, value, size);
+    await panel.elements.captureButton.onclick();
+    assert.strictEqual(callsFor(panel, '/api/capture').length, 0);
+    panel.elements.stopButton.onclick(); await flush();
+    assert.strictEqual(callsFor(panel, '/api/stop').length, 1);
+    assert.ok(!displayed(panel).includes('PRIVATE'));
+  }
+}
+async function testClearingCredentialsInvalidatesReviewAndBlocksActions() {
+  const panel = createPanel(); await loadLease(panel); await captureAndPrepare(panel);
+  assert.strictEqual(panel.elements.armButton.disabled, false);
+  panel.elements.clearLeaseButton.onclick();
+  assert.strictEqual(panel.elements.armButton.disabled, true);
+  assert.strictEqual(panel.elements.screen.src, '');
+  const before = callsFor(panel, '/api/capture').length;
+  await panel.elements.captureButton.onclick();
+  assert.strictEqual(callsFor(panel, '/api/capture').length, before);
+}
+async function testOwnershipCannotRotateWhileArmed() {
+  const panel = createPanel(); await loadLease(panel); await arm(panel);
+  await loadLease(panel, {request_id:'other',token:'b'.repeat(64)});
+  panel.elements.clearLeaseButton.onclick();
+  panel.elements.surface.dispatch('keydown', {key:'w'}); await flush();
+  assert.deepStrictEqual(callsFor(panel, '/api/action').at(-1).body.access, testLease);
+  assert.match(panel.elements.leaseState.textContent, /STOP/);
+}
+async function testStopDuringFileLoadInvalidatesLateCredentials() {
+  const panel = createPanel(); const pending = deferred();
+  panel.elements.leaseFile.files = [{size:100, text() { return pending.promise; }}];
+  panel.elements.leaseFile.dispatch('change'); await flush();
+  assert.strictEqual(panel.elements.captureButton.disabled, true);
+  panel.elements.stopButton.onclick(); await flush();
+  assert.deepStrictEqual(callsFor(panel, '/api/stop').at(-1).body, {});
+  pending.resolve(JSON.stringify(testLease)); await flush();
+  await panel.elements.captureButton.onclick();
+  assert.strictEqual(callsFor(panel, '/api/capture').length, 0);
+  assert.match(panel.elements.leaseState.textContent, /superseded/);
+}
+async function testOwnershipChangeDuringCaptureDoesNotRetargetPendingResult() {
+  const panel = createPanel(); await loadLease(panel);
+  const pending = panel.enqueue('/api/capture');
+  const capture = panel.elements.captureButton.onclick(); await flush();
+  await loadLease(panel, {request_id:'other',token:'b'.repeat(64)});
+  pending.resolve({captureId:'capture-1',imageBase64:'QQ==',reviewExpiresInSeconds:45});
+  await capture;
+  panel.elements.reviewCheck.checked = true; panel.elements.reviewNote.value = 'reviewed private fixture';
+  panel.elements.reviewCheck.dispatch('change'); panel.elements.reviewNote.dispatch('input');
+  await panel.elements.armButton.onclick();
+  assert.deepStrictEqual(callsFor(panel, '/api/arm').at(-1).body.access, testLease);
+}
+async function testRejectedLeaseIsNotRetriedWithoutEnvelope() {
+  const panel = createPanel(); await loadLease(panel);
+  const denied = panel.enqueue('/api/capture');
+  const capturing = panel.elements.captureButton.onclick();
+  denied.resolve({__status:409,__payload:{error:'lease expired'}});
+  await capturing; await flush();
+  assert.strictEqual(callsFor(panel, '/api/capture').length, 1);
+  assert.deepStrictEqual(callsFor(panel, '/api/capture')[0].body.access, testLease);
+}
+
 (async () => {
   await testPendingArmStopsOnBlurAndCannotDoubleSubmit();
   await testUncertainArmOutcomeGetsCompensatingStop();
@@ -623,7 +724,15 @@ async function testZeroWheelDoesNothing() {
   await testStalePointerLockAndStatusCannotOverwrite();
   await testLateSameModePointerLockCannotAttachToNewArm();
   await testZeroWheelDoesNothing();
-  process.stdout.write('control panel async regressions passed\n');
+  await testLeaseWrapsProtectedRoutesAndNeverDisplaysSecret();
+  await testGrantMetadataNeverForwardedAndStopStaysCredentialFree();
+  await testBadLeaseCannotFallBackToUnleasedMode();
+  await testClearingCredentialsInvalidatesReviewAndBlocksActions();
+  await testOwnershipCannotRotateWhileArmed();
+  await testStopDuringFileLoadInvalidatesLateCredentials();
+  await testOwnershipChangeDuringCaptureDoesNotRetargetPendingResult();
+  await testRejectedLeaseIsNotRetriedWithoutEnvelope();
+  process.stdout.write('control panel async regressions passed; 8 ownership scenarios passed\n');
 })().catch(error => {
   console.error(error.stack || error);
   process.exitCode = 1;

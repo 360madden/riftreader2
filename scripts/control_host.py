@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
-from contextlib import nullcontext
+from contextlib import nullcontext, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -20,11 +20,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import ipaddress
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import queue
 import re
+import select
 import socket
+import sqlite3
 import struct
 import sys
 import threading
@@ -38,6 +41,9 @@ MAX_FRAME_BYTES = 16 * 1024 * 1024
 MAX_HELLO_BYTES = 64 * 1024
 MAX_HTTP_BODY_BYTES = 64 * 1024
 REQUEST_TIMEOUT_SECONDS = 8.0
+SEND_TIMEOUT_SECONDS = 2.0
+TRANSPORT_POLL_SECONDS = .05
+TRANSPORT_CHUNK_BYTES = 64 * 1024
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 UUID_HEX = re.compile(r"^[0-9a-f]{32}$")
 CONTROL_KEYS = frozenset(("w", "a", "s", "d", "q", "e"))
@@ -212,6 +218,15 @@ class VmEpochGuard:
     def __init__(self, config: HostConfig):
         self.module = None
         self.config = None
+        self._console_condition = threading.Condition()
+        self._console_mutex = None
+        self._console_thread = None
+        self._console_identity = None
+        self._console_required = False
+        self._console_acquiring = False
+        self._console_closing = False
+        self._console_faulted = False
+        self._console_users = 0
         if config.vmx is None:
             return
         path = Path(__file__).with_name("vm_console_native.py")
@@ -233,28 +248,133 @@ class VmEpochGuard:
     def enabled(self):
         return self.module is not None
 
+    def console_status(self):
+        """Local exclusion state, not proof of guest release or supervisor readiness."""
+        with self._console_condition:
+            return {"required": self._console_required,
+                    "held": self._console_mutex is not None,
+                    "acquiring": self._console_acquiring,
+                    "closing": self._console_closing, "faulted": self._console_faulted,
+                    "inFlight": self._console_users}
+
+    def reserve_console(self):
+        """Reserve the established console mutex for this guard's lifetime.
+
+        Call and release from the same owning thread. Other native request
+        threads borrow this reservation; legacy console processes cannot. This
+        grants no queue lease and does not make an authenticated guest ready.
+        """
+        if not self.enabled:
+            raise ControlHostError("exclusive console requires an exact configured VM")
+        with self._console_condition:
+            if self._console_required or self._console_users:
+                raise ControlHostError("console ownership cannot be acquired twice or during a request")
+            self._console_required = True  # Never fall back silently after failure/release.
+            self._console_acquiring = True
+        mutex = self.module.ControlMutex(self.config.vmx)
+        entered = False
+        try:
+            mutex.__enter__()
+            entered = True
+            identity = self.module.collect_identity(self.config)
+            with self._console_condition:
+                if self._console_closing:
+                    raise ControlHostError("console reservation was closed during acquisition")
+                self._console_identity = dict(identity)
+                self._console_thread = threading.current_thread()
+                self._console_mutex = mutex
+                self._console_acquiring = False
+            return {"identity": dict(identity), "held": True,
+                    "previousOwnerAbandoned": getattr(mutex, "abandoned", False)}
+        except BaseException as error:
+            if entered:
+                mutex.__exit__(None, None, None)
+            with self._console_condition:
+                self._console_faulted = True
+                self._console_acquiring = False
+                self._console_condition.notify_all()
+            if isinstance(error, self.module.Blocked):
+                raise ControlHostError(str(error)) from None
+            raise
+
+    def release_console(self, *, timeout_seconds=2.0):
+        """Stop admission; release only after borrowed requests drain.
+
+        A pending result retains the mutex until an explicit same-thread retry.
+        Release is local ownership handoff, never a claim of guest key release.
+        The owner must shut down supervisors and guest sessions first.
+        """
+        if (type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds)
+                or not 0 <= timeout_seconds <= 5):
+            raise ControlHostError("invalid console release timeout")
+        deadline = time.monotonic() + timeout_seconds
+        with self._console_condition:
+            if self._console_acquiring:
+                self._console_closing = True
+                return {"released": False, "releasePending": True}
+            if self._console_mutex is None:
+                return {"released": True, "releasePending": False}
+            if threading.current_thread() is not self._console_thread:
+                raise ControlHostError("console reservation must be released by its owning thread")
+            self._console_closing = True
+            while self._console_users:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return {"released": False, "releasePending": True}
+                self._console_condition.wait(remaining)
+            self._console_mutex.__exit__(None, None, None)
+            self._console_mutex = None
+            return {"released": True, "releasePending": False}
+
+    @contextmanager
+    def _console_boundary(self):
+        with self._console_condition:
+            reserved = self._console_mutex is not None
+            if self._console_required and (not reserved or self._console_closing
+                    or self._console_faulted or not self._console_thread.is_alive()):
+                raise ControlHostError("console reservation is unavailable or closing")
+            self._console_users += 1
+        try:
+            with nullcontext() if reserved else self.module.ControlMutex(self.config.vmx):
+                yield reserved
+        finally:
+            with self._console_condition:
+                self._console_users -= 1
+                self._console_condition.notify_all()
+
+    def _observe(self, expected, fast, reserved):
+        try:
+            current = (self.module.verify_identity(self.config, expected) if fast
+                       else self.module.collect_identity(self.config))
+            if (expected is not None and current != expected) or (
+                    reserved and current != self._console_identity):
+                raise ControlHostError("VM process epoch changed during console ownership")
+            return current
+        except BaseException:
+            if reserved:
+                with self._console_condition:
+                    self._console_faulted = True
+            raise
+
     def collect(self) -> dict | None:
         if not self.enabled:
             return None
         try:
-            with self.module.ControlMutex(self.config.vmx):
-                return self.module.collect_identity(self.config)
+            with self._console_boundary() as reserved:
+                return self._observe(None, False, reserved)
         except self.module.Blocked as error:
             raise ControlHostError(str(error)) from error
 
     def request(self, expected: dict | None, callback, *, fast: bool):
         if not self.enabled:
             return callback()
+        if not isinstance(expected, dict):
+            raise ControlHostError("a complete authenticated VM identity is required")
         try:
-            with self.module.ControlMutex(self.config.vmx):
-                verify = self.module.verify_identity if fast else self.module.collect_identity
-                before = verify(self.config, expected) if fast else verify(self.config)
-                if before != expected:
-                    raise ControlHostError("VM process epoch changed since guest authentication")
+            with self._console_boundary() as reserved:
+                before = self._observe(expected, fast, reserved)
                 result = callback()
-                after = verify(self.config, before) if fast else verify(self.config)
-                if after != before:
-                    raise ControlHostError("VM process epoch changed during control request")
+                self._observe(before, fast, reserved)
                 return result
         except self.module.Blocked as error:
             raise ControlHostError(str(error)) from error
@@ -344,14 +464,26 @@ class EvidenceJournal:
 
 class AgentSession:
     def __init__(self, connection: socket.socket, source: str, hello: dict,
-                 journal: EvidenceJournal, on_closed, vm_identity=None):
+                 journal: EvidenceJournal, on_closed, vm_identity=None, dispatch_policy=None,
+                 require_supervisor=False):
         self.connection = connection
         self.source = source
         self.hello = dict(hello)
         self.journal = journal
         self.on_closed = on_closed
         self.vm_identity = vm_identity
-        self.stream = connection.makefile("rb")
+        self.dispatch_policy = dispatch_policy
+        self.require_supervisor = require_supervisor
+        self._control_lock = threading.Lock()
+        self._control_generation = 0
+        self._control_idle = threading.Condition(self._control_lock)
+        self._protected_calls = 0
+        self._controls_suspended = require_supervisor
+        self._cleanup_lock = threading.Lock()
+        # One fixed socket mode: per-request timeout changes would also affect the
+        # concurrent reader. Authenticated framing uses explicit nonblocking I/O.
+        self.connection.setblocking(False)
+        self._receive_buffer = bytearray()
         self._send_lock = threading.Lock()
         self._action_lock = threading.Lock()
         self._pending_lock = threading.Lock()
@@ -377,12 +509,185 @@ class AgentSession:
             "vmIdentity": self.vm_identity,
         }
 
-    def request(self, operation: str, payload: dict | None = None) -> dict:
-        lane = self._action_lock if operation == "action" else nullcontext()
-        with lane:
-            return self._request(operation, payload or {})
+    def request(self, operation: str, payload: dict | None = None, *, access=None) -> dict:
+        access = dict(access) if isinstance(access, dict) else access
+        protected = operation in ("capture", "arm", "action", "recover")
+        with self._control_lock:
+            if protected and self._controls_suspended:
+                raise ControlHostError("control session suspended for verified cleanup")
+            if operation in ("stop", "release"):
+                self._control_generation += 1
+            generation = self._control_generation
+            if protected:
+                self._protected_calls += 1
+        try:
+            lane = self._action_lock if operation == "action" else nullcontext()
+            with lane:
+                return self._request(operation, payload or {}, access=access, generation=generation)
+        finally:
+            if protected:
+                with self._control_idle:
+                    self._protected_calls -= 1
+                    self._control_idle.notify_all()
 
-    def _request(self, operation: str, payload: dict) -> dict:
+    @contextmanager
+    def preparation_boundary(self):
+        """Claim one startup without suspending another already-installed owner.
+
+        The cleanup owner lock also excludes a concurrent permit while startup
+        validates identity/registers its authority. No send/control-state lock
+        or database transaction spans the guest observations.
+        """
+        if not self._cleanup_lock.acquire(blocking=False):
+            raise ControlHostError("another preparation or cleanup owns this session")
+        try:
+            with self._control_lock:
+                if self.closed or self.dispatch_policy is not None:
+                    raise ControlHostError("session cannot be prepared twice or after disconnect")
+                self._controls_suspended = True
+                self._control_generation += 1
+            yield
+        finally:
+            self._cleanup_lock.release()
+
+    def suspend_controls(self):
+        """Local fail-closed latch; STOP/release/status remain available."""
+        with self._control_lock:
+            self._controls_suspended = True
+            self._control_generation += 1
+
+    def wait_controls_idle(self, timeout=2.0):
+        if type(timeout) not in (int, float) or not 0 <= timeout <= 5:
+            raise ControlHostError("cleanup drain timeout must be zero through five seconds")
+        with self._control_idle:
+            return self._control_idle.wait_for(lambda: self._protected_calls == 0, timeout)
+
+    @contextmanager
+    def cleanup_boundary(self):
+        """Exclude new controls, invalidate queued work, and latch failure.
+
+        The trusted caller must STOP, drain, verify fresh status and publish queue
+        cleanup before invoking the yielded release function. Only the cleanup-owner
+        mutex spans guest I/O, not send/control-state locks or a DB transaction.
+        Failure leaves controls suspended.
+        """
+        if not self._cleanup_lock.acquire(blocking=False):
+            raise ControlHostError("another cleanup owns this session")
+        self.suspend_controls()
+        permit_generation = None
+        completed = False
+        def permit():
+            nonlocal permit_generation
+            with self._control_lock:
+                if self.closed or self._protected_calls:
+                    raise ControlHostError("cannot release a closed or non-idle cleanup boundary")
+                permit_generation = self._control_generation
+        try:
+            yield permit
+            completed = True
+        finally:
+            with self._control_lock:
+                if (completed and permit_generation is not None
+                        and permit_generation == self._control_generation and not self.closed):
+                    self._controls_suspended = False
+            self._cleanup_lock.release()
+
+    @contextmanager
+    def _admission(self, operation, access):
+        if self.dispatch_policy is None:
+            if self.require_supervisor and operation in ("capture", "arm", "action", "recover"):
+                raise ControlHostError("new session requires an owned supervisor")
+            if access is not None and operation not in ("status", "stop", "release"):
+                raise ControlHostError("navigation lease supplied to an uncoordinated session")
+            yield None
+            return
+        try:
+            with self.dispatch_policy.guard(operation, access) as admit:
+                yield admit
+        except ValueError as error:
+            raise ControlHostError("navigation dispatch refused: " + str(error)) from error
+
+    def _abort_transport(self, failure):
+        """Fail local waiters; disconnection is never proof of guest-side release."""
+        self._closed.set()
+        self._fail_pending(failure)
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+        self.connection.close()
+
+    @contextmanager
+    def _send_boundary(self):
+        # Bound lock contention too. No new frame may follow a partly sent frame.
+        if not self._send_lock.acquire(timeout=SEND_TIMEOUT_SECONDS):
+            failure = ControlHostError("guest send lock deadline; delivery uncertain; no retry")
+            self._abort_transport(failure)
+            raise failure
+        try:
+            yield
+        finally:
+            self._send_lock.release()
+
+    def _send_frame(self, data):
+        deadline = time.monotonic() + SEND_TIMEOUT_SECONDS
+        view = memoryview(data)
+        offset = 0
+        try:
+            while offset < len(view):
+                if self.closed:
+                    raise OSError("transport closed")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError()
+                try:
+                    sent = self.connection.send(view[offset:offset + TRANSPORT_CHUNK_BYTES])
+                except (BlockingIOError, InterruptedError):
+                    # A ready indication is not a promise the whole frame fits.
+                    select.select([], [self.connection], [], min(remaining, TRANSPORT_POLL_SECONDS))
+                    continue
+                if sent <= 0:
+                    raise OSError("transport made no send progress")
+                offset += sent
+            if time.monotonic() > deadline:
+                raise TimeoutError()
+        except (OSError, ValueError) as error:
+            reason = "deadline" if isinstance(error, TimeoutError) else "failed"
+            failure = ControlHostError("guest send " + reason + "; delivery uncertain; no retry")
+            self._abort_transport(failure)
+            raise failure from None
+
+    def _receive_frame(self):
+        # The single reader retains coalesced frames and bounds incomplete input.
+        search_from = 0
+        while not self.closed:
+            end = self._receive_buffer.find(b"\n", search_from)
+            if end >= 0:
+                if end > MAX_FRAME_BYTES:
+                    raise ControlHostError("guest response frame exceeds size limit")
+                data = bytes(self._receive_buffer[:end])
+                del self._receive_buffer[:end + 1]
+                value = decode_json(data)
+                if not isinstance(value, dict):
+                    raise ControlHostError("JSON frame must be an object")
+                return value
+            if len(self._receive_buffer) > MAX_FRAME_BYTES:
+                raise ControlHostError("guest response frame is oversized or unterminated")
+            search_from = len(self._receive_buffer)
+            ready, _, _ = select.select([self.connection], [], [], TRANSPORT_POLL_SECONDS)
+            if not ready:
+                continue
+            try:
+                block = self.connection.recv(min(TRANSPORT_CHUNK_BYTES,
+                                                MAX_FRAME_BYTES + 2 - len(self._receive_buffer)))
+            except (BlockingIOError, InterruptedError):
+                continue
+            if not block:
+                raise EOFError("guest control connection closed")
+            self._receive_buffer.extend(block)
+        raise EOFError("guest control connection closed")
+
+    def _request(self, operation: str, payload: dict, *, access=None, generation=0) -> dict:
         if self.closed:
             raise ControlHostError("guest control connection is closed")
         if operation not in (
@@ -395,16 +700,28 @@ class AgentSession:
         with self._pending_lock:
             self._pending[command_id] = response_queue
         try:
-            with self._send_lock:
-                if self.closed:
-                    raise ControlHostError("guest control connection is closed")
-                self._sequence += 1
-                command = {
-                    "type": "command", "id": command_id,
-                    "sequence": self._sequence, "operation": operation,
-                    "payload": payload,
-                }
-                self.connection.sendall(encode_frame(command))
+            # Acquire the queue fence before the send lock: STOP/release must not
+            # wait for an experiment merely waiting to acquire its queue authority.
+            # Admission is rechecked after both waits; DB transactions end before send.
+            with self._admission(operation, access) as admit:
+                with self._send_boundary():
+                    if self.closed:
+                        raise ControlHostError("guest control connection is closed")
+                    if admit is not None:
+                        admit()
+                    with self._control_lock:
+                        if (operation in ("capture", "arm", "action", "recover")
+                                and (self._controls_suspended or (self.dispatch_policy is not None
+                                     and generation != self._control_generation))):
+                            raise ControlHostError("control request invalidated by STOP/release")
+                        self._sequence += 1
+                        command = {
+                            "type": "command", "id": command_id,
+                            "sequence": self._sequence, "operation": operation,
+                            "payload": payload,
+                        }
+                        frame = encode_frame(command)
+                        self._send_frame(frame)
             self.journal.append("control-command-request/1", command)
             try:
                 response = response_queue.get(timeout=REQUEST_TIMEOUT_SECONDS)
@@ -429,7 +746,7 @@ class AgentSession:
         failure: BaseException = ControlHostError("guest control connection closed")
         try:
             while not self.closed:
-                response = read_frame(self.stream)
+                response = self._receive_frame()
                 if set(response) != {"type", "id", "payload"} or response.get("type") != "response":
                     raise ControlHostError("guest sent an invalid response envelope")
                 response_id = response.get("id")
@@ -445,59 +762,85 @@ class AgentSession:
         except BaseException as error:
             failure = error
         finally:
-            self._closed.set()
-            self.stream.close()
-            try:
-                self.connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            self.connection.close()
-            with self._pending_lock:
-                pending = list(self._pending.values())
-            for destination in pending:
-                try:
-                    destination.put_nowait(failure)
-                except queue.Full:
-                    pass
+            self._abort_transport(failure)
+            self._receive_buffer.clear()
             self.on_closed(self)
 
-    def close(self):
-        if not self._closed.is_set():
-            self._closed.set()
+    def _fail_pending(self, failure):
+        with self._pending_lock:
+            pending = list(self._pending.values())
+        for destination in pending:
             try:
-                self.connection.shutdown(socket.SHUT_RDWR)
-            except OSError:
+                destination.put_nowait(failure)
+            except queue.Full:
                 pass
-            self.connection.close()
-        if threading.current_thread() is not self._reader:
+
+    def close(self):
+        self._abort_transport(ControlHostError("guest control connection closed"))
+        if threading.current_thread() is not self._reader and self._reader.is_alive():
             self._reader.join(timeout=1)
 
 
 class AgentGateway:
-    def __init__(self, config: HostConfig, journal: EvidenceJournal):
+    def __init__(self, config: HostConfig, journal: EvidenceJournal, *, dispatch_policy=None,
+                 require_supervisor=False, exclusive_console=False):
+        if (type(exclusive_console) is not bool or (exclusive_console and not require_supervisor)):
+            raise ControlHostError("exclusive console requires denied-first supervision")
+        self.exclusive_console = exclusive_console
+        self._start_attempted = False
+        if type(require_supervisor) is not bool or (require_supervisor and dispatch_policy is not None):
+            raise ControlHostError("deny-first startup requires a fresh per-session supervisor")
+        self.require_supervisor = require_supervisor
+        self.dispatch_policy = dispatch_policy
         self.config = config
         self.journal = journal
         self.vm_guard = VmEpochGuard(config)
+        if exclusive_console and not self.vm_guard.enabled:
+            raise ControlHostError("exclusive console requires an exact configured VM")
         self._listener = None
         self._accept_thread = None
         self._closed = threading.Event()
         self._session_lock = threading.Lock()
         self._session: AgentSession | None = None
         self._authentication_slots = threading.BoundedSemaphore(4)
+        self.coordinator = None
 
     @property
     def port(self) -> int | None:
-        return self._listener.getsockname()[1] if self._listener else None
+        return self._listener.getsockname()[1] if self._listener and self._listener.fileno() != -1 else None
 
     def start(self):
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        listener.bind((self.config.bind_address, self.config.agent_port))
-        listener.listen(4)
-        listener.settimeout(0.25)
-        self._listener = listener
-        self._accept_thread = threading.Thread(target=self._accept_loop, daemon=True)
-        self._accept_thread.start()
+        with self._session_lock:
+            if self._start_attempted or self._closed.is_set():
+                raise ControlHostError("gateway start is single-use")
+            self._start_attempted = True
+        reserved = False
+        listener = None
+        try:
+            with self._session_lock:
+                if self._closed.is_set():
+                    raise ControlHostError("gateway is closing")
+                if self.exclusive_console:
+                    self.vm_guard.reserve_console()
+                    reserved = True
+                    if self._closed.is_set():
+                        raise ControlHostError("gateway closed during console acquisition")
+                listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                listener.bind((self.config.bind_address, self.config.agent_port))
+                listener.listen(4)
+                listener.settimeout(0.25)
+                self._listener = listener
+                self._accept_thread = threading.Thread(target=self._accept_loop, daemon=True)
+                self._accept_thread.start()
+        except BaseException:
+            self._closed.set()
+            if listener is not None:
+                listener.close()
+            self._listener = None
+            if reserved:
+                self.vm_guard.release_console()
+            raise
 
     def _accept_loop(self):
         while not self._closed.is_set():
@@ -532,14 +875,17 @@ class AgentGateway:
             if machine.casefold() != self.config.expected_machine_name.casefold():
                 raise ControlHostError("guest machine name mismatch")
             with self._session_lock:
+                if self._closed.is_set():
+                    raise ControlHostError("gateway is closing")
                 if self._session is not None and not self._session.closed:
                     raise ControlHostError("a guest is already connected")
                 vm_identity = self.vm_guard.collect()
-                connection.settimeout(None)
+                # Keep the existing handshake timeout through the welcome write.
                 connection.sendall(encode_frame({"type": "welcome"}))
                 session = AgentSession(
                     connection, source, hello, self.journal,
-                    self._session_closed, vm_identity,
+                    self._session_closed, vm_identity, self.dispatch_policy,
+                    require_supervisor=self.require_supervisor,
                 )
                 self._session = session
             self.journal.append("control-guest-connected/1", session.summary())
@@ -569,17 +915,21 @@ class AgentGateway:
 
     def local_status(self) -> dict:
         try:
-            session = self.session()
-            return session.summary()
+            result = self.session().summary()
         except ControlHostError:
-            return {"connected": False}
+            result = {"connected": False}
+        if self.exclusive_console:
+            result["consoleReservation"] = self.vm_guard.console_status()
+        if self.coordinator is not None:
+            result["coordination"] = self.coordinator.status()
+        return result
 
-    def command(self, operation: str, payload: dict | None = None) -> dict:
+    def command(self, operation: str, payload: dict | None = None, *, access=None) -> dict:
         session = self.session()
-        invoke = lambda: session.request(operation, payload)
+        invoke = lambda: session.request(operation, payload, access=access)
         if operation == "arm":
             result = self.vm_guard.request(session.vm_identity, invoke, fast=False)
-        elif operation in ("action", "recover"):
+        elif operation in ("action", "recover") or (self.exclusive_console and operation == "capture"):
             result = self.vm_guard.request(session.vm_identity, invoke, fast=True)
         else:
             result = invoke()
@@ -590,10 +940,10 @@ class AgentGateway:
                 raise ControlHostError("guest returned an invalid 15 second arm result")
         return result
 
-    def capture(self) -> dict:
-        return self.journal.retain_capture(self.command("capture", {}))
+    def capture(self, *, access=None) -> dict:
+        return self.journal.retain_capture(self.command("capture", {}, access=access))
 
-    def close(self):
+    def close(self, *, reservation_timeout_seconds=2.0):
         self._closed.set()
         if self._listener:
             self._listener.close()
@@ -601,8 +951,41 @@ class AgentGateway:
             session = self._session
         if session:
             session.close()
-        if self._accept_thread:
+        if self._accept_thread and self._accept_thread.ident is not None:
             self._accept_thread.join(timeout=1)
+        if self.exclusive_console:
+            outcome = self.vm_guard.release_console(timeout_seconds=reservation_timeout_seconds)
+            return {"closed": True, "consoleReleased": outcome["released"],
+                    "releasePending": outcome["releasePending"]}
+
+
+PROTECTED_CONTROL_OPERATIONS = frozenset(("capture", "arm", "action", "recover"))
+
+
+def validate_control_access(value: object) -> dict:
+    """Copy only the private capability pair; authoritative lease checks happen at send."""
+    if not isinstance(value, dict) or set(value) != {"request_id", "token"}:
+        raise ControlHostError("control access must contain request_id and token")
+    request_id, token = value["request_id"], value["token"]
+    if (not isinstance(request_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", request_id)
+            or not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{64}", token)):
+        raise ControlHostError("invalid control access identifiers")
+    return {"request_id": request_id, "token": token}
+
+
+def split_control_envelope(operation: str, body: object):
+    """Explicit envelope, never a header that an older host could silently ignore.
+
+    Unwrapped legacy requests retain existing behavior; an installed policy still
+    refuses them at dispatch. STOP/release remain empty-body and credential-free.
+    """
+    if (operation in PROTECTED_CONTROL_OPERATIONS and isinstance(body, dict)
+            and ("access" in body or "payload" in body)):
+        if set(body) != {"access", "payload"} or not isinstance(body["payload"], dict):
+            raise ControlHostError("invalid owned control envelope")
+        return body["payload"], validate_control_access(body["access"])
+    return body, None
 
 
 def validate_arm_payload(payload: object) -> dict:
@@ -756,17 +1139,18 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         if not self._api_authorized():
             return
         try:
-            payload = self._body()
+            payload, access = split_control_envelope(operation, self._body())
+            access_kwargs = {"access": access} if access is not None else {}
             if operation in ("capture", "release", "stop", "recover") and payload != {}:
                 raise ControlHostError(f"{operation} request body must be an empty object")
             if operation == "capture":
-                result = self.server.gateway.capture()
+                result = self.server.gateway.capture(**access_kwargs)
             elif operation == "arm":
-                result = self.server.gateway.command("arm", validate_arm_payload(payload))
+                result = self.server.gateway.command("arm", validate_arm_payload(payload), **access_kwargs)
             elif operation == "action":
-                result = self.server.gateway.command("action", validate_action_payload(payload))
+                result = self.server.gateway.command("action", validate_action_payload(payload), **access_kwargs)
             elif operation in ("release", "stop", "recover"):
-                result = self.server.gateway.command(operation, {})
+                result = self.server.gateway.command(operation, {}, **access_kwargs)
             self._json(200, result)
         except ControlHostError as error:
             self._json(409, {"error": str(error)})
@@ -812,19 +1196,56 @@ class BootstrapRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(block)
 
 
-def main(argv=None) -> int:
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--coordination-db", type=Path,
+                        help="existing absolute queue database; opt-in coordinated host")
+    parser.add_argument("--coordination-resource", help="exact VM resource, for example vm:lab-1")
+    parser.add_argument("--reconcile-existing", action="store_true",
+                        help="explicitly revoke existing grants and verify fresh cleanup on startup")
+    parser.add_argument("--shutdown-file", type=Path,
+                        help="absent absolute marker path; creating it requests verified shutdown")
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
+    coordinated = args.coordination_db is not None
+    if coordinated != (args.coordination_resource is not None):
+        parser.error("coordination database and resource must be supplied together")
+    if (args.reconcile_existing or args.shutdown_file is not None) and not coordinated:
+        parser.error("reconciliation and shutdown marker require coordinated mode")
+    if coordinated and (not args.coordination_db.is_absolute()
+            or not re.fullmatch(r"vm:[a-z0-9][a-z0-9._/-]{0,120}", args.coordination_resource)):
+        parser.error("coordinated mode requires an absolute database and exact VM resource")
+    if args.shutdown_file is not None and (not args.shutdown_file.is_absolute() or args.shutdown_file.exists()):
+        parser.error("shutdown marker must be an absent absolute path")
     gateway = None
     ui = None
     bootstrap = None
     threads = []
+    coordinator = None
     try:
         config = HostConfig.load(args.config)
         journal = EvidenceJournal(config.output_directory)
-        gateway = AgentGateway(config, journal)
+        authority = None
+        if coordinated:
+            # Direct script execution must resolve the same repository package.
+            root = str(Path(__file__).resolve().parents[1])
+            if root not in sys.path:
+                sys.path.insert(0, root)
+            from scripts.nav_access_queue import AccessQueue
+            from scripts.nav_host_runtime import HostCoordinator
+            authority = AccessQueue(args.coordination_db)  # Refuse missing/corrupt DB.
+        gateway = AgentGateway(config, journal, require_supervisor=coordinated,
+                               exclusive_console=coordinated)
         gateway.start()
+        if coordinated:
+            coordinator = HostCoordinator(gateway, authority, args.coordination_resource, journal,
+                                          reconcile_existing=args.reconcile_existing)
+            gateway.coordinator = coordinator
         html_path = Path(__file__).with_name("control_panel.html")
         html = html_path.read_bytes()
         ui = ControlHttpServer(("127.0.0.1", config.ui_port), gateway, config, html)
@@ -845,18 +1266,45 @@ def main(argv=None) -> int:
             "evidence": str(journal.path.resolve()),
         }, indent=2))
         while True:
-            time.sleep(0.5)
+            if args.shutdown_file is not None and args.shutdown_file.exists():
+                break
+            if coordinator is not None:
+                coordinator.poll()
+            time.sleep(0.1)
+        return 0
     except KeyboardInterrupt:
         return 130
-    except (ControlHostError, OSError, ValueError) as error:
+    except (ControlHostError, OSError, ValueError, sqlite3.Error) as error:
         print(json.dumps({"status": "blocked", "error": str(error)}))
         return 2
     finally:
+        if coordinator is not None:
+            # Do not unlock console maintenance while a supervisor is running or
+            # release is unverified. A second Ctrl+C is an explicit forced exit,
+            # never a successful cleanup claim. Native STOP/status remain served.
+            outcome = coordinator.stop()
+            announced = False
+            while not outcome["safeToClose"]:
+                if not announced:
+                    # Diagnostic storage/output failure must not release ownership.
+                    try:
+                        journal.append("nav-host-shutdown-pending/1", outcome)
+                    except Exception:
+                        pass
+                    try:
+                        print(json.dumps({"status": "shutdown-blocked", "coordination": outcome}), flush=True)
+                    except (OSError, ValueError):
+                        pass
+                    announced = True
+                time.sleep(.25)
+                outcome = coordinator.stop(timeout_seconds=.1)
         if ui:
-            ui.shutdown()
+            if threads and threads[0].is_alive():
+                ui.shutdown()
             ui.server_close()
         if bootstrap:
-            bootstrap.shutdown()
+            if len(threads) > 1 and threads[1].is_alive():
+                bootstrap.shutdown()
             bootstrap.server_close()
         if gateway:
             gateway.close()

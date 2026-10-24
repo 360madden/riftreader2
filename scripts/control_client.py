@@ -78,12 +78,19 @@ def _read_response(response) -> dict:
 
 
 class ControlClient:
-    def __init__(self, config, opener=None):
+    def __init__(self, config, opener=None, *, access=None):
         self.config = config
         self.base_url = f"http://127.0.0.1:{config.ui_port}"
         self.opener = opener or _build_opener()
+        try:
+            self.access = HOST.validate_control_access(access) if access is not None else None
+        except HOST.ControlHostError:
+            raise ClientError("input-error", "invalid private control lease") from None
 
     def request(self, path: str, *, method: str, payload: dict | None = None) -> dict:
+        if (self.access is not None and method == "POST"
+                and path in {"/api/" + name for name in HOST.PROTECTED_CONTROL_OPERATIONS}):
+            payload = {"access": dict(self.access), "payload": payload}
         data = None if payload is None else _json_bytes(payload)
         headers = {
             "Authorization": f"Bearer {self.config.operator_token}",
@@ -128,6 +135,24 @@ def _read_json(path: Path, description: str) -> dict:
     if not isinstance(value, dict):
         raise ClientError("input-error", f"{description} must contain one JSON object")
     return value
+
+
+def _read_private_lease(path: Path) -> dict:
+    """Read a bounded private pair or queue dispatch grant; never acquire or renew."""
+    try:
+        with Path(path).open("rb") as stream:
+            data = stream.read(8193)
+        if len(data) > 8192:
+            raise ValueError()
+        value = HOST.decode_json(data)
+        pair = {"request_id", "token"}
+        grant = pair | {"owner", "track", "lease", "expires_ms", "deadline_ms"}
+        if not isinstance(value, dict) or set(value) not in (pair, grant):
+            raise ValueError()
+        return HOST.validate_control_access({key: value[key] for key in pair})
+    except (OSError, ValueError, HOST.ControlHostError):
+        # Parse exceptions can include private property names or filesystem paths.
+        raise ClientError("input-error", "private control lease must be valid JSON, at most 8 KiB") from None
 
 
 def _reserve_output(path: Path, *, private: bool = False):
@@ -346,6 +371,7 @@ def _simple(client: ControlClient, operation: str, output: Path | None) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--lease", type=Path, help="private access pair or queue grant JSON; no automatic acquisition or renewal")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status")
     capture = commands.add_parser("capture")
@@ -374,7 +400,10 @@ def run(args, *, opener=None) -> dict:
         config = HOST.HostConfig.load(args.config)
     except (OSError, ValueError, HOST.ControlHostError) as error:
         raise ClientError("config-error", str(error)) from error
-    client = ControlClient(config, opener=opener)
+    access = None
+    if args.command in HOST.PROTECTED_CONTROL_OPERATIONS and getattr(args, "lease", None) is not None:
+        access = _read_private_lease(args.lease)
+    client = ControlClient(config, opener=opener, access=access)
     if args.command == "status":
         return client.request("/api/status", method="GET")
     if args.command == "capture":

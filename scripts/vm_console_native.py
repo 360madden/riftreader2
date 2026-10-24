@@ -29,6 +29,7 @@ import struct
 import subprocess
 import sys
 import time
+import threading
 from typing import NamedTuple
 import uuid
 
@@ -359,8 +360,12 @@ class ControlMutex:
         self.name = mutex_name(vmx)
         self.handle = None
         self.api = None
+        self.owner_thread = None
+        self.abandoned = False
 
     def __enter__(self):
+        if self.handle is not None:
+            raise Blocked("controller-lock-already-owned")
         self.api = _kernel32()
         self.api.CreateMutexW.argtypes = [
             ctypes.c_void_p,
@@ -378,11 +383,16 @@ class ControlMutex:
             self.api.CloseHandle(self.handle)
             self.handle = None
             raise Blocked("controller-busy")
+        self.owner_thread = threading.current_thread()
+        self.abandoned = outcome == 0x80
         return self
 
     def __exit__(self, *_):
         if self.handle:
-            self.api.ReleaseMutex(self.handle)
+            if threading.current_thread() is not self.owner_thread:
+                raise Blocked("controller-lock-wrong-thread")
+            if not self.api.ReleaseMutex(self.handle):
+                raise Blocked("controller-lock-release-failed")
             self.api.CloseHandle(self.handle)
             self.handle = None
 

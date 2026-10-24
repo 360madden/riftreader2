@@ -6,7 +6,7 @@ workers must share one local database, not a database per worktree. No daemon or
 automatic experiment replay is provided here. Python 3.12+; standard library only.
 """
 
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import argparse
 import hashlib
 import hmac
@@ -17,6 +17,8 @@ import re
 import secrets
 import sqlite3
 import time
+import threading
+import weakref
 
 
 APPLICATION_ID = 0x52523251
@@ -65,12 +67,90 @@ def _unique_object(pairs):
     return result
 
 
+# Cooperative fencing covers all queue API transactions and the actual send boundary.
+# It is not authentication against direct SQL writes or a second authority path.
+_FENCE_STATES = weakref.WeakValueDictionary()
+_FENCE_STATES_LOCK = threading.Lock()
+
+
+class _FenceState:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.local = threading.local()
+
+
+def _fence_state(path):
+    key = os.path.normcase(str(path))
+    with _FENCE_STATES_LOCK:
+        state = _FENCE_STATES.get(key)
+        if state is None:
+            state = _FenceState()
+            _FENCE_STATES[key] = state
+        return state
+
+
+@contextmanager
+def _process_fence(path, timeout):
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+        api = ctypes.WinDLL("kernel32", use_last_error=True)
+        api.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        api.CreateMutexW.restype = wintypes.HANDLE
+        api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        api.WaitForSingleObject.restype = wintypes.DWORD
+        api.ReleaseMutex.argtypes = [wintypes.HANDLE]
+        api.ReleaseMutex.restype = wintypes.BOOL
+        api.CloseHandle.argtypes = [wintypes.HANDLE]
+        api.CloseHandle.restype = wintypes.BOOL
+        digest = hashlib.sha256(os.path.normcase(str(path)).encode("utf-8")).hexdigest()
+        handle = api.CreateMutexW(None, False, "Local\\RiftReader2.NavDispatch." + digest)
+        if not handle:
+            raise OSError("cannot create navigation dispatch mutex")
+        acquired = False
+        try:
+            outcome = api.WaitForSingleObject(handle, max(0, int(timeout * 1000)))
+            if outcome not in (0, 0x80):
+                raise TimeoutError("navigation dispatch fence unavailable")
+            acquired = True
+            yield
+        finally:
+            if acquired:
+                api.ReleaseMutex(handle)
+            api.CloseHandle(handle)
+    else:
+        # POSIX fallback: persistent lock-file; never unlink an authority's lock file.
+        import fcntl
+        import stat
+        flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(str(path) + ".dispatch.lock", flags, 0o600)
+        try:
+            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                raise OSError("navigation dispatch lock must be regular")
+            end = time.monotonic() + timeout
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if time.monotonic() >= end:
+                        raise TimeoutError("navigation dispatch fence unavailable") from None
+                    time.sleep(min(.01, max(0, end - time.monotonic())))
+            try:
+                yield
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+
 class AccessQueue:
     def __init__(self, path, *, create=False, clock=None):
         path = Path(path)
         if not path.is_absolute():
             raise QueueError("database path must be absolute and shared across workers")
         self.path = path.resolve()
+        self._fence = _fence_state(self.path)
         self.clock = clock or (lambda: time.time_ns() // 1_000_000)
         if create:
             # Never reset an existing authority, even an empty or corrupt one.
@@ -79,6 +159,45 @@ class AccessQueue:
             self._initialize()
         with self._connection() as database:
             self._verify_schema(database)
+
+    @contextmanager
+    def dispatch_fence(self, timeout=5.0):
+        """Serialize cooperative revocation and send admission, without a DB transaction.
+
+        Hold only through the transport send, never through the guest reply or a
+        complete experiment. Windows authorities must share one interactive session
+        and canonical local database path. STOP/release must not acquire this lock.
+        """
+        if type(timeout) not in (float, int) or not 0 <= timeout <= 5:
+            raise QueueError("dispatch fence timeout must be between zero and five seconds")
+        end = time.monotonic() + timeout
+        state = self._fence
+        if not state.lock.acquire(timeout=timeout):
+            raise QueueError("navigation dispatch fence unavailable")
+        try:
+            depth = getattr(state.local, "depth", 0)
+            if depth:
+                state.local.depth = depth + 1
+                try:
+                    yield
+                finally:
+                    state.local.depth -= 1
+            else:
+                stack = ExitStack()
+                try:
+                    try:
+                        stack.enter_context(_process_fence(self.path, max(0, end - time.monotonic())))
+                    except OSError as error:
+                        raise QueueError("navigation dispatch fence unavailable") from error
+                    state.local.depth = 1
+                    try:
+                        yield
+                    finally:
+                        state.local.depth = 0
+                finally:
+                    stack.close()
+        finally:
+            state.lock.release()
 
     @contextmanager
     def _connection(self):
@@ -151,7 +270,7 @@ class AccessQueue:
 
     @contextmanager
     def _transaction(self):
-        with self._connection() as database:
+        with self.dispatch_fence(), self._connection() as database:
             self._verify_schema(database)
             database.execute("BEGIN IMMEDIATE")
             try:
@@ -182,11 +301,16 @@ class AccessQueue:
                     database.execute("ROLLBACK")
                 raise
 
-    def register(self, resource, epoch):
+    def register(self, resource, epoch, *, require_absent=False):
+        """Register/reconcile identity; startup may require an atomically absent row."""
+        if type(require_absent) is not bool:
+            raise QueueError("require_absent must be boolean")
         resource = _identifier(resource, "resource", RESOURCE)
         epoch = _identifier(epoch, "epoch")
         with self._transaction() as (database, now):
             row = database.execute("SELECT * FROM resources WHERE name=?", (resource,)).fetchone()
+            if require_absent and row is not None:
+                raise QueueError("resource already registered; explicit reconciliation required")
             if row is None:
                 if database.execute("SELECT count(*) FROM resources").fetchone()[0] >= MAX_RESOURCES:
                     raise QueueError("resource limit reached")
@@ -204,6 +328,51 @@ class AccessQueue:
                                     blocked=1,blocked_since_ms=?,cleanup_receipt=NULL WHERE name=?""",
                                  (epoch, now, resource))
                 self._event(database, now, "resource-epoch-changed", resource=resource, epoch=epoch)
+            return dict(database.execute("SELECT * FROM resources WHERE name=?", (resource,)).fetchone())
+
+    def reconcile_resource(self, resource, epoch, expected, receipt):
+        """Trusted owner takeover with exact-row CAS; never publishes cleanup.
+
+        Caller owns console exclusion and has joined the previous supervisor.
+        All queued work mentioning this resource is invalidated, even if the
+        target epoch did not change. Active multi-resource holders are quarantined
+        together. Fresh watchdog cleanup is still required before a new grant.
+        """
+        _identifier(resource, "resource", RESOURCE)
+        _identifier(epoch, "epoch")
+        _text(receipt, "reconciliation receipt")
+        fields = {"name", "epoch", "generation", "blocked", "blocked_since_ms", "holder", "cleanup_receipt"}
+        if not isinstance(expected, dict) or set(expected) != fields or expected["name"] != resource:
+            raise QueueError("exact previous resource snapshot required")
+        for key in ("generation", "blocked_since_ms"):
+            _integer(expected[key], key, 0, 2**63 - 1)
+        _integer(expected["blocked"], "blocked", 0, 1)
+        expected = dict(expected)
+        with self._transaction() as (database, now):
+            row = database.execute("SELECT * FROM resources WHERE name=?", (resource,)).fetchone()
+            if row is None or dict(row) != expected:
+                raise QueueError("resource changed; reconciliation refused")
+            holder = row["holder"]
+            if holder:
+                owner = database.execute("SELECT * FROM requests WHERE request_id=?", (holder,)).fetchone()
+                if owner is None or owner["state"] not in ("active", "cleanup"):
+                    raise QueueError("unexpected previous resource holder")
+                if owner["state"] == "active":
+                    self._quarantine(database, now, holder, "stale", "supervisor-reconciled")
+                else:
+                    database.execute("UPDATE requests SET finish_state='stale' WHERE request_id=?", (holder,))
+            invalidated = []
+            for queued in database.execute("SELECT request_id,specification FROM requests WHERE state='queued'").fetchall():
+                if resource in json.loads(queued["specification"])["resources"]:
+                    database.execute("UPDATE requests SET state='stale' WHERE request_id=?", (queued["request_id"],))
+                    self._event(database, now, "stale", queued["request_id"], reason="supervisor-reconciled")
+                    invalidated.append(queued["request_id"])
+            database.execute("""UPDATE resources SET epoch=?,generation=generation+1,
+                                blocked=1,blocked_since_ms=?,cleanup_receipt=NULL WHERE name=?""",
+                             (epoch, now, resource))
+            self._event(database, now, "supervisor-reconciled", holder, resource=resource,
+                        previous_epoch=row["epoch"], epoch=epoch, receipt=receipt,
+                        invalidated_queued=invalidated)
             return dict(database.execute("SELECT * FROM resources WHERE name=?", (resource,)).fetchone())
 
     def submit(self, request_id, owner, track, resources, *, priority=0, benefit=1,
@@ -350,6 +519,31 @@ class AccessQueue:
                 self._event(database, now, "cancelled", request_id)
             return self._public(database.execute("SELECT * FROM requests WHERE request_id=?", (request_id,)).fetchone())
 
+    def quarantine_resource(self, resource, epoch, reason):
+        """Trusted watchdog management: revoke ownership, never repair or release it."""
+        _identifier(resource, "resource", RESOURCE)
+        _identifier(epoch, "epoch")
+        if reason not in ("watchdog-fault", "watchdog-shutdown"):
+            raise QueueError("unsupported watchdog quarantine reason")
+        with self._transaction() as (database, now):
+            row = database.execute("SELECT * FROM resources WHERE name=?", (resource,)).fetchone()
+            if row is None or row["epoch"] != epoch:
+                raise QueueError("watchdog resource identity changed")
+            if row["blocked"]:
+                return dict(row)
+            if row["holder"]:
+                holder = database.execute("SELECT state FROM requests WHERE request_id=?",
+                                          (row["holder"],)).fetchone()
+                if holder is None or holder["state"] != "active":
+                    raise QueueError("unexpected watchdog resource holder")
+                self._quarantine(database, now, row["holder"], "failed", reason)
+            else:
+                database.execute("""UPDATE resources SET blocked=1,blocked_since_ms=?,
+                                    generation=generation+1,cleanup_receipt=NULL WHERE name=?""",
+                                 (now, resource))
+                self._event(database, now, "watchdog-quarantine", resource=resource, reason=reason)
+            return dict(database.execute("SELECT * FROM resources WHERE name=?", (resource,)).fetchone())
+
     def cleanup(self, resource, epoch, generation, observed_ms, receipt, *, stopped, released, in_flight):
         """Accept a trusted adapter's attestation, not proof generated by this queue."""
         _identifier(resource, "resource", RESOURCE)
@@ -400,6 +594,55 @@ class AccessQueue:
                     "resources": [dict(row) for row in database.execute("SELECT * FROM resources ORDER BY name")],
                     "requests": [self._public(row) for row in page],
                     "next_sequence": page[-1]["sequence"] if len(rows) > limit else None}
+
+
+class QueueDispatchPolicy:
+    """Offline-qualified gateway admission component, not complete live coordination.
+
+    The trusted composition root supplies exact resource epochs. This component
+    neither discovers the live target nor starts a watchdog, repairs state or
+    certifies cleanup. Call the yielded admission check INSIDE the final send lock.
+    """
+    BYPASS = frozenset(("status", "stop", "release"))
+    PROTECTED = frozenset(("capture", "arm", "action", "recover"))
+
+    def __init__(self, queue, resources):
+        if not isinstance(resources, dict) or not 1 <= len(resources) <= 8:
+            raise QueueError("policy requires exact resource epochs")
+        self.queue = queue
+        self._resources = tuple(sorted(
+            (_identifier(name, "resource", RESOURCE), _identifier(epoch, "epoch"))
+            for name, epoch in resources.items()))
+
+    @property
+    def resource_epochs(self):
+        return dict(self._resources)
+
+    @contextmanager
+    def guard(self, operation, access):
+        if operation in self.BYPASS:
+            yield None
+            return
+        if operation not in self.PROTECTED:
+            raise QueueError("operation has no navigation admission contract")
+        if not isinstance(access, dict) or set(access) != {"request_id", "token"}:
+            raise QueueError("navigation lease required")
+        request_id, token = access["request_id"], access["token"]
+        _identifier(request_id, "request_id")
+        if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{64}", token):
+            raise QueueError("invalid navigation lease token")
+
+        def admit():
+            try:
+                record = self.queue.check(request_id, token)
+            except (sqlite3.Error, OSError) as error:
+                raise QueueError("navigation queue unavailable; no dispatch authorized") from error
+            if record["specification"]["resources"] != dict(self._resources):
+                raise QueueError("navigation lease resource scope does not match the gateway")
+            return record
+
+        with self.queue.dispatch_fence():
+            yield admit
 
 
 def main(argv=None):

@@ -1,5 +1,39 @@
 # Native supervised VM controls
 
+**Live coordination update (2026-10-22):** the recovered host now runs denied-first
+per-session supervision, queue-backed command admission and lifetime console
+exclusion. Protected calls require issued leases; STOP/release/status remain
+available. The connection and no-movement capture trial passed. See the
+[activation, current process receipt and maintenance procedure](../validation/navigation-coordinated-host-2026-10-22.md).
+Earlier sections below are historical unless explicitly unchanged.
+
+**Console exclusion (2026-10-22):** a coordinated gateway may hold the existing
+per-VM mutex throughout its lifetime, blocking known legacy console/bootstrap
+entrypoints. Native leased capture remains available; console maintenance needs
+explicit owner shutdown and release. This is not enabled by the current live
+configuration. See [contract and proof](../validation/navigation-console-exclusion-2026-10-22.md).
+
+**Ownership caller update (2026-10-21):** the CLI supports `--lease <private.json>`
+and the panel can load an existing private grant for protected calls. This neither
+creates a grant nor enables the coordinator. STOP/release/status remain available
+without loading that file. The new host envelope fails closed on older hosts.
+See the [caller contract and validation](../validation/navigation-native-callers-2026-10-21.md).
+
+**NAV-SCHED-02C update:** [bounded transport](../validation/navigation-bounded-transport-2026-10-21.md)
+is qualified offline. Stalled/partial frame sends fail without replay or claiming
+release. The running host is still unchanged; startup/manual-path integration
+and reviewed activation remain. Earlier updates below describe historical gates.
+
+**NAV-SCHED-02B update:** [pinned watchdog/cleanup](../validation/navigation-watchdog-cleanup-2026-10-21.md)
+is implemented and tested offline. The current running host still enables neither
+the policy nor watchdog. No new live control capability is claimed below.
+
+**Coordination update (2026-10-21):** the optional gateway/session admission seam
+is tested offline under [NAV-SCHED-02A](../validation/navigation-dispatch-fence-2026-10-21.md).
+It is not installed by the current host configuration and is not a claim that
+manual/legacy control paths are now coordinated. Live target/watchdog/cleanup and
+stalled-send gates remain; the operator workflow below is otherwise unchanged.
+
 Status: implemented and exercised on RIFT-Lab-1. The
 [October 20 live record](../validation/native-vm-controls-2026-10-20.md)
 demonstrates windowed capture, movement/chords, orbit, yaw/pitch, stop, and idle
