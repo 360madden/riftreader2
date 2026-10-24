@@ -2,7 +2,9 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Latest **guarded live-gate preparation**: [V13 healthy and V14 successor prepared](typed-snapshot-v14-preflight-2026-10-24.md). Exact game and VMware epoch still matched; no STOP or guest input occurred. New one-use two-digest intake passed 8 focused and 545 full Python tests; actual two report acquisitions/transfers remain pending.
+Latest **real live acquisition and recovery**: [two intact exact-epoch typed-prefix neighborhood snapshots and normal V14 restoration](typed-snapshot-first-live-pair-2026-10-24.md). Both 86,016-byte scopes have zero holes and verified hashes, but **strict typed-wire inspection found zero complete frames**. Of the three earlier marker addresses, one persisted with binary following the prefix and two moved/changed. V14, not V13, is the verified current native-console owner. Next gate is bounded same-operation scan-to-snapshot, after host-only validation.
+
+Historical **guarded live-gate preparation**: [V13 healthy and V14 successor prepared](typed-snapshot-v14-preflight-2026-10-24.md). Exact game and VMware epoch still matched; no STOP or guest input occurred. New one-use two-digest intake passed 8 focused and 545 full Python tests; actual two report acquisitions/transfers remain pending.
 
 Latest **host-only live-scout follow-up**: [SHA-pinned two-snapshot request plan](typed-scout-snapshot-followup-plan-2026-10-24.md), with two no-overwrite 84 KiB requests covering three prefix neighborhoods. **13/13 focused and 537/537 full Python tests passed**; no guest snapshot or Lua frame qualification yet.
 
@@ -47,7 +49,8 @@ record independent leased screenshots and ROI-level pixel changes, without claim
 | [Typed-prefix scout host→guest transfer readiness](typed-prefix-scout-transfer-2026-10-24.md) | Historical 74 MB pinned streaming GET, 10 focused and 524 full Python tests, V13 successor initially staged; guest not yet touched at that time. |
 | [First live typed-prefix scout and V13 recovery](typed-prefix-scout-live-2026-10-24.md) | Actual read-only game-memory scan, three current-process candidate addresses in a 512 MiB partial pass, hash-preserved host report and normal V13 recovery. |
 | [Offline two-snapshot scout follow-up plan](typed-scout-snapshot-followup-plan-2026-10-24.md) | Reproducible SHA-pinned exact-process three-window plan and two future capture requests, no-overwrite artifacts, 13 focused and 537 full Python checks; no live snapshots yet. |
-| [V13 live preflight and V14 recovery preparation](typed-snapshot-v14-preflight-2026-10-24.md) | Healthy same-epoch V13, prepared V14 successor, conservatively gated guest PowerShell stepper, and one-use snapshot-hash intake tests; no VM input or guest snapshot yet. |
+| [V13 live preflight and V14 recovery preparation](typed-snapshot-v14-preflight-2026-10-24.md) | Historical prior checkpoint: healthy V13, prepared successor and guest PowerShell stepper; execution followed in the newer real-pair record. |
+| [First live pair of typed-prefix snapshots and V14 recovery](typed-snapshot-first-live-pair-2026-10-24.md) | Two actual 86,016-byte exact-game-epoch captures, original SHA receipts/chunk integrity, strict unavailable typed frames, volatility diagnosis and independent healthy V14. |
 | [Current-epoch map transfer and V12 recovery](guest-map-report-transfer-2026-10-24.md) | Actual full game memory map retained on host, SHA-256 match and normal coordinator restoration. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
