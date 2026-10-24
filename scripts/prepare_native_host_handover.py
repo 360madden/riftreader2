@@ -1,7 +1,9 @@
-"""Prepare a versioned, read-only-verified handover to a new VM process epoch.
+"""Prepare a guarded native-host handover for a restarted or unchanged VM epoch.
 
-This creates only one-use local launch artifacts. It does not stop the previous
-host, mutate the authoritative queue, send VM/guest input, or launch a host.
+The default requires a restarted VM and quarantined queue. --same-epoch only
+prepares a successor while the current host is live and its queue is idle,
+unheld, and backed by a prior cleanup receipt. Neither mode stops a host,
+mutates queue authority, sends VM/guest input, or launches a successor.
 """
 from __future__ import annotations
 
@@ -47,8 +49,8 @@ def render_launcher(source: str, previous: str, successor: str) -> str:
     return result
 
 
-def require_quarantined_authority(path: Path, resource: str) -> None:
-    """Read the canonical SQLite authority without expiry sweeps or writes."""
+def authority_snapshot(path: Path, resource: str) -> tuple[int, str | None, str | None]:
+    """Read only one consistent SQLite authority snapshot; never sweep expiries."""
     import sqlite3
     from contextlib import closing
     from scripts.nav_access_queue import APPLICATION_ID, SCHEMA_VERSION
@@ -71,13 +73,51 @@ def require_quarantined_authority(path: Path, resource: str) -> None:
             "SELECT COUNT(*) FROM requests WHERE state IN ('queued','active','cleanup')"
         ).fetchone()[0]
         conn.execute("COMMIT")
-    if len(resources) != 1 or resources[0][0] != 1 or resources[0][1] is not None:
-        raise ValueError("authority is not exclusively quarantined")
+    if len(resources) != 1:
+        raise ValueError("canonical authority resource missing or duplicated")
     if pending != 0:
         raise ValueError("outstanding queue work requires owner review")
+    return resources[0]
 
 
-def prepare(previous: str, successor: str) -> dict:
+def require_quarantined_authority(path: Path, resource: str) -> None:
+    """Require shutdown quarantine without changing the canonical database."""
+    blocked, holder, _ = authority_snapshot(path, resource)
+    if blocked != 1 or holder is not None:
+        raise ValueError("authority is not exclusively quarantined")
+
+
+def require_idle_authority(path: Path, resource: str) -> None:
+    """Require a live host's free resource and previous verified cleanup receipt."""
+    blocked, holder, receipt = authority_snapshot(path, resource)
+    if blocked != 0 or holder is not None:
+        raise ValueError("authority must be free and unheld for same-epoch preparation")
+    if not isinstance(receipt, str) or not receipt:
+        raise ValueError("same-epoch preparation requires a cleanup receipt")
+
+
+def require_epoch_relation(prior: dict, current: dict, *, same_epoch: bool) -> None:
+    """Keep resource identity fixed; enforce the selected VM epoch relationship."""
+    if current["vmx"] != prior["vmx"] or current["port"] != prior["port"]:
+        raise ValueError("VM resource identity changed")
+    if same_epoch:
+        if current != prior:
+            raise ValueError("VM epoch changed; same-epoch handover refused")
+    elif current == prior:
+        raise ValueError("VM epoch has not changed; no stale-epoch handover")
+
+
+def successor_plan(prior: dict, current: dict, shutdown: Path) -> dict:
+    """Copy Python integer VM identities without JavaScript's 53-bit rounding."""
+    from datetime import datetime, timezone
+    result = dict(prior)
+    result["vmIdentity"] = dict(current)
+    result["shutdownFile"] = str(shutdown)
+    result["createdUtc"] = datetime.now(timezone.utc).isoformat()
+    return result
+
+
+def prepare(previous: str, successor: str, *, same_epoch: bool = False) -> dict:
     from scripts.control_host import HostConfig
     from scripts.vm_console_native import (
         collect_identity, process_identity, validate_config,
@@ -122,7 +162,10 @@ def prepare(previous: str, successor: str) -> dict:
         raise ValueError("canonical queue differs")
     if owner["resource"] != prior["resource"]:
         raise ValueError("resource differs")
-    require_quarantined_authority(queue_path, prior["resource"])
+    if same_epoch:
+        require_idle_authority(queue_path, prior["resource"])
+    else:
+        require_quarantined_authority(queue_path, prior["resource"])
     host_config = HostConfig.load(config)
     # Do not request a second console mutex while the old host still owns it.
     # This collector reads vmrun inventory/process/log/listener identity only;
@@ -132,11 +175,7 @@ def prepare(previous: str, successor: str) -> dict:
         HOME, require_files=True,
     )
     current = collect_identity(native_config)
-    if current == prior["vmIdentity"]:
-        raise ValueError("VM epoch has not changed; no stale-epoch handover")
-    if (current["vmx"] != prior["vmIdentity"]["vmx"]
-            or current["port"] != prior["vmIdentity"]["port"]):
-        raise ValueError("VM resource identity changed")
+    require_epoch_relation(prior["vmIdentity"], current, same_epoch=same_epoch)
     output = HOME / f"coordinated-host-plan-{successor}.json"
     launch = HOME / f"run-coordinated-host-{successor}.py"
     shutdown = HOME / f"STOP-NATIVE-20261024-{successor.upper()}.request"
@@ -150,11 +189,7 @@ def prepare(previous: str, successor: str) -> dict:
     if any(path.exists() for path in used):
         raise ValueError("target version has artifacts already; no overwrites")
     rendered = render_launcher(source.read_text(encoding="utf-8"), previous, successor)
-    new = dict(prior)
-    new["vmIdentity"] = current
-    new["shutdownFile"] = str(shutdown)
-    from datetime import datetime, timezone
-    new["createdUtc"] = datetime.now(timezone.utc).isoformat()
+    new = successor_plan(prior, current, shutdown)
     # Both creates are exclusive; preserve a partial write for investigation.
     with output.open("x", encoding="utf-8") as stream:
         json.dump(new, stream, indent=2)
@@ -163,13 +198,15 @@ def prepare(previous: str, successor: str) -> dict:
         stream.write(rendered)
     return {
         "state": "handover-prepared-not-executed",
+        "mode": "same-vm-epoch" if same_epoch else "restarted-vm-epoch",
         "previousOwnerPid": owner["pid"],
         "previousShutdownMarker": str(stop_previous),
         "newLauncher": str(launch),
         "newPlan": str(output),
         "newVmPid": current["pid"],
         "newVmLogEpoch": current["logEpoch"],
-        "queueBlockedPreserved": True,
+        "queueStatePreserved": True,
+        "queueBlockedAtPreparation": not same_epoch,
         "shutdownMarkerNotCreated": True,
         "guestInputSent": False,
     }
@@ -179,9 +216,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--previous", default="v7")
     parser.add_argument("--successor", default="v8")
+    parser.add_argument(
+        "--same-epoch", action="store_true",
+        help="prepare only: require the same VM epoch and free, cleaned queue",
+    )
     args = parser.parse_args()
     try:
-        report = prepare(args.previous, args.successor)
+        report = prepare(args.previous, args.successor, same_epoch=args.same_epoch)
     except (ValueError, KeyError, OSError, TypeError, AssertionError) as exc:
         print(json.dumps({"state": "blocked", "reason": str(exc)}), file=sys.stderr)
         return 2

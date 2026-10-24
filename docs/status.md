@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: guarded same-VM-epoch coordinator preparation
+
+- **Prepared but did not launch V11 (12:33Z):** Added explicit `--same-epoch` to `scripts/prepare_native_host_handover.py`. It demands the exact unchanged VMware identity, a live V10 owner, matching config/runtime hashes, and read-only SQLite proof of `blocked=0`, no holder/pending requests, and a cleanup receipt. The existing restarted-VM mode still requires queue quarantine and a changed VM epoch. Python-only plan creation prevents JavaScript rounding of Windows 64-bit `startTicks`.
+- **Verified live without interrupting V10:** V11 plan and launcher exist under ignored `artifacts/update-recovery-20261023-01/`; the V11 plan preserves exact `startTicks=134372941117887852`, all five runtime hashes, full VM identity, and has no shutdown marker. V10 PID **8168** remains alive; queue free/unheld/cleaned, no actions dispatched. **V11 is not running** and is valid only while this VM process epoch remains unchanged.
+- **Tests:** 7 focused handover, **496 Python**, **364 .NET** passed, plus `git diff --check`. The full `validate.ps1` runner was not completed: PowerShell 7 executable unavailable via Workbridge; Windows PowerShell 5.1 fallback mispassed Lua inline-code quotes on its first test. See [same-epoch handover evidence](validation/same-epoch-native-host-handover-2026-10-24.md). Next: resume field qualification using the verified V10 capture; no coordinator handover is needed for read-only discovery.
+
 ## October 24: receiver and coordinated host restored after VM epoch change
 
 - A fresh host read-only check at 2026-10-24T10:30:44Z confirmed vmware-vmx PID 38044 and its VNC listener on port 5905, with no native listeners on 49712/49715; old V7 coordinator PID 34352 no longer exists. V7 had first refused orderly shutdown (`shutdown-release-unverified`) and was terminated only after exact-process/no-in-flight checks. **This was not a guest STOP/release or cleanup receipt.** The prepared V8 coordinator has not been launched; its plan must be rechecked against the current VM epoch.
