@@ -216,3 +216,33 @@ were checked read-only and may change after this timestamp.
 Do not interpret the user-visible timeout as proof that any game or
 host process timed out. Restart work from independently verified identities,
 not from guesses or the prior command prompt.
+
+## 6. Later read-only status delta — October 24, 00:59 EDT
+
+A separate read-only status check at 2026-10-24T04:59:19Z (00:59 EDT)
+used the existing `scripts/control_client.py` with
+`artifacts/native-usability-20261020/host.json` and the `status`
+subcommand (authenticated GET `/api/status`). Workbridge job
+`rr2-context-status-20261024-001` exited 0 and retained its JSON output.
+
+- VM identity: PID `31884`, start ticks `134371752823274925`, same
+  as the handoff snapshot.
+- **RIFT game process changed**: PID `13788`, creation ticks
+  `639284141721819584`, superseding earlier PID `2768`.
+  Cause of the process change was not established.
+- The game executable SHA-256 remained
+  `7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD`.
+- Native host remained connected; coordinator `ready`, supervisor
+  `running`, console reservation held.
+- Guest status reported foreground `true`, armed `false`, busy `false`,
+  recoveryRequired `false` and sampled desktopInputsDown `[]`.
+  `nativeTextEntryState` was `unknown` and `responseVerified` was
+  `false`; this does not qualify an input experiment.
+
+The status query did **not** obtain typed Lua observations, current-player
+XYZ, a fresh native pointer report, or independent queue-row inspection.
+The earlier native XYZ candidate belongs to the older PID `2768` epoch
+and must not be presented as a current PID `13788` observation.
+Reacquire exact identity and independent readback before any semantic
+validation or new controlled action. No gameplay input or VM operation
+was performed for this status check.
