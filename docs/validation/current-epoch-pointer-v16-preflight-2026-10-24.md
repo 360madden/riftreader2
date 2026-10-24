@@ -1,0 +1,30 @@
+# Current-epoch native XYZ pointer trial — V16 host preparation, October 24, 2026
+
+**Status: PREPARED, NOT EXECUTED.** No fresh native game-memory pointer report or Lua/native agreement exists for PID 6940 yet. V15 is still the exclusive healthy VMware console owner; its normal STOP marker has not been created. This handoff separates the proven advancing typed Lua producer from the next independent native-position experiment.
+
+## Historical reason for this exact pointer
+
+- On October 19, independently retained read-only field-lab captures in two RIFT process epochs with executable SHA 7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD followed main-module RVA 0x32E0200 to different session-local heap owners and found native float32 XYZ at offsets +0x320/+0x324/+0x328 within about 0.004 units of contemporaneous typed Lua. See [native player fields](native-player-fields-2026-10-19.md); this is not a current-epoch validation or proof across a game update.
+- Current live advancing typed source comes from the independently verified [six-snapshot acquisition](typed-inline-first-live-six-snapshots-2026-10-24.md): strict C# comparison pair a1-b2, SHA CF353BD49E6D5D7FFC810C6C8C3AF8C049D26B10F2F9700257DEBBC9486274D5. Same player u035400012FA2D207, source sequence 112332 to 112588 and unchanged Lua XYZ (7461.1997070312, 863.84997558594, 2977.0598144531). Exact current game PID 6940, ticks 639284177321390013, same executable SHA.
+
+## Current operating preflight and bounded requests
+
+- At 22:00:47 UTC, the V15 authenticated read-only status endpoint reported ready/connected and supervisor running/cleanup verified, with RIFT foreground, guest disarmed/idle, no keys down, VM PID 38044 and log epoch 2026-10-24T05:41:51.833Z unchanged. The host did not access the V15-owned console.
+- At 22:01:28 UTC, the existing same-epoch handover helper produced the ignored pinned plan and launcher for V15 to V16. State explicitly handover-prepared-not-executed, queue preserved, old owner PID 27856, STOP marker absent, no guest input.
+- Reused the existing direct PowerShell pointer planner twice. Each request is native-pointer-follow-request/1 for the exact game target, one root RVA 0x32E0200 with offsets [0x0], terminalByteLength 816 (enough to include the three float32 fields), maxDurationMilliseconds 5000. Same canonical exact request SHA C6B90D59DCF472E50DCEEAE6992AED98446754D466AE2AFA1AE9510EFD5BE9EE, but disjoint guest basenames and future output targets. Both planners returned 10 steps, readerExecuted=false. Their ignored host folders are artifacts/update-recovery-20261023-01/rr2-v16-pointer-a-oct24-01/ and rr2-v16-pointer-b-oct24-01/.
+- The previously installed guest executable path in these plans is C:\RIFT_TRANSFER\RiftReader2Control\build-5ae1b56791ad\RiftReader2.Live.exe, which ran the current game memory map earlier October 24. Its last observed published bundle SHA was 70553F4CE4A9C73C5043CCA16622084734E6C69B1C9E49132C9F622A5F821E4E. **Fresh guest file hash, path and exact running-game identity must be reconfirmed before using either prebuilt action**; historical installation alone is not an execution authorization.
+
+## Independent offline XYZ reviewer (new)
+
+- Added scripts/review_current_pointer_xyz.py plus tests/test_review_current_pointer_xyz.py. This Python-only tool will accept two original read-only follow-pointer reports, the unchanged canonical request and the SHA-pinned independently advancing Lua comparison report. It never contacts RIFT, VMware, guest, service or network.
+- It rejects duplicate/malformed source JSON, untrusted source SHA, bad/wrong-epoch or stale Lua player/sequence, nonstationary typed reference, wrong root/offset/owner pointer, disagreed expected/observed process identities, incorrectly resolved raw pointer bytes, incomplete terminal owner memory, NaN/nonfinite floats, duplicate or reverse-ordered samples, and existing output. The exact pointer root+0x320/+0x324/+0x328 float32 data is interpreted only from a fully read 816-byte owner window.
+- It records original SHA-256, owner session addresses, source-to-native elapsed seconds, per-axis differences against typed Lua and tolerances. Even a match can only be 'candidate-compatible' with 'candidate-only-not-synchronized' qualification. Disagreements are explicitly retained. **10 focused synthetic tests passed**, including mismatch, nonfinite, source motion, stale-epoch and no-overwrite negatives. The tool separately parsed the actual complete advancing Lua comparison file and verified exact PID/ticks/build/unit/coordinates/source SHA. **No real native report has been supplied to this reviewer yet.**
+
+## Next physical gate (not yet undertaken)
+
+1. Before any maintenance, freshly verify V15 status, exact game/VM epoch, free canonical queue, closed one-use transfer listeners and guest focus. Follow the already-tested normal V15 STOP/quarantine procedure; do not acquire a competing VNC connection.
+2. Enter verified PowerShell only after V15 normal exit and exclusive mutex. Confirm installed read-only executable file SHA and exact request SHA on guest; inspect for guest dialog/focus changes. Execute two distinct no-overwrite pointer reads separated by a bounded interval. Confirm their actual complete outputs rather than inferring success from command-sent receipts.
+3. Preserve and transfer both original JSON results through an existing SHA-pinned one-use guest receiver, with guest-computed SHA/size and exact upload receipts. No generic listener or overwritten artifact; return guest shell to game and authenticate independent V16 ready/cleanup/queue release.
+4. Run review_current_pointer_xyz.py on the two original SHA-verified reports and the existing pair a1-b2 source; retain candidate/mismatch result and timing limitations. Native and Lua observations will not be simultaneous. Only later controlled movement plus fresh source can qualify motion/navigation semantics.
+
+**No STOP, VNC session, VM input, guest pointer read, guest upload or movement was performed in this host preparation.**

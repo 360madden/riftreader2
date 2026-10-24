@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest **V16 NATIVE XYZ HOST PREPARATION, NOT YET LIVE:** [same-epoch V16 successor plan, two exact-epoch single-hop pointer requests and SHA-pinned native-versus-advancing-Lua offline reviewer](current-epoch-pointer-v16-preflight-2026-10-24.md). **V15 remains the current exclusive healthy VM owner; no native XYZ read yet.**
+
 Latest **ACTUAL LIVE RIFT frame breakthrough**: [two exact-epoch read-only game scans, six independently verified original 28 KiB snapshots, six strictly advancing Lua producer comparisons of eight, and independently restored V15](typed-inline-first-live-six-snapshots-2026-10-24.md). **Native XYZ source agreement still pending. V15 owns the VM console.**
 
 Historical **guarded V14→V15 guest sequence (host-only preparation at that checkpoint)**: [31 exact-game-epoch console steps, three independently restricted one-use services, 20 focused offline tests, renewed authenticated RIFT foreground](typed-inline-v15-guarded-sequence-host-2026-10-24.md). **V14 still exclusively owns the VM**, no STOP or guest trial yet.

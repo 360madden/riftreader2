@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: V16 native XYZ pointer gate staged — HOST PREPARATION ONLY
+
+- **Current read-only owner/status:** V15 PID 27856 remains authenticated ready, guest disarmed/no keys held, RIFT foreground PID 6940/ticks 639284177321390013, VMware epoch unchanged (read-only host status 22:00:47 UTC). Canonical same-epoch V15→V16 successor plan/launcher was prepared safely (22:01:28 UTC), but **V15 STOP not requested and V16 NOT launched**.
+- **Two precise native pointer requests staged:** Existing guest PowerShell planner generated two separate 10-step no-overwrite plans with the same SHA-pinned exact-game request C6B90D59DCF472E50DCEEAE6992AED98446754D466AE2AFA1AE9510EFD5BE9EE. Each follows root RVA 0x32E0200 once, reads 816 bytes to include offsets +0x320/+0x324/+0x328, and caps execution at 5 seconds. They have NOT run in the guest.
+- **Native comparison reviewer implemented:** New scripts/review_current_pointer_xyz.py verifies both complete pointer reports, exact root/byte-level pointer hops, process/build/epoch, qualified stationary advancing Lua source and SHA, temporal separation and XYZ float32 differences. Synthetic focused 10 tests passed; it also accepted the actual source comparison SHA CF353BD49E6D5D7FFC810C6C8C3AF8C049D26B10F2F9700257DEBBC9486274D5. **Still missing: two real pointer originals, guest SHA-pinned transfer and actual native/Lua agreement.** [Full V16 native XYZ preparation and safe next sequence](validation/current-epoch-pointer-v16-preflight-2026-10-24.md).
+
 ## October 24: post-live guest transfer completion hardening — HOST ONLY
 
 - The successful real 74,254,755-byte guest download took approximately 167 seconds, beyond the earlier fixed screenshot delay. The guarded guest stepper now expressly marks every step receipt as a completed console action, not verified guest-command completion. After the download command, step 4 and later require distinct one-use independent service owner/exit receipts and the genuine exact-peer, exact-route, full-byte, correct-SHA delivered sender event. Step 30 and later require the completed guest ZIP claim before upload.
