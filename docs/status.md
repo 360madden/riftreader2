@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: V14 live preflight; V15 PREPARED ONLY, foreground not confirmed
+
+- **Read-only host observation at 19:30:35 UTC:** RIFT-Lab-1's V14 supervisor was ready/connected, disarmed and held the exclusive console; exact RIFT PID 6940/start ticks 639284177321390013/SHA and VMware PID 38044/log epoch unchanged. Canonical queue generation 1248, 0 pending, unblocked. **Guest `foreground=false`**, so a future UI operation must not assume focus. **No gameplay input.**
+- **19:31:32 UTC:** normal same-epoch **V15 successor plan generated but not executed**. V14 remains owner; STOP not requested; no VM maintenance, bundle transfer or guest capture. [Observed evidence and guarded next steps](validation/typed-inline-capture-v15-preflight-2026-10-24.md).
+
 ## October 24: same-scan typed CLI HOST VALIDATED; tested guest bundle ready, not deployed
 
 - **V2 implementation:** New `scout-copy-typed-native --request PATH --output NEW_DIRECTORY` uses an exact PID/start/executable-SHA-bound, **512 MiB/30 s/128-prefix** maximum private-memory scout and **at most eight** in-callback `RRAPIVAL2|{`-plausible **7 × 4 KiB** snapshots. Outputs are source-request/SHA-linked strict `native-memory-snapshot/1` originals with per-candidate status in `native-typed-inline-capture/1` `index.json`, published under a new folder by no-overwrite final directory rename. Post-capture process identity drift invalidates the manifest and suppresses usable snapshot files. The old prefix scout, V1 and gameplay controls are unchanged. [New command contract](reference/typed-inline-capture.md).
