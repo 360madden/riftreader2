@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: typed Lua wire — offline inspector verified; live acquisition pending
+
+- **V2 bounded analyzer now exists:** Added `inspect-typed-wire` for two existing `native-memory-snapshot/1` files. It reuses the strict hash-verified snapshot loader, never bridges unavailable chunks, searches complete `RRAPIVAL2|` v0.6.0 strings, rejects malformed/incomplete/conflicting copies, and requires same game process, source player, advancing sequence and `Inspect.Time.Frame`. It reports XYZ as `advanced-in-covered-scope` only, not globally unique/fresh or native-field qualified. This does not interact with VMware or V1.
+- **Validation:** 19/19 focused .NET tests, **383/383 full .NET 10** (293 core + 90 Live), clean scoped `dotnet format --verify-no-changes`, and CLI help smoke. The prior full Python suite was **502/502**; the PowerShell 7 composite runner remains unavailable through Workbridge. See [offline typed-wire validation](validation/typed-wire-offline-inspector-2026-10-24.md) and [usage contract](reference/typed-wire-snapshot.md).
+- **Next true blocker:** safely obtain the exact current RIFT PID 6940 `map-native` and two bounded `snapshot-native` reports inside the guest, retaining original report hashes under the authorized exclusive console/coordinator handover. No current-epoch typed frame or Lua/native XYZ agreement has yet been observed.
+
 ## October 24: verified three-frame visual baseline
 
 - **Three distinct foreground RIFT frames (12:21Z / 12:52Z / 12:53Z):** Existing V10 PID **8168** acquired two more authenticated Track B screenshots with unique queue leases; all requests **succeeded** with independent STOP/release cleanup and no ARM, movement, game keys or manual queue reset. Each verified BMP is **1211×686**/32-bit, 3,323,038 bytes, tied to unchanged RIFT PID **6940**/start/build and VMware PID **38044**. Host capture IDs, instants and hashes are distinct.

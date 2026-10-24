@@ -129,4 +129,8 @@ For saved field-lab position comparisons, use the reproducible
 [native field evidence reviewer](native-field-evidence.md) rather than manually
 reinterpreting each raw capture. It does not qualify restart/update survival.
 
+For strict source-contract discovery in **two already saved** memory snapshots,
+see [offline typed-wire inspection](typed-wire-snapshot.md). A scoped positive
+result still requires independent live source and native-field comparison.
+
 See [runtime validation](../validation/memory-discovery-2026-10-19.md).

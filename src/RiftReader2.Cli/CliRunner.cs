@@ -38,6 +38,7 @@ public static class CliRunner
                     Exit 0 for qualification means a valid report; inspect its claim statuses before use.
                     Exit codes: 0 success, 2 invalid input/IO failure, 130 canceled.
                     """);
+                await output.WriteLineAsync("inspect-typed-wire --before PATH --after PATH [--output PATH]");
                 return 0;
             }
 
@@ -53,6 +54,9 @@ public static class CliRunner
                 };
                 return await MemoryDiscoveryCommand.RunAsync(command, memoryOptions, output, cancellationToken);
             }
+            if (command == "inspect-typed-wire")
+                return await TypedWireSnapshotCommand.RunAsync(
+                    ParseOptions(args[1..], "--before", "--after", "--output"), output, cancellationToken);
             if (command == "compare-targeted-health")
                 return await TargetedHealthAuditCommand.CompareAsync(
                     ParseOptions(args[1..], "--before", "--after", "--output"), output, cancellationToken);

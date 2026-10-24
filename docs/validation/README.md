@@ -2,7 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Latest: [V10 three-frame temporal native capture](native-v10-temporal-frames-2026-10-24.md)
+Latest offline development: [V2 typed-wire inspector](typed-wire-offline-inspector-2026-10-24.md),
+validated with synthetic fixtures. Latest live capture: [V10 three-frame temporal native capture](native-v10-temporal-frames-2026-10-24.md)
 records independent identity/lease-bound screenshots, queue cleanup and reproducible
 ROI-level pixel changes without claiming gameplay movement.
 
@@ -29,6 +30,7 @@ ROI-level pixel changes without claiming gameplay movement.
 | [First V10 live frame](native-v10-foreground-capture-2026-10-24.md) | Foreground gate, authenticated native screenshot and verified leased cleanup. |
 | [Same-VM-epoch host handover](same-epoch-native-host-handover-2026-10-24.md) | Exact 64-bit identity preservation, V11 preparation without launch, read-only queue preflight and tests. |
 | [V10 temporal native frames](native-v10-temporal-frames-2026-10-24.md) | Three same-epoch native frames, time-separated pixel/ROI QA and no gameplay input. |
+| [V2 typed-wire offline inspector](typed-wire-offline-inspector-2026-10-24.md) | 19 focused synthetic tests, 383 full .NET tests, scoped analyzer and live limitations. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua

@@ -25,6 +25,7 @@ topic below instead of loading every document for each task.
 | Reference | [Supervised experiments](reference/guarded-experiments.md) | Single reviewed pulse, stop/release, identity, and before/after evidence. |
 | Reference | [Native VM controls](reference/native-vm-controls.md) | Native host/guest setup, operator panel, CLI, bounded input, and recovery. |
 | Reference | [Memory discovery](reference/memory-discovery.md) | Bounded snapshots, value/pattern comparisons, RVA pointer discovery and resolution. |
+| Reference | [Typed-wire snapshot inspection](reference/typed-wire-snapshot.md) | Offline two-sample Lua wire candidate validation with exact process/scope limits. |
 | Reference | [Native field evidence review](reference/native-field-evidence.md) | Replay candidate XYZ comparisons without automatic field qualification. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |
 | Addon | [Lua package guide](../addon/README.md) | Modules, configuration, and offline/client validation boundary. |
