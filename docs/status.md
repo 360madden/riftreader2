@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: complete pure scout→copy pass; 430/430 .NET tests
+
+- **Integrated host-only discovery primitive:** Added `TypedApiInlineCapturePass.Run` to compose the 64 KiB prefix scanner, immediate plausibility recheck and SHA-bound seven-page copier **in the same callback before the next scan read**. A hard **8-candidate copy cap** and the original scan byte/time/match budgets prevent runaway work. It retains candidate-level false-prefix, moved-header, out-of-range, copy-limited and partial-time statuses, without promoting prefixes or incomplete scan coverage to typed frames. **No public guest CLI or report publication yet**, no game/VM access.
+- **Actual verification:** Six new pure orchestration cases, plus the earlier real Windows self-process scanner→copy byte-exact smoke. **Full .NET 430/430 tests passed** (137 Live + 293 core); `dotnet format --verify-no-changes` for the changed source/tests passed. The next engineering gate is a strict exact-target CLI with no-overwrite, hash-linked `native-memory-snapshot/1` files and fail-closed process revalidation. [Pass evidence](validation/typed-inline-capture-pass-host-validation-2026-10-24.md).
+
 ## October 24: tested immediate prefix→memory-copy primitive — host only
 
 - **Substantial V2 code milestone, no guest deployment:** New `TypedApiImmediateNeighborhood.Capture` is a bounded synchronous consumer for the previously committed `onMatch` hook. It rechecks exact `RRAPIVAL2|{` in the same process handle, rejects NUL/binary/stale markers without dumping memory, then retains **7 × 4 KiB pages / 28,672 actual bytes** centered on a plausible candidate, with per-chunk SHA-256, partial/unavailable failures, strict time gate and safe `native-memory-snapshot/1` wrapping. This avoids assuming the earlier hour-stale addresses are still valid.
