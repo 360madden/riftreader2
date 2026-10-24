@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: handoff checkpoint — typed-prefix matcher committed, V12 live
+
+- **New verified implementation (10:47 EDT):** `6db17e1` adds V2 `TypedApiPrefixMatcher` plus 12 passing focused tests. Full .NET 10 solution gate **395/395** (293 core, 102 Live); earlier Python **514/514** remains the last Python full-suite check. This pure code was **not deployed to the guest**. It reports `RRAPIVAL2|` prefix candidates only and does not verify a complete Lua frame.
+- **Latest non-mutating live check (10:49 EDT):** V12 is authenticated **connected/ready**, owned supervisor **running** with initial cleanup verified; guest PID **6940** remains foreground, disarmed/idle, no sampled desktop input down. SQLite snapshot: authority **blocked=0**, holder absent, zero pending, fresh cleanup receipt `nav-cleanup:dd28b9be952b422e77ccf17cc7429a15e880545899ac9070163f4d3f083ccad9`. No VM or guest operation was performed in this check.
+- **Resume from the handoff:** [October 24 operational handoff](handoff-2026-10-24-typed-prefix-scout.md) records current identity, last ten implementation/evidence commits, exact artifact checksums, tests, safe preflight and next acceptance gates. **Next**: connect the matcher to an explicitly bounded, exact-epoch 64 KiB V2 scanner and versioned report/CLI. No current typed Lua candidate, advancement or native/Lua XYZ qualification has been established.
+
 ## October 24: complete guest map on host; native coordinator V12 active
 
 - **Lossless current-epoch report retained (10:21 EDT):** The full **2,831,071-byte** guest `native-memory-map/1` JSON is now at `artifacts/update-recovery-20261023-01/rr2-map-oct24-01-host.json` on the Windows host. Original guest, pre-upload, streaming receiver and independent host SHA-256 all equal `5A5F74EB80F81FBE86F7D04E9F2CCEA35D09709E18CDE959F2321DF9F04D9B3B`. The temporary one-use host-only upload receiver accepted exactly one hash-pinned POST and exited; no listener on 8765 remains. The new scoped receiver passed **12 focused** tests and the **514/514 full Python** suite; implementation checkpoint `183bd71`.
