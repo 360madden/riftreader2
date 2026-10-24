@@ -30,7 +30,7 @@ Other statuses are `blocked` (conflicting, malformed, incomplete, stale, or play
 
 ## Acquisition and validation sequence
 
-1. With V10 healthy, first confirm current VM/game/coordinator and canonical queue. Do not open VM console concurrently with the live coordinator.
+1. Verify the **currently active** VM/game/coordinator and canonical queue (V12 was last confirmed on October 24; always re-detect). Do not open VM console concurrently with the live coordinator. The [bounded V2 prefix scout](typed-prefix-scout.md) can locate candidate snapshot neighborhoods without changing V1.
 2. Obtain a **read-only** `map-native` report in the correct guest after genuine coordinator STOP/release. Use [memory discovery](memory-discovery.md). Select bounded committed/readable/private or plausible heap regions using this *same process epoch*. Historical October 16 absolute addresses were mobile **within** the old process; these are only heuristic hints, never current guest addresses.
 3. Produce two separate `snapshot-native` reports of explicitly chosen regions with source request and real process identity pinned. Preserve complete reports, request bytes and hashes, and missing-range warnings. Restore a correctly pinned native host/coordinator after guest maintenance.
 4. Run `inspect-typed-wire` on the two retained reports. Investigate `blocked` and `unavailable`; do not quietly enlarge broad scans or promote negative/incomplete scopes to success.

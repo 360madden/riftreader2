@@ -2,6 +2,12 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: bounded typed-prefix scout CLI host-validated; guest trial pending
+
+- **V2 implementation committed:** `c6908c8` adds the read-only, 64 KiB streaming `RRAPIVAL2|` scanner with coverage, holes, byte/time/match limits and overlap-safe resume cursor; `2e73b9a` adds `scout-typed-native`, exact process-epoch request validation, versioned hash-bound no-overwrite reports, and identity-invalidated status. Existing 4 KiB `snapshot-native` contract and V1 source were preserved.
+- **Host-only validation:** 23/23 focused scanner/matcher, 4/4 focused CLI, **410/410 .NET 10** full solution (117 Live + 293 core), **514/514 Python**, **108 Lua + 22 real Lua-to-C# shared cases**, full .NET formatting and zero-warning Release build passed. The published single-file executable passed its own-process native identity/no-overwrite smoke; size **74,209,699**, SHA-256 `C34D1C9BC5EC134D50AE38FBE6A16D13B0DBAC9EC412D9C4F4714E3DDFD9876C` (ignored `artifacts/validation/rr2-scout-publish-20261024-01/`). **The one-shot PowerShell 7 composite was unavailable**, but its principal component gates ran separately. No RIFT guest memory was scanned. See [command contract](reference/typed-prefix-scout.md) and [host validation](validation/typed-prefix-scout-host-validation-2026-10-24.md).
+- **Live state untouched:** most recent read-only coordinator status at **11:29 EDT** remained authenticated connected/ready, RIFT PID **6940** foreground, supervisor running, guest disarmed/idle. **No new guest binary, current Lua candidate, complete advancing typed frame, or native/Lua XYZ match yet.** Next: hash-pin the tested guest binary and execute the first bounded pass only after fresh exact-epoch/queue preflight and legitimate exclusive console release.
+
 ## October 24: handoff checkpoint — typed-prefix matcher committed, V12 live
 
 - **New verified implementation (10:47 EDT):** `6db17e1` adds V2 `TypedApiPrefixMatcher` plus 12 passing focused tests. Full .NET 10 solution gate **395/395** (293 core, 102 Live); earlier Python **514/514** remains the last Python full-suite check. This pure code was **not deployed to the guest**. It reports `RRAPIVAL2|` prefix candidates only and does not verify a complete Lua frame.

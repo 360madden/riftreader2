@@ -2,10 +2,14 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Latest offline development: [V2 typed-wire inspector](typed-wire-offline-inspector-2026-10-24.md),
-validated with synthetic fixtures. Latest live capture: [V10 three-frame temporal native capture](native-v10-temporal-frames-2026-10-24.md)
-records independent identity/lease-bound screenshots, queue cleanup and reproducible
-ROI-level pixel changes without claiming gameplay movement.
+Latest V2 Windows-host development: [typed-prefix scout and CLI](typed-prefix-scout-host-validation-2026-10-24.md),
+validated with synthetic cases and a real read of the Windows test process;
+**not yet deployed to RIFT**. The earlier [typed-wire inspector](typed-wire-offline-inspector-2026-10-24.md)
+was separately tested with synthetic frames.
+
+Latest **live game-memory** checkpoint: the [full current-epoch map and verified V12 recovery](guest-map-report-transfer-2026-10-24.md).
+The earlier [V10 temporal native frames](native-v10-temporal-frames-2026-10-24.md)
+record independent leased screenshots and ROI-level pixel changes, without claiming gameplay movement.
 
 | Record | Meaning |
 |---|---|
@@ -31,6 +35,8 @@ ROI-level pixel changes without claiming gameplay movement.
 | [Same-VM-epoch host handover](same-epoch-native-host-handover-2026-10-24.md) | Exact 64-bit identity preservation, V11 preparation without launch, read-only queue preflight and tests. |
 | [V10 temporal native frames](native-v10-temporal-frames-2026-10-24.md) | Three same-epoch native frames, time-separated pixel/ROI QA and no gameplay input. |
 | [V2 typed-wire offline inspector](typed-wire-offline-inspector-2026-10-24.md) | 19 focused synthetic tests, 383 full .NET tests, scoped analyzer and live limitations. |
+| [Typed-prefix scout Windows validation](typed-prefix-scout-host-validation-2026-10-24.md) | 410 .NET, 514 Python, Lua shared contract and pinned published-bundle smoke; no game-VM scout yet. |
+| [Current-epoch map transfer and V12 recovery](guest-map-report-transfer-2026-10-24.md) | Actual full game memory map retained on host, SHA-256 match and normal coordinator restoration. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua
