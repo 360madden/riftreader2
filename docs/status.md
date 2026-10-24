@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: guarded V14 → V15 typed-inline guest trial prepared, foreground restored — HOST ONLY
+
+- **Fresh owner check:** V14 authenticated and ready, game PID **6940** / exact 64-bit start/build unchanged, VM epoch unchanged, queue unheld/unblocked/0 pending. Joey corrected a VMware dialog stealing focus; a renewed read-only observation at **21:08:34 UTC** confirmed **RIFT foreground=true**. V14 still owns exclusive console, with **no STOP, bundle transfer or new guest memory scan**.
+- **Ready for serial maintenance:** New `scripts/run_guest_inline_trial.py` creates 31 bounded, individually receipted guest PowerShell commands guarded by V14 normal exit, blocked/unheld queue, exact V15 VM epoch, screenshot-gated shell and request/bundle SHA. New `scripts/run_guest_inline_service.py` restricts independent one-use download → ZIP hash claim → exact-hash upload to signed-in Windows `pythonw.exe`, exact guest IP and mutually exclusive phase receipts. **20/20** focused host tests passed; real PowerShell ZIP format rechecked byte-identically. Fixed a would-be **64-bit start-tick precision loss** in initial request construction *before use*. [Strict operational handoff](validation/typed-inline-v15-guarded-sequence-host-2026-10-24.md).
+
 ## October 24: closed guest ZIP checksum/receipt gap — HOST LOOPBACK VERIFIED
 
 - **One-use receiver reuse:** New bounded guest ZIP declaration receives only fixed-IP, exact-epoch **SHA + byte count**; existing one-use exact-digest ZIP upload receiver is unchanged. The archive verifier now binds *both* original receipts to actual ZIP SHA/length, path, guest peer, game process and bundle before publishing; it refuses mismatches and marks host fixtures separately. No new VM listener opened.
