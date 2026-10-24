@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest **HOST-ONLY bundled transfer readiness**: [both approved 74 MB executables SHA-checked with no listener; distinct exact routes; Windows receiver test flake corrected without touching production](typed-inline-bundle-transfer-host-2026-10-24.md). **14/14 sender, 26/26 combined, 549/549 full Python tests passed**; actual VM transfer and handover pending.
+
 Latest **live read-only owner check**: [V14 healthy but RIFT not foreground; V15 handover prepared, not executed](typed-inline-capture-v15-preflight-2026-10-24.md). Same VMware/game epoch, clean queue, no STOP, no guest access. Host-validated published capture CLI is ready for a future guarded maintenance window.
 
 Latest **fully implemented and published HOST-validated native CLI**: [real Windows test-process `scout-copy-typed-native`, hash-linked copies, published-bundle smokes and exact limitations](typed-inline-capture-cli-host-2026-10-24.md). Full **432 .NET + 545 Python**, **108 Lua + 22 shared** checks, formatting, published single-file bundle SHA and a complete **28 KiB** published-exe same-scan copy all pass. **No RIFT guest deployment or typed-field qualification yet**; composite PS7 validation unavailable, constituent gates independently passed.

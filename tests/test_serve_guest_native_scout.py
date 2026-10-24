@@ -10,12 +10,13 @@ import unittest
 
 from scripts.serve_guest_native_scout import (
     DeliveryServer, EXPECTED_BYTES, EXPECTED_SHA256, RESOURCE, SOURCE,
+    TYPED_EXPECTED_BYTES, TYPED_EXPECTED_SHA256, TYPED_RESOURCE, TYPED_SOURCE,
     open_verified_payload, serve,
 )
 
 
 def exchange(payload: bytes, method="GET", path=RESOURCE, guest="127.0.0.1",
-             declared_length=None, declared_sha=None):
+             declared_length=None, declared_sha=None, server_resource=RESOURCE):
     digest = hashlib.sha256(payload).hexdigest()
     with tempfile.TemporaryDirectory() as temporary:
         source = Path(temporary) / "scout.exe"
@@ -25,6 +26,7 @@ def exchange(payload: bytes, method="GET", path=RESOURCE, guest="127.0.0.1",
                 ("127.0.0.1", 0), guest, stream,
                 len(payload) if declared_length is None else declared_length,
                 digest if declared_sha is None else declared_sha,
+                resource=server_resource,
             ) as server:
                 server.timeout = 3
                 thread = threading.Thread(target=server.handle_request)
@@ -53,6 +55,43 @@ class ScoutTransferTests(unittest.TestCase):
         with open_verified_payload(SOURCE, EXPECTED_BYTES, EXPECTED_SHA256) as stream:
             self.assertEqual(stream.read(2), b"MZ")
             self.assertEqual(stream.seek(0, 2), EXPECTED_BYTES)
+
+    @unittest.skipUnless(TYPED_SOURCE.is_file(), "published typed inline bundle absent on this host")
+    def test_actual_typed_inline_bundle_matches_strict_pin(self):
+        with open_verified_payload(TYPED_SOURCE, TYPED_EXPECTED_BYTES, TYPED_EXPECTED_SHA256) as stream:
+            self.assertEqual(stream.read(2), b"MZ")
+            self.assertEqual(stream.seek(0, 2), TYPED_EXPECTED_BYTES)
+
+    def test_approved_typed_inline_route_is_distinct_and_exact(self):
+        payload = b"MZ" + (bytes(range(256)) * 800)
+        status, headers, data, delivered, incomplete, denied = exchange(
+            payload, path=TYPED_RESOURCE, server_resource=TYPED_RESOURCE,
+        )
+        self.assertEqual((status, data, delivered, incomplete, denied),
+                         (200, payload, True, 0, 0))
+        self.assertEqual(headers["Content-Disposition"],
+                         'attachment; filename="rr2-typed-inline-oct24-01.exe"')
+        self.assertEqual(headers["X-Content-SHA256"],
+                         hashlib.sha256(payload).hexdigest().upper())
+
+    def test_typed_inline_route_rejects_original_and_query_urls(self):
+        for path in (RESOURCE, TYPED_RESOURCE + "?x=1", "/rr2-typed-inline-oct24-01.exe/other"):
+            with self.subTest(path=path):
+                status, _, data, delivered, _, denied = exchange(
+                    b"MZ123", path=path, server_resource=TYPED_RESOURCE,
+                )
+                self.assertEqual((status, data, delivered, denied),
+                                 (404, b"", False, 1))
+
+    def test_unapproved_server_route_is_rejected_before_socket_bind(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "candidate.exe"
+            path.write_bytes(b"MZ")
+            digest = hashlib.sha256(b"MZ").hexdigest()
+            with open_verified_payload(path, 2, digest) as stream:
+                with self.assertRaisesRegex(ValueError, "unapproved delivery route"):
+                    DeliveryServer(("127.0.0.1", 0), "127.0.0.1", stream,
+                                   2, digest, resource="/arbitrary.exe")
 
     def test_streams_more_than_one_chunk_and_publishes_checksum_header(self):
         payload = b"MZ" + (bytes(range(256)) * 800)

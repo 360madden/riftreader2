@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: new published typed-capture bundle now allowed by guarded one-use transport — HOST ONLY
+
+- **Reuse-first delivery improvement:** `scripts/serve_guest_native_scout.py` now supports explicit `--bundle typed-inline`, with a distinct exact URL and the SHA-pinned 74,254,755-byte single-file executable, while the existing `scout` default, one-use, exact-peer, expiry and no arbitrary-file serving remain. Both original and new ~74 MB sources passed **real full-file SHA preflights without opening a socket**.
+- **Gates:** 14/14 focused new/legacy transfer tests, 26/26 combined sender/receiver tests and **549/549 full Python tests** passed. A preexisting Windows socket-abort flake in header-refusal receiver tests was fixed **in test harness only**, retaining exact refusal-code checks; production receiver unchanged. No guest transfer, V14 STOP or guest capture. [Transport proof and next gate](validation/typed-inline-bundle-transfer-host-2026-10-24.md).
+
 ## October 24: V14 live preflight; V15 PREPARED ONLY, foreground not confirmed
 
 - **Read-only host observation at 19:30:35 UTC:** RIFT-Lab-1's V14 supervisor was ready/connected, disarmed and held the exclusive console; exact RIFT PID 6940/start ticks 639284177321390013/SHA and VMware PID 38044/log epoch unchanged. Canonical queue generation 1248, 0 pending, unblocked. **Guest `foreground=false`**, so a future UI operation must not assume focus. **No gameplay input.**

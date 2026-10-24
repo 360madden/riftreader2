@@ -1,9 +1,9 @@
-"""One-use, stream-verified delivery of the pinned V2 read-only native scout.
+"""One-use, stream-verified delivery of an explicitly approved V2 native bundle.
 
 This is a host-only file handoff, not a remote execution or control endpoint.
-It binds only VMnet8, serves one exact 74 MB published executable to the
-known RIFT-Lab-1 guest, records an ignored local receipt, and expires. The
-guest MUST independently verify the full SHA-256 before launching the scout.
+It binds only VMnet8, serves one SHA-pinned, allowlisted published executable
+to the known RIFT-Lab-1 guest, records an ignored local receipt, and expires.
+The guest MUST independently verify full SHA-256 before running any command.
 """
 from __future__ import annotations
 
@@ -23,10 +23,21 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "artifacts" / "validation" / "rr2-scout-publish-20261024-01" / "RiftReader2.Live.exe"
-EVENT_DIR = SOURCE.parent / "transfer-events"
 EXPECTED_BYTES = 74209699
 EXPECTED_SHA256 = "c34d1c9bc5ec134d50ae38fbe6a16d13b0dbac9ec412d9c4f4714e3ddfd9876c"
 RESOURCE = "/rr2-scout-oct24-01.exe"
+TYPED_SOURCE = ROOT / "artifacts" / "validation" / "rr2-scout-copy-publish-oct24-01" / "RiftReader2.Live.exe"
+TYPED_EXPECTED_BYTES = 74254755
+TYPED_EXPECTED_SHA256 = "484fc6a0980bcac823154229b974b0bd18412a9053903a542bc0313eb5ef1716"
+TYPED_RESOURCE = "/rr2-typed-inline-oct24-01.exe"
+APPROVED_BUNDLES = {
+    "scout": (SOURCE, EXPECTED_BYTES, EXPECTED_SHA256, RESOURCE),
+    "typed-inline": (TYPED_SOURCE, TYPED_EXPECTED_BYTES, TYPED_EXPECTED_SHA256, TYPED_RESOURCE),
+}
+APPROVED_FILENAMES = {
+    RESOURCE: "rr2-scout-oct24-01.exe",
+    TYPED_RESOURCE: "rr2-typed-inline-oct24-01.exe",
+}
 BIND = "192.168.56.1"
 GUEST = "192.168.56.128"
 PORT = 8765
@@ -71,15 +82,20 @@ class DeliveryServer(HTTPServer):
     allow_reuse_address = False
     request_queue_size = 2
 
-    def __init__(self, address, guest: str, payload, length: int, digest: str):
+    def __init__(self, address, guest: str, payload, length: int, digest: str,
+                 resource: str = RESOURCE):
         self.guest = str(ipaddress.IPv4Address(guest))
         if type(length) is not int or length <= 0:
             raise ValueError("invalid declared length")
         if not re.fullmatch(r"[0-9a-f]{64}", digest):
             raise ValueError("invalid declared SHA")
+        if resource not in APPROVED_FILENAMES:
+            raise ValueError("unapproved delivery route")
         self.payload = payload
         self.length = length
         self.sha256 = digest
+        self.resource = resource
+        self.download_name = APPROVED_FILENAMES[resource]
         self.delivered = False
         self.denied = 0
         self.incomplete = 0
@@ -107,7 +123,7 @@ class DeliveryHandler(BaseHTTPRequestHandler):
         if self.client_address[0] != self.server.guest:
             self._deny(403)
             return False
-        if self.path != RESOURCE:
+        if self.path != self.server.resource:
             self._deny(404)
             return False
         if self.server.delivered:
@@ -118,7 +134,7 @@ class DeliveryHandler(BaseHTTPRequestHandler):
     def _headers(self):
         self.send_response(200)
         self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Disposition", 'attachment; filename="rr2-scout-oct24-01.exe"')
+        self.send_header("Content-Disposition", f'attachment; filename="{self.server.download_name}"')
         self.send_header("Content-Length", str(self.server.length))
         self.send_header("X-Content-SHA256", self.server.sha256.upper())
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -183,15 +199,18 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serve", action="store_true")
     parser.add_argument("--seconds", type=int, default=600)
+    parser.add_argument("--bundle", choices=tuple(APPROVED_BUNDLES), default="scout")
     args = parser.parse_args()
     try:
         if not 30 <= args.seconds <= MAX_SECONDS:
             raise ValueError("invalid expiry")
-        with open_verified_payload(SOURCE, EXPECTED_BYTES, EXPECTED_SHA256) as payload:
+        source, expected_bytes, expected_sha256, resource = APPROVED_BUNDLES[args.bundle]
+        with open_verified_payload(source, expected_bytes, expected_sha256) as payload:
             descriptor = {
-                "state": "verified-not-serving", "host": BIND, "guest": GUEST,
-                "port": PORT, "path": RESOURCE, "sha256": EXPECTED_SHA256.upper(),
-                "bytes": EXPECTED_BYTES, "lifetimeSeconds": args.seconds,
+                "state": "verified-not-serving", "bundle": args.bundle,
+                "host": BIND, "guest": GUEST, "port": PORT,
+                "path": resource, "sha256": expected_sha256.upper(),
+                "bytes": expected_bytes, "lifetimeSeconds": args.seconds,
                 "guestFileVerified": False, "guestScannerExecuted": False,
             }
             if not args.serve:
@@ -201,9 +220,11 @@ def main() -> int:
                 raise ValueError("live transfer requires signed-in Windows Pythonw")
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as check:
                 check.bind((BIND, 0))
-            with DeliveryServer((BIND, PORT), GUEST, payload, EXPECTED_BYTES, EXPECTED_SHA256) as server:
-                EVENT_DIR.mkdir(parents=True, exist_ok=True)
-                event = EVENT_DIR / (uuid4().hex + ".json")
+            with DeliveryServer((BIND, PORT), GUEST, payload, expected_bytes,
+                                expected_sha256, resource=resource) as server:
+                event_dir = source.parent / "transfer-events"
+                event_dir.mkdir(parents=True, exist_ok=True)
+                event = event_dir / (uuid4().hex + ".json")
                 started = timestamp()
 
                 def record(state):

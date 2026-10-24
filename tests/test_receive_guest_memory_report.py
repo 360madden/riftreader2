@@ -17,7 +17,8 @@ def exchange(body: bytes, *, expected: str | None = None,
              peer: str = "127.0.0.1", route: str = ROUTE,
              method: str = "POST", content_type: str = "application/octet-stream",
              max_bytes: int = 1024, create_conflict: bool = False,
-             missing_length: bool = False, replace_link: bool = False):
+             missing_length: bool = False, replace_link: bool = False,
+             send_body: bool = True):
     with tempfile.TemporaryDirectory() as folder:
         dest = Path(folder) / "map.json"
         if expected is None:
@@ -35,10 +36,13 @@ def exchange(body: bytes, *, expected: str | None = None,
                 client = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
                 headers = {"Content-Type": content_type}
                 def request_and_read():
-                    if missing_length:
+                    # Header-only rejection probes avoid Windows resets from unread POST bodies.
+                    if missing_length or not send_body:
                         client.putrequest(method, route)
                         for name, value in headers.items():
                             client.putheader(name, value)
+                        if not missing_length:
+                            client.putheader("Content-Length", str(len(body)))
                         client.endheaders()
                     else:
                         client.request(method, route, body=body, headers=headers)
@@ -83,27 +87,27 @@ class ExactGuestReportTests(unittest.TestCase):
         self.assertIsNone(result["bytes"])
 
     def test_only_exact_guest_address(self):
-        result = exchange(b"map", peer="192.0.2.99")
+        result = exchange(b"map", peer="192.0.2.99", send_body=False)
         self.assertEqual(result["status"], 403)
         self.assertIsNone(result["bytes"])
 
     def test_only_exact_route(self):
-        result = exchange(b"map", route="/anything-else")
+        result = exchange(b"map", route="/anything-else", send_body=False)
         self.assertEqual(result["status"], 404)
         self.assertIsNone(result["bytes"])
 
     def test_no_get_or_file_serving(self):
-        result = exchange(b"map", method="GET")
+        result = exchange(b"map", method="GET", send_body=False)
         self.assertEqual(result["status"], 405)
         self.assertFalse(result["delivered"])
 
     def test_explicit_content_type_required(self):
-        result = exchange(b"map", content_type="application/json")
+        result = exchange(b"map", content_type="application/json", send_body=False)
         self.assertEqual(result["status"], 415)
         self.assertIsNone(result["bytes"])
 
     def test_strict_maximum_before_body_read(self):
-        result = exchange(b"five5", max_bytes=4)
+        result = exchange(b"five5", max_bytes=4, send_body=False)
         self.assertEqual(result["status"], 413)
         self.assertIsNone(result["bytes"])
 
@@ -113,7 +117,7 @@ class ExactGuestReportTests(unittest.TestCase):
         self.assertIsNone(result["bytes"])
 
     def test_preexisting_destination_preserved(self):
-        result = exchange(b"map", create_conflict=True)
+        result = exchange(b"map", create_conflict=True, send_body=False)
         self.assertEqual(result["status"], 409)
         self.assertEqual(result["bytes"], b"existing data")
 
