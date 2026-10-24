@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: immediate post-match capture hook — host-only implementation
+
+- **V2 pure scanner improvement, NOT YET A LIVE FEATURE:** `TypedApiPrefixScout.Scan` now accepts an optional, synchronous `onMatch` observer notified of **retained matches in the current 64 KiB scan block before the next read**. The observer cannot receive cross-hole matches or candidate-overflow entries; existing `scout-typed-native` CLI and scan request/report remain unchanged and do not install an observer. This provides a tested seam for future **same-operation read-only neighborhood capture**, avoiding the roughly hour-long stale-address lag of the first live scout/snapshot follow-up. New focused tests cover prompt notification, overflow and split/hole cases. **No guest bundle deployed, VM console input or game read issued as part of this code change.**
+- **Next:** add a bounded, provenance-rich immediate capture consumer and test it without the game before touching V14; there is no current qualified typed wire or XYZ. [Scanner contract](reference/typed-prefix-scout.md).
+
 ## October 24: TWO REAL read-only native snapshot reports recovered; V14 healthy
 
 - **Live acquisition complete (17:44–17:45 UTC):** After a normal V13 STOP, exclusive VM console acquired two independent `snapshot-native` reports from the unchanged RIFT PID **6940** / start ticks **639284177321390013**, using the 3 × 28,672-byte exact-session source windows. Every one of **21 chunks per report** was complete and independently SHA-verified, with no holes. Sample A: **126,199 bytes**, SHA `32FE40D65E0F2312378797A50F69E005D754F50693C613777B7F9268841DFA33`; sample B: **128,139 bytes**, SHA `13AF9B26B9DD8A846029AA81BD6589D5A2BCC981F2BD033D418AF14DF35602C2`. Both full originals, transfer receipts and hashes are retained under ignored `artifacts/update-recovery-20261023-01/`.

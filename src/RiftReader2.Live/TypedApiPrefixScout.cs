@@ -42,7 +42,8 @@ public static class TypedApiPrefixScout
         int maxMatchCount,
         Func<ulong, byte[], int, TypedApiScanReadResult> readChunk,
         Func<bool> timeBudgetExceeded,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Action<ulong>? onMatch = null)
     {
         ArgumentNullException.ThrowIfNull(regions);
         ArgumentNullException.ThrowIfNull(readChunk);
@@ -119,7 +120,20 @@ public static class TypedApiPrefixScout
                 var readable = read.Complete || read.BytesRead < count ? read.BytesRead : 0;
                 if (readable > 0)
                 {
+                    var previousMatchCount = matcher.Addresses.Count;
                     matcher.Feed(address, buffer.AsSpan(0, readable));
+                    // An observer can copy a newly located neighborhood *now*, before
+                    // the next scan read. Never notify it for an overflowed candidate
+                    // or bytes crossing an unreadable boundary. Existing callers
+                    // without an observer retain their original scan behavior.
+                    if (onMatch is not null)
+                    {
+                        for (var matchIndex = previousMatchCount; matchIndex < matcher.Addresses.Count; matchIndex++)
+                        {
+                            cancellationToken.ThrowIfCancellationRequested();
+                            onMatch(matcher.Addresses[matchIndex]);
+                        }
+                    }
                     var consumed = readable;
                     if (matcher.MatchBudgetExceeded)
                     {

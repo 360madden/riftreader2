@@ -205,6 +205,99 @@ public sealed class TypedApiPrefixScoutTests
     }
 
     [Fact]
+    public void Scan_InlineObserverCanCaptureFirstMarkerBeforeNextScanChunkIsRead()
+    {
+        var memory = new byte[2 * TypedApiPrefixScout.ChunkBytes];
+        Marker.CopyTo(memory.AsSpan(123));
+        var notified = false;
+        var reads = 0;
+        var result = TypedApiPrefixScout.Scan(Regions(memory), Base,
+            TypedApiPrefixScout.MaxScanBytes, 128,
+            (address, output, count) =>
+            {
+                if (reads++ == 1)
+                {
+                    Assert.True(notified);
+                    Assert.Equal(Base + TypedApiPrefixScout.ChunkBytes, address);
+                }
+                memory.AsSpan(checked((int)(address - Base)), count).CopyTo(output);
+                return new(true, count, null);
+            }, () => false, onMatch: address =>
+            {
+                Assert.Equal(Base + 123, address);
+                Assert.Equal(1, reads);
+                notified = true;
+            });
+
+        Assert.Equal("complete", result.Status);
+        Assert.Equal(2, reads);
+        Assert.True(notified);
+    }
+
+    [Fact]
+    public void Scan_InlineObserverRunsBeforeNextReadAndReceivesOnlyRetainedMatches()
+    {
+        var memory = new byte[2 * TypedApiPrefixScout.ChunkBytes];
+        Marker.CopyTo(memory.AsSpan(2));
+        Marker.CopyTo(memory.AsSpan(40));
+        Marker.CopyTo(memory.AsSpan(90));
+        var nextRead = false;
+        var notified = new List<ulong>();
+        var result = TypedApiPrefixScout.Scan(Regions(memory), Base,
+            TypedApiPrefixScout.MaxScanBytes, 2,
+            (address, output, count) =>
+            {
+                if (address == Base + TypedApiPrefixScout.ChunkBytes)
+                {
+                    nextRead = true;
+                    Assert.Equal(new ulong[] { Base + 2, Base + 40 }, notified);
+                }
+                memory.AsSpan(checked((int)(address - Base)), count).CopyTo(output);
+                return new(true, count, null);
+            }, () => false, onMatch: address =>
+            {
+                Assert.False(nextRead);
+                notified.Add(address);
+            });
+
+        Assert.Equal("partial", result.Status);
+        Assert.Equal("candidate-budget-exceeded", result.Reason);
+        Assert.Equal(new ulong[] { Base + 2, Base + 40 }, notified);
+        // The overflow terminates before the next scan chunk is read.
+        Assert.False(nextRead);
+    }
+
+    [Fact]
+    public void Scan_InlineObserverHandlesSplitMarkerAndNeverNotifiesAcrossReadHole()
+    {
+        var memory = new byte[2 * TypedApiPrefixScout.ChunkBytes];
+        Marker.CopyTo(memory.AsSpan(TypedApiPrefixScout.ChunkBytes - 4));
+        var found = new List<ulong>();
+        var success = TypedApiPrefixScout.Scan(Regions(memory), Base,
+            TypedApiPrefixScout.MaxScanBytes, 128,
+            (address, output, count) =>
+            {
+                memory.AsSpan(checked((int)(address - Base)), count).CopyTo(output);
+                return new(true, count, null);
+            }, () => false, onMatch: found.Add);
+        Assert.Equal("complete", success.Status);
+        Assert.Equal(new[] { Base + TypedApiPrefixScout.ChunkBytes - 4UL }, found);
+
+        found.Clear();
+        var withHole = TypedApiPrefixScout.Scan(Regions(memory), Base,
+            TypedApiPrefixScout.MaxScanBytes, 128,
+            (address, output, count) =>
+            {
+                if (address == Base)
+                    return new(false, 0, 299);
+                memory.AsSpan(checked((int)(address - Base)), count).CopyTo(output);
+                return new(true, count, null);
+            }, () => false, onMatch: found.Add);
+        Assert.Equal("partial", withHole.Status);
+        Assert.Empty(found);
+    }
+
+    [Fact]
     public async Task WindowsSession_BoundedReusableBufferReadsOwnKnownAllocation()
     {
         if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)

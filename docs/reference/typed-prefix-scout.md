@@ -4,6 +4,8 @@ Status: **implemented, Windows-host tested and first run read-only in RIFT-Lab-1
 
 This command is separate from the existing `RR2L1` challenge scanner and the 4 KiB `snapshot-native` read contract. It reuses the strict `WindowsNativeMemorySession` process-epoch identity checks and its readable-region enumeration; a separate 64 KiB reusable buffer calls read-only `ReadProcessMemory`. V1 source and game memory remain unchanged.
 
+**New host-only API seam (after first live pair):** The pure `TypedApiPrefixScout.Scan` method accepts an optional synchronous `onMatch` callback invoked for retained prefixes **immediately after parsing the current scan chunk, before the next read**; a match straddling contiguous chunks is supported, while holes and overflowed candidates cannot trigger a callback. This is intended for a future bounded same-process read-only copy. The published `scout-typed-native` CLI **does not pass this callback**; the change alone does not collect a complete frame, change report schema or establish a new live guest capability. [First real typed-neighborhood pair](../validation/typed-snapshot-first-live-pair-2026-10-24.md) found the old addresses stale.
+
 ## Exact-target request
 
 In the **same 64-bit Windows environment as the target RIFT process**, execute the pinned `RiftReader2.Live.exe` binary (or the verified .NET invocation) with:
@@ -73,12 +75,12 @@ The partial `nextAddress` normally backs up **10 bytes** (marker length minus on
 
 ## Acceptance sequence (steps 1–3 passed for the October 24 RIFT-Lab-1 run)
 
-For the exact October 24 PID/start/build epoch, the guarded V12 release, pinned binary transfer, 512 MiB bounded scan, host report transfer and verified V13 restoration **all completed**; see the [actual guest execution record](../validation/typed-prefix-scout-live-2026-10-24.md). Steps 4–5 below are **pending**. All steps must be rechecked when the process/VM epoch changes.
+For the exact October 24 PID/start/build epoch, the guarded V12 release, pinned binary transfer, 512 MiB bounded scan, host report transfer and verified V13 restoration **all completed**; see the [actual guest execution record](../validation/typed-prefix-scout-live-2026-10-24.md). Step 4 was subsequently executed with two real exact-epoch `snapshot-native` reports and a normal V14 recovery, but [strict inspection found zero complete typed frames](../validation/typed-snapshot-first-live-pair-2026-10-24.md). Step 5 remains gated on advancing frames. Recheck all identity gates when process/VM epoch changes.
 
 1. Verify **fresh** VM, guest, coordinator and canonical SQLite queue state. Do not compete with the live coordinator's exclusive console. Guest use requires a verified normal coordinator STOP/release, then a correctly pinned successor restoration.
 2. Build and hash-pin the tested V2 guest bundle; transfer and validate it in the exact guest without overwriting prior evidence. No default request can run against a different PID/start/SHA.
 3. Run one bounded 512 MiB/30-second pass, retain its original request, report bytes/hash, result/coverage and the exact implementation identity. Continue only if the process epoch is unchanged; a partial result is useful limited evidence.
-4. For positive prefix candidates, use the [SHA-pinned two-request offline planner](../validation/typed-scout-snapshot-followup-plan-2026-10-24.md) to select small `snapshot-native` ranges. Capture those byte neighborhoods in at least **two independent acquisition windows**, then run [strict `inspect-typed-wire`](typed-wire-snapshot.md). An address hit alone is **not** a Lua frame or current XYZ.
+4. For positive prefix candidates, use the [SHA-pinned two-request offline planner](../validation/typed-scout-snapshot-followup-plan-2026-10-24.md) to select small `snapshot-native` ranges. **Historical October 24 result: two valid independent reports were acquired, but stale candidate positions yielded no complete frame.** Future experiments should copy matching bytes in the same scan operation. Run [strict `inspect-typed-wire`](typed-wire-snapshot.md) on each independent pair; an address hit alone is **not** a Lua frame or current XYZ.
 5. Only when a complete typed source advances independently, compare with the same-epoch native pointer chain rooted at RVA `0x32E0200`; retain the raw evidence and do not promote unverified field meaning.
 
 The [host→guest streaming transfer readiness](../validation/typed-prefix-scout-transfer-2026-10-24.md) is a historical host-only preflight and should **not** be treated as evidence of a guest run. The subsequently completed [live scout report and V13 recovery](../validation/typed-prefix-scout-live-2026-10-24.md) separately provide that evidence.
