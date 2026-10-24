@@ -47,9 +47,38 @@ def render_launcher(source: str, previous: str, successor: str) -> str:
     return result
 
 
+def require_quarantined_authority(path: Path, resource: str) -> None:
+    """Read the canonical SQLite authority without expiry sweeps or writes."""
+    import sqlite3
+    from contextlib import closing
+    from scripts.nav_access_queue import APPLICATION_ID, SCHEMA_VERSION
+
+    if not path.is_absolute() or not path.is_file() or path.is_symlink():
+        raise ValueError("invalid canonical queue path")
+    with closing(sqlite3.connect(
+        path.resolve().as_uri() + "?mode=ro", uri=True, timeout=4
+    )) as conn:
+        conn.execute("PRAGMA query_only=ON")
+        if (conn.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID
+                or conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION):
+            raise ValueError("canonical queue schema changed")
+        conn.execute("BEGIN")
+        resources = conn.execute(
+            "SELECT blocked,holder,cleanup_receipt FROM resources WHERE name=?",
+            (resource,),
+        ).fetchall()
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM requests WHERE state IN ('queued','active','cleanup')"
+        ).fetchone()[0]
+        conn.execute("COMMIT")
+    if len(resources) != 1 or resources[0][0] != 1 or resources[0][1] is not None:
+        raise ValueError("authority is not exclusively quarantined")
+    if pending != 0:
+        raise ValueError("outstanding queue work requires owner review")
+
+
 def prepare(previous: str, successor: str) -> dict:
     from scripts.control_host import HostConfig
-    from scripts.nav_access_queue import AccessQueue
     from scripts.vm_console_native import (
         collect_identity, process_identity, validate_config,
     )
@@ -93,15 +122,7 @@ def prepare(previous: str, successor: str) -> dict:
         raise ValueError("canonical queue differs")
     if owner["resource"] != prior["resource"]:
         raise ValueError("resource differs")
-    snapshot = AccessQueue(queue_path).status()
-    resource_rows = [r for r in snapshot["resources"] if r["name"] == prior["resource"]]
-    if len(resource_rows) != 1:
-        raise ValueError("canonical queue resource missing or ambiguous")
-    row = resource_rows[0]
-    if not row["blocked"] or row["holder"] is not None:
-        raise ValueError("queued authority is not in quarantine")
-    if any(r["state"] in ("queued", "active", "cleanup") for r in snapshot["requests"]):
-        raise ValueError("outstanding queue work requires manual owner review")
+    require_quarantined_authority(queue_path, prior["resource"])
     host_config = HostConfig.load(config)
     # Do not request a second console mutex while the old host still owns it.
     # This collector reads vmrun inventory/process/log/listener identity only;
