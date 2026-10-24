@@ -24,7 +24,7 @@ public static class NativeCommandRunner
                 throw new NotSupportedException("Native commands require 64-bit Windows.");
             if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             {
-                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nExisting outputs are never replaced.");
+                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nExisting outputs are never replaced.");
                 return 0;
             }
 
@@ -37,6 +37,9 @@ public static class NativeCommandRunner
                     ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
             if (args[0] == "scout-typed-native")
                 return await MemoryDiscoveryCommand.ScoutTypedAsync(
+                    ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
+            if (args[0] == "scout-copy-typed-native")
+                return await MemoryDiscoveryCommand.ScoutCopyTypedAsync(
                     ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
             if (args[0] == "snapshot-native")
                 return await MemoryDiscoveryCommand.SnapshotAsync(

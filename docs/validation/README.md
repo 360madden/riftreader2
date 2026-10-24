@@ -2,7 +2,9 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Latest **integrated host-only scan→copy pass**: [bounded in-callback typed candidate acquisition orchestration](typed-inline-capture-pass-host-validation-2026-10-24.md). Six new scenarios cover plausible/binary markers, relocation, copy cap and partial-time scope; full .NET **430/430** and targeted formatting pass. **CLI evidence publication and any RIFT guest trial remain pending.**
+Latest **fully implemented and published HOST-validated native CLI**: [real Windows test-process `scout-copy-typed-native`, hash-linked copies, published-bundle smokes and exact limitations](typed-inline-capture-cli-host-2026-10-24.md). Full **432 .NET + 545 Python**, **108 Lua + 22 shared** checks, formatting, published single-file bundle SHA and a complete **28 KiB** published-exe same-scan copy all pass. **No RIFT guest deployment or typed-field qualification yet**; composite PS7 validation unavailable, constituent gates independently passed.
+
+Earlier **integrated host-only scan→copy pass**: [bounded in-callback typed candidate acquisition orchestration](typed-inline-capture-pass-host-validation-2026-10-24.md). Six new scenarios cover plausible/binary markers, relocation, copy cap and partial-time scope; full .NET **430/430** and targeted formatting pass. **CLI evidence publication and any RIFT guest trial remain pending.**
 
 Earlier **Windows-host-only scan→immediate-copy proof**: [bounded inline typed-marker neighborhood capture](typed-inline-neighborhood-host-proof-2026-10-24.md). Newly implemented 11 tests plus real same-handle Windows **self-process** scanner→callback→28 KiB copied-byte proof, strict snapshot-loader round-trip, 424/424 .NET full solution, formatting passed. **Not yet a guest CLI or new RIFT observation.**
 
@@ -56,7 +58,8 @@ record independent leased screenshots and ROI-level pixel changes, without claim
 | [V13 live preflight and V14 recovery preparation](typed-snapshot-v14-preflight-2026-10-24.md) | Historical prior checkpoint: healthy V13, prepared successor and guest PowerShell stepper; execution followed in the newer real-pair record. |
 | [First live pair of typed-prefix snapshots and V14 recovery](typed-snapshot-first-live-pair-2026-10-24.md) | Two actual 86,016-byte exact-game-epoch captures, original SHA receipts/chunk integrity, strict unavailable typed frames, volatility diagnosis and independent healthy V14. |
 | [Inline neighborhood host proof](typed-inline-neighborhood-host-proof-2026-10-24.md) | New strict prefix-recheck and seven-page read-only copier, 11 host tests, real self-process scanner callback and byte-exact capture, 424/424 .NET at that checkpoint; guest CLI integration pending. |
-| [Bounded inline scan→copy pass](typed-inline-capture-pass-host-validation-2026-10-24.md) | Same-callback scanner/copier orchestration, hard 8-copy cap, stale/rejected outcomes, 6 focused tests and full 430/430 .NET solution; no guest operation. |
+| [Bounded inline scan→copy pass](typed-inline-capture-pass-host-validation-2026-10-24.md) | Earlier pure same-callback orchestrator, hard 8-copy cap, stale/rejected outcomes, 6 focused tests and 430/430 .NET at that checkpoint; no guest operation. |
+| [Same-scan native CLI and published Windows-host proof](typed-inline-capture-cli-host-2026-10-24.md) | Real host-process copy, strict source/snapshot hashes/no-overwrite, published single-file 28 KiB native smoke; 432 .NET + 545 Python + Lua/shared gates, guest trial still pending. |
 | [Current-epoch map transfer and V12 recovery](guest-map-report-transfer-2026-10-24.md) | Actual full game memory map retained on host, SHA-256 match and normal coordinator restoration. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 

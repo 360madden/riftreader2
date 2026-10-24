@@ -1,0 +1,31 @@
+# Host validation: exact-process same-scan typed capture CLI — October 24, 2026
+
+**Outcome: implemented and actually executed against the Windows .NET test process, not against RIFT-Lab-1.** The newly exposed `scout-copy-typed-native` command uses the [pure in-callback scan and capture pass](typed-inline-capture-pass-host-validation-2026-10-24.md) and publishes a [versioned, non-overwriting report directory](../reference/typed-inline-capture.md) with original saved per-candidate `native-memory-snapshot/1` files.
+
+## Actual host proof
+
+- The Windows integration test allocated and initialized its **own native memory**, including `RRAPIVAL2|{`. It supplied the **actual live Windows test process** PID, exact unrounded start ticks and current test executable SHA-256 to the CLI request, then used the genuine `WindowsNativeMemorySession` 64 KiB scanner and 4 KiB `ReadProcessMemory` copier.
+- The CLI found the intended marker without using a previous run's address, accepted its JSON-opening-brace plausibility gate, captured a complete **7 × 4,096-byte / 28,672-byte** neighborhood and wrote `index.json`, `capture-01.request.json` and `capture-01.snapshot.json` into a **new** directory. The test independently hashed original request and report bytes and matched the manifest's declared SHA-256 values.
+- The persisted snapshot passed **the existing strict `NativeMemorySnapshotFile.LoadAsync` loader**, with all seven original chunk SHA-256s, no holes and a byte-for-byte match against the test allocation. The request's saved byte SHA agreed with the snapshot source's `requestSha256`.
+- An immediate second invocation using the exact same output directory returned documented **exit 2**, refused to overwrite, and left the saved manifest **byte-identical**. A separate wrong-process-start-ticks test rejected the request **before creating any output directory**. These are **two actual focused Windows CLI test cases**, not simulated reports or RIFT guest evidence.
+- The earlier [11 immediate-capture tests plus self-process callback integration](typed-inline-neighborhood-host-proof-2026-10-24.md) and [6 pure pass tests](typed-inline-capture-pass-host-validation-2026-10-24.md) remain present. **Actual complete .NET Release solution gate: 432/432 tests (139 Windows Live + 293 core) pass; targeted `dotnet format --verify-no-changes` passes.** The independent full Python suite passes **545/545**, Lua 5.1 has **108** checks, and **22** actual Lua→C# shared wire cases pass.
+
+## Published single-file executable smoke and pinned integrity
+
+- Built an unchanged-repo **Release** single-file V2 executable at ignored `artifacts/validation/rr2-scout-copy-publish-oct24-01/RiftReader2.Live.exe`: **74,254,755 bytes**, SHA-256 **`484FC6A0980BCAC823154229B974B0BD18412A9053903A542BC0313EB5EF1716`**. Its actual CLI help exposes `scout-copy-typed-native --request PATH --output NEW_DIRECTORY`.
+- **Published native self-process smoke passed** using BOM-free UTF-8 input under Windows PowerShell 5.1: actual read-only PE `MZ` header capture, reported **single-file bundle hash equal to executable**, stale process epoch rejected and original snapshot unmodified by an overwrite attempt. Retained test-process report SHA-256 **`F2FDB3E8496C3E6F4270861BA4F21C7DC7ADB1F3EEEB0B3409BFE209B23E3281`**.
+- **The published new command itself was run against an allocated test-process memory block** (not RIFT). `scout-copy-typed-native` found the fresh `RRAPIVAL2|{` marker, copied all **28,672** expected bytes and emitted exact-hash request/snapshot files with `single-file-bundle` implementation identity; the host helper compared all actual bytes. Preserved `index.json` SHA-256 **`E70078F55DE1780216E8C4AC7E7E0C4FB1E59724C5ABE1556E4AF5270D850DDF`** in ignored `artifacts/validation/rr2-scout-copy-published-self-trial-oct24-01/`. Bundle SHA matches above.
+- **Composite validation caveat:** Workbridge does not expose PowerShell 7. Windows PowerShell 5.1 mangles the existing composite launcher’s native-argument quoting; the legacy publish-smoke wrapper also writes UTF-8 with a BOM that the JSON parser rightly rejects. Neither old script passed under PS5.1. Component .NET/Python/Lua/format tests and **BOM-free equivalent published executable smokes** passed separately; do not claim the stock `scripts/validate.ps1` completed successfully.
+
+## Safety and meaning
+
+- The code requires an exact native target before any read, enforces 512 MiB maximum scanned bytes and 8 copied neighborhoods, refuses pre-existing output, stages reports before one final directory rename, and rechecks the process identity after acquisition. If identity invalidates, the manifest is invalidated and **usable original snapshot files are not published**.
+- Source snapshot requests are generated for each actual selected seven-page window and saved beside the copy. The proven offline `inspect-typed-wire` loader can consume individual copies from two independent source runs; it alone can make a strict source-frame advancement determination.
+- **No new guest binary transfer, RIFT memory read, VNC control, game movement, source installation, loaded-module hash claim or native/Lua XYZ qualification took place in this host test.** V14's last verified healthy owner at 17:52 UTC remains the known exclusive console owner until freshly rechecked.
+
+## Next controlled acceptance
+
+1. Re-run the full repository gate plus self-process/no-overwrite tests and ensure the newest exact build passes. Retain test/format/lint hashes and a local Git commit before deployment.
+2. Build a new single-file guest bundle and SHA-pin the tested artifact, transfer with existing one-use restricted receiver and verify the guest content hash **only during genuine exclusive maintenance**.
+3. Before a live test, independently preflight current V14, game and VMware identities, queue and guest disarm state; normal V14 STOP/release precedes any guest console use, and a fresh exact-pinned successor must be restored after the read-only trial.
+4. Acquire two independent fresh capture directories, transfer originals with exact content hashes, compare with `inspect-typed-wire`. A candidate prefix or strict negative result does not qualify coordinates.

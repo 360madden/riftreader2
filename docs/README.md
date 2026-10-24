@@ -26,6 +26,7 @@ topic below instead of loading every document for each task.
 | Reference | [Native VM controls](reference/native-vm-controls.md) | Native host/guest setup, operator panel, CLI, bounded input, and recovery. |
 | Reference | [Memory discovery](reference/memory-discovery.md) | Bounded snapshots, value/pattern comparisons, RVA pointer discovery and resolution. |
 | Reference | [Typed-prefix live scout](reference/typed-prefix-scout.md) | Exact-epoch, bounded read-only marker search, resumable coverage, and versioned reports. |
+| Reference | [Same-scan typed snapshot acquisition](reference/typed-inline-capture.md) | Versioned exact-epoch native CLI, near-immediate plausible-frame copies, 8-candidate cap, content hashes and no-overwrite publication; host tested, guest pending. |
 | Reference | [Typed-wire snapshot inspection](reference/typed-wire-snapshot.md) | Offline two-sample Lua wire candidate validation with exact process/scope limits. |
 | Reference | [Native field evidence review](reference/native-field-evidence.md) | Replay candidate XYZ comparisons without automatic field qualification. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |

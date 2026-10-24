@@ -179,6 +179,160 @@ internal static class MemoryDiscoveryCommand
         return status == "complete" ? 0 : 3;
     }
 
+    internal static async Task<int> ScoutCopyTypedAsync(
+        IReadOnlyDictionary<string, string> options,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        var paths = RequirePaths(options);
+        var loaded = await LoadAsync<TypedInlineCaptureRequest>(paths.Request, cancellationToken);
+        var request = loaded.Value;
+        if (request.SchemaVersion != 1 ||
+            request.EvidenceKind != "native-typed-inline-capture-request/1")
+            throw new InvalidDataException("Only native-typed-inline-capture-request/1 schema version 1 is supported.");
+        ValidateTarget(request.Target);
+        ValidateDuration(request.MaxDurationMilliseconds);
+        if (request.MaxRegionCount is < 1 or > 32_768 ||
+            request.MaxMatchCount is < 1 or > TypedApiPrefixMatcher.MaxSupportedMatches ||
+            request.MaxCopiedCandidates is < 1 or > TypedApiInlineCapturePass.MaxCopies ||
+            request.MaxScanBytes is < TypedApiPrefixScout.ChunkBytes or > TypedApiPrefixScout.MaxScanBytes)
+            throw new InvalidDataException("Inline capture request exceeds a declared region, match, copy or scan-byte limit.");
+        var startAddress = ParseHex(request.StartAddress, "startAddress");
+        if (startAddress < TypedApiPrefixScout.MinUserAddress ||
+            startAddress >= TypedApiPrefixScout.MaxUserEnd)
+            throw new InvalidDataException("startAddress is outside the supported 64-bit user address range.");
+
+        var fullOutput = Path.GetFullPath(paths.Output);
+        if (Directory.Exists(fullOutput) || File.Exists(fullOutput))
+            throw new IOException("Inline capture output directory already exists; overwriting evidence is prohibited.");
+
+        await using var session = await OpenAsync(request.Target, cancellationToken);
+        var startedAtUtc = UtcNow();
+        var timer = Stopwatch.StartNew();
+        var regions = session.EnumerateReadableRegions(
+            request.MaxRegionCount, request.MaxDurationMilliseconds, cancellationToken);
+        var pass = TypedApiInlineCapturePass.Run(
+            regions, startAddress, request.MaxScanBytes, request.MaxMatchCount,
+            request.MaxCopiedCandidates, session.ReadScanChunk, session.Read,
+            () => timer.ElapsedMilliseconds >= request.MaxDurationMilliseconds,
+            UtcNow, cancellationToken);
+        var identityFailure = await session.RevalidateAsync(cancellationToken);
+        var completedAtUtc = UtcNow();
+        var status = identityFailure is not null ? "identity-invalidated" :
+            timer.ElapsedMilliseconds > request.MaxDurationMilliseconds ? "partial" :
+            pass.Scout.Status != "complete" || pass.CopyLimited ? "partial" : "complete";
+        var reason = identityFailure ??
+            (timer.ElapsedMilliseconds > request.MaxDurationMilliseconds
+                ? "time-budget-exceeded-during-capture-or-revalidation"
+                : pass.Scout.Status != "complete" ? pass.Scout.Reason
+                : pass.CopyLimited ? "candidate-copy-budget-exceeded" : null);
+
+        // Assemble the entire bounded result in memory first. An atomic final
+        // directory rename prevents half-written evidence looking published.
+        var destinationParent = Path.GetDirectoryName(fullOutput)
+            ?? throw new InvalidDataException("Output directory must have an explicit parent.");
+        Directory.CreateDirectory(destinationParent);
+        var staging = Path.Combine(destinationParent,
+            $".{Path.GetFileName(fullOutput)}.{Guid.NewGuid():N}.tmp");
+        Directory.CreateDirectory(staging);
+        var implementation = NativeCommandRunner.CreateImplementationIdentity();
+        var fileEntries = new List<TypedInlineCaptureFileEntry>();
+        var published = 0;
+        foreach (var candidate in pass.Candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (identityFailure is not null && candidate.Neighborhood is not null)
+            {
+                fileEntries.Add(new(candidate.MarkerAddress, "identity-invalidated",
+                    "The native process changed identity; captured bytes are not published as usable snapshots.",
+                    null, null, null, null));
+                continue;
+            }
+            if (candidate.Neighborhood is null)
+            {
+                fileEntries.Add(new(candidate.MarkerAddress, candidate.Status, candidate.Reason,
+                    null, null, null, null));
+                continue;
+            }
+
+            // Every saved snapshot gets its own persisted canonical request,
+            // not a guessed SHA or a filename posing as source proof.
+            var neighborhood = candidate.Neighborhood;
+            var sourceRequest = new MemorySnapshotRequest(
+                1, "native-memory-snapshot-request/1", request.Target,
+                request.MaxDurationMilliseconds,
+                [new("absolute-session-address", neighborhood.WindowStart,
+                    TypedApiImmediateNeighborhood.WindowBytes)]);
+            var prefix = $"capture-{++published:D2}";
+            var sourceName = $"{prefix}.request.json";
+            var snapshotName = $"{prefix}.snapshot.json";
+            var sourcePath = Path.Combine(staging, sourceName);
+            var snapshotPath = Path.Combine(staging, snapshotName);
+            await JsonReportWriter.WriteNewAsync(sourcePath, sourceRequest, cancellationToken);
+            var sourceSha = Convert.ToHexString(SHA256.HashData(await File.ReadAllBytesAsync(
+                sourcePath, cancellationToken)));
+            var source = new NativeMemorySnapshotSource(
+                "native-memory-snapshot-request/1", sourceSha, "producer-declared", implementation);
+            await JsonReportWriter.WriteNewAsync(snapshotPath,
+                neighborhood.ToSnapshotFile(source, session.Identity), cancellationToken);
+            var verified = await NativeMemorySnapshotFile.LoadAsync(snapshotPath, cancellationToken);
+            fileEntries.Add(new(candidate.MarkerAddress, candidate.Status, candidate.Reason,
+                sourceName, sourceSha, snapshotName, verified.FileSha256));
+        }
+
+        var scout = pass.Scout;
+        var scope = new TypedInlineCaptureScope(
+            identityFailure is not null ? "identity-invalidated" : scout.Status,
+            identityFailure ?? scout.Reason, Hex(scout.StartAddress),
+            identityFailure is not null ? null : scout.NextAddress is { } next ? Hex(next) : null,
+            scout.EligiblePrivateBytes, scout.AttemptedBytes, scout.ExaminedBytes,
+            scout.EligiblePrivateRegionCount, scout.TouchedPrivateRegionCount,
+            scout.PrefixAddresses.Select(Hex).ToArray(),
+            scout.CoveredSpans.Select(span => new TypedPrefixScoutSpanReport(
+                Hex(span.BaseAddress), span.ByteLength)).ToArray(),
+            scout.Holes.Select(hole => new TypedPrefixScoutHoleReport(
+                Hex(hole.BaseAddress), hole.ByteLength, hole.Reason, hole.Win32Error)).ToArray());
+
+        var manifest = new TypedInlineCaptureManifest(
+            1, "native-typed-inline-capture/1", loaded.Sha256,
+            request, implementation, session.Identity,
+            startedAtUtc, completedAtUtc, status, reason,
+            pass.MaxCopiedCandidates, pass.CopiedCandidates, published,
+            pass.CopyLimited, scope, fileEntries,
+            [
+                "Only exact-process, committed readable private memory was scanned; the covered scope is explicit and never a whole-process absence claim.",
+                "The 11-byte RRAPIVAL2|{ gate is not a parsed Lua frame; inspect copied candidate JSON with the existing strict offline inspector.",
+                "Native read-only 4 KiB chunks are copied inside each prefix match callback, never after an old absolute address is reused.",
+                "The copy cap is eight candidates; declined or missing chunks are never replaced with zeros.",
+                "The complete output directory is published through one no-overwrite final rename after all individual hashes are verified.",
+                "No snapshot files are published when post-acquisition process identity fails."
+            ]);
+        var manifestPath = Path.Combine(staging, "index.json");
+        await JsonReportWriter.WriteNewAsync(manifestPath, manifest, cancellationToken);
+        var indexSha = Convert.ToHexString(SHA256.HashData(
+            await File.ReadAllBytesAsync(manifestPath, cancellationToken)));
+        cancellationToken.ThrowIfCancellationRequested();
+        // A concurrent same-name creator makes this fail without replacing it.
+        Directory.Move(staging, fullOutput);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            manifest.SchemaVersion,
+            manifest.EvidenceKind,
+            manifest.Status,
+            manifest.Reason,
+            manifest.CopiedCandidates,
+            manifest.PublishedSnapshots,
+            manifest.CopyLimited,
+            ScanStatus = manifest.Scan.Status,
+            ScanReason = manifest.Scan.Reason,
+            ScanExaminedBytes = manifest.Scan.ExaminedBytes,
+            PrefixCount = manifest.Scan.PrefixAddresses.Count,
+            IndexSha256 = indexSha,
+            Output = fullOutput
+        }, JsonFormat.Options));
+        return status == "complete" ? 0 : 3;
+    }
+
     internal static async Task<int> SnapshotAsync(
         IReadOnlyDictionary<string, string> options,
         TextWriter output,
@@ -535,6 +689,60 @@ internal sealed record TypedPrefixScoutReport(
     IReadOnlyList<string> PrefixAddresses,
     IReadOnlyList<TypedPrefixScoutSpanReport> CoveredSpans,
     IReadOnlyList<TypedPrefixScoutHoleReport> Holes,
+    IReadOnlyList<string> Limitations);
+
+
+internal sealed record TypedInlineCaptureRequest(
+    int SchemaVersion,
+    string EvidenceKind,
+    NativeCaptureTarget Target,
+    string StartAddress,
+    long MaxScanBytes,
+    int MaxDurationMilliseconds,
+    int MaxRegionCount,
+    int MaxMatchCount,
+    int MaxCopiedCandidates);
+
+internal sealed record TypedInlineCaptureScope(
+    string Status,
+    string? Reason,
+    string StartAddress,
+    string? NextAddress,
+    long EligiblePrivateBytes,
+    long AttemptedBytes,
+    long ExaminedBytes,
+    int EligiblePrivateRegionCount,
+    int TouchedPrivateRegionCount,
+    IReadOnlyList<string> PrefixAddresses,
+    IReadOnlyList<TypedPrefixScoutSpanReport> CoveredSpans,
+    IReadOnlyList<TypedPrefixScoutHoleReport> Holes);
+
+internal sealed record TypedInlineCaptureFileEntry(
+    string MarkerAddress,
+    string Status,
+    string? Reason,
+    string? RequestFile,
+    string? RequestSha256,
+    string? SnapshotFile,
+    string? SnapshotSha256);
+
+internal sealed record TypedInlineCaptureManifest(
+    int SchemaVersion,
+    string EvidenceKind,
+    string RequestSha256,
+    TypedInlineCaptureRequest Request,
+    NativeImplementationIdentity Implementation,
+    NativeProcessIdentity Identity,
+    string StartedAtUtc,
+    string CompletedAtUtc,
+    string Status,
+    string? Reason,
+    int MaxCopiedCandidates,
+    int CopiedCandidates,
+    int PublishedSnapshots,
+    bool CopyLimited,
+    TypedInlineCaptureScope Scan,
+    IReadOnlyList<TypedInlineCaptureFileEntry> Candidates,
     IReadOnlyList<string> Limitations);
 
 internal sealed record MemorySnapshotRequest(
