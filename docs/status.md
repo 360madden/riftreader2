@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: verified three-frame visual baseline
+
+- **Three distinct foreground RIFT frames (12:21Z / 12:52Z / 12:53Z):** Existing V10 PID **8168** acquired two more authenticated Track B screenshots with unique queue leases; all requests **succeeded** with independent STOP/release cleanup and no ARM, movement, game keys or manual queue reset. Each verified BMP is **1211×686**/32-bit, 3,323,038 bytes, tied to unchanged RIFT PID **6940**/start/build and VMware PID **38044**. Host capture IDs, instants and hashes are distinct.
+- **Temporal QA, not motion qualification:** Deterministic pixel comparisons show **73.5576%** changed in frame 01→02 (~31 min), **39.2586%** in 02→03 (~87s), and **42.1977%** within the central-world ROI in the latter pair (mean RGB delta 0.5093). Scene animation/UI noise remain possible; these numbers do not prove player/camera motion or object recognition. Added reusable offline `scripts/compare_native_frames.py` with **6/6 tests** and no-overwrite reports under ignored artifacts. Both this suite and handover tests are included in `scripts/validate.ps1`. See [three-frame evidence](validation/native-v10-temporal-frames-2026-10-24.md).
+
 ## October 24: typed Lua readback blocker — targeted repair research
 
 - **Source-level cause confirmed, live fix still pending:** The V1 observer’s default 4 GiB/10 s broad private-memory scan stops with `scan-byte-budget-exceeded`; its incomplete pass deliberately prevents typed freshness evaluation. No evidence shows a missing Lua frame or changed game binary. The last blocked observation belonged to the older October 23 game epoch, **not yet remeasured** for current PID 6940.

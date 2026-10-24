@@ -2,9 +2,9 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Latest: [Camera tracking and real browser focus loss](camera-tracking-focus-2026-10-20.md)
-records 20 ms camera pulses, bounded pending movement, physical Edge Alt-Tab
-STOP, and the full gate including native-capture process-exit hardening.
+Latest: [V10 three-frame temporal native capture](native-v10-temporal-frames-2026-10-24.md)
+records independent identity/lease-bound screenshots, queue cleanup and reproducible
+ROI-level pixel changes without claiming gameplay movement.
 
 | Record | Meaning |
 |---|---|
@@ -25,6 +25,10 @@ STOP, and the full gate including native-capture process-exit hardening.
 | [Native controls follow-up](native-vm-controls-followup-2026-10-20.md) | Browser-compatible camera drag, hold timing, cursor policy, release feedback, and wheel diagnosis. |
 | [Native wheel zoom](native-zoom-2026-10-20.md) | Targeted wheel-message fix, panel dispatch, and reversible visual zoom on the final binary. |
 | [Native control usability](native-control-usability-2026-10-20.md) | Inspected bindings, panel lifecycle fixes, native review invalidation, drag/zoom/release evidence, and corrected page-exit STOP. |
+| [Receiver guest recovery](receiver-guest-recovery-2026-10-24.md) | Guest Startup installation verified, V9 receiver reconnect, supervisor cleanup and preserved queue. |
+| [First V10 live frame](native-v10-foreground-capture-2026-10-24.md) | Foreground gate, authenticated native screenshot and verified leased cleanup. |
+| [Same-VM-epoch host handover](same-epoch-native-host-handover-2026-10-24.md) | Exact 64-bit identity preservation, V11 preparation without launch, read-only queue preflight and tests. |
+| [V10 temporal native frames](native-v10-temporal-frames-2026-10-24.md) | Three same-epoch native frames, time-separated pixel/ROI QA and no gameplay input. |
 | [Success measures](success-measures.md) | Measurement framework and current foundation baseline. |
 
 The step-5 full gate passed 214 C# tests (205 portable and 9 Windows), 108 Lua
