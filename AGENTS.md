@@ -91,8 +91,15 @@ modules and selected lab tools, avoid new frameworks and unnecessary process.
   this scope. Live verification must precede claims of transport readiness.
 - Keep settings repository-local. Do not change global Git/Codex settings,
   Workbridge runtime settings, or REA installation as incidental setup.
-- Commit coherent, verified local changes using explicit files. A remote, push,
-  destructive history change, or deployment requires applicable user
-  authorization; carry forward authorization already given.
+- Commit coherent, verified local changes using explicit files. Joey also
+  authorized judgment-based **timely local commits for significant findings** on
+  2026-10-24, even when a research or recovery checkpoint changes no code. Do
+  not wait for an entire roadmap milestone when a consequential result is already
+  reproducible and worth preserving. Record exact evidence, source/build/session
+  identity when relevant, limitations, and the next action; label tentative,
+  negative, or blocked findings honestly. Preserve unrelated work and avoid
+  committing credentials, private configuration, and bulky generated artifacts.
+  A remote, push, destructive history change, or deployment still requires
+  applicable user authorization; carry forward authorization already given.
 - Report results and material limitations clearly. Continue routine authorized
   documentation work without repeated permission requests.

@@ -257,3 +257,24 @@ mid-task; it identifies work that should receive capable review.
 Record what changed, what was actually verified, limitations, and the next
 authorized task in `docs/status.md`. Commit only coherent explicit files with
 the repository-local author identity.
+
+## Timely evidence checkpoints
+
+Joey authorized local checkpoint commits for significant research and recovery
+findings on 2026-10-24, using the implementer's judgment. Preserve a finding
+promptly when it resolves or diagnoses a meaningful blocker, establishes a
+reproducible method or failure, changes a roadmap decision, or would be costly
+to reconstruct after a timeout. A small evidence-only commit is worthwhile even
+when no product code changes. Do not delay every such checkpoint until a large
+implementation milestone or mix unrelated work merely to make a commit.
+
+Before committing, retain a concise tracked evidence note with source/time,
+exact test or observation, relevant process/build/session identity, retained
+artifact references and hashes, uncertainty, known limitations, and the next
+reproducible step. Use terms such as candidate, blocked, or negative result when
+the evidence does not qualify a capability. Validate the scoped document and
+links for documentation-only changes; code changes require their appropriate
+focused checks and the full repository gate before claiming full validation.
+Use explicit Git paths, preserve other work, and do not commit credentials,
+private settings, or large generated captures. These commits are local; they
+do not imply permission to push, deploy, or alter Git history.
