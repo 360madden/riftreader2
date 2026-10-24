@@ -2,7 +2,9 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Latest **guarded V14→V15 guest sequence (host-only preparation)**: [31 exact-game-epoch console steps, three independently restricted one-use services, 20 focused offline tests, renewed authenticated RIFT foreground](typed-inline-v15-guarded-sequence-host-2026-10-24.md). **V14 still exclusively owns the VM**, no STOP or guest trial yet.
+Latest **ACTUAL LIVE RIFT frame breakthrough**: [two exact-epoch read-only game scans, six independently verified original 28 KiB snapshots, six strictly advancing Lua producer comparisons of eight, and independently restored V15](typed-inline-first-live-six-snapshots-2026-10-24.md). **Native XYZ source agreement still pending. V15 owns the VM console.**
+
+Historical **guarded V14→V15 guest sequence (host-only preparation at that checkpoint)**: [31 exact-game-epoch console steps, three independently restricted one-use services, 20 focused offline tests, renewed authenticated RIFT foreground](typed-inline-v15-guarded-sequence-host-2026-10-24.md). **V14 still exclusively owns the VM**, no STOP or guest trial yet.
 
 Latest **guest ZIP checksum-to-byte-identity path (loopback only)**: [one-use exact-game/bundle ZIP SHA/length declaration, unchanged pinned ZIP receiver and strict two-receipt archive gate](typed-inline-zip-claim-host-2026-10-24.md). Real HTTP localhost chain and 24/24 focused, **573/573 full Python** checks pass; no guest listener or VM access yet.
 
