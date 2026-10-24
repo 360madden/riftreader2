@@ -10,7 +10,7 @@ import threading
 import unittest
 
 from scripts.receive_guest_inline_zip_claim import (
-    MAX_ZIP_BYTES, ROUTE, decode_claim, handler_for,
+    MAX_ZIP_BYTES, ROUTE, POINTER_ROUTE, decode_claim, handler_for,
 )
 from scripts.receive_guest_memory_report import (
     ROUTE as ZIP_UPLOAD_ROUTE, create_handler as upload_handler,
@@ -25,8 +25,10 @@ HASH = "A" * 64
 
 def declaration(*, digest: str = HASH, size: int = 7575,
                 pid: int = PID, ticks: int = TICKS,
-                game: str = GAME, bundle: str = BUNDLE) -> bytes:
-    return f"RR2INLINEZIP1|{digest}|{size}|{pid}|{ticks}|{game}|{bundle}".encode("ascii")
+                game: str = GAME, bundle: str = BUNDLE,
+                kind: str = "inline") -> bytes:
+    marker = "RR2INLINEZIP1" if kind == "inline" else "RR2PTRZIP1"
+    return f"{marker}|{digest}|{size}|{pid}|{ticks}|{game}|{bundle}".encode("ascii")
 
 
 def roundtrip(handler, method="POST", route=ROUTE, body=b"",
@@ -96,6 +98,31 @@ class GuestZipClaimTests(unittest.TestCase):
                     args.update(context)
                     with self.assertRaises(ValueError):
                         handler_for(dest, "127.0.0.1", **args)
+
+    def test_native_pointer_claim_reuses_exact_one_use_intake(self):
+        raw = declaration(kind="pointer")
+        record = decode_claim(raw, pid=PID, ticks=TICKS,
+                              game_sha=GAME, bundle_sha=BUNDLE, kind="pointer")
+        self.assertEqual(record["zipSha256"], HASH)
+        with self.assertRaises(ValueError):
+            decode_claim(raw, pid=PID, ticks=TICKS, game_sha=GAME,
+                         bundle_sha=BUNDLE, kind="inline")
+        with tempfile.TemporaryDirectory() as temporary:
+            dest = Path(temporary) / "pointer-claim.json"
+            handler = handler_for(dest, "127.0.0.1", pid=PID, ticks=TICKS,
+                                  game_sha=GAME, bundle_sha=BUNDLE, kind="pointer")
+            code, result = roundtrip(handler, route=POINTER_ROUTE, body=raw)
+            self.assertEqual(code, 201)
+            self.assertEqual(result["evidenceKind"], "guest-native-pointer-zip-claim/1")
+            self.assertEqual(result["zipBytes"], 7575)
+            self.assertEqual(json.loads(dest.read_text()), result)
+        with tempfile.TemporaryDirectory() as temporary:
+            dest = Path(temporary) / "wrong-legacy-route.json"
+            handler = handler_for(dest, "127.0.0.1", pid=PID, ticks=TICKS,
+                                  game_sha=GAME, bundle_sha=BUNDLE, kind="pointer")
+            code, _ = roundtrip(handler, route=ROUTE, body=raw, header_only=True)
+            self.assertEqual(code, 404)
+            self.assertFalse(dest.exists())
 
     def test_valid_post_writes_exact_claim_receipt(self):
         with tempfile.TemporaryDirectory() as temporary:

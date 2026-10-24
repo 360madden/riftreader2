@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.receive_guest_memory_report import (
-    MAX_UPLOAD_BYTES, ROUTE, checked_target, create_handler,
+    MAX_UPLOAD_BYTES, ROUTE, POINTER_ROUTE, checked_target, create_handler,
 )
 
 
@@ -18,12 +18,13 @@ def exchange(body: bytes, *, expected: str | None = None,
              method: str = "POST", content_type: str = "application/octet-stream",
              max_bytes: int = 1024, create_conflict: bool = False,
              missing_length: bool = False, replace_link: bool = False,
-             send_body: bool = True):
+             send_body: bool = True, accepted_route: str = ROUTE):
     with tempfile.TemporaryDirectory() as folder:
         dest = Path(folder) / "map.json"
         if expected is None:
             expected = hashlib.sha256(body).hexdigest()
-        handler = create_handler(dest, expected, peer, max_bytes)
+        handler = create_handler(dest, expected, peer, max_bytes,
+                                 route=accepted_route)
         if create_conflict:
             dest.write_bytes(b"existing data")
         with HTTPServer(("127.0.0.1", 0), handler) as server:
@@ -79,6 +80,16 @@ class ExactGuestReportTests(unittest.TestCase):
         self.assertEqual(actual["info"]["sha256"], hashlib.sha256(blob).hexdigest())
         self.assertEqual(actual["info"]["guest"], "127.0.0.1")
         self.assertEqual(actual["partials"], [])
+
+    def test_pointer_archive_route_reuses_content_addressed_receiver(self):
+        body = b"pointer-archive-zipped-placeholder-fixture"
+        valid = exchange(body, route=POINTER_ROUTE, accepted_route=POINTER_ROUTE)
+        self.assertEqual(valid["status"], 201)
+        self.assertEqual(valid["bytes"], body)
+        wrong = exchange(body, route=ROUTE, accepted_route=POINTER_ROUTE,
+                         send_body=False)
+        self.assertEqual(wrong["status"], 404)
+        self.assertIsNone(wrong["bytes"])
 
     def test_wrong_sha_is_not_published(self):
         result = exchange(b"changed", expected=hashlib.sha256(b"original").hexdigest())
@@ -136,6 +147,8 @@ class ExactGuestReportTests(unittest.TestCase):
                 create_handler(dest, "a" * 64, "not-an-address")
             with self.assertRaises(ValueError):
                 create_handler(dest, "a" * 64, "127.0.0.1", MAX_UPLOAD_BYTES + 1)
+            with self.assertRaisesRegex(ValueError, "unsupported fixed"):
+                create_handler(dest, "a" * 64, "127.0.0.1", route="/arbitrary")
 
     def test_destination_restrictions(self):
         with tempfile.TemporaryDirectory() as folder:

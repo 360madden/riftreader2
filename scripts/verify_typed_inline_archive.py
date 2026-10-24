@@ -297,8 +297,14 @@ def _read_small_receipt(path: Path, label: str) -> tuple[dict, str]:
 def _transfer_proof(archive: Path, archive_sha: str, archive_bytes: int, *,
                     claim_path: Path | None, upload_path: Path | None,
                     pid: int, ticks: int, game_sha: str, bundle_sha: str,
-                    expected_guest: str) -> dict | None:
-    """Bind a guest-declared ZIP claim to the existing receiver's actual receipt."""
+                    expected_guest: str, claim_kind: str = "inline") -> dict | None:
+    """Bind an exact-kind guest ZIP claim to the receiver's actual content receipt."""
+    if claim_kind not in ("inline", "pointer"):
+        raise ArchiveError("unsupported guest ZIP claim kind")
+    expected_claim = ("guest-typed-inline-zip-claim/1" if claim_kind == "inline"
+                      else "guest-native-pointer-zip-claim/1")
+    expected_upload = ("content-addressed-guest-map-transfer" if claim_kind == "inline"
+                       else "content-addressed-guest-pointer-transfer")
     if claim_path is None and upload_path is None:
         return None  # Host-only synthetic fixture; do not invent guest attribution.
     if claim_path is None or upload_path is None:
@@ -307,7 +313,7 @@ def _transfer_proof(archive: Path, archive_sha: str, archive_bytes: int, *,
     delivered, upload_hash = _read_small_receipt(upload_path, "guest ZIP upload receipt")
     if (type(claim.get("schemaVersion")) is not int
             or claim["schemaVersion"] != 1
-            or claim.get("evidenceKind") != "guest-typed-inline-zip-claim/1"
+            or claim.get("evidenceKind") != expected_claim
             or claim.get("source") != "guest-declared-only"
             or claim.get("guest") != expected_guest):
         raise ArchiveError("guest ZIP claim has wrong schema or peer")
@@ -319,7 +325,7 @@ def _transfer_proof(archive: Path, archive_sha: str, archive_bytes: int, *,
         raise ArchiveError("guest ZIP claim differs from exact original bytes")
     if (type(delivered.get("schemaVersion")) is not int
             or delivered["schemaVersion"] != 1
-            or delivered.get("purpose") != "content-addressed-guest-map-transfer"
+            or delivered.get("purpose") != expected_upload
             or delivered.get("state") != "received"
             or delivered.get("guest") != claim["guest"]
             or type(delivered.get("bytes")) is not int

@@ -27,6 +27,7 @@ if str(ROOT) not in sys.path:
 from scripts.control_host import HostConfig
 
 ROUTE = "/rr2-map-oct24-01-report.json"
+POINTER_ROUTE = "/rr2-native-pointer-oct24-01-report.zip"
 HOST_ADDRESS = "192.168.56.1"
 GUEST_ADDRESS = "192.168.56.128"
 HOST_PORT = 8765
@@ -48,7 +49,7 @@ def checked_target(path: Path, scope: Path = ARTIFACT_SCOPE) -> Path:
 
 
 def create_handler(destination: Path, expected_sha256: str, guest: str,
-                   max_bytes: int = MAX_UPLOAD_BYTES):
+                   max_bytes: int = MAX_UPLOAD_BYTES, *, route: str = ROUTE):
     """Return a strictly scoped HTTP/1.0 POST handler; no listener is started."""
     if not destination.is_absolute() or not destination.parent.is_dir():
         raise ValueError("absolute destination and existing directory required")
@@ -60,6 +61,8 @@ def create_handler(destination: Path, expected_sha256: str, guest: str,
         raise ValueError("IPv4 guest address required")
     if not 1 <= max_bytes <= MAX_UPLOAD_BYTES:
         raise ValueError("invalid byte ceiling")
+    if route not in (ROUTE, POINTER_ROUTE):
+        raise ValueError("unsupported fixed one-use receiver route")
     expected = expected_sha256.lower()
 
     class Handler(BaseHTTPRequestHandler):
@@ -75,7 +78,7 @@ def create_handler(destination: Path, expected_sha256: str, guest: str,
         def do_POST(self):
             if self.client_address[0] != guest:
                 return self._deny(403)
-            if self.path != ROUTE:
+            if self.path != route:
                 return self._deny(404)
             if getattr(self.server, "delivered", False):
                 return self._deny(409)
@@ -178,6 +181,7 @@ def main() -> int:
     parser.add_argument("--seconds", type=int, default=300)
     parser.add_argument("--receipt", type=Path, required=True)
     parser.add_argument("--serve", action="store_true")
+    parser.add_argument("--kind", choices=("map", "pointer"), default="map")
     args = parser.parse_args()
     try:
         config = HostConfig.load(args.config)
@@ -189,11 +193,13 @@ def main() -> int:
         receipt = checked_target(args.receipt)
         if receipt == destination:
             raise ValueError("receipt overlaps report destination")
-        handler = create_handler(destination, args.expected_sha256, GUEST_ADDRESS)
+        route = ROUTE if args.kind == "map" else POINTER_ROUTE
+        handler = create_handler(destination, args.expected_sha256, GUEST_ADDRESS,
+                                 route=route)
         descriptor = {
             "state": "verified-not-serving",
             "host": HOST_ADDRESS, "port": HOST_PORT, "guest": GUEST_ADDRESS,
-            "route": ROUTE, "destination": str(destination),
+            "route": route, "destination": str(destination),
             "expectedSha256": args.expected_sha256.upper(),
             "maximumBytes": MAX_UPLOAD_BYTES,
             "lifetimeSeconds": args.seconds,
@@ -209,7 +215,9 @@ def main() -> int:
             print(json.dumps({"state": "expired-no-report"}), flush=True)
             return 3
         published = {
-            "schemaVersion": 1, "purpose": "content-addressed-guest-map-transfer",
+            "schemaVersion": 1,
+            "purpose": ("content-addressed-guest-map-transfer" if args.kind == "map"
+                        else "content-addressed-guest-pointer-transfer"),
             "state": "received", "destination": str(destination), **result
         }
         with receipt.open("x", encoding="utf-8") as output:

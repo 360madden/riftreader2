@@ -22,6 +22,7 @@ from scripts.receive_guest_snapshot_hashes import (
 )
 
 ROUTE = "/rr2-typed-inline-zip-claim-oct24-01"
+POINTER_ROUTE = "/rr2-native-pointer-zip-claim-oct24-01"
 MAX_ZIP_BYTES = 16 * 1024 * 1024
 MAX_CLAIM_BYTES = 255
 SHA256 = re.compile(r"[0-9A-F]{64}\Z")
@@ -30,19 +31,22 @@ WIRE = re.compile(
     rb"\|([1-9][0-9]{0,9})\|([1-9][0-9]{0,18})"
     rb"\|([0-9A-F]{64})\|([0-9A-F]{64})\Z"
 )
+POINTER_WIRE = re.compile(WIRE.pattern.replace(b"RR2INLINEZIP1", b"RR2PTRZIP1"))
 
 
 def decode_claim(data: bytes, *, pid: int, ticks: int,
-                 game_sha: str, bundle_sha: str) -> dict:
+                 game_sha: str, bundle_sha: str, kind: str = "inline") -> dict:
     if (type(data) is not bytes or len(data) > MAX_CLAIM_BYTES
             or type(pid) is not int or pid <= 0
             or type(ticks) is not int or ticks <= 0
             or not isinstance(game_sha, str) or SHA256.fullmatch(game_sha) is None
             or not isinstance(bundle_sha, str) or SHA256.fullmatch(bundle_sha) is None):
         raise ValueError("invalid exact-epoch hash-claim context")
-    match = WIRE.fullmatch(data)
+    if kind not in ("inline", "pointer"):
+        raise ValueError("unsupported exact-epoch claim kind")
+    match = (WIRE if kind == "inline" else POINTER_WIRE).fullmatch(data)
     if match is None:
-        raise ValueError("not a strict RR2INLINEZIP1 declaration")
+        raise ValueError("not a strict one-use exact-epoch ZIP declaration")
     archive_sha, archive_size, process_id, start_ticks, source_sha, binary_sha = (
         value.decode("ascii") for value in match.groups()
     )
@@ -63,16 +67,20 @@ def decode_claim(data: bytes, *, pid: int, ticks: int,
 
 
 def handler_for(destination: Path, guest_address: str, *,
-                pid: int, ticks: int, game_sha: str, bundle_sha: str):
+                pid: int, ticks: int, game_sha: str, bundle_sha: str,
+                kind: str = "inline"):
     if (not destination.is_absolute() or not destination.parent.is_dir()
             or destination.is_symlink() or destination.exists()):
         raise ValueError("claim destination must be new inside existing absolute directory")
     guest = str(ipaddress.IPv4Address(guest_address))
-    # Validate the expected epoch before any listener is constructed.
+    route = ROUTE if kind == "inline" else POINTER_ROUTE
+    # Validate the exact context and supported wire kind before constructing the server.
     decode_claim(
-        ("RR2INLINEZIP1|" + "A" * 64 + "|1|" + str(pid) + "|" + str(ticks)
+        (("RR2INLINEZIP1" if kind == "inline" else "RR2PTRZIP1") + "|"
+         + "A" * 64 + "|1|" + str(pid) + "|" + str(ticks)
          + "|" + game_sha + "|" + bundle_sha).encode("ascii"),
         pid=pid, ticks=ticks, game_sha=game_sha, bundle_sha=bundle_sha,
+        kind=kind,
     )
 
     class Handler(BaseHTTPRequestHandler):
@@ -88,7 +96,7 @@ def handler_for(destination: Path, guest_address: str, *,
         def do_POST(self):
             if self.client_address[0] != guest:
                 return self.reply(403)
-            if self.path != ROUTE:
+            if self.path != route:
                 return self.reply(404)
             if getattr(self.server, "delivered", False) or destination.exists():
                 return self.reply(409)
@@ -111,10 +119,11 @@ def handler_for(destination: Path, guest_address: str, *,
                     raise ValueError("short guest declaration")
                 claim = decode_claim(
                     raw, pid=pid, ticks=ticks,
-                    game_sha=game_sha, bundle_sha=bundle_sha)
+                    game_sha=game_sha, bundle_sha=bundle_sha, kind=kind)
                 receipt = {
                     "schemaVersion": 1,
-                    "evidenceKind": "guest-typed-inline-zip-claim/1",
+                    "evidenceKind": ("guest-typed-inline-zip-claim/1" if kind == "inline"
+                                     else "guest-native-pointer-zip-claim/1"),
                     "source": "guest-declared-only",
                     "guest": guest,
                     "receivedAtUtc": datetime.now(timezone.utc).isoformat(),
@@ -162,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--process-start-ticks", type=int, required=True)
     parser.add_argument("--game-sha256", required=True)
     parser.add_argument("--bundle-sha256", required=True)
+    parser.add_argument("--kind", choices=("inline", "pointer"), default="inline")
     parser.add_argument("--port", type=int, default=PORT)
     parser.add_argument("--seconds", type=int, default=600)
     parser.add_argument("--serve", action="store_true")
@@ -177,11 +187,13 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("claim receipt must be inside existing ignored artifacts")
         handler = handler_for(
             output, GUEST_ADDRESS, pid=args.process_id, ticks=args.process_start_ticks,
-            game_sha=args.game_sha256, bundle_sha=args.bundle_sha256)
+            game_sha=args.game_sha256, bundle_sha=args.bundle_sha256,
+            kind=args.kind)
         descriptor = {
             "state": "verified-not-serving",
             "host": HOST_ADDRESS, "guest": GUEST_ADDRESS, "port": PORT,
-            "route": ROUTE, "maximumZipBytes": MAX_ZIP_BYTES,
+            "route": ROUTE if args.kind == "inline" else POINTER_ROUTE,
+            "claimKind": args.kind, "maximumZipBytes": MAX_ZIP_BYTES,
             "target": {
                 "processId": args.process_id,
                 "processStartUtcTicks": args.process_start_ticks,

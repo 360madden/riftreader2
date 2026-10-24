@@ -2,6 +2,10 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: V16 native XYZ pointer ZIP transfer host-proven — NO GUEST ACTION
+
+- **Pointer originals transfer pathway now host-proven:** Extended the existing guest ZIP SHA claim and one-use content-pinned receiver with a distinct native-pointer route, preserving old inline/map defaults. New scripts/verify_pointer_zip_archive.py requires the exact three-file ZIP, verifies both process/guest/bundle/receipt identities and actual archive-member bytes, runs the strict native-vs-Lua reviewer and publishes no-overwrite originals/derivation. **52/52 focused archive/transport tests passed (including legacy compatibility)**. No new listener/guest access yet. [V16 complete staged gateway](validation/current-epoch-pointer-v16-preflight-2026-10-24.md).
+
 ## October 24: V16 native XYZ pointer gate staged — HOST PREPARATION ONLY
 
 - **Current read-only owner/status:** V15 PID 27856 remains authenticated ready, guest disarmed/no keys held, RIFT foreground PID 6940/ticks 639284177321390013, VMware epoch unchanged (read-only host status 22:00:47 UTC). Canonical same-epoch V15→V16 successor plan/launcher was prepared safely (22:01:28 UTC), but **V15 STOP not requested and V16 NOT launched**.
