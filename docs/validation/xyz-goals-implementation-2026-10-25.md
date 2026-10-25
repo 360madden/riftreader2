@@ -103,3 +103,31 @@ alongside fresh Lua; identify the character's resource type and a familiar
 resource-consuming ability. Then derive the locators and validate them through
 a normal full-game exit/relaunch. Unchanged health and power=100 do not establish
 native meanings. Goals 3–4 remain open; patch recovery remains deferred.
+
+## Paired capture readiness and one rejected candidate
+
+`health-scout-20261025-02/paired-readiness-02/` subsequently verified three
+native-before/Lua/native-after rounds, with Lua sequences **31989, 31994, 31998**.
+The native reads bracketed Lua acquisition by approximately 2.227, 1.161 and
+1.156 seconds; this is endpoint evidence, not continuous observation. All 43
+returned original files verified. The smaller Lua search uses 16 MiB beginning
+at the retained source region `0x52A70000`, with a five-second scan budget.
+The earlier readiness trial began too late in that region, found no Lua prefixes,
+and remains explicitly failed rather than being reused as reference evidence.
+
+The first health-shaped block, candidate `0x202AF8DE5F8` (context starts
+`0x202AF8DE5E8`), **stopped matching** even though all three independent Lua
+frames still showed health/max 18208 and power 100. Its native health slots were
+0, 0 and -1750345984. It is rejected as a continuing fixed-address candidate;
+this observation does not identify the underlying allocation's meaning.
+The other two blocks matched in both native reads of all three rounds, but
+remain unqualified until actual health/resource changes are observed.
+
+`candidate-invalidation.json` preserves that negative evidence.
+`targeted-health-request-v2.json` and the updated `paired_capture.py` now select
+only the remaining **two 84-byte windows (168 bytes per native read)**. Prior
+requests and original captures are preserved. The readiness export is 249,079
+bytes with SHA-256
+`CA77B65AA2F76BE2521622F5E7DA168CD8353120C482FEDB6CE714924E7BA29D`.
+No input was issued; final state was disarmed/idle with no held inputs. Further
+qualification awaits the user's coordinated health/resource change test.

@@ -19,6 +19,13 @@ addresses; health/resource changes, meanings, durable locators and their full
 game restart checks remain unproved. Await a coordinated safe health change
 and identification of the character's resource/ability; see the checkpoint above.
 
+**Paired capture ready; one candidate rejected:** Three fresh Lua/native rounds
+showed one block no longer matched unchanged Lua health/power. Two blocks remain
+plausible; the next native request is just **168 bytes**. The paired-capture
+export, original failed narrow Lua search and negative candidate evidence are
+retained under the same health-scout directory. The next step requires a
+coordinated actual health/resource change, not more unchanged scans.
+
 **Remaining goals:** [Current practical roadmap](planning/implementation-roadmap.md#remaining-practical-goals--refreshed-october-25-2026)
 now separates completed XYZ interface/restart/movement, reusable workflow and
 real catalog work from the remaining sequence: health, then resource/power.
