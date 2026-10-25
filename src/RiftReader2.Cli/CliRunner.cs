@@ -22,6 +22,7 @@ public static class CliRunner
                     decode-live-addon --frame PATH --session-id HEX [--output PATH]
                     replay-wall-motion --manifest PATH [--output PATH]
                     qualify-fields --catalog PATH --build-sha256 HEX --session-id ID --as-of UTC [--output PATH]
+                    export-discoveries --manifest PATH --build-sha256 HEX --session-id ID --as-of UTC --format json|csv|jsonl --output PATH [--source LIST] [--category LIST] [--status LIST] [--search TEXT] [--sort KEYS] [--columns CSV]
                     search-memory --snapshot PATH --type TYPE --value VALUE [--tolerance NUMBER] [--output PATH]
                     find-pattern --snapshot PATH --pattern PATTERN [--output PATH]
                     compare-memory --before PATH --after PATH --type TYPE --mode MODE [--output PATH]
@@ -68,6 +69,11 @@ public static class CliRunner
                 return await FieldCatalogCommand.RunAsync(
                     ParseOptions(args[1..], "--catalog", "--build-sha256", "--session-id", "--as-of", "--output"),
                     output, cancellationToken);
+            if (command == "export-discoveries")
+                return await DiscoveryExportCommand.RunAsync(
+                    ParseOptions(args[1..], "--manifest", "--build-sha256", "--session-id", "--as-of",
+                        "--format", "--output", "--source", "--category", "--status", "--search",
+                        "--sort", "--columns"), output, cancellationToken);
             if (command == "replay-wall-motion")
             {
                 var replayOptions = ParseOptions(args[1..], "--manifest", "--output");

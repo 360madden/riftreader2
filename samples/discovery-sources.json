@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "discovery-sources/1",
+  "sources": [
+    {
+      "sourceId": "sample-catalog",
+      "kind": "field-catalog",
+      "path": "catalog/catalog.json",
+      "byteLength": 4379,
+      "sha256": "0E4DFFFA309B476B9C06B40E467363166E3CEE8AC471F2E3BDC1A603E981DDD1"
+    },
+    {
+      "sourceId": "sample-notes",
+      "kind": "record-set",
+      "path": "discoveries-records.json",
+      "byteLength": 2347,
+      "sha256": "F4C77AE5AAFFD4EFB89BBDA25870B23768538E8CA267C24163F008F5D2DF6C31"
+    }
+  ]
+}

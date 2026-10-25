@@ -23,6 +23,8 @@
   <ItemGroup>
     <None Include="../../samples/demo/*.json*" Link="Fixtures/demo/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../samples/catalog/*.json" Link="Fixtures/catalog/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../samples/discovery-*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../samples/discoveries-*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../contracts/addon/fixtures/*.json" Link="Fixtures/addon/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
