@@ -2,7 +2,9 @@
 
 This directory records actual checks separately from proposed measurements.
 
-Current **ACTUAL GUEST SAMPLER AND BOUNDED MOVEMENT:** [October 25 exact-pinned deployment, 30/30 native reads spanning one 100 ms W pulse, complete advancing Lua snapshots, sub-0.0025 endpoint agreement, candidate-motion-consistent replay and exclusive V19 recovery](native-xyz-sampler-live-2026-10-25.md). Restart/patch qualification remains separate. Controller/PID and pending-trial statements in the older checkpoints below apply only to their recorded times.
+Current **ACTUAL NORMAL RIFT RESTART:** [October 25 unchanged-profile reacquisition, new PID/start/owner, absent/old-process rejection, 5/5 + 3/3 samples, nine advancing Lua pairings, sub-0.0025 native/API agreement and sole V20 recovery](native-xyz-restart-2026-10-25.md). This establishes one observed same-build game restart; patch qualification remains separate. Earlier controller identities below are dated historical observations.
+
+Earlier **ACTUAL GUEST SAMPLER AND BOUNDED MOVEMENT:** [October 25 exact-pinned deployment, 30/30 native reads spanning one 100 ms W pulse, complete advancing Lua snapshots, sub-0.0025 endpoint agreement, candidate-motion-consistent replay and then-exclusive V19 recovery](native-xyz-sampler-live-2026-10-25.md). The later restart record above supersedes that owner and pending-restart status. Controller/PID statements in older checkpoints apply only to their recorded times.
 
 Historical **HOST-ONLY V17 motion preparation:** [same-epoch V17 launcher staged, strict near-time two-native/two-Lua offline comparator, 17 focused tests, a real V16 stale-source negative control, and a 660/660 full Python validation gate](../reference/native-motion-pair-review.md). V16 was the sole console owner at that checkpoint; the later October 25 live record supersedes that ownership and pending-movement status.
 

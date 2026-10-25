@@ -1,6 +1,6 @@
 # Fast known-build player-position sampling
 
-**October 25 live validation:** The pinned guest reader completed its initial 3/3 smoke and a **30/30** native feed spanning one supervised 100 ms pulse. Independent near-time Lua/native endpoint and displacement checks returned `candidate-motion-consistent`. See [original evidence, safe recovery and remaining limits](../validation/native-xyz-sampler-live-2026-10-25.md). This supersedes the historical transfer-preparation status below; normal restart and patch qualification are still pending for this sampler.
+**October 25 live validation:** The pinned guest reader completed its initial 3/3 smoke and a **30/30** native feed spanning one supervised 100 ms pulse. Independent near-time Lua/native endpoint and displacement checks returned `candidate-motion-consistent`. See [original movement evidence and limits](../validation/native-xyz-sampler-live-2026-10-25.md). A [subsequent normal RIFT restart](../validation/native-xyz-restart-2026-10-25.md) passed absent/old-process rejection, unchanged-profile **5/5 + 3/3** reacquisition and fresh Lua agreement in the new process. This supersedes historical transfer-preparation status below. Patch qualification remains separate.
 
 The existing native pointer resolver can already read player-position-like XYZ bytes. This command provides a small **operational candidate feed** without repeating a heap scan or waiting for a full semantic qualification pipeline. It does not replace the independent evidence reviewer.
 

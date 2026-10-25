@@ -1,6 +1,6 @@
 # RiftReader2 handoff — October 25, 2026 (native XYZ direct sampling)
 
-**Superseded live status:** The [later October 25 guest validation](validation/native-xyz-sampler-live-2026-10-25.md) deployed the exact pinned sampler/profile, completed a 30-sample native feed across one bounded pulse, obtained `candidate-motion-consistent` near-time native/Lua evidence, and restored exclusive V19 supervision. Read that record and current status before using this earlier preparation checkpoint. Restart/patch qualification remains separate.
+**Superseded live status:** The [later October 25 guest validation](validation/native-xyz-sampler-live-2026-10-25.md) deployed the exact pinned sampler/profile and passed bounded movement comparison. The [subsequent normal RIFT restart](validation/native-xyz-restart-2026-10-25.md) passed unchanged-profile reacquisition and fresh Lua agreement, then restored exclusive V20 supervision. Read those records and current status before using this earlier preparation checkpoint. Patch qualification remains separate.
 
 **Purpose:** Resume Joey's RiftReader2 work in a later ChatGPT conversation without mistaking staged code for live RIFT proof. This is a durable, tracked checkpoint, not a request to replay stale VM actions. All UTC timestamps are explicit; otherwise use America/New_York.
 
