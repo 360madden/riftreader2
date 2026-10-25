@@ -2,6 +2,13 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**XYZ workflow follow-up:** Added a [reusable saved-session audit](workflows/xyz-collection.md).
+Both retained panel trials replayed: the initial trial correctly reports its 48
+live subnormal leaks; the corrected trial passes with 59 raw startup observations
+withheld and zero live leaks. This is offline evidence review, not another live
+restart. Deployment/transfer/export helper consolidation remains next; patch
+recovery and direct in-guest Computer Use remain deferred.
+
 **Current interaction policy — USER DECISION:** Defer ChatGPT Computer Use for
 direct RIFT interaction inside VMware until Joey explicitly resumes it. Do not
 prioritize further troubleshooting or retesting of that path. Use the verified
