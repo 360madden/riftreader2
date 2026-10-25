@@ -2,6 +2,11 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Working preference — USER DECISION:** Prioritize practical, reliable results
+with small changes and proportional checks. Reuse the existing workflow and move
+to actual use; avoid further infrastructure or documentation layers without a
+concrete need. Essential identity, freshness and controller protections remain.
+
 **Newest XYZ continuation — HOST VERIFIED, LIVE PENDING:** [Reusable Courier and guarded transfer lifecycle](validation/xyz-courier-transfer-2026-10-25.md)
 now use a bounded run configuration, pinned payloads, verified archive contents,
 panel process-continuity checks, and explicit one-use claim/upload phases. The

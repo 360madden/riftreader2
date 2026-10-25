@@ -7,6 +7,15 @@ discovery speed, efficiency, durable knowledge, restart recovery, update recover
 and less repetitive AI work. Movement and turning support controlled tests.
 Dedicated navigation, combat, and player automation belong to a future program.
 
+**Practical-results policy — user decision, 2026-10-25:** This is a personal
+tool, not an enterprise compliance program. Prefer the shortest reliable route
+to a working result. Reuse existing tools, make small changes, and move to actual
+use once the relevant checks pass. Add safeguards for concrete failure risks;
+do not keep adding frameworks, review layers, manifests, or documentation as an
+end in itself. Keep notes concise and checks proportional to the change; a
+documentation-only update does not need the full code-validation suite. Retain
+the essential exact-build, stale-data, restart and single-controller protections.
+
 The product is hybrid: a first-class RIFT Lua addon plus the modular external
 .NET application. Preserve addon API, native memory, and derived evidence as
 distinct sources. See [the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
