@@ -1,6 +1,6 @@
 # Near-time native/Lua motion comparison — V17 offline gate (October 24, 2026)
 
-Status: **reviewer implemented and tested offline; no movement trial, V16 STOP, V17 launch, or new guest sample has occurred.** This is a proposed evidence gate, not a report of measured motion. [The current live native XYZ originals](../validation/native-pointer-xyz-first-live-2026-10-24.md) remain a stationary **candidate-only-not-synchronized** result.
+Status: **reviewer implemented and tested offline; subsequently exercised on actual near-time RIFT movement originals on October 25.** The [actual guest trial](../validation/native-xyz-sampler-live-2026-10-25.md) returned **candidate-motion-consistent** and restored exclusive V19 supervision. The sequence below preserves the earlier V17 preparation; it is historical, not current controller ownership. [The earlier live native XYZ originals](../validation/native-pointer-xyz-first-live-2026-10-24.md) retain their stationary **candidate-only-not-synchronized** scope.
 
 ## Why a separate reviewer is necessary
 
