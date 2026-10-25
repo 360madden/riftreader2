@@ -4,6 +4,10 @@ Use the existing exact-build locating recipe for routine XYZ reads. Do not repea
 heap searches merely because RIFT restarted. Discovery, routine collection and
 independent semantic validation are separate tasks with different evidence needs.
 
+Use the [reusable preparation, returned-archive verification and export commands](../reference/xyz-workflow-tools.md)
+for the local parts of the workflow. They retain the existing live-operation
+boundaries and do not start a transfer or touch VMware.
+
 ## Current workflow
 
 1. Check [current status](../status.md) and the relevant saved recipe. Refresh
@@ -69,9 +73,10 @@ does not resume it or authorize unattended game interaction.
 
 1. **Implemented:** reusable offline panel audit, replayed against both retained
    October 25 trials; [results](../validation/position-panel-review-2026-10-25.md).
-2. Consolidate the existing deployment, transfer and export helpers into reviewed
-   reusable entry points, retaining fixed scope, content pins and sole ownership.
-   The new offline checker does not replace those one-off helpers yet.
+2. **Implemented offline:** pinned deployment payload preparation, returned
+   Courier ZIP verification and audited panel-session export. The authenticated
+   media controls, Courier and live transfer-service lifecycle remain on their
+   existing guarded paths; their generalization is a separate follow-up.
 3. Collect additional normal exit/relaunch cases when the live interaction path
    is explicitly resumed; report the observed count, never unlimited reliability.
 4. Add the evidence to the field catalog without automatically promoting XYZ,

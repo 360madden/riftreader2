@@ -2,11 +2,19 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Newest XYZ workflow result — OFFLINE:** [Reusable preparation, archive verification and panel export](validation/xyz-workflow-tools-2026-10-25.md)
+prepared the pinned corrected reader locally, recovered both retained guest ZIPs
+with their original 260/357 files, and exported audited sessions with the initial
+48 findings preserved and the corrected trial clean. No guest deployment,
+transfer, VM action or new restart occurred. Media/Courier/live transfer-service
+generalization remains separate; patch recovery and direct guest Computer Use
+remain deferred. [Commands and scope](reference/xyz-workflow-tools.md).
+
 **XYZ workflow follow-up:** Added a [reusable saved-session audit](workflows/xyz-collection.md).
 Both retained panel trials replayed: the initial trial correctly reports its 48
 live subnormal leaks; the corrected trial passes with 59 raw startup observations
 withheld and zero live leaks. This is offline evidence review, not another live
-restart. Deployment/transfer/export helper consolidation remains next; patch
+restart. Local preparation/verification/export commands are now available above; patch
 recovery and direct in-guest Computer Use remain deferred.
 
 **Current interaction policy — USER DECISION:** Defer ChatGPT Computer Use for
