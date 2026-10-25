@@ -2,13 +2,25 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
-**Power experiment — observations retained; clean repeat pending:** One reviewed
+**Clean Power test — RESPONSE DEMONSTRATED:** The coordinated hands-off repeat
+recorded one Light's Balm click inside slot 7, Lua **100 → 89 → 95 → 100**, and
+a responding `float64` memory candidate **100 → 89 → 96 → 100**. Health stayed
+18208/18208 and XYZ did not change. The initial latest-frame-only summary missed
+the intermediate Lua values; all validated retained frames recover them. See
+[the evidence and limitations](validation/power-test-2026-10-25.md).
+Candidate `0x202DBECE9C8` is session-only; owner/provenance (including possible
+addon copy), durable locator and restart qualification remain open. The
+16-file export verified; final state is disarmed/idle/no held inputs, queue
+clear. Input testing is finished. Health-change testing and patch recovery
+remain deferred. No input blocker was enabled.
+
+**Earlier Power experiment — interference-qualified observations:** One reviewed
 Light's Balm click was followed by a healing effect, UI Power 88 and advancing
 Lua Power 100 → 93 → 100; health stayed 18208. Four suspected native current-Power
 values remained 100. A later click was recentered away from the hotbar and is
 not a cast trial. Joey then reported using the in-game UI during testing; the
 interference interval is unspecified, so do not call these exclusively controlled
-runs. Input is stopped pending a coordinated hands-off repeat. Evidence and the
+runs. The clean repeat above supersedes that pending step. Evidence and the
 interpretation amendment are at `artifacts/exports/power-live-20261025-01/`.
 The subsequent large inline guest command caused a `vmrun` crash dialog;
 staging and hashing the script, then using a short bootstrap, completed the
@@ -23,12 +35,11 @@ direct ChatGPT Computer Use remain deferred.
 **Class/resource — LIVE IDENTIFIED:** Existing Lua identified Atank as a level
 45 Warrior, role `tank`, with Power 100. Two independent captures contained
 advancing player sequences; in-game ability tooltips independently name Power.
-The guarded helper inspected tooltips and restored action bar 1; it activated
-no ability. Health remains deferred. The resource-change test awaits a suitable
-self ability in an accessible slot. Joey reports placing Light's Balm in slot 7;
-a fresh read-only capture (`resource-lua-20261025-01/slot7-confirm-01/`) confirms
-the new golden-hand icon in that slot on bar 1. Its tooltip/cost and activation
-still need verification before the recorded resource test.
+The earlier guarded preparation inspected tooltips and restored action bar 1
+without activating an ability. Joey then placed Light's Balm in slot 7;
+`resource-lua-20261025-01/slot7-confirm-01/` retained the placement. The clean
+Power test above subsequently verified its tooltip and response. Health
+changed-state qualification remains deferred.
 See the [Lua/resource checkpoint](validation/xyz-goals-implementation-2026-10-25.md#lua-classresource-identification-and-deferred-health-test).
 The 84-file export verified; final state was disarmed/idle/no held inputs and a
 clear queue. Cached background guest login worked; interactive VMware launch

@@ -57,8 +57,10 @@ health meaning/locator/restart qualification remains unfinished. The roadmap is:
    locating recipe is retained, and normal full-game exit/relaunch reacquires it.
    Capture failures instead of repeatedly widening unchanged searches.
 4. **Repeat for the player's resource/power field — active.** Lua identified
-   Warrior / tank and Power; tooltips corroborated the resource name. Select a
-   safe self ability on an accessible slot, then record its decrease/recovery.
+   Warrior / tank and Power; tooltips corroborated the resource name. A
+   [clean Light's Balm test](../validation/power-test-2026-10-25.md) demonstrated
+   consumption/recovery and one responding memory candidate. Establish its
+   owner/provenance and reusable locator next; it may be an addon copy.
    Compare the native changes with Lua. Done when meaning, units,
    availability, locator, invalidation conditions and same-build restart evidence
    are recorded. Historical `power=100` matches are candidates, not completion.
