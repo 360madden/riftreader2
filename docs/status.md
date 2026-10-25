@@ -2,6 +2,18 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Power experiment — observations retained; clean repeat pending:** One reviewed
+Light's Balm click was followed by a healing effect, UI Power 88 and advancing
+Lua Power 100 → 93 → 100; health stayed 18208. Four suspected native current-Power
+values remained 100. A later click was recentered away from the hotbar and is
+not a cast trial. Joey then reported using the in-game UI during testing; the
+interference interval is unspecified, so do not call these exclusively controlled
+runs. Input is stopped pending a coordinated hands-off repeat. Evidence and the
+interpretation amendment are at `artifacts/exports/power-live-20261025-01/`.
+The subsequent large inline guest command caused a `vmrun` crash dialog;
+staging and hashing the script, then using a short bootstrap, completed the
+read-only baseline and two six-round captures. Root cause remains unconfirmed.
+
 **Latest user direction:** Defer the health-change test. Identify the class,
 resource and a suitable ability from Lua, and use the existing guarded helpers
 for the bounded resource test. Health meaning/locator/restart qualification
