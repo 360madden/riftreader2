@@ -29,6 +29,36 @@ internal static class PositionSampleCommand
         if ((long)(sampleCount - 1) * intervalMilliseconds > 60_000)
             throw new ArgumentException("The requested sampling schedule exceeds 60 seconds.");
         var profile = await NativePositionProfileLoader.LoadAsync(profilePath, cancellationToken);
+        var report = await ReadAsync(profile, sampleCount, intervalMilliseconds, cancellationToken,
+            observation => output.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                RecordType = "native-position-sample/1",
+                Qualification = "candidate-only",
+                Observation = observation
+            }, JsonLineOptions)));
+        await JsonReportWriter.WriteNewAsync(outputPath, report, cancellationToken);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            RecordType = "native-position-samples-summary/1",
+            report.ContractVersion,
+            report.Qualification,
+            report.Samples.Status,
+            report.Samples.Reason,
+            report.Samples.CompletedSamples,
+            report.Samples.RequestedSamples,
+            Latest = report.Samples.Observations.LastOrDefault(),
+            Output = Path.GetFullPath(outputPath)
+        }, JsonLineOptions));
+        return report.Samples.Status == "complete" ? 0 : 3;
+    }
+
+    internal static async Task<NativePositionSamplesReport> ReadAsync(
+        LoadedNativePositionProfile profile,
+        int sampleCount,
+        int intervalMilliseconds,
+        CancellationToken cancellationToken,
+        Func<PositionCandidateObservation, Task>? onSample = null)
+    {
         var processes = Process.GetProcessesByName("rift_x64");
         try
         {
@@ -38,13 +68,8 @@ internal static class PositionSampleCommand
                 processes[0].Id, null, profile.Profile.ExecutableSha256, cancellationToken);
             var samples = await PositionCandidateSampler.SampleAsync(
                 profile.Profile, session, sampleCount, intervalMilliseconds, cancellationToken,
-                observation => output.WriteLineAsync(JsonSerializer.Serialize(new
-                {
-                    RecordType = "native-position-sample/1",
-                    Qualification = "candidate-only",
-                    Observation = observation
-                }, JsonLineOptions)));
-            var report = new NativePositionSamplesReport(
+                onSample);
+            return new NativePositionSamplesReport(
                 1,
                 "native-position-samples/1",
                 "candidate-only-not-motion-or-update-qualified",
@@ -60,20 +85,6 @@ internal static class PositionSampleCommand
                     "No Lua freshness, player movement, restart survival or patch survival was tested by this command.",
                     "Raw terminal bytes are not embedded in this compact operational report; retain follow-pointer originals for independent field-evidence review."
                 ]);
-            await JsonReportWriter.WriteNewAsync(outputPath, report, cancellationToken);
-            await output.WriteLineAsync(JsonSerializer.Serialize(new
-            {
-                RecordType = "native-position-samples-summary/1",
-                report.ContractVersion,
-                report.Qualification,
-                report.Samples.Status,
-                report.Samples.Reason,
-                report.Samples.CompletedSamples,
-                report.Samples.RequestedSamples,
-                Latest = report.Samples.Observations.LastOrDefault(),
-                Output = Path.GetFullPath(outputPath)
-            }, JsonLineOptions));
-            return samples.Status == "complete" ? 0 : 3;
         }
         finally
         {

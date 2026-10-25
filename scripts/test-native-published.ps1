@@ -45,6 +45,17 @@ try {
     $staleOutput = Join-Path $runDirectory 'stale.json'
     & $captureExecutable capture-native --request $staleRequest --output $staleOutput > (Join-Path $runDirectory 'stale.stdout.txt') 2> (Join-Path $runDirectory 'stale.stderr.txt')
     if ($LASTEXITCODE -ne 2 -or (Test-Path -LiteralPath $staleOutput)) { throw 'Published native capture accepted a stale epoch.' }
+    $positionProfile = Join-Path (Split-Path -Parent $captureExecutable) 'position-candidate-profile.json'
+    $trackedPositionProfile = Join-Path $PSScriptRoot '../config/position-candidate-profile.json'
+    if (-not (Test-Path -LiteralPath $positionProfile) -or
+        (Get-FileHash -LiteralPath $positionProfile).Hash -ne (Get-FileHash -LiteralPath $trackedPositionProfile).Hash) {
+        throw 'Published position panel is missing its exact default profile sidecar.'
+    }
+    & $captureExecutable position-panel --output-directory $runDirectory > (Join-Path $runDirectory 'panel-existing.stdout.txt') 2> (Join-Path $runDirectory 'panel-existing.stderr.txt')
+    if ($LASTEXITCODE -ne 2 -or
+        (Get-Content -LiteralPath (Join-Path $runDirectory 'panel-existing.stderr.txt') -Raw) -notmatch 'evidence directory already exists') {
+        throw 'Published panel did not load its default profile and reject an existing evidence directory before opening a window.'
+    }
     Write-Output 'Published native smoke passed: synthetic host process only; bundle identity, PE header, stale epoch, and no-overwrite.'
 }
 finally {

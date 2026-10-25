@@ -25,6 +25,7 @@ public static class NativeCommandRunner
             if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             {
                 await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nsample-position --profile PATH --output PATH [--samples N] [--interval-ms N]\nExisting outputs are never replaced.");
+                await output.WriteLineAsync("position-panel [--profile PATH] [--output-directory NEW_DIRECTORY]\nStart / Read / Stop window; defaults to the profile beside this executable and a new local evidence session.");
                 return 0;
             }
 
@@ -176,7 +177,7 @@ public static class NativeCommandRunner
         return capture.Status == "complete" ? 0 : 3;
     }
 
-    private static Dictionary<string, string> ParseOptions(string[] args, params string[] allowed)
+    internal static Dictionary<string, string> ParseOptions(string[] args, params string[] allowed)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         for (var index = 0; index < args.Length; index += 2)

@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+**NATIVE POSITION WINDOW — HOST ONLY:** [Start / Read / Stop implementation, lifecycle/freshness tests and native startup/close; guest restart validation blocked by live desktop permission](position-panel-host-2026-10-25.md). The earlier sampler restart below does not establish this new interface's live behavior.
+
 **EXPORTED RESULTS:** [October 25 portable movement/restart evidence package, readable report, four-record JSON/CSV/JSONL compilation, offline explorer and checksums](native-xyz-results-export-2026-10-25.md). This is an offline export of the saved observations; original epochs and candidate qualifications remain unchanged.
 
 Current **ACTUAL NORMAL RIFT RESTART:** [October 25 unchanged-profile reacquisition, new PID/start/owner, absent/old-process rejection, 5/5 + 3/3 samples, nine advancing Lua pairings, sub-0.0025 native/API agreement and sole V20 recovery](native-xyz-restart-2026-10-25.md). This establishes one observed same-build game restart; patch qualification remains separate. Earlier controller identities below are dated historical observations.
