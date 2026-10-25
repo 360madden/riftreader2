@@ -2,6 +2,11 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: V17 host-only motion comparator and safe successor STAGED — NO VM INPUT
+
+- **Fresh V16 read-only proof:** At **2026-10-25T00:25:38Z**, the authenticated owner remained ready/connected, RIFT foreground PID **6940**/exact build, VMware PID **38044**/same epoch, no held keys, guest disarmed, supervisor running and console exclusively reserved. The no-overwrite **V16→V17 same-epoch handover** prepared plan and launcher at **00:26:31Z** using the existing clean queue; **no V16 STOP marker, VM console access, game input or V17 launch** was performed.
+- **New moving-XYZ offline reviewer:** `scripts/review_native_motion_pair.py` consumes strict advancing typed Lua before/after plus two exact-epoch original native pointer reports. It checks SHA pins, root/owner bytes, player identity, independent snapshots, nonoverlapping chronology, **unrounded at-most-180-second pair lag**, 0.02-unit endpoint tolerance and 0.1-unit minimum source displacement. Status is `candidate-motion-consistent`, `candidate-motion-disagrees`, or `insufficient-source-motion`, always **candidate-only** without stimulus/clock-skew proof. **17/17 focused safety tests** pass, including a real V16 original negative control and direct CLI. The full PowerShell 7.6.8 gate then passed exit **0 at 2026-10-25T00:34:39Z**: **660 Python**, **432 .NET**, 108 Lua, 22 Lua→C# cases, native publish/replay/format, **471 links**; evidence `artifacts/validation/20261025T003336Z-def5acac`. No new actual movement claim. [V17 evidence contract and safe multi-owner sequence](reference/native-motion-pair-review.md).
+
 ## October 24: FIRST LIVE current-epoch native XYZ — TWO ORIGINALS MATCH, V16 RECOVERED
 
 - **Actual game-memory result:** Normal V15 STOP and quarantined queue preceded 33 bounded exact-PID read-only guest PowerShell commands. Two independently saved pointer reports (113.116609 seconds apart) resolved main-module RVA **0x32E0200**, owner **0x211D37C0010**, and owner offsets **+0x320/+0x324/+0x328** to identical native XYZ **(7461.19921875, 863.8524169921875, 2977.061767578125)**. Guest screenshots showed **EXE_GATE=True**, both native command exit codes **0**, and **PTR_A_GATE=True/PTR_B_GATE=True**. No movement or process writes.

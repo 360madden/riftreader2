@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+Latest **HOST-ONLY V17 motion gate (NO MOVEMENT EXECUTED):** [same-epoch V17 launcher staged, new strict near-time two-native/two-Lua offline comparator, 17 focused tests, a real V16 stale-source negative control, and a 660/660 full Python validation gate](../reference/native-motion-pair-review.md). **V16 remains the sole console owner**; V17 is only prepared and needs a normal, separately verified handover before any guest interaction.
+
 Latest **ACTUAL LIVE CURRENT-EPOCH NATIVE XYZ:** [two read-only native owner-memory originals, exact guest ZIP claim/upload, verified sub-0.0025 native-vs-advancing-Lua differences and restored V16](native-pointer-xyz-first-live-2026-10-24.md). **Position is candidate-compatible, not yet synchronized or motion-qualified. V16 PID 28496 now exclusively owns the healthy VM console.** The [V16 preflight and original sequence](current-epoch-pointer-v16-preflight-2026-10-24.md) is retained as a historical preparation record.
 
 Earlier **ACTUAL LIVE RIFT advancing Lua-source breakthrough**: [two exact-epoch read-only game scans, six independently verified original 28 KiB snapshots, six strictly advancing Lua producer comparisons of eight, and historical V15 recovery](typed-inline-first-live-six-snapshots-2026-10-24.md). This source was subsequently compared to current-epoch native XYZ; V15 ownership is historical.
