@@ -2,6 +2,12 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Current interaction policy — USER DECISION:** Defer ChatGPT Computer Use for
+direct RIFT interaction inside VMware until Joey explicitly resumes it. Do not
+prioritize further troubleshooting or retesting of that path. Use the verified
+CLI workflow for applicable VM management; existing live-input scope and guards
+still apply. This policy update performs no VM or game interaction.
+
 **Newest interface result — PASSED:** [Corrected Start / Read / Stop window survived full game exit/relaunch](validation/position-panel-corrected-restart-2026-10-25.md). Fix `8e94c5b` passed **469 .NET, 669 Python, 108 Lua, 22 Lua/C#** and the full gate. New guest installation, actual buttons and normal RIFT **11712 → 1224** restart passed. All **59** subnormal startup reports were retained but withheld from live presentation; the same panel then produced **181** correct readings without another Start. Independent **3/3 before + 3/3 after**, raw float32 agreement, absence and old-epoch rejection passed. All **356** declared original hashes verified. Original media restored through authenticated CLI; V21 **PID 73252** independently ready/connected, sole console, guest disarmed/idle/no held inputs, queue clean, transfer port closed. Game was not foreground at final status. Refresh identities before further input. Portable results: `artifacts/exports/xyz-interface-restart-20261025-02.zip`. Patch recovery stays deferred.
 
 **Earlier interface checkpoint:** [Actual host Read / Start / Stop buttons passed; guest restart validation in progress](validation/position-panel-live-progress-2026-10-25.md). Computer Use now works; the earlier permission refusal is historical. Production code `8a9f894` passed the full **465 .NET, 669 Python, 108 Lua and 22 Lua/C#** gate. V20 exited normally at **13:15:23 UTC**, V21 is prepared but unstarted, and the queue is quarantined for exclusive maintenance. Guarded guest-console clicks/keys are explicitly authorized. After VMware's settings dialog closed, guest File Explorer still showed the old `RR2_FIELDS` disc; manual Browse selection of the pinned ISO is pending. No new guest install or game restart has been performed. Refresh actual ownership on resume. Patch recovery stays deferred.

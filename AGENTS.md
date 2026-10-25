@@ -51,6 +51,14 @@ VM/host restarts are separate scopes. Report observed restart cases honestly;
 one successful case does not establish unlimited reliability or field semantics.
 See [the accepted policy](docs/decisions/0008-full-game-restart-durability.md).
 
+## Computer Use policy — user decision, 2026-10-25
+
+**Defer ChatGPT Computer Use for direct interaction with RIFT inside VMware
+until Joey explicitly resumes it.** Do not make troubleshooting or retesting
+that path the next task. Prefer the verified CLI workflow for applicable VMware
+management operations. This deferral does not grant new live-input authority;
+existing scope, identity checks, console ownership and input guards still apply.
+
 ## Orientation and durable context
 
 - Work in `C:\work\riftreader2`.
