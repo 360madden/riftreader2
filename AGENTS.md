@@ -34,6 +34,23 @@ candidate fields for navigation, combat, casting, stats, and abilities) on
 outside this repository. Keep this a practical personal tool: reuse existing
 modules and selected lab tools, avoid new frameworks and unnecessary process.
 
+## Current durability policy — user decision, 2026-10-25
+
+Prioritize durable collection that survives **fully exiting RIFT and launching
+the game again**. Restart means the old game process has ended and a new
+process/start identity is acquired; addon reload, character relog, or reader
+restart alone does not satisfy it. Preserve reusable build-specific locating
+recipes and evidence, then resolve fresh process/owner addresses on each run.
+Reject absent/stale processes and never report cached coordinates as fresh.
+
+**Patch/update recovery is deferred until Joey explicitly resumes it.** Do not
+treat it as the next task or a prerequisite for accepting demonstrated same-build
+restart durability. Keep exact-build checks: a changed executable SHA still
+fails closed; deferral does not authorize carrying offsets to another build.
+VM/host restarts are separate scopes. Report observed restart cases honestly;
+one successful case does not establish unlimited reliability or field semantics.
+See [the accepted policy](docs/decisions/0008-full-game-restart-durability.md).
+
 ## Orientation and durable context
 
 - Work in `C:\work\riftreader2`.

@@ -6,8 +6,9 @@ Status: goals and modular foundation implementation authorized on 2026-10-18.
 
 RiftReader2 should collect information about RIFT so that future programs can
 build on dependable, reusable findings. Joey's priorities are speed, efficiency,
-reliability, persistence across restarts, and quick recovery when updates change
-where useful information can be found.
+reliability, and persistence across full game exits and relaunches. Recovery when
+updates change where useful information can be found remains a longer-term goal;
+Joey explicitly deferred patch recovery on 2026-10-25.
 
 RiftReader2 is an improved version developed around the goals and decisions in
 this repository. The original RiftReader is a reference for evidence, lessons,
@@ -28,7 +29,7 @@ parts of V2. See [the hybrid decision](decisions/0002-hybrid-addon-and-reader.md
 3. Preserve findings and supporting evidence so sessions can resume without
    repeating completed investigation.
 4. Reacquire applicable data after a restart using preserved knowledge.
-5. Use previous findings to narrow recovery work after game updates.
+5. Preserve findings for future update recovery; patch recovery is currently deferred.
 6. Move time-consuming, repetitive, and numerical work into local tools where
    that produces measurable benefit.
 7. Make the resulting knowledge useful to other programs.
@@ -51,9 +52,19 @@ The durable result should identify a field's meaning and units, how to locate
 it, which build and conditions it applies to, how it was validated, and what
 evidence supports it. Current process addresses alone are insufficient.
 
-Fast restart recovery and fast update recovery are separate objectives.
-A method proven across restarts of one build is not thereby proven against
-future game updates. Recovery speed and validity need separate measurements.
+**Current priority, reaffirmed by Joey on 2026-10-25:** durable collection across
+fully exiting RIFT and launching it again. A restart requires the old game
+process to end, a fresh process/start identity, and reacquisition through the
+preserved locating recipe. Addon reload, character relog, and reader restart
+alone do not satisfy this requirement. VM/host restart validation is separate.
+
+Patch/update recovery is deferred until Joey explicitly resumes it; it is not
+the automatic next milestone or a condition for accepting observed same-build
+restart durability. Exact-build guards remain mandatory: a changed executable
+SHA fails closed. A method proven on one build is not thereby proven after an
+update. Preserve the number and scope of observed restart cases and keep native
+field semantics separately qualified. See [the accepted restart durability
+policy](decisions/0008-full-game-restart-durability.md).
 
 ## Current authorized work
 

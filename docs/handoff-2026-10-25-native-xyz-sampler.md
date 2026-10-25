@@ -2,6 +2,15 @@
 
 **Superseded live status:** The [later October 25 guest validation](validation/native-xyz-sampler-live-2026-10-25.md) deployed the exact pinned sampler/profile and passed bounded movement comparison. The [subsequent normal RIFT restart](validation/native-xyz-restart-2026-10-25.md) passed unchanged-profile reacquisition and fresh Lua agreement, then restored exclusive V20 supervision. Read those records and current status before using this earlier preparation checkpoint. Patch qualification remains separate.
 
+**Current policy override — Joey, October 25:** Prioritize durable collection
+across fully exiting RIFT (old process gone) and launching a new game process,
+with fresh identity and recipe resolution. **Patch/update recovery is deferred
+until explicitly resumed**; the earlier patch-recovery sequencing below is
+historical and must not select the next task. Exact-build guards and candidate
+qualification remain unchanged. See [ADR 0008](decisions/0008-full-game-restart-durability.md).
+Addon reload, character relog and reader restart alone do not meet the game
+restart requirement; VM/host restarts are separate scopes.
+
 **Purpose:** Resume Joey's RiftReader2 work in a later ChatGPT conversation without mistaking staged code for live RIFT proof. This is a durable, tracked checkpoint, not a request to replay stale VM actions. All UTC timestamps are explicit; otherwise use America/New_York.
 
 ## Read this first

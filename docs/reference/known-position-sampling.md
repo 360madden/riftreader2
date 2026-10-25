@@ -31,11 +31,26 @@ From the second valid sample onward, each JSON line also includes `observation.c
 
 Defaults are three samples separated by a 500 ms *post-read delay*. Allowed bounds are 1–30 samples and 0–2000 ms delay, with at most 60 seconds of requested delays. The actual cadence may be slower because exact process identity checks include executable hashing. Cancellation publishes no completed report. A completed sample is still marked `candidate-only-not-motion-or-update-qualified`; it is useful for testing and observation, **not** qualified navigation truth.
 
+## Restart durability policy
+
+Joey's [October 25 policy](../decisions/0008-full-game-restart-durability.md)
+prioritizes surviving **full RIFT exit and relaunch**: confirm the old process
+has ended, acquire the new process/start identity, and resolve the saved
+build-specific recipe to current owner addresses. Addon reload, character relog
+or reader restart alone does not meet this requirement. Preserve absence/stale
+rejections and new-epoch evidence; cached coordinates cannot substitute for a
+fresh read. One observed same-build exit/relaunch has passed; VM/host restart
+scope and general reliability are separate.
+
+Patch/update recovery is deferred until Joey explicitly resumes it. Exact-build
+guards remain mandatory. This policy changes priorities and definitions, not
+the profile/report schema or existing candidate qualification labels.
+
 ## Recovery and research separation
 
 - **Known exact build, chain works:** use this short direct path. No broad value scan, typed-prefix scout, or addon-frame search is required just to read the candidate bytes.
 - **Chain read fails or returns nonfinite values:** preserve the failed report and troubleshoot the target/profile using `inspect-native`, `follow-pointer`, and saved evidence. Do not substitute a different heap address automatically.
-- **Executable SHA changes after a patch:** fail closed. Establish and review a new root/profile through [memory discovery](memory-discovery.md) and [native field evidence](native-field-evidence.md); do not silently carry this profile to another build.
+- **Executable SHA changes after a patch:** fail closed and preserve the mismatch. Patch recovery is deferred; do not automatically begin rediscovery or carry this profile to another build. If Joey explicitly resumes that work, establish and review a new root/profile through [memory discovery](memory-discovery.md) and [native field evidence](native-field-evidence.md).
 - **Semantic verification:** use the separate [near-time motion reviewer](native-motion-pair-review.md), source clock checks, stimulus receipts and field catalog. Operational sampling does not satisfy those gates.
 
 The command performs **no game input, process writes, debugger attachment, VM control, external delivery or field promotion**. Its compact report includes sample timestamps, native owner address, bytes SHA-256, XYZ and error status, but not the original 816-byte owner buffer. Use the existing `follow-pointer` capture to retain independently reviewable raw bytes.

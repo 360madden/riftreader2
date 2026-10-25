@@ -2,9 +2,26 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
-**Current resume checkpoint:** [October 25 normal RIFT restart, unchanged-profile XYZ reacquisition, stale/absent-process rejection and fresh Lua comparison](validation/native-xyz-restart-2026-10-25.md). The deployed reader is live-proven across this **one same-build game restart**, following the [earlier movement trial](validation/native-xyz-sampler-live-2026-10-25.md). Next separate scope: patch-specific profile/recovery work. The [earlier handoff](handoff-2026-10-25-native-xyz-sampler.md) preserves the operating workflow; its pending-deployment and old-owner statements are historical.
+**Current resume checkpoint:** [October 25 normal RIFT restart, unchanged-profile XYZ reacquisition, stale/absent-process rejection and fresh Lua comparison](validation/native-xyz-restart-2026-10-25.md). The deployed reader is live-proven across this **one same-build game restart**, following the [earlier movement trial](validation/native-xyz-sampler-live-2026-10-25.md). Current priority: durable collection across full game exit and relaunch; patch/update recovery is **deferred until Joey explicitly resumes it**, not the automatic next task. See the [accepted durability policy](decisions/0008-full-game-restart-durability.md). The [earlier handoff](handoff-2026-10-25-native-xyz-sampler.md) preserves the operating workflow; its pending-deployment and old-owner statements are historical.
 
 **Results exported:** [portable October 25 evidence package and report](validation/native-xyz-results-export-2026-10-25.md), with four hash-pinned discovery records (JSON/CSV/JSONL), offline explorer, raw guest archives, exact restart replay evidence and payload checksums. Both original process epochs and candidate-only limitations are preserved. Output: `artifacts/exports/xyz-live-and-restart-20261025-01.zip`.
+
+## October 25: Durable restart policy — USER DECISION
+
+- **Restart means fully exiting RIFT, confirming the old process has ended, then
+  launching the game again and reacquiring fresh process/start/owner identity.**
+  Addon reload, character relog, or reader restart alone does not satisfy this.
+  VM/host restarts are separate validation scopes.
+- Preserve reusable build-specific locating recipes and evidence; resolve current
+  addresses on each run, reject absent/stale processes, and never substitute old
+  coordinates for fresh data. The existing October 25 evidence establishes one
+  observed full game exit/relaunch on the same build.
+- Patch recovery is deferred until explicitly resumed. Exact executable SHA
+  guards remain in force; a changed build fails closed. Semantic qualification
+  and the limits of the observed restart case remain explicit.
+- Policy is recorded in AGENTS, the brief, roadmap, handoff and
+  [ADR 0008](decisions/0008-full-game-restart-durability.md). No new live trial is
+  implied by this documentation update.
 
 ## October 25: Normal game restart and XYZ reacquisition — LIVE PASSED
 

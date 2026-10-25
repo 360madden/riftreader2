@@ -9,6 +9,21 @@ work or the isolated Windows Live executable for live acquisition. Each
 increment should leave a useful artifact and a compact handoff so a
 later model does not need to rediscover the reasoning.
 
+## Current priority override — October 25, 2026
+
+Joey prioritizes durable collection across **fully exiting RIFT and launching it
+again**. Confirm the old process has ended, acquire the new process/start identity,
+and resolve the preserved build-specific recipe afresh. Addon reload, character
+relog or reader restart alone is insufficient; VM/host restarts are separate.
+
+**Patch/update recovery is deferred until Joey explicitly resumes it.** Later
+update-recovery references remain future work and do not select the next task.
+Do not weaken exact-build guards: changed executable SHA still fails closed.
+The [accepted policy](../decisions/0008-full-game-restart-durability.md) controls
+this priority. The [October 25 XYZ trial](../validation/native-xyz-restart-2026-10-25.md)
+establishes one observed normal full game exit/relaunch; it does not qualify all
+future restarts or other fields.
+
 ## 0. Reproducible repository foundation
 
 Deliver the pinned .NET 10 solution, five production modules, two test projects,

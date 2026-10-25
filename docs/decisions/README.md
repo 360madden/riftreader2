@@ -33,6 +33,9 @@ Source: Joey's instructions in the RiftReader v2 conversation.
 - [0007: Read-only discovery compilation](0007-discovery-compilation-views.md):
   pinned offline inputs, normalized candidate-preserving views, and local exports.
 
+- [0008: Full game restart durability; patch recovery deferred](0008-full-game-restart-durability.md):
+  Joey's October 25 priority and definition of restart; exact-build checks remain.
+
 ## Future records
 
 Use a short numbered Markdown record here when a material choice is made, for
