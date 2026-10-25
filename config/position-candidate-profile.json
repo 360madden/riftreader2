@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "native-position-profile/1",
+  "fieldId": "player.position.xyz",
+  "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+  "rootRva": "0x32E0200",
+  "xyzOffsets": ["0x320", "0x324", "0x328"],
+  "qualification": "candidate-only",
+  "evidenceReference": "docs/validation/native-pointer-xyz-first-live-2026-10-24.md"
+}

@@ -42,6 +42,20 @@ The addon command requires an exact saved frame (no trailing newline); it report
 the frame hash with source binding and freshness explicitly unverified. See
 [the addon guide](addon/README.md) and [wire contract](contracts/addon/README.md).
 
+## Fast known-build native XYZ sampling
+
+The Windows Live executable can repeatedly read the previously discovered,
+build-pinned native XYZ **candidate** without scanning for Lua frames or heap values:
+
+```powershell
+RiftReader2.Live.exe sample-position --profile position-candidate-profile.json --samples 3 --interval-ms 500 --output position-samples-new.json
+```
+
+Run on the same Windows machine as RIFT using the profile in
+`config/position-candidate-profile.json`. Reacquisition is per current PID/module
+and each read is identity-checked; another game build is rejected. Full semantics,
+motion, and update survival remain separate [validation tasks](docs/reference/known-position-sampling.md).
+
 ## Offline discovery explorer
 
 The [discovery compiler](docs/reference/discovery-compilation.md) combines

@@ -1,6 +1,13 @@
 # Current status
 
-Updated: 2026-10-24 (America/New_York; Windows host clock).
+Updated: 2026-10-25 (America/New_York; Windows host clock).
+
+## October 25: Known-build XYZ direct sampler and NDJSON feed — CODE VERIFIED; NO NEW GUEST SAMPLE
+
+- **Reuse-first operational path:** The new Windows Live `sample-position` command consumes a small strict `native-position-profile/1` JSON recipe pinned to the October 24 RIFT executable SHA **7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD**, root RVA **0x32E0200**, and owner float32 offsets **+0x320/+0x324/+0x328**. It discovers exactly one fresh `rift_x64` PID, opens a read-only exact-build session, re-resolves the chain per sample without heap/Lua rescanning, and refuses stale/wrong-build identity. Bounds: 1–30 reads, 0–2000 ms post-read interval, at most 60 seconds scheduled delays.
+- **Honest, immediate consumption:** Each sample emits one compact JSON line as soon as it completes, including explicit unavailable/nonfinite states; the final line summarizes the run. A separate no-overwrite `native-position-samples/1` report retains native owner session address, terminal-byte SHA, actual timestamps, XYZ when finite, and failure status. The report remains **candidate-only-not-motion-or-update-qualified**; the direct reader neither promotes catalog truth nor proves game behavior or future patch applicability. [Usage and limits](reference/known-position-sampling.md).
+- **Real host verification:** Seven new focused .NET 10 tests pass (known build, changing XYZ, profile hashing/schema, wrong build, identity invalidation, failed reads, nonfinite values, live sample callback), and the Windows Live `--help` smoke lists the command. Final PowerShell **7.6.8** full gate exited **0 at 2026-10-25T08:36:37Z**: **448 .NET tests** (309 core + 139 Live), **660 Python**, 108 Lua, 22 Lua→C# contracts, published-native synthetic-host smoke, format, and **496 documentation links**; evidence `artifacts/validation/20261025T083534Z-0d3b488a`.
+- **Explicit live boundary:** The new sampler has **not** been installed or run against the RIFT-Lab guest yet. The last verified VM authority was V16 exclusive coordinator; check fresh console ownership/process/build before any guest maintenance. Next: guarded exact-epoch publish/guest smoke, then near-time motion evidence via the existing [V17 offline reviewer](reference/native-motion-pair-review.md). Automatic cross-patch locator rediscovery remains separate.
 
 ## October 24: Evidence-preserving discovery compilation and offline explorer — NO VM INPUT
 

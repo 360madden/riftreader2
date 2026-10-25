@@ -24,7 +24,7 @@ public static class NativeCommandRunner
                 throw new NotSupportedException("Native commands require 64-bit Windows.");
             if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             {
-                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nExisting outputs are never replaced.");
+                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nsample-position --profile PATH --output PATH [--samples N] [--interval-ms N]\nExisting outputs are never replaced.");
                 return 0;
             }
 
@@ -47,6 +47,8 @@ public static class NativeCommandRunner
             if (args[0] == "follow-pointer")
                 return await MemoryDiscoveryCommand.FollowPointerAsync(
                     ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
+            if (args[0] == "sample-position")
+                return await PositionSampleCommand.RunAsync(ParseOptions(args[1..], "--profile", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             throw new ArgumentException($"Unknown command '{args[0]}'.");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
