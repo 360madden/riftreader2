@@ -1,5 +1,9 @@
 # Position window: full game restart and startup issue, October 25
 
+**Resolved in a separate trial:** [corrected reader full restart validation passed](position-panel-corrected-restart-2026-10-25.md).
+The open gate and maintenance state below describe this first trial's checkpoint.
+Its original defect evidence remains unchanged.
+
 The new Start / Read / Stop window was installed and exercised in RIFT-Lab-1.
 One normal complete game exit and relaunch established automatic same-build
 process/owner reacquisition. **Acceptance remains open:** the retained journal

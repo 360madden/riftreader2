@@ -4,6 +4,12 @@ Authorized by Joey on 2026-10-25: build the interface around the existing XYZ
 sampler and validate it through complete game exit and relaunch. Patch recovery
 remains deferred under [ADR 0008](../decisions/0008-full-game-restart-durability.md).
 
+**Completed:** [corrected guest full-game restart validation](../validation/position-panel-corrected-restart-2026-10-25.md).
+The first trial exposed subnormal initialization values; the corrected build
+withheld all 59 observed startup reports and recovered real XYZ automatically.
+One corrected-reader same-build restart, original evidence and restored sole
+supervision are established. Patch recovery remains deferred.
+
 1. Reuse the existing sampler and exact-build profile. Add a small native Windows
    Forms window to the existing Windows Live executable, using the installed
    .NET 10 Windows desktop SDK/reference pack and self-contained deployment.

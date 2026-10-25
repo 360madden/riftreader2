@@ -38,6 +38,12 @@ monotonic clock; a slow completion is not relabeled fresh. The cadence and
 freshness window are operational bounds, not a claim of synchronized Lua/native
 sampling. The user should enter the world before interpreting XYZ.
 
+Subnormal float32 coordinates are also withheld as **Waiting for position**;
+this addresses initialization values observed during a full game relaunch.
+Monitoring retries, while raw reports remain intact. Zero and normal negative
+coordinates remain allowed. This numerical check does not prove general
+world-entry or semantic readiness.
+
 While monitoring, a closed game produces unavailable reads with no current XYZ;
 later reads rediscover the new process after normal relaunch. Exact executable
 SHA guards remain mandatory. A changed build fails closed; no automatic patch
@@ -59,6 +65,7 @@ the Windows desktop framework; installing it separately in the guest is not
 required. The existing console acquisition commands remain available.
 
 Follow the [implementation and live acceptance plan](../planning/position-panel-roadmap.md).
-See the [host implementation checkpoint and pending live gate](../validation/position-panel-host-2026-10-25.md).
+See the [corrected full game restart validation](../validation/position-panel-corrected-restart-2026-10-25.md)
+and the historical [host implementation checkpoint](../validation/position-panel-host-2026-10-25.md).
 Host tests and actual guest restart validation must be recorded separately;
 the earlier sampler restart alone does not establish this new UI's behavior.
