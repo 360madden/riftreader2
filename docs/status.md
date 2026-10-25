@@ -2,6 +2,23 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Latest user direction:** Defer the health-change test. Identify the class,
+resource and a suitable ability from Lua, and use the existing guarded helpers
+for the bounded resource test. Health meaning/locator/restart qualification
+therefore remains unfinished; do not provoke health loss. Patch recovery and
+direct ChatGPT Computer Use remain deferred.
+
+**Class/resource — LIVE IDENTIFIED:** Existing Lua identified Atank as a level
+45 Warrior, role `tank`, with Power 100. Two independent captures contained
+advancing player sequences; in-game ability tooltips independently name Power.
+The guarded helper inspected tooltips and restored action bar 1; it activated
+no ability. Health remains deferred. The resource-change test awaits a suitable
+self ability in an accessible slot (requested: Light's Balm in empty slot 7).
+See the [Lua/resource checkpoint](validation/xyz-goals-implementation-2026-10-25.md#lua-classresource-identification-and-deferred-health-test).
+The 84-file export verified; final state was disarmed/idle/no held inputs and a
+clear queue. Cached background guest login worked; interactive VMware launch
+was separately rejected because that account is not the logged-in desktop user.
+
 **Goals 1–2 — LIVE DEMONSTRATED:** [Reusable workflow, real catalog and numeric scout](validation/xyz-goals-implementation-2026-10-25.md)
 now have retained live proof. Repeatable run 04 reused the cached guest login
 without prompting, verified 36 returned phase files, issued and released one
@@ -16,15 +33,15 @@ holes. Three promising health/power-shaped blocks now have a verified **252-byte
 targeted reread, so the next test does not need another broad scan. Evidence:
 `artifacts/validation/health-scout-20261025-02/`. These are candidate session
 addresses; health/resource changes, meanings, durable locators and their full
-game restart checks remain unproved. Await a coordinated safe health change
-and identification of the character's resource/ability; see the checkpoint above.
+game restart checks remain unproved. Health-change testing is now deferred;
+class/resource identification is complete, and a safe ability test remains next.
 
 **Paired capture ready; one candidate rejected:** Three fresh Lua/native rounds
 showed one block no longer matched unchanged Lua health/power. Two blocks remain
 plausible; the next native request is just **168 bytes**. The paired-capture
 export, original failed narrow Lua search and negative candidate evidence are
-retained under the same health-scout directory. The next step requires a
-coordinated actual health/resource change, not more unchanged scans.
+retained under the same health-scout directory. The next step requires an
+actual resource change, not more unchanged scans; health changes are deferred.
 
 **Remaining goals:** [Current practical roadmap](planning/implementation-roadmap.md#remaining-practical-goals--refreshed-october-25-2026)
 now separates completed XYZ interface/restart/movement, reusable workflow and

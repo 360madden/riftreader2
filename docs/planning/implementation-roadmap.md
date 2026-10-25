@@ -31,7 +31,10 @@ complete, including corrected same-build full-game exit/relaunch. Native/Lua
 displacement also passed through both manual movement and the
 [guarded helper](../validation/xyz-guarded-displacement-2026-10-25.md).
 Do not repeat these completed milestones as though they were still missing.
-The remaining active goals, in working order, are:
+Goals 1–2 have since passed live; see the
+[implementation evidence](../validation/xyz-goals-implementation-2026-10-25.md).
+Joey deferred the health-change test on October 25. Continue resource work while
+health meaning/locator/restart qualification remains unfinished. The roadmap is:
 
 1. **Make the proven XYZ run easy to repeat.** Consolidate the working CLI
    collection and guarded-helper steps into a small reusable entry point. Reuse
@@ -39,21 +42,24 @@ The remaining active goals, in working order, are:
    before, apply one reviewed bounded pulse, capture after, compare, export and
    clean up. Done when a fresh run works without editing dated artifact scripts
    or asking Joey to press movement keys. Keep credentials out of logs; persistent
-   credential storage is a separate choice, not assumed to exist.
+   credential caching was subsequently authorized and demonstrated without a
+   prompt on run 04.
 2. **Record XYZ as durable field knowledge.** Add a real catalog definition and
    scoped assessments linking the locating recipe, Lua/native comparison,
    movement and full-game restart evidence. Preserve startup failures and the
    corrected result. Done when the existing catalog command rebuilds a clear
    exact-build qualification report without AI interpreting scattered notes.
    State untested claims explicitly; do not claim patch survival.
-3. **Apply the same method to one new field: health first.** Use Lua health and
+3. **Health — changed-state test deferred.** Use Lua health and
    maximum health as the reference, gather controlled changed-state observations,
    and inspect only relevant native candidates. Done when actual changes
    distinguish the field from constant values and cached copies, a reusable
    locating recipe is retained, and normal full-game exit/relaunch reacquires it.
    Capture failures instead of repeatedly widening unchanged searches.
-4. **Repeat for the player's resource/power field.** Identify the resource type
-   and compare real decreases/recovery with Lua. Done when meaning, units,
+4. **Repeat for the player's resource/power field — active.** Lua identified
+   Warrior / tank and Power; tooltips corroborated the resource name. Select a
+   safe self ability on an accessible slot, then record its decrease/recovery.
+   Compare the native changes with Lua. Done when meaning, units,
    availability, locator, invalidation conditions and same-build restart evidence
    are recorded. Historical `power=100` matches are candidates, not completion.
 
@@ -64,8 +70,9 @@ Do not require endless repeat trials before moving to the next field.
 
 **Deferred or conditional:** patch/update recovery; VM/host reboot, crash and
 snapshot-restore qualification; precise velocity/input timing; other fields such
-as casting/cooldowns/abilities after health/resource; persistent credentials only
-if chosen; SQLite only after a measured need. The optional new Courier need not
+as casting/cooldowns/abilities after health/resource; SQLite only after a
+measured need. Guest credential caching is already authorized and verified.
+The optional new Courier need not
 be guest-deployed while the proven VMware CLI transfer route suffices. Dedicated
 navigation/combat automation remains outside this project. Direct ChatGPT
 Computer Use stays deferred; separately authorized guarded helpers remain usable.

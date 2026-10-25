@@ -130,4 +130,55 @@ requests and original captures are preserved. The readiness export is 249,079
 bytes with SHA-256
 `CA77B65AA2F76BE2521622F5E7DA168CD8353120C482FEDB6CE714924E7BA29D`.
 No input was issued; final state was disarmed/idle with no held inputs. Further
-qualification awaits the user's coordinated health/resource change test.
+qualification requires changed-state evidence. The subsequent user direction
+and current resource result follow below.
+
+## Lua class/resource identification and deferred health test
+
+Joey deferred the health-change test and requested class/resource identification
+from Lua plus use of the existing guarded helpers for the resource test. Health
+meaning, locator and restart qualification remain unfinished; do not provoke
+health loss. Patch recovery and direct ChatGPT Computer Use remain deferred.
+
+`artifacts/validation/resource-lua-20261025-01/` retains two independent 8 MiB
+captures beginning at `0x52A70000` and the exact deployed API-probe source.
+Source SHA-256 `1E1FDF14FD81F33AA465874AEEEE32BCD8A5EC92AA5DFDAEA46126AE4DCE5BCA`
+matches the reference addon. `Inspect.Unit.Detail` output advanced from sequence
+178201 / sampledAt 19310.219 to 178215 / 19311.742. Both report **Atank, level 45,
+calling `warrior`, role `tank`, Power 100, health/max 18208**. Mana fields are
+empty, not zero. Player identity is `u035400012FA2D207`.
+
+The game remained PID 1224/start ticks 639285359295548343, exact executable SHA
+`7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD`.
+V21 remained the sole controller of the unchanged VM epoch. No addon deployment,
+reload, new game restart or credential prompt was needed.
+
+Guarded pointer hovers confirmed **Face Slam: 10 Power**, **Light's Decree:
+20 Power**, and **Pacifying Strike: 20 Power**. These target/control or damage
+abilities were not activated. A helm icon was the Ashen Budgie mount. The Lua
+ability list includes Light's Balm and defensive abilities, but its string
+formatter omits the cost fields already collected in the internal Lua table;
+it does not supply verified hotbar placement. Action bars 2–6 were empty;
+bar 1 was restored and verified visually. Six menu clicks succeeded and released.
+Wheel adjustments netted zero notches. No ability was activated and no health
+loss was induced. This is preparation, **not a Power-change test**.
+
+The existing helper accepts movement keys and bounded relative mouse input.
+Its cursor edge guard makes the bottom ability-book menu unreliable at this
+window size. Do not weaken the guard or keep guessing clicks. Requested minimal
+setup: put Light's Balm in empty slot 7 on bar 1 without casting it; then inspect
+the tooltip and record a single guarded self-use with before/decrease/recovery
+Lua and the retained 168-byte native request. No candidate is promoted yet.
+
+Cached guest credentials continued to work for read-only background commands.
+A separate interactive VMware launch was rejected because the cached account
+does not match the logged-in desktop user. This is not a lost cache; do not
+repeat login dialogs or attempt desktop impersonation as a workaround.
+
+The selected evidence export at `resource-lua-20261025-01/export/evidence.zip`
+contains **84 files**, 13,224,060 bytes, verified SHA-256
+`826E17D2902B87C7B8A700BAE0F0B5084E53616D2B940B71CC750A00D0CEAD44`.
+It includes both original captures, source/transfer hashes, parsed Lua evidence,
+selected tooltip screenshots, action/release receipts and final state. Other
+intermediate captures remain in the original directory. Private arm tokens are
+excluded. Final state was disarmed/idle/no held inputs, with a clear queue.
