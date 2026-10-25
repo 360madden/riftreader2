@@ -37,7 +37,8 @@ game/build, no held inputs, guest disarmed/idle, queue free with cleanup receipt
 and unchanged VMware epoch. V21 recovery was prepared before normal V20 shutdown.
 V20 **PID 56804 exited normally at 13:15:23 UTC**. The canonical queue is
 quarantined and V21 has not started; do not try to use V20's old endpoint as live
-authority. An explicit exclusive console guard covers the ongoing GUI trial.
+authority. Each guest-console action acquires its own exclusive console guard
+and verifies the maintenance, queue and VM identity gates before and after input.
 
 Ignored working evidence directory:
 `artifacts/update-recovery-20261023-01/xyz-interface-restart-oct25-01/`.
@@ -65,16 +66,24 @@ automation is added by this validation helper.
 
 ## Current UI dependency
 
-Joey manually opened VMware's Virtual Machine Settings dialog. Computer Use can
-read it, but list selection, coordinate input and keyboard navigation have not
-selected CD/DVD. The dialog still shows the original mounted media
-`C:\work\riftreader2\artifacts\field-discovery\rr2-fields.iso`; no new media or
-guest files have been applied by the agent.
+Joey explicitly authorized **Use guarded VM-console tools** for guest clicks
+and keys, manually selected CD/DVD (SATA), and clicked OK after the agent set the
+ISO field. The dialog closed. However, the guest File Explorer subsequently
+showed **DVD Drive (D:) RR2_FIELDS** with the original FieldLab files, rather
+than the new `RR2_XYZ_UI` volume. The typed field readback and closed dialog did
+not establish that VMware applied the new media.
 
-The user was asked to click **CD/DVD (SATA)** and to explicitly choose whether
-the existing guarded VM-console tools may handle guest clicks/keys after that.
-The UI tool requires explicit authorization before switching interaction
-technologies. Keep that question pending; elapsed time is not authorization.
+Original screenshots and per-action identity/maintenance receipts are retained
+in `action-1792936599865609000/` and `action-1792936612276488300/` under the working
+evidence directory. No new guest software has run. Joey has been asked to use
+VMware's **Browse** button to select the exact pinned ISO and apply it. VMware
+does not respond reliably to the UI tool's button clicks. Guest terminal
+automation and undocumented runtime hardware changes are not being used.
+
+Read-only maintenance recheck at **13:58:28 UTC** confirmed V20 exited, V21
+unstarted, queue quarantined, unchanged VMware process/start/log identity and
+transfer port 8765 closed. Receipt: `media-awaiting-browse-1792936708718676900.json`
+under the working evidence directory.
 
 A physical-Escape stop at 13:28 UTC ended the earlier UI turn. Its maintenance
 lock was explicitly released and no guest work continued. Joey then explicitly
