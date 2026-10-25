@@ -2,6 +2,16 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Newest live result — DISPLACEMENT PASSED:** [CLI collection and native/Lua comparison](validation/xyz-cli-displacement-2026-10-25.md)
+reused the installed reader through authenticated VMware guest commands and file
+copies. User-reported manual movement produced **2.03814 native / 2.03196 Lua game
+units**, maximum per-axis displacement residual **0.00635** (gate 0.04), with
+native/Lua acquisitions about **0.3 seconds apart** at each endpoint. All six
+native samples completed, four cross-phase Lua comparisons advanced, and all 34
+returned originals verified. Temporary guest credentials were not saved; the
+session closed normally, V21 remained sole owner, and final status was idle with
+no held inputs. No new game restart, automated movement or patch recovery occurred.
+
 **Working preference — USER DECISION:** Prioritize practical, reliable results
 with small changes and proportional checks. Reuse the existing workflow and move
 to actual use; avoid further infrastructure or documentation layers without a
