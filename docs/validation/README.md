@@ -2,6 +2,8 @@
 
 This directory records actual checks separately from proposed measurements.
 
+**EXPORTED RESULTS:** [October 25 portable movement/restart evidence package, readable report, four-record JSON/CSV/JSONL compilation, offline explorer and checksums](native-xyz-results-export-2026-10-25.md). This is an offline export of the saved observations; original epochs and candidate qualifications remain unchanged.
+
 Current **ACTUAL NORMAL RIFT RESTART:** [October 25 unchanged-profile reacquisition, new PID/start/owner, absent/old-process rejection, 5/5 + 3/3 samples, nine advancing Lua pairings, sub-0.0025 native/API agreement and sole V20 recovery](native-xyz-restart-2026-10-25.md). This establishes one observed same-build game restart; patch qualification remains separate. Earlier controller identities below are dated historical observations.
 
 Earlier **ACTUAL GUEST SAMPLER AND BOUNDED MOVEMENT:** [October 25 exact-pinned deployment, 30/30 native reads spanning one 100 ms W pulse, complete advancing Lua snapshots, sub-0.0025 endpoint agreement, candidate-motion-consistent replay and then-exclusive V19 recovery](native-xyz-sampler-live-2026-10-25.md). The later restart record above supersedes that owner and pending-restart status. Controller/PID statements in older checkpoints apply only to their recorded times.

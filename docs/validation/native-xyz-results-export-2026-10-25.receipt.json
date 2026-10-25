@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "purpose": "completed portable XYZ movement/restart export receipt; kept outside archive to avoid self-reference",
+  "archivePath": "artifacts/exports/xyz-live-and-restart-20261025-01.zip",
+  "archive": {
+    "byteLength": 14328593,
+    "sha256": "42FC1E4011858305D6ABD844E58CFBC81CCAA24B38BDC6772039C179623EC9DF"
+  },
+  "archiveMembers": 103,
+  "payloadFiles": 102,
+  "payloadManifest": {
+    "byteLength": 19165,
+    "sha256": "C2A4FF1528FA60CB2BD752F7EB4E77015CF42CE28102D0A2A256F6B211E49A35"
+  },
+  "canonicalCompilation": {
+    "byteLength": 9520,
+    "sha256": "E3F084CA16903C14CFA16806F1AA58CC99FE403D4300F8DE8AB43BADD5B90994"
+  },
+  "sourceManifest": {
+    "byteLength": 1080,
+    "sha256": "1BE82B1787ACB6B536E921EB86B7B16DD0DAB13B5BAEF64C2C83F2DF7A120B85"
+  },
+  "records": 4,
+  "originalSourceEpochs": [
+    "pid:6940/ticks:639284177321390013",
+    "pid:9704/ticks:639285237698112372"
+  ],
+  "sourceRepositoryRevision": "993f6b49ded3e0b8da8b45cd1cdcc07520ba56dc",
+  "fullGate": {
+    "completedAtUtc": "2026-10-25T12:09:11.3487505Z",
+    "exitCode": 0
+  },
+  "browserSmoke": {
+    "status": "passed",
+    "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "loadedRecords": 4,
+    "statusMatches": 1,
+    "shaMatches": 1,
+    "timeSort": "ascending",
+    "csvRows": 1,
+    "jsonRows": 1
+  },
+  "qualification": "candidate native fields; one bounded movement trial and one observed same-build normal restart; no patch qualification"
+}

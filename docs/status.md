@@ -4,6 +4,8 @@ Updated: 2026-10-25 (America/New_York; Windows host clock).
 
 **Current resume checkpoint:** [October 25 normal RIFT restart, unchanged-profile XYZ reacquisition, stale/absent-process rejection and fresh Lua comparison](validation/native-xyz-restart-2026-10-25.md). The deployed reader is live-proven across this **one same-build game restart**, following the [earlier movement trial](validation/native-xyz-sampler-live-2026-10-25.md). Next separate scope: patch-specific profile/recovery work. The [earlier handoff](handoff-2026-10-25-native-xyz-sampler.md) preserves the operating workflow; its pending-deployment and old-owner statements are historical.
 
+**Results exported:** [portable October 25 evidence package and report](validation/native-xyz-results-export-2026-10-25.md), with four hash-pinned discovery records (JSON/CSV/JSONL), offline explorer, raw guest archives, exact restart replay evidence and payload checksums. Both original process epochs and candidate-only limitations are preserved. Output: `artifacts/exports/xyz-live-and-restart-20261025-01.zip`.
+
 ## October 25: Normal game restart and XYZ reacquisition — LIVE PASSED
 
 - Used normal RIFT **Exit Game**, its countdown, Glyph **Play** and Atank's world-entry **Play**. RIFT PID **6940** / ticks **639284177321390013** exited; new PID **9704** / ticks **639285237698112372** started **11:16:09.8112372 UTC**, with unchanged game executable SHA. VMware was not restarted.
