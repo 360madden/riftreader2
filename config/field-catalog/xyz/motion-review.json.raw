@@ -1,0 +1,121 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-motion-pair-review/1",
+  "status": "candidate-motion-consistent",
+  "qualification": "candidate-only-no-stimulus-or-clock-skew-proof",
+  "target": {
+    "processId": 1224,
+    "processStartUtcTicks": 639285359295548343,
+    "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD"
+  },
+  "playerUnitId": "u035400012FA2D207",
+  "rootRva": "0x32E0200",
+  "xyzOffsets": [
+    "0x320",
+    "0x324",
+    "0x328"
+  ],
+  "requestSha256": "C37F3D1B9DAC094D86572011AE7190066865C58B479EF38F2A429CF1E8256698",
+  "typedComparisonSha256": "81EF0E5E2ED7CB7FC5C619DC7FECDAFA7F21E2B0B4E263CD4F51EEC3A3A6F212",
+  "tolerance": 0.02,
+  "maxPairLagSeconds": 180,
+  "minMovementUnits": 0.1,
+  "nativeSamples": {
+    "before": {
+      "sourceSha256": "136CB227E9CB8ADE74D2574F176F81A74DCDFFD93ED5D45B9842EAFAA485B212",
+      "completedAtUtc": "2026-10-25T17:39:25.960763+00:00",
+      "ownerSessionAddress": "0x202BA8B1480",
+      "mainModuleBaseAddress": "0x7FF6EBDA0000",
+      "rootPointerAddress": "0x7FF6EF080200",
+      "xyz": {
+        "x": 7442.19482421875,
+        "y": 863.5908203125,
+        "z": 2973.460693359375
+      }
+    },
+    "after": {
+      "sourceSha256": "44D196A2CBC5F1400D81C51A19E414429CBB170859EAA8417708F74AB03C148A",
+      "completedAtUtc": "2026-10-25T17:40:03.980280+00:00",
+      "ownerSessionAddress": "0x202BA8B1480",
+      "mainModuleBaseAddress": "0x7FF6EBDA0000",
+      "rootPointerAddress": "0x7FF6EF080200",
+      "xyz": {
+        "x": 7441.58544921875,
+        "y": 863.5908203125,
+        "z": 2973.526611328125
+      }
+    }
+  },
+  "typedSamples": {
+    "before": {
+      "completedAtUtc": "2026-10-25T17:39:26.287075+00:00",
+      "snapshotSha256": "A696944B7CF1CC10CDC5DF8EDEEB75F44BC02E878FDC7DDFE1B8F4E8B68B4C51",
+      "wireSha256": "AD4361A6B32E8CDE2B1BB20A20462B8309747791FE01D45534D6F70AEDECB988",
+      "playerUnitId": "u035400012FA2D207",
+      "sequence": 21218,
+      "frameTime": 10838.149414062,
+      "xyz": {
+        "x": 7442.1997070312,
+        "y": 863.58996582031,
+        "z": 2973.4599609375
+      }
+    },
+    "after": {
+      "completedAtUtc": "2026-10-25T17:40:04.283239+00:00",
+      "snapshotSha256": "9B46BB3E5C3E2F18C3F811FA65A2C11ED79872F8E2FDD84CFCE1277C5F3792DE",
+      "wireSha256": "4298148824BD52754A7FF10765E5C2953B72CA1569FF83A1CDB7F60069E60377",
+      "playerUnitId": "u035400012FA2D207",
+      "sequence": 21293,
+      "frameTime": 10876.303710938,
+      "xyz": {
+        "x": 7441.58984375,
+        "y": 863.58996582031,
+        "z": 2973.5300292969
+      }
+    }
+  },
+  "nativeMinusTypedSampleTimeSeconds": {
+    "before": -0.326,
+    "after": -0.303
+  },
+  "endpointAgreement": {
+    "before": {
+      "nativeMinusLua": {
+        "x": -0.0048828124,
+        "y": 0.0008544922,
+        "z": 0.0007324219
+      },
+      "allAxesWithinTolerance": true
+    },
+    "after": {
+      "nativeMinusLua": {
+        "x": -0.0043945312,
+        "y": 0.0008544922,
+        "z": -0.0034179688
+      },
+      "allAxesWithinTolerance": true
+    }
+  },
+  "typedDisplacement": {
+    "x": -0.6098632812,
+    "y": 0.0,
+    "z": 0.0700683594
+  },
+  "nativeDisplacement": {
+    "x": -0.609375,
+    "y": 0.0,
+    "z": 0.0659179688
+  },
+  "nativeMinusTypedDisplacement": {
+    "x": 0.0004882812,
+    "y": 0.0,
+    "z": -0.0041503906
+  },
+  "limitations": [
+    "Guest native and typed source acquisition times are not simultaneous; source age is bounded, not zero.",
+    "Guest and host clock skew has not been independently measured.",
+    "No independent reviewed movement action/release receipt is checked here; correlation is not causation.",
+    "A typed producer frame can predate its capture; advancing sequence alone cannot prove wall-clock freshness.",
+    "Only the pinned one-hop owner window in the exact process epoch was read; patch/restart resilience is unproved."
+  ]
+}

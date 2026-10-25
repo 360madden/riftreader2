@@ -2,10 +2,18 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Goals 1–2 — LIVE DEMONSTRATED:** [Reusable workflow, real catalog and numeric scout](validation/xyz-goals-implementation-2026-10-25.md)
+now have retained live proof. Repeatable run 04 reused the cached guest login
+without prompting, verified 36 returned phase files, issued and released one
+guarded 100 ms W pulse, and produced consistent native/Lua displacement. The
+real catalog mechanically supports exact-build meaning, locator and the one
+observed same-build full-game restart. Health and resource/power changed-state
+discovery remain open; patch survival remains unqualified and deferred.
+
 **Remaining goals:** [Current practical roadmap](planning/implementation-roadmap.md#remaining-practical-goals--refreshed-october-25-2026)
-now separates completed XYZ interface/restart/movement work from the remaining
-sequence: reusable XYZ run entry point, real XYZ catalog qualification, health,
-then resource/power. Another XYZ restart is a confidence follow-up, not a repeated
+now separates completed XYZ interface/restart/movement, reusable workflow and
+real catalog work from the remaining sequence: health, then resource/power.
+Another XYZ restart is a confidence follow-up, not a repeated
 acceptance blocker. Patch recovery stays deferred; optional Courier deployment
 is not required while authenticated CLI transfers meet the need.
 
@@ -34,14 +42,14 @@ with small changes and proportional checks. Reuse the existing workflow and move
 to actual use; avoid further infrastructure or documentation layers without a
 concrete need. Essential identity, freshness and controller protections remain.
 
-**Newest XYZ continuation — HOST VERIFIED, LIVE PENDING:** [Reusable Courier and guarded transfer lifecycle](validation/xyz-courier-transfer-2026-10-25.md)
-now use a bounded run configuration, pinned payloads, verified archive contents,
-panel process-continuity checks, and explicit one-use claim/upload phases. The
-accepted Courier compiled and passed preflight; 39 focused cases and a static
-historical transfer preview passed. No new guest installation, lab listener,
-VM operation or restart occurred. Next is a separately bounded manual guest
-trial under fresh maintenance guards; patch recovery and direct in-game
-Computer Use remain deferred.
+**Newest repeatable XYZ result — LIVE PASSED:** [Repeatable workflow](reference/xyz-live-workflow.md)
+run 04 returned `candidate-motion-consistent`: **0.665936 native / 0.673551
+Lua units**, maximum per-axis displacement residual **0.0078125**, all **6/6**
+cross-phase comparisons advancing. Baseline/after transfers verified **19 + 17**
+original files. The cached login established in run 02 was reused without a
+prompt; no credentials entered project files. Final state was foreground,
+disarmed, idle and no inputs held. Verified export: **63 files**, 1,712,950
+bytes, SHA-256 `7C68EDED513C16981F49D54B0C6813F1AEE939CF5D35EBED778247AEC5F85FB6`.
 
 **Newest XYZ workflow result — OFFLINE:** [Reusable preparation, archive verification and panel export](validation/xyz-workflow-tools-2026-10-25.md)
 prepared the pinned corrected reader locally, recovered both retained guest ZIPs

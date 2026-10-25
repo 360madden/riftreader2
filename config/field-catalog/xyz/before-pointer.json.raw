@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "native-pointer-follow/1",
+  "requestSha256": "D7486133898F7A9DBF905A3A677C06A6AEEAA6134F668D2725B4728E3B0D3811",
+  "implementation": {
+    "toolVersion": "0.1.0.0",
+    "deploymentKind": "single-file-bundle",
+    "assemblySha256": null,
+    "bundleFileName": "RiftReader2.Live.exe",
+    "bundleSha256": "E01EA1DF88BD70E760F91D4DDB33757D647290A293166EC272DA2BAF2A617E95"
+  },
+  "completedAtUtc": "2026-10-25T14:34:43.1534213Z",
+  "chain": {
+    "rootRva": 53346816,
+    "offsets": [
+      0
+    ]
+  },
+  "resolution": {
+    "status": "complete",
+    "reason": null,
+    "expectedIdentity": {
+      "processId": 11712,
+      "processStartUtcTicks": 639285339497136209,
+      "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+      "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "moduleBaseAddress": 140698495614976,
+      "moduleSize": 62611456
+    },
+    "observedIdentity": {
+      "processId": 11712,
+      "processStartUtcTicks": 639285339497136209,
+      "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+      "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "moduleBaseAddress": 140698495614976,
+      "moduleSize": 62611456
+    },
+    "hops": [
+      {
+        "level": 1,
+        "pointerAddress": 140698548961792,
+        "pointerBytes": "EABzM8IBAAA=",
+        "pointerValue": 1933598457872,
+        "offset": 0,
+        "resolvedAddress": 1933598457872
+      }
+    ],
+    "terminalAddress": 1933598457872,
+    "terminalRead": {
+      "status": "success",
+      "bytes": "uDo+7vZ/AACoOj7u9n8AABAAczPCAQAAgKMw7PZ/AAAY/j3u9n8AAAj+Pe72fwAAEABzM8IBAADAYzDs9n8AABj+Pe72fwAACP497vZ/AAAQAHMzwgEAAJBgMOz2fwAAGP497vZ/AAAI/j3u9n8AABAAczPCAQAAMEkw7PZ/AACoAHMzwgEAAKgAczPCAQAACANzM8IBAAB0AGUAcgB2AGEAbAAAADAAMAAwADAAAADAAAAAAAAAAHIAAAAAAAAAIPJwM8IBAAAQAHMzwgEAACDycDPCAQAAAQAAAAAAAAAAAHMzwgEAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAczPCAQAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAwABzM8IBAACB/gAAAAAAAEwAaQBzAHQAZQBuAGUAcgBMAGUAcgBwAFQAbwBDAGEAbQBlAHIAYQAAAAAAAAAAAAAAMAAAAAAAQf4AAAAAAAAwAC4AMAAxADAAMAAwADAAAAAwADAAMAAh/gAAAAAAAEDycDPCAQAAMAFzM8IBAABA8nAzwgEAAAH+AAAAAAAAIPJwM8IBAAAQAHMzwgEAACDycDPCAQAAAQAAAAAAAAAAAP0uwgEAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAAAAcgB1AGUAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAUANzM8IBAACR/QAAAAAAABAAczPCAQAAMPFwM8IBAABwA3MzwgEAAAAAAAAAAAAAAABhM8IBAAAAAAAAAAAAAAAAAAAAAAAABwAAAAAAAAAAADUAAAAAAAAAAAAAAAAAAAAAAAAAAAAHAAAAAAAAAEDycDPCAQAAIf0AAAAAAAAg8nAzwgEAAHADczPCAQAAIPJwM8IBAAABAAAAAAAAAAAA+i7CAQAAAAAAAAAAAAAAAAAAAAAAAAcAAAAAAAAAAAByAHUAZQAAAAAAAAAAAAAAAAAAAAAABwAAAAAAAADwCvguwgEAAAD8AAAAAAAAm0lXQoSTzL8AAAAAAAAAAAAAAAAAAAAAAL76LsIBAAAKJelFe/NXRN4JOkUAADAA",
+      "win32ErrorCode": null,
+      "reason": null
+    },
+    "failedReadAddress": null,
+    "failedRead": null
+  },
+  "limitations": [
+    "The root RVA is relocatable only for the exact executable build; resolved addresses are session state.",
+    "A successful chain read demonstrates address resolution, not game-field meaning."
+  ]
+}

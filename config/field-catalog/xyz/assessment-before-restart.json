@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-assessment/1",
+  "assessmentId": "xyz-before-corrected-restart-20261025",
+  "fieldId": "player.position.xyz",
+  "fieldDefinitionSha256": "0F5FAA3661BBA09845D252B6226C465BBA584F18FBBCDC00C1119101803DD4D8",
+  "reviewer": "RiftReader2 October 25 evidence review",
+  "method": "Review the corrected panel's exact-build pre-restart pointer evidence together with its full-game absence, relaunch, fresh-owner, and old-epoch rejection manifest. Retain the preceding trial audit as contrary implementation history: it found 48 live subnormal startup presentations, which motivated the corrected reader but did not invalidate the module-relative locating recipe.",
+  "evidenceOrigin": "rift-recording",
+  "assessedAtUtc": "2026-10-25T17:45:00Z",
+  "expiresAtUtc": null,
+  "applicability": {
+    "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "sessionId": "rift-11712-639285339497136209"
+  },
+  "declarations": [
+    {
+      "claim": "restart-survival",
+      "outcome": "supports",
+      "rationale": "The corrected trial resolved the recipe in this pre-restart process, proved process absence, then resolved a different owner in a fresh same-build process; the old-process request was rejected. This is one observed full-game restart, not unlimited reliability."
+    }
+  ],
+  "artifacts": [
+    {
+      "evidenceRole": "observation",
+      "path": "before-pointer.json.raw",
+      "byteLength": 3124,
+      "sha256": "F73FC23CA795E20BCA93BD93886425DA0D1B5BBC4A6B97AB3FFC64F70A05C41E",
+      "evidenceKind": "native-pointer-follow/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-11712-639285339497136209"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "restart-package.json.raw",
+      "byteLength": 47225,
+      "sha256": "63B4B1C40C980CB001C72650B4B615EAC600000D23393826A5B03E062E38556A",
+      "evidenceKind": "xyz-interface-full-game-restart-gui-evidence",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-11712-639285339497136209"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "panel-initial-review.json.raw",
+      "byteLength": 27325,
+      "sha256": "AB9475D607A8EE950D55C13E4CB220BC8D5CD27595238C06B45E773AF47E2660",
+      "evidenceKind": "native-position-panel-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-11712-639285339497136209"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "panel-corrected-review.json.raw",
+      "byteLength": 30904,
+      "sha256": "99B96ED8EB8703BADE3E0F9E3A675CF668936178EBF5DAC9ED3D5175C1F80951",
+      "evidenceKind": "native-position-panel-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-11712-639285339497136209"
+    }
+  ]
+}

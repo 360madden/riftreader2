@@ -9,6 +9,9 @@ topic below instead of loading every document for each task.
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
+| Live XYZ workflow | [Repeatable CLI capture and guarded movement](reference/xyz-live-workflow.md) | One configured run, fresh screenshot review, comparison and evidence export. |
+| Real field catalog | [XYZ field knowledge](reference/xyz-field-catalog.md) | Exact-build meaning, locator and observed restart assessments; patch survival unqualified. |
+| Numeric discovery | [Bounded value scout](reference/native-value-scout.md) | Seed health/resource candidates once, then use small changed-state captures. |
 | Planning | [Discovery compilation roadmap](planning/discovery-compilation-roadmap.md) | Finalized offline compiler, filtering, export, and explorer milestones. |
 | Completed task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | Historical W/S/A/D validation phases and evidence. |
 | Native controls | [Native VM control roadmap](planning/native-vm-control-roadmap.md) | Repository-owned movement/camera implementation and explicit live limits. |

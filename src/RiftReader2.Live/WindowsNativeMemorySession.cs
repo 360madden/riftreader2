@@ -132,7 +132,8 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
     public IReadOnlyList<WindowsMemoryRegion> EnumerateReadableRegions(
         int maxRegionCount,
         int maxDurationMilliseconds,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        uint? requiredType = null)
     {
         ObjectDisposedException.ThrowIf(disposed, this);
         if (maxRegionCount is < 1 or > 262_144)
@@ -148,7 +149,7 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
 
         var stopwatch = Stopwatch.StartNew();
         var querySize = (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>();
-        var regions = new List<WindowsMemoryRegion>();
+        var collector = new WindowsMemoryRegionCollector(maxRegionCount, requiredType);
         while (address <= maximum)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -163,14 +164,10 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
             if (regionSize == 0 || regionBase > address || next <= address)
                 throw new InvalidDataException($"VirtualQueryEx returned a nonadvancing region at 0x{address:X}.");
             if (IsCommittedReadable(info))
-            {
-                if (regions.Count >= maxRegionCount)
-                    throw new InvalidDataException($"Readable memory region count exceeds the requested limit of {maxRegionCount}.");
-                regions.Add(new(regionBase, regionSize, info.Protect, info.Type));
-            }
+                collector.Add(new(regionBase, regionSize, info.Protect, info.Type));
             address = next;
         }
-        return regions;
+        return collector.Regions;
     }
 
     public async ValueTask<string?> RevalidateAsync(CancellationToken cancellationToken)
@@ -432,3 +429,31 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
 }
 
 public sealed record WindowsMemoryRegion(ulong BaseAddress, ulong RegionSize, uint Protection, uint Type);
+
+internal sealed class WindowsMemoryRegionCollector
+{
+    private readonly int maxRegionCount;
+    private readonly uint? requiredType;
+    private readonly List<WindowsMemoryRegion> regions = [];
+
+    internal WindowsMemoryRegionCollector(int maxRegionCount, uint? requiredType)
+    {
+        if (maxRegionCount is < 1 or > 262_144)
+            throw new ArgumentOutOfRangeException(nameof(maxRegionCount));
+        this.maxRegionCount = maxRegionCount;
+        this.requiredType = requiredType;
+    }
+
+    internal IReadOnlyList<WindowsMemoryRegion> Regions => regions;
+
+    internal void Add(WindowsMemoryRegion region)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        if (requiredType is { } type && region.Type != type)
+            return;
+        if (regions.Count >= maxRegionCount)
+            throw new InvalidDataException(
+                $"Readable memory region count exceeds the requested limit of {maxRegionCount} after applying the requested type filter.");
+        regions.Add(region);
+    }
+}
