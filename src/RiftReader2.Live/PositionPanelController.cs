@@ -317,6 +317,11 @@ public sealed class PositionPanelController : IDisposable
             reason = candidate.Reason ?? "finite-complete-xyz-required";
             return false;
         }
+        if (float.IsSubnormal(x) || float.IsSubnormal(y) || float.IsSubnormal(z))
+        {
+            reason = "position-values-not-ready";
+            return false;
+        }
         if (!string.Equals(report.Profile.ExecutableSha256,
             report.Samples.Identity.ExecutableSha256, StringComparison.Ordinal))
         {

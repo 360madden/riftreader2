@@ -251,6 +251,53 @@ public sealed class PositionPanelControllerTests
         Assert.False(controller.State.IsReading);
     }
 
+    [Theory]
+    [InlineData("x")]
+    [InlineData("y")]
+    [InlineData("z")]
+    public async Task SubnormalCoordinateOnAnyAxisIsNotPublished(string axis)
+    {
+        var subnormal = float.Epsilon;
+        var x = axis == "x" ? subnormal : 1f;
+        var y = axis == "y" ? subnormal : 2f;
+        var z = axis == "z" ? subnormal : 3f;
+        using var controller = new PositionPanelController(
+            _ => Task.FromResult(Report(Identity(42, 100), x, y, z)));
+        controller.Start();
+
+        await controller.ReadAsync();
+
+        Assert.Equal("unavailable", controller.State.Status);
+        Assert.Equal("position-values-not-ready", controller.State.Reason);
+        Assert.Null(controller.State.Identity);
+        Assert.Null(controller.State.Observation);
+    }
+
+    [Fact]
+    public async Task MonitoringRecoversWhenSameNewProcessCoordinatesInitialize()
+    {
+        var identity = Identity(11712, 200);
+        var reports = new Queue<NativePositionSamplesReport>([
+            Report(identity, 9.918325e-39f, 1.63e-43f, 4.2245e-39f),
+            Report(identity, 0f, -1.25f, 2.5f)
+        ]);
+        using var controller = new PositionPanelController(
+            _ => Task.FromResult(reports.Dequeue()));
+        controller.Start();
+
+        await controller.ReadAsync();
+        Assert.Equal("unavailable", controller.State.Status);
+        Assert.Equal("position-values-not-ready", controller.State.Reason);
+        Assert.Null(controller.State.Observation);
+
+        await controller.ReadAsync();
+        Assert.Equal("live", controller.State.Status);
+        Assert.Equal(identity, controller.State.Identity);
+        Assert.Equal(0f, controller.State.Observation!.X);
+        Assert.Equal(-1.25f, controller.State.Observation.Y);
+        Assert.Equal(2.5f, controller.State.Observation.Z);
+    }
+
     private static NativeProcessIdentity Identity(int processId, long ticks) =>
         new(processId, ticks, @"C:\RIFT\rift_x64.exe", BuildSha, 0x140000000, 0x4000000);
 

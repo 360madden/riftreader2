@@ -194,9 +194,10 @@ internal sealed class PositionPanelForm : Forms.Form
         readButton.Enabled = !state.IsReading;
         stopButton.Enabled = state.IsMonitoring || state.IsReading || state.Observation is not null;
         var absent = state.Reason?.Contains("found 0.", StringComparison.Ordinal) == true;
+        var initializing = state.Reason == "position-values-not-ready";
         var unsupportedBuild = state.Reason?.Contains("SHA-256", StringComparison.Ordinal) == true ||
             state.Reason == "profile-process-build-mismatch";
-        statusLabel.Text = absent ? "Waiting for RIFT" : state.Status switch
+        statusLabel.Text = absent ? "Waiting for RIFT" : initializing ? "Waiting for position" : state.Status switch
         {
             "live" => state.IsMonitoring ? "Monitoring · Fresh reading" : "Fresh reading",
             "waiting" => "Waiting for RIFT",
@@ -213,6 +214,9 @@ internal sealed class PositionPanelForm : Forms.Form
             $"Game session {state.Identity.ProcessId}";
         freshnessLabel.Text = observation is null ? "" : $"Updated {DateTimeOffset.Parse(observation.CompletedAtUtc, CultureInfo.InvariantCulture):HH:mm:ss 'UTC'} · fresh for up to 3 seconds";
         reasonLabel.Text = absent ? "RIFT is closed. Launch it and enter the world to read your position." :
+            initializing ? state.IsMonitoring
+                ? "Position values are still initializing. Monitoring will retry automatically."
+                : "Position values are still initializing. Enter the world, then choose Read or Start." :
             unsupportedBuild ? "This game build does not match the saved profile. Patch recovery is deferred." :
             state.Status == "unavailable" ? "The current position could not be read. Details were saved in this session's evidence." :
             state.Status == "stale" ? "The last reading has expired. Choose Read or Start to get a fresh position." :
