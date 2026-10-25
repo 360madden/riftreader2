@@ -55,6 +55,7 @@ record independent leased screenshots and ROI-level pixel changes, without claim
 | [Saved wall-motion replay](wall-replay-2026-10-19.md) | Independent V2 replay of one content-pinned V1 capture: free-travel plausibility and two decisive wall disagreements. |
 | [Native capture](native-capture-2026-10-19.md) | Final native bundle: bounded raw reads, explicit failures, exact identities, publication, and ordinary RIFT restart rejection/reacquisition. |
 | [Field catalog](field-catalog-2026-10-19.md) | Offline qualification of content-bound definitions and assessments, scoped confidence, disagreement, expiration, and deterministic rebuilding. |
+| [Discovery compilation/export](discovery-compilation-2026-10-24.md) | Complete offline compiler gate, synthetic sample, and imported original V15/V16 native/Lua review records; no VM access. |
 | [Supervised experiments](experiments-2026-10-19.md) | Bounded RIFT pulse, API before/after samples, identity/duplicate rejection, and stop-before-input. |
 | [Memory discovery](memory-discovery-2026-10-19.md) | Published RIFT map/snapshot/pointer commands, explicit failures, and offline searches on actual captures. |
 | [Native player fields: partial handoff](native-player-fields-2026-10-19.md) | Stationary native/Lua position candidate, failed old health seeds, retained pulse evidence, and unfinished restart qualification. |

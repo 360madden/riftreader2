@@ -2,6 +2,13 @@
 
 Updated: 2026-10-24 (America/New_York; Windows host clock).
 
+## October 24: Evidence-preserving discovery compilation and offline explorer — NO VM INPUT
+
+- **Finalized plan and implementation:** D0 [bounded compilation roadmap](planning/discovery-compilation-roadmap.md) commit `d62cbc3`, D1/D2 compiler/filter/sort/JSON+CSV+JSONL commit `0f31cf6`. Strict explicit SHA/byte-pinned source manifest, honest per-row qualifications, stable filters/sorts, deterministic results, and never-overwrite output. The self-contained `scripts/discovery_explorer.html` previews a user-chosen JSON compilation in a browser with search, header sorting, categorical filters, evidence inspection, pagination, and local filtered downloads. See [usage contract](reference/discovery-compilation.md) and [ADR 0007](decisions/0007-discovery-compilation-views.md).
+- **Actual historical RIFT input replay, read-only:** One V15/V16 advancing-typed-source original and one native pointer review original were pinned in an ignored local manifest, compiled to two distinct rows with separate source hashes and epochs. Typed row remains `advanced-in-covered-scope` / source-only; native row remains `candidate-compatible` / **not synchronized or motion-qualified**. This run did not contact VMware, start a host listener, read the game process, or alter V16 console ownership. [Evidence and limitations](validation/discovery-compilation-2026-10-24.md).
+
+- **Actual local Chrome UI proof and final gate:** Independent headless Chrome loaded **6 synthetic** and **2 previously retained real RIFT** rows via the local file picker; status/SHA filter, precise UTC sort, CSV and JSON filtered downloads passed (jobs `rr2-disc-d4-browser-real-01`, `rr2-disc-d4-browser-live-evidence-01`). The full PowerShell 7.6.8 `scripts/validate.ps1` gate then finished **exit 0 at 2026-10-25T01:51:18Z**, **441 .NET**, **660 Python**, 108 Lua, 22 Lua→C# contracts, published-native smoke, formatting, 490 links. Evidence `artifacts/validation/20261025T015017Z-106b7fd1`. [Full proof](validation/discovery-compilation-2026-10-24.md); human visual/accessibility review remains separate.
+
 ## October 24: V17 host-only motion comparator and safe successor STAGED — NO VM INPUT
 
 - **Fresh V16 read-only proof:** At **2026-10-25T00:25:38Z**, the authenticated owner remained ready/connected, RIFT foreground PID **6940**/exact build, VMware PID **38044**/same epoch, no held keys, guest disarmed, supervisor running and console exclusively reserved. The no-overwrite **V16→V17 same-epoch handover** prepared plan and launcher at **00:26:31Z** using the existing clean queue; **no V16 STOP marker, VM console access, game input or V17 launch** was performed.

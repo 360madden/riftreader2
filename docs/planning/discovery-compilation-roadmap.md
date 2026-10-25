@@ -1,6 +1,6 @@
 # Discovery compilation, query and export roadmap
 
-Status: **finalized design, implementation authorized October 24, 2026**.
+Status: **D0–D4 implemented and validated October 24, 2026 (America/New_York)**; next-stage features explicitly deferred.
 Owner: RiftReader2. Scope: offline evidence presentation for other programs and human review. No guest input, live memory reads, VMware access, new service or new database.
 
 ## Outcome
@@ -17,7 +17,7 @@ Compile *explicitly selected, retained* RIFT evidence into a deterministic, read
 6. **Storage choice:** keep files as authoritative. A compiled JSON view is disposable/rebuildable. Do not add SQLite until repeated measured workloads demonstrate a concrete shortcoming (roadmap step 7).
 7. **No overwrite.** Publish files atomically with create-new behavior; reject invalid manifest, stale hash, duplicate IDs, output conflict, unknown options, oversized sources and canceled operations before a successful report. Default deterministic ordering and stable tie-breakers.
 
-## Planned stages and acceptance gates
+## Implemented stages and acceptance gates
 
 ### D0. Finalized contract and roadmap (checkpoint commit)
 - Document data identity, bounded manifest and normalized row shape.
@@ -46,6 +46,10 @@ Compile *explicitly selected, retained* RIFT evidence into a deterministic, read
 - Tracked synthetic compilation fixture; examples and exact CLI instructions. Real ignored live evidence can be imported only when individually declared/pinned; do not commit bulky/private artifacts.
 - Focused tests, then `pwsh -NoProfile -File scripts/validate.ps1` with actual exit-code/output review. Test deterministic two-run output, bad SHA, invalid paths, categories/status separation and filtered file contents.
 - Update documentation index, CLI help and `docs/status.md`; commit coherent verified milestones locally. No push or deployment.
+
+## Completion evidence
+
+D0 design was committed as `d62cbc3`; D1/D2 as `0f31cf6`. D3 local browser functionality passed on six synthetic and two retained real RIFT discovery records, including filtered CSV/JSON downloads. D4 passed the full PowerShell 7.6.8 validation gate on 2026-10-25 UTC with 441 .NET, 660 Python, 108 Lua, 22 Lua-to-C# and 490 documentation links. All selected retained game evidence remained read-only; [precise evidence and handoff](../validation/discovery-compilation-2026-10-24.md). The console owner remains the latest independently recorded V16.
 
 ## Deferred by design
 

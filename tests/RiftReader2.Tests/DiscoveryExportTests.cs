@@ -97,6 +97,36 @@ public sealed class DiscoveryExportTests
     }
 
     [Fact]
+    public void SearchFindsRetainedProvenanceLimitationsAndUtcObservationTime()
+    {
+        var one = MakeRow("one", new DateTimeOffset(2026, 10, 25, 0, 2, 0, TimeSpan.Zero)) with
+        {
+            SourceId = "first-report",
+            SourcePath = "saved/native-a.json",
+            EvidenceSha256 = new string('F', 64),
+            Units = "degrees",
+            Limitations = ["No verified control"]
+        };
+        var two = MakeRow("two", null) with
+        {
+            SourceId = "second-report",
+            SourcePath = "saved/lua-b.json",
+            EvidenceSha256 = new string('D', 64),
+            Units = "metres",
+            Limitations = ["Historical only"]
+        };
+        var rows = new[] { one, two };
+        foreach (var (query, expected) in new[]
+                 {
+                     ("native-a.json", "one"), ("second-report", "two"),
+                     ("No verified control", "one"), ("FFFFFFFF", "one"),
+                     ("2026-10-25T00:02:00", "one"), ("degrees", "one")
+                 })
+            Assert.Equal(expected, Assert.Single(DiscoveryQuery.Apply(rows,
+                new(null, null, null, query, "id:asc"))).Id);
+    }
+
+    [Fact]
     public async Task BadSourceHashAndTraversalDoNotPublish()
     {
         using var folder = new TemporaryFolder();

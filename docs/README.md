@@ -9,6 +9,7 @@ topic below instead of loading every document for each task.
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
+| Planning | [Discovery compilation roadmap](planning/discovery-compilation-roadmap.md) | Finalized offline compiler, filtering, export, and explorer milestones. |
 | Completed task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | Historical W/S/A/D validation phases and evidence. |
 | Native controls | [Native VM control roadmap](planning/native-vm-control-roadmap.md) | Repository-owned movement/camera implementation and explicit live limits. |
 | Navigation coordination | [NAV-SCHED-01 access queue](planning/navigation-access-queue.md) | Queue, dispatch fence, watchdog cleanup and bounded transport tested offline; live startup/manual-path integration pending. |
@@ -22,6 +23,7 @@ topic below instead of loading every document for each task.
 | Reference | [Capture format](reference/capture-format.md) | Version-1 offline inputs, output semantics, and compatibility. |
 | Reference | [Native capture](reference/native-capture.md) | Bounded read-only Windows requests, raw-byte provenance, and failure semantics. |
 | Reference | [Field catalog](reference/field-catalog.md) | Content-bound definitions, retained assessments, and scoped qualification workflow. |
+| Reference | [Discovery compilation and exports](reference/discovery-compilation.md) | Source manifest, typed/native adapters, filtering, CSV/JSON/JSONL and local explorer. |
 | Reference | [Supervised experiments](reference/guarded-experiments.md) | Single reviewed pulse, stop/release, identity, and before/after evidence. |
 | Reference | [Native VM controls](reference/native-vm-controls.md) | Native host/guest setup, operator panel, CLI, bounded input, and recovery. |
 | Reference | [Memory discovery](reference/memory-discovery.md) | Bounded snapshots, value/pattern comparisons, RVA pointer discovery and resolution. |

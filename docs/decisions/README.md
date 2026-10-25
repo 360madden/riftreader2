@@ -30,6 +30,8 @@ Source: Joey's instructions in the RiftReader v2 conversation.
 - [0006: Native supervised VM controls](0006-native-supervised-vm-controls.md):
   guest-local bounded input, authenticated outbound connection, and native
   operator workflow independent of V1 source.
+- [0007: Read-only discovery compilation](0007-discovery-compilation-views.md):
+  pinned offline inputs, normalized candidate-preserving views, and local exports.
 
 ## Future records
 

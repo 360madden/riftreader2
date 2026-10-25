@@ -25,6 +25,7 @@
     <None Include="../../samples/catalog/*.json" Link="Fixtures/catalog/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../samples/discovery-*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../samples/discoveries-*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/discovery_explorer.html" Link="Fixtures/discovery_explorer.html" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../../contracts/addon/fixtures/*.json" Link="Fixtures/addon/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

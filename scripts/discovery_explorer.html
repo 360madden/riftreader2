@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src data:">
+<title>RiftReader2 — Discovery Explorer</title>
+<style>
+:root{color-scheme:dark;--bg:#0b1020;--panel:#151d31;--soft:#1c2942;--edge:#2b3956;--ink:#eff4ff;--sub:#aabbd7;--blue:#7aafff;--good:#80ddc5;--warn:#ffd18b;--bad:#ff929e}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 12% -12%,#223a64 0,transparent 36%),var(--bg);color:var(--ink);font:14px/1.5 system-ui,Segoe UI,sans-serif}
+.shell{max-width:1440px;margin:auto;padding:26px clamp(12px,3vw,42px) 70px}
+header{display:flex;justify-content:space-between;align-items:center;gap:15px;flex-wrap:wrap;padding-bottom:24px}
+.brand{display:flex;align-items:center;gap:14px}.logo{background:linear-gradient(135deg,#4981db,#77cfba);width:44px;height:44px;border-radius:13px;display:grid;place-items:center;color:#0b1422;font-weight:900;font-size:19px}
+h1{font-size:25px;line-height:1.15;margin:0;letter-spacing:-.6px}h2{font-size:17px;margin:0 0 10px}
+.subtitle,.muted{color:var(--sub)}.subtitle{font-size:12px;margin-top:3px}
+.pill{border:1px solid var(--edge);background:#14243c;border-radius:999px;padding:5px 11px;color:var(--good);font-size:12px}
+.panel{background:rgba(21,29,49,.95);border:1px solid var(--edge);border-radius:15px;box-shadow:0 10px 28px #0003;padding:19px;margin-bottom:16px}
+.loader{display:flex;gap:20px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+input[type=file]{max-width:100%;color:var(--sub)}input[type=file]::file-selector-button{background:#2b4b7b;color:#fff;border:1px solid #5174a5;border-radius:9px;padding:10px 15px;margin-right:12px;cursor:pointer}
+.status{min-height:22px;color:var(--sub);font-size:12px;margin-top:7px}.error{color:var(--bad)}
+.filters{display:grid;grid-template-columns:minmax(175px,2fr) repeat(3,minmax(125px,1fr));gap:10px}
+label{display:block;color:var(--sub);font-size:12px;margin-bottom:6px}
+input[type=search],select{width:100%;background:var(--bg);color:var(--ink);border:1px solid var(--edge);border-radius:9px;padding:10px 11px;outline:none}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.controls,.tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:14px}
+button{background:#2d4f80;color:var(--ink);border:1px solid #426494;border-radius:9px;padding:8px 12px;cursor:pointer;font-weight:600}
+button:hover:not(:disabled){background:#3a659d}button:disabled{opacity:.4;cursor:not-allowed}.secondary{background:var(--soft);border-color:var(--edge)}
+.stats{display:flex;gap:12px;flex-wrap:wrap;color:var(--sub);font-size:12px}.stat strong{color:var(--ink)}
+.tablebox{overflow:auto;max-height:570px;border:1px solid var(--edge);border-radius:11px}
+table{width:100%;border-collapse:collapse;min-width:940px;text-align:left}
+thead{position:sticky;top:0;z-index:1;background:#20304c}
+th{padding:0;border-bottom:1px solid var(--edge);font-weight:600;font-size:12px;white-space:nowrap}
+th button{display:block;width:100%;text-align:left;background:transparent!important;border:0;color:#c6d7f3;padding:12px;white-space:nowrap}
+th button:hover{color:var(--blue)}td{border-bottom:1px solid #27334e;padding:11px 12px;vertical-align:top}tbody tr:hover{background:#1c2b45}
+.link{padding:0;background:transparent!important;border:0;color:var(--blue);text-align:left;overflow-wrap:anywhere;font-weight:600}
+.small{font-size:12px;color:var(--sub)}.mono{font:12px/1.5 Consolas,monospace;overflow-wrap:anywhere}
+.chip{display:inline-block;border-radius:7px;padding:3px 7px;border:1px solid #52617a;color:#ccd7e8;background:#2d3951;font-size:11px;white-space:nowrap}
+.chip.good{color:var(--good);border-color:#287f70;background:#133b38}.chip.warn{color:var(--warn);border-color:#866342;background:#4b3628}.chip.bad{color:var(--bad);border-color:#944956;background:#4b2433}
+pre{white-space:pre-wrap;word-break:break-word;background:#0b1425;padding:15px;border-radius:9px;border:1px solid var(--edge);max-height:360px;overflow:auto;font:12px/1.55 Consolas,monospace}
+.empty{padding:44px 20px;text-align:center;color:var(--sub)}.note{font-size:12px;color:var(--sub);margin-top:12px}
+@media(max-width:930px){.filters{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:540px){.filters{grid-template-columns:1fr}.loader{display:block}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<main class="shell">
+<header>
+  <div class="brand"><div class="logo">R2</div><div><h1>Discovery Explorer</h1><div class="subtitle">RiftReader2 · evidence-first offline workspace</div></div></div>
+  <div class="pill">● Local files only</div>
+</header>
+<section class="panel">
+ <div class="loader">
+  <div><h2>Open a compilation</h2><div class="muted">Choose JSON created by <code>export-discoveries --format json</code>. No game connection or upload.</div></div>
+  <input id="file" type="file" accept=".json,application/json" aria-label="Select a RiftReader2 compilation file">
+ </div>
+ <div id="loadStatus" class="status" role="status">No compilation loaded.</div>
+</section>
+<section class="panel">
+ <div class="filters">
+  <div><label for="search">Search all visible text</label><input id="search" type="search" placeholder="Name, status, locator, coordinates..." disabled></div>
+  <div><label for="source">Source</label><select id="source" disabled><option value="">All sources</option></select></div>
+  <div><label for="category">Category</label><select id="category" disabled><option value="">All categories</option></select></div>
+  <div><label for="status">Status</label><select id="status" disabled><option value="">All statuses</option></select></div>
+ </div>
+ <div class="controls">
+  <div class="stats"><span class="stat">Selected: <strong id="visibleCount">0</strong></span><span class="stat">Compiled: <strong id="totalCount">0</strong></span><span class="stat">Input sources: <strong id="sourceCount">0</strong></span></div>
+  <div class="tools"><button class="secondary" id="clear" disabled>Clear filters</button><button id="csv" disabled>Download CSV</button><button id="json" disabled>Download JSON</button></div>
+ </div>
+</section>
+<section class="panel">
+ <h2>Discovery records</h2>
+ <div class="tablebox">
+  <table aria-label="Filtered RIFT discovery records">
+   <thead><tr>
+    <th><button data-sort="fieldId">Field ▾</button></th>
+    <th><button data-sort="category">Category</button></th>
+    <th><button data-sort="sourceKind">Source</button></th>
+    <th><button data-sort="status">Status</button></th>
+    <th>Observed value</th>
+    <th><button data-sort="observedAtUtc">Time</button></th>
+    <th>Evidence / source</th>
+   </tr></thead>
+   <tbody id="rows"><tr><td colspan="7" class="empty">Select a local compilation to explore its records.</td></tr></tbody>
+  </table>
+ </div>
+ <div class="controls"><span id="pageInfo" class="small">Page 0 of 0</span><div class="tools"><button class="secondary" id="prev" disabled>Previous</button><button class="secondary" id="next" disabled>Next</button></div></div>
+ <p class="note">Each row preserves its original status. Candidate/native comparisons are not promoted into qualified game fields. Select a field to see its exact provenance. Downloads include all filtered records, not just the current page.</p>
+</section>
+<section class="panel">
+ <h2>Selected evidence</h2>
+ <div id="detailMessage" class="muted">Select a field above to inspect its reported qualification, locator, session and retained-source hash.</div>
+ <pre id="detail" hidden></pre>
+</section>
+</main>
+<script>
+"use strict";
+(function(){
+ const el = id => document.getElementById(id);
+ const controls = ["search","source","category","status","clear","csv","json","prev","next"];
+ const keys = ["fieldId","category","sourceKind","status","observedAtUtc"];
+ let compilation = null, filtered = [], sortKey = "fieldId", descending = false, page = 0;
+ const pageSize = 100;
+ const str = v => v == null ? "" : String(v);
+ const clean = v => str(v).toLocaleLowerCase("en-US");
+ const text = (node, value) => {node.textContent = str(value);return node;};
+ const create = (name, className, value) => {
+   const node = document.createElement(name);
+   if(className) node.className = className;
+   if(value != null) node.textContent = str(value);
+   return node;
+ };
+ const valueText = row => {
+   if(!row.value) return "—";
+   if(row.value.text != null) return str(row.value.text);
+   if(row.value.components && typeof row.value.components === "object")
+     return Object.entries(row.value.components).map(([k,v]) => k + "=" + str(v)).join(" · ");
+   return "—";
+ };
+ const sortValue = (row,key) => str(row[key]);
+ const utcSortKey = value => {
+   const match = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.(\d{1,7}))?(?:Z|\+00:00)$/.exec(str(value));
+   return match ? match[1]+"."+(match[2] || "").padEnd(7,"0") : str(value);
+ };
+ const compare = (a,b) => {
+   let first = sortValue(a,sortKey), second = sortValue(b,sortKey), order = 0;
+   if(sortKey === "observedAtUtc"){
+     if(!first || !second) order = first ? -1 : (second ? 1 : 0);
+     else {
+       first = utcSortKey(first); second = utcSortKey(second);
+       order = first < second ? -1 : first > second ? 1 : 0;
+       if(descending) order = -order;
+     }
+   } else {
+     first = clean(first); second = clean(second);
+     order = first < second ? -1 : first > second ? 1 : 0;
+     if(descending) order = -order;
+   }
+   return order || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+ };
+ function options(id,values,label){
+   const selector = el(id); selector.replaceChildren(new Option(label,""));
+   [...new Set(values.filter(x => typeof x === "string" && x.length))].sort().forEach(v => selector.add(new Option(v,v)));
+ }
+ function setLoaded(loaded){
+   controls.forEach(id => el(id).disabled = !loaded);
+ }
+ function sortHeaders(){
+   const labels = {fieldId:"Field",category:"Category",sourceKind:"Source",status:"Status",observedAtUtc:"Time"};
+   document.querySelectorAll("thead [data-sort]").forEach(button=>{
+     const selected=button.dataset.sort===sortKey;
+     button.textContent=labels[button.dataset.sort]+(selected?(descending?" ▼":" ▲"):"");
+     button.parentElement.setAttribute("aria-sort",selected?(descending?"descending":"ascending"):"none");
+   });
+ }
+ function refresh(){
+   if(!compilation) return;
+   const term = clean(el("search").value.trim()), source = el("source").value,
+     category = el("category").value, status = el("status").value;
+   filtered = compilation.records.filter(row =>
+     (!source || row.sourceKind === source) &&
+     (!category || row.category === category) &&
+     (!status || row.status === status) &&
+     (!term || [row.id,row.fieldId,row.category,row.sourceKind,row.status,
+       row.qualification,row.meaning,row.units,row.locatorKind,row.locator,
+       row.buildSha256,row.sessionId,row.observedAtUtc,row.evidenceKind,
+       row.evidenceSha256,row.sourceId,row.sourcePath,...(row.limitations||[]),
+       valueText(row)].some(item => clean(item).includes(term)))).slice().sort(compare);
+   sortHeaders();
+   text(el("visibleCount"),filtered.length);
+   text(el("totalCount"),compilation.records.length);
+   text(el("sourceCount"),compilation.sources.length);
+   const body = el("rows"); body.replaceChildren();
+   const pages = Math.ceil(filtered.length/pageSize);
+   if(page>=pages) page=Math.max(0,pages-1);
+   text(el("pageInfo"),"Page "+(pages ? page+1 : 0)+" of "+pages+" · 100 rows/page");
+   el("prev").disabled=!compilation || page===0;
+   el("next").disabled=!compilation || page+1>=pages;
+   if(!filtered.length){
+     const r=create("tr"), c=create("td","empty","No records match these filters.");
+     c.colSpan=7; r.append(c); body.append(r); return;
+   }
+   const fragment=document.createDocumentFragment();
+   filtered.slice(page*pageSize,(page+1)*pageSize).forEach(row => {
+     const tr=create("tr");
+     const field=create("td"); const button=create("button","link",row.fieldId);
+     button.type="button"; button.title="Inspect original evidence";
+     button.addEventListener("click",()=>inspect(row));
+     field.append(button,create("div","small mono",row.id));tr.append(field);
+     tr.append(create("td","",row.category),create("td","",row.sourceKind));
+     const statusCell=create("td");
+     const badge=create("span","chip "+(row.status === "contradicted" || row.status.includes("disagrees") || row.status === "rejected" ? "bad" :
+        row.status === "supported-by-recorded-assessment" ? "good" :
+        row.status.includes("candidate") || row.status === "hypothesis" ? "warn" : ""),row.status);
+     statusCell.append(badge);tr.append(statusCell);
+     tr.append(create("td","mono",valueText(row)));
+     tr.append(create("td","small",row.observedAtUtc ? row.observedAtUtc.replace("T"," ").replace("+00:00"," UTC") : "—"));
+     const proof=create("td");proof.append(create("div","small",row.evidenceKind),create("div","small mono",row.sourceId));tr.append(proof);
+     fragment.append(tr);
+   });
+   body.append(fragment);
+ }
+ function inspect(row){
+   el("detailMessage").textContent="Read-only record · source hashes identify saved evidence, not independent semantic attestation.";
+   el("detail").hidden=false;
+   el("detail").textContent=JSON.stringify(row,null,2);
+ }
+ function fileStatus(message,error){
+   const node=el("loadStatus");node.textContent=message;node.classList.toggle("error",!!error);
+ }
+ el("file").addEventListener("change",async event=>{
+   const file=event.target.files && event.target.files[0]; if(!file) return;
+   try{
+     if(file.size > 32*1024*1024) throw Error("Browser preview limit is 32 MiB; use the CLI for larger datasets.");
+     const parsed=JSON.parse(await file.text());
+     if(parsed.schemaVersion!==1 || parsed.contractVersion!=="discovery-compilation/1" ||
+       !Array.isArray(parsed.records) || !Array.isArray(parsed.sources) || parsed.records.length>8192 ||
+       !parsed.records.every(r=>r && typeof r.id==="string" && typeof r.fieldId==="string" &&
+         typeof r.status==="string" && typeof r.sourceKind==="string" && typeof r.category==="string" &&
+         typeof r.sourceId==="string" && typeof r.evidenceKind==="string" &&
+         Array.isArray(r.limitations) && (r.observedAtUtc==null || typeof r.observedAtUtc==="string") &&
+         (r.value==null || (typeof r.value==="object" && !Array.isArray(r.value)))))
+       throw Error("Unsupported or malformed discovery-compilation/1 JSON.");
+     compilation=parsed;page=0;sortKey="fieldId";descending=false;
+     options("source",parsed.records.map(r=>r.sourceKind),"All sources");
+     options("category",parsed.records.map(r=>r.category),"All categories");
+     options("status",parsed.records.map(r=>r.status),"All statuses");
+     el("search").value="";setLoaded(true);
+     el("detail").hidden=true;
+     text(el("detailMessage"),"Select a field to inspect its provenance and qualification.");
+     fileStatus("Loaded "+file.name+" · manifest SHA-256 "+str(parsed.manifestSha256).slice(0,16)+"… · browser does not revalidate original files.",false);
+     refresh();
+   }catch(error){
+     compilation=null;setLoaded(false);fileStatus("Cannot load file: "+error.message,true);
+     el("rows").replaceChildren();el("detail").hidden=true;
+     text(el("detailMessage"),"Select a valid compilation to view evidence.");
+     text(el("pageInfo"),"Page 0 of 0");
+     text(el("visibleCount"),"0");text(el("totalCount"),"0");text(el("sourceCount"),"0");
+   }
+ });
+ ["search","source","category","status"].forEach(id=>el(id).addEventListener(id==="search"?"input":"change",()=>{page=0;refresh();}));
+ el("clear").addEventListener("click",()=>{
+   el("search").value="";["source","category","status"].forEach(id=>el(id).value="");page=0;refresh();
+ });
+ document.querySelectorAll("thead [data-sort]").forEach(button=>button.addEventListener("click",()=>{
+   const key=button.dataset.sort;if(!keys.includes(key) || !compilation) return;
+   descending=sortKey===key?!descending:false;sortKey=key;page=0;refresh();
+ }));
+ el("prev").addEventListener("click",()=>{if(page>0){page--;refresh();}});
+ el("next").addEventListener("click",()=>{if((page+1)*pageSize<filtered.length){page++;refresh();}});
+ function download(name,mime,content){
+   const url=URL.createObjectURL(new Blob([content],{type:mime}));
+   const a=document.createElement("a");a.href=url;a.download=name;document.body.append(a);a.click();a.remove();
+   setTimeout(()=>URL.revokeObjectURL(url),5000);
+ }
+ function csvValue(value){
+   let cell=str(value);
+   if(/^\s*[=+\-@]/.test(cell)) cell="'"+cell;
+   return '"'+cell.replace(/"/g,'""')+'"';
+ }
+ el("csv").addEventListener("click",()=>{
+   if(!compilation) return;
+   const columns=["fieldId","category","sourceKind","status","qualification","meaning",
+       "units","value","locator","buildSha256","sessionId","observedAtUtc","evidenceSha256","sourcePath"];
+   const lines=[columns.map(csvValue).join(",")];
+   filtered.forEach(row=>lines.push(columns.map(key=>csvValue(key==="value"?valueText(row):row[key])).join(",")));
+   download("riftreader2-filtered.csv","text/csv;charset=utf-8",lines.join("\n")+"\n");
+ });
+ el("json").addEventListener("click",()=>{
+   if(!compilation) return;
+   const payload={...compilation,selectedRecords:filtered.length,
+     selection:{source:el("source").value||null,category:el("category").value||null,
+       status:el("status").value||null,search:el("search").value||null,
+       sort:sortKey+":"+(descending?"desc":"asc")},records:filtered};
+   download("riftreader2-filtered.json","application/json;charset=utf-8",JSON.stringify(payload,null,2)+"\n");
+ });
+ setLoaded(false);
+})();
+</script>
+</body>
+</html>

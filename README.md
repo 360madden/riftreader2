@@ -42,6 +42,21 @@ The addon command requires an exact saved frame (no trailing newline); it report
 the frame hash with source binding and freshness explicitly unverified. See
 [the addon guide](addon/README.md) and [wire contract](contracts/addon/README.md).
 
+## Offline discovery explorer
+
+The [discovery compiler](docs/reference/discovery-compilation.md) combines
+explicit, SHA-pinned field catalogs, Lua/native review reports and recorded
+research into a queryable view without accessing RIFT or VMware. Export
+JSON, CSV or JSON Lines; existing files are never replaced.
+
+```powershell
+dotnet run --project src/RiftReader2.Cli -- export-discoveries --manifest samples/discovery-sources.json --build-sha256 ('A' * 64) --session-id synthetic-session-a --as-of 2026-10-21T00:00:00Z --format json --output artifacts/discoveries-example.json
+```
+
+Open `scripts/discovery_explorer.html` in a browser and select the output JSON
+to filter, sort, inspect and download records locally. The sample is synthetic;
+compiling a discovery does not qualify native game memory semantics.
+
 ## Modules
 
 | Project | Responsibility |

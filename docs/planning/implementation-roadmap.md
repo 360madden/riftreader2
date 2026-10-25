@@ -215,6 +215,21 @@ Acceptance evidence:
 - migrations, backup/rebuild, and compatibility are tested;
 - Domain and Application remain storage-independent.
 
+## 8. Discovery compilation, query and export
+
+Joey authorized an optimal plan and its execution on October 24, 2026.
+The [finalized discovery roadmap](discovery-compilation-roadmap.md) owns D0–D4
+milestones: strict hash-pinned source manifests, non-promoting typed/native and
+catalog importers, deterministic filtering/sorting and JSON/CSV/JSONL export,
+then a standalone offline browser explorer with downloads.
+
+Reuse the existing .NET projects and field-catalog semantics. Do not touch
+V16/V17 VM console ownership or add a service/database. Retain the complete
+rebuildable manifest and original evidence; exports are scoped views, not
+semantic qualifications. The [usage contract](../reference/discovery-compilation.md)
+specifies bounds, exact CLI options and statuses. Automatic indexing,
+cross-build semantic merge and live data feeds remain separately gated.
+
 ## Handoff size and model allocation
 
 Split work at the increments above, then subdivide into one contract or adapter

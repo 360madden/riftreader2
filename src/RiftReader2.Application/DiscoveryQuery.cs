@@ -80,7 +80,10 @@ public static class DiscoveryQuery
         string.Join(' ', record.Id, record.FieldId, record.Category, record.Meaning,
             record.SourceKind, record.Status, record.Qualification, record.LocatorKind,
             record.Locator, record.BuildSha256, record.SessionId, record.EvidenceKind,
-            record.Value?.Text, record.Value?.Components is null ? null :
+            record.EvidenceSha256, record.SourceId, record.SourcePath, record.Units,
+            record.ObservedAtUtc?.ToUniversalTime().ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+            string.Join(' ', record.Limitations), record.Value?.Text,
+            record.Value?.Components is null ? null :
                 string.Join(' ', record.Value.Components.Select(item =>
                     item.Key + "=" + item.Value.ToString("R", System.Globalization.CultureInfo.InvariantCulture))));
 
