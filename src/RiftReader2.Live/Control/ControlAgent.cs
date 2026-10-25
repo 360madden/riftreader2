@@ -116,7 +116,8 @@ public sealed class ControlAgent
                     type = "hello",
                     token = configuration.Token,
                     instanceId,
-                    machineName = Environment.MachineName
+                    machineName = Environment.MachineName,
+                    targetedClickVersion = 1
                 }, cancellationToken);
                 using var welcome = JsonDocument.Parse(await ReadLineAsync(reader, cancellationToken));
                 if (welcome.RootElement.GetProperty("type").GetString() != "welcome")
@@ -182,6 +183,7 @@ public sealed class ControlAgent
                     response = new
                     {
                         instanceId,
+                        targetedClickVersion = 1,
                         target = Inspect(),
                         armed = IsArmed(),
                         expiresInSeconds = IsArmed() ? Math.Max(0, 15 - Stopwatch.GetElapsedTime(armedAt).TotalSeconds) : 0,
@@ -286,7 +288,13 @@ public sealed class ControlAgent
             token.ThrowIfCancellationRequested();
             if (!IsArmed() || target != Inspect())
                 throw new InvalidOperationException("Control target changed before cursor setup.");
-            if (request.Action.MouseButton is not null || request.Action.WheelNotches != 0)
+            if (request.Action.ClickTarget is { } click)
+            {
+                cursorPreparation = WindowsControlDesktop.PrepareTargetedClick(target, click);
+                // Allow hover to settle; the button-down path rechecks position and window.
+                await Task.Delay(50, token);
+            }
+            else if (request.Action.MouseButton is not null || request.Action.WheelNotches != 0)
             {
                 var placement = WindowsControlDesktop.PrepareCursor(
                     target, request.Action.DeltaX, request.Action.DeltaY);
@@ -306,7 +314,7 @@ public sealed class ControlAgent
                 }
             }
             token.ThrowIfCancellationRequested();
-            var input = new BoundInput(this, target);
+            var input = new BoundInput(this, target, request.Action.ClickTarget);
             var result = await new BoundedControlExecutor(input).ExecuteAsync(request.Action, token);
             if (result.ReleaseSucceeded)
                 File.Delete(PendingPath);
@@ -399,7 +407,7 @@ public sealed class ControlAgent
         value == "left" ? MouseButton.Left : value == "right" ? MouseButton.Right
             : throw new InvalidDataException("Invalid mouse button.");
 
-    private sealed class BoundInput(ControlAgent owner, DesktopTarget target) : IControlInput
+    private sealed class BoundInput(ControlAgent owner, DesktopTarget target, ClickTarget? clickTarget = null) : IControlInput
     {
         private readonly long started = Stopwatch.GetTimestamp();
         public List<object> Events { get; } = [];
@@ -430,6 +438,13 @@ public sealed class ControlAgent
         public void ButtonDown(string button)
         {
             RequireTarget();
+            if (clickTarget is not null)
+            {
+                WindowsControlDesktop.RequireTargetedClickWindow(target);
+                var position = WindowsControlDesktop.GetCursorPosition();
+                WindowsControlDesktop.ValidateTargetedClickPosition(target, clickTarget, position);
+                Record("targetedClickPositionVerified", position);
+            }
             WindowsControlDesktop.SendMouseButton(ParseButton(button), true);
             Record("buttonDownInserted", button);
         }

@@ -1,5 +1,29 @@
 # Native supervised VM controls
 
+**Targeted clicks (2026-10-25):** use `scripts/run_targeted_click.py` for a
+single reviewed spell-button click. Supply `--output` and `--target X Y WIDTH HEIGHT`
+in **captured client pixels**, choosing the rectangle from the current action bar.
+The helper obtains the existing lease, captures a fresh screenshot, waits for the
+capture-ID review, arms once, clicks once, captures afterward and stops. It does
+not identify spells automatically or accept screen coordinates as client pixels.
+
+The optional action `clickTarget` is `{x,y,width,height}`. It requires a standalone
+left click, no keys/relative motion/wheel, a 4–128 pixel rectangle in each dimension,
+and containment inside the reviewed client. The guest deliberately positions at
+the button center, waits 50 ms, then checks the same foreground window/geometry
+and cursor position immediately before button-down (one pixel tolerance).
+This path never uses camera recentering. The authenticated guest handshake must
+advertise `targetedClickVersion: 1`; the host rejects older agents before sending.
+Existing movement/camera commands retain their behavior. The lower-level
+`control_client.py action --mouse-button left --click-target X Y WIDTH HEIGHT`
+uses the same contract with the existing arm and lease requirements.
+
+This is not a physical-input lock, semantic spell detector or an atomic guarantee
+against simultaneous human input. A small position-check-to-input race remains;
+keep the guest untouched during the bounded test and verify game response.
+The [Light's Balm live trial](../validation/targeted-click-2026-10-25.md) demonstrated
+correct positioning from a screen-edge cursor, one click and Lua Power recovery.
+
 **Live coordination update (2026-10-22):** the recovered host now runs denied-first
 per-session supervision, queue-backed command admission and lifetime console
 exclusion. Protected calls require issued leases; STOP/release/status remain

@@ -221,6 +221,15 @@ public sealed class BoundedControlExecutor
             throw new InvalidDataException("Relative mouse deltas must each be between -200 and 200.");
         if (action.WheelNotches is < -3 or > 3)
             throw new InvalidDataException("Wheel input must be between -3 and 3 notches.");
+        if (action.ClickTarget is { } click)
+        {
+            if (action.Keys.Length != 0 || action.MouseButton != "left"
+                || action.DeltaX != 0 || action.DeltaY != 0 || action.WheelNotches != 0)
+                throw new InvalidDataException("A targeted click must be a standalone left click.");
+            if (click.X is < 0 or > 4095 || click.Y is < 0 or > 2159
+                || click.Width is < 4 or > 128 || click.Height is < 4 or > 128)
+                throw new InvalidDataException("Invalid targeted button rectangle.");
+        }
 
         var hasMovement = action.Keys.Length != 0;
         var hasCamera = action.MouseButton is not null || action.DeltaX != 0 || action.DeltaY != 0;

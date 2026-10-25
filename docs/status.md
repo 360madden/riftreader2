@@ -2,6 +2,18 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Targeted spell click — DEPLOYED AND LIVE PASSED:** The new
+[reviewed button-click helper](validation/targeted-click-2026-10-25.md) moved an
+edge cursor into Light's Balm's slot 7, checked its position before pressing,
+and delivered/released one click. Lua Power **100 → 81 → 87 → 100**, full health
+and unchanged XYZ establish the live response. V22 and the upgraded guest
+agent are active; the workflow configuration points to V22. Full validation
+passed; the 19-file evidence export verified. Final state is disarmed/idle,
+no held inputs, clear queue. RIFT was not restarted. The previously responding
+native address read zero during this baseline, so it is not reliable current
+Power; owner/provenance remains the field-discovery follow-up. Health-change
+testing, patch recovery and direct ChatGPT Computer Use remain deferred.
+
 **Clean Power test — RESPONSE DEMONSTRATED:** The coordinated hands-off repeat
 recorded one Light's Balm click inside slot 7, Lua **100 → 89 → 95 → 100**, and
 a responding `float64` memory candidate **100 → 89 → 96 → 100**. Health stayed

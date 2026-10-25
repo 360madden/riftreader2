@@ -326,6 +326,8 @@ def _action(client: ControlClient, args) -> dict:
             "deltaY": args.dy, "wheelNotches": args.wheel,
         },
     }
+    if getattr(args, "click_target", None) is not None:
+        payload["action"]["clickTarget"] = dict(zip(("x", "y", "width", "height"), args.click_target))
     try:
         payload = HOST.validate_action_payload(payload)
     except HOST.ControlHostError as error:
@@ -388,6 +390,8 @@ def build_parser() -> argparse.ArgumentParser:
     action.add_argument("--dx", default=0, type=int)
     action.add_argument("--dy", default=0, type=int)
     action.add_argument("--wheel", default=0, type=int)
+    action.add_argument("--click-target", nargs=4, type=int, metavar=("X", "Y", "WIDTH", "HEIGHT"),
+                        help="reviewed client-pixel button rectangle; standalone left click only")
     action.add_argument("--output", required=True, type=Path)
     for name in ("stop", "release", "recover"):
         command = commands.add_parser(name)

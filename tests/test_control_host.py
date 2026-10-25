@@ -36,10 +36,10 @@ def bmp_bytes():
 
 
 class FakeGuest:
-    def __init__(self, port, token="guest-token-0123456789", machine="RIFT-LAB-1"):
+    def __init__(self, port, token="guest-token-0123456789", machine="RIFT-LAB-1", **capabilities):
         self.socket = socket.create_connection(("127.0.0.1", port), timeout=2)
         self.stream = self.socket.makefile("rb")
-        self.send({"type":"hello", "token":token, "instanceId":"guest-one", "machineName":machine})
+        self.send({"type":"hello", "token":token, "instanceId":"guest-one", "machineName":machine, **capabilities})
 
     def send(self, value):
         self.socket.sendall(host.encode_frame(value))
@@ -90,6 +90,43 @@ class GatewayTests(unittest.TestCase):
         guest.respond(command, {"ready": True})
         thread.join(2)
         self.assertEqual(result, {"ready": True})
+
+    def test_targeted_click_rejected_before_send_to_old_guest(self):
+        local, remote = socket.socketpair()
+        self.addCleanup(remote.close)
+        session = host.AgentSession(local, 'test', {'instanceId': 'old', 'machineName': 'guest'},
+                                    self.journal, lambda _: None)
+        self.addCleanup(session.close)
+        with self.assertRaisesRegex(host.ControlHostError, "does not support targeted clicks"):
+            session.request("action", {"action": {"clickTarget": {"x": 1}}})
+        self.assertEqual(session.summary()["lastIssuedSequence"], 0)
+
+    def test_targeted_click_contract_preserves_rectangle_and_rejects_mixed_input(self):
+        payload = {"armToken": "a", "action": {"keys": [], "holdMilliseconds": 100,
+            "mouseButton": "left", "deltaX": 0, "deltaY": 0, "wheelNotches": 0,
+            "clickTarget": {"x": 608, "y": 640, "width": 30, "height": 30}}}
+        self.assertEqual(host.validate_action_payload(payload), payload)
+        for change in ({"deltaX": 1}, {"keys": ["w"]}, {"clickTarget": None},
+                       {"clickTarget": {"x": True, "y": 0, "width": 30, "height": 30}}):
+            with self.subTest(change=change), self.assertRaises(host.ControlHostError):
+                host.validate_action_payload({**payload, "action": {**payload["action"], **change}})
+
+    def test_targeted_click_capability_is_authenticated_and_delivered(self):
+        guest = FakeGuest(self.gateway.port, targetedClickVersion=1)
+        self.addCleanup(guest.close)
+        self.assertEqual(guest.receive(), {"type": "welcome"})
+        self.wait_connected()
+        payload = {"armToken": "a", "action": {"keys": [], "holdMilliseconds": 100,
+            "mouseButton": "left", "deltaX": 0, "deltaY": 0, "wheelNotches": 0,
+            "clickTarget": {"x": 608, "y": 640, "width": 30, "height": 30}}}
+        result = {}
+        thread = threading.Thread(target=lambda: result.update(self.gateway.command("action", payload)))
+        thread.start()
+        command = guest.receive()
+        self.assertEqual(command['payload'], payload)
+        guest.respond(command, {'deliverySucceeded': True})
+        thread.join(2)
+        self.assertEqual(result, {'deliverySucceeded': True})
 
     def test_release_can_pass_an_outstanding_action_and_sequences_stay_ordered(self):
         guest = FakeGuest(self.gateway.port)

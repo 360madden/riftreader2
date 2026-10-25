@@ -695,6 +695,10 @@ class AgentSession:
             raise ControlHostError("unsupported guest operation")
         if not isinstance(payload, dict):
             raise ControlHostError("command payload must be an object")
+        if (operation == "action" and payload.get("action", {}).get("clickTarget") is not None
+                and (type(self.hello.get("targetedClickVersion")) is not int
+                     or self.hello["targetedClickVersion"] != 1)):
+            raise ControlHostError("guest does not support targeted clicks; no action sent")
         command_id = uuid.uuid4().hex
         response_queue = queue.Queue(maxsize=1)
         with self._pending_lock:
@@ -863,8 +867,13 @@ class AgentGateway:
         try:
             connection.settimeout(5)
             hello = read_frame(stream, MAX_HELLO_BYTES)
-            if set(hello) != {"type", "token", "instanceId", "machineName"} or hello.get("type") != "hello":
+            hello_fields = {"type", "token", "instanceId", "machineName"}
+            if (set(hello) not in (hello_fields, hello_fields | {"targetedClickVersion"})
+                    or hello.get("type") != "hello"):
                 raise ControlHostError("invalid hello envelope")
+            if "targetedClickVersion" in hello and (type(hello["targetedClickVersion"]) is not int
+                                                   or hello["targetedClickVersion"] != 1):
+                raise ControlHostError("unsupported targeted click version")
             if source != self.config.guest_address:
                 raise ControlHostError("guest source address mismatch")
             supplied = hello.get("token")
@@ -1006,7 +1015,7 @@ def validate_action_payload(payload: object) -> dict:
     token = _bounded_text(payload.get("armToken"), "armToken", 512)
     action = payload.get("action")
     expected = {"keys", "holdMilliseconds", "mouseButton", "deltaX", "deltaY", "wheelNotches"}
-    if not isinstance(action, dict) or set(action) != expected:
+    if not isinstance(action, dict) or set(action) not in (expected, expected | {"clickTarget"}):
         raise ControlHostError("action fields do not match the control contract")
     keys = action.get("keys")
     if (not isinstance(keys, list) or len(keys) > len(CONTROL_KEYS)
@@ -1039,10 +1048,21 @@ def validate_action_payload(payload: object) -> dict:
         raise ControlHostError("holdMilliseconds must be an integer from 20 through 250")
     if not keys and mouse is None and deltas == [0, 0] and wheel == 0:
         raise ControlHostError("action must contain a bounded operator input")
-    return {"armToken": token, "action": {
+    result = {"armToken": token, "action": {
         "keys": keys, "holdMilliseconds": hold, "mouseButton": mouse,
         "deltaX": deltas[0], "deltaY": deltas[1], "wheelNotches": wheel,
     }}
+    if "clickTarget" in action:
+        click = action["clickTarget"]
+        if (not isinstance(click, dict) or set(click) != {"x", "y", "width", "height"}
+                or any(type(v) is not int for v in click.values())
+                or not 0 <= click["x"] <= 4095 or not 0 <= click["y"] <= 2159
+                or not 4 <= click["width"] <= 128 or not 4 <= click["height"] <= 128):
+            raise ControlHostError("invalid targeted button rectangle")
+        if keys or mouse != "left" or deltas != [0, 0] or wheel:
+            raise ControlHostError("a targeted click must be a standalone left click")
+        result["action"]["clickTarget"] = dict(click)
+    return result
 
 
 class ControlHttpServer(ThreadingHTTPServer):

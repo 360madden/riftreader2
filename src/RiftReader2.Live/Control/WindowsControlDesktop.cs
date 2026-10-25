@@ -319,6 +319,47 @@ public static class WindowsControlDesktop
         return previous;
     }
 
+    public static DesktopPoint TargetedClickPoint(DesktopTarget target, RiftReader2.Domain.ClickTarget click)
+    {
+        if (click.X < 0 || click.Y < 0 || click.Width is < 4 or > 128 || click.Height is < 4 or > 128
+            || (long)click.X + click.Width > target.ClientWidth
+            || (long)click.Y + click.Height > target.ClientHeight)
+            throw new InvalidOperationException("Targeted button is outside the reviewed client area.");
+        return new(checked(target.ClientX + click.X + click.Width / 2),
+            checked(target.ClientY + click.Y + click.Height / 2));
+    }
+
+    public static void ValidateTargetedClickPosition(
+        DesktopTarget target, RiftReader2.Domain.ClickTarget click, DesktopPoint actual)
+    {
+        var expected = TargetedClickPoint(target, click);
+        // Allow tiny cursor rounding, but never drift to another part of the button or screen.
+        if (Math.Abs((long)actual.X - expected.X) > 1 || Math.Abs((long)actual.Y - expected.Y) > 1)
+            throw new InvalidOperationException("Targeted click cursor drifted; no button press allowed.");
+    }
+
+    public static CursorPreparation PrepareTargetedClick(DesktopTarget target, RiftReader2.Domain.ClickTarget click)
+    {
+        var point = TargetedClickPoint(target, click);
+        RequireTargetedClickWindow(target);
+        EnsureNoMouseButtonDown(NativeMethods.GetAsyncKeyState);
+        var original = GetCursorPosition();
+        SetCursorPosition(point.X, point.Y);
+        RequireTargetedClickWindow(target);
+        ValidateTargetedClickPosition(target, click, GetCursorPosition());
+        return new(original, point, original != point);
+    }
+
+    public static void RequireTargetedClickWindow(DesktopTarget target)
+    {
+        var window = ParseWindowHandle(target.WindowHandle);
+        RevalidateTarget(target, window);
+        var geometry = GetClientGeometry(window);
+        if (!IsTargetForeground(window) || geometry.X != target.ClientX || geometry.Y != target.ClientY
+            || geometry.Width != target.ClientWidth || geometry.Height != target.ClientHeight)
+            throw new InvalidOperationException("Targeted click window changed after review.");
+    }
+
     public static CursorPreparation PrepareCursor(DesktopTarget target, int deltaX, int deltaY)
     {
         ArgumentNullException.ThrowIfNull(target);
