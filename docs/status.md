@@ -13,11 +13,21 @@ direct ChatGPT Computer Use remain deferred.
 advancing player sequences; in-game ability tooltips independently name Power.
 The guarded helper inspected tooltips and restored action bar 1; it activated
 no ability. Health remains deferred. The resource-change test awaits a suitable
-self ability in an accessible slot (requested: Light's Balm in empty slot 7).
+self ability in an accessible slot. Joey reports placing Light's Balm in slot 7;
+a fresh read-only capture (`resource-lua-20261025-01/slot7-confirm-01/`) confirms
+the new golden-hand icon in that slot on bar 1. Its tooltip/cost and activation
+still need verification before the recorded resource test.
 See the [Lua/resource checkpoint](validation/xyz-goals-implementation-2026-10-25.md#lua-classresource-identification-and-deferred-health-test).
 The 84-file export verified; final state was disarmed/idle/no held inputs and a
 clear queue. Cached background guest login worked; interactive VMware launch
 was separately rejected because that account is not the logged-in desktop user.
+
+**Future interaction-addon consideration — user observation:** An in-game Lua
+addon may help interactions, but this is a substantial separate effort requiring
+accumulated RIFT-specific Lua/API documentation, restrictions and live evidence.
+Do not assume an addon can cast or automate arbitrary interactions. Reuse the
+existing addon knowledge and establish supported capabilities before proposing
+implementation; this observation does not authorize a new automation subsystem.
 
 **Goals 1–2 — LIVE DEMONSTRATED:** [Reusable workflow, real catalog and numeric scout](validation/xyz-goals-implementation-2026-10-25.md)
 now have retained live proof. Repeatable run 04 reused the cached guest login
