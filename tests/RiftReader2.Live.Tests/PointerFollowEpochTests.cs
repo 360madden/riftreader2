@@ -169,12 +169,13 @@ public sealed class PointerFollowEpochTests
                     process.Id, null, null, CancellationToken.None);
             }
             catch (Win32Exception exception) when (
-                exception.NativeErrorCode == 18 &&
+                exception.NativeErrorCode is 18 or 299 &&
                 !process.HasExited &&
                 Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(5))
             {
                 // A newly created process can exist briefly before Toolhelp exposes
-                // its first module. Production epoch opening remains fail-fast; only
+                // its first module (ERROR_NO_MORE_FILES / ERROR_PARTIAL_COPY).
+                // Production epoch opening remains fail-fast; only
                 // this disposable test fixture waits for process initialization.
                 await Task.Delay(20);
             }

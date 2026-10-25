@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import unittest
 
@@ -98,15 +99,19 @@ class GuestReceiverIsoTests(unittest.TestCase):
     @unittest.skipUnless(ISO.is_file(), "generated ISO required")
     def test_repeat_invocation_refuses_overwrite(self):
         old_hash = sha(ISO.read_bytes())
-        # A PowerShell 7 parent can pass a PS7-only PSModulePath to this PS5.1
-        # subprocess. Restore the inbox Windows PowerShell modules explicitly.
+        # Use the repository's supported PowerShell 7 runtime when available.
+        # PS5.1 has a separate execution policy and may reject local scripts.
+        powershell = shutil.which("pwsh") or shutil.which("powershell.exe")
+        if powershell is None:
+            self.skipTest("PowerShell required for builder invocation")
         env = os.environ.copy()
-        ps51_modules = (Path(env.get("SystemRoot", r"C:\Windows")) / "System32"
-                        / "WindowsPowerShell" / "v1.0" / "Modules")
-        env["PSModulePath"] = str(ps51_modules) + os.pathsep + env.get("PSModulePath", "")
+        if Path(powershell).name.casefold() == "powershell.exe":
+            ps51_modules = (Path(env.get("SystemRoot", r"C:\Windows")) / "System32"
+                            / "WindowsPowerShell" / "v1.0" / "Modules")
+            env["PSModulePath"] = str(ps51_modules) + os.pathsep + env.get("PSModulePath", "")
         result = subprocess.run(
             [
-                "powershell.exe", "-NoProfile", "-NonInteractive",
+                powershell, "-NoProfile", "-NonInteractive",
                 "-File", str(BUILDER),
             ],
             cwd=ROOT,
