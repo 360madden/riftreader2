@@ -2,6 +2,16 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Latest live result — GUARDED MOVEMENT PASSED:** [Helper-driven XYZ displacement](validation/xyz-guarded-displacement-2026-10-25.md)
+used one requested 100 ms W pulse through the existing V21 controller, with
+recorded key-down/key-up and successful release. Native/Lua distance was
+**0.61293 / 0.61388 units**, maximum per-axis displacement residual **0.00415**
+(limit 0.04); 9/9 Lua comparisons advanced and 38 returned files verified. Final
+status was disarmed/idle/no held inputs, sole controller, clean access queue;
+temporary guest credentials were not saved. AGENTS now distinguishes deferred
+ChatGPT Computer Use from the separately authorized guarded helpers. Reuse this
+working CLI-plus-helper path; patch recovery remains deferred.
+
 **Newest live result — DISPLACEMENT PASSED:** [CLI collection and native/Lua comparison](validation/xyz-cli-displacement-2026-10-25.md)
 reused the installed reader through authenticated VMware guest commands and file
 copies. User-reported manual movement produced **2.03814 native / 2.03196 Lua game

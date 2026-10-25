@@ -68,6 +68,12 @@ that path the next task. Prefer the verified CLI workflow for applicable VMware
 management operations. This deferral does not grant new live-input authority;
 existing scope, identity checks, console ownership and input guards still apply.
 
+**Clarification — user correction, 2026-10-25:** This deferral concerns the
+ChatGPT Computer Use path. Existing separately authorized guarded VM-console
+helpers remain available for supervised bounded experiments. Use their normal
+capture, identity, exclusive-access, arm and release checks; do not unnecessarily
+ask Joey to press movement keys when the authorized helper can perform the test.
+
 ## Orientation and durable context
 
 - Work in `C:\work\riftreader2`.
