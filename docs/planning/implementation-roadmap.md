@@ -24,6 +24,55 @@ this priority. The [October 25 XYZ trial](../validation/native-xyz-restart-2026-
 establishes one observed normal full game exit/relaunch; it does not qualify all
 future restarts or other fields.
 
+## Remaining practical goals — refreshed October 25, 2026
+
+The original [Start / Read / Stop milestone](position-panel-roadmap.md) is
+complete, including corrected same-build full-game exit/relaunch. Native/Lua
+displacement also passed through both manual movement and the
+[guarded helper](../validation/xyz-guarded-displacement-2026-10-25.md).
+Do not repeat these completed milestones as though they were still missing.
+The remaining active goals, in working order, are:
+
+1. **Make the proven XYZ run easy to repeat.** Consolidate the working CLI
+   collection and guarded-helper steps into a small reusable entry point. Reuse
+   the installed reader and existing tools; authenticate once per run, capture
+   before, apply one reviewed bounded pulse, capture after, compare, export and
+   clean up. Done when a fresh run works without editing dated artifact scripts
+   or asking Joey to press movement keys. Keep credentials out of logs; persistent
+   credential storage is a separate choice, not assumed to exist.
+2. **Record XYZ as durable field knowledge.** Add a real catalog definition and
+   scoped assessments linking the locating recipe, Lua/native comparison,
+   movement and full-game restart evidence. Preserve startup failures and the
+   corrected result. Done when the existing catalog command rebuilds a clear
+   exact-build qualification report without AI interpreting scattered notes.
+   State untested claims explicitly; do not claim patch survival.
+3. **Apply the same method to one new field: health first.** Use Lua health and
+   maximum health as the reference, gather controlled changed-state observations,
+   and inspect only relevant native candidates. Done when actual changes
+   distinguish the field from constant values and cached copies, a reusable
+   locating recipe is retained, and normal full-game exit/relaunch reacquires it.
+   Capture failures instead of repeatedly widening unchanged searches.
+4. **Repeat for the player's resource/power field.** Identify the resource type
+   and compare real decreases/recovery with Lua. Done when meaning, units,
+   availability, locator, invalidation conditions and same-build restart evidence
+   are recorded. Historical `power=100` matches are candidates, not completion.
+
+**Confidence follow-up, not a blocker for the completed XYZ milestone:** collect
+another full-game exit/relaunch during normal use, including absent-process
+handling, fresh PID/start identity, fresh coordinates and old-process rejection.
+Do not require endless repeat trials before moving to the next field.
+
+**Deferred or conditional:** patch/update recovery; VM/host reboot, crash and
+snapshot-restore qualification; precise velocity/input timing; other fields such
+as casting/cooldowns/abilities after health/resource; persistent credentials only
+if chosen; SQLite only after a measured need. The optional new Courier need not
+be guest-deployed while the proven VMware CLI transfer route suffices. Dedicated
+navigation/combat automation remains outside this project. Direct ChatGPT
+Computer Use stays deferred; separately authorized guarded helpers remain usable.
+
+The numbered sections below retain the original implementation history and
+acceptance criteria; this refreshed list determines the next practical work.
+
 ## 0. Reproducible repository foundation
 
 Deliver the pinned .NET 10 solution, five production modules, two test projects,

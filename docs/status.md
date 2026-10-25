@@ -2,6 +2,13 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Remaining goals:** [Current practical roadmap](planning/implementation-roadmap.md#remaining-practical-goals--refreshed-october-25-2026)
+now separates completed XYZ interface/restart/movement work from the remaining
+sequence: reusable XYZ run entry point, real XYZ catalog qualification, health,
+then resource/power. Another XYZ restart is a confidence follow-up, not a repeated
+acceptance blocker. Patch recovery stays deferred; optional Courier deployment
+is not required while authenticated CLI transfers meet the need.
+
 **Latest live result — GUARDED MOVEMENT PASSED:** [Helper-driven XYZ displacement](validation/xyz-guarded-displacement-2026-10-25.md)
 used one requested 100 ms W pulse through the existing V21 controller, with
 recorded key-down/key-up and successful release. Native/Lua distance was
