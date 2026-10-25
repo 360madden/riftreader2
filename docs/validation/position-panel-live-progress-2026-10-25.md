@@ -1,5 +1,10 @@
 # Position window live validation: host buttons passed, guest trial in progress
 
+**Later evidence:** the [actual guest restart trial](position-panel-restart-2026-10-25.md)
+verified automatic same-build reacquisition but found live-labeled initialization
+values during startup. Its corrective work and new live gate supersede the
+pending guest-deployment statements below; those describe the earlier checkpoint.
+
 This record supersedes the permission-only block in the
 [host implementation checkpoint](position-panel-host-2026-10-25.md).
 Joey's original request remains active: install the new position window in the
