@@ -116,7 +116,8 @@ The [offline integration record](../validation/xyz-workflow-tools-2026-10-25.md)
 records replay of both retained trials and preparation of the pinned corrected
 reader. No new guest installation or game restart is implied.
 
-Authenticated VMware media control, the trial-specific Courier and one-use
-transfer-service lifecycle remain on their existing guarded paths. They have
-not been generalized by these local commands. Patch recovery and direct
+The [subsequent reusable Courier and guarded transfer lifecycle](xyz-courier-transfer.md)
+now provide configurable preparation and explicit claim/upload phases, verified
+on the host but still awaiting a new guest trial. Authenticated VMware media
+control remains on its existing reviewed path. Patch recovery and direct
 ChatGPT Computer Use inside RIFT remain deferred.

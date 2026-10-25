@@ -74,9 +74,10 @@ does not resume it or authorize unattended game interaction.
 1. **Implemented:** reusable offline panel audit, replayed against both retained
    October 25 trials; [results](../validation/position-panel-review-2026-10-25.md).
 2. **Implemented offline:** pinned deployment payload preparation, returned
-   Courier ZIP verification and audited panel-session export. The authenticated
-   media controls, Courier and live transfer-service lifecycle remain on their
-   existing guarded paths; their generalization is a separate follow-up.
+   Courier ZIP verification and audited panel-session export. The subsequent
+   [reusable Courier and transfer lifecycle](../reference/xyz-courier-transfer.md)
+   are host-verified; actual guest deployment and real-network use remain pending.
+   Authenticated media control retains its existing reviewed path.
 3. Collect additional normal exit/relaunch cases when the live interaction path
    is explicitly resumed; report the observed count, never unlimited reliability.
 4. Add the evidence to the field catalog without automatically promoting XYZ,

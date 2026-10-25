@@ -2,6 +2,15 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Newest XYZ continuation — HOST VERIFIED, LIVE PENDING:** [Reusable Courier and guarded transfer lifecycle](validation/xyz-courier-transfer-2026-10-25.md)
+now use a bounded run configuration, pinned payloads, verified archive contents,
+panel process-continuity checks, and explicit one-use claim/upload phases. The
+accepted Courier compiled and passed preflight; 39 focused cases and a static
+historical transfer preview passed. No new guest installation, lab listener,
+VM operation or restart occurred. Next is a separately bounded manual guest
+trial under fresh maintenance guards; patch recovery and direct in-game
+Computer Use remain deferred.
+
 **Newest XYZ workflow result — OFFLINE:** [Reusable preparation, archive verification and panel export](validation/xyz-workflow-tools-2026-10-25.md)
 prepared the pinned corrected reader locally, recovered both retained guest ZIPs
 with their original 260/357 files, and exported audited sessions with the initial
