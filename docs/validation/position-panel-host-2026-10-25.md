@@ -1,5 +1,10 @@
 # Position window: implemented and host verified, guest validation pending
 
+**Later live progress:** [actual host button/visual checks now passed and guarded
+guest maintenance is underway](position-panel-live-progress-2026-10-25.md).
+The earlier permission-only block below is historical; use that later record
+and current status for controller ownership and remaining work.
+
 Joey authorized building a Start / Read / Stop interface around the existing XYZ
 sampler and validating it through complete RIFT exit and relaunch on 2026-10-25.
 Patch recovery remains deferred under [ADR 0008](../decisions/0008-full-game-restart-durability.md).
