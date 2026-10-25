@@ -66,11 +66,40 @@ labels semantic evidence `recorded-assertions-only` and identity `declared-only`
 retained-byte verification is not independent live attestation.
 
 Goals 1–2 are demonstrated by the live reusable run and the mechanically rebuilt
-catalog. Health/resource scout deployment and actual scans are pending. Retained
-Lua frames show health/healthMax 18208 and raw power 100, but these were
-unchanged during XYZ movement. They are reference observations, not native
-field proof.
-Next: a fresh Lua reference, one bounded health seed pass, small targeted reads
-during real value changes, then locator derivation and normal full-game restart
-verification. Resource type/behavior must be established independently; historical
-power=100 matches do not satisfy it. Patch recovery remains deferred.
+catalog. Goals 3–4 remain open as described below.
+
+## Health seed and small reread — candidates only
+
+The numeric reader was deployed separately to
+`C:\RIFT_TRANSFER\RR2-ValueScout-oct25-01\RiftReader2.Live.exe`; guest SHA-256
+`5134A45352ABF3CC65F1116C623C14D650FD92FBA34609A3CC2B03A961199293`
+matched the published bundle. The existing XYZ reader was retained. Fresh
+advancing Lua evidence showed health/healthMax 18208 and raw power 100.
+
+`artifacts/validation/health-scout-20261025-02/` retains the bounded live scan:
+1,073,741,824 bytes examined, no read holes, 41 candidates (34 int32 and seven
+float64), approximately 16.10 seconds from acquisition start through
+revalidation. It correctly reports partial coverage, `byte-budget-exceeded`;
+the forward resume address is `0x202F5BD4479`. This is not whole-process coverage.
+All 86 returned scout files verified. The first request in `health-scout-20261025-01`
+was rejected before scanning because its hexadecimal address used lowercase;
+that failure and diagnostic remain retained.
+
+Three contexts contained the repeated health/current-max-shaped layout plus
+two 100-valued integers: `0x202AF8DE5F8`, `0x202AF8DEBE8`, and `0x202F5581158`.
+These are session addresses for PID 1224/start 639285359295548343, not durable
+locators. `targeted-health-request.json` and `targeted_read.py` reuse three
+84-byte windows. The first targeted baseline completed all **252 bytes** and
+was exported separately. No broad rescan is needed for the next value change.
+
+The seed export is 246,948 bytes, SHA-256
+`07DBC56B0F89963F30A3FAA59402B91BDEF302C115C1612F6B855C253C639262`.
+No new game input or restart was performed during health collection. Final
+controller state remained disarmed/idle with no held inputs. The timed-out
+diagnostic helpers were subsequently confirmed absent; no process was stopped.
+
+Next: coordinate a low-risk health change with the user and reread these windows
+alongside fresh Lua; identify the character's resource type and a familiar
+resource-consuming ability. Then derive the locators and validate them through
+a normal full-game exit/relaunch. Unchanged health and power=100 do not establish
+native meanings. Goals 3–4 remain open; patch recovery remains deferred.

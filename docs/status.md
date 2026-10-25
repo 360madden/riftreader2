@@ -10,6 +10,15 @@ real catalog mechanically supports exact-build meaning, locator and the one
 observed same-build full-game restart. Health and resource/power changed-state
 discovery remain open; patch survival remains unqualified and deferred.
 
+**Health seed — LIVE CANDIDATES:** The separately deployed numeric scout read
+its 1 GiB allowance in about 16 seconds and retained 41 matches, with no read
+holes. Three promising health/power-shaped blocks now have a verified **252-byte**
+targeted reread, so the next test does not need another broad scan. Evidence:
+`artifacts/validation/health-scout-20261025-02/`. These are candidate session
+addresses; health/resource changes, meanings, durable locators and their full
+game restart checks remain unproved. Await a coordinated safe health change
+and identification of the character's resource/ability; see the checkpoint above.
+
 **Remaining goals:** [Current practical roadmap](planning/implementation-roadmap.md#remaining-practical-goals--refreshed-october-25-2026)
 now separates completed XYZ interface/restart/movement, reusable workflow and
 real catalog work from the remaining sequence: health, then resource/power.
