@@ -5,6 +5,13 @@ using RiftReader2.Domain;
 
 namespace RiftReader2.Application;
 
+public sealed record PositionCandidateStep(
+    double DeltaX,
+    double DeltaY,
+    double DeltaZ,
+    double DistanceGameUnits,
+    double ElapsedMilliseconds);
+
 public sealed record PositionCandidateObservation(
     int Sequence,
     string StartedAtUtc,
@@ -17,7 +24,16 @@ public sealed record PositionCandidateObservation(
     float? Y,
     float? Z,
     string? OwnerAddress,
-    string? TerminalBytesSha256);
+    string? TerminalBytesSha256,
+    PositionCandidateStep? ChangeFromPrevious);
+
+public sealed record PositionCandidateMotionSummary(
+    string Status,
+    double ThresholdGameUnits,
+    int CompleteSamples,
+    double? FirstLastDistanceGameUnits,
+    double? MaxExcursionFromFirstGameUnits,
+    double? MaxConsecutiveChangeGameUnits);
 
 public sealed record PositionCandidateSampleSummary(
     string Status,
@@ -27,7 +43,8 @@ public sealed record PositionCandidateSampleSummary(
     string CompletedAtUtc,
     int RequestedSamples,
     int CompletedSamples,
-    IReadOnlyList<PositionCandidateObservation> Observations);
+    IReadOnlyList<PositionCandidateObservation> Observations,
+    PositionCandidateMotionSummary Motion);
 
 /// <summary>
 /// A short, read-only, exact-build sampling path using the existing pointer resolver.
@@ -35,6 +52,8 @@ public sealed record PositionCandidateSampleSummary(
 /// </summary>
 public static class PositionCandidateSampler
 {
+    private const double CandidateChangeThresholdGameUnits = 0.1;
+
     public static async Task<PositionCandidateSampleSummary> SampleAsync(
         PositionCandidateProfile profile,
         IReadOnlyNativeMemorySession session,
@@ -56,6 +75,7 @@ public static class PositionCandidateSampler
         var startedAtUtc = DateTimeOffset.UtcNow.ToString("O");
         var elapsed = Stopwatch.StartNew();
         var observations = new List<PositionCandidateObservation>(sampleCount);
+        PositionCandidateObservation? previousComplete = null;
         for (var index = 0; index < sampleCount; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -89,6 +109,16 @@ public static class PositionCandidateSampler
                     reason = "Terminal owner bytes contain non-finite XYZ float32 values.";
                 }
             }
+            PositionCandidateStep? change = null;
+            if (status == "complete" && previousComplete is not null)
+            {
+                var deltaX = (double)x!.Value - previousComplete.X!.Value;
+                var deltaY = (double)y!.Value - previousComplete.Y!.Value;
+                var deltaZ = (double)z!.Value - previousComplete.Z!.Value;
+                change = new(
+                    deltaX, deltaY, deltaZ, Distance(deltaX, deltaY, deltaZ),
+                    Math.Max(0, startMs - previousComplete.MonotonicStartMilliseconds));
+            }
             var observation = new PositionCandidateObservation(
                 index + 1,
                 sampleStarted,
@@ -101,8 +131,11 @@ public static class PositionCandidateSampler
                 y,
                 z,
                 resolved.TerminalAddress is null ? null : $"0x{resolved.TerminalAddress.Value:X}",
-                bytesSha256);
+                bytesSha256,
+                change);
             observations.Add(observation);
+            if (status == "complete")
+                previousComplete = observation;
             if (onSample is not null)
                 await onSample(observation);
             if (status != "complete")
@@ -117,7 +150,37 @@ public static class PositionCandidateSampler
             observations.Any(observation => observation.Status == "complete") ? "partial" : "failed";
         var reasonSummary = complete ? null :
             $"Sampling stopped at observation {observations[^1].Sequence}: {observations[^1].Status}.";
+        var motion = SummarizeCandidateChanges(observations);
         return new(statusSummary, reasonSummary, identity, startedAtUtc,
-            DateTimeOffset.UtcNow.ToString("O"), sampleCount, observations.Count, observations);
+            DateTimeOffset.UtcNow.ToString("O"), sampleCount, observations.Count, observations, motion);
     }
+
+    private static PositionCandidateMotionSummary SummarizeCandidateChanges(
+        IReadOnlyList<PositionCandidateObservation> observations)
+    {
+        var complete = observations.Where(item => item.Status == "complete").ToArray();
+        if (complete.Length < 2)
+            return new("insufficient-complete-samples", CandidateChangeThresholdGameUnits,
+                complete.Length, null, null, null);
+
+        var first = complete[0];
+        var maxExcursion = complete.Max(item => Distance(
+            (double)item.X!.Value - first.X!.Value,
+            (double)item.Y!.Value - first.Y!.Value,
+            (double)item.Z!.Value - first.Z!.Value));
+        var last = complete[^1];
+        var firstLast = Distance(
+            (double)last.X!.Value - first.X!.Value,
+            (double)last.Y!.Value - first.Y!.Value,
+            (double)last.Z!.Value - first.Z!.Value);
+        var maxStep = complete.Max(item => item.ChangeFromPrevious?.DistanceGameUnits ?? 0);
+        return new(
+            Math.Max(maxExcursion, maxStep) >= CandidateChangeThresholdGameUnits
+                ? "native-candidate-change-observed" : "no-significant-native-change-observed",
+            CandidateChangeThresholdGameUnits,
+            complete.Length, firstLast, maxExcursion, maxStep);
+    }
+
+    private static double Distance(double x, double y, double z) =>
+        Math.Sqrt(x * x + y * y + z * z);
 }

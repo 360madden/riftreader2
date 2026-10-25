@@ -26,6 +26,16 @@ public sealed class PositionCandidateTests
         Assert.Equal([1.5f, 2.5f], result.Observations.Select(sample => sample.X!.Value));
         Assert.Equal([2.5f, 3.5f], result.Observations.Select(sample => sample.Y!.Value));
         Assert.Equal([3.5f, 4.5f], result.Observations.Select(sample => sample.Z!.Value));
+        Assert.Null(result.Observations[0].ChangeFromPrevious);
+        var step = Assert.IsType<PositionCandidateStep>(result.Observations[1].ChangeFromPrevious);
+        Assert.Equal(1d, step.DeltaX);
+        Assert.Equal(1d, step.DeltaY);
+        Assert.Equal(1d, step.DeltaZ);
+        Assert.Equal(Math.Sqrt(3), step.DistanceGameUnits, 8);
+        Assert.True(step.ElapsedMilliseconds >= 0);
+        Assert.Equal("native-candidate-change-observed", result.Motion.Status);
+        Assert.Equal(Math.Sqrt(3), result.Motion.MaxExcursionFromFirstGameUnits!.Value, 8);
+        Assert.Equal(Math.Sqrt(3), result.Motion.FirstLastDistanceGameUnits!.Value, 8);
         Assert.All(result.Observations, sample =>
         {
             Assert.Equal("complete", sample.Status);
@@ -88,6 +98,33 @@ public sealed class PositionCandidateTests
         Assert.Equal(1f, result.Observations[0].X);
         Assert.Equal("read-failed", result.Observations[1].Status);
         Assert.Null(result.Observations[1].X);
+        Assert.Null(result.Observations[1].ChangeFromPrevious);
+        Assert.Equal("insufficient-complete-samples", result.Motion.Status);
+    }
+
+    [Fact]
+    public async Task SmallCandidateJitterIsNotLabeledPlayerMovement()
+    {
+        var session = new FixtureSession(Identity,
+            [Owner(7461.1992f, 863.8524f, 2977.0618f),
+             Owner(7461.1997f, 863.85f, 2977.0598f)]);
+        var result = await PositionCandidateSampler.SampleAsync(Profile, session, 2, 0, CancellationToken.None);
+        Assert.Equal("complete", result.Status);
+        Assert.Equal("no-significant-native-change-observed", result.Motion.Status);
+        Assert.Equal(0.1d, result.Motion.ThresholdGameUnits);
+        Assert.InRange(result.Observations[1].ChangeFromPrevious!.DistanceGameUnits, 0, 0.01);
+    }
+
+    [Fact]
+    public async Task ReturnedToStartingCoordinateRetainsIntermediateCandidateExcursion()
+    {
+        var session = new FixtureSession(Identity,
+            [Owner(100, 200, 300), Owner(100.5f, 200, 300), Owner(100, 200, 300)]);
+        var result = await PositionCandidateSampler.SampleAsync(Profile, session, 3, 0, CancellationToken.None);
+        Assert.Equal("native-candidate-change-observed", result.Motion.Status);
+        Assert.Equal(0d, result.Motion.FirstLastDistanceGameUnits);
+        Assert.Equal(0.5d, result.Motion.MaxExcursionFromFirstGameUnits);
+        Assert.Equal(0.5d, result.Motion.MaxConsecutiveChangeGameUnits);
     }
 
     [Fact]
