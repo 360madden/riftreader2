@@ -2,7 +2,7 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
-**Resume handoff:** [October 25 native XYZ direct reader, pinned guest transfer, and guarded next steps](handoff-2026-10-25-native-xyz-sampler.md). It records the exact code/evidence checkpoint; no new guest run or movement qualification is claimed.
+**Resume handoff:** [October 25 native XYZ direct reader, priority workflow pivot, pinned guest transfer, and guarded next steps](handoff-2026-10-25-native-xyz-sampler.md). The recommended operating order is **reuse known-build XYZ → guarded guest reader → near-time native/Lua movement validation → restart/patch recovery → wider field discovery**, keeping research separate from routine reads. A fresh authenticated read-only controller status at **2026-10-25T10:22:47Z** still showed exclusive reservation, RIFT foreground, guest disarmed/no held inputs, same RIFT PID/build and VMX epoch. **No new guest run, movement or deployment is claimed.**
 
 ## October 25: Known-build XYZ direct sampler and NDJSON feed — CODE VERIFIED; NO NEW GUEST SAMPLE
 

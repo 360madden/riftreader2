@@ -5,9 +5,21 @@
 ## Read this first
 
 - **Repository:** `C:\work\riftreader2`, branch `codex/modular-foundation`. Use Workbridge for the user's Windows host; current bridge seen as `0.16.3-dev`, root `C:\work`. Read repository `AGENTS.md`, `docs/status.md`, and [known-position sampling](reference/known-position-sampling.md) before changes. `C:\rift modding\RiftReader` is V1 **reference-only**.
-- **Verified pre-handoff HEAD:** `7aab1f3ffc845baf50716f03bf8bae1b75da9eb8`. Workbridge Git status at handoff preparation was clean (`## codex/modular-foundation`). A handoff commit after this paragraph will become the new HEAD; inspect history rather than assuming an old hash remains HEAD.
+- **Verified pre-update Git state:** HEAD `8844e33c7a2f7c567147bff53479133e50526d5f`, branch `codex/modular-foundation`, Workbridge status clean. This refresh will create a newer handoff commit; always inspect HEAD and working tree at resume.
 - **Authorization:** Repository step 6 allows supervised, bounded movement/turning and read-only RIFT memory discovery. Do **not** attach a debugger, inject/write native process memory, modify V1 or REA, or run a competing VM controller. Use exact session/build identity and preserve originals. Commit verified meaningful milestones without unrelated files; Joey specifically approved timely progress commits.
 - **Current objective:** Make already-known player XYZ *operationally easy to read*, leaving live source/motion qualification and restart/update resilience separate. Avoid re-running a full heap/Lua scan solely to get known-build candidate coordinates.
+
+## October 25 decision: operating workflow pivot (plain language)
+
+**Joey's agreed priority:** Stop treating player XYZ as an open-ended discovery problem on a build where we already have a working candidate recipe. First turn the known candidate into a dependable, fast read-only tool; independently prove what its bytes mean; then build restart and patch recovery. Maintain research as a separate fallback rather than repeating broad scans for every coordinate sample.
+
+1. **Routine reader lane — implemented in code, not yet proven in the guest.** For the *exact pinned RIFT executable build*, `sample-position` should quickly locate the live process, resolve the saved module-relative recipe anew on each read, and produce timestamped XYZ and deltas. It must not reuse the old absolute owner address, assume an old PID, or silently accept a changed executable.
+2. **Independent validation lane — still pending.** Deploy safely under the sole VM owner, record a short finite/read-only position feed and original receipts, then compare before/after native XYZ to near-time independently captured Lua source coordinates during a short, bounded supervised movement. Stationary agreement 2.4 hours apart is **candidate compatibility only**, not moving player-field proof.
+3. **Repair/research lane — conditional.** If a pointer chain, game build, or native/Lua agreement fails, retain the failure and use narrow `follow-pointer`/saved captures, existing V1 reference research and REA static analysis to investigate. Never restart a large heap scan just because a routine sample was requested, and never auto-apply another build's offset. Live debugger attachment is not an authorized step here.
+4. **Recovery lane — after live proof.** Check normal restart reacquisition, then maintain build-specific, hash-pinned profiles and reviewed rediscovery after patches. New executable SHA means fail closed until a separately validated profile exists.
+5. **Broader roadmap — after the core fast path is dependable.** Apply the same discover → prove → retain → monitor pattern to heading, camera, entities, targets, stats, combat/casting and collision data. Keep the finished `export-discoveries` compilation/explorer available for filtering and external consumption. Keep RIFT-Lab-1 stable; consider RIFT-Lab-2 as a separate research lane only after the primary reader and console handovers are reliable. Do not grow to four VMs now.
+
+**Practical completion criterion:** A resumed operator can safely deploy the pinned reader, obtain new timestamped position samples without a broad scan, preserve raw acquisition proof, see a corroborated native/Lua positional change from an independently recorded movement pulse, and later recover the recipe after a restart. No step in this new handoff turn has established those still-pending guest or movement results.
 
 ## Verified result and three new commits
 
@@ -43,6 +55,7 @@ Last complete Windows PowerShell 7.6.8 gate:
 - Evidence: ignored `artifacts/validation/20261025T093540Z-12ff745f`.
 - Focused new position tests: 9/9; new + legacy + recovery transfer tests: 34/34.
 - Read-only preflight of both new transfer choices passed: exact byte length/hash, route, peer. **No live download or guest execution is proven.**
+- **October 25 pivot-handoff-only revalidation:** a fresh full PowerShell 7.6.8 `scripts/validate.ps1` run exited **0 at 2026-10-25T10:25:55Z** (job `rr2-pivot-handoff-full-gate-01`): **450 .NET, 669 Python, 108 Lua, 22 Lua-to-C#**, native-publish host smoke, formatting and **502** relative links. Ignored evidence `artifacts/validation/20261025T102454Z-2a728be4`. Only this handoff and `docs/status.md` were edited; no game/VM mutations were made.
 
 ### Exact-pinned guest delivery ingredients
 
@@ -60,6 +73,10 @@ At **2026-10-25T09:00:23Z**, authenticated read-only `scripts/control_client.py 
 - VMware VMX PID **38044**, log epoch `2026-10-24T05:41:51.833Z`, console port 5905; same VM epoch as previous proof.
 - Prior validated coordinator PID **28496**; check a **fresh** process/owner status before using it. **Do not connect to VNC/VM console while V16 exclusively owns it.**
 - **V16→V17 successor is only staged** under `artifacts/update-recovery-20261023-01/` (`coordinated-host-plan-v17.json`, `run-coordinated-host-v17.py`). No V16 normal STOP, no V17 launch, no new guest file transfer or new movement has occurred as of this handoff. See [motion reviewer and safety sequence](reference/native-motion-pair-review.md).
+
+### Fresh non-mutating handoff observation — 2026-10-25T10:22:47Z
+
+An authenticated **read-only** `control_client.py ... status` command (job `rr2-pivot-handoff-readonly-status-01`, exit **0**) again reported host coordination **ready**, connected, sole VM-console reservation held, supervisor running, no shutdown or recovery request, guest **unarmed/not busy**, no sampled keys/buttons down, and RIFT foreground. Exact game **PID 6940**, start ticks **639284177321390013**, executable SHA **7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD**, VMX **PID 38044** and VM log epoch **2026-10-24T05:41:51.833Z** matched the previous record. This is a fresh status result only: **no V16 STOP, guest file transfer, screenshot interaction, V17 start, memory sampling, or movement** was performed. Re-check everything again at the next session; these PIDs are not a future authority.
 
 ## Exact next work — do in this order
 
