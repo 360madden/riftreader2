@@ -253,7 +253,10 @@ class V16GuestPointerSafetyTests(unittest.TestCase):
                 service.upload_received(self.plan)
 
     def test_guest_post_upload_stage_fails_before_vnc_on_missing_receiver(self):
-        with patch.object(trial, "HOME", self.root), patch.object(
+        # A real live guest claim may now exist in service.HOME. Isolate both
+        # modules so a regression test never reads actual service receipts.
+        a, b, c, d, e = self.service_paths()
+        with a, b, c, d, e, patch.object(
                 trial, "commands", return_value=[("upload", "Write-Output 1")] * 33), patch.object(
                 trial, "maintenance", return_value=self.plan), patch.object(
                 trial, "require_previous_step"), patch.object(

@@ -1,6 +1,8 @@
 """ZIP and two-receipt boundary tests for current RIFT native pointer capture."""
 import hashlib
 import json
+import subprocess
+import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -31,6 +33,16 @@ class NativePointerArchiveTests(unittest.TestCase):
         self.write_archive()
         self.output = self.root / "recovered"
         self.source_sha = hashlib.sha256(self.fx.sourcefile.read_bytes()).hexdigest().upper()
+
+    def test_standalone_cli_help_resolves_package_imports(self):
+        script = Path(__file__).resolve().parents[1] / "scripts" / "verify_pointer_zip_archive.py"
+        proc = subprocess.run(
+            [sys.executable, str(script), "--help"],
+            cwd=script.parents[1], capture_output=True, text=True, timeout=15,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("--archive", proc.stdout)
 
     def write_archive(self, *, members=None):
         pairs = {

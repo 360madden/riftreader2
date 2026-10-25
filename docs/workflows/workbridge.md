@@ -42,6 +42,14 @@ they do not register tools or executable command profiles.
    Use a null expected HEAD for an initial commit. Inspect history before
    retrying an uncertain commit.
 
+October 24 operational exception: the dedicated `git_commit` call hung twice
+without advancing HEAD. After checking `git_status` and `git_history`, the
+scoped fallback through `terminal_run` succeeded: Git `add -- EXACT_FILES`,
+`diff --cached --name-status`, `diff --cached --check`, then
+`commit -m MESSAGE -- EXACT_FILES`. Poll for exit code zero, then recheck HEAD
+and the clean worktree. This committed `374170d` without touching unrelated
+files. Never blindly retry an uncertain commit or stage the whole repository.
+
 Workbridge currently allows two concurrent command jobs. Batch independent
 reads when useful; keep dependent edits, commits, and recovery sequential.
 
@@ -71,6 +79,18 @@ actual exit code. Windows PowerShell 5.1 availability does not establish that
 the gate can run. If PowerShell 7 is unavailable through a particular bridge
 route, report that access limitation rather than substituting a partial check.
 
+October 24 live resolution: PowerShell **7.6.8** was installed as the Store
+package `Microsoft.PowerShell`, but the shell's `pwsh.exe` WindowsApps alias
+and the assumed `C:\Program Files\PowerShell\7\pwsh.exe` did not resolve
+through `terminal_run`. A read-only PowerShell 5.1 query,
+`Get-AppxPackage -Name Microsoft.PowerShell`, returned `InstallLocation`.
+The true executable was
+`C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.8.0_x64__8wekyb3d8bbwe\pwsh.exe`.
+The real package binary accepted `-NoProfile -File scripts/validate.ps1`
+and the full native milestone gate passed. Discover the **current** package
+location each session because Store versions can change; never infer that
+PowerShell 7 is absent from the zero-byte WindowsApps alias failure.
+
 When available, the intended terminal invocation is equivalent to:
 
 ```text
@@ -86,9 +106,11 @@ a submitted Workbridge job is not evidence for the current checkout.
 ## Generated data and recovery
 
 Workbridge can inspect saved raw or prepared gzip snapshots. That capability
-does not itself capture a live process. The current RiftReader2 product also has
-no live-game reader. Keep bulky output under `artifacts/` and request only
-relevant portions.
+does not itself capture a live process. RiftReader2 now has an independently
+verified, bounded **guest native game-memory read** path and original-byte
+transfer; it does **not** yet have a continuous, synchronized live XYZ stream
+or a motion-qualified field. Keep bulky output under `artifacts/` and request
+only relevant portions.
 
 Recoverable file edits and Git history serve different purposes. Workbridge's
 undo records do not provide a full backup of the project or ignored artifacts.

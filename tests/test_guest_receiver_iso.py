@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import unittest
@@ -97,12 +98,19 @@ class GuestReceiverIsoTests(unittest.TestCase):
     @unittest.skipUnless(ISO.is_file(), "generated ISO required")
     def test_repeat_invocation_refuses_overwrite(self):
         old_hash = sha(ISO.read_bytes())
+        # A PowerShell 7 parent can pass a PS7-only PSModulePath to this PS5.1
+        # subprocess. Restore the inbox Windows PowerShell modules explicitly.
+        env = os.environ.copy()
+        ps51_modules = (Path(env.get("SystemRoot", r"C:\Windows")) / "System32"
+                        / "WindowsPowerShell" / "v1.0" / "Modules")
+        env["PSModulePath"] = str(ps51_modules) + os.pathsep + env.get("PSModulePath", "")
         result = subprocess.run(
             [
                 "powershell.exe", "-NoProfile", "-NonInteractive",
                 "-File", str(BUILDER),
             ],
             cwd=ROOT,
+            env=env,
             capture_output=True,
             text=True,
             timeout=20,

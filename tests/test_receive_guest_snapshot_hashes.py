@@ -31,7 +31,11 @@ def exchange(body: bytes, *, route=ROUTE, guest="127.0.0.1", method="POST",
             thread.start()
             try:
                 connection = HTTPConnection("127.0.0.1", server.server_port, timeout=3)
-                connection.request(method, route, body=body, headers={"Content-Type": content_type})
+                # On Windows, a rejected POST with unread bytes can be reset on close.
+                # Early-denial cases only need headers/peer identity, not a body.
+                wire = body if (guest == "127.0.0.1" and route == ROUTE
+                                and method == "POST" and content_type == "text/plain") else b""
+                connection.request(method, route, body=wire, headers={"Content-Type": content_type})
                 response = connection.getresponse()
                 status = response.status
                 response.read()

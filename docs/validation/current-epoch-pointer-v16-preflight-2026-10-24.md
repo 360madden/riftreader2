@@ -1,6 +1,6 @@
-# Current-epoch native XYZ pointer trial — V16 host preparation, October 24, 2026
+# Current-epoch native XYZ pointer trial — historical V16 host preparation, October 24, 2026
 
-**Status: PREPARED, NOT EXECUTED.** No fresh native game-memory pointer report or Lua/native agreement exists for PID 6940 yet. V15 is still the exclusive healthy VMware console owner; its normal STOP marker has not been created. This handoff separates the proven advancing typed Lua producer from the next independent native-position experiment.
+**Historical preflight as of 22:41 UTC, since executed successfully.** This document records the state and gates *before* the V15 normal STOP, two original live native reads, SHA-pinned guest upload and restored independent V16. Its later present-tense statements are historical, **not current operational status**. See [the completed live result and V16 recovery](native-pointer-xyz-first-live-2026-10-24.md) for the actual addresses, values, original hashes, exact limitations and current console owner.
 
 ## Historical reason for this exact pointer
 

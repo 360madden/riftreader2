@@ -16,6 +16,10 @@ import sys
 from tempfile import TemporaryDirectory
 from zipfile import BadZipFile, ZIP_DEFLATED, ZIP_STORED, ZipFile
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from scripts.review_current_pointer_xyz import EvidenceError, review
 from scripts.verify_typed_inline_archive import (
     ArchiveError, _sha, _sha_match, _transfer_proof,
