@@ -12,6 +12,12 @@ On the Windows guest (or another Windows x64 machine with exactly one `rift_x64.
 
 The tracked source profile is `config/position-candidate-profile.json`. It is explicitly pinned to executable SHA-256 `7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD`, module root RVA `0x32E0200`, and float32 owner offsets `+0x320/+0x324/+0x328`. Those are current-build **candidate** observations from the October 24 proof, not universal RIFT offsets.
 
+### Separate, pinned host-to-guest delivery
+
+The new `scripts/serve_guest_position_sampler.py` reuses the original delivery handler **without changing the older SHA-pinned transfer script**. On the Windows host, run `python scripts/serve_guest_position_sampler.py --bundle executable` and then `python scripts/serve_guest_position_sampler.py --bundle profile` for read-only verification; neither command starts a listener. The executable is the 74,349,475-byte validated October 25 single-file publish; the profile is the 395-byte tracked JSON. Each has its own exact SHA-256, fixed route and filename, the existing RIFT-Lab-1 guest IP allowlist, and a maximum ten-minute, one-use VMnet8 server that requires signed-in Windows `pythonw.exe` for `--serve`. Receipt files, if later delivered, go under ignored `artifacts/validation/`, not into tracked `config/`. Do not overlap the two one-use services.
+
+Actual guest delivery is **not** part of these preflights. A normal V16 STOP, quarantined access queue, verified VM epoch and exclusive screenshot-gated guest maintenance are required first. Guest PowerShell must independently verify both downloaded SHA-256 values before running the reader from a new destination, leaving the installed prior reader untouched. A clean successor controller must then be restored. No transfer step qualifies XYZ semantics.
+
 The command:
 
 1. Validates a strict, small `native-position-profile/1` file and refuses existing outputs.
