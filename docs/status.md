@@ -2,6 +2,20 @@
 
 Updated: 2026-10-26 (America/New_York; Windows host clock).
 
+**Updated casting addon — DEPLOYED; RANGED-REACH HIT VERIFIED:**
+Normal Chat worker preflight selected Light's Decree from the real API catalog;
+the coordinator deployed matching addon hashes and used guarded helpers for two
+separate 60s recordings. First attempt was dodged. After reviewing that evidence,
+the second confirmed 402 Life damage on the exact selected dummy from a constant
+5.179 derived coordinate distance, Power 100 -> 80 -> 100, and 12.006s effective
+cooldown recovery. Other-dummy area hits were excluded; successful trial had no
+autoattack events. New panel layout is live-verified. See the
+[result and limitations](validation/casting-ranged-2026-10-26.md); export:
+`artifacts/exports/casting-ranged-20261026-01/`. All input released, controller idle.
+No source changes, full-game restart claim, health-loss test or patch recovery.
+Next small fix: display exact-target dodge/avoidance more clearly; raw evidence
+already distinguishes it from damage. Earlier undeployed notes below are history.
+
 **Normal Chat worker workflow — TWO-WORKER TRIAL VERIFIED:**
 An independent casting reviewer and workflow-doc writer ran concurrently through
 Workbridge with separate file ownership. Both wrote local completion receipts;

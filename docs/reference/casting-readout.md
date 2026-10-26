@@ -60,6 +60,12 @@ This increment is a readout and supervised test, not a complete casting engine.
 
 ## Evidence
 
+The [2026-10-26 ranged-reach trial](../validation/casting-ranged-2026-10-26.md)
+deployed 0.2.0 and verified the updated layout. Light's Decree dealt 402 Life
+damage to the exact selected dummy after an earlier dodged attempt; Power and
+12-second cooldown recovery were recorded. Other-target area damage was excluded.
+This does not qualify healing, independent GCD, all casting types or game restart.
+
 The panel samples at 10 Hz for up to 60 seconds, retaining at most 630 snapshots,
 64 combat events and 64 selected-ability cooldown events per trial. Recent trials
 and the selected ability survive UI reload as historical saved evidence. A trial
