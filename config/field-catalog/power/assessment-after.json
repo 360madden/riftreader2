@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-assessment/1",
+  "assessmentId": "power-after-restart-20261025",
+  "fieldId": "player.resource.power",
+  "fieldDefinitionSha256": "CAFF11CEDD3510CBE3BFFA9DC05F7662A2831895DE8D42C571DF7AC1E4C5259F",
+  "reviewer": "codex-evidence-review",
+  "method": "Review retained exact-build native sample bytes, independently validated advancing Lua frames, guarded click release, near-time and clock-aligned comparisons, process-absence journal and old-process rejection. Preserve source timing limits and one-restart scope.",
+  "evidenceOrigin": "rift-recording",
+  "assessedAtUtc": "2026-10-26T01:30:24.762964Z",
+  "expiresAtUtc": null,
+  "applicability": {
+    "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "sessionId": "rift-12076-639285736860316715"
+  },
+  "declarations": [
+    {
+      "claim": "meaning",
+      "outcome": "supports",
+      "rationale": "One reviewed Light's Balm click in this process produced 120/120 native reads and independently advancing Lua Power consumption/recovery. Nearest-time residuals were at most 2 points; stable-record reconstructions at Lua clock times matched exactly. Health and position were unchanged. No exact spell-cost claim."
+    },
+    {
+      "claim": "locator",
+      "outcome": "supports",
+      "rationale": "The exact-build resource chain was re-resolved for every sample, with vtable/type, stable-input and process checks. The Power getter found in the exact game executable defines the float32 regeneration calculation. The old portrait UI float64 address is not this locator."
+    },
+    {
+      "claim": "restart-survival",
+      "outcome": "supports",
+      "rationale": "This is the after endpoint of one normal complete game exit/relaunch, independently observed as zero game processes followed by a new PID/start and all-new resource addresses. The unchanged recipe produced the changed-state Power trace in both sessions. Old-process reads were rejected. No patch or VM reboot claim."
+    }
+  ],
+  "artifacts": [
+    {
+      "evidenceRole": "observation",
+      "path": "after-native.json.raw",
+      "byteLength": 89832,
+      "sha256": "38F3C6369D46729B4791F67D0100AEF3F9E5490B5AB917DF002B31C343BD038C",
+      "evidenceKind": "native-power-samples/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "after-comparison.json.raw",
+      "byteLength": 971,
+      "sha256": "6DAF863F57D8D8FCFD92BFDFE3672ED1AF7FF9836419DCA12F7D8294CAC9876E",
+      "evidenceKind": "power-lua-comparison-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "after-lua.json.raw",
+      "byteLength": 25632,
+      "sha256": "07EC36403089BAFCA2260130D2948289322265FBB3DC3A9A13B619775EA51852",
+      "evidenceKind": "validated-power-lua-frames/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "after-aligned.json.raw",
+      "byteLength": 3067,
+      "sha256": "DFF493CAF356B4CAC2DD0E551FE9CD6EAEFBAFC10369854E9BADCB3D7F50065A",
+      "evidenceKind": "power-clock-aligned-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "after-action.json.raw",
+      "byteLength": 1612,
+      "sha256": "59C394A22520A70C6762FC06D8E6880AEA1BA68484D89F4C69278C00662EC150",
+      "evidenceKind": "guarded-native-input-action/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "restart-summary.json.raw",
+      "byteLength": 4688,
+      "sha256": "9BD6EBCECBA3863DF15189A0E8D7112905116C1ECCE785DAA9447573677587E6",
+      "evidenceKind": "power-locator-restart-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "process-transition.json.raw",
+      "byteLength": 6959,
+      "sha256": "D39B13561A121C3A29B3F7FDE7D9AFFB0CBCBBD91FFEBA155CA0406C930C32B7",
+      "evidenceKind": "controller-process-transition-evidence/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "old-process-rejection.json.raw",
+      "byteLength": 1281,
+      "sha256": "766AEC8A354055961DC51125402FA7FA6AD4D96CABBF48AD28FFE561D67E4466",
+      "evidenceKind": "old-process-rejection-evidence/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-12076-639285736860316715"
+    }
+  ]
+}

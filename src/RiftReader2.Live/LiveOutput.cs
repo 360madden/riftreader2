@@ -62,7 +62,11 @@ public sealed record LiveReaderSnapshot(
     string? ReaderReason,
     LiveTargetReport? Target,
     LiveRiftReader2Report RiftReader2,
-    LiveDeliveryReport Delivery);
+    LiveDeliveryReport Delivery)
+{
+    // Additive independent source block; the existing addon contract is unchanged.
+    public LivePowerReport NativePower { get; init; } = LivePowerRead.Unavailable("native-power-not-read");
+}
 
 public static class LiveOutput
 {

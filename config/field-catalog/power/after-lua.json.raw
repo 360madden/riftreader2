@@ -1,0 +1,1172 @@
+[
+  {
+    "sequence": 596,
+    "frameTime": 318.29327392578,
+    "wireSha256": "56D550C790672389A4146BD9266022EAE420587780CDCF382B621AA6D7370C43",
+    "snapshot": "data\\lua-1\\capture-03.snapshot.json",
+    "snapshotSha256": "7596C5B5C999741244D339B9D643C944294EF06E5F7863091AEA3FA7DBBC4C5A",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 597,
+    "frameTime": 318.80432128906,
+    "wireSha256": "125BE098AE2B69FBEC3542FFA2D5805A9E2635E95097786C639910984FB306C5",
+    "snapshot": "data\\lua-1\\capture-01.snapshot.json",
+    "snapshotSha256": "2F182232529EBAB6A20EF009FF62C7516148BFB9C2453061F9EA120AC47F6B3D",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 598,
+    "frameTime": 319.31042480469,
+    "wireSha256": "AF038C8FE069F6299571CB703FF0C27F6E8651A872CAE89799FE398AF5D7152C",
+    "snapshot": "data\\lua-1\\capture-02.snapshot.json",
+    "snapshotSha256": "B769217B923F6B93023ED1D3C4EB78C94ECD9B7599389500F69109F7314E2C2A",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 599,
+    "frameTime": 319.81661987305,
+    "wireSha256": "D8171699011133903F58C60D2F242B1969FE0CA3A70C56F1580EAE714B924A3C",
+    "snapshot": "data\\lua-2\\capture-02.snapshot.json",
+    "snapshotSha256": "25D38E55DC4E043B3BBE0A703A6A40BCF35E83558342BDF40F9349329D88B503",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 600,
+    "frameTime": 320.33282470703,
+    "wireSha256": "7BF33EBD69EE64314BDEC61906541426C220CE0A5165FB8E8D54D2936017F919",
+    "snapshot": "data\\lua-2\\capture-01.snapshot.json",
+    "snapshotSha256": "23A194E07DD3197F459F6C3D8C43F172E8FDAE0345353D6347D07C52F202BB8D",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 601,
+    "frameTime": 320.83883666992,
+    "wireSha256": "3701A9AE62EECAC267B7FB4CCF55552439B2530364C89423DC87A3BBA42B93A4",
+    "snapshot": "data\\lua-3\\capture-01.snapshot.json",
+    "snapshotSha256": "91602EA48C0DBF3A54CF053245C701CD7D0BC3CA9270407FB7C2097CD16C743D",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 602,
+    "frameTime": 321.34945678711,
+    "wireSha256": "B19681952B34B9CFF630747722E927CA5FC6CCC59CBAF0E7C0ABE217645C894D",
+    "snapshot": "data\\lua-4\\capture-01.snapshot.json",
+    "snapshotSha256": "B60E6BEC5DBDDF3AF9358730FBAD4D1BBE288017E8ACA523C4BE2D3577FF9577",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 603,
+    "frameTime": 321.85916137695,
+    "wireSha256": "39A7D8A6AB2A614D9E894B5F41BE9D75ED29673681DCC917E89FDF1A235D2A59",
+    "snapshot": "data\\lua-4\\capture-02.snapshot.json",
+    "snapshotSha256": "3CDF2946424C44A743D49945535EA6ACE424DFC880B2E876A91A92D6D2962812",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 604,
+    "frameTime": 322.36212158203,
+    "wireSha256": "0BFF0F8B2B1B9D1FFEA4FF92F15F3F1C894198DDC67BA9A3782DD99F191CFD4A",
+    "snapshot": "data\\lua-5\\capture-01.snapshot.json",
+    "snapshotSha256": "F967CED695DDD3E8BE83513E5A947C2F392190A1B690B675F4E5891ED4531A61",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 81
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 605,
+    "frameTime": 322.87051391602,
+    "wireSha256": "6E775700E32DD290C6D23ED751893F7AD627A430F95D4F0E6B5D8892335ED573",
+    "snapshot": "data\\lua-6\\capture-01.snapshot.json",
+    "snapshotSha256": "44706D5B21DB7337793A225EC6017BF3F6B0A814E689672DD737CC87BE0DF8EB",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 87
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 606,
+    "frameTime": 323.37698364258,
+    "wireSha256": "B6C36E252A679BFA9C8AA26ECA9C87A4016B6B0382B817EB37D50D981B42B3DF",
+    "snapshot": "data\\lua-6\\capture-02.snapshot.json",
+    "snapshotSha256": "3493761097BBB4B83CC1A431C6395FA99B7DBA54A990B82C81E14E991C42D163",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 93
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 607,
+    "frameTime": 323.88729858398,
+    "wireSha256": "05715ACA48BCD26B534AF370EF4FEC970BE7E3D143994E0FF0736A84A0678937",
+    "snapshot": "data\\lua-7\\capture-02.snapshot.json",
+    "snapshotSha256": "13AC9F16E9B05D183D95E04FCB51FF9373621DF6B3E4D93B44B34A80B5092EE3",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 99
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 608,
+    "frameTime": 324.39163208008,
+    "wireSha256": "503E388893A2454331778F99E5AAADA54FA293A4190A23ADB25B1A43F355980D",
+    "snapshot": "data\\lua-8\\capture-02.snapshot.json",
+    "snapshotSha256": "F49C1C871C6C88B9658E903B22BF6877FA51FC027B7A27469088A3B3003820A4",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 609,
+    "frameTime": 324.90161132812,
+    "wireSha256": "BE56B8E5C102DD23F876848943A1625FE4FF898F8A6EC032E26BAC8874990779",
+    "snapshot": "data\\lua-8\\capture-01.snapshot.json",
+    "snapshotSha256": "40EA6D636F4FB44CCE0D63A07C994ECED1395B0F0F702ADDE3969137161F5A45",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 610,
+    "frameTime": 325.4153137207,
+    "wireSha256": "E2334FC656DEE82C8607081C4B968D2AC9BF8256A1A60857F1281B96C394FFD0",
+    "snapshot": "data\\lua-9\\capture-01.snapshot.json",
+    "snapshotSha256": "8FA8A818FC173446AF971259DB83C0CD9C1D24A81397B5CDFAF6F6E7A6C02EF4",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 611,
+    "frameTime": 325.92855834961,
+    "wireSha256": "09B82C7C28BAF8B8BA00B3EAE45DDA651F29927A85DE8BDBA5BFA3D1B0D27FA5",
+    "snapshot": "data\\lua-9\\capture-02.snapshot.json",
+    "snapshotSha256": "C6B267C3D0036C9CC1B5E1E0190B47C8A659D4342C687D17CC41B187C1463E4B",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 612,
+    "frameTime": 326.42886352539,
+    "wireSha256": "1B5FB1C36914E8CF8B4758EBE9D7D63B60D9CE16D0E0353B0DF55A70352E946D",
+    "snapshot": "data\\lua-10\\capture-02.snapshot.json",
+    "snapshotSha256": "9249B090E917AB42E91764541D5056C5B3B3D33156582311788422F684034D5D",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  },
+  {
+    "sequence": 613,
+    "frameTime": 326.92922973633,
+    "wireSha256": "A16EDF13812B1B448E9E3ABB41EDD4AAD12EAF184DB526F520C8A6F875019C58",
+    "snapshot": "data\\lua-10\\capture-01.snapshot.json",
+    "snapshotSha256": "98E465A2259B98A5752A3C21908812922C5157704D40D5EC666E25B335E68A32",
+    "fields": {
+      "combat": {
+        "status": "unavailable"
+      },
+      "combo": {
+        "status": "ok",
+        "value": 3
+      },
+      "coordX": {
+        "status": "ok",
+        "value": 7441.4897460938
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 863.57995605469
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": 2964.9299316406
+      },
+      "dead": {
+        "status": "unavailable"
+      },
+      "health": {
+        "status": "ok",
+        "value": 18208
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 18208
+      },
+      "mana": {
+        "status": "unavailable"
+      },
+      "manaMax": {
+        "status": "unavailable"
+      },
+      "mounted": {
+        "status": "unavailable"
+      },
+      "planar": {
+        "status": "ok",
+        "value": 1
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 3
+      },
+      "power": {
+        "status": "ok",
+        "value": 100
+      },
+      "zone": {
+        "status": "ok",
+        "value": "z487C9102D2EA79BE"
+      }
+    },
+    "playerUnitId": "u035400012FA2D207"
+  }
+]

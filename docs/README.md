@@ -13,6 +13,7 @@ topic below instead of loading every document for each task.
 | Guest operations | [Managed agent launcher](reference/guest-agent-launcher.md) | Hash-checked graceful updates and measured VMware file transfers; NAT unchanged. |
 | Real field catalog | [XYZ field knowledge](reference/xyz-field-catalog.md) | Exact-build meaning, locator and observed restart assessments; patch survival unqualified. |
 | Power discovery | [Native Warrior Power locator](reference/native-power-locator.md) | Player resource chain and API calculation; changed-state Lua agreement across one full game restart. |
+| Power data | [Live interface and field catalog](reference/power-data-interface.md) | Fresh native Power in normal JSON output, retained catalog assessments, standard JSON/CSV discovery exports. |
 | Numeric discovery | [Bounded value scout](reference/native-value-scout.md) | Seed health/resource candidates once, then use small changed-state captures. |
 | Planning | [Discovery compilation roadmap](planning/discovery-compilation-roadmap.md) | Finalized offline compiler, filtering, export, and explorer milestones. |
 | Completed task | [Movement-control parity roadmap](planning/movement-control-parity-roadmap.md) | Historical W/S/A/D validation phases and evidence. |

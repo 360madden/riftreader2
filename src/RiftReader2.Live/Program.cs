@@ -172,6 +172,9 @@ internal static class Program
                     after.Target?.Identity ?? attachedTarget.Identity,
                     lastSelection,
                     scanStartedAt);
+                var nativePower = after.Target is not null && SameProcess(attachedTarget, after.Target)
+                    ? await LivePowerReader.ReadAsync(after.Target, timeProvider, cancellation.Token)
+                    : new LivePowerRead(null, null, timeProvider.GetTimestamp(), "target-identity-changed-during-scan");
                 var sequence = ++outerSequence;
                 var beforeDelivery = CreateSnapshot(
                     instanceId,
@@ -188,7 +191,10 @@ internal static class Program
                     scanStartedAt,
                     configuration,
                     delivery.State,
-                    timeProvider);
+                    timeProvider) with
+                {
+                    NativePower = nativePower.Present(timeProvider, TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds))
+                };
                 await delivery.DeliverAsync(beforeDelivery, cancellation.Token);
                 var afterDelivery = CreateSnapshot(
                     instanceId,
@@ -205,7 +211,10 @@ internal static class Program
                     scanStartedAt,
                     configuration,
                     delivery.State,
-                    timeProvider);
+                    timeProvider) with
+                {
+                    NativePower = nativePower.Present(timeProvider, TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds))
+                };
                 await LiveOutput.WriteAtomicAsync(outputPath, afterDelivery, cancellation.Token);
                 PrintStatus(afterDelivery);
 
@@ -345,7 +354,10 @@ internal static class Program
                     timeProvider,
                     "unavailable",
                     reason),
-                deliveryState);
+                deliveryState)
+            {
+                NativePower = LivePowerRead.Unavailable(reason)
+            };
         }
         await delivery.DeliverAsync(Build(delivery.State), cancellationToken);
         await LiveOutput.WriteAtomicAsync(outputPath, Build(delivery.State), cancellationToken);
@@ -394,7 +406,10 @@ internal static class Program
                 timeProvider,
                 "unavailable",
                 "reader-terminated"),
-            delivery);
+            delivery)
+        {
+            NativePower = LivePowerRead.Unavailable("reader-terminated")
+        };
     }
 
     private static LiveTargetReport TargetReport(DiscoveredTarget target) => new(

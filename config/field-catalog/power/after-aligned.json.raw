@@ -1,0 +1,131 @@
+{
+  "method": "Derived corroboration at Lua clock only for stable surrounding native records; not simultaneous reads.",
+  "pairs": [
+    {
+      "luaSequence": 599,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 319.73047,
+      "bracketEnd": 320.02286,
+      "nativeSequence": 1
+    },
+    {
+      "luaSequence": 600,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 320.31516,
+      "bracketEnd": 320.56775,
+      "nativeSequence": 1
+    },
+    {
+      "luaSequence": 601,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 320.56775,
+      "bracketEnd": 320.90457,
+      "nativeSequence": 1
+    },
+    {
+      "luaSequence": 602,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 321.16193,
+      "bracketEnd": 321.53473,
+      "nativeSequence": 1
+    },
+    {
+      "luaSequence": 603,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 321.53473,
+      "bracketEnd": 321.8856,
+      "nativeSequence": 1
+    },
+    {
+      "luaSequence": 605,
+      "lua": 87,
+      "reconstructedAtLuaFrameTime": 87,
+      "residual": 0,
+      "bracketStart": 322.80814,
+      "bracketEnd": 323.09546,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 606,
+      "lua": 93,
+      "reconstructedAtLuaFrameTime": 93,
+      "residual": 0,
+      "bracketStart": 323.09546,
+      "bracketEnd": 323.40634,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 607,
+      "lua": 99,
+      "reconstructedAtLuaFrameTime": 99,
+      "residual": 0,
+      "bracketStart": 323.68668,
+      "bracketEnd": 323.93842,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 608,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 324.19815,
+      "bracketEnd": 324.487,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 609,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 324.8269,
+      "bracketEnd": 325.09106,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 610,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 325.39032,
+      "bracketEnd": 325.67123,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 611,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 325.67123,
+      "bracketEnd": 325.95074,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 612,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 326.21744,
+      "bracketEnd": 326.4664,
+      "nativeSequence": 2
+    },
+    {
+      "luaSequence": 613,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 326.75107,
+      "bracketEnd": 327.02332,
+      "nativeSequence": 2
+    }
+  ]
+}

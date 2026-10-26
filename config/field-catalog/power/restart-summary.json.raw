@@ -1,0 +1,164 @@
+{
+  "status": "power-locator-and-one-full-game-restart-demonstrated",
+  "recipe": "player-power-7C356C9D-v1",
+  "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+  "before": {
+    "processId": 1224,
+    "processStartUtcTicks": 639285359295548343,
+    "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+    "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "moduleBaseAddress": 140698495614976,
+    "moduleSize": 62611456
+  },
+  "after": {
+    "processId": 12076,
+    "processStartUtcTicks": 639285736860316715,
+    "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+    "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "moduleBaseAddress": 140698495614976,
+    "moduleSize": 62611456
+  },
+  "trials": [
+    {
+      "label": "trial-02-capture",
+      "review": {
+        "qualification": "candidate-live-comparison-only",
+        "identity": {
+          "processId": 1224,
+          "processStartUtcTicks": 639285359295548343,
+          "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+          "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+          "moduleBaseAddress": 140698495614976,
+          "moduleSize": 62611456
+        },
+        "nativeStatus": "complete",
+        "completeSamples": 120,
+        "unavailableSamples": 0,
+        "nativePowerValues": [
+          83,
+          86,
+          89,
+          92,
+          95,
+          98,
+          100
+        ],
+        "luaPowerValues": [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          82,
+          88,
+          94,
+          100,
+          100,
+          100,
+          100
+        ],
+        "luaFrames": 15,
+        "pairedFrames": 13,
+        "maxAbsoluteResidual": 2,
+        "maxPairTimeDifference": 0.2110312500008149,
+        "healthValues": [
+          18208
+        ],
+        "positions": [
+          [
+            7441.4897460938,
+            863.57995605469,
+            2964.9299316406
+          ]
+        ]
+      },
+      "clockAlignedMatches": 12,
+      "rawNativeComplete": 120,
+      "clickDeliveredAndReleased": true
+    },
+    {
+      "label": "trial-restart-01-capture",
+      "review": {
+        "qualification": "candidate-live-comparison-only",
+        "identity": {
+          "processId": 12076,
+          "processStartUtcTicks": 639285736860316715,
+          "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+          "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+          "moduleBaseAddress": 140698495614976,
+          "moduleSize": 62611456
+        },
+        "nativeStatus": "complete",
+        "completeSamples": 120,
+        "unavailableSamples": 0,
+        "nativePowerValues": [
+          83,
+          86,
+          90,
+          94,
+          97,
+          100
+        ],
+        "luaPowerValues": [
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100,
+          81,
+          87,
+          93,
+          99,
+          100,
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "luaFrames": 18,
+        "pairedFrames": 16,
+        "maxAbsoluteResidual": 2,
+        "maxPairTimeDifference": 0.1852732128900243,
+        "healthValues": [
+          18208
+        ],
+        "positions": [
+          [
+            7441.4897460938,
+            863.57995605469,
+            2964.9299316406
+          ]
+        ]
+      },
+      "clockAlignedMatches": 14,
+      "rawNativeComplete": 120,
+      "clickDeliveredAndReleased": true
+    }
+  ],
+  "patchRecovery": "deferred",
+  "healthChange": "deferred",
+  "networkChanges": false,
+  "transport": "VMware Tools with cached guest login",
+  "limitations": [
+    "One same-build restart and one changed-state cast per session; not all future restarts, patches, other classes or VM boots.",
+    "Native and Lua reads are separately timed; aligned formula comparisons are derived corroboration.",
+    "Initial restart observer failed on expected stderr; independent controller journal proves zero game processes.",
+    "Post-restart orchestration detected stale controller binding after successful input and capture; normal reconnect recovered, and preflight now rejects that condition before input."
+  ],
+  "absenceObservedAtUtc": "2026-10-26T01:07:34.599446Z",
+  "oldIdentityRejected": true,
+  "finalState": {
+    "host": "v23",
+    "ready": true,
+    "disarmed": true,
+    "noHeldInputs": true,
+    "queueClear": true
+  }
+}

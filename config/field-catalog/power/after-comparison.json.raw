@@ -1,0 +1,56 @@
+{
+  "qualification": "candidate-live-comparison-only",
+  "identity": {
+    "processId": 12076,
+    "processStartUtcTicks": 639285736860316715,
+    "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+    "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "moduleBaseAddress": 140698495614976,
+    "moduleSize": 62611456
+  },
+  "nativeStatus": "complete",
+  "completeSamples": 120,
+  "unavailableSamples": 0,
+  "nativePowerValues": [
+    83,
+    86,
+    90,
+    94,
+    97,
+    100
+  ],
+  "luaPowerValues": [
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100,
+    81,
+    87,
+    93,
+    99,
+    100,
+    100,
+    100,
+    100,
+    100,
+    100
+  ],
+  "luaFrames": 18,
+  "pairedFrames": 16,
+  "maxAbsoluteResidual": 2,
+  "maxPairTimeDifference": 0.1852732128900243,
+  "healthValues": [
+    18208
+  ],
+  "positions": [
+    [
+      7441.4897460938,
+      863.57995605469,
+      2964.9299316406
+    ]
+  ]
+}

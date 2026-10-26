@@ -2,6 +2,17 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Power normal interface/catalog — IMPLEMENTED AND LIVE VERIFIED:**
+The [normal live JSON snapshot](reference/power-data-interface.md) now includes
+independent `nativePower` values, exact identity, freshness and unavailable/expired
+clearing. The 12-second guest run published 16 fresh 100/100 readings, then cleared
+them on termination; Lua remained unavailable rather than inheriting native data.
+The real Power catalog retains both tested sessions and supports meaning, locator
+and one same-build restart. Standard discovery JSON/CSV exports work; unobserved
+contexts and update survival remain unqualified. Full gate passed: 514 .NET tests,
+820 Python passes/two skips. VMware Tools/cached login used; no game input or
+network change. Evidence: `artifacts/power-interface-20261025-01/`.
+
 **Power locator — LIVE AND FULL-GAME RESTART PASSED:**
 The [exact-build Power reader](reference/native-power-locator.md) follows the
 player resource objects and reconstructs the API's regeneration calculation.
@@ -20,8 +31,8 @@ controller binding blocked final cleanup; its normal reconnect recovered, and
 the shared preflight now rejects that stale binding before input. V23 is ready,
 disarmed/idle, no held input, queue clear. Evidence export:
 `artifacts/exports/power-locator-and-restart-20261025-01/`.
-Next: expose Power in the normal data interface/catalog. Health-change, patch
-recovery and HTTP work stay deferred.
+The interface/catalog increment above completes the follow-up. Health-change,
+patch recovery and HTTP work stay deferred.
 
 **Guest launcher — DEPLOYED; TRANSFERS MEASURED:** The
 [managed launcher and live results](validation/guest-agent-launcher-2026-10-25.md)

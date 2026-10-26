@@ -216,6 +216,6 @@ remain in the working artifact directory rather than the export.
 
 Final live state: V23 ready, supervisor bound to the current game identity,
 guest disarmed/idle/no held input, resource unblocked and no pending requests.
-Next useful work is exposing this proven Power reader through the regular
-data interface and catalog; no further broad Power scan is needed. Patch
+The follow-up [normal data interface and catalog](power-data-interface.md) is now
+implemented and live verified; no further broad Power scan is needed. Patch
 recovery and health-change testing remain deferred.
