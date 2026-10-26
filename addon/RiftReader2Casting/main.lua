@@ -18,13 +18,43 @@ picker:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 365, 75)
 picker:SetWidth(710); picker:SetHeight(500); picker:SetBackgroundColor(0.05, 0.05, 0.05, 0.98); picker:SetLayer(10); picker:SetVisible(false)
 local choices, page, rows = {}, 1, {}
 local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = "0.1.0", trials = {}}
+-- Use RIFT's existing secure macro facility. This button has no Lua casting
+-- callback or automatic retry: only an actual reviewed click invokes its macro.
+local castContext = UI.CreateContext("RR2CastingSecure")
+castContext:SetSecureMode("restricted")
+local castButton = UI.CreateFrame("RiftButton", "RR2CastingSecureButton", castContext)
+castButton:SetSecureMode("restricted")
+castButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 315)
+castButton:SetWidth(455); castButton:SetHeight(32); castButton:SetText("Cast: choose an ability above")
+local stopButton = UI.CreateFrame("RiftButton", "RR2CastingStopButton", castContext)
+stopButton:SetSecureMode("restricted")
+stopButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 350)
+stopButton:SetWidth(455); stopButton:SetHeight(32); stopButton:SetText("Stop autoattack")
+stopButton:EventMacroSet(Event.UI.Input.Mouse.Left.Click, "stopattack")
+local function selectAbility(id)
+    if model.trial and model.trial.status == "recording" then return false end
+    local secureOk, secure = pcall(Inspect.System.Secure)
+    if not secureOk or secure ~= false then return false end
+    local ok, d = pcall(Inspect.Ability.New.Detail, id)
+    if not ok or type(d)~="table" or type(d.name)~="string" or #d.name==0 or #d.name>120 or
+        string.find(d.name, "[\r\n]") or d.passive or d.positioned or d.autoattack then return false end
+    local macro = "cast " .. d.name
+    local previous = model.selected
+    if not model:Select(id) then return false end
+    local attached = pcall(castButton.EventMacroSet, castButton, Event.UI.Input.Mouse.Left.Click, macro)
+    if not attached then model.selected = previous; return false end
+    castButton:SetText("Cast: " .. d.name)
+    evidence.castButton = {abilityId = id, abilityName = d.name, macro = macro}
+    return true
+end
+private.SelectAbility = selectAbility
 -- Ask the installed game for its own API documentation; saved only as research
 -- evidence, never as live state or permission to invoke protected commands.
 if type(Inspect.Documentation) == "function" then
     evidence.runtimeApi = {}
-    for _, name in ipairs({"Inspect.Ability.New.Detail", "Inspect.Ability.New.List", "Inspect.Unit.Castbar",
+    for _, name in ipairs({"Inspect.Ability.New.Detail", "Inspect.Ability.Detail", "Inspect.Ability.New.List", "Inspect.Unit.Castbar",
         "Inspect.Unit.Detail", "Inspect.Tooltip", "Event.Combat.Damage", "Event.Ability.New.Cooldown.Begin",
-        "Event.Ability.New.Cooldown.End", "Command.Event.Attach"}) do
+        "Event.Ability.New.Cooldown.End", "Command.Event.Attach", "Layout:EventMacroSet", "Inspect.System.Secure"}) do
         local ok, doc = pcall(Inspect.Documentation, name)
         if ok and type(doc)=="string" then evidence.runtimeApi[name] = string.sub(doc, 1, 16000) end
     end
@@ -55,19 +85,19 @@ for i = 1, 48 do
     local index = i
     rows[i] = button("RR2CastingChoice" .. i, "-", picker, 5 + ((i-1)%3)*235, 30 + math.floor((i-1)/3)*28, 230, function()
         local item = choices[(page - 1)*48 + index]
-        if item and model:Select(item.lookupId) then message = "Watching " .. item.name; picker:SetVisible(false) end
+        if item and selectAbility(item.lookupId) then message = "Watching " .. item.name; picker:SetVisible(false) end
     end)
 end
 button("RR2CastingPrev", "Previous", picker, 5, 0, 110, function() page = math.max(1, page-1); showChoices() end)
 button("RR2CastingNext", "Next", picker, 120, 0, 110, function() if page*48 < #choices then page=page+1 end; showChoices() end)
 button("RR2CastingClose", "Close", picker, 580, 0, 110, function() picker:SetVisible(false) end)
 button("RR2CastingAbilities", "Abilities", panel, 6, 187, 110, function() page=1; showChoices() end)
-button("RR2CastingRecord", "Record 30s", panel, 120, 187, 125, function()
+button("RR2CastingRecord", "Record 60s", panel, 120, 187, 125, function()
     local ok, reason = model:Begin()
     if ok then
         evidence.trials[#evidence.trials+1] = model.trial
         if #evidence.trials > 8 then table.remove(evidence.trials,1) end
-        message = "Recording only; use the reviewed action-bar button."
+        message = "Recording only; click the named Cast button once."
     else message = "Not recording: " .. reason end
 end)
 button("RR2CastingHide", "Hide", panel, 340, 187, 100, function() panel:SetVisible(false) end)
@@ -83,6 +113,7 @@ local function update()
     RiftReader2CastingEvidence = evidence
     local t = model.trial
     local result = t and (t.status .. ": " .. (t.reason or (t.hit and "intended hit confirmed" or "awaiting ability damage"))) or message
+    if t and t.status == "recording" then result = result .. " (" .. math.ceil(t.deadline-now) .. "s left)" end
     text:SetText("RR2 Casting | seq " .. r.sequence .. " | " .. f(r.clock) .. "\n" ..
         "Target: " .. (r.target.name or "none") .. "  " .. (r.targetId or "") .. "\n" ..
         "Ability: " .. (r.ability.name or "choose below") .. "\n" ..
@@ -129,7 +160,27 @@ Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
                 if #evidence.previousTrials > 8 then table.remove(evidence.previousTrials, 1) end
             end
         end
-        if type(prior.last)=="table" and prior.last.abilityId then model:Select(prior.last.abilityId) end
+        if type(prior.last)=="table" and prior.last.abilityId then selectAbility(prior.last.abilityId) end
+        -- Read-only API reconciliation of retained raw combat IDs. Historical
+        -- trial verdicts remain untouched; this records what the current API says.
+        evidence.abilityMappings = {}
+        for _, trial in ipairs(evidence.previousTrials) do
+            for _, event in ipairs(trial.events or {}) do
+                if type(event.ability)=="string" and not evidence.abilityMappings[event.ability] then
+                    local item = {}
+                    for _, name in ipairs({"New", "Legacy"}) do
+                        local fn = name == "New" and Inspect.Ability.New.Detail or Inspect.Ability.Detail
+                        if type(fn)=="function" then
+                            local ok, detail = pcall(fn, event.ability)
+                            if ok and type(detail)=="table" then
+                                item[name] = {id=detail.id, idNew=detail.idNew, name=detail.name}
+                            else item[name] = {unavailable=true} end
+                        end
+                    end
+                    evidence.abilityMappings[event.ability] = item
+                end
+            end
+        end
     end
     evidence.loadedAt = Inspect.Time.Frame()
     evidence.abilities = model:Abilities()

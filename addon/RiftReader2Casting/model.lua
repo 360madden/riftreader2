@@ -96,7 +96,7 @@ function M.New(api)
             if not number(now) or now < t.started then t.status = "aborted"; t.reason = "clock-invalid"
             elseif player ~= t.playerId or target ~= t.targetId then t.status = "aborted"; t.reason = "target-or-player-changed"
             elseif now > t.deadline then t.status = "finished"; t.reason = t.hit and "intended-hit-confirmed" or "no-matching-damage-observed"
-            elseif #t.samples < 330 then t.samples[#t.samples + 1] = r end
+            elseif #t.samples < 630 then t.samples[#t.samples + 1] = r end
         end
         return r
     end
@@ -105,7 +105,7 @@ function M.New(api)
         local r = self:Read()
         if r.status ~= "ready" then return false, r.reason end
         -- Observation only: this does not arm a controller or trigger a spell.
-        self.trial = {status = "recording", started = r.clock, deadline = r.clock + 30,
+        self.trial = {status = "recording", started = r.clock, deadline = r.clock + 60,
             playerId = r.playerId, targetId = r.targetId, targetName = r.target.name,
             abilityId = self.selected, abilityNewId = r.ability.idNew or r.ability.id,
             abilityName = r.ability.name, samples = {r}, events = {}, cooldowns = {}, hit = false}
@@ -120,12 +120,26 @@ function M.New(api)
             t.status = "aborted"; t.reason = "target-or-player-changed"; return
         end
         if info.caster ~= t.playerId then return end
-        local event = copy(info, {"caster", "casterName", "target", "targetName", "ability", "abilityName", "damage", "damageAbsorbed", "crit", "type"})
+        local event = copy(info, {"caster", "casterName", "target", "targetName", "ability", "abilityNew", "abilityName", "damage", "damageAbsorbed", "crit", "type"})
         event.clock = now; event.kind = kind
         local detail = info.ability and call(api.Ability.New.Detail, info.ability)
-        local normalized = type(detail) == "table" and (detail.idNew or detail.id) or nil
-        event.matchesAbility = info.ability ~= nil and (info.ability == t.abilityId or
-            (t.abilityNewId ~= nil and (info.ability == t.abilityNewId or normalized == t.abilityNewId)))
+        local normalized = type(info.abilityNew) == "string" and info.abilityNew or
+            (type(detail) == "table" and (detail.idNew or detail.id) or nil)
+        event.abilityMappingSource = type(info.abilityNew) == "string" and "Event.Combat.abilityNew" or
+            (normalized and "Inspect.Ability.New.Detail" or nil)
+        if not normalized and info.ability and type(api.Ability.Detail) == "function" then
+            detail = call(api.Ability.Detail, info.ability)
+            normalized = type(detail) == "table" and detail.idNew or nil
+            event.abilityMappingSource = normalized and "Inspect.Ability.Detail" or nil
+        end
+        if type(normalized) ~= "string" or #normalized == 0 or #normalized > 128 then normalized = nil end
+        event.normalizedAbilityId = normalized
+        if info.abilityNew ~= nil then
+            event.matchesAbility = normalized ~= nil and normalized == t.abilityNewId
+        else
+            event.matchesAbility = info.ability ~= nil and (info.ability == t.abilityId or
+                (t.abilityNewId ~= nil and (info.ability == t.abilityNewId or normalized == t.abilityNewId)))
+        end
         event.matchesTarget = info.target == t.targetId
         if #t.events < 64 then t.events[#t.events + 1] = event else t.eventsTruncated = true end
         if kind == "damage" and event.matchesAbility and event.matchesTarget and number(info.damage) and info.damage > 0 then

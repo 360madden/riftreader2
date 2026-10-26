@@ -1,27 +1,25 @@
 # Current status
 
-Updated: 2026-10-25 (America/New_York; Windows host clock).
+Updated: 2026-10-26 (America/New_York; Windows host clock).
 
-**Casting readout — IMPLEMENTED/DEPLOYED; LIVE DUMMY TEST PENDING:**
-The optional [casting addon](reference/casting-readout.md) reuses RIFT's ability,
-unit, castbar, cooldown and combat-event APIs. It displays readiness and the
-effective ability/GCD cooldown, and records a bounded 30-second trial pinned to
-player/ability/target IDs. A positive matching damage event is required for a hit;
-names and Power changes alone do not qualify it. No autonomous casting is added.
-Guest files are hash verified through cached-login VMware Tools. The running
-game owner's Documents location confirms the installation path. Initial RIFT
-recognition failed; comparison with working addons found omitted Email metadata,
-which is corrected. Recognition after that correction is not yet verified.
-The user is beside a selected Normal Practice Dummy. The guarded helper most
-recently refused input because RIFT was not foreground; a request to restore
-foreground and release guest controls is pending. No offensive cast or hit is
-claimed. Installed API documentation was retrieved, and the addon is prepared to
-retain documentation from the running client's `Inspect.Documentation` once loaded.
-Evidence and deployment receipts: `artifacts/casting-20261025-01/`.
-Full gate passed: 514 .NET tests, 837 Python passes/two skips, Lua/C# contracts,
-formatting and published-reader smoke; 17 focused casting/package tests included.
-Gate evidence: `artifacts/validation/20261026T035554Z-c60c00d2/`.
-Health-change, patch recovery, HTTP changes and direct Computer Use remain deferred.
+**Casting readout — LIVE DUMMY HIT VERIFIED:**
+The [detailed handoff and result](workflows/casting-handoff-2026-10-26.md) preserves
+code, deployment, raw evidence, failed attempts and exact continuation steps.
+A reviewed Aggressive Block click produced 118 damage to the selected Normal
+Practice Dummy with exact player/target/modern ability IDs. The 60s capture has
+565 samples: Power 100 -> 80 -> 100, health unchanged at 18208, effective cooldown 1.5s
+with Begin/End separated by 1.514s. Out-of-range blocking and later melee readiness
+were observed; explicit Stop autoattack ended follow-on attacks. Combat abilityNew
+fixed the legacy-ID mismatch; names alone never qualify a hit. Files were hash
+verified through cached-login VMware Tools. Raw result: `artifacts/casting-20261025-01/trial-evidence-04/`.
+Full gate passed: 514 .NET tests, 849 Python passes/two skips, contracts, format,
+native publish smoke and 619 links. Evidence: `artifacts/validation/20261026T045106Z-525cce97/`.
+Final additional ID-conflict regression: focused casting suite 30/30 passed.
+The narrow final guard is deployed as deploy-11; successful trial used deploy-10.
+Export: `artifacts/exports/casting-dummy-20261026-01/` (report, JSON, CSV, evidence ZIP).
+No casting restart, ranged/channel, moving-target or general facing/LOS claim.
+Next practical increment: a separately scoped ranged ability/cooldown test.
+Patch recovery and controlled player-health-loss tests remain deferred.
 
 **Power normal interface/catalog — IMPLEMENTED AND LIVE VERIFIED:**
 The [normal live JSON snapshot](reference/power-data-interface.md) now includes
