@@ -7,15 +7,73 @@ requirements.
 
 ## Normal Chat workers
 
-Joey authorized normal Chat workers through Workbridge on 2026-10-26, with the
-coordinator assigning bounded work, reviewing actual diffs and verifying tests.
-Keep one worker per small change; assign explicit file ownership and prevent
-concurrent edits to those files. Workers report completed command results, not
-just submitted jobs. Live game/VM control is not part of a coding assignment.
+Joey authorized normal Chat workers through Workbridge on 2026-10-26.
+The coordinator assigns bounded tasks and reviews actual diffs, completed checks,
+and receipts before integration. Keep **one worker** for a small task; use **2-3**
+only when independent ownership or review reduces total work. Give each file one
+writer, and sequence dependent edits. Workers stay in normal Chat mode.
+
+### Operating recipe
+
+1. Coordinator checks HEAD and Git status, then assigns a bounded objective,
+   base commit, scoped inputs, exclusive owned paths, acceptance checks,
+   excluded live actions, and a single receipt path.
+2. Worker reads only relevant instructions/files through Workbridge, batching
+   scoped reads. Prefer dedicated Git/read tools over terminal commands for
+   inspection to reduce unnecessary command approvals. Before edits, use current SHA-256, an exact edit or previewed
+   patch, and unique operation IDs. Preserve unrelated changes.
+3. Run proportionate checks using `terminal_run` with literal arguments and an
+   explicit repository `cwd`. Poll `command_status`; inspect `command_output`
+   and actual exit codes. Job submission alone is not a pass.
+4. Once edits and checks settle, inspect the resulting diff and changed paths.
+   **Last**, create the one plain-text completion receipt using `write_file`
+   (`expectedHash: null`, unique operation ID). Record status, base commit,
+   changed paths, checks with actual exit codes, findings, and limitations.
+5. Coordinator reads the local receipt and diff, verifies ownership and test
+   evidence, then accepts or requests correction. Parallel work is not successful
+   until reviewed. Poll the browser only for approval or failure blockers; handle
+   each scoped approval once, never globally auto-approve unrelated permissions.
+
+The Account Usage UI stated Chat conversations are not included in the shared
+Codex/Work allowance; coordinator work still consumes Codex. Unchanged displayed
+usage percentages are rounded observations, not proof of savings.
+
+### Copy/paste worker task brief
+
+```text
+Normal Chat Workbridge worker. Stay in normal Chat mode; do not switch to Work
+or delegate. Repository: C:\work\riftreader2.
+Objective: <specific bounded result>.
+Base commit: <full SHA>; check current Git status before edits.
+Input paths: <AGENTS.md, relevant status section, exact source/docs/tests>.
+Owned write paths: <exact paths, exclusive writer per file>.
+Acceptance checks: <focused commands or review checks; capture exit codes>.
+Excluded live actions: <game/VM input, deployment, credentials, global settings,
+  patch recovery, health-loss tests, commits/push unless explicitly authorized>.
+Use batched scoped Workbridge reads, current hashes and unique operation IDs;
+sequence dependent edits and preserve unrelated changes.
+Prefer dedicated Git/read tools for inspection; terminal jobs are for checks
+and operations without a suitable dedicated tool. Stop after writing the receipt.
+After edits/checks settle, inspect the actual diff. LAST create
+<exact file-backed receipt path> using Workbridge write_file with
+expectedHash null and a unique operation ID. Receipt contents: status;
+base commit; changed paths; checks and actual exit codes; findings/limitations.
+The coordinator will inspect the local receipt and diff. Do not claim success
+from a submitted command or browser final response alone.
+```
+
 The first coding worker, [Casting Readout Update](https://chatgpt.com/c/6adee9ee-a378-83ea-8999-0081c1c1e69c),
 implemented range/timing display with 41 focused tests. The coordinator's full
 gate passed at `artifacts/validation/20261026T055835Z-891717ad/`. Browser final
 response rendering failed, but the local changes and checks were verified.
+
+The next trial ran two normal Chat workers concurrently: an independent casting
+reviewer and a writer owning only this guide. Both saved completion receipts under
+`artifacts/chat-workers-20261026-02/`. The reviewer found no concrete regression
+and completed 41 focused tests (exit 0); live layout remains unverified. The
+coordinator reviewed the guide diff, confirmed separate ownership and passed
+`git diff --check`. The file handoff remained readable despite the reviewer's
+browser response-rendering failure. No quantified usage or speed saving is claimed.
 
 ## Verified access
 

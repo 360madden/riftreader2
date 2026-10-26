@@ -2,6 +2,17 @@
 
 Updated: 2026-10-26 (America/New_York; Windows host clock).
 
+**Normal Chat worker workflow — TWO-WORKER TRIAL VERIFIED:**
+An independent casting reviewer and workflow-doc writer ran concurrently through
+Workbridge with separate file ownership. Both wrote local completion receipts;
+the coordinator reviewed the results and guide diff. Casting review found no
+concrete regression and passed 41 focused tests; live layout is still unverified.
+The [worker recipe and task brief](workflows/workbridge.md) now use bounded inputs,
+one writer per file, completed checks and a last-written result file, avoiding
+dependence on browser final-response rendering. Evidence:
+`artifacts/chat-workers-20261026-02/`. Documentation checks passed; no source or
+live-game changes in this follow-up. No measured usage/speed saving is claimed.
+
 **Casting range/timing readout — CHAT WORKER IMPLEMENTED, COORDINATOR VERIFIED:**
 A normal Chat worker used Workbridge to add selected-ability API range min/max,
 cast time and channel state to the existing panel. Missing/nonfinite numbers stay
