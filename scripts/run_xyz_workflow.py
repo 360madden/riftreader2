@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
 from scripts.control_client import ControlClient, _capture, _arm, _action
 from scripts.control_host import HostConfig
 from scripts.nav_access_queue import AccessQueue
+from scripts.nav_control_watchdog import bind_identity, resource_epoch
 from scripts.prepare_xyz_deployment import validate_profile
 from scripts.review_native_motion_pair import review
 from scripts.vm_console_native import collect_identity, process_identity, validate_config
@@ -156,6 +157,9 @@ class HostGuard:
         require(host['connected'] and host['vmIdentity'] == self.plan['vmIdentity']
                 and host['consoleReservation']['held'] and not host['consoleReservation']['faulted']
                 and host['coordination']['state'] == 'ready', 'Controller is not ready or sole owner')
+        require(host['coordination'].get('supervisor', {}).get('epoch') ==
+                resource_epoch(bind_identity(host, guest)),
+                'Controller is still bound to a previous game/session; wait for a verified reconnect before input')
         target = {k: guest['target'][k] for k in ('processId', 'processStartUtcTicks', 'executableSha256')}
         require(target['executableSha256'] == self.profile['executableSha256'], 'Game build differs from profile')
         require(type(target['processId']) is int and target['processId'] > 0

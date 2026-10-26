@@ -16,6 +16,47 @@ from scripts import run_xyz_workflow as workflow
 
 
 class WorkflowTests(unittest.TestCase):
+    def bound_status(self):
+        from tests.test_nav_control_watchdog import VM, TARGET
+        host = dict(connected=True, vmIdentity=dict(VM), instanceId='guest-one',
+                    machineName=TARGET['machineName'],
+                    consoleReservation=dict(held=True, faulted=False),
+                    coordination=dict(state='ready'))
+        guest = dict(instanceId='guest-one', target=dict(TARGET), armed=False,
+                     busy=False, desktopInputsDown=[], recoveryRequired=False)
+        host['coordination']['supervisor'] = dict(
+            epoch=workflow.resource_epoch(workflow.bind_identity(host, guest)))
+        guard = workflow.HostGuard.__new__(workflow.HostGuard)
+        guard.check = MagicMock()
+        guard.client = MagicMock()
+        guard.client.request.return_value = dict(host=host, guest=guest)
+        guard.plan = dict(vmIdentity=dict(VM))
+        guard.profile = dict(executableSha256=TARGET['executableSha256'])
+        guard.target = None
+        return guard, host, guest
+
+    def test_ready_controller_must_bind_current_game_epoch(self):
+        guard, host, guest = self.bound_status()
+        guest['target']['processStartUtcTicks'] += 1
+        guest['target']['processId'] += 1
+        with self.assertRaisesRegex(ValueError, 'previous game/session'):
+            guard.status()
+        self.assertIsNone(guard.target)
+        host['coordination']['supervisor']['epoch'] = workflow.resource_epoch(
+            workflow.bind_identity(host, guest))
+        self.assertEqual(guest, guard.status()['guest'])
+
+    def test_missing_supervisor_binding_is_unavailable(self):
+        guard, host, _ = self.bound_status()
+        del host['coordination']['supervisor']
+        with self.assertRaisesRegex(ValueError, 'previous game/session'):
+            guard.status()
+
+    def test_same_epoch_foreground_loss_does_not_change_identity_binding(self):
+        guard, _, guest = self.bound_status()
+        guest['target']['isForeground'] = False
+        self.assertEqual(guest, guard.status()['guest'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

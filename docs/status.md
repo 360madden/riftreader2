@@ -2,6 +2,27 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Power locator — LIVE AND FULL-GAME RESTART PASSED:**
+The [exact-build Power reader](reference/native-power-locator.md) follows the
+player resource objects and reconstructs the API's regeneration calculation.
+One guarded Light's Balm click produced 120/120 complete native reads,
+100 -> 83 -> 100, alongside Lua 100 -> 82 -> 88 -> 94 -> 100. Nearest readings
+differed by at most 2 points within 0.212 seconds; 12 eligible clock-aligned
+cross-checks matched exactly. Health and XYZ were unchanged. The prior float64
+candidate is linked to a portrait UI heap and is not the locator. The separate
+reader is deployed and hash verified through VMware Tools; cached login reused,
+NAT unchanged. One normal full exit/relaunch changed PID 1224 -> 12076 and all
+player/resource addresses; the unchanged locator reacquired without a Power
+scan. Independent process-absence and old-identity rejection evidence is saved.
+The second cast produced another 120/120 native reads and advancing Lua agreement
+(maximum near-time residual 2; 14 clock-aligned cross-checks exact). A stale
+controller binding blocked final cleanup; its normal reconnect recovered, and
+the shared preflight now rejects that stale binding before input. V23 is ready,
+disarmed/idle, no held input, queue clear. Evidence export:
+`artifacts/exports/power-locator-and-restart-20261025-01/`.
+Next: expose Power in the normal data interface/catalog. Health-change, patch
+recovery and HTTP work stay deferred.
+
 **Guest launcher — DEPLOYED; TRANSFERS MEASURED:** The
 [managed launcher and live results](validation/guest-agent-launcher-2026-10-25.md)
 cover rejected bad hashes, clean agent replacement and a successful CLI repeat.
