@@ -82,7 +82,9 @@ public sealed class ControlAgent
                 throw new InvalidOperationException("Another RR2 control agent owns this session.");
             try
             {
-                await new ControlAgent(config).RunConnectionLoopAsync(cancellationToken);
+                var agent = new ControlAgent(config);
+                await ControlAgentLifetime.RunAsync(config.OutputDirectory,
+                    agent.RunConnectionLoopAsync, cancellationToken);
             }
             finally { owner.Release(); }
             return 0;
@@ -101,6 +103,7 @@ public sealed class ControlAgent
     private async Task RunConnectionLoopAsync(CancellationToken cancellationToken)
     {
         Console.WriteLine($"RR2 control agent {instanceId}; starts disarmed; no unattended input.");
+        var readinessWritten = false;
         while (!cancellationToken.IsCancellationRequested)
         {
             using var client = new TcpClient { NoDelay = true };
@@ -122,6 +125,21 @@ public sealed class ControlAgent
                 using var welcome = JsonDocument.Parse(await ReadLineAsync(reader, cancellationToken));
                 if (welcome.RootElement.GetProperty("type").GetString() != "welcome")
                     throw new InvalidDataException("Host authentication handshake failed.");
+                if (!readinessWritten)
+                {
+                    using var process = Process.GetCurrentProcess();
+                    await WriteAtomicAsync(Path.Combine(configuration.OutputDirectory, "ready.json"),
+                        new
+                        {
+                            instanceId,
+                            processId = process.Id,
+                            processStartUtcTicks = process.StartTime.ToUniversalTime().Ticks,
+                            gracefulShutdownVersion = 1,
+                            connectedAtUtc = DateTimeOffset.UtcNow
+                        },
+                        cancellationToken, false);
+                    readinessWritten = true;
+                }
                 long sequence = 0;
                 var requestIds = new HashSet<string>(StringComparer.Ordinal);
                 while (!cancellationToken.IsCancellationRequested)
@@ -184,6 +202,7 @@ public sealed class ControlAgent
                     {
                         instanceId,
                         targetedClickVersion = 1,
+                        gracefulShutdownVersion = 1,
                         target = Inspect(),
                         armed = IsArmed(),
                         expiresInSeconds = IsArmed() ? Math.Max(0, 15 - Stopwatch.GetElapsedTime(armedAt).TotalSeconds) : 0,

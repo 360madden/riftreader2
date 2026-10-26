@@ -2,12 +2,27 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Guest launcher — DEPLOYED; TRANSFERS MEASURED:** The
+[managed launcher and live results](validation/guest-agent-launcher-2026-10-25.md)
+cover rejected bad hashes, clean agent replacement and a successful CLI repeat.
+V23 and the managed guest agent are active; workflow configuration now points
+to V23. RIFT and the VM were not restarted. All 12 VMware test copies verified:
+512 KiB median about 1.7 seconds, 8 MiB about 5.7 seconds in either direction.
+HTTP connectivity failed, so there is no HTTP speed comparison. NAT, firewall,
+adapters and shared folders remain unchanged. Startup is registered, but fresh
+Windows logon/reboot is untested. The full gate passed (487 .NET tests, 817
+Python passes and two skips). Evidence is exported under
+`artifacts/exports/guest-launcher-and-transfers-20261025-01/`.
+Practical next field work remains resource
+owner/provenance and a durable locator; health-change and patch recovery stay
+deferred. Use the [launcher CLI](reference/guest-agent-launcher.md) for agent updates.
+
 **Targeted spell click — DEPLOYED AND LIVE PASSED:** The new
 [reviewed button-click helper](validation/targeted-click-2026-10-25.md) moved an
 edge cursor into Light's Balm's slot 7, checked its position before pressing,
 and delivered/released one click. Lua Power **100 → 81 → 87 → 100**, full health
-and unchanged XYZ establish the live response. V22 and the upgraded guest
-agent are active; the workflow configuration points to V22. Full validation
+and unchanged XYZ establish the live response. That test used V22 and the upgraded guest
+agent; the managed-launcher checkpoint above supersedes its runtime. Full validation
 passed; the 19-file evidence export verified. Final state is disarmed/idle,
 no held inputs, clear queue. RIFT was not restarted. The previously responding
 native address read zero during this baseline, so it is not reliable current
