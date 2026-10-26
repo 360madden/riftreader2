@@ -42,6 +42,7 @@ topic below instead of loading every document for each task.
 | Reference | [Typed-wire snapshot inspection](reference/typed-wire-snapshot.md) | Offline two-sample Lua wire candidate validation with exact process/scope limits. |
 | Reference | [Native field evidence review](reference/native-field-evidence.md) | Replay candidate XYZ comparisons without automatic field qualification. |
 | Contract | [Addon wire format](../contracts/addon/README.md) | Version-1 typed observations and freshness limits. |
+| Reference | [Casting readout](reference/casting-readout.md) | RIFT API readiness, effective cooldowns and bounded target-specific damage evidence. |
 | Addon | [Lua package guide](../addon/README.md) | Modules, configuration, and offline/client validation boundary. |
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |
 | Research | [Motion evidence review](research/motion-evidence-review-2026-10-18.md) | Saved negative example, timing evidence, and reproducibility gap. |

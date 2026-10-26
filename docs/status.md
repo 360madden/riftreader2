@@ -2,6 +2,27 @@
 
 Updated: 2026-10-25 (America/New_York; Windows host clock).
 
+**Casting readout — IMPLEMENTED/DEPLOYED; LIVE DUMMY TEST PENDING:**
+The optional [casting addon](reference/casting-readout.md) reuses RIFT's ability,
+unit, castbar, cooldown and combat-event APIs. It displays readiness and the
+effective ability/GCD cooldown, and records a bounded 30-second trial pinned to
+player/ability/target IDs. A positive matching damage event is required for a hit;
+names and Power changes alone do not qualify it. No autonomous casting is added.
+Guest files are hash verified through cached-login VMware Tools. The running
+game owner's Documents location confirms the installation path. Initial RIFT
+recognition failed; comparison with working addons found omitted Email metadata,
+which is corrected. Recognition after that correction is not yet verified.
+The user is beside a selected Normal Practice Dummy. The guarded helper most
+recently refused input because RIFT was not foreground; a request to restore
+foreground and release guest controls is pending. No offensive cast or hit is
+claimed. Installed API documentation was retrieved, and the addon is prepared to
+retain documentation from the running client's `Inspect.Documentation` once loaded.
+Evidence and deployment receipts: `artifacts/casting-20261025-01/`.
+Full gate passed: 514 .NET tests, 837 Python passes/two skips, Lua/C# contracts,
+formatting and published-reader smoke; 17 focused casting/package tests included.
+Gate evidence: `artifacts/validation/20261026T035554Z-c60c00d2/`.
+Health-change, patch recovery, HTTP changes and direct Computer Use remain deferred.
+
 **Power normal interface/catalog — IMPLEMENTED AND LIVE VERIFIED:**
 The [normal live JSON snapshot](reference/power-data-interface.md) now includes
 independent `nativePower` values, exact identity, freshness and unavailable/expired
