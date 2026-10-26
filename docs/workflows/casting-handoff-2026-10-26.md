@@ -1,5 +1,12 @@
 # Casting workflow handoff — 2026-10-26
 
+Latest source-only change: the range/timing readout now displays API range bounds,
+cast time and channel metadata, with explicit unknowns. The normal Chat worker's
+patch passed coordinator review and full validation (514 .NET, 861 Python passes,
+two skips). It is not deployed. Panel controls and secure buttons moved down 48
+UI units; the historical pixel rectangles below must not be reused after deployment.
+Capture fresh screenshots and identify each control before any guarded click.
+
 Later same-day work: [API reuse implementation](../reference/riftmeter-api-reuse.md)
 adds a batch ability inventory and healing/overhealing/mitigation capture in addon
 0.2.0. See current status for checks. That increment is source-side and has not

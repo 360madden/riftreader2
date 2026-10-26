@@ -5,6 +5,18 @@ For current project phase and verified foundation status, read
 browser ChatGPT; it does not change RiftReader2's module boundaries or evidence
 requirements.
 
+## Normal Chat workers
+
+Joey authorized normal Chat workers through Workbridge on 2026-10-26, with the
+coordinator assigning bounded work, reviewing actual diffs and verifying tests.
+Keep one worker per small change; assign explicit file ownership and prevent
+concurrent edits to those files. Workers report completed command results, not
+just submitted jobs. Live game/VM control is not part of a coding assignment.
+The first coding worker, [Casting Readout Update](https://chatgpt.com/c/6adee9ee-a378-83ea-8999-0081c1c1e69c),
+implemented range/timing display with 41 focused tests. The coordinator's full
+gate passed at `artifacts/validation/20261026T055835Z-891717ad/`. Browser final
+response rendering failed, but the local changes and checks were verified.
+
 ## Verified access
 
 On 2026-10-18, `workspace_info` reported Workbridge **0.6.0**, write access,

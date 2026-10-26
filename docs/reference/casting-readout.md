@@ -44,6 +44,14 @@ target or self for an appropriately targeted heal. No matching result produces
 fields. These additions have offline tests and historical damage replay coverage;
 live healing/overhealing qualification is pending.
 
+The panel also displays the selected ability's API-provided `rangeMin` / `rangeMax`,
+`castingTime` and `channeled` metadata. Each missing or nonfinite range endpoint
+shows **unknown**; missing or nonfinite cast time stays **unknown** (only explicit
+zero is **instant**). Missing channel state is **unknown**, not `no`. These are
+ability properties, not measured player-to-target distance or proof of facing,
+line of sight or readiness. API `outOfRange`, cooldown/readiness checks and the
+secure Cast/Stop guards are unchanged; ability picking behaves as before.
+
 The effective cooldown is labeled **ability/GCD**: the documented API describes
 the cooldown currently influencing that ability, not a separately qualified GCD
 clock. Timings use `Inspect.Time.Frame`. No fixed GCD sleep is used. Facing and

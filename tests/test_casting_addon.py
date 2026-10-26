@@ -296,6 +296,66 @@ class CastingAddonTests(unittest.TestCase):
                          self.lua.table(identifier="RiftReader2Casting"), private)
         return private, state, counts
 
+    def readout(self, state=None):
+        private, _, counts = self.load_main(state)
+        self.assertTrue(private.SelectAbility("ability-old"))
+        self.lua.globals().TEST_HANDLERS["RR2 casting readout"](
+            self.lua.globals().Event.System.Update.Begin)
+        frames = self.lua.globals().TEST_FRAMES
+        return frames["RR2CastingText"].SetTextValue[1], frames, counts
+
+    def test_readout_shows_melee_and_ranged_api_metadata_without_new_calls(self):
+        cases = (
+            ("melee", 0, 3, 0, False, False, "READY - observed-ready", "instant (0s)"),
+            ("ranged", 8, 30, 1.75, True, True, "BLOCKED - out-of-range", "1.75s"),
+        )
+        for label, minimum, maximum, cast_time, channeled, out_of_range, status, cast_label in cases:
+            with self.subTest(ability=label):
+                state = self.state()
+                ability = state.abilities["ability-old"]
+                ability.rangeMin = minimum
+                ability.rangeMax = maximum
+                ability.castingTime = cast_time
+                ability.channeled = channeled
+                ability.outOfRange = out_of_range
+                rendered, frames, counts = self.readout(state)
+
+                self.assertIn(f"API range min/max: {minimum:.2f} / {maximum:.2f}", rendered)
+                self.assertIn(f"API cast time: {cast_label} | Channeled: {'yes' if channeled else 'no'}",
+                              rendered)
+                self.assertIn(status, rendered)
+                self.assertIn("Facing / line of sight: unverified", rendered)
+                self.assertEqual(3, counts.abilityScalar)  # Two select calls and the normal read.
+                self.assertEqual("cast Practice Strike",
+                                 self.lua.globals().TEST_MACROS["RR2CastingSecureButton"])
+                self.assertEqual(268, frames["RR2CastingPanel"].SetHeightValue[1])
+                self.assertEqual(235, frames["RR2CastingAbilities"].SetPointValue[5])
+                self.assertEqual(363, frames["RR2CastingSecureButton"].SetPointValue[5])
+                self.assertEqual(398, frames["RR2CastingStopButton"].SetPointValue[5])
+
+    def test_readout_distinguishes_missing_cast_time_from_instant(self):
+        state = self.state()
+        state.abilities["ability-old"].rangeMin = 4.5
+        rendered, _, _ = self.readout(state)
+        self.assertIn("API range min/max: 4.50 / unknown", rendered)
+        self.assertIn("API cast time: unknown | Channeled: unknown", rendered)
+        self.assertNotIn("instant", rendered)
+
+    def test_readout_nonfinite_and_nonboolean_metadata_is_unknown(self):
+        for invalid in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(invalid=repr(invalid)):
+                state = self.state()
+                ability = state.abilities["ability-old"]
+                ability.rangeMin = invalid
+                ability.rangeMax = invalid
+                ability.castingTime = invalid
+                ability.channeled = "true"  # A string must not masquerade as a boolean.
+                rendered, _, _ = self.readout(state)
+                self.assertIn("API range min/max: unknown / unknown", rendered)
+                self.assertIn("API cast time: unknown | Channeled: unknown", rendered)
+                self.assertNotIn("instant", rendered)
+                self.assertIn("READY - observed-ready", rendered)
+
     def test_ready_with_realistic_absent_optional_flags(self):
         model, _, _ = self.selected()
         result = model.Read(model)

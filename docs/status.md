@@ -2,6 +2,20 @@
 
 Updated: 2026-10-26 (America/New_York; Windows host clock).
 
+**Casting range/timing readout — CHAT WORKER IMPLEMENTED, COORDINATOR VERIFIED:**
+A normal Chat worker used Workbridge to add selected-ability API range min/max,
+cast time and channel state to the existing panel. Missing/nonfinite numbers stay
+unknown; only explicit zero cast time means instant. No additional API calls or
+readiness/secure-casting changes. The coordinator reviewed the three-file patch;
+full gate passed: 514 .NET tests, 861 Python passes/two skips (41 focused casting
+tests), contracts, formatting, native smoke and 625 links. Evidence:
+`artifacts/validation/20261026T055835Z-891717ad/`; worker record:
+`artifacts/chat-worker-casting-20261026-01/`.
+Not deployed or live-layout verified. Controls moved down 48 UI units: obtain
+fresh screenshot targets before live clicks. Next: deploy the pending addon
+increment and perform the separately scoped ranged-ability/cooldown test.
+Patch recovery and health-loss testing remain deferred.
+
 **Addon API reuse — IMPLEMENTED AND OFFLINE VALIDATED:**
 Casting addon 0.2.0 uses the SpellDump batch List/Detail pattern and retains the
 full known-ability inventory, with Cast-picker filtering kept separate. Independent

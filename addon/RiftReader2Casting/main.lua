@@ -4,7 +4,7 @@ private.Instance = model
 local context = UI.CreateContext("RR2Casting")
 local panel = UI.CreateFrame("Frame", "RR2CastingPanel", context)
 panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 85)
-panel:SetWidth(455); panel:SetHeight(220); panel:SetBackgroundColor(0, 0, 0, 0.86)
+panel:SetWidth(455); panel:SetHeight(268); panel:SetBackgroundColor(0, 0, 0, 0.86)
 local text = UI.CreateFrame("Text", "RR2CastingText", panel)
 text:SetPoint("TOPLEFT", panel, "TOPLEFT", 8, 6); text:SetFontSize(13)
 local function button(name, label, parent, x, y, width, handler)
@@ -24,11 +24,11 @@ local castContext = UI.CreateContext("RR2CastingSecure")
 castContext:SetSecureMode("restricted")
 local castButton = UI.CreateFrame("RiftButton", "RR2CastingSecureButton", castContext)
 castButton:SetSecureMode("restricted")
-castButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 315)
+castButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 363)
 castButton:SetWidth(455); castButton:SetHeight(32); castButton:SetText("Cast: choose an ability above")
 local stopButton = UI.CreateFrame("RiftButton", "RR2CastingStopButton", castContext)
 stopButton:SetSecureMode("restricted")
-stopButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 350)
+stopButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 375, 398)
 stopButton:SetWidth(455); stopButton:SetHeight(32); stopButton:SetText("Stop autoattack")
 stopButton:EventMacroSet(Event.UI.Input.Mouse.Left.Click, "stopattack")
 local function selectAbility(id)
@@ -94,8 +94,8 @@ end
 button("RR2CastingPrev", "Previous", picker, 5, 0, 110, function() page = math.max(1, page-1); showChoices() end)
 button("RR2CastingNext", "Next", picker, 120, 0, 110, function() if page*48 < #choices then page=page+1 end; showChoices() end)
 button("RR2CastingClose", "Close", picker, 580, 0, 110, function() picker:SetVisible(false) end)
-button("RR2CastingAbilities", "Abilities", panel, 6, 187, 110, function() page=1; showChoices() end)
-button("RR2CastingRecord", "Record 60s", panel, 120, 187, 125, function()
+button("RR2CastingAbilities", "Abilities", panel, 6, 235, 110, function() page=1; showChoices() end)
+button("RR2CastingRecord", "Record 60s", panel, 120, 235, 125, function()
     local ok, reason = model:Begin()
     if ok then
         evidence.trials[#evidence.trials+1] = model.trial
@@ -103,8 +103,18 @@ button("RR2CastingRecord", "Record 60s", panel, 120, 187, 125, function()
         message = "Recording only; click the named Cast button once."
     else message = "Not recording: " .. reason end
 end)
-button("RR2CastingHide", "Hide", panel, 340, 187, 100, function() panel:SetVisible(false) end)
+button("RR2CastingHide", "Hide", panel, 340, 235, 100, function() panel:SetVisible(false) end)
 local function f(v) return type(v)=="number" and string.format("%.2f",v) or "?" end
+local function finite(v) return type(v)=="number" and v==v and math.abs(v)<math.huge end
+local function metadataNumber(v) return finite(v) and string.format("%.2f",v) or "unknown" end
+local function castTime(v)
+    if not finite(v) then return "unknown" end
+    return v == 0 and "instant (0s)" or string.format("%.2fs",v)
+end
+local function channel(v)
+    if type(v)~="boolean" then return "unknown" end
+    return v and "yes" or "no"
+end
 local function update()
     local now = Inspect.Time.Frame()
     if type(now) ~= "number" or now ~= now or math.abs(now) == math.huge then error("frame-clock-unavailable") end
@@ -128,6 +138,8 @@ local function update()
     text:SetText("RR2 Casting | seq " .. r.sequence .. " | " .. f(r.clock) .. "\n" ..
         "Target: " .. (r.target.name or "none") .. "  " .. (r.targetId or "") .. "\n" ..
         "Ability: " .. (r.ability.name or "choose below") .. "\n" ..
+        "API range min/max: " .. metadataNumber(r.ability.rangeMin) .. " / " .. metadataNumber(r.ability.rangeMax) .. "\n" ..
+        "API cast time: " .. castTime(r.ability.castingTime) .. " | Channeled: " .. channel(r.ability.channeled) .. "\n" ..
         string.upper(r.status) .. " - " .. r.reason .. "\n" ..
         "Effective cooldown (ability/GCD): " .. f(r.ability.currentCooldownRemaining or 0) .. "s\n" ..
         "Cast: " .. (r.cast.abilityName or "none") .. " " .. (r.cast.remaining and f(r.cast.remaining).."s" or "") .. "\n" ..
