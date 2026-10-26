@@ -2,6 +2,13 @@
 
 Updated: 2026-10-26 (America/New_York; Windows host clock).
 
+**Rift Meter review — COMBAT API REUSE:**
+Inspected installed Rift Meter 1.2 source. It confirms modern combat `abilityNew`,
+caster/target attribution, damage/healing and avoidance/mitigation events, plus
+unit/pet owner lookup. Preserve raw events before its name fallback, pet merging,
+combat-session filtering or display calculations. See the
+[reuse findings](reference/riftmeter-api-reuse.md). No game input or addon changes.
+
 **SpellDump review — API-FIRST ABILITY INVENTORY:**
 Inspected both guest SpellDump implementations without changing them. Their
 ability collection uses `Inspect.Ability.New.List()` plus one batch

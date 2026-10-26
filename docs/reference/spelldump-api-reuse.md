@@ -1,5 +1,8 @@
 # SpellDump: reuse the game's ability catalog
 
+Pair this catalog with [Rift Meter's combat-event patterns](riftmeter-api-reuse.md)
+for observed outcomes, exact targets, healing and damage breakdowns.
+
 Source inspected from the RIFT guest on 2026-10-26 through cached-login VMware
 Tools. Original addons were not modified, enabled, or renamed. Both source folders
 have `.disabled` suffixes; their names alone do not establish current load state.
