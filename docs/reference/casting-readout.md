@@ -35,6 +35,15 @@ establishes success. Miss, immunity, resist,
 dodge and parry observations remain distinct outcomes. A timeout without matching
 damage means no confirmed hit, not proof that input failed. Do not blindly retry.
 
+Version 0.2.0 also records healing and overhealing. Positive effective healing
+produces `intended-heal-confirmed`; overhealing alone produces
+`intended-overheal-observed`. Neither is a damage hit or proof of a health change.
+The player, ability and intended target must still match exactly; select a friendly
+target or self for an appropriately targeted heal. No matching result produces
+`no-matching-outcome-observed`. Damage mitigation and overkill remain separate raw
+fields. These additions have offline tests and historical damage replay coverage;
+live healing/overhealing qualification is pending.
+
 The effective cooldown is labeled **ability/GCD**: the documented API describes
 the cooldown currently influencing that ability, not a separately qualified GCD
 clock. Timings use `Inspect.Time.Frame`. No fixed GCD sleep is used. Facing and

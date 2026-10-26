@@ -1,5 +1,10 @@
 # Casting workflow handoff — 2026-10-26
 
+Later same-day work: [API reuse implementation](../reference/riftmeter-api-reuse.md)
+adds a batch ability inventory and healing/overhealing/mitigation capture in addon
+0.2.0. See current status for checks. That increment is source-side and has not
+been deployed or live-qualified; the successful live result below used 0.1.0.
+
 ## Resumed workflow result — supersedes pending instructions below
 
 The bounded dummy test **passed** after this handoff was saved. `record-04` /

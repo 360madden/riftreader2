@@ -51,7 +51,10 @@ cost and requirements) from fresh readiness (effective cooldown remaining,
 outOfRange, unusable, effective target, current resources and castbar). Refresh
 readiness immediately before a supervised action and verify the outcome through
 combat events. The existing casting addon already uses these APIs; its catalog
-loop currently requests details per ID and can adopt SpellDump's batch call.
+inventory now uses SpellDump's batch-call pattern in addon 0.2.0. It retains
+passive and free abilities in the catalog while keeping unsupported ability types
+out of the supervised Cast picker. Spirit cost, stealth requirements, continuous
+flags, icons and focus limits are retained when available.
 The API supports more fields than either SpellDump display chooses to retain.
 
 Actual prior dummy evidence established `Event.Combat.abilityNew` as the exact
@@ -60,7 +63,6 @@ working addon code, installed-client documentation, and actual returned records
 together. Do not replace exact IDs with name matching or copy derived labels as
 game facts. SavedVariables remain offline evidence, not live readiness.
 
-Practical next implementation: a complete API-backed ability inventory feeding
-the existing casting picker/readout, with ranged/cast-time/cooldown views. This
-review changes no gameplay behavior and performs no additional cast. Patch
+The API inventory now feeds the existing picker/readout. Additional categorized
+views remain optional; no heuristic offensive classification is required. Patch
 recovery and player-health-loss testing remain deferred.

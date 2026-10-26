@@ -17,7 +17,7 @@ local picker = UI.CreateFrame("Frame", "RR2CastingPicker", context)
 picker:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 365, 75)
 picker:SetWidth(710); picker:SetHeight(500); picker:SetBackgroundColor(0.05, 0.05, 0.05, 0.98); picker:SetLayer(10); picker:SetVisible(false)
 local choices, page, rows = {}, 1, {}
-local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = "0.1.0", trials = {}}
+local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = "0.2.0", trials = {}}
 -- Use RIFT's existing secure macro facility. This button has no Lua casting
 -- callback or automatic retry: only an actual reviewed click invokes its macro.
 local castContext = UI.CreateContext("RR2CastingSecure")
@@ -53,7 +53,7 @@ private.SelectAbility = selectAbility
 if type(Inspect.Documentation) == "function" then
     evidence.runtimeApi = {}
     for _, name in ipairs({"Inspect.Ability.New.Detail", "Inspect.Ability.Detail", "Inspect.Ability.New.List", "Inspect.Unit.Castbar",
-        "Inspect.Unit.Detail", "Inspect.Tooltip", "Event.Combat.Damage", "Event.Ability.New.Cooldown.Begin",
+        "Inspect.Unit.Detail", "Inspect.Tooltip", "Event.Combat.Damage", "Event.Combat.Heal", "Event.Ability.New.Cooldown.Begin",
         "Event.Ability.New.Cooldown.End", "Command.Event.Attach", "Layout:EventMacroSet", "Inspect.System.Secure"}) do
         local ok, doc = pcall(Inspect.Documentation, name)
         if ok and type(doc)=="string" then evidence.runtimeApi[name] = string.sub(doc, 1, 16000) end
@@ -73,8 +73,11 @@ end
 local message = "Select an ability; select one training dummy."
 local lastUpdate = -1
 local function showChoices()
-    choices = model:Abilities()
-    evidence.abilities = choices
+    evidence.abilities = model:Abilities()
+    choices = {}
+    for _, item in ipairs(evidence.abilities) do
+        if not item.passive and not item.positioned and not item.autoattack then choices[#choices+1] = item end
+    end
     for i = 1, 48 do
         local item = choices[(page - 1) * 48 + i]
         rows[i]:SetText(item and item.name or "-"); rows[i]:SetVisible(item ~= nil)
@@ -112,8 +115,16 @@ local function update()
     evidence.last = r; evidence.trial = model.trial
     RiftReader2CastingEvidence = evidence
     local t = model.trial
-    local result = t and (t.status .. ": " .. (t.reason or (t.hit and "intended hit confirmed" or "awaiting ability damage"))) or message
+    local pending = t and (t.hit and "intended hit confirmed" or t.healingConfirmed and "intended heal confirmed" or
+        t.overhealObserved and "intended overheal observed" or "awaiting ability outcome")
+    local result = t and (t.status .. ": " .. (t.reason or pending)) or message
     if t and t.status == "recording" then result = result .. " (" .. math.ceil(t.deadline-now) .. "s left)" end
+    local detail = ""
+    if t and t.lastHit then
+        detail = "HIT " .. (t.lastHit.abilityName or "?") .. " -> " .. (t.lastHit.targetName or "?") .. " : " .. f(t.lastHit.damage)
+    elseif t and t.lastHeal then
+        detail = "HEAL " .. f(t.lastHeal.heal) .. " / OVERHEAL " .. f(t.lastHeal.overheal) .. " -> " .. (t.lastHeal.targetName or "?")
+    end
     text:SetText("RR2 Casting | seq " .. r.sequence .. " | " .. f(r.clock) .. "\n" ..
         "Target: " .. (r.target.name or "none") .. "  " .. (r.targetId or "") .. "\n" ..
         "Ability: " .. (r.ability.name or "choose below") .. "\n" ..
@@ -122,7 +133,7 @@ local function update()
         "Cast: " .. (r.cast.abilityName or "none") .. " " .. (r.cast.remaining and f(r.cast.remaining).."s" or "") .. "\n" ..
         "Power: " .. f(r.player.power) .. "  Cost: " .. f(r.ability.costPower) .. "\n" ..
         "Facing / line of sight: unverified\n" .. result .. "\n" ..
-        (t and t.lastHit and ("HIT " .. (t.lastHit.abilityName or "?") .. " -> " .. (t.lastHit.targetName or "?") .. " : " .. f(t.lastHit.damage)) or ""))
+        detail)
 end
 Command.Event.Attach(Event.System.Update.Begin, function()
     local ok, reason = pcall(update)
@@ -136,7 +147,7 @@ Command.Event.Attach(Event.System.Update.Begin, function()
         lastUpdate = -1
     end
 end, "RR2 casting readout")
-for _, spec in ipairs({{"Damage","damage"},{"Miss","miss"},{"Immune","immune"},{"Resist","resist"},{"Dodge","dodge"},{"Parry","parry"}}) do
+for _, spec in ipairs({{"Damage","damage"},{"Heal","heal"},{"Miss","miss"},{"Immune","immune"},{"Resist","resist"},{"Dodge","dodge"},{"Parry","parry"}}) do
     local kind = spec[2]
     if Event.Combat[spec[1]] then
         Command.Event.Attach(Event.Combat[spec[1]], function(_, info) model:Combat(kind, info) end, "RR2 casting " .. kind)

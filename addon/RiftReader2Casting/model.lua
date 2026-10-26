@@ -23,9 +23,16 @@ end
 local abilityKeys = {"id", "idNew", "name", "description", "target", "castingTime", "channeled",
     "cooldown", "currentCooldownBegin", "currentCooldownDuration", "currentCooldownRemaining",
     "currentCooldownExpired", "currentCooldownPaused", "unusable", "outOfRange", "rangeMin", "rangeMax",
-    "costPower", "costMana", "costEnergy", "costCharge", "costPlanarCharge", "positioned", "passive", "autoattack", "weapon"}
-local unitKeys = {"id", "name", "health", "healthMax", "power", "mana", "energy", "charge", "planar", "combo",
+    "costPower", "costMana", "costEnergy", "costCharge", "costSpirit", "costPlanarCharge", "positioned", "passive",
+    "continuous", "autoattack", "weapon", "stealthRequired", "icon", "focusMin", "focusMax"}
+local unitKeys = {"id", "name", "health", "healthMax", "power", "mana", "energy", "charge", "spirit", "planar", "combo",
     "combat", "relation", "player", "coordX", "coordY", "coordZ"}
+local function outcome(t)
+    if t.hit then return "intended-hit-confirmed" end
+    if t.healingConfirmed then return "intended-heal-confirmed" end
+    if t.overhealObserved then return "intended-overheal-observed" end
+    return "no-matching-outcome-observed"
+end
 
 function M.New(api)
     local self = {api = api, sequence = 0, selected = nil, trial = nil, last = nil}
@@ -33,9 +40,11 @@ function M.New(api)
         local list = call(api.Ability.New.List)
         local result = {}
         if type(list) ~= "table" then return result end
+        local details = call(api.Ability.New.Detail, list)
+        if type(details) ~= "table" then return result end
         for id in pairs(list) do
-            local d = call(api.Ability.New.Detail, id)
-            if type(d) == "table" and d.passive ~= true then
+            local d = details[id]
+            if type(d) == "table" then
                 local item = copy(d, abilityKeys); item.lookupId = id
                 result[#result + 1] = item
             end
@@ -83,7 +92,7 @@ function M.New(api)
         elseif ad.unusable then r.reason = "ability-unusable"
         else
             r.status = "ready"; r.reason = "observed-ready"
-            for _, pair in ipairs({{"costPower","power"},{"costMana","mana"},{"costEnergy","energy"},{"costCharge","charge"},{"costPlanarCharge","planar"}}) do
+            for _, pair in ipairs({{"costPower","power"},{"costMana","mana"},{"costEnergy","energy"},{"costCharge","charge"},{"costSpirit","spirit"},{"costPlanarCharge","planar"}}) do
                 local cost = ad[pair[1]]
                 if number(cost) and cost > 0 and (not number(pd[pair[2]]) or pd[pair[2]] < cost) then
                     r.status = "blocked"; r.reason = "insufficient-or-unknown-" .. pair[2]; break
@@ -95,7 +104,7 @@ function M.New(api)
         if t and t.status == "recording" then
             if not number(now) or now < t.started then t.status = "aborted"; t.reason = "clock-invalid"
             elseif player ~= t.playerId or target ~= t.targetId then t.status = "aborted"; t.reason = "target-or-player-changed"
-            elseif now > t.deadline then t.status = "finished"; t.reason = t.hit and "intended-hit-confirmed" or "no-matching-damage-observed"
+            elseif now > t.deadline then t.status = "finished"; t.reason = outcome(t)
             elseif #t.samples < 630 then t.samples[#t.samples + 1] = r end
         end
         return r
@@ -108,7 +117,8 @@ function M.New(api)
         self.trial = {status = "recording", started = r.clock, deadline = r.clock + 60,
             playerId = r.playerId, targetId = r.targetId, targetName = r.target.name,
             abilityId = self.selected, abilityNewId = r.ability.idNew or r.ability.id,
-            abilityName = r.ability.name, samples = {r}, events = {}, cooldowns = {}, hit = false}
+            abilityName = r.ability.name, samples = {r}, events = {}, cooldowns = {}, hit = false,
+            healingConfirmed = false, overhealObserved = false}
         return true
     end
     function self:Combat(kind, info)
@@ -120,14 +130,20 @@ function M.New(api)
             t.status = "aborted"; t.reason = "target-or-player-changed"; return
         end
         if info.caster ~= t.playerId then return end
-        local event = copy(info, {"caster", "casterName", "target", "targetName", "ability", "abilityNew", "abilityName", "damage", "damageAbsorbed", "crit", "type"})
+        local event = copy(info, {"caster", "casterName", "target", "targetName", "ability", "abilityNew", "abilityName",
+            "damage", "damageAbsorbed", "damageBlocked", "damageDeflected", "damageIntercepted", "damageModified",
+            "overkill", "heal", "overheal", "crit", "type"})
         event.clock = now; event.kind = kind
-        local detail = info.ability and call(api.Ability.New.Detail, info.ability)
-        local normalized = type(info.abilityNew) == "string" and info.abilityNew or
-            (type(detail) == "table" and (detail.idNew or detail.id) or nil)
-        event.abilityMappingSource = type(info.abilityNew) == "string" and "Event.Combat.abilityNew" or
-            (normalized and "Inspect.Ability.New.Detail" or nil)
-        if not normalized and info.ability and type(api.Ability.Detail) == "function" then
+        local detail, normalized
+        if info.abilityNew ~= nil then
+            normalized = type(info.abilityNew) == "string" and info.abilityNew or nil
+            event.abilityMappingSource = "Event.Combat.abilityNew"
+        else
+            detail = info.ability and call(api.Ability.New.Detail, info.ability)
+            normalized = type(detail) == "table" and (detail.idNew or detail.id) or nil
+            event.abilityMappingSource = normalized and "Inspect.Ability.New.Detail" or nil
+        end
+        if info.abilityNew == nil and not normalized and info.ability and type(api.Ability.Detail) == "function" then
             detail = call(api.Ability.Detail, info.ability)
             normalized = type(detail) == "table" and detail.idNew or nil
             event.abilityMappingSource = normalized and "Inspect.Ability.Detail" or nil
@@ -144,6 +160,10 @@ function M.New(api)
         if #t.events < 64 then t.events[#t.events + 1] = event else t.eventsTruncated = true end
         if kind == "damage" and event.matchesAbility and event.matchesTarget and number(info.damage) and info.damage > 0 then
             t.hit = true; t.lastHit = event
+        end
+        if kind == "heal" and event.matchesAbility and event.matchesTarget then
+            if number(info.heal) and info.heal > 0 then t.healingConfirmed = true; t.lastHeal = event end
+            if number(info.overheal) and info.overheal > 0 then t.overhealObserved = true; t.lastHeal = event end
         end
     end
     function self:Cooldown(kind, cooldowns)

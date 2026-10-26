@@ -16,7 +16,8 @@ MAIN = PACKAGE / "main.lua"
 
 API_FACTORY = r"""
 return function(state)
-    local counts = { lookup = 0, detail = 0, ability = 0, legacyAbility = 0 }
+    local counts = { lookup = 0, detail = 0, ability = 0, abilityList = 0,
+        abilityBatch = 0, abilityScalar = 0, legacyAbility = 0 }
     local api = {
         System = { Secure = function()
             if state.secureError then error("secure state error") end
@@ -57,12 +58,20 @@ return function(state)
             end,
             New = {
                 List = function()
+                    counts.abilityList = counts.abilityList + 1
                     if state.listError then error("list error") end
                     return state.abilityList
                 end,
                 Detail = function(id)
                     counts.ability = counts.ability + 1
                     if state.abilityError then error("ability error") end
+                    if type(id) == "table" then
+                        counts.abilityBatch = counts.abilityBatch + 1
+                        local result = {}
+                        for key in pairs(id) do result[key] = state.abilities[key] end
+                        return result
+                    end
+                    counts.abilityScalar = counts.abilityScalar + 1
                     return state.abilities[id]
                 end,
             },
@@ -78,8 +87,10 @@ TEST_HANDLERS = {}
 TEST_MACROS = {}
 TEST_SECURE_MODES = {}
 TEST_MACRO_FAILURE = false
+TEST_FRAMES = {}
 local function frame(name)
     local value = { frameName = name }
+    TEST_FRAMES[name] = value
     for _, name in ipairs({"SetPoint", "SetWidth", "SetHeight", "SetBackgroundColor", "SetLayer",
         "SetVisible", "SetFontSize", "SetText"}) do
         value[name] = function(self, ...) self[name .. "Value"] = {...} end
@@ -102,7 +113,7 @@ Event = {
     System = { Update = { Begin = {} } },
     Addon = { SavedVariables = { Load = { End = {} } } },
     Ability = { New = { Cooldown = { Begin = {}, End = {} } } },
-    Combat = { Damage = {}, Miss = {}, Immune = {}, Resist = {}, Dodge = {}, Parry = {} },
+    Combat = { Damage = {}, Heal = {}, Miss = {}, Immune = {}, Resist = {}, Dodge = {}, Parry = {} },
 }
 Command = {
     Event = { Attach = function(event, handler, label) TEST_HANDLERS[label] = handler end },
@@ -293,6 +304,76 @@ class CastingAddonTests(unittest.TestCase):
         self.assertEqual("unverified", result.facingAndLineOfSight)
         self.assertIsNone(result.ability.unusable)
 
+    def test_ability_catalog_uses_one_list_and_one_batch_detail_call(self):
+        state = self.state()
+        state.abilityList = self.table({
+            "ability-old": True, "passive": True, "free": True, "sparse": True,
+        })
+        state.abilities["passive"] = self.table({
+            "id": "passive", "name": "Passive Ward", "passive": True, "costPower": 0,
+        })
+        state.abilities["free"] = self.table({
+            "id": "free", "name": "Free Strike", "costPower": 0, "costSpirit": 2,
+            "continuous": True, "stealthRequired": False, "icon": "icon.dds",
+            "focusMin": 1, "focusMax": 5,
+        })
+        state.abilities["sparse"] = self.table({"id": "sparse"})
+        model, _, counts = self.model(state)
+        abilities = model.Abilities(model)
+        items = {item.lookupId: item for item in abilities.values()}
+
+        self.assertEqual({"ability-old", "passive", "free", "sparse"}, set(items))
+        self.assertTrue(items["passive"].passive)
+        self.assertEqual(0, items["passive"].costPower)
+        self.assertEqual(0, items["free"].costPower)
+        self.assertEqual(2, items["free"].costSpirit)
+        self.assertTrue(items["free"].continuous)
+        self.assertFalse(items["free"].stealthRequired)
+        self.assertEqual("icon.dds", items["free"].icon)
+        self.assertEqual(1, items["free"].focusMin)
+        self.assertEqual(5, items["free"].focusMax)
+        self.assertIsNone(items["sparse"].name)
+        self.assertIsNone(items["sparse"].costPower)
+        self.assertEqual(1, counts.abilityList)
+        self.assertEqual(1, counts.abilityBatch)
+        self.assertEqual(0, counts.abilityScalar)
+
+    def test_picker_filters_known_unsupported_types_without_removing_them_from_catalog(self):
+        state = self.state()
+        state.abilityList = self.table({
+            "passive": True, "positioned": True, "auto": True, "free": True, "sparse": True,
+        })
+        state.abilities["passive"] = self.table({"id": "passive", "name": "Passive", "passive": True})
+        state.abilities["positioned"] = self.table({"id": "positioned", "name": "Ground", "positioned": True})
+        state.abilities["auto"] = self.table({"id": "auto", "name": "Auto", "autoattack": True})
+        state.abilities["free"] = self.table({"id": "free", "name": "Free Strike", "costPower": 0})
+        state.abilities["sparse"] = self.table({"id": "sparse"})
+        _, _, counts = self.load_main(state)
+
+        self.lua.globals().TEST_HANDLERS["RR2CastingAbilities click"]()
+        frames = self.lua.globals().TEST_FRAMES
+        self.assertEqual("Free Strike", frames["RR2CastingChoice1"].SetTextValue[1])
+        self.assertTrue(frames["RR2CastingChoice1"].SetVisibleValue[1])
+        self.assertEqual("-", frames["RR2CastingChoice2"].SetTextValue[1])
+        self.assertTrue(frames["RR2CastingChoice2"].SetVisibleValue[1])
+        self.assertFalse(frames["RR2CastingChoice3"].SetVisibleValue[1])
+        self.assertEqual(1, counts.abilityList)
+        self.assertEqual(1, counts.abilityBatch)
+
+    def test_spirit_resource_is_copied_and_checked(self):
+        state = self.state()
+        state.units["player-1"].spirit = 4
+        state.abilities["ability-old"].costSpirit = 5
+        model, _, _ = self.selected(state)
+        blocked = model.Read(model)
+        self.assertEqual(4, blocked.player.spirit)
+        self.assertEqual(5, blocked.ability.costSpirit)
+        self.assertEqual("insufficient-or-unknown-spirit", blocked.reason)
+
+        state.units["player-1"].spirit = 5
+        ready = model.Read(model)
+        self.assertEqual("ready", ready.status)
+
     def test_effective_cooldown_waits(self):
         state = self.state()
         state.abilities["ability-old"].currentCooldownRemaining = 1.25
@@ -375,6 +456,94 @@ class CastingAddonTests(unittest.TestCase):
         self.assertTrue(model.trial.lastHit.matchesAbility)
         self.assertTrue(model.trial.lastHit.matchesTarget)
         self.assertEqual(17, model.trial.lastHit.damage)
+
+    def test_heal_and_overheal_are_confirmed_separately_from_damage_hit(self):
+        model, state, _ = self.selected()
+        self.assertTrue(model.Begin(model))
+        model.Combat(model, "heal", self.table({
+            "caster": "player-1", "target": "dummy-1", "ability": "ability-old",
+            "abilityNew": "ability-new", "abilityName": "Practice Mend", "heal": 19, "overheal": 0,
+        }))
+        self.assertFalse(model.trial.hit)
+        self.assertTrue(model.trial.healingConfirmed)
+        self.assertFalse(model.trial.overhealObserved)
+        self.assertEqual(19, model.trial.lastHeal.heal)
+        state.clock = 161
+        model.Read(model)
+        self.assertEqual("intended-heal-confirmed", model.trial.reason)
+
+        model, state, _ = self.selected()
+        self.assertTrue(model.Begin(model))
+        model.Combat(model, "heal", self.table({
+            "caster": "player-1", "target": "dummy-1", "ability": "ability-old",
+            "abilityNew": "ability-new", "abilityName": "Practice Mend", "heal": 0, "overheal": 27,
+        }))
+        self.assertFalse(model.trial.hit)
+        self.assertFalse(model.trial.healingConfirmed)
+        self.assertTrue(model.trial.overhealObserved)
+        self.assertEqual(27, model.trial.lastHeal.overheal)
+        state.clock = 161
+        model.Read(model)
+        self.assertEqual("intended-overheal-observed", model.trial.reason)
+
+    def test_damage_confirmation_has_finish_precedence_over_healing(self):
+        model, state, _ = self.selected()
+        self.assertTrue(model.Begin(model))
+        common = {"caster": "player-1", "target": "dummy-1", "ability": "ability-old",
+                  "abilityNew": "ability-new", "abilityName": "Practice Strike"}
+        model.Combat(model, "heal", self.table({**common, "heal": 8, "overheal": 3}))
+        model.Combat(model, "damage", self.table({**common, "damage": 12}))
+        state.clock = 161
+        model.Read(model)
+        self.assertTrue(model.trial.hit)
+        self.assertTrue(model.trial.healingConfirmed)
+        self.assertEqual("intended-hit-confirmed", model.trial.reason)
+
+    def test_wrong_combat_identities_cannot_qualify_healing_or_overheal(self):
+        cases = (
+            {"caster": "other", "target": "dummy-1", "abilityNew": "ability-new"},
+            {"caster": "player-1", "target": "other", "abilityNew": "ability-new"},
+            {"caster": "player-1", "target": "dummy-1", "abilityNew": "other"},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                model, _, _ = self.selected()
+                self.assertTrue(model.Begin(model))
+                event = {"caster": "player-1", "target": "dummy-1", "ability": "ability-old",
+                         "abilityNew": "ability-new", "abilityName": "Practice Mend",
+                         "heal": 22, "overheal": 9}
+                event.update(changes)
+                model.Combat(model, "heal", self.table(event))
+                self.assertFalse(model.trial.hit)
+                self.assertFalse(model.trial.healingConfirmed)
+                self.assertFalse(model.trial.overhealObserved)
+                self.assertIsNone(model.trial.lastHeal)
+
+    def test_damage_mitigation_fields_are_retained(self):
+        model, _, _ = self.selected()
+        self.assertTrue(model.Begin(model))
+        model.Combat(model, "damage", self.table({
+            "caster": "player-1", "target": "dummy-1", "ability": "ability-old",
+            "abilityNew": "ability-new", "damage": 40, "damageAbsorbed": 1,
+            "damageBlocked": 2, "damageDeflected": 3, "damageIntercepted": 4,
+            "damageModified": 5, "overkill": 6,
+        }))
+        event = model.trial.lastHit
+        self.assertEqual((1, 2, 3, 4, 5, 6),
+                         (event.damageAbsorbed, event.damageBlocked, event.damageDeflected,
+                          event.damageIntercepted, event.damageModified, event.overkill))
+
+    def test_out_of_combat_state_does_not_filter_exact_outcome(self):
+        state = self.state()
+        state.units["player-1"].combat = False
+        state.units["dummy-1"].combat = False
+        model, _, _ = self.selected(state)
+        self.assertTrue(model.Begin(model))
+        model.Combat(model, "damage", self.table({
+            "caster": "player-1", "target": "dummy-1", "ability": "ability-old",
+            "abilityNew": "ability-new", "damage": 7,
+        }))
+        self.assertTrue(model.trial.hit)
 
     def test_legacy_ability_detail_can_normalize_combat_id_to_selected_new_id(self):
         state = self.state()
@@ -529,7 +698,7 @@ class CastingAddonTests(unittest.TestCase):
         state.clock = 161
         model.Read(model)
         self.assertEqual("finished", model.trial.status)
-        self.assertEqual("no-matching-damage-observed", model.trial.reason)
+        self.assertEqual("no-matching-outcome-observed", model.trial.reason)
 
     def test_snapshot_fault_cannot_become_a_hit(self):
         model, state, _ = self.selected()
@@ -541,7 +710,7 @@ class CastingAddonTests(unittest.TestCase):
         state.clockError = False
         state.clock = 161
         model.Read(model)
-        self.assertEqual("no-matching-damage-observed", model.trial.reason)
+        self.assertEqual("no-matching-outcome-observed", model.trial.reason)
 
     def test_cooldown_events_keep_only_selected_ability_during_window(self):
         model, state, _ = self.selected()
@@ -609,6 +778,14 @@ class CastingAddonTests(unittest.TestCase):
                           "ability": "ability-old", "abilityName": "Practice Strike", "damage": 11})
         handlers["RR2 casting damage"](self.lua.globals().Event.Combat.Damage, hit)
         self.assertTrue(instance.trial.hit)
+
+        heal = self.table({"caster": "player-1", "target": "dummy-1",
+                           "ability": "ability-old", "abilityNew": "ability-new",
+                           "abilityName": "Practice Mend", "heal": 13, "overheal": 2})
+        handlers["RR2 casting heal"](self.lua.globals().Event.Combat.Heal, heal)
+        self.assertTrue(instance.trial.healingConfirmed)
+        self.assertTrue(instance.trial.overhealObserved)
+        self.assertEqual(13, instance.trial.lastHeal.heal)
 
         handlers["RR2 casting cooldown Begin"](
             self.lua.globals().Event.Ability.New.Cooldown.Begin,

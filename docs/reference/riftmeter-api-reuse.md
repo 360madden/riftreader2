@@ -48,5 +48,28 @@ Use [SpellDump's ability catalog](spelldump-api-reuse.md) to determine what the
 character knows and its reported requirements. Use fresh ability/unit/castbar
 inspection to assess readiness. Use Rift Meter's combat-event patterns to determine
 what actually happened and to whom. Keep raw events before deriving summaries.
-The existing casting addon already handles damage/outcome IDs; healing, mitigation
-and pet attribution are useful later extensions, not claimed implemented here.
+## Implemented selective reuse
+
+Casting addon 0.2.0 independently implements these API patterns in its existing
+small model. No Rift Meter implementation or libraries were copied. No explicit
+reuse license was found in the inspected source files; this change needs no
+third-party source import. Rift Meter remains an implementation reference.
+
+The recorder now subscribes to Heal and retains effective healing, overhealing,
+overkill, absorbs, blocks, deflections, interceptions and modifications when the
+game supplies them. Positive healing and positive overhealing have separate
+verdicts and never set the damage-hit flag. Every accepted result still needs the
+exact recorded caster, ability and target. Select the intended friendly target
+(including self) before starting a healing trial; a hostile selected target with
+a self-targeting ability remains a mismatch. There is no meter-style combat-only
+filter, so an otherwise valid out-of-combat healing event can be retained.
+
+Modern IDs are authoritative; a missing or malformed modern ID cannot be replaced
+by a name. No pet merging, combat-session inference, damage-rate dashboard, or new
+external helper app is added. Pet attribution remains a future extension.
+
+Validation includes regression tests and offline replay of the previously
+captured live dummy trial: the same 118-damage exact-ID hit, seven combat events
+and two cooldown events remain intact. Replay evidence:
+`artifacts/casting-20261025-01/reuse-replay-result.json`. New healing/overhealing
+behavior is not yet live-qualified; this implementation performed no game input.

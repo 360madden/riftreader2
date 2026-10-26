@@ -2,6 +2,18 @@
 
 Updated: 2026-10-26 (America/New_York; Windows host clock).
 
+**Addon API reuse — IMPLEMENTED AND OFFLINE VALIDATED:**
+Casting addon 0.2.0 uses the SpellDump batch List/Detail pattern and retains the
+full known-ability inventory, with Cast-picker filtering kept separate. Independent
+code informed by Rift Meter adds healing/overhealing outcomes and raw mitigation
+fields; exact caster/ability/target IDs still gate each result. No third-party code
+or libraries were imported. Offline replay preserves the prior 118-damage dummy
+hit, seven events and two cooldown events. Full gate passed: 514 .NET tests,
+858 Python passes/two skips (38 focused casting tests), contracts, formatting,
+native publish smoke and 625 links. Evidence: `artifacts/validation/20261026T051331Z-5fd1d67f/`.
+New healing/overhealing behavior is not live-qualified or deployed. No game input
+was performed for this increment; patch recovery and health-loss testing stay deferred.
+
 **Rift Meter review — COMBAT API REUSE:**
 Inspected installed Rift Meter 1.2 source. It confirms modern combat `abilityNew`,
 caster/target attribution, damage/healing and avoidance/mitigation events, plus
