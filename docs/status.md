@@ -2,6 +2,15 @@
 
 Updated: 2026-10-26 (America/New_York; Windows host clock).
 
+**SpellDump review — API-FIRST ABILITY INVENTORY:**
+Inspected both guest SpellDump implementations without changing them. Their
+ability collection uses `Inspect.Ability.New.List()` plus one batch
+`Inspect.Ability.New.Detail(ids)` call. SpellDump2 exposes range, costs, cast time,
+channel/ground-target/stealth flags and descriptions; its offensive categories
+are heuristics and must not replace the complete raw catalog. See the
+[reuse findings](reference/spelldump-api-reuse.md). Next casting work should reuse
+this catalog before further ability selection/testing. No additional game input.
+
 **Casting readout — LIVE DUMMY HIT VERIFIED:**
 The [detailed handoff and result](workflows/casting-handoff-2026-10-26.md) preserves
 code, deployment, raw evidence, failed attempts and exact continuation steps.

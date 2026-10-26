@@ -1,5 +1,8 @@
 # Casting readout and bounded dummy test
 
+See [SpellDump API reuse](spelldump-api-reuse.md) for the inspected existing
+batch ability catalog and the distinction between game facts and addon filters.
+
 The optional `addon/RiftReader2Casting` addon provides a diagnostic panel and
 separate secure Cast / Stop autoattack buttons.
 It reuses RIFT's `Inspect.Ability.New.List/Detail`, `Inspect.Unit.Lookup/Detail`,
