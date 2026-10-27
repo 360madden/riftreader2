@@ -19,6 +19,16 @@ fresh **Lua data**, not native XYZ, pointer stability or a movement test.
 Visual/screenshot access, other addon behaviors and native-field semantics
 remain unverified.
 
+**New-build native XYZ scout — 10 STRUCTURAL CANDIDATES, NO FIELD PROMOTION:**
+`scout-values-native` in Lab-2 searched 256 MiB of high `MEM_PRIVATE` with
+fresh Lua player X reference. It published 23 SHA-verified context snapshots;
+19 still contained X on copy, and 10 had nearby float32 Y/Z exactly at
+`X+4`/`X+8` within ±0.02 of the earlier Lua values. Multiple copies and
+no observed movement block authoritative native-XYZ classification.
+An attempted `vmrun -interactive` diagnostic failed before publication;
+no screenshot or desktop control was established. See
+[native XYZ candidate validation](validation/lab2-native-xyz-candidates-2026-10-27.md).
+
 **Updated casting addon — DEPLOYED; RANGED-REACH HIT VERIFIED:**
 Normal Chat worker preflight selected Light's Decree from the real API catalog;
 the coordinator deployed matching addon hashes and used guarded helpers for two
