@@ -23,8 +23,11 @@ remain unverified.
 `scout-values-native` in Lab-2 searched 256 MiB of high `MEM_PRIVATE` with
 fresh Lua player X reference. It published 23 SHA-verified context snapshots;
 19 still contained X on copy, and 10 had nearby float32 Y/Z exactly at
-`X+4`/`X+8` within ±0.02 of the earlier Lua values. Multiple copies and
-no observed movement block authoritative native-XYZ classification.
+`X+4`/`X+8` within ±0.02 of the earlier Lua values. Five exact-epoch 76-byte
+contexts reread later were byte-for-byte unchanged. A third typed API run
+advanced the same player's sequence to **16731/16732** while Lua XYZ remained
+stable; four more strict cross-run comparisons passed. Multiple copies and no
+observed movement still block authoritative native-XYZ classification.
 An attempted `vmrun -interactive` diagnostic failed before publication;
 no screenshot or desktop control was established. See
 [native XYZ candidate validation](validation/lab2-native-xyz-candidates-2026-10-27.md).

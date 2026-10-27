@@ -34,6 +34,12 @@
 - API-source player position was unchanged across all four pairs: **X 7160.759765625, Y 821.2099609375, Z 3156.1499023438**. This is evidence of available, advancing **Lua-sourced** coordinates for one apparently stationary player, not a verified native XYZ memory locator or a controlled movement test.
 - The strict loader checked each snapshot's full covered segments and chunk hashes; no malformed complete or incomplete candidate fragments were present in selected snapshots. Inspector process exit 0 alone does not constitute positive semantics; its embedded `status` above does.
 
+## Third live read proving later source advancement
+
+- After a separate native candidate reread, a **third** 512 MiB bounded `scout-copy-typed-native` pass on the unchanged game PID/build obtained **two more complete 28,672-byte snapshots**. The result remained correctly `partial: byte-budget-exceeded`; `index.json` SHA-256 **`4E41C4C5CECC3373344DB39AA34712D0BCAC6CD86C81529DE7D54193C2579960`**, original host ZIP SHA-256 **`1928F28297E175C578D1F78467DE32D3127DFB94FBBE0CB5F94312BE259323AA`**; exact ignored originals `artifacts/lab2-typed-20261027-10-run3.zip`, receipt and extraction alongside it. Host verified ZIP, index, request and all snapshot SHA links before comparison.
+- The unchanged strict offline inspector comparing second run (`05`) to third (`10`) produced **4/4 additional** `advanced-in-covered-scope` reports; sequences **14545/14546 → 16731/16732**, same player and exactly unchanged API-source XYZ **(7160.759765625, 821.2099609375, 3156.1499023438)**. Reports: `artifacts/lab2-typed-20261027-10-comparisons/`.
+- This shows the Lua producer continued advancing on the patched build long after the first pair. Stationary XYZ and no input still prevent proof of native-field authority or movement semantics.
+
 ## Guest Lua producer inventory (installation evidence)
 
 - The game's user-profile Documents folder is OneDrive redirected: `OneDrive\Documents\RIFT\Interface\Addons`. The four present enabled-looking directories include `RiftReader2`, `RiftReader2Casting`, `RiftReaderApiProbe`, and `RiftMeter`; mere presence does not guarantee enabled/in-world loading.

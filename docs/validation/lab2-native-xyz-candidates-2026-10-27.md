@@ -21,6 +21,12 @@
 - The verified 2026-10-27 typed wire also contained `player.health=10635`, `healthMax=10635`, `planar=3`, `planarMax=3`, `combo=5`, `coordX/Y/Z` as above, and `player.zone=z0000000CB7B53FD7` with field statuses `ok`.
 - `player.power`, mana, combat and mounted values were **unavailable** in that frame; target status was **absent**. Do not treat unavailable as zero or infer new-build native resource fields from it. `autonomousInputReady=false` is a producer field, not a guarantee of game-control readiness.
 
+## Later same-epoch native readback
+
+- An independent, later, **read-only five-range `snapshot-native`** operation pinned to the same game PID/start/SHA returned `status=complete` with **five of five** successful 76-byte contexts. Exact original ignored: `artifacts/lab2-xyz-20261027-09-snapshot.json`, SHA-256 **`43831785A5F442D1C2BA1CA56F4B56D47DEDEB0F08615BD2E4C0C0F848658236`**; guest/host receipt `artifacts/lab2-xyz-20261027-09-receipt.json`. Host verified all per-chunk Base64 lengths/hashes and matching request provenance.
+- All five selected contexts (X addresses `0x257A80DF638`, `0x257A897DE40`, `0x257AC9E04D0`, `0x257B8F7D390`, `0x257B8F91050`) were **byte-for-byte identical** to their initial scout contexts and retained approximately (7160.758789, 821.214233, 3156.152832). The guest game PID/start remained unchanged.
+- A third independently verified typed API run roughly one minute later continued to advance sequence **14545/14546 → 16731/16732** with the same source player and unchanged Lua XYZ (four of four strict offline pairs). See the [third-run evidence](lab2-typed-inline-postpatch-2026-10-27.md). Temporal persistence is useful evidence, but identical static values **cannot distinguish authoritative native position from stale copies**. A separately observed position change is still essential.
+
 ## GUI validation blocker and remaining gates
 
 - A read-only `vmrun runProgramInGuest -interactive -noWait` diagnostic for Lab-2 returned **4294967295** before creating its expected receipt. A separately authenticated noninteractive check confirmed no interactive diagnostic receipt, game still running in Windows session **1**, guest default PowerShell in session **0**. Do not claim interactive console or screenshot support from this failed experiment.
