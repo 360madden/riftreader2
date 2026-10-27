@@ -2,14 +2,22 @@
 
 Updated: 2026-10-27 (America/New_York; Windows host clock).
 
-**RIFT EXECUTABLE UPDATED — LAB-2 NATIVE READ PROVEN, FIELDS PENDING:**
-Lab-2 runs an October 27 `rift_x64.exe` with a new SHA-256. The current
-RiftReader2.Live reader was independently staged there under a new filename;
-exact-process `inspect-native`, a 64-byte module-header capture, and a
-6,932-region native map completed successfully. Old XYZ and power readers were
-rejected at runtime (exit 2, no stale reports). New field semantics and
-in-world addon/screenshot testing remain pending.
-See [Lab-2 patch validation](validation/rift-lab2-patch-2026-10-27.md).
+**RIFT EXECUTABLE UPDATED — LAB-2 LUA SOURCE RECOVERED, NATIVE FIELDS PENDING:**
+Lab-2 runs the October 27 `rift_x64.exe` with a new SHA-256. The current
+RiftReader2.Live reader was staged separately; exact-process `inspect-native`,
+64-byte module-header capture and 6,932-region native map succeeded. Old XYZ
+and power profiles failed closed at runtime (exit 2, no stale reports).
+**New:** Two time-separated 512 MiB bounded scans recovered four original
+28,672-byte typed API snapshots. All four strict offline cross-run comparisons
+reported `advanced-in-covered-scope`, stable player `u035400012DFEB5BC`,
+sequence 14436/14437 -> 14545/14546, and Lua-source player position
+**(7160.759765625, 821.2099609375, 3156.1499023438)**. The installed
+Lab-2 API Probe 0.6.0 `validation.lua` matches its documented SHA. This is
+fresh **Lua data**, not native XYZ, pointer stability or a movement test.
+[Patch validation](validation/rift-lab2-patch-2026-10-27.md) and
+[post-patch typed source proof](validation/lab2-typed-inline-postpatch-2026-10-27.md).
+Visual/screenshot access, other addon behaviors and native-field semantics
+remain unverified.
 
 **Updated casting addon — DEPLOYED; RANGED-REACH HIT VERIFIED:**
 Normal Chat worker preflight selected Light's Decree from the real API catalog;

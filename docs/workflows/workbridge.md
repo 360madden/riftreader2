@@ -120,8 +120,11 @@ scoped fallback through `terminal_run` succeeded: Git `add -- EXACT_FILES`,
 and the clean worktree. This committed `374170d` without touching unrelated
 files. Never blindly retry an uncertain commit or stage the whole repository.
 
-Workbridge currently allows two concurrent command jobs. Batch independent
-reads when useful; keep dependent edits, commits, and recovery sequential.
+Workbridge 0.16.3-dev currently reports **six** concurrent command jobs via
+`workspace_info.limits.commandJobs` (verified 2026-10-27). Recheck the live
+limit when scheduling parallel terminal work; this is a command-job cap, not
+an agent-count guarantee. Batch independent reads when useful; keep dependent
+edits, commits, and recovery sequential.
 
 ## Current commands
 
@@ -160,6 +163,10 @@ The real package binary accepted `-NoProfile -File scripts/validate.ps1`
 and the full native milestone gate passed. Discover the **current** package
 location each session because Store versions can change; never infer that
 PowerShell 7 is absent from the zero-byte WindowsApps alias failure.
+On October 27 the Store package advanced to **7.6.9** at
+`C:\Program Files\WindowsApps\Microsoft.PowerShell_7.6.9.0_x64__8wekyb3d8bbwe\pwsh.exe`.
+The current reader's published-native smoke then passed using that exact
+executable (Workbridge job `rr2-lab2-native-smoke-pwsh769-20261027-01`).
 
 When available, the intended terminal invocation is equivalent to:
 
