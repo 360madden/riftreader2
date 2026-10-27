@@ -1,6 +1,14 @@
 # Current status
 
-Updated: 2026-10-26 (America/New_York; Windows host clock).
+Updated: 2026-10-27 (America/New_York; Windows host clock).
+
+**RIFT EXECUTABLE UPDATED — LAB-2 NATIVE READ PROVEN, FIELDS PENDING:**
+Lab-2 runs an October 27 `rift_x64.exe` with a new SHA-256. The current
+RiftReader2.Live reader was independently staged there under a new filename;
+exact-process `inspect-native` and a 64-byte `capture-native` module-header
+read both completed successfully. The old build's XYZ and power recipes remain
+unqualified and exact-build-gated; in-world addon/screenshot tests remain pending.
+See [Lab-2 patch validation](validation/rift-lab2-patch-2026-10-27.md).
 
 **Updated casting addon — DEPLOYED; RANGED-REACH HIT VERIFIED:**
 Normal Chat worker preflight selected Light's Decree from the real API catalog;
