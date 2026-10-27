@@ -5,9 +5,10 @@ Updated: 2026-10-27 (America/New_York; Windows host clock).
 **RIFT EXECUTABLE UPDATED — LAB-2 NATIVE READ PROVEN, FIELDS PENDING:**
 Lab-2 runs an October 27 `rift_x64.exe` with a new SHA-256. The current
 RiftReader2.Live reader was independently staged there under a new filename;
-exact-process `inspect-native` and a 64-byte `capture-native` module-header
-read both completed successfully. The old build's XYZ and power recipes remain
-unqualified and exact-build-gated; in-world addon/screenshot tests remain pending.
+exact-process `inspect-native`, a 64-byte module-header capture, and a
+6,932-region native map completed successfully. Old XYZ and power readers were
+rejected at runtime (exit 2, no stale reports). New field semantics and
+in-world addon/screenshot testing remain pending.
 See [Lab-2 patch validation](validation/rift-lab2-patch-2026-10-27.md).
 
 **Updated casting addon — DEPLOYED; RANGED-REACH HIT VERIFIED:**

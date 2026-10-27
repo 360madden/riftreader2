@@ -25,6 +25,15 @@ Status: **patch detected; updated reader deployed separately; native identity an
 
 **Validation limitation:** The existing published-native smoke PowerShell script could not pass on this host: `pwsh` and the expected PowerShell 7 installation were unavailable, and Windows PowerShell 5.1 writes a UTF-8 BOM that the strict request reader rejects. Do not count this smoke check as passed; the live Lab-2 inspection and capture are separate successful direct evidence. Prior full gate reports concern older tested source/build contexts, not a patch-survival attestation.
 
+## Follow-on Lab-2 read and rejection evidence
+
+- **Fresh new-build map:** `map-native` completed against the same PID/start/SHA, exit **0**, with **6,932** readable committed regions (6,071 private, 574 image, 287 mapped). Readable here means permitted to query, **not** semantically recognized. Local report: `artifacts/lab2-patch-native-map-report-20261027-01.json` (939,899 bytes; SHA-256 `0326A5FE5AD8F88147C13004C03D08A1A0FC5568E1004F4D05C54528834A8D93`); request and bounded guest receipt are adjacent.
+- **Old position profile fail-closed:** `sample-position` with the previously documented exact-old-SHA profile exited **2** with **no output report**. Source validation supplies the profile's old SHA to native session opening before position sampling.
+- **Old power recipe fail-closed:** `sample-power` using the new PID/start but the compiled old-SHA recipe also exited **2** with **no output report**. Together these runtime checks are consistent with exact-build rejection, not a proof of new XYZ or Power. Evidence: `artifacts/lab2-patch-old-field-gate-20261027-01.json`. Game PID 11900 remained running; no game input was sent.
+- **Screenshot diagnostic:** Lab-2 VNC port 5906 accepts localhost TCP and advertises `RFB 003.008` with security type **2 (VNC password)**. Existing VNC client still could not authenticate/connect. VMware `vmrun captureScreen` was also attempted both without and with the cached VM encryption credential, but both returned 4294967295 and **no screenshot**. A narrowly scoped VM screenshot-helper experiment passed 21 focused unit tests but could not capture this guest; its source/test edits were completely **undone**, leaving no such feature in the tracked tree. Do not treat an available VNC listener as a working visual control surface.
+
+No movement was performed, no game state was changed, and no post-patch field semantics or restart survivability were established.
+
 ## Continuation
 
 1. Maintain Lab-2-only scope, no surprise control of Lab-1. Before new guest operations recheck VM/process/executable identity.
