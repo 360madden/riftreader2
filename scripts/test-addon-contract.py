@@ -36,7 +36,7 @@ def main():
     toc = read_toc((package / "RiftAddon.toc").read_text(encoding="utf-8"))
     startup_files = list(toc.RunOnStartup.values())
     if (toc.Identifier != "RiftReader2" or toc.Version != "0.1.0" or toc.Environment != "4.4"
-            or toc.Author != "360madden" or startup_files != ["wire.lua", "producer.lua", "live.lua", "main.lua"]):
+            or toc.Author != "360madden" or startup_files != ["wire.lua", "producer.lua", "live.lua", "guidance.lua", "main.lua"]):
         raise AssertionError("Addon metadata or startup module order differs from the supported package.")
     for module in startup_files[:-1]:
         lua.execute((repo / "addon/RiftReader2" / module).read_text(encoding="utf-8"), info, private)
@@ -125,7 +125,48 @@ def main():
                 or live_report["bindingStatus"] != "unbound" or live_report["freshnessStatus"] != "unverified"
                 or live_report["envelopeSha256"].lower() != hashlib.sha256(envelope).hexdigest()):
             raise AssertionError(f"{case['name']}: live envelope decoding differs or overstated verification")
-    print(f"Lua 5.1: {lua_checks} lifecycle/encoder checks; {len(cases)} addon + {len(cases)} live-envelope real Lua -> C# shared cases passed.")
+    # Exercise the real producer -> external CLI -> real Lua receiver, rather
+    # than copying a golden slash string into each language's isolated tests.
+    for lab, nonce in (("lab1", "0123456789abcdef0123456789abcdef"),
+                       ("lab2", "fedcba9876543210fedcba9876543210")):
+        state = dict(clock=123.5, beforePlayer="uGuidance123", afterPlayer="uGuidance123",
+                     detail=dict(coordX=10, coordY=2, coordZ=20, health=100, healthMax=100, combat=False))
+        producer = private.Producer.New(make_api(to_lua(state)))
+        frame, observation = producer.Update(producer)
+        live = private.Live.New()
+        assert live.Bind(live, nonce) is True
+        envelope = live.Wrap(live, frame)
+        frame_path = args.output_directory / ("guidance-" + lab + ".wire")
+        frame_path.write_bytes(envelope.encode("ascii"))
+        result = subprocess.run(
+            ["dotnet", str(args.cli.resolve()), "guide-addon", "--frame", str(frame_path.resolve()),
+             "--lab", lab, "--session-id", nonce, "--result-sequence", "1",
+             "--destination-x", "7", "--destination-y", "6", "--destination-z", "24"],
+            text=True, encoding="utf-8", capture_output=True, check=False)
+        if result.returncode != 0:
+            raise AssertionError(f"{lab}: external guidance failed: {result.stderr}")
+        report = json.loads(result.stdout)
+        receiver = private.Guidance.New()
+        accepted, _ = receiver.Bind(receiver, lab, nonce)
+        assert accepted is True
+        command = report["slashCommand"].removeprefix("/rr2guide ")
+        accepted, reason = receiver.Receive(receiver, command, observation, 124)
+        if accepted is not True or receiver.Result.distance != 5 or receiver.Result.dy != 4:
+            raise AssertionError(f"{lab}: real external command rejected or wrong math: {reason}")
+        wrong_lab = "lab2" if lab == "lab1" else "lab1"
+        other = private.Guidance.New()
+        assert other.Bind(other, wrong_lab, nonce)[0] is True
+        assert other.Receive(other, command, observation, 124)[0] is False
+        # Expiry is checked against the original source clock, with fresh local
+        # observation time. It must remove the accepted calculated result.
+        observation.clock.value = 134
+        receiver.Status(receiver, observation, 134)
+        assert receiver.Result is None
+        report["validation"] = dict(kind="synthetic-lua-csharp-lua", receiptSourceAgeSeconds=0.5,
+                                    wrongLabRejected=True, expiryCleared=True, gameRuntimeVerified=False)
+        with (args.output_directory / ("guidance-" + lab + ".json")).open("x", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2)
+    print(f"Lua 5.1: {lua_checks} lifecycle/encoder checks; {len(cases)} addon + {len(cases)} live-envelope real Lua -> C# shared cases; 2 synthetic lab-bound Lua -> C# -> Lua guidance round trips passed.")
 
 
 if __name__ == "__main__":

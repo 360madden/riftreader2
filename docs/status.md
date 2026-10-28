@@ -2,6 +2,40 @@
 
 Updated: 2026-10-28 (America/New_York).
 
+**Bidirectional guidance — SOURCE/OFFLINE GATES PASSED; LIVE ACCEPTANCE PENDING:**
+The [fresh two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md)
+records both VM identities and read-only screenshots. Lab-1 is in game as
+Atank (45), but two authenticated guest-tools process-list calls timed out;
+its current executable/process/unit identity is unavailable. Lab-2 is in game
+as Bolinao (43), RIFT PID 2700/start `2026-10-28T18:05:39.4270240Z`, SHA
+`1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
+Installed core 0.1.0, ReaderBridge 0.3.2 and Casting 0.4.0 were hash-inventoried.
+Joey reserved idle Lab-2 for this installation/manual reload-paste trial.
+
+The prepared [manual guidance path](reference/addon-guidance.md) reuses normal
+Live `latest.json` through strict `guide-addon --snapshot` gating; `--frame`
+remains an offline input. It calculates planar distance/coordinate bearing and
+signed deltas, then emits bounded `/rr2guide result ...` text. The addon binds
+lab/reader nonce, rejects wrong/old/expired sources and duplicate results,
+displays external calculations with age, and clears after movement or source
+expiry. It executes no gameplay actions. RR2A1/RR2L1 remain unchanged.
+
+Full `scripts/validate.ps1` passed: **539 .NET tests, 922 Python tests
+(2 skipped), 110 Lua lifecycle/encoder checks, 22 existing real Lua/C# cases,
+two distinct synthetic lab-bound Lua -> C# -> Lua guidance round trips**,
+Release build/format/dependencies, native smoke, deterministic replay and
+661 relative links. Evidence: `artifacts/validation/20261028T235032Z-2814371d/`,
+log `artifacts/bidirectional-final-gate-20261028-02.log`.
+Independent review and 20 focused C#/18 Lua guidance tests passed. Two existing
+test-fixture races were fixed separately without native/transport production
+changes. Neither synthetic round trip is live lab reproduction.
+
+Lab-2 hash-verified core installation is the next operation; live reload,
+fresh advancing snapshot, manual receipt/display/latency/stale checks,
+movement checkpoints and second-lab reproduction remain pending. Lab-1 guest
+access needs recovery. Patch recovery and direct Computer Use remain deferred;
+do not advance ordered routes, camera projection or actions before their gates.
+
 **Two-lab hybrid roadmap — USER SCOPE UPDATE, OCTOBER 28:**
 Joey authorized using **RIFT-Lab-1 and RIFT-Lab-2** for faster parallel
 discovery and validation, superseding the earlier Lab-2-only restriction for

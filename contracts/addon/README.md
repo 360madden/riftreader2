@@ -50,7 +50,10 @@ Separate Lua modules own encoding, acquisition/state, and RIFT event hookup.
 The default sampling interval is 0.5 seconds; a validated constructor option
 allows 0.05..60 seconds. Only the six declared fields are acquired in this schema.
 One current frame is published in `RiftReader2_Frame`; no history, file/network
-access, SavedVariables, inbound commands, or unbounded scans are implemented.
+access, SavedVariables or unbounded scans are implemented by the producer.
+The separate [manual guidance receiver](../../docs/reference/addon-guidance.md)
+accepts bounded calculated results outside this observation schema; it does not
+change RR2A1 fields or execute gameplay actions.
 The event callback returns no values. API errors do not escape the callback.
 Startup/update events use the API shape observed in V1 and verified in one
 identified actual-client session on 2026-10-18. The global is a publication

@@ -28,6 +28,7 @@ flowchart LR
     Native[Native reader adapter] --> App
     Replay[Saved evidence adapter] --> App
     App --> Store[Evidence storage and reports]
+    App -. operator-delivered bounded result .-> Lua
 ```
 
 The minimal Lua addon and offline decoder are implemented and tested together.
@@ -44,6 +45,11 @@ The separate finite [native capture path](reference/native-capture.md) retains
 explicit raw ranges, process/build identity, timing, hashes, and read failures.
 Its Application session port isolates Win32 access in Live. Raw-byte acquisition
 does not promote field meanings or replace the addon contract.
+The prepared [manual guidance slice](reference/addon-guidance.md) returns bounded
+external calculations through an operator-delivered slash command. It uses
+lab/reader identity, source-age and movement invalidation; it executes no game
+actions. Current-client delivery and UI acceptance remain separate live gates.
+
 The [field catalog](reference/field-catalog.md) adds an offline qualification
 workflow. Infrastructure verifies content-pinned artifacts and assessments;
 Application evaluates separate meaning, locator, restart, and update claims at

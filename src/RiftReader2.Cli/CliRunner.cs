@@ -20,6 +20,7 @@ public static class CliRunner
                     validate-capture --manifest PATH [--config PATH]
                     decode-addon --frame PATH [--output PATH]
                     decode-live-addon --frame PATH --session-id HEX [--output PATH]
+                    guide-addon (--snapshot PATH | --frame PATH) --lab lab1|lab2 --session-id HEX --result-sequence INTEGER --destination-x NUMBER --destination-y NUMBER --destination-z NUMBER [--output PATH]
                     replay-wall-motion --manifest PATH [--output PATH]
                     qualify-fields --catalog PATH --build-sha256 HEX --session-id ID --as-of UTC [--output PATH]
                     export-discoveries --manifest PATH --build-sha256 HEX --session-id ID --as-of UTC --format json|csv|jsonl --output PATH [--source LIST] [--category LIST] [--status LIST] [--search TEXT] [--sort KEYS] [--columns CSV]
@@ -44,6 +45,10 @@ public static class CliRunner
             }
 
             var command = args[0];
+            if (command == "guide-addon")
+                return await AddonGuidanceCommand.RunAsync(
+                    ParseOptions(args[1..], "--frame", "--snapshot", "--lab", "--session-id", "--result-sequence",
+                        "--destination-x", "--destination-y", "--destination-z", "--output"), output, cancellationToken);
             if (command is "search-memory" or "find-pattern" or "compare-memory" or "find-pointers")
             {
                 var memoryOptions = command switch

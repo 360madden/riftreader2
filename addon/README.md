@@ -2,20 +2,23 @@
 
 This directory contains the minimal in-game Lua producer for RiftReader2. It
 publishes a bounded API-reference observation for later acquisition by the
-external .NET application. It does not read native memory, calculate motion,
-persist SavedVariables, or send network traffic. Its only command is the
-one-load reader binding described below.
+external .NET application. It also accepts bounded manually delivered external
+guidance through `/rr2guide`, with lab/session binding and automatic expiry.
+It does not read native memory, persist SavedVariables, send network traffic,
+or execute gameplay actions. See [manual guidance](../docs/reference/addon-guidance.md)
+for the prepared return channel and its live-validation limits.
 
 ## Package
 
-`RiftAddon.toc` loads four Lua modules in order. Together with the manifest, the
-current package contains five files:
+`RiftAddon.toc` loads five Lua modules in order. Together with the manifest, the
+current package contains six files:
 
 | File | Responsibility |
 |---|---|
 | `wire.lua` | Strict bounded ASCII/JSON encoding for the version-1 frame. |
 | `producer.lua` | API acquisition, validation, sequence/epoch state, throttling, and publication. |
 | `live.lua` | One-load nonce binding and the version-1 live envelope. |
+| `guidance.lua` | Bounded manual result validation, freshness and display model. |
 | `main.lua` | Minimal RIFT startup/update event hookup and error containment. |
 
 The manifest uses `Environment = 4.4`, the value observed in the V1 addon
