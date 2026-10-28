@@ -31,14 +31,14 @@ def exchange(payload: bytes, *, bundle: str, method="GET", url=None,
                     connection = HTTPConnection("127.0.0.1", server.server_port, timeout=4)
                     connection.request(method, resource if url is None else url)
                     reply = connection.getresponse()
-                    outcome = (reply.status, dict(reply.getheaders()), reply.read(),
-                               server.delivered, server.denied, server.incomplete)
+                    response = (reply.status, dict(reply.getheaders()), reply.read())
                     connection.close()
                 finally:
                     thread.join(timeout=5)
                     if thread.is_alive():
                         raise AssertionError("single request did not settle")
-                return outcome
+                return (*response, server.delivered, server.denied,
+                        server.incomplete)
 
 
 class PositionDeliveryTests(unittest.TestCase):
