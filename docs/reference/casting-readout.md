@@ -11,7 +11,7 @@ It uses RIFT's restricted `EventMacroSet` facility for a named ability and the
 standard `stopattack` command. Only a physical click activates those buttons;
 there is no timer, automatic retry or rotation. Earlier supervised trials used
 a screenshot-reviewed guarded helper. A Lab-2 game-input path is not yet
-qualified for 0.3.0; the player can operate the controls manually. Target
+qualified for 0.4.0; the player can operate the controls manually. Target
 selection remains explicit.
 
 ## Use
@@ -80,9 +80,52 @@ hostile-target LOS/facing: the saved client documentation exposes XYZ but no
 general facing/yaw field; the `blocked` flag is scoped to group members in
 that documented build. The next in-game evidence capture should recheck the
 current client API before introducing a native or heuristic facing/LOS test.
-Each load still uses the TOC-derived **v0.3.0** title and once-per-load colored
-chat announcement. Visual screenshot and picker clipping verification remain
-pending a manual `/reloadui`.
+The v0.3.0 title was visible after a player reload; its chat announcement
+remains unverified in the available screenshot. That screenshot also revealed
+a hard-to-read **Hide** label; v0.4.0
+adds a higher-contrast foreground-layer control, pending a new live check.
+
+## Draggable Casting HUD and slash CLI — 0.4.0
+
+Drag the **Casting** header (away from **Hide**) to move the main dashboard, or
+drag the **Abilities** picker header to move both panes together. The protected
+**Cast** and **Stop attack** actions follow the dashboard but cannot be
+activated through a drag gesture. The position is constrained to the client
+viewport and saved per character as `RiftReader2CastingEvidence.hudPosition`
+with finite `x`/`y` pixel coordinates. Corrupt saved coordinates are ignored.
+If the game is in protected combat, the addon refuses repositioning and shows
+an explanatory warning; it also defers restoration until the necessary
+viewport and nonsecure state are available. Moving the HUD does not cast.
+
+Enter `/rr2cast help` in game for the colored help guide. All commands are
+case-insensitive; `/rr2cast` by itself opens the hidden dashboard:
+
+| Command | Effect |
+| --- | --- |
+| `/rr2cast` or `/rr2cast show` | Reveal dashboard and manual action tray |
+| `/rr2cast hide` or `/rr2cast toggle` | Hide the dashboard, or toggle it |
+| `/rr2cast status` | Current API checks, selected target/ability, Power, cooldown, recording and panel position |
+| `/rr2cast info` | Addon version, protections, documented limitations and readout details |
+| `/rr2cast abilities` | Open the paginated 20-entry/page ability picker (when safe) |
+| `/rr2cast record` | Start a supervised 60-second observation without casting |
+| `/rr2cast position` | Show dashboard pixel position |
+| `/rr2cast move 360 96` | Move dashboard to an example coordinate; actual result is viewport-clamped |
+| `/rr2cast reset` | Return to a usable default dashboard location |
+| `/rr2cast help` | Detailed colored command reference |
+
+The `/rr2cast` interface never invokes the restricted Cast/Stop actions:
+those still require a **physical click** under the game's protection rules.
+It refuses unsafe action during secure combat and never promotes uncertain
+facing/LOS into **API READY**. Malformed command input fails with a
+human-readable usage hint instead of writing corrupted state.
+
+**Live qualification still required after `/reloadui`:** verify that both
+header drag handles receive mouse events, the HUD and protected controls stay
+aligned, the saved position survives a subsequent reload, Hide is legible,
+`/rr2cast help` is readable, and clicking the protected actions behaves
+normally. Lua 5.1 mock tests prove policy and error handling, not live hit
+regions, focus or RIFT secure-click dispatch. The v0.4.0 title and colored
+one-time initialization notification still derive their version from the TOC.
 
 During the bounded recording, click the selected **Cast: [name]** button once
 after reviewing current readiness and the remaining recording time. Then use **Stop attack**

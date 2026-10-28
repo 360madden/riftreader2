@@ -1,5 +1,5 @@
 local addonInfo, private = ...
-local FALLBACK_VERSION = "0.3.0"
+local FALLBACK_VERSION = "0.4.0"
 local function versionFromMetadata(info)
     local toc = type(info) == "table" and info.toc
     local value = type(toc) == "table" and toc.Version
@@ -11,7 +11,8 @@ local addonVersion = versionFromMetadata(addonInfo)
 local model = private.Casting.New(Inspect)
 private.Instance = model
 local context = UI.CreateContext("RR2Casting")
-local PX, PY, PW, PH = 286, 72, 584, 602
+local DEFAULT_PX, DEFAULT_PY, PW, PH = 286, 72, 584, 602
+local PX, PY = DEFAULT_PX, DEFAULT_PY
 local colors = {
     background = {0.039, 0.067, 0.090, 0.98},
     header = {0.078, 0.125, 0.165, 0.98},
@@ -69,10 +70,12 @@ local function centeredLabel(name, parent, width, height, value, rgba)
 end
 local function button(name, value, parent, x, y, width, height, handler, role)
     local fill = role == "primary" and colors.primaryButton or
-        (role == "danger" and colors.dangerButton or colors.section)
+        (role == "danger" and colors.dangerButton or
+        (role == "ghost" and colors.raised or colors.section))
     local tint = role == "danger" and colors.red or
         (role == "ghost" and colors.muted or colors.accent)
     local frame = surface(name, parent, x, y, width, height, fill)
+    if role == "ghost" then frame:SetLayer(3) end -- Clear of the header backdrop.
     local accent = block(name .. "Accent", frame, 1, 1, 4, height - 2, tint)
     accent:SetLayer(1); accent:SetMouseMasking("limited")
     local caption = centeredLabel(name .. "Label", frame, width, height, value)
@@ -101,9 +104,11 @@ local panel = UI.CreateFrame("Frame", "RR2CastingPanel", context)
 panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PX, PY)
 panel:SetWidth(PW); panel:SetHeight(PH); background(panel, colors.background)
 block("RR2CastingLeftAccent", panel, 0, 0, 4, PH, colors.accent)
-block("RR2CastingHeader", panel, 4, 0, PW - 4, 66, colors.header)
+local header = block("RR2CastingHeader", panel, 4, 0, PW - 4, 66, colors.header)
+local dragHandle = block("RR2CastingDragHandle", header, 0, 0, 450, 66, {0, 0, 0, 0})
+dragHandle:SetLayer(1); dragHandle:SetMouseMasking("full")
 label("RR2CastingTitle", panel, 24, 9, 408, 22, "RR2 CASTING  v" .. addonVersion, colors.text)
-label("RR2CastingSubtitle", panel, 24, 43, 420, 13, "Observation console  /  Manual actions only", colors.muted)
+label("RR2CastingSubtitle", panel, 24, 43, 420, 13, "Drag header to move  /  /rr2cast help", colors.muted)
 
 surface("RR2CastingStatusBackground", panel, 16, 76, 552, 82, colors.header)
 local statusAccent = block("RR2CastingStatusAccent", panel, 16, 76, 4, 82, colors.amber)
@@ -137,7 +142,7 @@ local trialDetail = label("RR2CastingTrialDetail", panel, 28, 434, 526, 13,
 
 surface("RR2CastingManualTray", panel, 4, 521, PW - 4, 81, colors.header)
 label("RR2CastingManualLabel", panel, 24, 529, 376, 13, "MANUAL ACTIONS  /  RIFT-PROTECTED", colors.muted)
-local sequenceText = label("RR2CastingSequence", panel, 414, 530, 150, 11, "SEQ --", colors.muted)
+local sequenceText = label("RR2CastingSequence", panel, 414, 529, 150, 13, "SEQ --", colors.muted)
 
 local picker = UI.CreateFrame("Frame", "RR2CastingPicker", context)
 picker:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PX, PY)
@@ -150,12 +155,15 @@ block("RR2CastingPickerAccent", picker, 0, 0, PW, 4, colors.accent)
 label("RR2CastingPickerTitle", picker, 24, 17, 440, 22, "Choose an ability", colors.text)
 label("RR2CastingPickerSubtitle", picker, 24, 49, 530, 13,
     "Supported manual-cast abilities from the current RIFT API catalog", colors.muted)
+local pickerDragHandle = block("RR2CastingPickerDragHandle", picker, 0, 4, PW, 76, {0, 0, 0, 0})
+pickerDragHandle:SetLayer(1); pickerDragHandle:SetMouseMasking("full")
 local pageText = label("RR2CastingPage", picker, 273, 474, 162, 13, "PAGE 1 / 1", colors.muted)
 local emptyText = label("RR2CastingPickerEmpty", picker, 32, 223, 516, 16,
     "No supported abilities reported by RIFT.", colors.muted)
 emptyText:SetVisible(false)
 local choices, page, rows = {}, 1, {}
-local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = addonVersion, trials = {}}
+local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = addonVersion,
+    trials = {}, hudPosition = {x = PX, y = PY}}
 local savedLoaded = false -- Preserve saved evidence until its exact load-end event.
 
 -- The actual macro targets are styled restricted Frames, not decorative click
@@ -188,25 +196,145 @@ if not stopOk or stopResult == false then
     evidence.secureActionWarnings = {"stop-macro-unavailable"}
 end
 
-local function setPanelVisible(visible)
-    local ok, secure = pcall(Inspect.System.Secure)
-    if not ok or secure ~= false then return false end
-    -- Never leave an orphaned protected action row when hiding the dashboard.
-    local castOk, castResult = pcall(castButton.SetVisible, castButton, visible)
-    if not castOk or castResult == false then return false end
-    local stopShowOk, stopShowResult = pcall(stopButton.SetVisible, stopButton, visible)
-    if not stopShowOk or stopShowResult == false then
-        pcall(castButton.SetVisible, castButton, not visible)
-        return false
+-- Keep all UIParent-anchored surfaces in one coordinate system. Restricted
+-- frames must move first; a failed protected move never persists a new origin.
+local function coordinate(v)
+    return type(v) == "number" and v == v and math.abs(v) < math.huge
+end
+local function nonSecure()
+    local system = type(Inspect) == "table" and Inspect.System
+    local check = type(system) == "table" and system.Secure
+    if type(check) ~= "function" then return false end
+    local ok, value = pcall(check)
+    return ok and value == false
+end
+local function viewport()
+    local okW, width = pcall(function() return UIParent:GetWidth() end)
+    local okH, height = pcall(function() return UIParent:GetHeight() end)
+    if not okW or not okH or not coordinate(width) or not coordinate(height) or
+        width <= 0 or height <= 0 then return nil, nil end
+    return width, height
+end
+local function safePoint(frame, x, y)
+    local ok, result = pcall(frame.SetPoint, frame, "TOPLEFT", UIParent, "TOPLEFT", x, y)
+    return ok and result ~= false
+end
+local function safeVisible(frame, visible)
+    local ok, result = pcall(frame.SetVisible, frame, visible)
+    return ok and result ~= false
+end
+local pendingPosition
+local positionEditedBeforeLoad = false
+local function setPosition(x, y, restoring)
+    if not coordinate(x) or not coordinate(y) then return false, "invalid-coordinates" end
+    if not nonSecure() then return false, "combat-lock" end
+    local screenW, screenH = viewport()
+    if not screenW then return false, "viewport-unavailable" end
+    local newX = math.floor(math.max(0, math.min(x, math.max(0, screenW - PW))) + 0.5)
+    local newY = math.floor(math.max(0, math.min(y, math.max(0, screenH - PH))) + 0.5)
+    if newX == PX and newY == PY then
+        pendingPosition = nil
+        evidence.hudPosition = {x = PX, y = PY}
+        if not savedLoaded and not restoring then positionEditedBeforeLoad = true end
+        return true
     end
-    panel:SetVisible(visible)
-    if not visible then picker:SetVisible(false) end
+    local oldX, oldY = PX, PY
+    local changes = {
+        {castButton, oldX + 16, oldY + 552, newX + 16, newY + 552},
+        {stopButton, oldX + 374, oldY + 552, newX + 374, newY + 552},
+        {panel, oldX, oldY, newX, newY},
+        {picker, oldX, oldY, newX, newY}
+    }
+    for i, entry in ipairs(changes) do
+        if not safePoint(entry[1], entry[4], entry[5]) then
+            local rollbackFailed = false
+            for j = i, 1, -1 do
+                local prior = changes[j]
+                if not safePoint(prior[1], prior[2], prior[3]) then rollbackFailed = true end
+            end
+            evidence.layoutWarning = rollbackFailed and "layout-rollback-incomplete" or "layout-move-rejected"
+            return false, evidence.layoutWarning
+        end
+    end
+    PX, PY = newX, newY
+    evidence.hudPosition = {x = PX, y = PY}
+    evidence.layoutWarning = nil
+    pendingPosition = nil
+    if not savedLoaded and not restoring then positionEditedBeforeLoad = true end
+    if savedLoaded then RiftReader2CastingEvidence = evidence end
+    return true
+end
+
+local drag = {active = false, offsetX = 0, offsetY = 0}
+local function mousePosition()
+    local fn = type(Inspect) == "table" and Inspect.Mouse
+    if type(fn) ~= "function" then return nil end
+    local ok, pos = pcall(fn)
+    if ok and type(pos) == "table" and coordinate(pos.x) and coordinate(pos.y) then return pos end
+    return nil
+end
+local function beginDrag()
+    drag.active = false
+    if not nonSecure() then return end
+    local pos = mousePosition()
+    if not pos then return end
+    drag.offsetX = pos.x - PX
+    drag.offsetY = pos.y - PY
+    drag.active = true
+end
+local function moveDrag()
+    if not drag.active then return end
+    if not nonSecure() then drag.active = false; return end
+    -- Global Cursor.Move reports only a handle. Poll the actual screen mouse
+    -- and held-button state so a missed Upoutside cannot cause hover-dragging.
+    local pos = mousePosition()
+    if not pos or pos.Left ~= true then drag.active = false; return end
+    local ok = setPosition(pos.x - drag.offsetX, pos.y - drag.offsetY)
+    if not ok then drag.active = false end
+end
+local function endDrag() drag.active = false end
+local function attachDrag(handle, suffix)
+    local mouse = Event.UI and Event.UI.Input and Event.UI.Input.Mouse
+    local left = mouse and mouse.Left
+    local cursor = mouse and mouse.Cursor
+    if not left or not left.Down or not left.Up or not cursor or not cursor.Move then
+        evidence.dragWarning = "rift-mouse-events-unavailable"
+        return
+    end
+    handle:EventAttach(left.Down, beginDrag, "RR2 casting drag start" .. suffix)
+    handle:EventAttach(cursor.Move, moveDrag, "RR2 casting drag move" .. suffix)
+    handle:EventAttach(left.Up, endDrag, "RR2 casting drag end" .. suffix)
+    if left.Upoutside then
+        handle:EventAttach(left.Upoutside, endDrag, "RR2 casting drag cancel" .. suffix)
+    end
+end
+attachDrag(dragHandle, "")
+attachDrag(pickerDragHandle, " picker")
+
+local panelVisible = true
+local function setPanelVisible(visible)
+    if type(visible) ~= "boolean" then return false, "invalid-visibility" end
+    if not nonSecure() then return false, "combat-lock" end
+    local before = panelVisible
+    if not safeVisible(castButton, visible) then return false, "cast-visibility-rejected" end
+    if not safeVisible(stopButton, visible) then
+        safeVisible(castButton, before)
+        return false, "stop-visibility-rejected"
+    end
+    if not safeVisible(panel, visible) or
+        (not visible and not safeVisible(picker, false)) then
+        safeVisible(panel, before)
+        safeVisible(castButton, before)
+        safeVisible(stopButton, before)
+        return false, "panel-visibility-rejected"
+    end
+    panelVisible = visible
+    if not visible then drag.active = false end
     return true
 end
 local function selectAbility(id)
     if model.trial and model.trial.status == "recording" then return false end
-    local secureOk, secure = pcall(Inspect.System.Secure)
-    if not secureOk or secure ~= false then return false end
+    if not nonSecure() then return false end
     local abilityApi = type(Inspect) == "table" and type(Inspect.Ability) == "table" and Inspect.Ability or nil
     local newApi = abilityApi and type(abilityApi.New) == "table" and abilityApi.New or nil
     local detail = newApi and newApi.Detail
@@ -232,7 +360,8 @@ if type(Inspect.Documentation) == "function" then
     for _, name in ipairs({"Inspect.Ability.New.Detail", "Inspect.Ability.Detail", "Inspect.Ability.New.List", "Inspect.Unit.Castbar",
         "Inspect.Unit.Detail", "Inspect.Tooltip", "Event.Combat.Damage", "Event.Combat.Heal", "Event.Ability.New.Cooldown.Begin",
         "Event.Ability.New.Cooldown.End", "Command.Event.Attach", "Layout:EventMacroSet", "Inspect.System.Secure",
-        "Frame:EventMacroSet", "Frame:SetMouseMasking"}) do
+        "Frame:EventMacroSet", "Frame:SetMouseMasking", "Inspect.Mouse",
+        "Event.UI.Input.Mouse.Cursor.Move", "Event.UI.Input.Mouse.Left.Down", "Frame:SetPoint"}) do
         local ok, doc = pcall(Inspect.Documentation, name)
         if ok and type(doc)=="string" then evidence.runtimeApi[name] = string.sub(doc, 1, 16000) end
     end
@@ -292,11 +421,20 @@ button("RR2CastingNext", "Next", picker, 136, 461, 112, 40, function()
 end)
 button("RR2CastingClose", "Close", picker, 450, 461, 118, 40,
     function() picker:SetVisible(false) end)
-button("RR2CastingAbilities", "Choose ability", panel, 16, 473, 270, 40, function()
-    page = 1; showChoices()
-end)
-button("RR2CastingRecord", "Record 60s", panel, 298, 473, 270, 40, function()
-    local ok, reason = model:Begin()
+local function openPicker()
+    if not nonSecure() then return false, "combat-lock" end
+    if not panelVisible then
+        local visible, reason = setPanelVisible(true)
+        if not visible then return false, reason end
+    end
+    page = 1
+    local ok = pcall(showChoices)
+    if not ok then return false, "ability-catalog-unavailable" end
+    return true
+end
+local function beginRecording()
+    local called, ok, reason = pcall(model.Begin, model)
+    if not called then ok, reason = false, "observation-unavailable" end
     if ok then
         evidence.trials[#evidence.trials + 1] = model.trial
         if #evidence.trials > 8 then table.remove(evidence.trials, 1) end
@@ -304,9 +442,20 @@ button("RR2CastingRecord", "Record 60s", panel, 298, 473, 270, 40, function()
     else
         message = "Not recording: " .. (reason or "unavailable")
     end
+    return ok, reason
+end
+button("RR2CastingAbilities", "Choose ability", panel, 16, 473, 270, 40, function()
+    local ok, reason = openPicker()
+    if not ok then message = "Picker unavailable: " .. (reason or "unknown") end
+end)
+button("RR2CastingRecord", "Record 60s", panel, 298, 473, 270, 40, function()
+    beginRecording()
 end, "primary")
-button("RR2CastingHide", "Hide", panel, 484, 16, 84, 38,
-    function() setPanelVisible(false) end, "ghost")
+button("RR2CastingHide", "Hide", header, 480, 16, 84, 38,
+    function()
+        local ok, reason = setPanelVisible(false)
+        if not ok then message = "Cannot hide: " .. (reason or "unavailable") end
+    end, "ghost")
 
 local function finite(v) return type(v) == "number" and v == v and math.abs(v) < math.huge end
 local function f(v) return finite(v) and string.format("%.2f", v) or "unknown" end
@@ -397,6 +546,14 @@ local function update()
     end
 end
 Command.Event.Attach(Event.System.Update.Begin, function()
+    if pendingPosition and nonSecure() then
+        local pending = pendingPosition
+        local moved, failure = setPosition(pending.x, pending.y, true)
+        if not moved and failure ~= "combat-lock" and failure ~= "viewport-unavailable" then
+            evidence.layoutWarning = failure
+            pendingPosition = nil
+        end
+    end
     local ok, reason = pcall(update)
     if not ok then
         evidence.last = {status = "unavailable", reason = "readout-update-failed"}
@@ -509,9 +666,170 @@ Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
         evidence.abilities = {}
         loadWarnings[#loadWarnings + 1] = "ability-catalog-unavailable"
     end
+    if not positionEditedBeforeLoad and type(prior) == "table" and
+        type(prior.hudPosition) == "table" then
+        local priorX, priorY = prior.hudPosition.x, prior.hudPosition.y
+        if coordinate(priorX) and coordinate(priorY) then
+            local moved, failure = setPosition(priorX, priorY, true)
+            if not moved then
+                evidence.hudPosition = {x = priorX, y = priorY}
+                if failure == "combat-lock" or failure == "viewport-unavailable" then
+                    pendingPosition = {x = priorX, y = priorY}
+                else
+                    loadWarnings[#loadWarnings + 1] = "hud-position-restore-failed"
+                end
+            end
+        else
+            loadWarnings[#loadWarnings + 1] = "invalid-saved-hud-position"
+        end
+    end
     if #loadWarnings > 0 then evidence.loadWarnings = loadWarnings end
     savedLoaded = true
     RiftReader2CastingEvidence = evidence
     announceInitialized()
 end, "RR2 casting saved evidence")
-table.insert(Command.Slash.Register("rr2cast"), {function() setPanelVisible(true) end, "RiftReader2Casting", "Show casting readout"})
+-- The legacy RIFT slash callback receives one raw argument string (not an
+-- event handle). Keep the CLI diagnostic-only; it must never click a macro.
+local function cliOutput(value, level)
+    local palette = {info = "99DDE8", success = "52E3BB", caution = "F0BE62", error = "EC6A76"}
+    local hex = palette[level] or palette.info
+    local line = type(value) == "string" and value or "RR2 Casting: unavailable"
+    local console = type(Command) == "table" and Command.Console
+    if type(console) == "table" and type(console.Display) == "function" then
+        local ok, accepted = pcall(console.Display, "general", true,
+            '<font color="#' .. hex .. '">' .. line .. '</font>', true)
+        if ok and accepted ~= false then return end
+    end
+    if type(print) == "function" then pcall(print, "|cff" .. hex .. line .. "|r") end
+end
+local function safeCli(value, maxLength)
+    if type(value) ~= "string" then return "unknown" end
+    local clean = string.gsub(value, "[%c<&>|]", " ")
+    return shortName(clean, maxLength)
+end
+local function commandHelp()
+    cliOutput("RR2 CASTING v" .. addonVersion .. "  /  COMMAND GUIDE", "success")
+    cliOutput("/rr2cast (or show) - show dashboard; hide/toggle also available", "info")
+    cliOutput("/rr2cast abilities | record - picker / 60s observation", "info")
+    cliOutput("/rr2cast status | info - API checks / feature limits", "info")
+    cliOutput("/rr2cast position - coordinates and drag instructions", "info")
+    cliOutput("/rr2cast move X Y | reset - place HUD / restore default", "info")
+    cliOutput("Drag the header or picker title. Cast and Stop require manual clicks.", "caution")
+    cliOutput("Facing and hostile LOS are UNVERIFIED; API READY is not a clear-shot claim.", "caution")
+end
+local function commandStatus()
+    local r = evidence.last
+    if type(r) ~= "table" then
+        cliOutput("RR2 Casting v" .. addonVersion .. " | No readout sample yet.", "caution")
+    else
+        local state = type(r.status) == "string" and string.upper(r.status) or "UNKNOWN"
+        if state == "READY" then state = "API READY" end
+        local reason = safeCli(humanReason(r.reason), 68)
+        local severity = r.status == "ready" and "success" or
+            (r.status == "waiting" and "caution" or "error")
+        cliOutput("RR2 Casting v" .. addonVersion .. " | " .. safeCli(state, 20) ..
+            " | " .. reason, severity)
+        local target = type(r.target) == "table" and r.target.name or nil
+        local ability = type(r.ability) == "table" and r.ability or {}
+        local player = type(r.player) == "table" and r.player or {}
+        cliOutput("Target: " .. safeCli(target, 42) ..
+            "  |  Ability: " .. safeCli(ability.name, 42), "info")
+        cliOutput("Range: " .. f(ability.rangeMin) .. " - " .. f(ability.rangeMax) ..
+            "  |  Cast: " .. castTime(ability.castingTime) ..
+            "  |  Channel: " .. channel(ability.channeled), "info")
+        cliOutput("Ability/GCD cooldown: " .. f(ability.currentCooldownRemaining) ..
+            "s  |  Power: " .. f(player.power) .. " / " .. f(ability.costPower), "info")
+    end
+    local trial = model.trial
+    local trialStatus = type(trial) == "table" and trial.status or "not recording"
+    cliOutput("Trial: " .. safeCli(trialStatus, 30) ..
+        "  |  HUD: " .. (panelVisible and "shown" or "hidden") ..
+        "  |  X " .. PX .. "  Y " .. PY, "info")
+    cliOutput("Facing: UNVERIFIED  |  Line of sight: UNVERIFIED", "caution")
+    if evidence.layoutWarning then
+        cliOutput("Layout warning: " .. safeCli(evidence.layoutWarning, 60), "error")
+    end
+end
+local function parseCommand(raw)
+    if raw == nil then raw = "" end
+    if type(raw) ~= "string" or #raw > 96 then return nil end
+    local tokens = {}
+    for word in string.gmatch(raw, "%S+") do
+        if #tokens >= 3 or #word > 32 then return nil end
+        tokens[#tokens + 1] = string.lower(word)
+    end
+    return tokens
+end
+local function slashCommand(raw)
+    local tokens = parseCommand(raw)
+    if not tokens then
+        cliOutput("Invalid command arguments. Use /rr2cast help.", "error")
+        return
+    end
+    local verb = tokens[1] or "show"
+    if verb == "?" or verb == "commands" then verb = "help" end
+    if verb == "version" then verb = "info" end
+    if verb == "open" then verb = "show" end
+    if verb == "close" then verb = "hide" end
+    if verb ~= "move" and #tokens > 1 then
+        cliOutput("Unexpected extra arguments. Use /rr2cast help.", "error")
+        return
+    end
+    if verb == "help" then
+        commandHelp()
+    elseif verb == "status" then
+        commandStatus()
+    elseif verb == "info" then
+        cliOutput("RR2 Casting v" .. addonVersion .. " | RIFT Lua diagnostics and bounded trials.", "success")
+        cliOutput("API READY means available target/resource/range/cooldown checks passed.", "info")
+        cliOutput("Facing/LOS not verified; no automated casting, retries or movement.", "caution")
+        cliOutput("Position saved with character data; use /rr2cast help for controls.", "info")
+    elseif verb == "position" then
+        cliOutput("HUD top-left: X " .. PX .. ", Y " .. PY ..
+            ". Drag header/title or use /rr2cast move X Y; reset for default.", "info")
+        if pendingPosition then cliOutput("Saved position awaits the end of combat.", "caution") end
+        if evidence.dragWarning then cliOutput("Drag warning: " .. safeCli(evidence.dragWarning, 48), "caution") end
+    elseif verb == "move" then
+        if #tokens ~= 3 or not coordinate(tonumber(tokens[2])) or
+            not coordinate(tonumber(tokens[3])) then
+            cliOutput("Usage: /rr2cast move X Y  (finite screen coordinates)", "error")
+            return
+        end
+        local ok, reason = setPosition(tonumber(tokens[2]), tonumber(tokens[3]))
+        cliOutput(ok and ("HUD moved to X " .. PX .. ", Y " .. PY) or
+            ("Cannot move HUD: " .. safeCli(reason, 48)), ok and "success" or "error")
+    elseif verb == "reset" then
+        local ok, reason = setPosition(DEFAULT_PX, DEFAULT_PY)
+        cliOutput(ok and ("HUD reset to X " .. PX .. ", Y " .. PY) or
+            ("Cannot reset HUD: " .. safeCli(reason, 48)), ok and "success" or "error")
+    elseif verb == "show" or verb == "hide" or verb == "toggle" then
+        local desired = verb == "show" or (verb == "toggle" and not panelVisible)
+        local ok, reason = setPanelVisible(desired)
+        cliOutput(ok and ("Dashboard " .. (desired and "shown" or "hidden")) or
+            ("Visibility unchanged: " .. safeCli(reason, 48)), ok and "success" or "caution")
+    elseif verb == "abilities" then
+        local ok, reason = openPicker()
+        cliOutput(ok and "Ability picker opened; select only while out of combat." or
+            ("Cannot open picker: " .. safeCli(reason, 48)), ok and "success" or "caution")
+    elseif verb == "record" then
+        if not panelVisible then
+            local shown, failure = setPanelVisible(true)
+            if not shown then
+                cliOutput("Cannot record while hidden: " .. safeCli(failure, 48), "error")
+                return
+            end
+        end
+        local ok, reason = beginRecording()
+        cliOutput(ok and "Recording 60s. Casting still requires a manual click." or
+            ("Not recording: " .. safeCli(reason, 48)), ok and "success" or "caution")
+    else
+        cliOutput("Unknown RR2 Casting command. Use /rr2cast help.", "error")
+    end
+end
+local registerOk, registerList = pcall(function() return Command.Slash.Register("rr2cast") end)
+if registerOk and type(registerList) == "table" then
+    table.insert(registerList, {slashCommand, "RiftReader2Casting", "Casting v" ..
+        addonVersion .. ": help, status, show/hide, position, manual recording"})
+else
+    evidence.slashWarning = "rr2cast-registration-unavailable"
+end

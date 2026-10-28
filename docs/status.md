@@ -2,7 +2,35 @@
 
 Updated: 2026-10-28 (America/New_York).
 
-**Casting HUD v0.3.0 — LAB-2 DEPLOYED/HASH-VERIFIED, MANUAL RELOAD PENDING:**
+**Casting HUD v0.4.0 — LAB-2 DEPLOYED/HASH-VERIFIED, LIVE INPUT CHECK PENDING:**
+The dashboard and 20-choice/page ability picker now have draggable headers.
+Main panel, picker and the separate RIFT-restricted Cast/Stop frames share one
+viewport-clamped position. Valid positions persist in character evidence;
+malformed saves fail safely and restoration waits for nonsecure game state and
+valid viewport. The Header **Hide** button has raised contrast and foreground
+layering after the user's v0.3.0 screenshot showed it too dark to read.
+The original `/rr2cast` show-only slash handler now offers a color-coded CLI:
+`help`, `status`, `info`, `show`, `hide`, `toggle`, `abilities`, `record`,
+`position`, `move X Y`, and `reset`. Help explains the protected manual-click
+requirement and that hostile-facing/LOS **remain UNVERIFIED**. No CLI command
+casts, starts autoattack, automatically moves a character or retries a spell.
+The TOC-driven title and once-per-load green-teal chat notice now say **0.4.0**.
+
+**71 focused Casting tests and 904 repository-wide Python tests (2 skipped)
+passed**, along with Lua 5.1 syntax and `git diff --check`; no C# source was
+changed for this version. A guarded v0.4.0 deployment was installed **only in
+RIFT-Lab-2**, after exact game process, VM identity, old-file, staged-file,
+backup and source hash checks. Independent postflight matched all three
+installed hashes, PID **2700**, and unchanged process start. The versioned
+receipt is `artifacts/rr2-lab2-hud-deploy-20261028-07/`, run
+`7c64061e50024a40be59e655e0f1e908`. Rollback was unnecessary; the verified
+v0.3.0 guest backup remains. **No game input, reload or physical click was
+sent.** Joey must type `/reloadui` in Lab 2 and check the drag handles, Hide,
+`/rr2cast help`, picker position persistence and manual secure Cast/Stop
+clicks. This deployment proves file installation, **not** runtime hit testing
+or real secure click behavior. See [controls and limitations](reference/casting-readout.md).
+
+**Casting HUD v0.3.0 — PREVIOUS LAB-2 DEPLOYMENT/HASH-VERIFIED; TITLE SEEN IN USER SCREENSHOT:**
 A professional two-column visual refresh replaces the mismatched glossy native
 Cast/Stop buttons with flat restricted RIFT Frames styled consistently with the
 other 40-unit controls. The 584 x 602 panel standardizes color, hierarchy,
@@ -23,7 +51,8 @@ independent postflight verified the installed TOC/model/main SHA-256 under
 RIFT process epoch stayed unchanged. Rollback was unnecessary; no game input,
 UI reload or live click verification occurred. **Joey must enter `/reloadui`**
 and manually verify the title, chat notification, picker, Cast and Stop
-clicks; read-only screenshots cannot establish click dispatch. Source gates:
+clicks; an ensuing user screenshot confirmed the v0.3.0 title but showed Hide
+too dim and did not establish chat notification or click dispatch. Source gates:
 **61 focused Casting tests** and **894 Python tests (2 skipped) passed**;
 no C# source changed in this increment. See
 [the design and API constraints](reference/casting-readout.md).
