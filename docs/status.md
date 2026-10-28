@@ -1,8 +1,32 @@
 # Current status
 
-Updated: 2026-10-27 (America/New_York; Windows host clock).
+Updated: 2026-10-28 (America/New_York).
 
-**Casting HUD 0.2.1 — DEPLOYED TO LAB-2; LIVE LAYOUT NOT YET VERIFIED:**
+**Casting HUD 0.2.2 — DEPLOYED/HASH-VERIFIED IN LAB-2; LIVE UI PENDING:**
+An October 28 read-only RIFT-Lab-2 screenshot of 0.2.1 showed undersized
+text and a clipped native Cast caption (stable VM identity, `inputSent=false`):
+`artifacts/rr2-lab2-hud-capture-20261028-01/`. Version 0.2.2 enlarges the HUD,
+shows 20 abilities per picker page, keeps that overlay off the secure action
+row, improves native Cast/Stop captions, and guards SavedVariables load order.
+Independent source gates passed: 514 .NET tests, 870 Python tests (two skipped;
+48 focused casting tests), 108 addon contracts and 11+11 real cases, Release
+build, formatting, native publish, 636 relative doc links, and diff whitespace.
+The combined `scripts/validate.ps1` wrapper was not executable through
+Workbridge, so only these separately successful checks are claimed.
+Two installation attempts stopped safely, including a VMware `vmrun`
+`(host-67852) Buffer too small` error on an oversized encoded guest command.
+A new short-command, SHA-verified guest-script workflow then installed the
+exact 0.2.2 `main.lua` and `RiftAddon.toc` plus unchanged `model.lua` in
+**RIFT-Lab-2 only**. Installation and separate postflight both matched all
+three reviewed hashes; rollback was unnecessary. Guest RIFT PID 2700, executable
+hash and process start epoch stayed stable; prior 0.2.1 files remain in a
+hash-verified guest backup. Evidence:
+`artifacts/rr2-lab2-hud-deploy-20261028-02/` (run
+`1dad0497769a43f5abdc4233d11d3506`). No game input or Lab-1 operation.
+**Still pending:** Joey's in-game `/reloadui`, `/rr2cast`, picker interaction,
+and a new screenshot. Installed file hashes do not prove the live UI layout.
+
+**Casting HUD 0.2.1 — PREVIOUSLY DEPLOYED TO LAB-2 (HISTORICAL):**
 Replaced the dense one-text-block panel shown in Joey's screenshot with a readable
 status header, separate target/ability fields, four metric cards, trial outcome,
 24-per-page flat-button ability picker, and aligned restricted Cast/Stop controls.
@@ -19,8 +43,9 @@ RIFT PID 10672, start 2026-10-28T01:25:39Z, new executable SHA
 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
 Previous files were hash-verified in a guest Public Documents backup; temporary
 staging files were removed. Receipts: `artifacts/casting-lab2-ui-20261028-01/`.
-No game input, reload, restart or screenshot occurred. Joey must use `/reloadui`
-and provide a fresh in-game screenshot before visual layout can be qualified.
+That installation involved no game input, reload, restart or screenshot at
+the time. The October 28 read-only capture above later provided the 0.2.1
+visual baseline. Version 0.2.2 still needs its own post-reload live UI check.
 
 **RIFT EXECUTABLE UPDATED — LAB-2 LUA SOURCE RECOVERED, NATIVE FIELDS PENDING:**
 Lab-2 runs the October 27 `rift_x64.exe` with a new SHA-256. The current
@@ -36,8 +61,8 @@ Lab-2 API Probe 0.6.0 `validation.lua` matches its documented SHA. This is
 fresh **Lua data**, not native XYZ, pointer stability or a movement test.
 [Patch validation](validation/rift-lab2-patch-2026-10-27.md) and
 [post-patch typed source proof](validation/lab2-typed-inline-postpatch-2026-10-27.md).
-Visual/screenshot access, other addon behaviors and native-field semantics
-remain unverified.
+Read-only Lab-2 screenshot access was recovered for the 0.2.1 Casting HUD;
+other addon behaviors and native-field semantics remain unverified.
 
 **New-build native XYZ scout — 10 STRUCTURAL CANDIDATES, NO FIELD PROMOTION:**
 `scout-values-native` in Lab-2 searched 256 MiB of high `MEM_PRIVATE` with
@@ -63,8 +88,8 @@ autoattack events. The prior 0.2.0 panel was live-verified, not the 0.2.1 HUD. S
 [result and limitations](validation/casting-ranged-2026-10-26.md); export:
 `artifacts/exports/casting-ranged-20261026-01/`. All input released, controller idle.
 No source changes, full-game restart claim, health-loss test or patch recovery.
-Next small fix: display exact-target dodge/avoidance more clearly; raw evidence
-already distinguishes it from damage. Earlier undeployed notes below are history.
+The later 0.2.1 addon displays exact-target dodge/avoidance distinctly;
+raw evidence never promoted it to damage. Earlier undeployed notes below are history.
 
 **Normal Chat worker workflow — TWO-WORKER TRIAL VERIFIED:**
 An independent casting reviewer and workflow-doc writer ran concurrently through

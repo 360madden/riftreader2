@@ -9,8 +9,10 @@ It reuses RIFT's `Inspect.Ability.New.List/Detail`, `Inspect.Unit.Lookup/Detail`
 `Inspect.Unit.Castbar`, cooldown begin/end events, and combat outcome events.
 It uses RIFT's restricted `EventMacroSet` facility for a named ability and the
 standard `stopattack` command. Only a physical click activates those buttons;
-there is no timer, automatic retry or rotation. The existing screenshot-reviewed
-guarded helper supplies each bounded click. Target selection remains explicit.
+there is no timer, automatic retry or rotation. Earlier supervised trials used
+a screenshot-reviewed guarded helper. A Lab-2 game-input path is not yet
+qualified for 0.2.2; the player can operate the controls manually. Target
+selection remains explicit.
 
 ## Use
 
@@ -22,21 +24,26 @@ active cast/channel, range failure, unusable ability, insufficient/unknown
 required resource, or mismatched effective target. A target/player change aborts
 the recording. `/rr2cast` shows a hidden panel.
 
-Version **0.2.1** replaces the crowded multiline readout with a structured HUD:
+Version **0.2.2** enlarges typography and spacing in the structured HUD:
 color-coded observed status, named target/ability, range/cast/channel/cooldown/
-Power cards and a separate trial outcome. The supported-type ability picker shows
-24 named entries per page; the complete API catalog remains in saved evidence.
-Nonfinite and absent values display as unknown, not zero. An exact-target dodge
-is described in the visible trial detail without changing its no-hit verdict.
-The flat **Abilities / Record / Hide** controls sit inside the panel, while the
-restricted manual **Cast / Stop** buttons form one aligned row below. Hiding and
-reopening these secure buttons requires the game to be outside secure combat.
-This layout passed offline tests and its 0.2.1 startup files were independently
-hash-verified after deployment to RIFT-Lab-2 on 2026-10-27 evening ET. It still
-needs a game UI reload and a fresh in-game screenshot for visual verification.
+Power cards and a separate trial outcome. The supported-type picker displays
+**20 named entries per page**; the complete API catalog remains in saved evidence.
+Absent or nonfinite values display as **unknown**, not zero. Exact-target dodge
+remains a visible no-hit verdict. The flat **Abilities / Record / Hide** controls
+sit inside the panel; the picker overlays those controls while open, intercepts
+background clicks, and stays clear of the protected **Cast / Stop** row below.
+The native Cast caption begins **Select ability**, then becomes **Cast: [name]**
+(with a shortened, UTF-8-safe name when necessary); the actual secure macro
+always uses the validated full ability name. Hide/reopen guards require the game
+to be outside secure combat. A read-only RIFT-Lab-2 screenshot of 0.2.1
+exposed tiny labels and a clipped Cast caption. The version 0.2.2 files are
+now installed and independently hash-verified in RIFT-Lab-2, with the original
+files backed up and no game input sent. Version 0.2.2 still requires a
+post-`/reloadui` screenshot and in-game picker-click verification before live
+UI qualification.
 
-During the bounded recording, click the named **Cast** button once after reviewing
-current readiness and the remaining recording time. Then use **Stop autoattack**
+During the bounded recording, click the selected **Cast: [name]** button once
+after reviewing current readiness and the remaining recording time. Then use **Stop attack**
 to end any follow-on melee. Ability selection/macro configuration is refused in
 secure combat or during a trial. The secure Cast button does not itself enforce
 the diagnostic readiness checks; supervise the click and let RIFT enforce its
@@ -63,7 +70,7 @@ shows **unknown**; missing or nonfinite cast time stays **unknown** (only explic
 zero is **instant**). Missing channel state is **unknown**, not `no`. These are
 ability properties, not measured player-to-target distance or proof of facing,
 line of sight or readiness. API `outOfRange`, cooldown/readiness checks and the
-secure Cast/Stop guards are unchanged; ability picking behaves as before.
+secure Cast/Stop guards are unchanged; picker filtering semantics are unchanged.
 
 The effective cooldown is labeled **ability/GCD**: the documented API describes
 the cooldown currently influencing that ability, not a separately qualified GCD
@@ -81,9 +88,13 @@ This does not qualify healing, independent GCD, all casting types or game restar
 
 The panel samples at 10 Hz for up to 60 seconds, retaining at most 630 snapshots,
 64 combat events and 64 selected-ability cooldown events per trial. Recent trials
-and the selected ability survive UI reload as historical saved evidence. A trial
-is never resumed from saved state. The addon also captures selected documentation
-and related function names through the installed client's `Inspect.Documentation`.
+persist as historical saved evidence. The addon consumes prior data on the exact
+`SavedVariables.Load.End` event before publishing its new evidence table; early
+frame updates do not overwrite persisted data, and duplicate load-end events
+are ignored. The last selected ability is restored only after current-API and
+nonsecure-state revalidation. No trial resumes from saved state. The addon also
+captures selected documentation and related function names through the installed
+client's `Inspect.Documentation`.
 
 `RiftReader2CastingEvidence` is a character SavedVariable, written by RIFT when
 it saves addon state. Retrieve the resulting `RiftReader2Casting.lua` file through
