@@ -1,5 +1,5 @@
 local addonInfo, private = ...
-local FALLBACK_VERSION = "0.2.3"
+local FALLBACK_VERSION = "0.2.4"
 local function versionFromMetadata(info)
     local toc = type(info) == "table" and info.toc
     local value = type(toc) == "table" and toc.Version
@@ -151,7 +151,11 @@ local function selectAbility(id)
     if model.trial and model.trial.status == "recording" then return false end
     local secureOk, secure = pcall(Inspect.System.Secure)
     if not secureOk or secure ~= false then return false end
-    local ok, d = pcall(Inspect.Ability.New.Detail, id)
+    local abilityApi = type(Inspect) == "table" and type(Inspect.Ability) == "table" and Inspect.Ability or nil
+    local newApi = abilityApi and type(abilityApi.New) == "table" and abilityApi.New or nil
+    local detail = newApi and newApi.Detail
+    if type(detail) ~= "function" then return false end
+    local ok, d = pcall(detail, id)
     if not ok or type(d)~="table" or type(d.name)~="string" or #d.name==0 or #d.name>120 or
         string.find(d.name, "[\r\n]") or d.passive or d.positioned or d.autoattack then return false end
     local macro = "cast " .. d.name

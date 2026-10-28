@@ -11,7 +11,7 @@ It uses RIFT's restricted `EventMacroSet` facility for a named ability and the
 standard `stopattack` command. Only a physical click activates those buttons;
 there is no timer, automatic retry or rotation. Earlier supervised trials used
 a screenshot-reviewed guarded helper. A Lab-2 game-input path is not yet
-qualified for 0.2.3; the player can operate the controls manually. Target
+qualified for 0.2.4; the player can operate the controls manually. Target
 selection remains explicit.
 
 ## Use
@@ -35,18 +35,26 @@ clicks, and stays clear of the protected **Cast / Stop** row below. The native
 Cast caption begins **Select ability**, then becomes **Cast: [name]** (shortened
 for display when necessary); the secure macro retains the validated full name.
 
-Version **0.2.3** adds the version to the HUD title using validated TOC
-metadata and prints a once-per-load teal-green General chat notification:
-**RiftReader2 Casting Readout v0.2.3 initialized.** A console failure uses a
-guarded colored-print fallback. Text labels are rendered at an explicit
-foreground layer, addressing the blank title/faint metric text in the
-read-only 0.2.2 post-reload screenshot. Present malformed ability costs
-fail closed. Saved evidence initialization now survives transient clock,
-ability-catalog and modern-API lookup failures; legacy mappings cannot be
-misreported as modern. Hide/reopen and secure macro protections are unchanged.
-All 0.2.3 files are installed and separately SHA-verified **in RIFT-Lab-2 only**,
-with a rollback backup and no game input. A new post-`/reloadui` screenshot
-and Joey's manual picker checks are still needed for live UI qualification.
+Version **0.2.3** added the version to the HUD title using validated TOC
+metadata and a once-per-load teal-green General chat notification such as
+**RiftReader2 Casting Readout v0.2.3 initialized.** A console failure has a
+guarded colored-print fallback. Labels render on explicit foreground layers;
+the fresh read-only Lab-2 capture
+`artifacts/rr2-lab2-v023-readonly-capture-20261028-03/` confirms the versioned
+title, readable metrics, and secure Cast/Stop row. Malformed ability costs
+fail closed, and older trial data retains its original ability ID provenance.
+
+Version **0.2.4** fixes a saved-ability restore path that previously evaluated
+`Inspect.Ability.New.Detail` before `pcall`, plus related unguarded API table
+access during live read updates. When the modern table/function disappears,
+restoration fails safely and the readout shows blocked/unavailable status rather
+than crashing. The title and once-per-load notice now contain **v0.2.4**.
+The patch is installed and hash-verified **only in RIFT-Lab-2**, with a backup
+and no game input: `artifacts/rr2-lab2-hud-deploy-20261028-05/`.
+Joey still needs to `/reloadui` after the 0.2.4 deployment, open the Abilities
+picker manually, confirm it does not expose clicks through its overlay,
+and observe the colored notification in General chat. The 0.2.3 screenshot
+does not establish those remaining interactions or the new patch's live UI.
 
 During the bounded recording, click the selected **Cast: [name]** button once
 after reviewing current readiness and the remaining recording time. Then use **Stop attack**

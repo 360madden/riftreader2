@@ -36,11 +36,19 @@ end
 
 function M.New(api)
     local self = {api = api, sequence = 0, selected = nil, trial = nil, last = nil}
+    local empty = {}
+    local function section(name, nested)
+        if type(api) ~= "table" then return empty end
+        local value = api[name]
+        if type(value) ~= "table" then return empty end
+        if nested ~= nil then value = value[nested] end
+        return type(value) == "table" and value or empty
+    end
     function self:Abilities()
-        local list = call(api.Ability.New.List)
+        local list = call(section("Ability", "New").List)
         local result = {}
         if type(list) ~= "table" then return result end
-        local details = call(api.Ability.New.Detail, list)
+        local details = call(section("Ability", "New").Detail, list)
         if type(details) ~= "table" then return result end
         for id in pairs(list) do
             local d = details[id]
@@ -54,21 +62,21 @@ function M.New(api)
     end
     function self:Select(id)
         if self.trial and self.trial.status == "recording" then return false end
-        local d = call(api.Ability.New.Detail, id)
+        local d = call(section("Ability", "New").Detail, id)
         if type(d) ~= "table" then return false end
         self.selected = id
         return true
     end
     function self:Read()
         self.sequence = self.sequence + 1
-        local now = call(api.Time.Frame)
-        local player = call(api.Unit.Lookup, "player")
-        local target = call(api.Unit.Lookup, "player.target")
-        local pd = player and call(api.Unit.Detail, player)
-        local td = target and call(api.Unit.Detail, target)
-        local ad = self.selected and call(api.Ability.New.Detail, self.selected)
+        local now = call(section("Time").Frame)
+        local player = call(section("Unit").Lookup, "player")
+        local target = call(section("Unit").Lookup, "player.target")
+        local pd = player and call(section("Unit").Detail, player)
+        local td = target and call(section("Unit").Detail, target)
+        local ad = self.selected and call(section("Ability", "New").Detail, self.selected)
         local castOk, cast = false, nil
-        if player and type(api.Unit.Castbar) == "function" then castOk, cast = pcall(api.Unit.Castbar, player) end
+        if player and type(section("Unit").Castbar) == "function" then castOk, cast = pcall(section("Unit").Castbar, player) end
         local r = {sequence = self.sequence, clock = now, playerId = player, targetId = target,
             player = copy(pd, unitKeys), target = copy(td, unitKeys), abilityId = self.selected,
             ability = copy(ad, abilityKeys), cast = copy(cast, {"ability", "abilityName", "begin", "duration", "remaining", "expired", "channeled"}),
@@ -78,7 +86,7 @@ function M.New(api)
         if not number(now) or type(pd) ~= "table" then r.reason = "player-unavailable"
         elseif not target or type(td) ~= "table" then r.reason = "no-target"
         elseif type(ad) ~= "table" then r.reason = "select-ability"
-        elseif call(api.Unit.Lookup, "player") ~= player or call(api.Unit.Lookup, "player.target") ~= target then r.reason = "identity-changed"
+        elseif call(section("Unit").Lookup, "player") ~= player or call(section("Unit").Lookup, "player.target") ~= target then r.reason = "identity-changed"
         elseif not number(pd.health) or pd.health <= 0 then r.reason = "player-not-alive"
         elseif not number(td.health) or td.health <= 0 then r.reason = "target-not-alive"
         elseif ad.passive or ad.positioned or ad.autoattack then r.reason = "unsupported-ability-type"
@@ -126,9 +134,9 @@ function M.New(api)
     function self:Combat(kind, info)
         local t = self.trial
         if not t or t.status ~= "recording" or type(info) ~= "table" then return end
-        local now = call(api.Time.Frame)
+        local now = call(section("Time").Frame)
         if not number(now) or now < t.started or now > t.deadline then return end
-        if call(api.Unit.Lookup, "player") ~= t.playerId or call(api.Unit.Lookup, "player.target") ~= t.targetId then
+        if call(section("Unit").Lookup, "player") ~= t.playerId or call(section("Unit").Lookup, "player.target") ~= t.targetId then
             t.status = "aborted"; t.reason = "target-or-player-changed"; return
         end
         if info.caster ~= t.playerId then return end
@@ -141,12 +149,12 @@ function M.New(api)
             normalized = type(info.abilityNew) == "string" and info.abilityNew or nil
             event.abilityMappingSource = "Event.Combat.abilityNew"
         else
-            detail = info.ability and call(api.Ability.New.Detail, info.ability)
+            detail = info.ability and call(section("Ability", "New").Detail, info.ability)
             normalized = type(detail) == "table" and (detail.idNew or detail.id) or nil
             event.abilityMappingSource = normalized and "Inspect.Ability.New.Detail" or nil
         end
-        if info.abilityNew == nil and not normalized and info.ability and type(api.Ability.Detail) == "function" then
-            detail = call(api.Ability.Detail, info.ability)
+        if info.abilityNew == nil and not normalized and info.ability and type(section("Ability").Detail) == "function" then
+            detail = call(section("Ability").Detail, info.ability)
             normalized = type(detail) == "table" and detail.idNew or nil
             event.abilityMappingSource = normalized and "Inspect.Ability.Detail" or nil
         end
@@ -169,10 +177,10 @@ function M.New(api)
         end
     end
     function self:Cooldown(kind, cooldowns)
-        local t, now = self.trial, call(api.Time.Frame)
+        local t, now = self.trial, call(section("Time").Frame)
         if not t or t.status ~= "recording" or type(cooldowns) ~= "table" or
             not number(now) or now < t.started or now > t.deadline then return end
-        if call(api.Unit.Lookup, "player") ~= t.playerId or call(api.Unit.Lookup, "player.target") ~= t.targetId then return end
+        if call(section("Unit").Lookup, "player") ~= t.playerId or call(section("Unit").Lookup, "player.target") ~= t.targetId then return end
         local value = cooldowns[t.abilityId] or (t.abilityNewId and cooldowns[t.abilityNewId])
         if number(value) and #t.cooldowns < 64 then
             t.cooldowns[#t.cooldowns+1] = {kind = kind, clock = now, remaining = value, abilityId = t.abilityId}

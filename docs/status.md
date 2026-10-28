@@ -2,29 +2,34 @@
 
 Updated: 2026-10-28 (America/New_York).
 
-**Casting HUD 0.2.3 — DEPLOYED/HASH-VERIFIED IN RIFT-LAB-2; LIVE VISUAL CHECK PENDING:**
-Joey's post-`/reloadui` read-only capture of 0.2.2 confirmed the larger native
-`Select ability` button but revealed a blank header and faint metric text.
-RIFT's installed UI docs state same-layer sibling draw order is undefined.
-Version 0.2.3 puts text on a foreground layer, derives the HUD title version
-from the validated addon TOC metadata, and announces initialization once in
-teal-green General chat (with a guarded fallback). Malformed ability costs
-now block readiness; SavedVariables load tolerates clock/catalog failures
-and absent modern ability APIs without losing historical provenance.
-The earlier 0.2.2 picker, spacing, protected Cast/Stop controls and
-manual-only casting behavior remain intact.
+**Casting HUD 0.2.4 — DEPLOYED/HASH-VERIFIED IN RIFT-LAB-2;
+POST-RELOAD CHAT/PICKER CHECK PENDING:**
+Version 0.2.3 added a TOC-derived version to the HUD title, once-per-load
+teal-green General chat notification, foreground label layers and fail-closed
+ability costs. A fresh read-only Lab-2 capture in
+`artifacts/rr2-lab2-v023-readonly-capture-20261028-03/` **visibly confirms
+`RR2 CASTING  v0.2.3` and readable HUD header/cards/secure-button row**.
+The chat viewport did not contain the initialization message, and the
+Abilities picker has not been opened in a reviewed screenshot.
 
-All three 0.2.3 files were installed **only in RIFT-Lab-2** through the cached
-authenticated VMware Tools route, first via
-`artifacts/rr2-lab2-hud-deploy-20261028-03/`, then with the final startup
-hardening via `artifacts/rr2-lab2-hud-deploy-20261028-04/`.
-The final preflight, backup, installation and separate postflight verified
-all source/guest SHA-256 hashes, the exact Lab-2 VM identity and unchanged
-game PID 2700/process epoch. No input was sent; rollback was not needed;
-a verified guest backup remains. The **installed files alone do not verify
-visible layout or chat color**: Joey must perform another `/reloadui` and
-the team must inspect a read-only screenshot, then manually check picker
-selection/interception and the secure button row.
+A follow-up bug hunt found that restoring a previously selected ability
+could throw when modern RIFT ability APIs were missing. Version **0.2.4**
+guards lookup before `pcall` and checks nested ability/unit/time API tables
+in the read model so saved load and subsequent updates fail closed.
+The title and once-per-load colored chat notice automatically use 0.2.4.
+The interaction remains manual-only; Cast/Stop secure-button protections
+and historical combat ID provenance are unchanged.
+
+All three 0.2.4 files were installed **only in RIFT-Lab-2** using cached
+authenticated VMware Tools. Source, staging, installed and separate
+postflight SHA-256 matched under
+`artifacts/rr2-lab2-hud-deploy-20261028-05/`
+(run `907ae3454c5f4de08dd087c6e3f3434d`).
+Game PID 2700 and exact process epoch remained unchanged, input was
+not sent, rollback was not required and a verified backup remains.
+**Joey must run `/reloadui` after this 0.2.4 installation** and manually
+open/check Abilities and observe the teal-green initialization notice.
+A read-only screenshot can confirm visual layout, but not click interception.
 
 **Repo-wide October 28 bug hunt:** parallel audits reviewed addon Lua,
 native capture, reader/live state, desktop tooling and tests. Confirmed
@@ -33,7 +38,7 @@ XYZ execution without pre-creating its capture directory, truthful launcher
 maintenance outcomes, safe fenced/paginated maintenance admission, an
 exception-safe position-read gate, finite wall-motion math, bounded profile
 file reads and incomplete native scout snapshot status.
-Independent gates passed: 519 .NET tests, 890 Python tests (2 skipped; 57
+Independent gates passed: 519 .NET tests, 892 Python tests (2 skipped; 59
 focused Casting and 12 guest-launcher tests), 108 Lua checks + 22 real-Lua/C#
 cases, Release build and formatting, native publish, deterministic CLI
 replay, 637 relative links and diff whitespace. See the [full bug-hunt findings](validation/rr2-bughunt-2026-10-28.md).
