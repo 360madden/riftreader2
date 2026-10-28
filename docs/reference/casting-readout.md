@@ -22,6 +22,17 @@ active cast/channel, range failure, unusable ability, insufficient/unknown
 required resource, or mismatched effective target. A target/player change aborts
 the recording. `/rr2cast` shows a hidden panel.
 
+Version **0.2.1** replaces the crowded multiline readout with a structured HUD:
+color-coded observed status, named target/ability, range/cast/channel/cooldown/
+Power cards and a separate trial outcome. The supported-type ability picker shows
+24 named entries per page; the complete API catalog remains in saved evidence.
+Nonfinite and absent values display as unknown, not zero. An exact-target dodge
+is described in the visible trial detail without changing its no-hit verdict.
+The flat **Abilities / Record / Hide** controls sit inside the panel, while the
+restricted manual **Cast / Stop** buttons form one aligned row below. Hiding and
+reopening these secure buttons requires the game to be outside secure combat.
+This layout has offline tests but still needs fresh in-game visual verification.
+
 During the bounded recording, click the named **Cast** button once after reviewing
 current readiness and the remaining recording time. Then use **Stop autoattack**
 to end any follow-on melee. Ability selection/macro configuration is refused in

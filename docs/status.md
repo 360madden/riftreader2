@@ -2,6 +2,18 @@
 
 Updated: 2026-10-27 (America/New_York; Windows host clock).
 
+**Casting HUD 0.2.1 — SOURCE REDESIGNED; LIVE LAYOUT NOT YET VERIFIED:**
+Replaced the dense one-text-block panel shown in Joey's screenshot with a readable
+status header, separate target/ability fields, four metric cards, trial outcome,
+24-per-page flat-button ability picker, and aligned restricted Cast/Stop controls.
+Hide now hides the secure buttons too when out of protected combat; `/rr2cast`
+restores the full interface. Exact-target dodge is visible without promoting it
+to a damage hit. Raw capture, identity checks and manual-only macros are unchanged.
+Full validation passed: 514 .NET tests, 866 Python tests (two skips), Lua/contracts,
+format, published-native smoke and 636 links. Evidence:
+`artifacts/validation/20261028T030141Z-6aa9d0b8/`. No game/VM input or addon
+deployment occurred. Fresh in-game screenshot targets are required before clicks.
+
 **RIFT EXECUTABLE UPDATED — LAB-2 LUA SOURCE RECOVERED, NATIVE FIELDS PENDING:**
 Lab-2 runs the October 27 `rift_x64.exe` with a new SHA-256. The current
 RiftReader2.Live reader was staged separately; exact-process `inspect-native`,
