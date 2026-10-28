@@ -125,13 +125,19 @@ public sealed class PointerFollowEpochTests
                 ?? throw new InvalidOperationException("Could not start disposable test process.");
             try
             {
-                await using var session = await OpenDisposableProcessAsync(child);
                 var request = Path.Combine(directory, "exited-epoch.json");
                 var output = Path.Combine(directory, "should-not-exist.json");
+                int processId;
+                long processStartUtcTicks;
+                string executableSha256;
+                await using (var session = await OpenDisposableProcessAsync(child))
+                {
+                    processId = session.Identity.ProcessId;
+                    processStartUtcTicks = session.Identity.ProcessStartUtcTicks;
+                    executableSha256 = session.Identity.ExecutableSha256;
+                }
                 await File.WriteAllTextAsync(request, RequestJson(
-                    session.Identity.ProcessId,
-                    session.Identity.ProcessStartUtcTicks,
-                    session.Identity.ExecutableSha256));
+                    processId, processStartUtcTicks, executableSha256));
 
                 child.Kill(entireProcessTree: true);
                 await child.WaitForExitAsync();
