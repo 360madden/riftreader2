@@ -11,13 +11,13 @@ It uses RIFT's restricted `EventMacroSet` facility for a named ability and the
 standard `stopattack` command. Only a physical click activates those buttons;
 there is no timer, automatic retry or rotation. Earlier supervised trials used
 a screenshot-reviewed guarded helper. A Lab-2 game-input path is not yet
-qualified for 0.2.4; the player can operate the controls manually. Target
+qualified for 0.3.0; the player can operate the controls manually. Target
 selection remains explicit.
 
 ## Use
 
 Enable **RiftReader2 Casting Readout** in RIFT's Addons window (Refresh after a
-new installation). Choose an ability with **Abilities**, select a training dummy
+new installation). Choose an ability with **Choose ability**, select a training dummy
 in the game, and inspect the readout. **Record 60s** starts observation only and
 pins the player, target unit ID and ability ID. It refuses a known cooldown,
 active cast/channel, range failure, unusable ability, insufficient/unknown
@@ -51,10 +51,38 @@ restoration fails safely and the readout shows blocked/unavailable status rather
 than crashing. The title and once-per-load notice now contain **v0.2.4**.
 The patch is installed and hash-verified **only in RIFT-Lab-2**, with a backup
 and no game input: `artifacts/rr2-lab2-hud-deploy-20261028-05/`.
-Joey still needs to `/reloadui` after the 0.2.4 deployment, open the Abilities
-picker manually, confirm it does not expose clicks through its overlay,
-and observe the colored notification in General chat. The 0.2.3 screenshot
-does not establish those remaining interactions or the new patch's live UI.
+The 0.2.4 deployment required a manual `/reloadui`; the earlier 0.2.3
+screenshot does not establish the live behavior of later versions.
+
+## Unified Casting dashboard — 0.3.0
+
+The panel uses a consistent **584 x 602** two-column diagnostic layout with
+16-unit outer gutters, 12-unit column spacing, 8-unit row spacing and a clear
+visual hierarchy: 22-unit title, 18-unit values, 13-unit metadata and
+16-unit action captions. All controls share the same square, bordered,
+flat-surface treatment, accessible light text and a 40-unit click target.
+The header houses **Hide**; ability selection and **Record 60s** form one
+ordinary-action row. A separate labeled **MANUAL ACTIONS / RIFT-PROTECTED**
+tray holds the matching flat **Cast** and **Stop attack** controls. The 20-choice
+picker uses two aligned columns and never overlays the protected tray.
+
+The protected actions are restricted RIFT **Frame** instances with
+`EventMacroSet` attached directly. Their visual fills and captions have
+limited mouse masking so they do not consume or proxy clicks. There are no
+ordinary input handlers on the protected frames; a human click remains
+necessary and the macro continues to use the validated full ability name.
+The actual in-game click behavior still needs manual verification.
+
+**API READY** means only that the model's available RIFT target, resource,
+range and cooldown checks passed. Separate amber **FACING UNVERIFIED** and
+**LINE OF SIGHT UNVERIFIED** indicators deliberately do not assert generic
+hostile-target LOS/facing: the saved client documentation exposes XYZ but no
+general facing/yaw field; the `blocked` flag is scoped to group members in
+that documented build. The next in-game evidence capture should recheck the
+current client API before introducing a native or heuristic facing/LOS test.
+Each load still uses the TOC-derived **v0.3.0** title and once-per-load colored
+chat announcement. Visual screenshot and picker clipping verification remain
+pending a manual `/reloadui`.
 
 During the bounded recording, click the selected **Cast: [name]** button once
 after reviewing current readiness and the remaining recording time. Then use **Stop attack**

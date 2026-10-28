@@ -2,8 +2,34 @@
 
 Updated: 2026-10-28 (America/New_York).
 
-**Casting HUD 0.2.4 — DEPLOYED/HASH-VERIFIED IN RIFT-LAB-2;
-POST-RELOAD CHAT/PICKER CHECK PENDING:**
+**Casting HUD v0.3.0 — LAB-2 DEPLOYED/HASH-VERIFIED, MANUAL RELOAD PENDING:**
+A professional two-column visual refresh replaces the mismatched glossy native
+Cast/Stop buttons with flat restricted RIFT Frames styled consistently with the
+other 40-unit controls. The 584 x 602 panel standardizes color, hierarchy,
+spacing, typography and the 20-entry two-column picker; a protected action tray
+remains separate from ordinary controls. **API READY** now names only verified
+API-based gating. Distinct **FACING UNVERIFIED** and **LINE OF SIGHT
+UNVERIFIED** chips prevent claims unsupported by the captured API evidence. The TOC-driven title and once-per-load colored chat notice report
+**v0.3.0**. The last captured in-game documentation (from before the October 27 game
+patch) provides XYZ but no general target-facing/yaw or hostile LOS flag; its
+group-member-only `blocked` field does not prove generic hostile LOS. The
+current build needs a fresh API evidence capture before implementing either.
+
+All three addon files were installed **only in RIFT-Lab-2** after identity,
+source/staging hash, verified guest backup and exact process checks. An
+independent postflight verified the installed TOC/model/main SHA-256 under
+`artifacts/rr2-lab2-hud-deploy-20261028-06/` (run
+`17c9896ae6e642608adadda309b4f665`); PID **2700** and the exact
+RIFT process epoch stayed unchanged. Rollback was unnecessary; no game input,
+UI reload or live click verification occurred. **Joey must enter `/reloadui`**
+and manually verify the title, chat notification, picker, Cast and Stop
+clicks; read-only screenshots cannot establish click dispatch. Source gates:
+**61 focused Casting tests** and **894 Python tests (2 skipped) passed**;
+no C# source changed in this increment. See
+[the design and API constraints](reference/casting-readout.md).
+
+**Casting HUD 0.2.4 — PREVIOUS DEPLOYMENT/HASH-VERIFIED IN RIFT-LAB-2;
+POST-RELOAD CHECK SUPERSEDED BY v0.3.0:**
 Version 0.2.3 added a TOC-derived version to the HUD title, once-per-load
 teal-green General chat notification, foreground label layers and fail-closed
 ability costs. A fresh read-only Lab-2 capture in

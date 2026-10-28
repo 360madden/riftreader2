@@ -93,11 +93,12 @@ TEST_CHAT = {}
 TEST_PRINT = {}
 TEST_CONSOLE_FAILURE = false
 print = function(message) TEST_PRINT[#TEST_PRINT + 1] = message end
-local function frame(name)
-    local value = { frameName = name }
+local function frame(name, kind)
+    local value = { frameName = name, frameKind = kind }
     TEST_FRAMES[name] = value
     for _, name in ipairs({"SetPoint", "SetWidth", "SetHeight", "SetBackgroundColor", "SetLayer",
-        "SetVisible", "SetFontSize", "SetFontColor", "SetWordwrap", "SetText"}) do
+        "SetVisible", "SetFontSize", "SetFontColor", "SetWordwrap", "SetText",
+        "SetMouseMasking"}) do
         value[name] = function(self, ...) self[name .. "Value"] = {...} end
     end
     value.EventAttach = function(self, event, handler, label) TEST_HANDLERS[label] = handler end
@@ -109,8 +110,8 @@ local function frame(name)
     return value
 end
 UI = {
-    CreateContext = function(name) return frame(name) end,
-    CreateFrame = function(kind, name) return frame(name) end,
+    CreateContext = function(name) return frame(name, "Context") end,
+    CreateFrame = function(kind, name) return frame(name, kind) end,
 }
 UIParent = {}
 Event = {
@@ -193,7 +194,7 @@ class CastingAddonTests(unittest.TestCase):
             value = metadata[field]
             self.assertIsInstance(value, str)
             self.assertTrue(value.strip(), field)
-        self.assertEqual("0.2.4", metadata.Version)
+        self.assertEqual("0.3.0", metadata.Version)
         self.assertEqual("4.4", metadata.Environment)
         self.assertEqual("character", metadata.SavedVariables.RiftReader2CastingEvidence)
         startup = list(metadata.RunOnStartup.values())
@@ -205,7 +206,7 @@ class CastingAddonTests(unittest.TestCase):
         self.load_main()
         globals_ = self.lua.globals()
         frames = globals_.TEST_FRAMES
-        self.assertEqual("RR2 CASTING  v0.2.4", frames["RR2CastingTitle"].SetTextValue[1])
+        self.assertEqual("RR2 CASTING  v0.3.0", frames["RR2CastingTitle"].SetTextValue[1])
         for name in ("RR2CastingTitle", "RR2CastingSubtitle",
                      "RR2CastingReason", "RR2CastingTrialState",
                      "RR2CastingRangeCaption"):
@@ -221,21 +222,21 @@ class CastingAddonTests(unittest.TestCase):
         self.assertTrue(notice.html)
         self.assertTrue(notice.suppressPrefix)
         self.assertIn('<font color="#52E3BB">', notice.message)
-        self.assertIn("RiftReader2 Casting Readout v0.2.4 initialized.", notice.message)
+        self.assertIn("RiftReader2 Casting Readout v0.3.0 initialized.", notice.message)
         globals_.TEST_HANDLERS["RR2 casting saved evidence"](None, "RiftReader2Casting")
-        self.assertEqual("0.2.4", globals_.RiftReader2CastingEvidence.addonVersion)
+        self.assertEqual("0.3.0", globals_.RiftReader2CastingEvidence.addonVersion)
         self.assertEqual(1, len(globals_.TEST_CHAT))
 
     def test_initialization_fallback_color_and_metadata_validation(self):
         self.load_main(version="<malformed>")
         globals_ = self.lua.globals()
-        self.assertEqual("RR2 CASTING  v0.2.4",
+        self.assertEqual("RR2 CASTING  v0.3.0",
                          globals_.TEST_FRAMES["RR2CastingTitle"].SetTextValue[1])
         globals_.TEST_CONSOLE_FAILURE = True
         globals_.TEST_HANDLERS["RR2 casting initialized"](None, "RiftReader2Casting")
         self.assertEqual(0, len(globals_.TEST_CHAT))
         self.assertEqual(1, len(globals_.TEST_PRINT))
-        self.assertIn("|cff52E3BBRiftReader2 Casting Readout v0.2.4 initialized.",
+        self.assertIn("|cff52E3BBRiftReader2 Casting Readout v0.3.0 initialized.",
                       globals_.TEST_PRINT[1])
         self.assertTrue(globals_.TEST_PRINT[1].endswith("|r"))
 
@@ -246,6 +247,51 @@ class CastingAddonTests(unittest.TestCase):
                          globals_.TEST_FRAMES["RR2CastingTitle"].SetTextValue[1])
         globals_.TEST_HANDLERS["RR2 casting initialized"](None, "RiftReader2Casting")
         self.assertIn("v7.8.9 initialized.", globals_.TEST_CHAT[1].message)
+
+    def test_dashboard_uses_one_design_system_for_all_manual_actions(self):
+        self.load_main()
+        frames = self.lua.globals().TEST_FRAMES
+        self.assertEqual(584, frames["RR2CastingPanel"].SetWidthValue[1])
+        for name in ("RR2CastingAbilities", "RR2CastingRecord",
+                     "RR2CastingSecureButton", "RR2CastingStopButton"):
+            self.assertEqual("Frame", frames[name].frameKind, name)
+            self.assertEqual(40, frames[name].SetHeightValue[1], name)
+            self.assertEqual("Text", frames[name + "Label"].frameKind, name)
+            self.assertEqual(16, frames[name + "Label"].SetFontSizeValue[1], name)
+            self.assertEqual("limited",
+                             frames[name + "Label"].SetMouseMaskingValue[1], name)
+            self.assertEqual(
+                tuple(frames[name].SetBackgroundColorValue.values()),
+                tuple(frames["RR2CastingAbilities"].SetBackgroundColorValue.values()),
+                name,
+            )
+        self.assertEqual(
+            tuple(frames["RR2CastingRecordFill"].SetBackgroundColorValue.values()),
+            tuple(frames["RR2CastingSecureButtonFill"].SetBackgroundColorValue.values()),
+        )
+        for name in ("RR2CastingSecureButton", "RR2CastingStopButton"):
+            self.assertEqual("restricted", self.lua.globals().TEST_SECURE_MODES[name])
+            self.assertEqual("full", frames[name].SetMouseMaskingValue[1])
+            self.assertIsNone(self.lua.globals().TEST_HANDLERS[name + " click"])
+        self.assertEqual("stopattack",
+                         self.lua.globals().TEST_MACROS["RR2CastingStopButton"])
+
+    def test_facing_and_los_are_explicitly_unverified_not_ready(self):
+        private, _, _ = self.load_main()
+        frames = self.lua.globals().TEST_FRAMES
+        self.assertEqual("FACING   UNVERIFIED",
+                         frames["RR2CastingFacing"].SetTextValue[1])
+        self.assertEqual("LINE OF SIGHT   UNVERIFIED",
+                         frames["RR2CastingLineOfSight"].SetTextValue[1])
+        self.assertTrue(private.SelectAbility("ability-old"))
+        self.lua.globals().TEST_HANDLERS["RR2 casting readout"](
+            self.lua.globals().Event.System.Update.Begin)
+        self.assertEqual("API READY",
+                         frames["RR2CastingStatus"].SetTextValue[1])
+        self.assertEqual("FACING   UNVERIFIED",
+                         frames["RR2CastingFacing"].SetTextValue[1])
+        self.assertEqual("LINE OF SIGHT   UNVERIFIED",
+                         frames["RR2CastingLineOfSight"].SetTextValue[1])
 
     def test_secure_cast_button_configures_exact_selected_ability_only(self):
         private, _, counts = self.load_main()
@@ -265,18 +311,18 @@ class CastingAddonTests(unittest.TestCase):
         private, _, _ = self.load_main()
         frames = self.lua.globals().TEST_FRAMES
         handlers = self.lua.globals().TEST_HANDLERS
-        self.assertEqual("Select ability",
-                         frames["RR2CastingSecureButton"].SetTextValue[1])
+        self.assertEqual("SELECT AN ABILITY",
+                         frames["RR2CastingSecureButtonLabel"].SetTextValue[1])
         self.assertIsNotNone(handlers["RR2 casting picker backdrop"])
         self.assertTrue(private.SelectAbility("ability-old"))
-        self.assertEqual("Cast: Practice Strike",
-                         frames["RR2CastingSecureButton"].SetTextValue[1])
+        self.assertEqual("CAST  Practice Strike",
+                         frames["RR2CastingSecureButtonLabel"].SetTextValue[1])
         picker = frames["RR2CastingPicker"]
         picker_bottom = picker.SetPointValue[5] + picker.SetHeightValue[1]
         secure_top = frames["RR2CastingSecureButton"].SetPointValue[5]
         hud_footer_bottom = (frames["RR2CastingPanel"].SetPointValue[5]
-                             + frames["RR2CastingHide"].SetPointValue[5]
-                             + frames["RR2CastingHide"].SetHeightValue[1])
+                             + frames["RR2CastingRecord"].SetPointValue[5]
+                             + frames["RR2CastingRecord"].SetHeightValue[1])
         self.assertGreater(secure_top, picker_bottom)
         self.assertGreaterEqual(picker_bottom, hud_footer_bottom)
         last_row = frames["RR2CastingChoice20"]
@@ -290,10 +336,10 @@ class CastingAddonTests(unittest.TestCase):
         private, _, _ = self.load_main(state)
         self.assertTrue(private.SelectAbility("ability-old"))
         caption = self.lua.globals().TEST_FRAMES[
-            "RR2CastingSecureButton"].SetTextValue[1]
-        self.assertTrue(caption.startswith("Cast: "))
+            "RR2CastingSecureButtonLabel"].SetTextValue[1]
+        self.assertTrue(caption.startswith("CAST  "))
         self.assertTrue(caption.endswith("..."))
-        self.assertLessEqual(len(caption.removeprefix("Cast: ").encode("utf-8")), 17)
+        self.assertLessEqual(len(caption.removeprefix("CAST  ").encode("utf-8")), 25)
         self.assertEqual("cast " + long_name,
                          self.lua.globals().TEST_MACROS["RR2CastingSecureButton"])
 
@@ -379,7 +425,7 @@ class CastingAddonTests(unittest.TestCase):
         self.assertTrue(model.Select(model, "ability-old"))
         return model, state, counts
 
-    def load_main(self, state=None, *, version="0.2.4"):
+    def load_main(self, state=None, *, version="0.3.0"):
         state = state or self.state()
         api, counts = self.factory(state)
         self.lua.execute(UI_STUB)
@@ -403,8 +449,8 @@ class CastingAddonTests(unittest.TestCase):
 
     def test_readout_shows_melee_and_ranged_api_metadata_without_new_calls(self):
         cases = (
-            ("melee", 0, 3, 0, False, False, "READY",
-             "Observed checks pass; facing/LOS unknown", "instant (0s)"),
+            ("melee", 0, 3, 0, False, False, "API READY",
+             "Target, power and cooldown checks passed", "instant (0s)"),
             ("ranged", 8, 30, 1.75, True, True, "BLOCKED",
              "Target is out of API range", "1.75s"),
         )
@@ -428,14 +474,14 @@ class CastingAddonTests(unittest.TestCase):
                 self.assertEqual(3, counts.abilityScalar)  # Two select calls and the normal read.
                 self.assertEqual("cast Practice Strike",
                                  self.lua.globals().TEST_MACROS["RR2CastingSecureButton"])
-                self.assertEqual(445, frames["RR2CastingPanel"].SetHeightValue[1])
-                self.assertEqual(408, frames["RR2CastingAbilities"].SetPointValue[5])
-                self.assertEqual(95 + 445 + 6, frames["RR2CastingSecureButton"].SetPointValue[5])
-                self.assertEqual(300 + 378, frames["RR2CastingStopButton"].SetPointValue[4])
+                self.assertEqual(602, frames["RR2CastingPanel"].SetHeightValue[1])
+                self.assertEqual(473, frames["RR2CastingAbilities"].SetPointValue[5])
+                self.assertEqual(72 + 552, frames["RR2CastingSecureButton"].SetPointValue[5])
+                self.assertEqual(286 + 374, frames["RR2CastingStopButton"].SetPointValue[4])
                 self.assertEqual(350, frames["RR2CastingSecureButton"].SetWidthValue[1])
-                self.assertEqual(590, frames["RR2CastingPicker"].SetWidthValue[1])
-                self.assertEqual(448, frames["RR2CastingPicker"].SetHeightValue[1])
-                self.assertEqual(14, frames["RR2CastingPowerCaption"].SetFontSizeValue[1])
+                self.assertEqual(584, frames["RR2CastingPicker"].SetWidthValue[1])
+                self.assertEqual(519, frames["RR2CastingPicker"].SetHeightValue[1])
+                self.assertEqual(13, frames["RR2CastingPowerCaption"].SetFontSizeValue[1])
                 self.assertEqual(20, frames["RR2CastingStatus"].SetFontSizeValue[1])
 
     def test_readout_distinguishes_missing_cast_time_from_instant(self):
@@ -463,7 +509,7 @@ class CastingAddonTests(unittest.TestCase):
                 self.assertEqual("unknown  /  unknown",
                                  frames["RR2CastingCastTimeValue"].SetTextValue[1])
                 self.assertNotIn("instant", rendered)
-                self.assertEqual("READY", frames["RR2CastingStatus"].SetTextValue[1])
+                self.assertEqual("API READY", frames["RR2CastingStatus"].SetTextValue[1])
 
     def test_saved_evidence_survives_update_before_exact_load_end(self):
         prior = self.table({
@@ -483,7 +529,7 @@ class CastingAddonTests(unittest.TestCase):
                          self.lua.globals().RiftReader2CastingEvidence.stamp)
         handlers["RR2 casting saved evidence"](event, "RiftReader2Casting")
         published = self.lua.globals().RiftReader2CastingEvidence
-        self.assertEqual("0.2.4", published.addonVersion)
+        self.assertEqual("0.3.0", published.addonVersion)
         self.assertEqual(1, len(published.previousTrials))
         self.assertEqual("finished", published.previousTrials[1].status)
         self.assertEqual("ability-old", private.Instance.selected)
@@ -502,12 +548,12 @@ class CastingAddonTests(unittest.TestCase):
         event = self.lua.globals().Event.Addon.SavedVariables.Load.End
         handlers["RR2 casting saved evidence"](event, "RiftReader2Casting")
         published = self.lua.globals().RiftReader2CastingEvidence
-        self.assertEqual("0.2.4", published.addonVersion)
+        self.assertEqual("0.3.0", published.addonVersion)
         self.assertEqual(1, len(published.previousTrials))
         self.assertEqual("aborted", published.previousTrials[1].status)
         self.assertIsNotNone(published.abilityMappings)
         handlers["RR2 casting readout"](self.lua.globals().Event.System.Update.Begin)
-        self.assertEqual("0.2.4", self.lua.globals().RiftReader2CastingEvidence.addonVersion)
+        self.assertEqual("0.3.0", self.lua.globals().RiftReader2CastingEvidence.addonVersion)
 
     def assert_historical_mapping_with_missing_modern_api(self, missing_table):
         state = self.state()
@@ -527,7 +573,7 @@ class CastingAddonTests(unittest.TestCase):
         self.lua.globals().TEST_HANDLERS["RR2 casting saved evidence"](
             None, "RiftReader2Casting")
         published = self.lua.globals().RiftReader2CastingEvidence
-        self.assertEqual("0.2.4", published.addonVersion)
+        self.assertEqual("0.3.0", published.addonVersion)
         mapping = published.abilityMappings["ability-old"]
         self.assertIsNone(mapping["New"])
         self.assertEqual("Legacy Only", mapping["Legacy"].name)
@@ -575,7 +621,7 @@ class CastingAddonTests(unittest.TestCase):
         handlers = self.lua.globals().TEST_HANDLERS
         handlers["RR2 casting saved evidence"](None, "RiftReader2Casting")
         published = self.lua.globals().RiftReader2CastingEvidence
-        self.assertEqual("0.2.4", published.addonVersion)
+        self.assertEqual("0.3.0", published.addonVersion)
         self.assertEqual(1, len(published.previousTrials))
         self.assertIn("frame-clock-unavailable", list(published.loadWarnings.values()))
         self.assertEqual(1, len(self.lua.globals().TEST_CHAT))
@@ -589,7 +635,7 @@ class CastingAddonTests(unittest.TestCase):
         handlers = self.lua.globals().TEST_HANDLERS
         handlers["RR2 casting saved evidence"](None, "RiftReader2Casting")
         published = self.lua.globals().RiftReader2CastingEvidence
-        self.assertEqual("0.2.4", published.addonVersion)
+        self.assertEqual("0.3.0", published.addonVersion)
         self.assertIn("frame-clock-unavailable", list(published.loadWarnings.values()))
         self.assertEqual(1, len(self.lua.globals().TEST_CHAT))
 
@@ -601,7 +647,7 @@ class CastingAddonTests(unittest.TestCase):
         published = self.lua.globals().RiftReader2CastingEvidence
         self.assertEqual(0, len(published.abilities))
         self.assertIn("ability-catalog-unavailable", list(published.loadWarnings.values()))
-        self.assertEqual("0.2.4", published.addonVersion)
+        self.assertEqual("0.3.0", published.addonVersion)
 
     def test_hud_hides_secure_buttons_and_slash_reopens_them(self):
         private, state, _ = self.load_main()
