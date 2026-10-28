@@ -110,6 +110,109 @@ class GuestAgentLauncherTests(unittest.TestCase):
             self.assertEqual('failed', json.loads(
                 (output / 'maintenance.json').read_text())['operationStatus'])
 
+    def test_maintenance_fence_rejects_pending_after_first_status_page(self):
+        with tempfile.TemporaryDirectory() as directory:
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            resource = {'name': 'vm:test', 'epoch': 'epoch', 'blocked': False,
+                        'holder': None}
+            queue = MagicMock()
+            queue.status.side_effect = [
+                {'resources': [resource], 'requests': [{'state': 'succeeded'}],
+                 'next_sequence': 100},
+                {'resources': [resource], 'requests': [{'state': 'queued'}],
+                 'next_sequence': None},
+            ]
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4',
+                               return_value=SimpleNamespace(hex='e' * 32))):
+                with self.assertRaisesRegex(ValueError, 'Control queue occupied'):
+                    with launcher.maintenance_lease(guard, Path(directory)):
+                        self.fail('Failed admission must not yield control')
+            queue.status.assert_any_call(after_sequence=100)
+            queue.submit.assert_not_called()
+            queue.dispatch.assert_not_called()
+
+    def test_maintenance_foreign_grant_cancels_only_its_own_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            queue = MagicMock()
+            queue.status.return_value = {
+                'resources': [{'name': 'vm:test', 'epoch': 'epoch',
+                               'blocked': False, 'holder': None}],
+                'requests': [], 'next_sequence': None,
+            }
+            queue.dispatch.return_value = {'request_id': 'foreign', 'token': 'foreign-token'}
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4',
+                               return_value=SimpleNamespace(hex='f' * 32))):
+                with self.assertRaisesRegex(ValueError, 'Maintenance grant unavailable'):
+                    with launcher.maintenance_lease(guard, Path(directory)):
+                        self.fail('Foreign grant must not be accepted')
+            queue.cancel.assert_called_once_with(
+                'agent-maintenance-' + 'f' * 12, 'agent-launcher')
+            queue.finish.assert_not_called()
+
+    def test_maintenance_grant_is_fenced_until_work_begins(self):
+        with tempfile.TemporaryDirectory() as directory:
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            queue = MagicMock()
+            held = {'value': False}
+            fence = MagicMock()
+            fence.__enter__.side_effect = lambda: held.__setitem__('value', True)
+            fence.__exit__.side_effect = lambda *_: held.__setitem__('value', False)
+            queue.dispatch_fence.return_value = fence
+
+            def status(*, after_sequence=0):
+                self.assertTrue(held['value'])
+                return {
+                    'resources': [{'name': 'vm:test', 'epoch': 'epoch',
+                                   'blocked': False, 'holder': None}],
+                    'requests': [], 'next_sequence': None,
+                }
+
+            def submit(*args, **kwargs):
+                self.assertTrue(held['value'])
+
+            def dispatch():
+                self.assertTrue(held['value'])
+                return {'request_id': 'agent-maintenance-' + 'g' * 12,
+                        'token': 'mock-token'}
+
+            queue.status.side_effect = status
+            queue.submit.side_effect = submit
+            queue.dispatch.side_effect = dispatch
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4',
+                               return_value=SimpleNamespace(hex='g' * 32))):
+                with launcher.maintenance_lease(guard, Path(directory)):
+                    self.assertFalse(held['value'])
+            self.assertFalse(held['value'])
+            self.assertEqual('succeeded', queue.finish.call_args.args[2])
+
+    def test_maintenance_thread_start_failure_releases_failed_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            queue = MagicMock()
+            queue.status.return_value = {
+                'resources': [{'name': 'vm:test', 'epoch': 'epoch',
+                               'blocked': False, 'holder': None}],
+                'requests': [], 'next_sequence': None,
+            }
+            queue.dispatch.return_value = {
+                'request_id': 'agent-maintenance-' + 'h' * 12, 'token': 'mock-token',
+            }
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4',
+                               return_value=SimpleNamespace(hex='h' * 32)),
+                  patch.object(launcher.threading.Thread, 'start',
+                               side_effect=RuntimeError('thread unavailable'))):
+                with self.assertRaisesRegex(RuntimeError, 'thread unavailable'):
+                    with launcher.maintenance_lease(guard, Path(directory)):
+                        self.fail('Failed heartbeat start must not yield')
+            self.assertEqual('failed', queue.finish.call_args.args[2])
+            self.assertEqual('failed', json.loads(
+                (Path(directory) / 'maintenance.json').read_text())['operationStatus'])
+
     def test_bundle_has_short_entrypoints_and_pinned_release(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); exe = root / 'fake.exe'; exe.write_bytes(b'offline fixture only')

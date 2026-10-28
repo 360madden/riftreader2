@@ -30,15 +30,17 @@ selection/interception and the secure button row.
 native capture, reader/live state, desktop tooling and tests. Confirmed
 issues fixed in source include VMware PowerShell argument limits, staged
 XYZ execution without pre-creating its capture directory, truthful launcher
-maintenance outcomes, an exception-safe position-read gate, finite wall-motion
-math, bounded profile file reads and incomplete native scout snapshot status.
-Independent gates passed: 519 .NET tests, 886 Python tests (2 skipped; 57
-focused Casting tests), 108 Lua checks + 22 real-Lua/C# cases, Release build
-and formatting, native publish, deterministic CLI replay, 637 relative links
-and diff whitespace. See the [full bug-hunt findings](validation/rr2-bughunt-2026-10-28.md).
+maintenance outcomes, safe fenced/paginated maintenance admission, an
+exception-safe position-read gate, finite wall-motion math, bounded profile
+file reads and incomplete native scout snapshot status.
+Independent gates passed: 519 .NET tests, 890 Python tests (2 skipped; 57
+focused Casting and 12 guest-launcher tests), 108 Lua checks + 22 real-Lua/C#
+cases, Release build and formatting, native publish, deterministic CLI
+replay, 637 relative links and diff whitespace. See the [full bug-hunt findings](validation/rr2-bughunt-2026-10-28.md).
 The combined `scripts/validate.ps1` launcher was unavailable via Workbridge;
-these were separate checks. Lower-priority open work includes a
-maintenance-queue acquisition race, failed typed-scout staging cleanup,
+these were separate checks. Guest maintenance admission was subsequently
+fenced, paginated and guarded against heartbeat-start failures. Remaining
+follow-ups include typed-scout staging cleanup, maintenance lease budget,
 stationary wall-contact semantics and live visual/picker qualification.
 
 **Casting HUD 0.2.1 — PREVIOUSLY DEPLOYED TO LAB-2 (HISTORICAL):**

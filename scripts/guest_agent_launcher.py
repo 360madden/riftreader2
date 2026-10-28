@@ -19,12 +19,33 @@ from scripts.nav_access_queue import QueueError
 @contextmanager
 def maintenance_lease(guard, output):
     queue = w.AccessQueue(guard.plan['database'])
-    resource = next(v for v in queue.status()['resources'] if v['name'] == guard.plan['resource'])
     rid = 'agent-maintenance-' + uuid.uuid4().hex[:12]
-    queue.submit(rid, 'agent-launcher', 'C', {resource['name']: resource['epoch']},
-                 ttl_ms=30000, max_ms=120000, estimated_ms=1000)
-    grant = queue.dispatch()
-    w.require(grant and grant['request_id'] == rid, 'Maintenance grant unavailable')
+    # Serialize admission with other cooperative dispatches. Status is paged:
+    # 100 historical completed rows must not conceal a newer queued request.
+    with queue.dispatch_fence():
+        page = queue.status()
+        resource = next(v for v in page['resources'] if v['name'] == guard.plan['resource'])
+        w.require(not resource.get('blocked') and resource.get('holder') is None,
+                  'Control resource occupied')
+        while True:
+            w.require(not any(v['state'] in ('queued', 'active', 'cleanup')
+                              for v in page.get('requests', [])), 'Control queue occupied')
+            cursor = page.get('next_sequence')
+            if cursor is None:
+                break
+            page = queue.status(after_sequence=cursor)
+        queue.submit(rid, 'agent-launcher', 'C', {resource['name']: resource['epoch']},
+                     ttl_ms=30000, max_ms=120000, estimated_ms=1000)
+        try:
+            grant = queue.dispatch()
+            w.require(grant and grant['request_id'] == rid, 'Maintenance grant unavailable')
+        except BaseException:
+            # Cancel only this request. Do not consume or release a foreign grant.
+            try:
+                queue.cancel(rid, 'agent-launcher')
+            except QueueError:
+                pass
+            raise
     done = threading.Event()
 
     def heartbeat():
@@ -34,14 +55,19 @@ def maintenance_lease(guard, output):
             except QueueError:
                 return  # Reconnecting the guest revokes the old session's lease.
 
-    thread = threading.Thread(target=heartbeat, daemon=True); thread.start()
+    thread = threading.Thread(target=heartbeat, daemon=True)
     completed = False
     verdict = {'succeeded': True}
+    started = False
     try:
+        thread.start()
+        started = True
         yield verdict
         completed = verdict['succeeded'] is True
     finally:
-        done.set(); thread.join()
+        done.set()
+        if started:
+            thread.join()
         status = 'succeeded' if completed else 'failed'
         try:
             queue.check(rid, grant['token'])
