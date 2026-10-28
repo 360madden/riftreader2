@@ -108,3 +108,25 @@ in both labs; live reload/command delivery with confirmed human ownership;
 measured transfer age; manual movement and independent second-lab reproduction.
 Camera research, projection, overlay and coordinated actions depend on later
 evidence. No gameplay-input expansion or patch-recovery resumption is assumed.
+
+## Verified checkpoint
+
+The complete authoritative gate passed in
+`artifacts/validation/20261028T235032Z-2814371d/`: 539 .NET tests, 922 Python
+tests (two skips), 110 Lua lifecycle/encoder checks, 22 existing real Lua/C#
+cases, two synthetic lab-bound Lua -> C# -> Lua guidance round trips,
+build/format/native smoke/deterministic replay and 661 documentation links.
+Independent combined-source review passed. Synthetic lab identities establish
+isolation in software, not independent live reproduction in two VMs.
+
+After Joey reserved idle Lab-2, the core package was installed and independently
+rechecked using the exact game identity above. Apply run
+`7c7948e806ef422d83dea4a9e4a400e7` and separate postflight
+`1af3845db72047078a1aabb66302c9d8` are retained under
+`artifacts/bidirectional-20261028/lab2-deploy/`. Manifest SHA-256:
+`8A0531EBC68FFF40649539DA49FC12322634A0196B21866567894679F054F957`.
+All six installed content hashes matched; Casting's three hashes, game process
+and VM identity stayed unchanged. Backup:
+`C:\Users\Public\Documents\RR2CoreBackup-7c7948e806ef422d83dea4a9e4a400e7`.
+No input, UI reload or controller start was sent. The physical reload/status
+step is pending user observation. This proves installation, not live feedback.

@@ -2,7 +2,7 @@
 
 Updated: 2026-10-28 (America/New_York).
 
-**Bidirectional guidance — SOURCE/OFFLINE GATES PASSED; LIVE ACCEPTANCE PENDING:**
+**Bidirectional guidance — SOURCE/OFFLINE GATES PASSED, LAB-2 INSTALLED; LIVE ACCEPTANCE PENDING:**
 The [fresh two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md)
 records both VM identities and read-only screenshots. Lab-1 is in game as
 Atank (45), but two authenticated guest-tools process-list calls timed out;
@@ -30,8 +30,17 @@ Independent review and 20 focused C#/18 Lua guidance tests passed. Two existing
 test-fixture races were fixed separately without native/transport production
 changes. Neither synthetic round trip is live lab reproduction.
 
-Lab-2 hash-verified core installation is the next operation; live reload,
-fresh advancing snapshot, manual receipt/display/latency/stale checks,
+Lab-2 core installation and a separate postflight passed under
+`artifacts/bidirectional-20261028/lab2-deploy/`, apply run
+`7c7948e806ef422d83dea4a9e4a400e7`, independent postflight
+`1af3845db72047078a1aabb66302c9d8`. All six source/installed hashes matched,
+Casting hashes and VM/game identity stayed unchanged, and the old five-file
+backup was verified. No input/reload/controller start occurred. The source
+matches commit `4d7e7c7`; the frozen manifest predates that commit and records
+parent `8273745`, so its six content hashes are the deployment authority.
+
+The user has been asked to physically enter `/reloadui`, then `/rr2guide status`
+in reserved Lab-2. Live reload, fresh advancing snapshot, manual receipt/display/latency/stale checks,
 movement checkpoints and second-lab reproduction remain pending. Lab-1 guest
 access needs recovery. Patch recovery and direct Computer Use remain deferred;
 do not advance ordered routes, camera projection or actions before their gates.
