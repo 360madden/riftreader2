@@ -28,7 +28,9 @@ v0.3.0 guest backup remains. **No game input, reload or physical click was
 sent.** Joey must type `/reloadui` in Lab 2 and check the drag handles, Hide,
 `/rr2cast help`, picker position persistence and manual secure Cast/Stop
 clicks. This deployment proves file installation, **not** runtime hit testing
-or real secure click behavior. See [controls and limitations](reference/casting-readout.md).
+or real secure click behavior. Resume from the
+[October 28 Casting handoff](workflows/casting-handoff-2026-10-28.md), with
+[controls and limitations](reference/casting-readout.md).
 
 **Casting HUD v0.3.0 — PREVIOUS LAB-2 DEPLOYMENT/HASH-VERIFIED; TITLE SEEN IN USER SCREENSHOT:**
 A professional two-column visual refresh replaces the mismatched glossy native
