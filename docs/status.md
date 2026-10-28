@@ -2,6 +2,18 @@
 
 Updated: 2026-10-28 (America/New_York).
 
+**Two-lab hybrid roadmap — USER SCOPE UPDATE, OCTOBER 28:**
+Joey authorized using **RIFT-Lab-1 and RIFT-Lab-2** for faster parallel
+discovery and validation, superseding the earlier Lab-2-only restriction for
+this work. The [saved combined prompt and roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md)
+defines complementary lab roles, separate identities/evidence/endpoints,
+one input controller per lab, and the first useful demonstration: addon
+coordinates -> external distance/direction calculation -> addon display.
+Next: establish both current lab baselines and assess the inbound transport.
+This update saves the plan; it does not claim a working return channel or
+fresh Lab-1 validation. Existing game-input limits, patch-recovery and direct
+Computer Use deferrals remain. Lab-2 Casting v0.4.0 acceptance is still pending.
+
 **Casting HUD v0.4.0 — LAB-2 DEPLOYED/HASH-VERIFIED, LIVE INPUT CHECK PENDING:**
 The dashboard and 20-choice/page ability picker now have draggable headers.
 Main panel, picker and the separate RIFT-restricted Cast/Stop frames share one

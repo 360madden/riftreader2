@@ -43,6 +43,19 @@ candidate fields for navigation, combat, casting, stats, and abilities) on
 outside this repository. Keep this a practical personal tool: reuse existing
 modules and selected lab tools, avoid new frameworks and unnecessary process.
 
+## Two-lab scope — user decision, 2026-10-28
+
+Both **RIFT-Lab-1 and RIFT-Lab-2** are available for the bidirectional hybrid
+research and validation work. This supersedes the earlier Lab-2-only restriction
+for that work. Follow the [saved prompt and roadmap](docs/planning/bidirectional-hybrid-two-lab-roadmap.md).
+Assign complementary discovery/validation tasks with explicit file ownership,
+separate lab/session identities, endpoints and evidence, and one input controller
+per lab. Reacquire current VM/process/build identity; do not copy absolute
+addresses or assume matching builds. Coordinate expensive scans on the shared host.
+Other input restrictions, patch-recovery deferral, V1 reference-only status and
+limits on dedicated gameplay automation remain in force. Roadmap targets are
+not implementation evidence or blanket action authorization.
+
 ## Current durability policy — user decision, 2026-10-25
 
 Prioritize durable collection that survives **fully exiting RIFT and launching

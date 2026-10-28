@@ -14,9 +14,15 @@ and [repository instructions](../../AGENTS.md) before changing anything.
   host; use exact-file SHA guards, unique operation IDs, terminal command exit
   codes, and explicit Git file/hash lists. Do not assume the ChatGPT container
   can directly see Windows `C:\work`.
-- **Scope imposed by Joey:** **RIFT-Lab-2 only for this conversation.**
-  Do not touch or use RIFT-Lab-1. Keep original RiftReader/V1 reference-only.
-  The RIFT patch-recovery work is deferred by existing repository policy.
+- **Scope updated by Joey, October 28:** **Both RIFT-Lab-1 and RIFT-Lab-2**
+  are available for bidirectional hybrid discovery and validation in parallel.
+  This supersedes the previous Lab-2-only restriction for that work. Follow
+  the [saved prompt and two-lab roadmap](../planning/bidirectional-hybrid-two-lab-roadmap.md).
+  Use separate identities, endpoints and evidence, explicit worker ownership,
+  and one input controller per lab; recheck each build independently. Keep
+  original RiftReader/V1 reference-only. Patch recovery and direct Computer
+  Use inside VMware remain deferred; later automation phases require their
+  applicable authorization. Historical deployments below were Lab-2-only.
 - **Input policy:** ChatGPT Computer Use inside VMware remains deferred.
   Separately authorized, guarded native VM-console helpers can still be used
   for supervised bounded tests after fresh identity, capture, ownership, and
@@ -84,7 +90,7 @@ Relevant source:
 ## RIFT-Lab-2 deployment (verified files; no UI reload)
 
 - **Target VMX:** `C:\rift modding\VMs\RIFT-Lab-2\RIFT-Lab.vmx`; VMware
-  monitor port **5906**. No Lab-1 access.
+  monitor port **5906**. That deployment did not access Lab-1.
 - **Game executable:** guest `C:\RIFT_TRANSFER\RIFT\rift_x64.exe` with
   SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
   At deployment, PID **2700**, UTC process start
@@ -113,8 +119,8 @@ Relevant source:
 
 ## Next authorized milestone: live UI and CLI acceptance
 
-1. Check fresh repository status, Lab-2-only VMX, process identity/build,
-   controller lease and screenshots. Do **not** act on the historical PID or
+1. Check fresh repository status, the Lab-2 VMX for this acceptance test,
+   process identity/build, controller lease and screenshots. Do **not** act on the historical PID or
    pixel rectangles from older casting handoffs.
 2. Ask Joey to type `/reloadui` **in the RIFT-Lab-2 client**. Confirm the
    HUD title **RR2 CASTING v0.4.0** and one teal-green chat initialization
@@ -148,11 +154,19 @@ protected-action click success until individually observed.** An addon
 
 ## Broader follow-up (separate from release acceptance)
 
+The [bidirectional hybrid prompt and roadmap](../planning/bidirectional-hybrid-two-lab-roadmap.md)
+now records the two-lab workstream. First establish fresh baselines for both
+labs and evaluate a harmless external-to-addon round trip; assign complementary
+discovery and independent validation work. Lab-1 availability is authorized,
+not yet freshly verified by this documentation update. The v0.4.0 deployment
+and pending acceptance above remain specific to Lab-2; do not infer Lab-1 parity.
+
 The current dashboard is an improvement, not a final professional design
 system. Review it holistically after current-version screenshots: consistent
 control states, focus/hover, readable typography, spacing, scalable/clamped
 layout, hierarchy, status semantics and the secure-action boundary. Keep
 facing/LOS visibly unverified until actual current-game evidence supports
-implementation; avoid fabricating clear-shot readiness. Continue RR2's
-durable restart-aware native reader and discovery roadmap only after the
-short live UI acceptance loop. Patch recovery remains deferred.
+implementation; avoid fabricating clear-shot readiness. Finish the short Lab-2
+UI acceptance loop before treating this release as live-qualified. Independent
+two-lab baseline and transport feasibility work can proceed in parallel.
+Patch recovery remains deferred.
