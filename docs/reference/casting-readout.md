@@ -31,7 +31,9 @@ is described in the visible trial detail without changing its no-hit verdict.
 The flat **Abilities / Record / Hide** controls sit inside the panel, while the
 restricted manual **Cast / Stop** buttons form one aligned row below. Hiding and
 reopening these secure buttons requires the game to be outside secure combat.
-This layout has offline tests but still needs fresh in-game visual verification.
+This layout passed offline tests and its 0.2.1 startup files were independently
+hash-verified after deployment to RIFT-Lab-2 on 2026-10-27 evening ET. It still
+needs a game UI reload and a fresh in-game screenshot for visual verification.
 
 During the bounded recording, click the named **Cast** button once after reviewing
 current readiness and the remaining recording time. Then use **Stop autoattack**

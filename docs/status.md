@@ -2,7 +2,7 @@
 
 Updated: 2026-10-27 (America/New_York; Windows host clock).
 
-**Casting HUD 0.2.1 — SOURCE REDESIGNED; LIVE LAYOUT NOT YET VERIFIED:**
+**Casting HUD 0.2.1 — DEPLOYED TO LAB-2; LIVE LAYOUT NOT YET VERIFIED:**
 Replaced the dense one-text-block panel shown in Joey's screenshot with a readable
 status header, separate target/ability fields, four metric cards, trial outcome,
 24-per-page flat-button ability picker, and aligned restricted Cast/Stop controls.
@@ -11,8 +11,16 @@ restores the full interface. Exact-target dodge is visible without promoting it
 to a damage hit. Raw capture, identity checks and manual-only macros are unchanged.
 Full validation passed: 514 .NET tests, 866 Python tests (two skips), Lua/contracts,
 format, published-native smoke and 636 links. Evidence:
-`artifacts/validation/20261028T030141Z-6aa9d0b8/`. No game/VM input or addon
-deployment occurred. Fresh in-game screenshot targets are required before clicks.
+`artifacts/validation/20261028T030141Z-6aa9d0b8/`.
+On Oct 27 evening ET, installed all three 0.2.1 source files **only in RIFT-Lab-2**,
+using cached authenticated VMware Tools. Source/guest SHA-256 matched independently
+at installation and in a second postflight; unchanged model Lua included. Guest
+RIFT PID 10672, start 2026-10-28T01:25:39Z, new executable SHA
+`1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
+Previous files were hash-verified in a guest Public Documents backup; temporary
+staging files were removed. Receipts: `artifacts/casting-lab2-ui-20261028-01/`.
+No game input, reload, restart or screenshot occurred. Joey must use `/reloadui`
+and provide a fresh in-game screenshot before visual layout can be qualified.
 
 **RIFT EXECUTABLE UPDATED — LAB-2 LUA SOURCE RECOVERED, NATIVE FIELDS PENDING:**
 Lab-2 runs the October 27 `rift_x64.exe` with a new SHA-256. The current
@@ -51,7 +59,7 @@ separate 60s recordings. First attempt was dodged. After reviewing that evidence
 the second confirmed 402 Life damage on the exact selected dummy from a constant
 5.179 derived coordinate distance, Power 100 -> 80 -> 100, and 12.006s effective
 cooldown recovery. Other-dummy area hits were excluded; successful trial had no
-autoattack events. New panel layout is live-verified. See the
+autoattack events. The prior 0.2.0 panel was live-verified, not the 0.2.1 HUD. See the
 [result and limitations](validation/casting-ranged-2026-10-26.md); export:
 `artifacts/exports/casting-ranged-20261026-01/`. All input released, controller idle.
 No source changes, full-game restart claim, health-loss test or patch recovery.
