@@ -45,6 +45,53 @@ public sealed class WallMotionReplayTests
     }
 
     [Fact]
+    public async Task Analyzer_HandlesLargeFiniteAlignedVectorsWithoutOverflow()
+    {
+        var result = await new WallMotionReplayAnalyzer().AnalyzeAsync(
+            ToAsync(ExtremeFreeTravelSamples(0, 5e199, 1e200, 1e200)),
+            StandardTrials(), new(100, 500));
+
+        Assert.Equal("free-travel-plausible", result.Trials[0].Classification);
+        Assert.Equal(0, result.Trials[0].DirectionErrorDegrees, 10);
+        Assert.Equal(0, result.Trials[0].ProjectedVectorErrorFractionOfActualDisplacement, 10);
+    }
+
+    [Fact]
+    public async Task Analyzer_RejectsFiniteCoordinatesWhoseDeltaOverflows()
+    {
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            new WallMotionReplayAnalyzer().AnalyzeAsync(
+                ToAsync(ExtremeFreeTravelSamples(-double.MaxValue, 0, double.MaxValue, 1)),
+                StandardTrials(), new(100, 500)));
+
+        Assert.Contains("nonfinite realized displacement", error.Message);
+    }
+
+    private static WallMotionTrial[] StandardTrials() =>
+    [
+        Trial("free", "free-travel", 1, 2),
+        Trial("wall-a", "wall-contact", 3, 4),
+        Trial("wall-b", "wall-contact", 5, 6)
+    ];
+
+    private static WallMotionSample[] ExtremeFreeTravelSamples(
+        double beforeX, double middleX, double afterX, double projectedX) =>
+    [
+        Sample(1, 0.95, beforeX, 0, projectedX, 0),
+        Sample(2, 1, beforeX, 0, projectedX, 0),
+        Sample(3, 1.5, middleX, 0, projectedX, 0),
+        Sample(4, 2, afterX, 0, projectedX, 0),
+        Sample(5, 2.95, 2, 0, 1, 1),
+        Sample(6, 3, 2, 0, 1, 1),
+        Sample(7, 3.5, 2.5, -0.5, 1, 1),
+        Sample(8, 4, 3, -1, 1, 1),
+        Sample(9, 4.95, 3, -1, 1, 1),
+        Sample(10, 5, 3, -1, 1, 1),
+        Sample(11, 5.5, 3.5, -1.5, 1, 1),
+        Sample(12, 6, 4, -2, 1, 1)
+    ];
+
+    [Fact]
     public async Task Analyzer_RejectsAProjectionGapThatCouldHideMotion()
     {
         var trials = new[]

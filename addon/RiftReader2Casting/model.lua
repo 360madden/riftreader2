@@ -94,7 +94,9 @@ function M.New(api)
             r.status = "ready"; r.reason = "observed-ready"
             for _, pair in ipairs({{"costPower","power"},{"costMana","mana"},{"costEnergy","energy"},{"costCharge","charge"},{"costSpirit","spirit"},{"costPlanarCharge","planar"}}) do
                 local cost = ad[pair[1]]
-                if number(cost) and cost > 0 and (not number(pd[pair[2]]) or pd[pair[2]] < cost) then
+                if cost ~= nil and (not number(cost) or cost < 0) then
+                    r.status = "blocked"; r.reason = "invalid-ability-cost"; break
+                elseif number(cost) and cost > 0 and (not number(pd[pair[2]]) or pd[pair[2]] < cost) then
                     r.status = "blocked"; r.reason = "insufficient-or-unknown-" .. pair[2]; break
                 end
             end

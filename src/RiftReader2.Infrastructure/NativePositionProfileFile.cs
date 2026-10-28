@@ -27,9 +27,7 @@ public static class NativePositionProfileLoader
     public static async Task<LoadedNativePositionProfile> LoadAsync(
         string path, CancellationToken cancellationToken = default)
     {
-        if (new FileInfo(path).Length > MaximumBytes)
-            throw new InvalidDataException("Position profile exceeds 8192 bytes.");
-        var bytes = await File.ReadAllBytesAsync(path, cancellationToken);
+        var bytes = await AddonFrameFile.ReadBoundedAsync(path, MaximumBytes, cancellationToken);
         if (bytes.Length is < 1 or > MaximumBytes)
             throw new InvalidDataException("Position profile must contain 1-8192 bytes.");
         var source = JsonSerializer.Deserialize<NativePositionProfileFile>(bytes, JsonFormat.Options)

@@ -104,7 +104,7 @@ internal static class NativeValueScoutCommand
                     session.Identity,
                     context.StartedAtUtc,
                     context.CompletedAtUtc,
-                    context.Read.Status == "success" ? "complete" : "partial",
+                    context.Read.Status == "success" ? "complete" : "failed",
                     context.Read.Status == "success" ? null : "The retained context read was incomplete.",
                     [chunk],
                     [

@@ -35,10 +35,14 @@ def maintenance_lease(guard, output):
                 return  # Reconnecting the guest revokes the old session's lease.
 
     thread = threading.Thread(target=heartbeat, daemon=True); thread.start()
+    completed = False
+    verdict = {'succeeded': True}
     try:
-        yield
+        yield verdict
+        completed = verdict['succeeded'] is True
     finally:
         done.set(); thread.join()
+        status = 'succeeded' if completed else 'failed'
         try:
             queue.check(rid, grant['token'])
         except QueueError:
@@ -46,9 +50,11 @@ def maintenance_lease(guard, output):
             w.require(current['epoch'] != resource['epoch'], 'Maintenance lease lost without a session transition')
             outcome = 'revoked-by-session-transition'
         else:
-            queue.finish(rid, grant['token'], 'succeeded', ['launcher operation finished; see result.json'])
+            notes = (['launcher operation finished; see result.json'] if status == 'succeeded'
+                     else ['launcher operation failed; see local diagnostics'])
+            queue.finish(rid, grant['token'], status, notes)
             outcome = 'released'
-        w.save(output / 'maintenance.json', dict(requestId=rid, outcome=outcome))
+        w.save(output / 'maintenance.json', dict(requestId=rid, outcome=outcome, operationStatus=status))
 
 
 def run(config, output, guest_root, operation, release=None):
@@ -73,33 +79,36 @@ def run(config, output, guest_root, operation, release=None):
     w.save(output / 'request.json', request)
     sha = w.digest((output / 'request.json').read_bytes())
     incoming = guest_root + '\\request-' + request['id'] + '.tmp'
-    with maintenance_lease(guard, output), GuestSession(Path(cfg['vmrun']), guard.native.vmx, guard.check) as guest:
-        w.save(output / 'stop.json', w.sanitize(guard.client.request('/api/stop', method='POST', payload={})))
-        guest.run('copyFileFromHostToGuest', str((output / 'request.json').resolve()), incoming)
-        # Atomic publication: the launcher never reads a partly transferred request.
-        script = ("$ErrorActionPreference='Stop';$p='" + incoming + "';$r='" + guest_root +
-                  "';if([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($p))).Replace('-','') -ne '" + sha + "'){throw 'request-hash-mismatch'};"
-                  "[IO.File]::Move($p,($r+'\\request.json'));$f=$r+'\\results\\" + request['id'] +
-                  ".json';$end=[DateTime]::UtcNow.AddSeconds(95);while(-not(Test-Path -LiteralPath $f)){"
-                  "if([DateTime]::UtcNow -ge $end){throw 'launcher-response-timeout'};Start-Sleep -Milliseconds 200}")
-        guest.powershell(script, timeout=110)
-        guest.copy_from_guest(guest_root + '\\results\\' + request['id'] + '.json', output / 'result.json')
-        guest.copy_from_guest(guest_root + '\\launcher-state.json', output / 'launcher-state.json')
-    result = w.load(output / 'result.json')
-    w.require(result['id'] == request['id'], 'Launcher response identity mismatch')
-    if operation in ('start', 'restart', 'update') and result['success']:
-        deadline = time.monotonic() + 30
-        while True:
-            try:
-                state = guard.status()
-                w.require(state['guest'].get('gracefulShutdownVersion') == 1, 'Managed guest capability missing')
-                break
-            except Exception:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(.5)
-        w.save(output / 'after.json', w.sanitize(state))
-    return result
+    with maintenance_lease(guard, output) as verdict:
+        with GuestSession(Path(cfg['vmrun']), guard.native.vmx, guard.check) as guest:
+            w.save(output / 'stop.json', w.sanitize(guard.client.request('/api/stop', method='POST', payload={})))
+            guest.run('copyFileFromHostToGuest', str((output / 'request.json').resolve()), incoming)
+            # Atomic publication: the launcher never reads a partly transferred request.
+            script = ("$ErrorActionPreference='Stop';$p='" + incoming + "';$r='" + guest_root +
+                      "';if([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([IO.File]::ReadAllBytes($p))).Replace('-','') -ne '" + sha + "'){throw 'request-hash-mismatch'};"
+                      "[IO.File]::Move($p,($r+'\\request.json'));$f=$r+'\\results\\" + request['id'] +
+                      ".json';$end=[DateTime]::UtcNow.AddSeconds(95);while(-not(Test-Path -LiteralPath $f)){"
+                      "if([DateTime]::UtcNow -ge $end){throw 'launcher-response-timeout'};Start-Sleep -Milliseconds 200}")
+            guest.powershell(script, timeout=110)
+            guest.copy_from_guest(guest_root + '\\results\\' + request['id'] + '.json', output / 'result.json')
+            guest.copy_from_guest(guest_root + '\\launcher-state.json', output / 'launcher-state.json')
+        result = w.load(output / 'result.json')
+        w.require(result['id'] == request['id'], 'Launcher response identity mismatch')
+        w.require(type(result.get('success')) is bool, 'Launcher success flag is invalid')
+        verdict['succeeded'] = result['success']
+        if operation in ('start', 'restart', 'update') and result['success']:
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    state = guard.status()
+                    w.require(state['guest'].get('gracefulShutdownVersion') == 1, 'Managed guest capability missing')
+                    break
+                except Exception:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(.5)
+            w.save(output / 'after.json', w.sanitize(state))
+        return result
 
 
 if __name__ == '__main__':

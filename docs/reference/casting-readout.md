@@ -11,7 +11,7 @@ It uses RIFT's restricted `EventMacroSet` facility for a named ability and the
 standard `stopattack` command. Only a physical click activates those buttons;
 there is no timer, automatic retry or rotation. Earlier supervised trials used
 a screenshot-reviewed guarded helper. A Lab-2 game-input path is not yet
-qualified for 0.2.2; the player can operate the controls manually. Target
+qualified for 0.2.3; the player can operate the controls manually. Target
 selection remains explicit.
 
 ## Use
@@ -24,23 +24,29 @@ active cast/channel, range failure, unusable ability, insufficient/unknown
 required resource, or mismatched effective target. A target/player change aborts
 the recording. `/rr2cast` shows a hidden panel.
 
-Version **0.2.2** enlarges typography and spacing in the structured HUD:
+Version **0.2.2** enlarged typography and spacing in the structured HUD:
 color-coded observed status, named target/ability, range/cast/channel/cooldown/
 Power cards and a separate trial outcome. The supported-type picker displays
-**20 named entries per page**; the complete API catalog remains in saved evidence.
+**up to 20 named entries per page**; the complete API catalog stays in evidence.
 Absent or nonfinite values display as **unknown**, not zero. Exact-target dodge
 remains a visible no-hit verdict. The flat **Abilities / Record / Hide** controls
-sit inside the panel; the picker overlays those controls while open, intercepts
-background clicks, and stays clear of the protected **Cast / Stop** row below.
-The native Cast caption begins **Select ability**, then becomes **Cast: [name]**
-(with a shortened, UTF-8-safe name when necessary); the actual secure macro
-always uses the validated full ability name. Hide/reopen guards require the game
-to be outside secure combat. A read-only RIFT-Lab-2 screenshot of 0.2.1
-exposed tiny labels and a clipped Cast caption. The version 0.2.2 files are
-now installed and independently hash-verified in RIFT-Lab-2, with the original
-files backed up and no game input sent. Version 0.2.2 still requires a
-post-`/reloadui` screenshot and in-game picker-click verification before live
-UI qualification.
+sit inside the panel; the picker overlays them while open, intercepts background
+clicks, and stays clear of the protected **Cast / Stop** row below. The native
+Cast caption begins **Select ability**, then becomes **Cast: [name]** (shortened
+for display when necessary); the secure macro retains the validated full name.
+
+Version **0.2.3** adds the version to the HUD title using validated TOC
+metadata and prints a once-per-load teal-green General chat notification:
+**RiftReader2 Casting Readout v0.2.3 initialized.** A console failure uses a
+guarded colored-print fallback. Text labels are rendered at an explicit
+foreground layer, addressing the blank title/faint metric text in the
+read-only 0.2.2 post-reload screenshot. Present malformed ability costs
+fail closed. Saved evidence initialization now survives transient clock,
+ability-catalog and modern-API lookup failures; legacy mappings cannot be
+misreported as modern. Hide/reopen and secure macro protections are unchanged.
+All 0.2.3 files are installed and separately SHA-verified **in RIFT-Lab-2 only**,
+with a rollback backup and no game input. A new post-`/reloadui` screenshot
+and Joey's manual picker checks are still needed for live UI qualification.
 
 During the bounded recording, click the selected **Cast: [name]** button once
 after reviewing current readiness and the remaining recording time. Then use **Stop attack**

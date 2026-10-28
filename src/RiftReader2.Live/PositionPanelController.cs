@@ -138,13 +138,13 @@ public sealed class PositionPanelController : IDisposable
                 IsReading = true
             };
         }
-        Changed?.Invoke(readingState);
-
         NativePositionSamplesReport? report = null;
         string? failure = null;
         var canceled = false;
         try
         {
+            // A failing UI/journal subscriber must not strand physicalReadInFlight.
+            Changed?.Invoke(readingState);
             report = await read(session.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (session.IsCancellationRequested)

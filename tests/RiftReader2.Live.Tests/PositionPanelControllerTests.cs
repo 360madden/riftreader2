@@ -26,6 +26,36 @@ public sealed class PositionPanelControllerTests
     }
 
     [Fact]
+    public async Task ThrowingReadingSubscriberCannotWedgeLaterReads()
+    {
+        var calls = 0;
+        using var controller = new PositionPanelController(_ =>
+        {
+            calls++;
+            return Task.FromResult(Report(Identity(42, 100), 1, 2, 3));
+        });
+        var throwOnce = true;
+        controller.Changed += state =>
+        {
+            if (state.Status == "reading" && throwOnce)
+            {
+                throwOnce = false;
+                throw new IOException("journal temporarily unavailable");
+            }
+        };
+
+        await controller.ReadAsync();
+        Assert.Equal("unavailable", controller.State.Status);
+        Assert.False(controller.State.IsReading);
+        Assert.Equal(0, calls);
+
+        await controller.ReadAsync();
+        Assert.Equal(1, calls);
+        Assert.Equal("live", controller.State.Status);
+        Assert.False(controller.State.IsReading);
+    }
+
+    [Fact]
     public async Task ConcurrentReadIsIgnored()
     {
         var release = new TaskCompletionSource<NativePositionSamplesReport>(TaskCreationOptions.RunContinuationsAsynchronously);

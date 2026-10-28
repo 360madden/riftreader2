@@ -68,6 +68,30 @@ public sealed class MemoryDiscoveryCliTests
         Assert.Contains("identity was invalidated", error.ToString());
     }
 
+    [Theory]
+    [InlineData("partial")]
+    [InlineData("unavailable")]
+    public async Task SingleIncompleteContextSnapshotIsFailedWithoutAnalyzableBytes(string chunkStatus)
+    {
+        using var fixture = new SnapshotFixture();
+        var partialBytes = new byte[] { 0xAA };
+        var chunk = chunkStatus == "partial"
+            ? new NativeMemorySnapshotChunk("0x10000", 4, "partial", 1,
+                Convert.ToBase64String(partialBytes),
+                Convert.ToHexString(SHA256.HashData(partialBytes)), 299, "short read")
+            : new NativeMemorySnapshotChunk("0x10000", 4, "unavailable", 0,
+                null, null, 299, "not readable");
+        var snapshot = await fixture.WriteAsync("failed", "No complete context chunk", chunk);
+        var loaded = await NativeMemorySnapshotFile.LoadAsync(snapshot);
+        Assert.Equal("failed", loaded.File.Status);
+        Assert.Equal(chunkStatus, Assert.Single(loaded.File.Chunks).Status);
+        if (chunkStatus == "partial")
+            Assert.Equal(Convert.ToBase64String(partialBytes), loaded.File.Chunks[0].BytesBase64);
+        Assert.Empty(loaded.Snapshot.Segments);
+        Assert.Contains(loaded.CoverageWarnings,
+            warning => warning.Contains("overall status is 'failed'", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task PointerCandidatesUseModuleRvaAndExistingOutputIsPreserved()
     {

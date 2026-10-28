@@ -34,7 +34,7 @@ from scripts.nav_control_watchdog import bind_identity, resource_epoch
 from scripts.prepare_xyz_deployment import validate_profile
 from scripts.review_native_motion_pair import review
 from scripts.vm_console_native import collect_identity, process_identity, validate_config
-from scripts.vmware_guest_session import GuestSession, SessionError
+from scripts.vmware_guest_session import GuestSession, POWERSHELL, SessionError
 
 MAX_BYTES = 16 * 1024 * 1024
 SHA = re.compile(r'[A-F0-9]{64}\Z')
@@ -230,12 +230,31 @@ def unpack_phase(archive, claim, destination, phase):
     return len(members)
 
 
+def launch_phase_script(session, script_path, guest_output, phase, *, timeout=150):
+    """Execute a staged, hash-checked guest script with short vmrun arguments."""
+    expected = digest(script_path.read_bytes())
+    # The baseline capture requires guest_output to be absent until it starts.
+    # Use an existing out-of-band folder, never the output directory itself.
+    guest_script = (r'C:\Users\Public\Documents\RR2XYZ-' + phase + '-'
+                    + uuid.uuid4().hex + '.ps1')
+    session.run('copyFileFromHostToGuest', str(script_path.resolve()), guest_script, timeout=90)
+    escaped = guest_script.replace("'", "''")
+    check = ("$ErrorActionPreference='Stop';$p='" + escaped + "';"
+             "if((Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash -ne '"
+             + expected + "'){throw 'phase-script-hash-mismatch'}")
+    session.powershell(check, timeout=60)
+    session.run('runProgramInGuest', POWERSHELL, '-NoProfile', '-NonInteractive',
+                '-ExecutionPolicy', 'Bypass', '-File', guest_script, timeout=timeout)
+    return guest_script
+
+
 def collect_phase(session, guard, cfg, profile_sha, output, guest_output, phase):
     guard.status()
     script = phase_script(cfg, profile_sha, guard.target, guest_output, phase)
-    with (output / (phase + '.ps1')).open('x', encoding='utf-8') as f:
+    script_path = output / (phase + '.ps1')
+    with script_path.open('x', encoding='utf-8-sig') as f:
         f.write(script)
-    session.powershell(script, timeout=150)
+    launch_phase_script(session, script_path, guest_output, phase, timeout=150)
     receipt_path = output / (phase + '.receipt.json')
     session.copy_from_guest(guest_output + '\\' + phase + '.receipt.json', receipt_path)
     require(receipt_path.stat().st_size <= 16384, 'Receipt too large')

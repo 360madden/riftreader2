@@ -123,28 +123,40 @@ public sealed class WallMotionReplayAnalyzer
             var holdSeconds = (trial.KeyUpAtUtc - trial.KeyDownAtUtc).TotalSeconds;
             var actualX = after.X - before.X;
             var actualZ = after.Z - before.Z;
-            var actualMagnitude = Math.Sqrt((actualX * actualX) + (actualZ * actualZ));
+            var actualMagnitude = double.Hypot(actualX, actualZ);
+            if (!double.IsFinite(actualMagnitude))
+                throw new InvalidDataException($"Trial '{trial.Phase}' has nonfinite realized displacement.");
             if (actualMagnitude == 0)
                 throw new InvalidDataException($"Trial '{trial.Phase}' has zero realized displacement.");
             var projectedXPerSecond = Median(projectionX);
             var projectedZPerSecond = Median(projectionZ);
-            var projectionMagnitude = Math.Sqrt((projectedXPerSecond * projectedXPerSecond) + (projectedZPerSecond * projectedZPerSecond));
+            var projectionMagnitude = double.Hypot(projectedXPerSecond, projectedZPerSecond);
+            if (!double.IsFinite(projectionMagnitude))
+                throw new InvalidDataException($"Trial '{trial.Phase}' has nonfinite projection magnitude.");
             if (projectionMagnitude == 0)
                 throw new InvalidDataException($"Trial '{trial.Phase}' has a zero projection vector.");
             var projectedX = projectedXPerSecond * holdSeconds;
             var projectedZ = projectedZPerSecond * holdSeconds;
-            var dot = ((actualX * projectedX) + (actualZ * projectedZ))
-                / (actualMagnitude * Math.Sqrt((projectedX * projectedX) + (projectedZ * projectedZ)));
+            var projectedMagnitude = double.Hypot(projectedX, projectedZ);
+            if (!double.IsFinite(projectedMagnitude) || projectedMagnitude == 0)
+                throw new InvalidDataException($"Trial '{trial.Phase}' has an invalid projected displacement.");
+            // Normalize before computing the dot product: raw vector products overflow
+            // for legitimate large finite coordinates even when their angle is zero.
+            var dot = (actualX / actualMagnitude) * (projectedX / projectedMagnitude)
+                + (actualZ / actualMagnitude) * (projectedZ / projectedMagnitude);
             var directionError = Math.Acos(Math.Clamp(dot, -1, 1)) * (180 / Math.PI);
             var errorX = projectedX - actualX;
             var errorZ = projectedZ - actualZ;
-            var vectorError = Math.Sqrt((errorX * errorX) + (errorZ * errorZ)) / actualMagnitude;
+            var vectorError = double.Hypot(errorX, errorZ) / actualMagnitude;
+            var actualSpeed = actualMagnitude / holdSeconds;
+            if (!double.IsFinite(directionError) || !double.IsFinite(vectorError) || !double.IsFinite(actualSpeed))
+                throw new InvalidDataException($"Trial '{trial.Phase}' has nonfinite derived motion.");
             var classification = trial.Role == "free-travel"
                 ? directionError <= options.FreeTravelMaxDirectionErrorDegrees
                     && vectorError <= options.FreeTravelMaxVectorErrorFraction
                         ? "free-travel-plausible"
                         : "free-travel-disagreement"
-                : projectedZ * actualZ < 0
+                : projectedZ != 0 && actualZ != 0 && Math.Sign(projectedZ) != Math.Sign(actualZ)
                     && directionError >= options.WallMinDirectionErrorDegrees
                     && vectorError >= options.WallMinVectorErrorFraction
                         ? "decisive-wall-disagreement"
@@ -163,7 +175,7 @@ public sealed class WallMotionReplayAnalyzer
                 maximumProjectionGap,
                 holdSeconds * 1000,
                 [actualX, actualZ],
-                actualMagnitude / holdSeconds,
+                actualSpeed,
                 [projectedXPerSecond, projectedZPerSecond],
                 projectionMagnitude,
                 [projectedX, projectedZ],

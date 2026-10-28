@@ -24,6 +24,8 @@ ALLOWED_COMMANDS = frozenset({
     "copyFileFromHostToGuest",
 })
 POWERSHELL = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+# This vmrun build has crashed on large encoded argv; leave room for VM credentials.
+MAX_ENCODED_POWERSHELL_CHARS = 4096
 CRED_TYPE_GENERIC = 1
 CRED_PERSIST_LOCAL_MACHINE = 2
 CREDUI_FLAGS_DO_NOT_PERSIST = 0x00002
@@ -329,10 +331,12 @@ class GuestSession:
         return result.stdout
 
     def powershell(self, script: str, *, timeout: int = 150) -> str:
-        """Run a supplied PowerShell script without placing its text in argv."""
+        """Run only short scripts by encoded argv; stage larger scripts as files."""
         if not isinstance(script, str) or not script:
             raise SessionError("powershell-script-required")
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+        if len(encoded) > MAX_ENCODED_POWERSHELL_CHARS:
+            raise SessionError("guest-powershell-script-too-large")
         return self.run("runProgramInGuest", POWERSHELL, "-NoProfile",
                         "-NonInteractive", "-WindowStyle", "Hidden",
                         "-EncodedCommand", encoded, timeout=timeout)

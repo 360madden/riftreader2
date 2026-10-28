@@ -154,6 +154,13 @@ public sealed class PositionCandidateTests
             Assert.Equal(64, loaded.SourceSha256.Length);
             Assert.Equal("docs/validation/example.md", loaded.EvidenceReference);
 
+            var maximum = json.PadRight(8192, ' ');
+            await File.WriteAllTextAsync(path, maximum);
+            Assert.Equal(8192, new FileInfo(path).Length);
+            Assert.Equal(Profile, (await NativePositionProfileLoader.LoadAsync(path)).Profile);
+            await File.AppendAllTextAsync(path, " ");
+            await Assert.ThrowsAsync<InvalidDataException>(() => NativePositionProfileLoader.LoadAsync(path));
+
             await File.WriteAllTextAsync(path, json.Replace("\"schemaVersion\": 1",
                 "\"schemaVersion\": 1, \"unexpected\": true", StringComparison.Ordinal));
             await Assert.ThrowsAsync<JsonException>(() => NativePositionProfileLoader.LoadAsync(path));

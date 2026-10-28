@@ -120,6 +120,38 @@ class WorkflowTests(unittest.TestCase):
         encoded=other.split("FromBase64String('",1)[1].split("'",1)[0]
         self.assertEqual(settings['pointerRequest'],json.loads(base64.b64decode(encoded))['pointerRequest'])
 
+    def test_staged_phase_invokes_hash_check_and_short_file_command(self):
+        script = self.root / 'baseline.ps1'
+        script.write_text("Write-Output 'phase'\n", encoding='utf-8-sig')
+        guest = MagicMock()
+        with patch.object(workflow.uuid, 'uuid4', return_value=SimpleNamespace(hex='a' * 32)):
+            remote = workflow.launch_phase_script(
+                guest, script, r"C:\Lab\O'Brien", 'baseline', timeout=91)
+        first, second = guest.run.call_args_list
+        self.assertEqual('copyFileFromHostToGuest', first.args[0])
+        self.assertEqual(str(script.resolve()), first.args[1])
+        self.assertEqual(remote, first.args[2])
+        check = guest.powershell.call_args.args[0]
+        self.assertNotIn("O'Brien", check)
+        self.assertTrue(remote.startswith(r'C:\Users\Public\Documents\RR2XYZ-baseline-'))
+        self.assertNotIn(r"C:\Lab", remote)
+        self.assertIn(workflow.digest(script.read_bytes()), check)
+        self.assertEqual('runProgramInGuest', second.args[0])
+        self.assertEqual(workflow.POWERSHELL, second.args[1])
+        self.assertEqual('-File', second.args[-2])
+        self.assertEqual(remote, second.args[-1])
+        self.assertEqual(91, second.kwargs['timeout'])
+
+    def test_staged_phase_hash_check_failure_prevents_execution(self):
+        script = self.root / 'baseline.ps1'
+        script.write_text("Write-Output 'phase'\n", encoding='utf-8-sig')
+        guest = MagicMock()
+        guest.powershell.side_effect = workflow.SessionError('guest-script-hash-mismatch')
+        with self.assertRaisesRegex(workflow.SessionError, 'guest-script-hash-mismatch'):
+            workflow.launch_phase_script(guest, script, r'C:\Lab', 'baseline')
+        self.assertEqual(1, guest.run.call_count)
+        self.assertEqual('copyFileFromHostToGuest', guest.run.call_args.args[0])
+
     @unittest.skipUnless(os.name == 'nt', 'Windows PowerShell 5.1 compatibility fixture')
     def test_guest_packaging_fragment_runs_in_windows_powershell(self):
         phase = self.root/'baseline'

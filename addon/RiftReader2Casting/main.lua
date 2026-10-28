@@ -1,4 +1,13 @@
-local _, private = ...
+local addonInfo, private = ...
+local FALLBACK_VERSION = "0.2.3"
+local function versionFromMetadata(info)
+    local toc = type(info) == "table" and info.toc
+    local value = type(toc) == "table" and toc.Version
+    if type(value) == "string" and #value > 0 and #value <= 24 and
+        not string.find(value, "[^%w%.%-]") then return value end
+    return FALLBACK_VERSION
+end
+local addonVersion = versionFromMetadata(addonInfo)
 local model = private.Casting.New(Inspect)
 private.Instance = model
 local context = UI.CreateContext("RR2Casting")
@@ -27,6 +36,7 @@ local function block(name, parent, x, y, width, height, rgba)
 end
 local function label(name, parent, x, y, width, size, value, rgba)
     local frame = UI.CreateFrame("Text", name, parent)
+    frame:SetLayer(2) -- Keep text above opaque section/header backgrounds.
     frame:SetPoint("TOPLEFT", parent, "TOPLEFT", x, y)
     frame:SetWidth(width); frame:SetHeight(size + 8)
     frame:SetFontSize(size); frame:SetWordwrap(false)
@@ -72,7 +82,7 @@ panel:SetPoint("TOPLEFT", UIParent, "TOPLEFT", PX, PY)
 panel:SetWidth(PW); panel:SetHeight(PH); background(panel, colors.background)
 block("RR2CastingLeftAccent", panel, 0, 0, 4, PH, colors.accent)
 block("RR2CastingHeader", panel, 4, 0, PW - 4, 60, colors.header)
-label("RR2CastingTitle", panel, 16, 8, 315, 22, "RR2  /  CASTING", colors.text)
+label("RR2CastingTitle", panel, 16, 8, 330, 20, "RR2 CASTING  v" .. addonVersion, colors.text)
 label("RR2CastingSubtitle", panel, 17, 39, 470, 13, "MANUAL CAST  /  FACING & LOS UNVERIFIED", colors.muted)
 local sequenceText = label("RR2CastingSequence", panel, 355, 17, 170, 12, "SEQ --", colors.muted)
 block("RR2CastingStatusBackground", panel, 14, 66, 512, 53, colors.section)
@@ -109,7 +119,7 @@ label("RR2CastingPickerSubtitle", picker, 16, 43, 550, 13,
     "API catalog  /  supported click-to-cast types", colors.muted)
 local pageText = label("RR2CastingPage", picker, 260, 417, 190, 13, "PAGE 1 / 1", colors.muted)
 local choices, page, rows = {}, 1, {}
-local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = "0.2.2", trials = {}}
+local evidence = {schemaVersion = 1, source = "RIFT Lua API", addonVersion = addonVersion, trials = {}}
 local savedLoaded = false -- Preserve the persisted table until the load-end event has consumed it.
 -- Only a reviewed physical click may fire these secure macro buttons. Position
 -- them as a single action row just beneath the HUD, never as floating full-width bars.
@@ -258,6 +268,7 @@ local reasonLabels = {
     ["cast-or-channel-active"] = "A cast/channel is active",
     ["insufficient-or-unknown-power"] = "Insufficient/unknown Power",
     ["cast-state-unavailable"] = "Cast state unavailable",
+    ["invalid-ability-cost"] = "Ability cost data invalid",
     ["ability-unusable"] = "Ability is unavailable"
 }
 local function humanReason(reason)
@@ -350,6 +361,27 @@ if Event.Ability and Event.Ability.New and Event.Ability.New.Cooldown then
             "RR2 casting cooldown " .. name)
     end
 end
+local initializedNoticeSent = false
+local function announceInitialized()
+    if initializedNoticeSent then return end
+    initializedNoticeSent = true
+    local plain = "RiftReader2 Casting Readout v" .. addonVersion .. " initialized."
+    local colored = '<font color="#52E3BB">' .. plain .. '</font>'
+    local console = type(Command) == "table" and Command.Console
+    if type(console) == "table" and type(console.Display) == "function" then
+        local ok, accepted = pcall(console.Display, "general", true, colored, true)
+        if ok and accepted ~= false then return end
+    end
+    -- If the console API fails, retain a colored, best-effort chat fallback.
+    if type(print) == "function" then pcall(print, "|cff52E3BB" .. plain .. "|r") end
+end
+local addonLoadEnd = Event.Addon and Event.Addon.Load and Event.Addon.Load.End
+if addonLoadEnd then
+    pcall(Command.Event.Attach, addonLoadEnd, function(_, info)
+        local loadedId = type(info) == "table" and info.identifier or info
+        if loadedId == "RiftReader2Casting" then announceInitialized() end
+    end, "RR2 casting initialized")
+end
 Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
     if id ~= "RiftReader2Casting" or savedLoaded then return end
     local prior = RiftReader2CastingEvidence
@@ -370,12 +402,20 @@ Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
         -- Read-only API reconciliation of retained raw combat IDs. Historical
         -- trial verdicts remain untouched; this records what the current API says.
         evidence.abilityMappings = {}
+        local abilityApi = type(Inspect) == "table" and type(Inspect.Ability) == "table"
+            and Inspect.Ability or {}
+        local newApi = type(abilityApi.New) == "table" and abilityApi.New or {}
         for _, trial in ipairs(evidence.previousTrials) do
             for _, event in ipairs(type(trial.events) == "table" and trial.events or {}) do
                 if type(event) == "table" and type(event.ability)=="string" and not evidence.abilityMappings[event.ability] then
                     local item = {}
                     for _, name in ipairs({"New", "Legacy"}) do
-                        local fn = name == "New" and Inspect.Ability.New.Detail or Inspect.Ability.Detail
+                        local fn
+                        if name == "New" then
+                            fn = newApi.Detail
+                        else
+                            fn = abilityApi.Detail
+                        end
                         if type(fn)=="function" then
                             local ok, detail = pcall(fn, event.ability)
                             if ok and type(detail)=="table" then
@@ -388,9 +428,25 @@ Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
             end
         end
     end
-    evidence.loadedAt = Inspect.Time.Frame()
-    evidence.abilities = model:Abilities()
+    local loadWarnings = {}
+    local clockOk, loadedAt = pcall(function()
+        return Inspect.Time.Frame()
+    end)
+    if clockOk and finite(loadedAt) then
+        evidence.loadedAt = loadedAt
+    else
+        loadWarnings[#loadWarnings + 1] = "frame-clock-unavailable"
+    end
+    local listOk, list = pcall(model.Abilities, model)
+    if listOk and type(list) == "table" then
+        evidence.abilities = list
+    else
+        evidence.abilities = {}
+        loadWarnings[#loadWarnings + 1] = "ability-catalog-unavailable"
+    end
+    if #loadWarnings > 0 then evidence.loadWarnings = loadWarnings end
     savedLoaded = true
     RiftReader2CastingEvidence = evidence
+    announceInitialized()
 end, "RR2 casting saved evidence")
 table.insert(Command.Slash.Register("rr2cast"), {function() setPanelVisible(true) end, "RiftReader2Casting", "Show casting readout"})

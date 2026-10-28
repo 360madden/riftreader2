@@ -2,29 +2,44 @@
 
 Updated: 2026-10-28 (America/New_York).
 
-**Casting HUD 0.2.2 — DEPLOYED/HASH-VERIFIED IN LAB-2; LIVE UI PENDING:**
-An October 28 read-only RIFT-Lab-2 screenshot of 0.2.1 showed undersized
-text and a clipped native Cast caption (stable VM identity, `inputSent=false`):
-`artifacts/rr2-lab2-hud-capture-20261028-01/`. Version 0.2.2 enlarges the HUD,
-shows 20 abilities per picker page, keeps that overlay off the secure action
-row, improves native Cast/Stop captions, and guards SavedVariables load order.
-Independent source gates passed: 514 .NET tests, 870 Python tests (two skipped;
-48 focused casting tests), 108 addon contracts and 11+11 real cases, Release
-build, formatting, native publish, 636 relative doc links, and diff whitespace.
-The combined `scripts/validate.ps1` wrapper was not executable through
-Workbridge, so only these separately successful checks are claimed.
-Two installation attempts stopped safely, including a VMware `vmrun`
-`(host-67852) Buffer too small` error on an oversized encoded guest command.
-A new short-command, SHA-verified guest-script workflow then installed the
-exact 0.2.2 `main.lua` and `RiftAddon.toc` plus unchanged `model.lua` in
-**RIFT-Lab-2 only**. Installation and separate postflight both matched all
-three reviewed hashes; rollback was unnecessary. Guest RIFT PID 2700, executable
-hash and process start epoch stayed stable; prior 0.2.1 files remain in a
-hash-verified guest backup. Evidence:
-`artifacts/rr2-lab2-hud-deploy-20261028-02/` (run
-`1dad0497769a43f5abdc4233d11d3506`). No game input or Lab-1 operation.
-**Still pending:** Joey's in-game `/reloadui`, `/rr2cast`, picker interaction,
-and a new screenshot. Installed file hashes do not prove the live UI layout.
+**Casting HUD 0.2.3 — DEPLOYED/HASH-VERIFIED IN RIFT-LAB-2; LIVE VISUAL CHECK PENDING:**
+Joey's post-`/reloadui` read-only capture of 0.2.2 confirmed the larger native
+`Select ability` button but revealed a blank header and faint metric text.
+RIFT's installed UI docs state same-layer sibling draw order is undefined.
+Version 0.2.3 puts text on a foreground layer, derives the HUD title version
+from the validated addon TOC metadata, and announces initialization once in
+teal-green General chat (with a guarded fallback). Malformed ability costs
+now block readiness; SavedVariables load tolerates clock/catalog failures
+and absent modern ability APIs without losing historical provenance.
+The earlier 0.2.2 picker, spacing, protected Cast/Stop controls and
+manual-only casting behavior remain intact.
+
+All three 0.2.3 files were installed **only in RIFT-Lab-2** through the cached
+authenticated VMware Tools route, first via
+`artifacts/rr2-lab2-hud-deploy-20261028-03/`, then with the final startup
+hardening via `artifacts/rr2-lab2-hud-deploy-20261028-04/`.
+The final preflight, backup, installation and separate postflight verified
+all source/guest SHA-256 hashes, the exact Lab-2 VM identity and unchanged
+game PID 2700/process epoch. No input was sent; rollback was not needed;
+a verified guest backup remains. The **installed files alone do not verify
+visible layout or chat color**: Joey must perform another `/reloadui` and
+the team must inspect a read-only screenshot, then manually check picker
+selection/interception and the secure button row.
+
+**Repo-wide October 28 bug hunt:** parallel audits reviewed addon Lua,
+native capture, reader/live state, desktop tooling and tests. Confirmed
+issues fixed in source include VMware PowerShell argument limits, staged
+XYZ execution without pre-creating its capture directory, truthful launcher
+maintenance outcomes, an exception-safe position-read gate, finite wall-motion
+math, bounded profile file reads and incomplete native scout snapshot status.
+Independent gates passed: 519 .NET tests, 886 Python tests (2 skipped; 57
+focused Casting tests), 108 Lua checks + 22 real-Lua/C# cases, Release build
+and formatting, native publish, deterministic CLI replay, 637 relative links
+and diff whitespace. See the [full bug-hunt findings](validation/rr2-bughunt-2026-10-28.md).
+The combined `scripts/validate.ps1` launcher was unavailable via Workbridge;
+these were separate checks. Lower-priority open work includes a
+maintenance-queue acquisition race, failed typed-scout staging cleanup,
+stationary wall-contact semantics and live visual/picker qualification.
 
 **Casting HUD 0.2.1 — PREVIOUSLY DEPLOYED TO LAB-2 (HISTORICAL):**
 Replaced the dense one-text-block panel shown in Joey's screenshot with a readable
@@ -44,8 +59,9 @@ RIFT PID 10672, start 2026-10-28T01:25:39Z, new executable SHA
 Previous files were hash-verified in a guest Public Documents backup; temporary
 staging files were removed. Receipts: `artifacts/casting-lab2-ui-20261028-01/`.
 That installation involved no game input, reload, restart or screenshot at
-the time. The October 28 read-only capture above later provided the 0.2.1
-visual baseline. Version 0.2.2 still needs its own post-reload live UI check.
+the time. An October 28 read-only capture later provided the 0.2.1
+visual baseline. A subsequent 0.2.2 post-reload capture showed the new Cast
+caption but revealed blank/dim labels, motivating 0.2.3 foreground layering.
 
 **RIFT EXECUTABLE UPDATED — LAB-2 LUA SOURCE RECOVERED, NATIVE FIELDS PENDING:**
 Lab-2 runs the October 27 `rift_x64.exe` with a new SHA-256. The current

@@ -45,6 +45,16 @@ class GuestSessionTests(unittest.TestCase):
         self.assertNotIn("hello", " ".join(argv))
         self.assertEqual(options["timeout"], 150)
 
+    def test_large_powershell_script_fails_closed_before_vmrun(self):
+        calls = []
+        def runner(argv, **_kwargs):
+            calls.append(argv)
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        with self.make(runner) as guest:
+            with self.assertRaisesRegex(session.SessionError, "guest-powershell-script-too-large"):
+                guest.powershell("Write-Output x\n" * 500)
+        self.assertEqual([], calls)
+
     def test_secrets_are_not_in_sanitized_failure_or_retained_after_close(self):
         def runner(_argv, **_kwargs):
             return subprocess.CompletedProcess([], 9, "process list secret", "password secret")

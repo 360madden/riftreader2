@@ -4,12 +4,112 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 import zipfile
 
+from scripts import guest_agent_launcher as launcher
 from scripts.prepare_guest_agent import prepare
 
 
 class GuestAgentLauncherTests(unittest.TestCase):
+    def test_maintenance_failure_never_reports_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            queue = MagicMock()
+            queue.status.return_value = {'resources': [{'name': 'vm:test', 'epoch': 'epoch'}]}
+            queue.dispatch.return_value = {'request_id': 'agent-maintenance-' + 'a' * 12,
+                                           'token': 'mock-token'}
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4', return_value=SimpleNamespace(hex='a' * 32))):
+                with self.assertRaisesRegex(RuntimeError, 'guest-copy-failed'):
+                    with launcher.maintenance_lease(guard, output):
+                        raise RuntimeError('guest-copy-failed')
+            self.assertEqual('failed', queue.finish.call_args.args[2])
+            self.assertIn('failed', queue.finish.call_args.args[3][0])
+            record = json.loads((output / 'maintenance.json').read_text())
+            self.assertEqual('failed', record['operationStatus'])
+            self.assertEqual('released', record['outcome'])
+
+    def test_maintenance_success_still_reports_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            queue = MagicMock()
+            queue.status.return_value = {'resources': [{'name': 'vm:test', 'epoch': 'epoch'}]}
+            queue.dispatch.return_value = {'request_id': 'agent-maintenance-' + 'b' * 12,
+                                           'token': 'mock-token'}
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4', return_value=SimpleNamespace(hex='b' * 32))):
+                with launcher.maintenance_lease(guard, output):
+                    pass
+            self.assertEqual('succeeded', queue.finish.call_args.args[2])
+            self.assertEqual('succeeded', json.loads(
+                (output / 'maintenance.json').read_text())['operationStatus'])
+
+    def test_maintenance_reported_failure_records_failed_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            guard = SimpleNamespace(plan={'database': 'queue.json', 'resource': 'vm:test'})
+            queue = MagicMock()
+            queue.status.return_value = {
+                'resources': [{'name': 'vm:test', 'epoch': 'epoch'}],
+                'requests': [],
+            }
+            queue.dispatch.return_value = {
+                'request_id': 'agent-maintenance-' + 'c' * 12, 'token': 'mock-token',
+            }
+            with (patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher.uuid, 'uuid4',
+                               return_value=SimpleNamespace(hex='c' * 32))):
+                with launcher.maintenance_lease(guard, output) as verdict:
+                    verdict['succeeded'] = False
+            self.assertEqual('failed', queue.finish.call_args.args[2])
+            self.assertEqual('failed', json.loads(
+                (output / 'maintenance.json').read_text())['operationStatus'])
+
+    def test_run_guest_failure_retains_false_result_and_failed_lease(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'launcher-run'
+            guard = MagicMock()
+            guard.plan = {'database': 'queue.json', 'resource': 'vm:test'}
+            guard.status.return_value = {'guest': {'gracefulShutdownVersion': 1}}
+            guard.client.request.return_value = {'status': 'stopped'}
+            queue = MagicMock()
+            queue.status.return_value = {
+                'resources': [{'name': 'vm:test', 'epoch': 'epoch',
+                               'blocked': False, 'holder': None}],
+                'requests': [],
+            }
+            queue.dispatch.return_value = {
+                'request_id': 'agent-maintenance-' + 'd' * 12, 'token': 'mock-token',
+            }
+            guest = MagicMock()
+
+            def fake_copy(_, destination):
+                if destination.name == 'result.json':
+                    destination.write_text(json.dumps({'id': 'd' * 32, 'success': False}))
+                else:
+                    destination.write_text('{}')
+
+            guest.copy_from_guest.side_effect = fake_copy
+            with (patch.object(launcher.w, 'read_config',
+                               return_value=({'vmrun': 'vmrun.exe'}, {}, None)),
+                  patch.object(launcher.w, 'HostGuard', return_value=guard),
+                  patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher, 'GuestSession') as session,
+                  patch.object(launcher.uuid, 'uuid4',
+                               return_value=SimpleNamespace(hex='d' * 32))):
+                session.return_value.__enter__.return_value = guest
+                result = launcher.run(
+                    'unused-config', output,
+                    r'C:\RIFT_TRANSFER\RiftReader2Control\managed', 'restart')
+            self.assertFalse(result['success'])
+            self.assertEqual('failed', queue.finish.call_args.args[2])
+            self.assertEqual('failed', json.loads(
+                (output / 'maintenance.json').read_text())['operationStatus'])
+
     def test_bundle_has_short_entrypoints_and_pinned_release(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); exe = root / 'fake.exe'; exe.write_bytes(b'offline fixture only')
