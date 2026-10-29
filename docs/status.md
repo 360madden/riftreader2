@@ -2,6 +2,19 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Native Codex device connections - GUEST HOSTS CONNECTED; PAIRING PENDING:**
+Both guest native managed daemons were freshly checked at 10:47 EDT: exit 0,
+`connected`, `alreadyRunning`; daemon-version queries returned `running`.
+Normal signed-in Explorer launches resolved GuestOps elevation and scheduled
+task process-lifetime restrictions. Both remain running with distinct native
+environment IDs despite cloned Windows names. No SSH, pairing codes, RIFT input
+or VM/game restart. Main-PC controller authorization, pairing and per-guest
+execution acceptance remain outstanding. The uploaded `Allow devices to
+control this computer?` error belongs to the host setup flow; controller setup
+uses `Control other devices` and `Authorize on chatgpt.com`. The screenshot's
+generic failure has no classified current native-log cause. See the
+[checkpoint and remaining acceptance](validation/native-codex-remote-2026-10-29.md).
+
 **Guest Codex project workflows - IMPLEMENTED AND VERIFIED IN BOTH LABS:**
 Use `python scripts/lab_codex.py` for `doctor`, `dispatch`, `status`, `collect`,
 `cancel`, `run` and `batch`. The ignored `.local/lab-codex.json` is configured
