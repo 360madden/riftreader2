@@ -11,7 +11,8 @@ topic below instead of loading every document for each task.
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
 | Planning | [Bidirectional hybrid prompt and two-lab roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md) | Saved implementation prompt; both labs authorized for parallel discovery/validation; return-channel feasibility first. |
 | Planning | [Two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md) | Fresh VM/guest limits, ownership and first manual-feedback acceptance. |
-| Reference | [Manual external guidance](reference/addon-guidance.md) | Prepared lab/nonce-bound external calculations and expiring addon display; live acceptance pending. |
+| Reference | [Manual external guidance](reference/addon-guidance.md) | Lab/nonce-bound external calculations and expiring addon display; scoped live results in the two-lab hour report. |
+| Validation | [Two-lab live guidance hour](validation/two-lab-guidance-hour-2026-10-29.md) | Independent live return results, bounded movement, same-destination recalculation and remaining invalidation limits. |
 | Live XYZ workflow | [Repeatable CLI capture and guarded movement](reference/xyz-live-workflow.md) | One configured run, fresh screenshot review, comparison and evidence export. |
 | Guest operations | [Managed agent launcher](reference/guest-agent-launcher.md) | Hash-checked graceful updates and measured VMware file transfers; NAT unchanged. |
 | Real field catalog | [XYZ field knowledge](reference/xyz-field-catalog.md) | Exact-build meaning, locator and observed restart assessments; patch survival unqualified. |

@@ -2,6 +2,27 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Two-lab live guidance hour — ROUND TRIPS AND BOUNDED MOVEMENT VERIFIED:**
+Both labs accepted separate reader bindings and displayed independently calculated
+guidance using their own fresh game/reader/player identities. Lab-2 displayed a
+changed calculation to the same destination after a reviewed 150 ms backward
+pulse (5.00 to 5.62); Lab-1 reproduced this after a reviewed 150 ms forward pulse
+(5.00 to 5.99). Exact calculations and cleanup are recorded in the
+[hour report](validation/two-lab-guidance-hour-2026-10-29.md). Both pulses have
+delivery, release, API displacement and normal queue/host cleanup evidence.
+Movement-triggered invalidation remains unproved: result expiry preceded input.
+The helper now uses a strictly newer post-input receiver observation instead of
+a slow GuestOps recheck; one verified execution fell from 14.627 s to 2.347 s.
+A transient stale-receipt follow-up retains the four-second deadline and never
+retries input. Full gate: `20261029T194027Z-ab9a7a36` (540 .NET, 1,008 Python
+run/1,006 passed/2 skipped, 110 Lua, 22 shared cases, two synthetic round trips).
+Native lab Codex chats supplied guest-local checks and cross-lab arithmetic
+reviews via the main coordinator. The live receiver was reused serially;
+simultaneous live collection is not established by this experiment.
+Both bounded readers subsequently terminated and the temporary receiver was
+stopped. Final control hosts remain connected/ready, disarmed and idle, with no
+held desktop inputs or queue holders; see the report's final cleanup evidence.
+
 **Native Codex pipeline collaboration - OFFLINE BOUNDARIES VERIFIED:** Lab-1
 traced installed observation production, Lab-2 traced guidance acceptance and
 invalidation, and the coordinator relayed a cross-review. The resulting

@@ -1,9 +1,11 @@
 # Manual external guidance
 
-This prepared slice adds ordinary addon information exchange. Live delivery and
-current-client UI behavior must pass the
-[two-lab acceptance](../planning/bidirectional-feasibility-2026-10-28.md) before
-being called verified. It implements no gameplay actions.
+This slice adds ordinary addon information exchange. Separate live return
+results and recalculation after bounded movement were verified on both labs in
+the [October 29 trial](../validation/two-lab-guidance-hour-2026-10-29.md).
+Movement-triggered invalidation remains unproved in the live client; see the
+[acceptance boundaries](../planning/bidirectional-feasibility-2026-10-28.md).
+The guidance channel implements no gameplay actions.
 
 ## Bind and calculate
 
@@ -119,7 +121,18 @@ snapshot, report and command evidence before typing. Immediately before input,
 the stream must still be continuous, position must be within 0.5 of the actual
 calculation source, and effective source age—including the 250 ms clock-skew
 allowance—must remain below eight seconds. The Lua ten-second limit is not
-relaxed. The slow exact guest game check runs after Enter.
+relaxed.
+
+After Enter and input release, fast result delivery waits at most four seconds
+for a strictly newer pinned receiver observation. Its host receipt time must
+follow completed input, and its guest capture time must be at least 250 ms
+later to conservatively account for clock skew. Receiver ownership, reader and
+target identity, continuity, origin and freshness checks still apply. Only a
+transient stale-receipt rejection is retried within that deadline; input is
+never retried. Exact accepted receipt bytes and their hash are retained, then
+the VM identity is checked again. Normal bind/status operations retain the
+GuestOps identity checks. A blocked post-check can follow already-delivered
+input: inspect the execution flags and screenshot before deciding any next step.
 
 Reader PID/start/hash in the fast source pin are a reviewed startup attestation,
 not facts proved by the HTTP receipt. The live receipt independently proves its
