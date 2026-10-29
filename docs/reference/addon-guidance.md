@@ -56,6 +56,15 @@ The receiver cannot continuously refresh distance without new delivered results.
 
 ## Reviewed VM-console delivery helper
 
+For installations under OneDrive, verify that each TOC-listed Lua file is
+locally readable. On October 29, Lab-1's TOC and five other core files matched
+the repository, but `guidance.lua` was an unreadable cloud placeholder. That
+caused `main.lua:6` to index a nil `Guidance` module. Preserving the placeholder,
+replacing it with the hash-verified file, and pinning that file locally restored
+loading. Validate all six installed hashes, reload, then require a successful
+`/rr2guide status` response; the package version alone does not prove readable
+installed contents. Keep any previous unreadable file as recovery evidence.
+
 `scripts/addon_command_console.py` is the bounded VNC delivery path for the two
 labs. It is not a general console controller. Every operation uses a new output
 directory, exact VM identity and pinned game identity, the shared controller mutex, a screenshot,

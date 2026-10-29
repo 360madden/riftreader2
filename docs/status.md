@@ -2,6 +2,23 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Lab-1 Guidance load error - REPAIRED AND VERIFIED LIVE:**
+The user's current screenshot showed `main.lua:6` indexing nil `Guidance`.
+Installed TOC and five readable core files matched source; `guidance.lua` was
+an unreadable OneDrive placeholder: Windows reported the cloud file provider
+was not running. The placeholder was preserved under a unique backup name,
+the exact repository guidance file installed and locally pinned, and all six
+installed core hashes verified. No Lua fallback or source change was needed.
+After the user reserved idle Lab-1, a guarded UI reload completed without the
+error popup. `/rr2guide status` responded **RR2 GUIDANCE UNBOUND** plus its bind
+instruction, proving the module and slash handler loaded. This is load/status
+recovery, not a Lab-1 external guidance round trip. VM epoch stayed 68572;
+current RIFT PID/start is `8388 / 639288504643259710`, same `1935...A4BE8` build.
+Evidence: `artifacts/lab1-guidance-repair-20261029/`,
+`artifacts/lab1-guidance-file-metadata-20261029/`, and
+`artifacts/lab1-guidance-status-20261029-01/`. Input cleanup passed; RIFT remains
+in world. Ordinary Casting/Readiness panels were hidden for command entry.
+
 **Multi-VM control host - PREFLIGHT ADDED; LIVE MIGRATION PENDING:**
 The user requested resolving control-host operation for two or more VMs and
 asked about four/five discovery labs. Existing hosts isolate one VM per process;
