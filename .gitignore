@@ -4,6 +4,7 @@
 
 # Local tool state and environment files.
 /.local/
+/.worktrees/
 .env
 .env.*
 !.env.example
