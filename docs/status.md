@@ -2,6 +2,14 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Native Codex addon inventory - LAB-1 FOLLOW-UP NEEDED:** At 17:37 UTC both
+guest chats independently reported their Windows identities and no RIFT process.
+Lab-2's installed TOC, guidance.lua and main.lua matched the main checkout at
+`d9760e7`. Lab-1's TOC and main.lua matched, but its guidance.lua had a recall
+attribute and was intentionally not opened or hashed. This is not a verified
+read failure or proof of loaded addon state. See the
+[native inventory](validation/native-codex-addon-inventory-2026-10-29.md).
+
 **Browser Workbridge guest probe - BOTH LABS PASSED:** Normal ChatGPT in the
 in-app browser launched two overlapping Workbridge jobs that independently
 listed guest processes through VMware GuestOps, without invoking guest Codex.
