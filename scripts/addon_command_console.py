@@ -582,7 +582,15 @@ def _post_input_receipt(pin: dict, source: dict, input_sent_at: datetime,
     input_sent_at = input_sent_at.astimezone(timezone.utc)
     deadline = time.monotonic() + timeout_seconds
     while True:
-        current, data, gate = _fast_receipt(pin, initial=False)
+        try:
+            current, data, gate = _fast_receipt(pin, initial=False)
+        except Blocked as error:
+            if str(error) != "live-receipt-not-fresh":
+                raise
+            if time.monotonic() >= deadline:
+                _fail("post-input-receipt-timeout")
+            time.sleep(0.05)
+            continue
         current_outer = current["observation"].get("sequence")
         received = _parse_time(current["receivedAtUtc"])
         captured = _parse_time(current["observation"]["capturedAtUtc"])

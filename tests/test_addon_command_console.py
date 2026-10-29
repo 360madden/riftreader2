@@ -476,9 +476,33 @@ class FastResultTests(unittest.TestCase):
             source["observation"]["capturedAtUtc"] = (sent - timedelta(milliseconds=100)).isoformat()
             current = self.post_receipt(source, sent)
             data = json.dumps(current).encode()
-            with mock.patch.object(module, "_fast_receipt", return_value=(current, data, {"status": "fresh"})):
-                actual, actual_bytes, gate = module._post_input_receipt(pin, source, sent, 0)
+            with mock.patch.object(module, "_fast_receipt", side_effect=[
+                    module.Blocked("live-receipt-not-fresh"),
+                    (current, data, {"status": "fresh"}),
+            ]), mock.patch.object(module.time, "sleep"):
+                actual, actual_bytes, gate = module._post_input_receipt(pin, source, sent, 1)
             self.assertEqual((current, data, "fresh"), (actual, actual_bytes, gate["status"]))
+
+    def test_post_input_receipt_stale_until_deadline_times_out(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, source, _ = self.fixture(folder)
+            sent = datetime.now(timezone.utc) - timedelta(milliseconds=500)
+            source["observation"]["capturedAtUtc"] = (sent - timedelta(milliseconds=100)).isoformat()
+            with mock.patch.object(module, "_fast_receipt",
+                                   side_effect=module.Blocked("live-receipt-not-fresh")), \
+                    self.assertRaisesRegex(module.Blocked, "post-input-receipt-timeout"):
+                module._post_input_receipt(pin, source, sent, 0)
+
+    def test_post_input_receipt_identity_failure_is_immediate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, source, _ = self.fixture(folder)
+            sent = datetime.now(timezone.utc) - timedelta(milliseconds=500)
+            source["observation"]["capturedAtUtc"] = (sent - timedelta(milliseconds=100)).isoformat()
+            with mock.patch.object(module, "_fast_receipt",
+                                   side_effect=module.Blocked("live-target-identity-mismatch")) as read, \
+                    self.assertRaisesRegex(module.Blocked, "live-target-identity-mismatch"):
+                module._post_input_receipt(pin, source, sent, 4)
+            read.assert_called_once_with(pin, initial=False)
 
     def test_post_input_receipt_rejects_nonadvancing_or_preinput_evidence(self):
         with tempfile.TemporaryDirectory() as folder:
