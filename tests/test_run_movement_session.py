@@ -1,0 +1,316 @@
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+from scripts.run_movement_session import (
+    MovementSessionError, _require_feedback_target, execute_armed_session, sha,
+    validate_session_pins,
+)
+
+
+NOW = datetime(2026, 10, 29, 20, 0, tzinfo=timezone.utc)
+GAME_TARGET = {"processId": 111, "processStartUtcTicks": 222,
+               "executableSha256": "C" * 64}
+
+
+class Sample:
+    def __init__(self, x, y, z, sequence):
+        self.xyz = (x, y, z); self.sequence = sequence
+    def to_dict(self):
+        return {"xyz": {"x": self.xyz[0], "y": self.xyz[1], "z": self.xyz[2]},
+                "outerSequence": self.sequence, "lab": "lab1", "player": "unit-1",
+                "addonEpoch": 7, "sourceAddress": "192.168.56.128",
+                "readerProcessId": 333, "readerProcessStartUtcTicks": 444,
+                "readerExecutableSha256": "D" * 64, "readerInstance": "reader-1",
+                "readerNonce": "nonce-1", "receiverInstance": "receiver-1",
+                "target": dict(GAME_TARGET)}
+
+
+def sample_identity():
+    value = Sample(0, 0, 0, 1).to_dict()
+    return {key: value[key] for key in (
+        "lab", "player", "addonEpoch", "sourceAddress", "readerProcessId",
+        "readerProcessStartUtcTicks", "readerExecutableSha256", "readerInstance",
+        "readerNonce", "receiverInstance", "target")}
+
+
+def profile_document():
+    return {"schemaVersion": 1, "evidenceKind": "empirical-movement-calibration/1",
+            "mode": "calibration", "status": "calibrated", "normalizedCross": 1.0,
+            "calibrationKeys": ["w", "q"], "calibrationIdentity": sample_identity(),
+            "calibrations": {
+                "w": {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
+                      "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                      "vertical_displacement": 0},
+                "q": {"key": "q", "dx_per_ms": 0, "dz_per_ms": .005,
+                      "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                      "vertical_displacement": 0}}}
+
+
+class Feedback:
+    def __init__(self, samples, failure=None):
+        self.samples = iter(samples); self.failure = failure; self.waits = 0; self.next_waits = 0
+    def read(self, _label): return next(self.samples)
+    def wait_after(self, _completed, _prior, timeout_seconds=3.0):
+        self.waits += 1
+        if self.failure is not None: raise self.failure
+        return next(self.samples)
+    def wait_next(self, _prior, timeout_seconds=3.0):
+        self.next_waits += 1
+        if self.failure is not None: raise self.failure
+        return next(self.samples)
+
+
+class Lease:
+    def __init__(self, fail_check=None):
+        self.checks = 0; self.heartbeats = 0; self.finishes = []; self.fail_check = fail_check
+    def check(self):
+        self.checks += 1
+        if self.fail_check == self.checks: raise RuntimeError("lease lost")
+    def heartbeat(self): self.heartbeats += 1
+    def finish(self, outcome, evidence): self.finishes.append((outcome, evidence))
+
+
+class Host:
+    def __init__(self, ambiguous=False, arm_expired=False, stop_fails=False):
+        self.ambiguous = ambiguous; self.arm_expired = arm_expired
+        self.stop_fails = stop_fails
+        self.arms = 0; self.actions = []; self.stops = 0
+    def status(self, require_armed=None, **_kwargs):
+        if require_armed and self.arm_expired: raise RuntimeError("arm expired")
+        return {"guest": {"busy": False, "armed": bool(require_armed),
+                          "recoveryRequired": False, "desktopInputsDown": []}}
+    def arm(self, _capture, _note, output):
+        self.arms += 1; Path(output).write_text("private", encoding="utf-8")
+    def action(self, action, _output):
+        self.actions.append(action)
+        return {"result": {"deliverySucceeded": True,
+                            "releaseSucceeded": not self.ambiguous,
+                            "cancelled": False, "targetLost": False,
+                            "stateUncertain": self.ambiguous},
+                "recoveryRequired": self.ambiguous,
+                "completedAtUtc": NOW.isoformat()}
+    def stop(self):
+        self.stops += 1
+        return {"stopped": not self.stop_fails, "recoveryRequired": self.stop_fails}
+
+
+def session(mode, profile=None, goal=None, keys=("w", "q")):
+    return {"sessionId": "a" * 32, "sessionPlanSha256": "A" * 64,
+            "mode": mode, "capture": {"captureId": "c" * 32, "capture": "capture.json"},
+            "captureImageSha256": "B" * 64, "calibrationProfile": str(profile) if profile else None,
+            "goal": goal, "allowedKeys": list(keys), "target": dict(GAME_TARGET)}
+
+
+def review():
+    return {"schemaVersion": 1, "decision": "approve", "sessionId": "a" * 32,
+            "sessionPlanSha256": "A" * 64, "captureId": "c" * 32,
+            "captureImageSha256": "B" * 64, "note": "Reviewed bounded empty-world movement batch."}
+
+
+class MovementSessionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+
+    def test_calibration_arms_once_and_measures_only_reviewed_w_q(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2), Sample(.5, 0, .5, 3)])
+        result = execute_armed_session(session=session("calibration"), review=review(),
+            output=self.root / "run", host=host, lease=lease, feedback=feedback,
+            clock=lambda: 1.0, now=lambda: NOW)
+        self.assertTrue(result["success"]); self.assertEqual(result["status"], "calibrated")
+        self.assertEqual([a.key for a in host.actions], ["w", "q"])
+        self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_goal_run_uses_feedback_then_two_advancing_arrival_settles(self):
+        profile = self.root / "profile.json"
+        profile.write_text(json.dumps({"calibrations": {
+            "w": {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
+                  "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                  "vertical_displacement": 0},
+            "q": {"key": "q", "dx_per_ms": 0, "dz_per_ms": .005,
+                  "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                  "vertical_displacement": 0}},
+            "schemaVersion": 1, "evidenceKind": "empirical-movement-calibration/1",
+            "mode": "calibration", "status": "calibrated", "normalizedCross": 1.0,
+            "calibrationKeys": ["w", "q"], "calibrationIdentity": sample_identity()}),
+            encoding="utf-8")
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.75, 0, 0, 2),
+                             Sample(1.2, 0, 0, 3), Sample(1.2, 0, 0, 4)])
+        result = execute_armed_session(session=session("movement", profile,
+                    {"x": 1.2, "y": 0, "z": 0}), review=review(),
+                    output=self.root / "run", host=host, lease=lease, feedback=feedback,
+                    clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(result["status"], "arrived"); self.assertEqual(result["settles"], 1)
+        self.assertEqual(result["arrivalObservations"], 2); self.assertEqual(feedback.next_waits, 1)
+        self.assertEqual(len(host.actions), 2); self.assertEqual(result["feedbackIterations"], 2)
+        self.assertEqual(host.arms, 1)
+        self.assertEqual(host.stops, 1); self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_ambiguous_action_stops_fails_and_never_retries(self):
+        host, lease = Host(ambiguous=True), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "ambiguous"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "run", host=host, lease=lease, feedback=feedback,
+                clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(len(host.actions), 1); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_feedback_failure_stops_fails_and_never_retries(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1)], failure=RuntimeError("stale feedback"))
+        with self.assertRaisesRegex(RuntimeError, "stale feedback"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "run", host=host, lease=lease, feedback=feedback,
+                clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(len(host.actions), 1); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_arm_expiry_prevents_action_and_cleans_once(self):
+        host, lease = Host(arm_expired=True), Lease()
+        with self.assertRaisesRegex(RuntimeError, "arm expired"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "run", host=host, lease=lease,
+                feedback=Feedback([Sample(0, 0, 0, 1)]), clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.actions, []); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_queue_loss_prevents_action_and_cleans_once(self):
+        host, lease = Host(), Lease(fail_check=2)
+        with self.assertRaisesRegex(RuntimeError, "lease lost"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "run", host=host, lease=lease,
+                feedback=Feedback([Sample(0, 0, 0, 1)]), clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.actions, []); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_cleanup_failure_forces_failed_finish(self):
+        host, lease = Host(stop_fails=True), Lease()
+        with self.assertRaisesRegex(MovementSessionError, "STOP"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "run", host=host, lease=lease,
+                feedback=Feedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2),
+                                   Sample(.5, 0, .5, 3)]), clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_reduced_calibration_profile_is_rejected(self):
+        profile = self.root / "reduced.json"
+        profile.write_text(json.dumps({"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "normalizedCross": 1.0,
+            "calibrationKeys": ["w", "q"], "calibrations": {
+                "w": {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
+                      "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                      "vertical_displacement": 0}}}), encoding="utf-8")
+        host, lease = Host(), Lease()
+        with self.assertRaisesRegex(MovementSessionError, "reviewed key pair"):
+            execute_armed_session(session=session("movement", profile,
+                    {"x": 1, "y": 0, "z": 0}), review=review(), output=self.root / "run",
+                    host=host, lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.actions, []); self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_calibration_profile_mutation_breaks_session_pin(self):
+        files = []
+        for name in ("host-plan.json", "host-receipt.json", "feedback.json", "profile.json"):
+            path = self.root / name; path.write_text('{}', encoding="utf-8"); files.append(path)
+        pinned = {"mode": "movement", "hostPlan": str(files[0]), "hostPlanSha256": sha(files[0]),
+                  "hostReceipt": str(files[1]), "hostReceiptSha256": sha(files[1]),
+                  "feedbackPin": str(files[2]), "feedbackPinSha256": sha(files[2]),
+                  "calibrationProfile": str(files[3]), "calibrationProfileSha256": sha(files[3])}
+        files[3].write_text('{"changed":true}', encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "calibration profile changed"):
+            validate_session_pins(pinned)
+
+    def test_collinear_calibration_profile_is_rejected(self):
+        vector = {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
+                  "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                  "vertical_displacement": 0}
+        profile = self.root / "collinear.json"
+        profile.write_text(json.dumps({"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "normalizedCross": 0, "calibrationKeys": ["w", "q"],
+            "calibrationIdentity": sample_identity(),
+            "calibrations": {"w": vector, "q": {**vector, "key": "q"}}}), encoding="utf-8")
+        host, lease = Host(), Lease()
+        with self.assertRaisesRegex(ValueError, "collinear"):
+            execute_armed_session(session=session("movement", profile,
+                    {"x": 1, "y": 0, "z": 0}), review=review(), output=self.root / "run",
+                    host=host, lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.actions, []); self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_calibration_supports_reviewed_s_q_without_inferring_opposites(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(-.5, 0, 0, 2),
+                             Sample(-.5, 0, .5, 3)])
+        result = execute_armed_session(session=session("calibration", keys=("s", "q")),
+            review=review(), output=self.root / "run", host=host, lease=lease,
+            feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual([action.key for action in host.actions], ["s", "q"])
+        self.assertEqual(result["calibrationKeys"], ["s", "q"])
+        self.assertEqual(set(result["calibrations"]), {"s", "q"})
+        self.assertNotIn("w", result["calibrations"])
+
+    def test_initial_in_tolerance_cannot_succeed_without_two_actions(self):
+        profile = self.root / "profile.json"
+        profile.write_text(json.dumps({"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "normalizedCross": 1.0, "calibrationKeys": ["w", "q"],
+            "calibrationIdentity": sample_identity(),
+            "calibrations": {
+                "w": {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
+                      "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                      "vertical_displacement": 0},
+                "q": {"key": "q", "dx_per_ms": 0, "dz_per_ms": .005,
+                      "calibration_hold_ms": 150, "horizontal_displacement": .75,
+                      "vertical_displacement": 0}}}), encoding="utf-8")
+        host, lease, feedback = Host(), Lease(), Feedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "two action"):
+            execute_armed_session(session=session("movement", profile, {"x": 0, "y": 0, "z": 0}),
+                review=review(), output=self.root / "run", host=host, lease=lease,
+                feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.actions, []); self.assertEqual(feedback.next_waits, 0)
+        self.assertEqual(host.stops, 1); self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_foreign_calibration_identity_is_rejected_before_arm(self):
+        profile = self.root / "foreign.json"
+        document = profile_document(); document["calibrationIdentity"]["lab"] = "lab2"
+        profile.write_text(json.dumps(document), encoding="utf-8")
+        host, lease = Host(), Lease()
+        with self.assertRaisesRegex(MovementSessionError, "identity differs"):
+            execute_armed_session(session=session("movement", profile,
+                    {"x": 1, "y": 0, "z": 0}), review=review(), output=self.root / "run",
+                    host=host, lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 0); self.assertEqual(host.actions, [])
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_feedback_pin_target_must_match_reviewed_guest_target(self):
+        pin = {"gameIdentity": dict(GAME_TARGET)}
+        _require_feedback_target({"target": dict(GAME_TARGET)}, pin)
+        pin["gameIdentity"]["processId"] = 999
+        with self.assertRaisesRegex(MovementSessionError, "another game process"):
+            _require_feedback_target({"target": dict(GAME_TARGET)}, pin)
+
+    def test_calibration_cannot_succeed_after_elapsed_budget(self):
+        ticks = iter((0.0, 0.0, 0.0, 0.0, 13.0))
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2),
+                             Sample(.5, 0, .5, 3)])
+        with self.assertRaisesRegex(MovementSessionError, "elapsed budget"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "run", host=host, lease=lease, feedback=feedback,
+                clock=lambda: next(ticks), now=lambda: NOW)
+        self.assertEqual(len(host.actions), 2); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+
+if __name__ == "__main__":
+    unittest.main()

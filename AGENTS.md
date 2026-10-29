@@ -67,6 +67,23 @@ It does not expand into arbitrary Lua/macros, protected clicks, unrestricted
 gameplay automation or previously deferred research. Keep direct ChatGPT Computer
 Use deferred; the authorized repository CLI/console-helper route remains available.
 
+## Automated movement trial — user decision, 2026-10-29
+
+After the two-lab guidance hour, Joey explicitly requested another two hours
+using both labs toward common goals, with maximum useful subagents, focused on
+"automated and reliable player movement." This authorizes implementing and
+testing bounded position-feedback movement in this repository; it supersedes
+the earlier deferral of that specific automation work for this trial.
+
+Use the existing reviewed capture, exact identity, queue lease, native arm and
+release contracts. A reviewed finite arm may contain multiple automatically
+chosen pulses driven by new independent position observations. Keep the current
+15-second arm boundary; do not silently re-arm. Calibrate actual key responses
+before using them, and stop on lost freshness, identity, control, progress or
+budget. Nearby waypoint trials do not establish general pathfinding, obstacle
+avoidance, combat automation or qualified native facing. The Computer Use and
+patch-recovery deferrals below remain in force.
+
 ## Current durability policy — user decision, 2026-10-25
 
 Prioritize durable collection that survives **fully exiting RIFT and launching
