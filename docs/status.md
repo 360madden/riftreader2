@@ -2,6 +2,15 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Native Codex complementary review - PASSED WITH LAB-1 FOLLOW-UP:** Both
+guest chats completed concurrent read-only tasks and a coordinator-relayed
+review. Lab-1 reported its guidance.lua offline/recall attributes despite a
+running OneDrive process; Lab-2 checked installed guidance freshness logic and
+the manifest/main startup dependency. These are disk/source observations, not
+a live game test. One passive wait briefly returned `Task host changed during
+passive read`; an exact-host read recovered the completed Lab-2 response. See
+[review](validation/native-codex-complementary-review-2026-10-29.md).
+
 **Native Codex addon inventory - LAB-1 FOLLOW-UP NEEDED:** At 17:37 UTC both
 guest chats independently reported their Windows identities and no RIFT process.
 Lab-2's installed TOC, guidance.lua and main.lua matched the main checkout at
