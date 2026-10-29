@@ -41,7 +41,7 @@ class IdentityParserTests(unittest.TestCase):
             )
             self.assertEqual(parsed, [vmx.resolve()])
 
-    def test_tcp_parser_returns_matching_listener_owners(self):
+    def test_tcp_parser_strict_default_returns_only_listen_state_owners(self):
         rows = [
             (2, "127.0.0.1", 5905, 39056),
             (5, "127.0.0.1", 5905, 99),
@@ -57,6 +57,15 @@ class IdentityParserTests(unittest.TestCase):
             console.parse_tcp_listener_rows(encoded, 5905),
             [("127.0.0.1", 39056)],
         )
+
+    def test_tcp_parser_listener_table_accepts_passive_state_metadata(self):
+        address = struct.unpack("<I", socket.inet_aton("127.0.0.1"))[0]
+        encoded = struct.pack("<I6I", 1, 1, address, socket.htons(5906), 0, 0, 42160)
+        self.assertEqual(
+            console.parse_tcp_listener_rows(encoded, 5906, listener_table=True),
+            [("127.0.0.1", 42160)],
+        )
+        self.assertEqual(console.parse_tcp_listener_rows(encoded, 5906), [])
 
     def test_tcp_parser_rejects_truncated_table(self):
         with self.assertRaisesRegex(console.Blocked, "listener-query-invalid"):

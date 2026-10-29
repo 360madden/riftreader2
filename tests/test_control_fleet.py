@@ -64,8 +64,8 @@ class ControlFleetTests(unittest.TestCase):
             with self.assertRaisesRegex(fleet.FleetError, "listener-collision"):
                 fleet.validate_fleet(manifest)
 
-    def test_rejects_duplicate_vm_vnc_output_guest_machine_and_config(self):
-        cases = ("vmx", "vnc", "output", "guest", "machine", "config")
+    def test_rejects_duplicate_vm_vnc_output_guest_and_config(self):
+        cases = ("vmx", "vnc", "output", "guest", "config")
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
@@ -74,11 +74,23 @@ class ControlFleetTests(unittest.TestCase):
                     second = first
                 else:
                     kwargs = {case: {"vmx": "vm-1.vmx", "vnc": 5901,
-                                     "output": "output-1", "guest": "192.168.56.101",
-                                     "machine": "rift-lab-1"}[case]}
+                                     "output": "output-1",
+                                     "guest": "192.168.56.101"}[case]}
                     second = self.write_config(root, 2, **kwargs)
                 with self.assertRaises(fleet.FleetError):
                     fleet.validate_fleet(self.manifest(root, [first, second]))
+
+    def test_allows_clones_with_the_same_expected_machine_name(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = self.write_config(root, 1, machine="RIFT-CLONE")
+            second = self.write_config(root, 2, machine="RIFT-CLONE")
+            result = fleet.validate_fleet(self.manifest(root, [first, second]))
+        self.assertEqual(2, result["hostCount"])
+        self.assertEqual(
+            ["RIFT-CLONE", "RIFT-CLONE"],
+            [assignment["expectedMachineName"] for assignment in result["assignments"]],
+        )
 
     def test_rejects_incomplete_vm_guard(self):
         with tempfile.TemporaryDirectory() as directory:

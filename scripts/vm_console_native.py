@@ -41,6 +41,7 @@ MAX_TEXT_LENGTH = 2048
 MAX_SCREEN_DIMENSION = 16384
 HMAC_LABEL = b"RIFT-Lab local console v1"
 MUTEX_PREFIX = "Local\\RiftReader.VMConsole."
+TCP_TABLE_OWNER_PID_LISTENER = 3
 LOG_PATTERN = re.compile(
     r"(?m)^(?P<epoch>\S+) .*Log for VMware Workstation pid=(?P<pid>\d+) "
 )
@@ -151,8 +152,16 @@ def parse_vmware_log_identity(header: str) -> tuple[str, int]:
     return epoch, pid
 
 
-def parse_tcp_listener_rows(table: bytes, port: int) -> list[tuple[str, int]]:
-    """Parse matching LISTEN rows from a MIB_TCPTABLE_OWNER_PID byte buffer."""
+def parse_tcp_listener_rows(
+    table: bytes, port: int, *, listener_table: bool = False
+) -> list[tuple[str, int]]:
+    """Parse matching rows, optionally from a listener-filtered Windows table.
+
+    The strict default accepts only rows whose per-row state is LISTEN.  A caller
+    that obtained ``TCP_TABLE_OWNER_PID_LISTENER`` may set ``listener_table``;
+    that API table class is itself the listener classification, so its rows are
+    matched by local port even when Windows reports noncanonical state metadata.
+    """
     if len(table) < 4:
         raise Blocked("listener-query-invalid")
     count = struct.unpack_from("<I", table)[0]
@@ -164,7 +173,10 @@ def parse_tcp_listener_rows(table: bytes, port: int) -> list[tuple[str, int]]:
         state, address, local_port, _, _, pid = struct.unpack_from(
             "<6I", table, 4 + index * 24
         )
-        if state != 2 or socket.ntohs(local_port & 0xFFFF) != port:
+        if (
+            (not listener_table and state != 2)
+            or socket.ntohs(local_port & 0xFFFF) != port
+        ):
             continue
         ip = socket.inet_ntoa(struct.pack("<I", address))
         matches.append((ip, pid))
@@ -226,13 +238,21 @@ def listener_owner(port: int) -> int:
         wintypes.ULONG,
     ]
     size = wintypes.DWORD()
-    get_table(None, ctypes.byref(size), False, socket.AF_INET, 3, 0)
+    get_table(
+        None, ctypes.byref(size), False, socket.AF_INET,
+        TCP_TABLE_OWNER_PID_LISTENER, 0,
+    )
     if not size.value:
         raise Blocked("listener-query-failed")
     data = ctypes.create_string_buffer(size.value)
-    if get_table(data, ctypes.byref(size), False, socket.AF_INET, 3, 0):
+    if get_table(
+        data, ctypes.byref(size), False, socket.AF_INET,
+        TCP_TABLE_OWNER_PID_LISTENER, 0,
+    ):
         raise Blocked("listener-query-failed")
-    matches = parse_tcp_listener_rows(bytes(data.raw[: size.value]), port)
+    matches = parse_tcp_listener_rows(
+        bytes(data.raw[: size.value]), port, listener_table=True
+    )
     if any(ip != "127.0.0.1" for ip, _ in matches):
         raise Blocked("console-not-loopback-only")
     owners = [pid for ip, pid in matches if ip == "127.0.0.1"]

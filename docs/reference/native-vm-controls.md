@@ -1,5 +1,10 @@
 # Native supervised VM controls
 
+**Two-lab runtime update (2026-10-29):** both independent hosts now pass live
+status, native capture, cleanup and managed guest-agent reconnect with cross-lab
+isolation. See the [current live record](../validation/control-fleet-live-2026-10-29.md)
+and [actual endpoint allocation](#multiple-vm-configuration-preflight).
+
 **Targeted clicks (2026-10-25):** use `scripts/run_targeted_click.py` for a
 single reviewed spell-button click. Supply `--output` and `--target X Y WIDTH HEIGHT`
 in **captured client pixels**, choosing the rectangle from the current action bar.
@@ -96,30 +101,42 @@ The manifest has `schemaVersion: 1`, `hosts` entries containing `lab` and
 containing `address`, `port`, and `purpose`. Reserve existing telemetry listeners
 explicitly. Keep private host configs and credentials outside tracked examples.
 
-Proposed allocation, pending availability checks and live profile migration:
+October 29 allocation: Lab-1/Lab-2 agent and operator endpoints are live-tested.
+Remaining endpoints and labs are proposals requiring actual bind checks:
 
 | Lab | Agent | Loopback operator API | Optional bootstrap | Telemetry |
 |---|---:|---:|---:|---:|
 | 1 | 49810 | 49811 | 49812 | 49813 |
-| 2 | 49820 | 49821 | 49822 | 49823 |
+| 2 | 49920 | 49921 | 49922 | 49923 |
 | 3 | 49830 | 49831 | 49832 | 49833 |
 | 4 | 49840 | 49841 | 49842 | 49843 |
 | 5 | 49850 | 49851 | 49852 | 49853 |
 
+Windows refused the original Lab-2 agent port 49820 with error 10013; 49920
+and 49921 were bind-tested and then connected successfully. Optional bootstrap
+and telemetry columns do not claim running services. The live VNC assignments
+are Lab-1 5905 and Lab-2 5962. Separate existing `pythonw.exe` host processes
+share the original queue, using `vm:rift-lab-1` and `vm:rift-lab-2`.
+
 Operator APIs stay on loopback. Other listeners use the verified host-only
-address. Each actual VM also needs a unique verified guest address, machine
-identity, VMX, VNC port and output directory. The preflight rejects duplicate
-identities, reused secrets and overlapping listeners, including wildcard
-reservations and the legacy control/telemetry collision at port 49712.
+address. Each actual VM also needs a unique verified guest address, VMX, VNC
+port and output directory. Cloned guests may share `expectedMachineName`; each
+host still verifies that its connected guest matches its own configured name.
+The preflight rejects duplicate VM resources or guest addresses, reused secrets
+and overlapping listeners, including wildcard reservations and the legacy
+control/telemetry collision at port 49712.
 Its sanitized base launch arguments still require the normal coordinated queue
 and exact resource arguments for coordinated deployment.
 
 Migration order: preserve the existing receiver, verify fresh identities and
 idle ownership, allocate dedicated endpoints, update matching host/guest profiles,
 start disarmed, then verify each authenticated guest connection independently.
-Check that disconnecting one VM leaves the other VM's identity and input state
-intact. These live steps remain pending. Static validation does not establish
-free ports, connectivity or runtime readiness.
+Check that reconnecting one guest agent leaves the other VM's identity and input
+state intact. Both current labs passed authenticated status, leased native
+capture, cleanup, and one managed graceful agent restart with cross-lab
+isolation. See the [live evidence and maintenance boundary](../validation/control-fleet-live-2026-10-29.md).
+Static preflight alone does not establish free ports or runtime readiness for
+another configuration; bind-test the actual endpoints before launching it.
 
 The October 29 host snapshot showed Ryzen 9 9950X3D (16 cores/32 threads), about
 64 GB RAM, RTX 5080, and about 13 GB available RAM. Each existing VM is assigned
@@ -387,8 +404,15 @@ strict shape for the normal VM-guarded path without the optional bundle server:
 `bindAddress` and `guestAddress` must be literal RFC 1918 IPv4 addresses. The
 VMX, `vmrun`, and VNC values are optional only as a group; omitting the group
 also omits the host-side VMware process-epoch guard. `agentPort`, `uiPort`, and
-an optional `bootstrapPort` are integers from 1 through 65535. If the optional
-bundle endpoint is deliberately used, add both fields:
+an optional `bootstrapPort` are integers from 1 through 65535.
+
+The VMware epoch guard queries Windows with the owner-PID listener table class.
+Because that table is already filtered to listeners, it matches its rows by
+port even on Windows builds that return noncanonical per-row TCP state metadata.
+It still requires exactly one loopback listener owned by the exact current VMX
+process; generic mixed-table parsing continues to require the LISTEN state.
+
+If the optional bundle endpoint is deliberately used, add both fields:
 
 ```json
 {

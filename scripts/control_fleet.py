@@ -88,7 +88,6 @@ def validate_fleet(manifest_path: Path) -> dict:
     output_paths: set[str] = set()
     vnc_ports: set[int] = set()
     guest_addresses: set[str] = set()
-    machines: set[str] = set()
     guest_secret_hashes: set[str] = set()
     operator_secret_hashes: set[str] = set()
     assignments = []
@@ -145,7 +144,6 @@ def validate_fleet(manifest_path: Path) -> dict:
             (output_paths, _path_key(config.output_directory), "output-directory"),
             (vnc_ports, config.vnc_port, "vnc-port"),
             (guest_addresses, config.guest_address, "guest-address"),
-            (machines, config.expected_machine_name.casefold(), "machine-identity"),
         )
         for collection, item, label in unique_values:
             if item in collection:

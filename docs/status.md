@@ -2,6 +2,43 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Two-lab native control fleet - LIVE VERIFIED:**
+Both independent coordinated control hosts are connected, ready and disarmed.
+Lab-1 uses agent `192.168.56.1:49810`, operator `127.0.0.1:49811`, guest
+`192.168.56.128`, VNC 5905 and resource `vm:rift-lab-1`. Lab-2 uses agent
+`192.168.56.1:49920`, operator `127.0.0.1:49921`, guest `192.168.56.129`,
+VNC 5962 and resource `vm:rift-lab-2`. Windows refused the original Lab-2
+49820 bind; the replacement pair was bind-tested and verified live.
+
+Each host completed authenticated status, native RIFT screenshot capture,
+normal queue cleanup and a managed graceful guest-agent restart. Reconnecting
+one lab preserved the other lab's host, connection, VM and game identities.
+Both finished ready, unarmed, not busy, recovery-free, with no sampled held
+inputs, occupied queue resource or pending request. The new journals contain
+zero arm/action/recover commands. This verifies connections, captures and one
+reconnect per lab, not movement or automatic recovery after PC/VM restart.
+Both VMware tabs are visible; Lab-2 was explicitly opened after a background
+launch caused confusion about its running state.
+
+Fleet preflight now permits cloned Windows machine names while keeping exact
+per-host machine matching and distinct VM/IP/credential/endpoint guards.
+The VM ownership query uses Windows' listener-filtered table classification
+instead of its inconsistent passive TCP state field. Two diagnostic Lab-2
+cycles did not fix that metadata; no further restart or weakened process
+identity check was needed. Existing permitted `pythonw.exe` runs both hosts;
+no firewall rule was changed. Both guest-local Codex CLI 0.165.0 read-only,
+ephemeral diagnostic tasks completed successfully using the existing logins.
+
+Current verified VMX/RIFT PIDs are Lab-1 `49392 / 6988` and Lab-2
+`52072 / 11896`, with the same `1935...A4BE8` executable build. These supersede
+the session identities in older checkpoints below. Lab-2's unreadable
+OneDrive `guidance.lua` was also backed up, replaced, all six core files
+hash-verified/pinned, and reloaded without the visible addon error.
+Full source validation passed: 539 .NET tests, 973 Python tests run (2 skipped),
+Lua/shared contracts, published smoke and 700 links. See the
+[live validation and maintenance boundary](validation/control-fleet-live-2026-10-29.md)
+and `artifacts/control-fleet-repair-20261029/reconnect-isolation-v3/`.
+
 **Lab-1 Guidance load error - REPAIRED AND VERIFIED LIVE:**
 The user's current screenshot showed `main.lua:6` indexing nil `Guidance`.
 Installed TOC and five readable core files matched source; `guidance.lua` was
@@ -19,22 +56,12 @@ Evidence: `artifacts/lab1-guidance-repair-20261029/`,
 `artifacts/lab1-guidance-status-20261029-01/`. Input cleanup passed; RIFT remains
 in world. Ordinary Casting/Readiness panels were hidden for command entry.
 
-**Multi-VM control host - PREFLIGHT ADDED; LIVE MIGRATION PENDING:**
-The user requested resolving control-host operation for two or more VMs and
-asked about four/five discovery labs. Existing hosts isolate one VM per process;
-the old agent listener conflicts with telemetry at port 49712. The read-only
-`scripts/control_fleet.py` checks distinct identities, secrets, output paths and
-listeners across host configurations and explicit reservations. See the
-[fleet allocation and migration sequence](reference/native-vm-controls.md#multiple-vm-configuration-preflight).
-No host/guest profile was migrated or live service started in this increment.
-Next priority is disarmed Lab-1/Lab-2 connections on dedicated ports, then a
-measured three-VM capacity trial before expanding to four/five.
-The preflight reproduced the real saved Lab-1 / telemetry port collision;
-five-config fixtures passed. Full validation passed: 539 .NET tests, 971 Python
-tests run (2 skipped), Lua/contracts, format and 700 links. Evidence:
-`artifacts/validation/20261029T054258Z-175b2946/` and
-`artifacts/control-fleet-gate-20261029.log`. Static validity does not establish
-live multi-VM control or higher discovery throughput.
+**Earlier fleet preflight checkpoint - SUPERSEDED BY LIVE VERIFICATION ABOVE:**
+The original port-49712 control/telemetry collision was reproduced, and static
+five-config fixtures passed before live migration. Lab-1/Lab-2 migration is now
+verified; three/four/five active VM capacity and discovery throughput remain
+unmeasured. See the
+[current allocation](reference/native-vm-controls.md#multiple-vm-configuration-preflight).
 
 **Lab-1 recovery — BACK IN GAME; GUEST OPERATIONS RESTORED:**
 Joey's requested health check found a healthy game but wedged VMware GuestOps.
