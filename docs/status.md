@@ -2,18 +2,21 @@
 
 Updated: 2026-10-29 (America/New_York).
 
-**Native Codex device connections - GUEST HOSTS CONNECTED; PAIRING PENDING:**
-Both guest native managed daemons were freshly checked at 10:47 EDT: exit 0,
-`connected`, `alreadyRunning`; daemon-version queries returned `running`.
-Normal signed-in Explorer launches resolved GuestOps elevation and scheduled
-task process-lifetime restrictions. Both remain running with distinct native
-environment IDs despite cloned Windows names. No SSH, pairing codes, RIFT input
-or VM/game restart. Main-PC controller authorization, pairing and per-guest
-execution acceptance remain outstanding. The uploaded `Allow devices to
-control this computer?` error belongs to the host setup flow; controller setup
-uses `Control other devices` and `Authorize on chatgpt.com`. The screenshot's
-generic failure has no classified current native-log cause. See the
-[checkpoint and remaining acceptance](validation/native-codex-remote-2026-10-29.md).
+**Native Codex device connections - BOTH PAIRED; REMOTE READS VERIFIED:**
+Both native guest daemons were already running and connected. Joey clarified
+that the main PC was at code entry and the Allow error was inside a VM.
+Exactly one native CLI pairing response per lab was privately passed to the
+main app; successful remote-data reconciliation followed at 11:02 EDT for
+Lab-1 and 11:12 EDT for Lab-2. Main-app host discovery and explicit
+`read_thread` calls then returned existing remote data from both exact hosts
+without tool errors at 11:14 EDT. Both have distinct environment IDs and
+auto-connect enabled despite cloned Windows display names. Temporary private
+codes were deleted. Initial host-not-found errors were registration races,
+not persistent failures. No SSH, new chat, guest shell-execution test, RIFT
+input or VM/game restart was used. The VM desktop Allow error itself remains
+unclassified; the native CLI route supplied the working pairing mechanism.
+New-job execution and reboot recovery remain unverified. See the
+[pairing evidence and usage](validation/native-codex-remote-2026-10-29.md).
 
 **Guest Codex project workflows - IMPLEMENTED AND VERIFIED IN BOTH LABS:**
 Use `python scripts/lab_codex.py` for `doctor`, `dispatch`, `status`, `collect`,
