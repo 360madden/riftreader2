@@ -2,6 +2,12 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**VM snapshot baselines - CREATED:** Both powered-on labs now have verified
+named VMware snapshots, including memory; Lab-2's older snapshot remains.
+The script uses cached encrypted-VM credentials through a private console and
+independently lists the result. Both native Codex host reads passed afterward;
+restoration has not been tested. See [lab snapshots](workflows/lab-snapshots.md).
+
 **Sequential reboot check - BOTH CODEX HOSTS PASSED:** Lab-1 and Lab-2
 automatically reconnected under their existing identities after fresh Windows
 boots. Lab-2's first reboot exposed a competing packaged desktop server and
