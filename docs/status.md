@@ -2,6 +2,15 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Lab-2 native Codex auto-start - VERIFIED AFTER REBOOT:** One per-user
+interactive/limited scheduled task dispatches the existing native host via
+Explorer after logon. On the 16:01:04Z reboot, the task fired automatically;
+fresh dispatcher and worker receipts reported Session 1, non-admin,
+`connected`, `RIFT-LAB-2`, and the existing native environment ID. Main-app
+exact-host read passed. It requires `mrkoo` to log on; this is not a pre-login
+service. RIFT and the guest control agent were not running. See the
+[startup verification](validation/lab2-codex-autostart-2026-10-29.md).
+
 **VM Windows names and repeated reboot - VERIFIED:** Both guests now report
 `RIFT-LAB-1` and `RIFT-LAB-2`; final boots were 15:44:08Z and 15:45:07Z.
 The main app successfully read each existing native Codex host after reboot.
