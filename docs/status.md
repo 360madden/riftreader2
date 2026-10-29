@@ -1,8 +1,25 @@
 # Current status
 
-Updated: 2026-10-28 (America/New_York).
+Updated: 2026-10-29 (America/New_York).
 
-**Lab-1 recovery — BACK IN GAME; GUEST OPERATIONS RESTORED:**
+**Multi-VM control host - PREFLIGHT ADDED; LIVE MIGRATION PENDING:**
+The user requested resolving control-host operation for two or more VMs and
+asked about four/five discovery labs. Existing hosts isolate one VM per process;
+the old agent listener conflicts with telemetry at port 49712. The read-only
+`scripts/control_fleet.py` checks distinct identities, secrets, output paths and
+listeners across host configurations and explicit reservations. See the
+[fleet allocation and migration sequence](reference/native-vm-controls.md#multiple-vm-configuration-preflight).
+No host/guest profile was migrated or live service started in this increment.
+Next priority is disarmed Lab-1/Lab-2 connections on dedicated ports, then a
+measured three-VM capacity trial before expanding to four/five.
+The preflight reproduced the real saved Lab-1 / telemetry port collision;
+five-config fixtures passed. Full validation passed: 539 .NET tests, 971 Python
+tests run (2 skipped), Lua/contracts, format and 700 links. Evidence:
+`artifacts/validation/20261029T054258Z-175b2946/` and
+`artifacts/control-fleet-gate-20261029.log`. Static validity does not establish
+live multi-VM control or higher discovery throughput.
+
+**Lab-1 recovery â€” BACK IN GAME; GUEST OPERATIONS RESTORED:**
 Joey's requested health check found a healthy game but wedged VMware GuestOps.
 VMTools and VGAuth service restarts, an elevated installed-Tools Repair, and an
 orderly Windows restart did not restore authenticated commands. Joey approved
@@ -30,7 +47,7 @@ control-host endpoint still refuses connection. Evidence:
 [validation checkpoint](validation/bidirectional-hybrid-2026-10-28.md),
 `artifacts/bidirectional-20261028/lab1-health-check-after-restart-summary.json`.
 
-**First live static hybrid round trip — LAB-2 PASS, INCLUDING EXPIRY:**
+**First live static hybrid round trip â€” LAB-2 PASS, INCLUDING EXPIRY:**
 The addon source -> external calculation -> reviewed console delivery -> addon
 display loop succeeded in Lab-2. Result 1 showed planar distance **5.00**,
 **dX +3.00 / dZ +4.00 / dY +0.00** from an actual fresh API snapshot.

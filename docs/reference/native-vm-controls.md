@@ -83,6 +83,54 @@ bounded action in its existing interactive Windows session.
 Dedicated navigation, combat, unattended input, process writes, injection, and
 debugger attachment remain outside this repository.
 
+## Multiple VM configuration preflight
+
+October 29: use one existing `control_host.py` process per VM, each with its own
+authentication, VM/game identity, evidence directory and control resource.
+The shared access queue already distinguishes VM resources. The read-only
+`scripts/control_fleet.py --manifest PATH` checks private host configurations;
+it starts nothing and grants no input authority.
+
+The manifest has `schemaVersion: 1`, `hosts` entries containing `lab` and
+`configPath` (relative to the manifest), and `reservedEndpoints` entries
+containing `address`, `port`, and `purpose`. Reserve existing telemetry listeners
+explicitly. Keep private host configs and credentials outside tracked examples.
+
+Proposed allocation, pending availability checks and live profile migration:
+
+| Lab | Agent | Loopback operator API | Optional bootstrap | Telemetry |
+|---|---:|---:|---:|---:|
+| 1 | 49810 | 49811 | 49812 | 49813 |
+| 2 | 49820 | 49821 | 49822 | 49823 |
+| 3 | 49830 | 49831 | 49832 | 49833 |
+| 4 | 49840 | 49841 | 49842 | 49843 |
+| 5 | 49850 | 49851 | 49852 | 49853 |
+
+Operator APIs stay on loopback. Other listeners use the verified host-only
+address. Each actual VM also needs a unique verified guest address, machine
+identity, VMX, VNC port and output directory. The preflight rejects duplicate
+identities, reused secrets and overlapping listeners, including wildcard
+reservations and the legacy control/telemetry collision at port 49712.
+Its sanitized base launch arguments still require the normal coordinated queue
+and exact resource arguments for coordinated deployment.
+
+Migration order: preserve the existing receiver, verify fresh identities and
+idle ownership, allocate dedicated endpoints, update matching host/guest profiles,
+start disarmed, then verify each authenticated guest connection independently.
+Check that disconnecting one VM leaves the other VM's identity and input state
+intact. These live steps remain pending. Static validation does not establish
+free ports, connectivity or runtime readiness.
+
+The October 29 host snapshot showed Ryzen 9 9950X3D (16 cores/32 threads), about
+64 GB RAM, RTX 5080, and about 13 GB available RAM. Each existing VM is assigned
+8 GB and four vCPUs. Four/five such guests allocate 32/40 GB before host,
+graphics and VM overhead. This snapshot is not a capacity benchmark. Expand to
+three measured active VMs first. Give labs independent questions and stagger
+large memory scans. Compare accepted findings per hour alongside freshness,
+latency, FPS, memory and disk load. Broadcom describes host memory starvation
+and swapping as causes of VM slowdown in its
+[performance guidance](https://knowledge.broadcom.com/external/article/324692/virtual-machine-performance-problems.html).
+
 ## Runtime boundary
 
 | Component | Responsibility |
