@@ -3,6 +3,15 @@
 Authorized October 29, 2026: plan and implement main-PC coordination of the
 existing Codex CLI installations in both RIFT labs, with timely local commits.
 
+**Completed:** the plan, guest worker and host commands are committed as
+`861355c`, `9596b7f` and `47f8f2b`. Both real guest jobs succeeded in parallel,
+repeat collection/status and terminal cancellation passed, existing control
+hosts stayed ready/disarmed, and the full implementation gate passed. See the
+[live acceptance](../validation/lab-codex-workflows-2026-10-29.md) and
+[operator guide](../workflows/lab-codex.md). Active timeout/cancellation cleanup
+was exercised with disposable Windows CLI/child process fixtures. The initial
+PowerShell alias collision was fixed before the successful live batch.
+
 ## Outcome and approach
 
 Keep the authoritative repository and integration on the main PC. Dispatch a

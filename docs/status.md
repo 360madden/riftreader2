@@ -2,6 +2,34 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Guest Codex project workflows - IMPLEMENTED AND VERIFIED IN BOTH LABS:**
+Use `python scripts/lab_codex.py` for `doctor`, `dispatch`, `status`, `collect`,
+`cancel`, `run` and `batch`. The ignored `.local/lab-codex.json` is configured
+for the two existing guests. Main-PC source remains authoritative; jobs receive
+selected frozen source files and return schema-checked, hash-bound reports.
+No SSH, port, persistent service or global Codex change was needed.
+
+The real sample batch ran both signed-in Codex CLI 0.165.0 installations in
+parallel from clean source commit `47f8f2b`. Lab-1 reviewed the supplied guidance
+source; Lab-2 reported matching SHA-256/lengths for all three installed sample
+files. Independent review checked those reports and their task/input/VM/report
+provenance. Repeated collections were identical, repeated status remained
+terminal, and cancelling an already completed job was a no-op. Disposable
+Windows process tests verify active cancellation and timeout cleanup of the
+worker-owned CLI and its child. Both RIFT control hosts retained their exact
+host/agent/VM/game identities and remained ready, disarmed and queue-idle.
+
+Full implementation validation passed: 539 .NET tests, 999 Python tests run
+(2 skipped), Lua/shared contracts, published smoke and 720 relative links.
+Plan `861355c`, guest worker `9596b7f` and host workflow `47f8f2b` are committed.
+See the [operator guide](workflows/lab-codex.md),
+[live acceptance record](validation/lab-codex-workflows-2026-10-29.md), and
+`artifacts/lab-codex-validation/live/summary.json`. The sample batch index is
+`artifacts/lab-codex/batch-b241a27f-174d-479d-a905-63250cedb08e/batch.json`.
+Jobs are read-only analysis/diagnostics; guest patch application, writable
+repository synchronization and game-input coordination are not added by this
+workflow. Continue actual project research with small explicit guest tasks.
+
 **Two-lab native control fleet - LIVE VERIFIED:**
 Both independent coordinated control hosts are connected, ready and disarmed.
 Lab-1 uses agent `192.168.56.1:49810`, operator `127.0.0.1:49811`, guest
