@@ -150,15 +150,15 @@ class PinnedFeedback:
                 self._sleep(0.05)
                 continue
 
-            disposition = _validate_advancing(prior, receipt, completed)
-            if disposition == "accept":
-                current_outer = receipt["observation"]["sequence"]
-                if barrier_outer is None:
+            current_outer = receipt["observation"]["sequence"]
+            if barrier_outer is None:
+                if _validate_barrier(prior, receipt, completed) == "accept":
                     # The receiver handled this POST after the action.  Because
                     # delivery is synchronous, a later outer sequence from the
                     # same pinned reader must belong to an iteration whose full
                     # scan began after this response, and therefore after the
-                    # action.  Publication time alone cannot prove that.
+                    # action.  This receipt is only the barrier; it is never
+                    # promoted to post-action movement evidence itself.
                     _write_receipt(
                         self.evidence_dir,
                         f"barrier-{prior.outer_sequence}-{current_outer}",
@@ -167,13 +167,14 @@ class PinnedFeedback:
                     barrier_selected = _console._selected(receipt)
                     barrier_addon_sequence = barrier_selected["sequence"]
                     barrier_addon_clock = float(barrier_selected["clock"]["value"])
-                elif (current_outer > barrier_outer
-                        and _console._selected(receipt)["sequence"] > barrier_addon_sequence
-                        and float(_console._selected(receipt)["clock"]["value"])
-                        > barrier_addon_clock):
-                    label = f"after-{prior.outer_sequence}-{current_outer}"
-                    return _sample_from_receipt(
-                        self._pin, receipt, data, self.evidence_dir, label)
+            elif (_validate_advancing(prior, receipt, completed) == "accept"
+                    and current_outer > barrier_outer
+                    and _console._selected(receipt)["sequence"] > barrier_addon_sequence
+                    and float(_console._selected(receipt)["clock"]["value"])
+                    > barrier_addon_clock):
+                label = f"after-{prior.outer_sequence}-{current_outer}"
+                return _sample_from_receipt(
+                    self._pin, receipt, data, self.evidence_dir, label)
             if self._monotonic() >= deadline:
                 _console._fail("movement-feedback-timeout")
             self._sleep(0.05)
@@ -242,6 +243,22 @@ def _validate_advancing(
             or float(addon_clock) == prior.addon_clock
             or received < action_completed_at.astimezone(timezone.utc)
             or captured <= prior.captured_at_utc or captured < threshold):
+        return "wait"
+    return "accept"
+
+
+def _validate_barrier(
+    prior: MovementSample,
+    current: dict,
+    action_completed_at: datetime,
+) -> str:
+    """Accept an exact advancing delivery boundary, never movement evidence."""
+    if _validate_next(prior, current) != "accept":
+        return "wait"
+    completed = action_completed_at.astimezone(timezone.utc)
+    received = _console._parse_time(current["receivedAtUtc"])
+    captured = _console._parse_time(current["observation"]["capturedAtUtc"])
+    if received <= completed or captured <= completed:
         return "wait"
     return "accept"
 

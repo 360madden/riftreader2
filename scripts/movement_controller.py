@@ -224,10 +224,13 @@ class WaypointController:
         raise MovementHalted(reason)
 
     def _check_observation(self, position: Position, elapsed_seconds: float) -> Position:
-        position = _position(position, "position")
         elapsed = _finite(elapsed_seconds, "elapsed_seconds")
         if elapsed < 0 or elapsed > self.max_elapsed_seconds:
             self._halt("elapsed-budget")
+        return self._check_position(position)
+
+    def _check_position(self, position: Position) -> Position:
+        position = _position(position, "position")
         if planar_distance(self.start, position) > self.max_radius:
             self._halt("radius-budget")
         if self._cross_track(position) > self.max_cross_track:
@@ -235,6 +238,22 @@ class WaypointController:
         if abs(position.y - self.start.y) > self.max_vertical_drift:
             self._halt("vertical-drift")
         return position
+
+    def confirm_released_settle(self, position: Position) -> None:
+        """Confirm arrival after the caller has stopped and verified input release.
+
+        The movement elapsed budget deliberately does not apply to this no-input
+        confirmation phase.  Callers must establish that the action phase ended
+        in tolerance, STOP/disarm succeeded, and no desktop input remains down.
+        """
+        if self.status == "halted":
+            raise MovementHalted(self.halt_reason or "halted")
+        if self.pending is not None:
+            raise MovementError("pending action cannot enter released settle phase")
+        if self.status != "confirming-arrival" or self.arrival_confirmations != 1:
+            raise MovementError("released settle requires one in-tolerance action feedback")
+        self.current = self._check_position(position)
+        self._note_arrival(self.current)
 
     def _cross_track(self, position: Position) -> float:
         goal_x, goal_z = self.goal.x - self.start.x, self.goal.z - self.start.z

@@ -165,29 +165,68 @@ class MovementFeedbackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             prior = self.baseline(folder)
             completed = self.now + timedelta(seconds=1)
-            too_early = self.receipt(
+            early_barrier = self.receipt(
                 outer=11, addon=21, clock=31,
-                captured=completed + timedelta(milliseconds=249))
+                captured=completed + timedelta(milliseconds=90))
             accepted = self.receipt(
                 outer=12, addon=22, clock=32, x=1.5,
                 captured=completed + timedelta(milliseconds=250))
-            delayed_same_frame = self.receipt(
-                outer=13, addon=22, clock=32, x=1.5,
-                captured=completed + timedelta(milliseconds=700))
-            post_barrier = self.receipt(
-                outer=14, addon=23, clock=33, x=1.75,
-                captured=completed + timedelta(seconds=1))
             adapter, reader = self.adapter(
-                folder, [too_early, accepted, delayed_same_frame, post_barrier])
+                folder, [early_barrier, accepted])
 
             sample = adapter.wait_after(completed, prior)
 
-            self.assertEqual(14, sample.outer_sequence)
-            self.assertEqual(23, sample.addon_sequence)
-            self.assertEqual(33, sample.addon_clock)
-            self.assertEqual((1.75, 2.0, 3.0), sample.xyz)
-            self.assertEqual(4, reader.calls)
+            self.assertEqual(12, sample.outer_sequence)
+            self.assertEqual(22, sample.addon_sequence)
+            self.assertEqual(32, sample.addon_clock)
+            self.assertEqual((1.5, 2.0, 3.0), sample.xyz)
+            self.assertEqual(2, reader.calls)
+            self.assertTrue((Path(folder) / "barrier-10-11-receipt.json").is_file())
+
+    def test_wait_does_not_use_a_pre_action_capture_as_barrier(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prior = self.baseline(folder)
+            completed = self.now + timedelta(seconds=1)
+            pre_action = self.receipt(
+                outer=11, addon=21, clock=31,
+                captured=completed - timedelta(milliseconds=1),
+                received=completed + timedelta(milliseconds=10))
+            barrier = self.receipt(
+                outer=12, addon=22, clock=32,
+                captured=completed + timedelta(milliseconds=90))
+            accepted = self.receipt(
+                outer=13, addon=23, clock=33,
+                captured=completed + timedelta(milliseconds=300))
+            adapter, reader = self.adapter(folder, [pre_action, barrier, accepted])
+
+            sample = adapter.wait_after(completed, prior)
+
+            self.assertEqual(13, sample.outer_sequence)
+            self.assertEqual(3, reader.calls)
+            self.assertFalse((Path(folder) / "barrier-10-11-receipt.json").exists())
             self.assertTrue((Path(folder) / "barrier-10-12-receipt.json").is_file())
+
+    def test_wait_never_promotes_the_barrier_to_final_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prior = self.baseline(folder)
+            completed = self.now + timedelta(seconds=1)
+            barrier = self.receipt(
+                outer=11, addon=21, clock=31,
+                captured=completed + timedelta(milliseconds=90))
+            data = json.dumps(barrier, separators=(",", ":")).encode()
+            clock = Clock()
+
+            class BarrierOnlyReader:
+                def __call__(self, pin, *, initial):
+                    return barrier, data, {"status": "fresh"}
+
+            adapter = module.PinnedFeedback(
+                self.pin, Path(folder), receipt_reader=BarrierOnlyReader(),
+                monotonic=clock.monotonic, sleep=clock.sleep)
+            with self.assertRaisesRegex(module._console.Blocked, "movement-feedback-timeout"):
+                adapter.wait_after(completed, prior, timeout_seconds=0.1)
+            self.assertTrue((Path(folder) / "barrier-10-11-receipt.json").is_file())
+            self.assertEqual([], list(Path(folder).glob("after-*-receipt.json")))
 
     def test_wait_retries_only_stale_and_nonadvancing_evidence(self):
         with tempfile.TemporaryDirectory() as folder:

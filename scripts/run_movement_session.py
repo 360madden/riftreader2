@@ -328,6 +328,18 @@ def _action_result(response: dict) -> tuple[dict, datetime]:
     return result, completed
 
 
+def _stop_and_verify(host, output: Path) -> dict:
+    stopped = host.stop()
+    require(stopped.get("stopped") is True and stopped.get("recoveryRequired") is False,
+            "STOP did not verify release")
+    final_status = host.status(require_armed=False)
+    guest = final_status["guest"]
+    require(guest.get("busy") is False and guest.get("desktopInputsDown") == []
+            and guest.get("recoveryRequired") is False, "final released state is not idle")
+    save(Path(output) / "final-status.json", sanitized(final_status))
+    return final_status
+
+
 def execute_armed_session(*, session: dict, review: dict, output: Path, host, lease,
                           feedback, clock=time.monotonic, now=utc_now,
                           controller_factory=WaypointController) -> dict:
@@ -457,6 +469,17 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 actions.append({"index": len(actions)+1, "decision": asdict(decision),
                                 "result": response, "before": prior.to_dict(), "after": after.to_dict()})
                 prior = after
+                if controller.status == "confirming-arrival" and controller.feedback_iterations >= 2:
+                    lease.check(); lease.heartbeat()
+                    _stop_and_verify(host, output); released = True
+                    settle = _require_advancing(prior,
+                        feedback.wait_next(prior, timeout_seconds=3.0))
+                    require(planar_distance(_position(settle), goal) <= controller.tolerance,
+                            "arrival settle left tolerance")
+                    samples.append(settle.to_dict())
+                    controller.confirm_released_settle(_position(settle))
+                    prior = settle; settles += 1
+                    require(controller.status == "arrived", "arrival did not confirm")
             require(controller.status == "arrived" and settles == 1
                     and controller.feedback_iterations >= 2,
                     "arrival lacks two action feedback iterations and a distinct confirmation")
@@ -469,15 +492,8 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
         return {"success": True, **result_payload, "actionEvidence": actions, "samples": samples}
     finally:
         try:
-            stopped = host.stop()
-            require(stopped.get("stopped") is True and stopped.get("recoveryRequired") is False,
-                    "STOP did not verify release")
-            final_status = host.status(require_armed=False)
-            guest = final_status["guest"]
-            require(guest.get("busy") is False and guest.get("desktopInputsDown") == []
-                    and guest.get("recoveryRequired") is False, "final released state is not idle")
-            save(output / "final-status.json", sanitized(final_status))
-            released = True
+            if not released:
+                _stop_and_verify(host, output); released = True
         finally:
             lease.finish("succeeded" if success and released else "failed",
                          [str(output.resolve()), "reviewed bounded movement session"])

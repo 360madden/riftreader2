@@ -53,6 +53,7 @@ class Feedback:
     def __init__(self, samples, failure=None):
         self.samples = iter(samples); self.failure = failure; self.waits = 0; self.next_waits = 0
         self.initial_timeouts = []; self.wait_timeouts = []; self.next_wait_timeouts = []
+        self.on_next = None
     def read(self, _label): return next(self.samples)
     def wait_initial(self, timeout_seconds=4.5):
         self.initial_timeouts.append(timeout_seconds)
@@ -63,6 +64,7 @@ class Feedback:
         return next(self.samples)
     def wait_next(self, _prior, timeout_seconds=3.0):
         self.next_waits += 1; self.next_wait_timeouts.append(timeout_seconds)
+        if self.on_next is not None: self.on_next()
         if self.failure is not None: raise self.failure
         return next(self.samples)
 
@@ -143,7 +145,7 @@ class MovementSessionTests(unittest.TestCase):
                 AssertionError("run clock sampled before ARM")), now=lambda: NOW)
         self.assertTrue(result["success"])
 
-    def test_goal_run_uses_feedback_then_two_advancing_arrival_settles(self):
+    def test_goal_run_stops_then_confirms_one_advancing_released_settle(self):
         profile = self.root / "profile.json"
         profile.write_text(json.dumps({"calibrations": {
             "w": {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
@@ -159,10 +161,12 @@ class MovementSessionTests(unittest.TestCase):
         host, lease = Host(), Lease()
         feedback = Feedback([Sample(0, 0, 0, 1), Sample(.75, 0, 0, 2),
                              Sample(1.2, 0, 0, 3), Sample(1.2, 0, 0, 4)])
+        feedback.on_next = lambda: self.assertEqual(host.stops, 1)
+        ticks = iter((0.0, 1.0, 4.0, 5.0, 9.0))
         result = execute_armed_session(session=session("movement", profile,
                     {"x": 1.2, "y": 0, "z": 0}), review=review(),
                     output=self.root / "run", host=host, lease=lease, feedback=feedback,
-                    clock=lambda: 1.0, now=lambda: NOW)
+                    clock=lambda: next(ticks), now=lambda: NOW)
         self.assertEqual(result["status"], "arrived"); self.assertEqual(result["settles"], 1)
         self.assertEqual(result["arrivalObservations"], 2); self.assertEqual(feedback.next_waits, 1)
         self.assertEqual(feedback.wait_timeouts, [4.5, 4.5])
