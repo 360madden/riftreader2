@@ -2,6 +2,15 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Browser ChatGPT + Workbridge two-lab diagnostic - PARTIAL PASS:** A normal
+browser ChatGPT chat submitted both existing `lab_codex.py doctor` commands via
+Workbridge; separate overlapping jobs finished exit 0 with ready diagnostics
+for the correct distinct labs. The browser's final answer and a follow-up failed
+to render, so the coordinator verified actual job outputs independently. The
+route uses VMware GuestOps and the installed Codex CLI for preflight; it does
+not prove an independent guest AI task. See the
+[comparison](validation/browser-workbridge-two-lab-2026-10-29.md).
+
 **Native Codex two-lab teamwork - SIMPLE TASK PASSED:** The main-PC chat sent
 read-only prompts to existing native remote chats in both labs. Each executed a
 local command, reported its distinct machine name and calculated the same
