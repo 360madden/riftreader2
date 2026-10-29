@@ -433,13 +433,21 @@ internal static class Program
     private static void PrintBindingInstruction(string nonce)
     {
         Console.WriteLine();
-        Console.WriteLine("============================================================");
-        Console.WriteLine("Enter this command locally in RIFT chat:");
-        Console.WriteLine($"/rr2bind {nonce}");
-        Console.WriteLine("This challenge is valid only for this reader attachment.");
-        Console.WriteLine("============================================================");
+        foreach (var line in BindingInstructions(nonce))
+            Console.WriteLine(line);
         Console.WriteLine();
     }
+
+    internal static IReadOnlyList<string> BindingInstructions(string nonce) =>
+        new List<string>
+        {
+            "============================================================",
+            "If this addon load is already bound to another reader, enter /reloadui and wait for it to finish first.",
+            "Then enter this command locally in RIFT chat:",
+            $"/rr2bind {nonce}",
+            "This challenge is valid only for this reader attachment.",
+            "============================================================"
+        };
 
     private static void PrintStatus(LiveReaderSnapshot snapshot) =>
         Console.WriteLine(
