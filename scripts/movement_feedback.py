@@ -26,7 +26,8 @@ import addon_command_console as _console
 
 
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
-_MAX_WAIT_SECONDS = 3.0
+_MAX_ACTION_WAIT_SECONDS = 4.5
+_MAX_NEXT_WAIT_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -99,13 +100,13 @@ class PinnedFeedback:
         self,
         action_completed_at: datetime,
         prior: MovementSample,
-        timeout_seconds: float = _MAX_WAIT_SECONDS,
+        timeout_seconds: float = _MAX_ACTION_WAIT_SECONDS,
     ) -> MovementSample:
         if action_completed_at.tzinfo is None:
             _console._fail("movement-feedback-action-time-must-be-aware")
         if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
                 or not math.isfinite(float(timeout_seconds))
-                or not 0 < float(timeout_seconds) <= _MAX_WAIT_SECONDS):
+                or not 0 < float(timeout_seconds) <= _MAX_ACTION_WAIT_SECONDS):
             _console._fail("movement-feedback-invalid-timeout")
         _require_prior_pin(self._pin, prior)
 
@@ -156,12 +157,12 @@ class PinnedFeedback:
     def wait_next(
         self,
         prior: MovementSample,
-        timeout_seconds: float = _MAX_WAIT_SECONDS,
+        timeout_seconds: float = _MAX_NEXT_WAIT_SECONDS,
     ) -> MovementSample:
         """Wait for a distinct fresh sample when no new input was sent."""
         if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
                 or not math.isfinite(float(timeout_seconds))
-                or not 0 < float(timeout_seconds) <= _MAX_WAIT_SECONDS):
+                or not 0 < float(timeout_seconds) <= _MAX_NEXT_WAIT_SECONDS):
             _console._fail("movement-feedback-invalid-timeout")
         _require_prior_pin(self._pin, prior)
         deadline = self._monotonic() + float(timeout_seconds)

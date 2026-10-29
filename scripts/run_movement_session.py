@@ -372,7 +372,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 response = host.action(action, output / f"action-{index}.json")
                 _result, completed = _action_result(response)
                 after = _require_advancing(prior,
-                    feedback.wait_after(completed, prior, timeout_seconds=3.0))
+                    feedback.wait_after(completed, prior, timeout_seconds=4.5))
                 samples.append(after.to_dict())
                 calibrations[key] = calibrate_displacement(key, _position(prior), _position(after), 150)
                 actions.append({"index": index, "decision": asdict(action), "result": response,
@@ -418,7 +418,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 response = host.action(decision, output / f"action-{len(actions)+1}.json")
                 _result, completed = _action_result(response)
                 after = _require_advancing(prior,
-                    feedback.wait_after(completed, prior, timeout_seconds=3.0))
+                    feedback.wait_after(completed, prior, timeout_seconds=4.5))
                 samples.append(after.to_dict()); controller.record_feedback(_position(after), clock() - started)
                 actions.append({"index": len(actions)+1, "decision": asdict(decision),
                                 "result": response, "before": prior.to_dict(), "after": after.to_dict()})

@@ -58,7 +58,7 @@ class TraceFeedback:
         return next(self.samples)
 
     def wait_after(self, _completed, _prior, timeout_seconds=3.0):
-        if timeout_seconds != 3.0:
+        if timeout_seconds != 4.5:
             raise AssertionError("unexpected feedback timeout")
         return next(self.samples)
 

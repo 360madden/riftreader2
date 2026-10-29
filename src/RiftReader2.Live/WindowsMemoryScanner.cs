@@ -40,62 +40,17 @@ public static class WindowsMemoryScanner
 
         try
         {
-            var regions = EnumerateReadablePrivateRegions(handle, target.Identity.ProcessId, maxScanTime, stopwatch, cancellationToken);
-            long plannedBytes = 0;
-            foreach (var region in regions)
-            {
-                plannedBytes = checked(plannedBytes + region.Size);
-                if (plannedBytes > maxScanBytes)
-                    return Incomplete("byte-budget-exceeded", plannedBytes, 0, regions.Count, stopwatch.Elapsed,
-                        $"Readable private memory exceeds the configured {maxScanBytes} byte budget.");
-            }
-
-            var accumulator = new EnvelopeCandidateAccumulator(challenge);
-            var buffer = GC.AllocateUninitializedArray<byte>(ChunkBytes);
-            long scannedBytes = 0;
-            MemoryRegion? previous = null;
-            foreach (var region in regions)
-            {
-                if (previous is null || previous.BaseAddress.ToInt64() + previous.Size != region.BaseAddress.ToInt64())
-                    accumulator.ResetMemoryBoundary();
-                long offset = 0;
-                while (offset < region.Size)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    if (stopwatch.Elapsed > maxScanTime)
-                        return Incomplete("time-budget-exceeded", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
-                            $"Scan exceeded the configured {maxScanTime.TotalSeconds:F0} second budget.", accumulator);
-                    var count = checked((int)Math.Min(buffer.Length, region.Size - offset));
-                    var address = checked(new nint(region.BaseAddress.ToInt64() + offset));
-                    if (!NativeMethods.ReadProcessMemory(handle, address, buffer, (nuint)count, out var read) || read != (nuint)count)
-                    {
-                        return Incomplete("read-failed", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
-                            $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {Win32Error()}", accumulator);
-                    }
-                    accumulator.Feed(buffer.AsSpan(0, count));
-                    if (accumulator.BudgetExceeded)
-                        return Incomplete("candidate-budget-exceeded", plannedBytes, scannedBytes + count, regions.Count,
-                            stopwatch.Elapsed, "Envelope endpoint or valid-candidate budget was exceeded.", accumulator);
-                    scannedBytes += count;
-                    offset += count;
-                }
-                previous = region;
-            }
-            cancellationToken.ThrowIfCancellationRequested();
-            if (stopwatch.Elapsed > maxScanTime)
-                return Incomplete("time-budget-exceeded", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
-                    "The final memory read or candidate decode exceeded the scan time budget.", accumulator);
-            return new(
-                true,
-                "complete",
-                plannedBytes,
-                scannedBytes,
-                regions.Count,
-                stopwatch.Elapsed,
-                accumulator.ValidCandidates,
-                accumulator.EndpointCandidateCount,
-                accumulator.MalformedCandidateCount,
-                null);
+            return RunWithPartialCopyRetry(
+                () => ScanAttempt(
+                    handle,
+                    target.Identity.ProcessId,
+                    challenge,
+                    maxScanBytes,
+                    maxScanTime,
+                    stopwatch,
+                    cancellationToken),
+                () => stopwatch.Elapsed,
+                maxScanTime);
         }
         catch (OperationCanceledException)
         {
@@ -109,6 +64,94 @@ public static class WindowsMemoryScanner
         {
             NativeMethods.CloseHandle(handle);
         }
+    }
+
+    internal static LiveScanResult RunWithPartialCopyRetry(
+        Func<ScanAttemptResult> scan,
+        Func<TimeSpan> elapsed,
+        TimeSpan maxScanTime)
+    {
+        ArgumentNullException.ThrowIfNull(scan);
+        ArgumentNullException.ThrowIfNull(elapsed);
+        var first = scan();
+        if (first.ReadErrorCode != NativeMethods.ErrorPartialCopy ||
+            first.Result.Completed ||
+            first.Result.Status != "read-failed" ||
+            elapsed() >= maxScanTime)
+            return first.Result;
+        return scan().Result;
+    }
+
+    private static ScanAttemptResult ScanAttempt(
+        nint handle,
+        int processId,
+        string challenge,
+        long maxScanBytes,
+        TimeSpan maxScanTime,
+        Stopwatch stopwatch,
+        CancellationToken cancellationToken)
+    {
+        var regions = EnumerateReadablePrivateRegions(handle, processId, maxScanTime, stopwatch, cancellationToken);
+        long plannedBytes = 0;
+        foreach (var region in regions)
+        {
+            plannedBytes = checked(plannedBytes + region.Size);
+            if (plannedBytes > maxScanBytes)
+                return new(Incomplete("byte-budget-exceeded", plannedBytes, 0, regions.Count, stopwatch.Elapsed,
+                    $"Readable private memory exceeds the configured {maxScanBytes} byte budget."), null);
+        }
+
+        var accumulator = new EnvelopeCandidateAccumulator(challenge);
+        var buffer = GC.AllocateUninitializedArray<byte>(ChunkBytes);
+        long scannedBytes = 0;
+        MemoryRegion? previous = null;
+        foreach (var region in regions)
+        {
+            if (previous is null || previous.BaseAddress.ToInt64() + previous.Size != region.BaseAddress.ToInt64())
+                accumulator.ResetMemoryBoundary();
+            long offset = 0;
+            while (offset < region.Size)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (stopwatch.Elapsed > maxScanTime)
+                    return new(Incomplete("time-budget-exceeded", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
+                        $"Scan exceeded the configured {maxScanTime.TotalSeconds:F0} second budget.", accumulator), null);
+                var count = checked((int)Math.Min(buffer.Length, region.Size - offset));
+                var address = checked(new nint(region.BaseAddress.ToInt64() + offset));
+                var succeeded = NativeMethods.ReadProcessMemory(handle, address, buffer, (nuint)count, out var read);
+                if (!succeeded || read != (nuint)count)
+                {
+                    int? error = succeeded ? null : Marshal.GetLastWin32Error();
+                    var detail = error is { } code
+                        ? Win32Error(code)
+                        : $"ReadProcessMemory returned {read} of {count} requested bytes without a Win32 error.";
+                    return new(Incomplete("read-failed", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
+                        $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {detail}", accumulator), error);
+                }
+                accumulator.Feed(buffer.AsSpan(0, count));
+                if (accumulator.BudgetExceeded)
+                    return new(Incomplete("candidate-budget-exceeded", plannedBytes, scannedBytes + count, regions.Count,
+                        stopwatch.Elapsed, "Envelope endpoint or valid-candidate budget was exceeded.", accumulator), null);
+                scannedBytes += count;
+                offset += count;
+            }
+            previous = region;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (stopwatch.Elapsed > maxScanTime)
+            return new(Incomplete("time-budget-exceeded", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
+                "The final memory read or candidate decode exceeded the scan time budget.", accumulator), null);
+        return new(new(
+            true,
+            "complete",
+            plannedBytes,
+            scannedBytes,
+            regions.Count,
+            stopwatch.Elapsed,
+            accumulator.ValidCandidates,
+            accumulator.EndpointCandidateCount,
+            accumulator.MalformedCandidateCount,
+            null), null);
     }
 
     private static List<MemoryRegion> EnumerateReadablePrivateRegions(
@@ -184,8 +227,13 @@ public static class WindowsMemoryScanner
     private static string Win32Error()
     {
         var code = Marshal.GetLastWin32Error();
-        return $"{new Win32Exception(code).Message} (Win32 {code})";
+        return Win32Error(code);
     }
+
+    private static string Win32Error(int code) =>
+        $"{new Win32Exception(code).Message} (Win32 {code})";
+
+    internal sealed record ScanAttemptResult(LiveScanResult Result, int? ReadErrorCode);
 
     private sealed record MemoryRegion(nint BaseAddress, long Size);
 
@@ -200,6 +248,7 @@ public static class WindowsMemoryScanner
         internal const uint PageExecuteRead = 0x20;
         internal const uint PageExecuteReadWrite = 0x40;
         internal const uint PageExecuteWriteCopy = 0x80;
+        internal const int ErrorPartialCopy = 299;
 
         [Flags]
         internal enum ProcessAccess : uint

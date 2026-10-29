@@ -52,13 +52,14 @@ def profile_document():
 class Feedback:
     def __init__(self, samples, failure=None):
         self.samples = iter(samples); self.failure = failure; self.waits = 0; self.next_waits = 0
+        self.wait_timeouts = []; self.next_wait_timeouts = []
     def read(self, _label): return next(self.samples)
     def wait_after(self, _completed, _prior, timeout_seconds=3.0):
-        self.waits += 1
+        self.waits += 1; self.wait_timeouts.append(timeout_seconds)
         if self.failure is not None: raise self.failure
         return next(self.samples)
     def wait_next(self, _prior, timeout_seconds=3.0):
-        self.next_waits += 1
+        self.next_waits += 1; self.next_wait_timeouts.append(timeout_seconds)
         if self.failure is not None: raise self.failure
         return next(self.samples)
 
@@ -123,6 +124,7 @@ class MovementSessionTests(unittest.TestCase):
             clock=lambda: 1.0, now=lambda: NOW)
         self.assertTrue(result["success"]); self.assertEqual(result["status"], "calibrated")
         self.assertEqual([a.key for a in host.actions], ["w", "q"])
+        self.assertEqual(feedback.wait_timeouts, [4.5, 4.5])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
 
@@ -148,6 +150,8 @@ class MovementSessionTests(unittest.TestCase):
                     clock=lambda: 1.0, now=lambda: NOW)
         self.assertEqual(result["status"], "arrived"); self.assertEqual(result["settles"], 1)
         self.assertEqual(result["arrivalObservations"], 2); self.assertEqual(feedback.next_waits, 1)
+        self.assertEqual(feedback.wait_timeouts, [4.5, 4.5])
+        self.assertEqual(feedback.next_wait_timeouts, [3.0])
         self.assertEqual(len(host.actions), 2); self.assertEqual(result["feedbackIterations"], 2)
         self.assertEqual(host.arms, 1)
         self.assertEqual(host.stops, 1); self.assertEqual(lease.finishes[0][0], "succeeded")
