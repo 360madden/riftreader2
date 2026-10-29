@@ -6,7 +6,9 @@ import tempfile
 import unittest
 from unittest import mock
 import json
+import socket
 import shutil
+import struct
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -593,6 +595,21 @@ class FastResultTests(unittest.TestCase):
             with self.subTest(rows=rows), self.assertRaisesRegex(
                     module.Blocked, "not-unique"):
                 module._select_receiver_listener(rows, "192.168.56.1")
+
+    def test_native_listener_table_accepts_passive_state_metadata(self):
+        def row(state, address, port, pid):
+            return struct.pack(
+                "<6I", state, struct.unpack("<I", socket.inet_aton(address))[0],
+                socket.htons(port), 0, 0, pid)
+
+        table = struct.pack("<I", 2)
+        table += row(0, "192.168.56.1", 49712, 40940)
+        table += row(2, "127.0.0.1", 49713, 99)
+
+        self.assertEqual(
+            [("192.168.56.1", 40940)],
+            module._parse_receiver_listener_rows(table, 49712),
+        )
 
     def test_native_receiver_rejects_owner_hash_and_process_drift(self):
         receiver = {"instanceId": "receiver-1", "processId": 24144,

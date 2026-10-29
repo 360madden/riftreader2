@@ -347,8 +347,12 @@ def _receiver_listener_owner(host: str, port: int) -> int:
     data = ctypes.create_string_buffer(size.value)
     if get_table(data, ctypes.byref(size), False, socket.AF_INET, 3, 0):
         _fail("receiver-listener-query-failed")
-    matches = parse_tcp_listener_rows(bytes(data.raw[:size.value]), port)
+    matches = _parse_receiver_listener_rows(bytes(data.raw[:size.value]), port)
     return _select_receiver_listener(matches, host)
+
+
+def _parse_receiver_listener_rows(table: bytes, port: int) -> list[tuple[str, int]]:
+    return parse_tcp_listener_rows(table, port, listener_table=True)
 
 
 def _select_receiver_listener(matches: list[tuple[str, int]], host: str) -> int:
