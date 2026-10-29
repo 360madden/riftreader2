@@ -78,6 +78,12 @@ freshly reviewed operations:
 - A command is typed only after a new screenshot visibly establishes an open,
   empty, focused chat entry. Closed, nonempty or unfocused chat fails closed.
 
+If the character is AFK, the first reviewed `Enter` may only clear AFK. Treat
+that as a completed one-key attempt, take a fresh capture, and separately review
+a second `open-chat` operation. A short multi-frame no-input capture can confirm
+the blinking white caret before approving a command; do not infer focus from an
+empty gray strip alone.
+
 Stacked panels require one separately prepared and reviewed close/hide attempt
 per panel. An execution receipt proves only that the reviewed input and cleanup
 were attempted against the pinned identity. Inspect the next fresh screenshot
@@ -85,7 +91,7 @@ before inferring that a panel closed, chat opened, or the addon accepted text.
 
 ### Deferred fresh result calculation
 
-Human screenshot review can exceed the addon's ten-second source lifetime. For
+Screenshot review can exceed the addon's ten-second source lifetime. For
 results, `--deferred-result-intent INTENT.json --fast-source-pin PIN.json`
 reviews an immutable calculation intent instead of an already-aging slash
 command. The strict intent binds lab, nonce, positive result sequence, reviewed

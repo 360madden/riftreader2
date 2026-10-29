@@ -2,90 +2,73 @@
 
 Updated: 2026-10-28 (America/New_York).
 
-**Autonomous two-lab trial checkpoint â€” OCTOBER 28 EVENING:**
-Joey explicitly authorized helper-based command entry while away after reserving
-idle Lab-2. The new narrow console helper retains exact VM/game identity,
-single-controller mutex, whole-plan/screenshot review, one-use execution and
-key/mouse release. Live evidence disproved a leading-slash-to-open-chat
-assumption: command characters opened Guild/LFG and a target-required message.
-That path is retired. The corrected Enter/open-empty-focused-chat sequence and
-ordinary Readiness/Casting Hide buttons are qualified by separate screenshots.
-No deliberate combat or movement trial has been run in this pass.
+**Lab-1 recovery — BACK IN GAME; GUEST OPERATIONS RESTORED:**
+Joey's requested health check found a healthy game but wedged VMware GuestOps.
+VMTools and VGAuth service restarts, an elevated installed-Tools Repair, and an
+orderly Windows restart did not restore authenticated commands. Joey approved
+restarting Lab-1; a complete orderly VM stop/start ended the old VM process and
+restored GuestOps. This was the observed recovery step; the root cause is not
+proved. The VM now has PID `68572`, native start ticks `134377147707331937`,
+log epoch `2026-10-29T02:32:50.782Z`, VNC 5905.
 
-Autonomous reload and guidance binding succeeded; the new confirmation text
-reads **Bound lab2; manual feedback only.** Current API source is bound/fresh
-for `u035400012DFEB5BC`, exact native RIFT PID/start ticks
-`2700 / 639288075394270241` (CIM loses the last tick), build `1935...A4BE8`.
-Reader process `3524 / 639288320762861032` uses nonce
-`7330a96ab95c4d56bef125b5dcb30518`, bounded until
-`2026-10-29T01:24:36.2861032Z` (October 28, 21:24 ET). Host receiver PID 24144,
-native start ticks `639288285817563485`, owns `192.168.56.1:49712` for Lab-2 only.
-These are expiring session facts, not durable configuration.
-
-The first fresh calculation plan was prepared, but the image/model review
-round trip took 20.96 seconds; the eight-second helper source gate correctly
-blocked before input. Thus distance return/display is **not yet verified**.
-A typed destination intent with calculation after UI review is being added;
-the 2/8/10-second source gates are not relaxed. Raw evidence:
-`artifacts/bidirectional-20261028/`, especially `live-result-a331bb114bf94d8b9b8a998ad81d9a5d/`.
-The [live validation checkpoint](validation/bidirectional-hybrid-2026-10-28.md)
-distinguishes accepted findings and failed attempts. The older full gate below
-predates these helper changes; focused checks and independent review passed,
-and a new full gate is required after integration.
-
-Lab-1 Tools reports running using the scoped encrypted management route, but
-the one capped 15-second cached GuestOps validation still timed out. No new
-game identity or independent live reproduction is claimed there. Tools-service
-recovery remains preparatory work; no Lab-1 service or VM restart was sent.
-
-**Bidirectional guidance â€” SOURCE/OFFLINE GATES PASSED, LAB-2 INSTALLED; LIVE ACCEPTANCE PENDING:**
-The [fresh two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md)
-records both VM identities and read-only screenshots. Lab-1 is in game as
-Atank (45), but two authenticated guest-tools process-list calls timed out;
-its current executable/process/unit identity is unavailable. Lab-2 is in game
-as Bolinao (43), RIFT PID 2700/start `2026-10-28T18:05:39.4270240Z`, SHA
+Normal Glyph launch retained its saved login. RIFT returned as Atank (45) at
+Thedeor's Circle, Sanctum after leaving the previous dimension during exit.
+Fresh authenticated collections before/after loading show RIFT PID `8160`,
+native UTC start ticks `639288387782122269`, executable
+`C:\RIFT_TRANSFER\RIFT\rift_x64.exe`, SHA-256
 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
-Installed core 0.1.0, ReaderBridge 0.3.2 and Casting 0.4.0 were hash-inventoried.
-Joey reserved idle Lab-2 for this installation/manual reload-paste trial.
+Both VMware services are Running. Visible game samples were 50/46 FPS;
+ReaderBridge 0.3.2 advanced 76 -> 304, Casting 0.2.3 advanced to 2843, and
+Readiness loaded. The ordinary Daily Rewards popup was closed; addon panels
+remain visible. All input is released. No gameplay action trial was run.
 
-The prepared [manual guidance path](reference/addon-guidance.md) reuses normal
-Live `latest.json` through strict `guide-addon --snapshot` gating; `--frame`
-remains an offline input. It calculates planar distance/coordinate bearing and
-signed deltas, then emits bounded `/rr2guide result ...` text. The addon binds
-lab/reader nonce, rejects wrong/old/expired sources and duplicate results,
-displays external calculations with age, and clears after movement or source
-expiry. It executes no gameplay actions. RR2A1/RR2L1 remain unchanged.
+Repeated cached GuestOps collection/copy/cleanup passed. The broad addon-file
+inventory exceeded its guest PowerShell time cap; a smaller launch inventory
+and final exact game identity succeeded. Do not claim complete addon hashes,
+field qualification, or a working external control host: the known configured
+control-host endpoint still refuses connection. Evidence:
+[validation checkpoint](validation/bidirectional-hybrid-2026-10-28.md),
+`artifacts/bidirectional-20261028/lab1-health-check-after-restart-summary.json`.
 
-Full `scripts/validate.ps1` passed: **539 .NET tests, 922 Python tests
-(2 skipped), 110 Lua lifecycle/encoder checks, 22 existing real Lua/C# cases,
-two distinct synthetic lab-bound Lua -> C# -> Lua guidance round trips**,
-Release build/format/dependencies, native smoke, deterministic replay and
-661 relative links. Evidence: `artifacts/validation/20261028T235032Z-2814371d/`,
-log `artifacts/bidirectional-final-gate-20261028-02.log`.
-Independent review and 20 focused C#/18 Lua guidance tests passed. Two existing
-test-fixture races were fixed separately without native/transport production
-changes. Neither synthetic round trip is live lab reproduction.
+**First live static hybrid round trip — LAB-2 PASS, INCLUDING EXPIRY:**
+The addon source -> external calculation -> reviewed console delivery -> addon
+display loop succeeded in Lab-2. Result 1 showed planar distance **5.00**,
+**dX +3.00 / dZ +4.00 / dY +0.00** from an actual fresh API snapshot.
+The addon chat accepted it with source age **1.797 seconds**, and the panel
+showed about 2.1 seconds. A later no-input screenshot showed **UNAVAILABLE /
+Source expired**, with active numbers removed. This is a post-limit expiry
+observation, not exact threshold timing. Independent source/command/math/hash
+and screenshot review passed.
 
-Lab-2 core installation and a separate postflight passed under
-`artifacts/bidirectional-20261028/lab2-deploy/`, apply run
-`7c7948e806ef422d83dea4a9e4a400e7`, independent postflight
-`1af3845db72047078a1aabb66302c9d8`. All six source/installed hashes matched,
-Casting hashes and VM/game identity stayed unchanged, and the old five-file
-backup was verified. No input/reload/controller start occurred. The source
-matches commit `4d7e7c7`; the frozen manifest predates that commit and records
-parent `8273745`, so its six content hashes are the deployment authority.
+Source epoch/sequence/clock/player were
+`1 / 2568 / 30891.716796875 / u035400012DFEB5BC`. RIFT remained
+`2700 / 639288075394270241`, build `1935...A4BE8`. The bounded reader is
+`9384 / 639288371649316705`, nonce `ba60619b5e9549e8994db9e9bb571700`,
+expiring automatically at `2026-10-29T03:19:24.9316705Z`. The receiver owns
+`192.168.56.1:49712` (PID 24144/start `639288285817563485`). These are session
+facts, not durable configuration. Evidence:
+`artifacts/bidirectional-20261028/deferred-result-7fca06f4d8b04574ba4fc5c5334cfc41/`,
+`lab2-result-expiry-01/`, and the validation checkpoint above.
 
-The user physically entered `/reloadui`, then `/rr2guide status` in reserved
-Lab-2. Independent read-only screenshot review at about 19:54 ET shows
-**RR2 GUIDANCE UNBOUND**, its bind instruction, Casting **v0.4.0 initialized**
-and API Probe **0.6.0** startup. Evidence:
-`artifacts/bidirectional-20261028/lab2-after-install/` (image SHA and observation
-review retained). This proves the new guidance slash handler loaded; Casting
-drag/picker/protected-click acceptance remains separate. Next: bounded read-only
-reader with fresh nonce, fresh advancing snapshot, manual receipt/display/latency/stale checks,
-movement checkpoints and second-lab reproduction remain pending. Lab-1 guest
-access needs recovery. Patch recovery and direct Computer Use remain deferred;
-do not advance ordered routes, camera projection or actions before their gates.
+The reviewed helper is committed as `b862c93`. It uses separate ordinary Hide,
+Enter/open-empty-focused-chat and exact allowed-command steps. First Enter
+may clear AFK only; a separately reviewed second Enter opened chat. Deferred
+result intent pins destination/sequence/calculator before review, then computes
+from a new authenticated receipt after review without relaxing age gates.
+The old leading-slash focus assumption was rejected and retired.
+
+The authoritative full helper gate passed: **539 .NET tests, 962 Python tests
+(2 skipped), 110 Lua lifecycle/encoder checks, 22 existing shared Lua/C# cases,
+two synthetic lab-bound Lua -> C# -> Lua guidance round trips**, Release
+build/format, native smoke, deterministic replay and 685 relative links.
+Evidence: `artifacts/validation/20261029T014842Z-76addab5/`, log
+`artifacts/bidirectional-helper-final-gate-20261028.log`.
+
+**Next useful increment:** one supervised manual movement checkpoint to verify
+live result invalidation/recalculation, then independent Lab-1 reproduction.
+One static Lab-2 case does not establish guidance across full-game restart,
+second-lab delivery, routes, facing, camera projection or actions. Patch recovery
+and direct Computer Use remain deferred.
 
 **Two-lab hybrid roadmap â€” USER SCOPE UPDATE, OCTOBER 28:**
 Joey authorized using **RIFT-Lab-1 and RIFT-Lab-2** for faster parallel
@@ -94,7 +77,7 @@ this work. The [saved combined prompt and roadmap](planning/bidirectional-hybrid
 defines complementary lab roles, separate identities/evidence/endpoints,
 one input controller per lab, and the first useful demonstration: addon
 coordinates -> external distance/direction calculation -> addon display.
-Next: establish both current lab baselines and assess the inbound transport.
+The initial baseline/transport assessment is recorded in the feasibility document; current results and the next increment are above.
 This update saves the plan; it does not claim a working return channel or
 fresh Lab-1 validation. Existing game-input limits, patch-recovery and direct
 Computer Use deferrals remain. Lab-2 Casting v0.4.0 acceptance is still pending.
