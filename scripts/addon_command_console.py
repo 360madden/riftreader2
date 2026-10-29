@@ -12,7 +12,7 @@ import argparse
 import ctypes
 from ctypes import wintypes
 import importlib.util
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -573,6 +573,31 @@ def _require_origin_near(source: dict, current: dict) -> None:
         _fail("fast-result-source-position-changed")
 
 
+def _post_input_receipt(pin: dict, source: dict, input_sent_at: datetime,
+                        timeout_seconds: float = 4.0) -> tuple[dict, bytes, dict]:
+    source_outer = source["observation"].get("sequence")
+    source_captured = _parse_time(source["observation"]["capturedAtUtc"])
+    if type(source_outer) is not int or source_outer < 1 or input_sent_at.tzinfo is None:
+        _fail("invalid-fast-result-source")
+    input_sent_at = input_sent_at.astimezone(timezone.utc)
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        current, data, gate = _fast_receipt(pin, initial=False)
+        current_outer = current["observation"].get("sequence")
+        received = _parse_time(current["receivedAtUtc"])
+        captured = _parse_time(current["observation"]["capturedAtUtc"])
+        if (type(current_outer) is int and current_outer > source_outer
+                and received >= input_sent_at and captured > source_captured
+                and captured >= input_sent_at + timedelta(seconds=_live_gate.CLOCK_SKEW_SECONDS)):
+            _require_continuity(source, current)
+            _require_origin_near(source, current)
+            _fast_age(current)
+            return current, data, gate
+        if time.monotonic() >= deadline:
+            _fail("post-input-receipt-timeout")
+        time.sleep(0.05)
+
+
 def prepare(config: Config, command: str | None, ui_step: str | None,
             expected_game: dict, fast_source_pin_path: Path | None = None,
             guidance_report_path: Path | None = None, hide_frame: str | None = None,
@@ -950,6 +975,8 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
                 # entry. UI steps are exactly one reviewed key attempt.
                 _send_operation(client, operation, command)
                 report["inputSent"] = True
+                input_sent_at = datetime.now(timezone.utc)
+                report["inputSentAtUtc"] = input_sent_at.isoformat().replace("+00:00", "Z")
                 time.sleep(0.5)
                 _capture(client, config.output / "after-screen.png")
             finally:
@@ -961,9 +988,28 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
                         pass
             if not report["releaseSucceeded"]:
                 _fail("input-release-uncertain")
-            verify_identity(config, vm)
-            game_after = query_game_identity(config, vm)
-            _require_game(game_after, plan["gameIdentity"])
+            if fast_mode:
+                post_receipt, post_bytes, _ = _post_input_receipt(
+                    pin, current_receipt, input_sent_at)
+                post_path = config.output / "post-input-source-receipt.json"
+                with post_path.open("xb") as stream:
+                    stream.write(post_bytes)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                report["postInputReceipt"] = {
+                    "path": str(post_path.resolve()),
+                    "sha256": hashlib.sha256(post_bytes).hexdigest(),
+                    "receivedAtUtc": post_receipt["receivedAtUtc"],
+                    "capturedAtUtc": post_receipt["observation"]["capturedAtUtc"],
+                    "outerSequence": post_receipt["observation"]["sequence"],
+                }
+                verify_identity(config, vm)
+                game_after = {key: pin["gameIdentity"][key] for key in
+                              ("processId", "processStartUtcTicks", "executableSha256")}
+            else:
+                verify_identity(config, vm)
+                game_after = query_game_identity(config, vm)
+                _require_game(game_after, plan["gameIdentity"])
             report["after"] = {"vm": vm, "game": game_after}
             report["status"] = "completed"
     except Blocked as exc:

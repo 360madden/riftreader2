@@ -458,6 +458,141 @@ class FastResultTests(unittest.TestCase):
                 "seed": {"player": selected["player"]["value"], "epoch": selected["epoch"],
                          "x": 10, "y": 2, "z": 20}, "calculator": self.calculator()}
 
+    def post_receipt(self, source, input_sent_at):
+        current = json.loads(json.dumps(source))
+        current["receivedAtUtc"] = (input_sent_at + timedelta(milliseconds=350)).isoformat()
+        current["receivedMonotonicNs"] = __import__("time").monotonic_ns() - 10_000_000
+        current["observation"]["sequence"] += 1
+        current["observation"]["capturedAtUtc"] = (input_sent_at + timedelta(milliseconds=300)).isoformat()
+        selected = current["observation"]["riftReader2"]["observation"]
+        selected["sequence"] += 1
+        selected["clock"]["value"] += 0.5
+        return current
+
+    def test_post_input_receipt_accepts_strictly_new_fresh_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, source, _ = self.fixture(folder)
+            sent = datetime.now(timezone.utc) - timedelta(milliseconds=500)
+            source["observation"]["capturedAtUtc"] = (sent - timedelta(milliseconds=100)).isoformat()
+            current = self.post_receipt(source, sent)
+            data = json.dumps(current).encode()
+            with mock.patch.object(module, "_fast_receipt", return_value=(current, data, {"status": "fresh"})):
+                actual, actual_bytes, gate = module._post_input_receipt(pin, source, sent, 0)
+            self.assertEqual((current, data, "fresh"), (actual, actual_bytes, gate["status"]))
+
+    def test_post_input_receipt_rejects_nonadvancing_or_preinput_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, source, _ = self.fixture(folder)
+            sent = datetime.now(timezone.utc) - timedelta(milliseconds=500)
+            source["observation"]["capturedAtUtc"] = (sent - timedelta(milliseconds=100)).isoformat()
+            for mutation in ("outer", "received", "captured"):
+                current = self.post_receipt(source, sent)
+                if mutation == "outer":
+                    current["observation"]["sequence"] = source["observation"]["sequence"]
+                elif mutation == "received":
+                    current["receivedAtUtc"] = (sent - timedelta(milliseconds=1)).isoformat()
+                else:
+                    current["observation"]["capturedAtUtc"] = (sent + timedelta(milliseconds=249)).isoformat()
+                with self.subTest(mutation=mutation), \
+                        mock.patch.object(module, "_fast_receipt", return_value=(current, b"x", {})), \
+                        self.assertRaisesRegex(module.Blocked, "post-input-receipt-timeout"):
+                    module._post_input_receipt(pin, source, sent, 0)
+
+    def test_post_input_receipt_rejects_continuity_or_origin_drift(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, source, _ = self.fixture(folder)
+            sent = datetime.now(timezone.utc) - timedelta(milliseconds=500)
+            source["observation"]["capturedAtUtc"] = (sent - timedelta(milliseconds=100)).isoformat()
+            for mutation in ("epoch", "origin"):
+                current = self.post_receipt(source, sent)
+                selected = current["observation"]["riftReader2"]["observation"]
+                if mutation == "epoch":
+                    selected["epoch"] += 1
+                else:
+                    selected["fields"]["coordX"]["value"] += 0.500001
+                reason = "continuity-lost" if mutation == "epoch" else "position-changed"
+                with self.subTest(mutation=mutation), \
+                        mock.patch.object(module, "_fast_receipt", return_value=(current, b"x", {})), \
+                        self.assertRaisesRegex(module.Blocked, reason):
+                    module._post_input_receipt(pin, source, sent, 0)
+
+    def test_fast_execute_uses_post_receipt_not_post_input_guestops(self):
+        now = datetime.now(timezone.utc)
+        vm = {"vmwarePid": 99, "vmwareStartUtc": "epoch"}
+        client = ExecuteTests.Client()
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            pin, receipt, command = self.fixture(folder)
+            pin["vmIdentity"] = vm
+            screen = output / "review-screen.png"
+            screen.write_bytes(b"reviewed screen")
+            snapshot = json.dumps(receipt["observation"], ensure_ascii=True,
+                                  sort_keys=True, separators=(",", ":")).encode("ascii")
+            receipt_bytes = json.dumps(receipt).encode()
+            (output / "source-receipt.json").write_bytes(receipt_bytes)
+            (output / "source-snapshot.json").write_bytes(snapshot)
+            game = {"lab": "lab2", **{key: pin["gameIdentity"][key] for key in
+                    ("processId", "processStartUtcTicks", "executableSha256")}}
+            source = {"sourcePin": pin,
+                      "receiptSha256": __import__("hashlib").sha256(receipt_bytes).hexdigest(),
+                      "snapshotSha256": __import__("hashlib").sha256(snapshot).hexdigest()}
+            plan = {"schemaVersion": 1, "captureId": "e" * 32,
+                    "capturedAtUtc": (now - timedelta(seconds=2)).isoformat(),
+                    "screen": str(screen), "screenSha256": module._sha(screen),
+                    "operation": {"type": "command", "command": command},
+                    "vmIdentity": vm, "gameIdentity": game, "fastResultSource": source}
+            plan["planSha256"] = module._plan_sha(plan)
+            plan_path = output / "plan.json"
+            plan_path.write_text(json.dumps(plan), encoding="utf-8")
+            review = {"schemaVersion": 1, "captureId": plan["captureId"],
+                      "screenSha256": plan["screenSha256"], "reviewedAtUtc": now.isoformat(),
+                      "planSha256": plan["planSha256"], "decision": "approved",
+                      "gameForeground": True, "textEntryClosed": False,
+                      "chatEntryOpen": True, "chatEntryEmpty": True,
+                      "chatEntryFocused": True, "panelOpen": False,
+                      "soleControllerIdle": True, "knownControllerIdle": True,
+                      "queueIdle": True, "reviewer": "root-agent", "note": "reviewed"}
+            review_path = output / "review.json"
+            review_path.write_text(json.dumps(review), encoding="utf-8")
+            post = self.post_receipt(receipt, now - timedelta(seconds=1))
+            post_bytes = json.dumps(post).encode()
+            config = module.Config(Path("lab.vmx"), 5905, Path("vmrun.exe"), output)
+
+            def fake_capture(_client, destination):
+                destination.write_bytes(b"after")
+                return 800, 600
+
+            send_completed = []
+
+            def fake_send(*_args):
+                send_completed.append(datetime.now(timezone.utc))
+
+            with mock.patch.object(module, "ControlMutex", return_value=__import__("contextlib").nullcontext()), \
+                    mock.patch.object(module, "collect_identity", return_value=vm), \
+                    mock.patch.object(module, "verify_identity", return_value=vm) as verify, \
+                    mock.patch.object(module, "query_game_identity") as query, \
+                    mock.patch.object(module, "connect", return_value=client), \
+                    mock.patch.object(module, "_capture", side_effect=fake_capture), \
+                    mock.patch.object(module, "_send_operation", side_effect=fake_send), \
+                    mock.patch.object(module, "_fast_receipt", return_value=(receipt, receipt_bytes, {})), \
+                    mock.patch.object(module, "_post_input_receipt", return_value=(post, post_bytes, {})) as post_check, \
+                    mock.patch.object(module, "_fast_age"), mock.patch.object(module.time, "sleep"):
+                report = module.execute(config, plan_path, review_path)
+
+            self.assertEqual("completed", report["status"])
+            query.assert_not_called()
+            verify.assert_called_once_with(config, vm)
+            post_check.assert_called_once()
+            input_sent_at = post_check.call_args.args[2]
+            self.assertGreaterEqual(input_sent_at, send_completed[0])
+            self.assertEqual(
+                input_sent_at,
+                datetime.fromisoformat(report["inputSentAtUtc"].replace("Z", "+00:00")),
+            )
+            saved = output / "post-input-source-receipt.json"
+            self.assertEqual(post_bytes, saved.read_bytes())
+            self.assertEqual(module._sha(saved), report["postInputReceipt"]["sha256"])
+
     def test_exact_result_matches_authenticated_source(self):
         with tempfile.TemporaryDirectory() as folder:
             pin, receipt, command = self.fixture(folder)
