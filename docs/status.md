@@ -2,6 +2,20 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Both native Codex hosts - LOGON START VERIFIED:** Lab-1 now uses
+`RiftReader2-CodexRemote-Lab1`, an interactive limited logon task with an
+Explorer handoff, matching Lab-2's architecture. A fresh Lab-1 reboot at
+16:21:09Z produced automatic dispatcher and non-admin worker receipts; the
+worker reported connected under the original Lab-1 environment ID. Main-app
+exact-host reads succeeded for both labs. Lab-1 uses shorter delays and records
+an already-online conflict without stopping an existing server. After an
+earlier duplicate produced 409 warnings, Lab-1's package-specific Windows
+startup task was disabled; the app remains available to open manually. The
+final reboot and 105-second settled check showed no app duplicate or 409.
+Both starts
+require user logon; neither establishes game-control readiness. See the
+[Lab-1 startup verification](validation/lab1-codex-autostart-2026-10-29.md).
+
 **Lab-2 native Codex auto-start - VERIFIED AFTER REBOOT:** One per-user
 interactive/limited scheduled task dispatches the existing native host via
 Explorer after logon. On the 16:01:04Z reboot, the task fired automatically;
