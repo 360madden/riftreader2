@@ -91,6 +91,38 @@ public sealed class EnvelopeCandidateAccumulatorTests
         Assert.Empty(accumulator.ValidCandidates);
     }
 
+    [Fact]
+    public void Feed_GrowsScratchForAnArbitraryLargeChunkWithoutChangingOutput()
+    {
+        var envelope = ValidEnvelope("large-chunk");
+        var input = new byte[192 * 1024];
+        var offset = 100 * 1024 + 17;
+        envelope.CopyTo(input, offset);
+        var accumulator = new EnvelopeCandidateAccumulator(Challenge);
+
+        accumulator.Feed(input);
+
+        var candidate = Assert.Single(accumulator.ValidCandidates);
+        Assert.True(candidate.Span.SequenceEqual(envelope));
+    }
+
+    [Fact]
+    public void Feed_DoesNotAllocateForRepeatedMarkerFreeScannerChunks()
+    {
+        var input = new byte[64 * 1024];
+        new Random(20261029).NextBytes(input);
+        var accumulator = new EnvelopeCandidateAccumulator(Challenge);
+        accumulator.Feed(input);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (var index = 0; index < 256; index++)
+            accumulator.Feed(input);
+
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Assert.Equal(0, allocated);
+        Assert.Empty(accumulator.ValidCandidates);
+    }
+
     private static byte[] ValidEnvelope(string player)
     {
         var escapedPlayer = System.Text.Json.JsonSerializer.Serialize(player);

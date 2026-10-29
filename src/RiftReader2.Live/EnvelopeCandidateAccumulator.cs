@@ -5,12 +5,15 @@ namespace RiftReader2.Live;
 
 public sealed class EnvelopeCandidateAccumulator
 {
+    private const int InitialChunkBytes = 64 * 1024;
+    private const int RetainedTailBytes = LiveAddonEnvelopeDecoder.MaxEnvelopeBytes - 1;
     public const int MaxEndpointCandidates = 4096;
     public const int MaxValidCandidates = 256;
     private static readonly byte[] Suffix = "|ENDRR2L1"u8.ToArray();
     private readonly string challenge;
     private readonly byte[] prefix;
-    private byte[] tail = [];
+    private byte[] scratch = new byte[InitialChunkBytes + RetainedTailBytes];
+    private int tailLength;
     private readonly List<ReadOnlyMemory<byte>> validCandidates = [];
 
     public EnvelopeCandidateAccumulator(string challenge)
@@ -27,19 +30,27 @@ public sealed class EnvelopeCandidateAccumulator
     public int MalformedCandidateCount { get; private set; }
     public bool BudgetExceeded { get; private set; }
 
-    public void ResetMemoryBoundary() => tail = [];
+    public void ResetMemoryBoundary() => tailLength = 0;
 
     public void Feed(ReadOnlySpan<byte> bytes)
     {
         if (bytes.Length == 0 || BudgetExceeded)
             return;
-        var tailLength = tail.Length;
-        var window = GC.AllocateUninitializedArray<byte>(tailLength + bytes.Length);
-        tail.CopyTo(window, 0);
-        bytes.CopyTo(window.AsSpan(tailLength));
-        Extract(window, tailLength);
-        var keep = Math.Min(LiveAddonEnvelopeDecoder.MaxEnvelopeBytes - 1, window.Length);
-        tail = window[^keep..];
+        var windowLength = checked(tailLength + bytes.Length);
+        EnsureCapacity(windowLength);
+        bytes.CopyTo(scratch.AsSpan(tailLength));
+        Extract(scratch.AsSpan(0, windowLength), tailLength);
+        var keep = Math.Min(RetainedTailBytes, windowLength);
+        scratch.AsSpan(windowLength - keep, keep).CopyTo(scratch);
+        tailLength = keep;
+    }
+
+    private void EnsureCapacity(int required)
+    {
+        if (required <= scratch.Length)
+            return;
+        var doubled = scratch.Length <= int.MaxValue / 2 ? scratch.Length * 2 : int.MaxValue;
+        Array.Resize(ref scratch, Math.Max(required, doubled));
     }
 
     private void Extract(ReadOnlySpan<byte> window, int newDataOffset)
