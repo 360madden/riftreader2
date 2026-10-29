@@ -2,6 +2,17 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Automated two-lab movement trial — IN PROGRESS:** The reviewed session runner
+now calibrates actual key responses and makes bounded waypoint decisions from
+independently advancing addon XYZ. Code checkpoints `0e2af08` and `d382173`
+passed offline validation. Initial live calibration attempts exposed transient
+partial-memory reads, feedback cadence limits and a zero-displacement lateral
+response; no waypoint arrival is accepted yet. Each failed attempt released
+inputs and cleaned up its queue lease. Fresh readers with one complete-scan retry
+and 250 ms polling are being rebound. See the
+[movement trial report](validation/automated-movement-two-lab-2026-10-29.md)
+for current evidence and limitations. The authorized window ends at 22:04:30Z.
+
 **Two-lab live guidance hour — ROUND TRIPS AND BOUNDED MOVEMENT VERIFIED:**
 Both labs accepted separate reader bindings and displayed independently calculated
 guidance using their own fresh game/reader/player identities. Lab-2 displayed a
