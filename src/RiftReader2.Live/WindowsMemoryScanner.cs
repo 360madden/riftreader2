@@ -26,7 +26,8 @@ public static class WindowsMemoryScanner
         string challenge,
         long maxScanBytes,
         TimeSpan maxScanTime,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action? attemptStarting = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var handle = NativeMethods.OpenProcess(
@@ -50,7 +51,8 @@ public static class WindowsMemoryScanner
                     stopwatch,
                     cancellationToken),
                 () => stopwatch.Elapsed,
-                maxScanTime);
+                maxScanTime,
+                attemptStarting);
         }
         catch (OperationCanceledException)
         {
@@ -69,16 +71,19 @@ public static class WindowsMemoryScanner
     internal static LiveScanResult RunWithPartialCopyRetry(
         Func<ScanAttemptResult> scan,
         Func<TimeSpan> elapsed,
-        TimeSpan maxScanTime)
+        TimeSpan maxScanTime,
+        Action? attemptStarting = null)
     {
         ArgumentNullException.ThrowIfNull(scan);
         ArgumentNullException.ThrowIfNull(elapsed);
+        attemptStarting?.Invoke();
         var first = scan();
         if (first.ReadErrorCode != NativeMethods.ErrorPartialCopy ||
             first.Result.Completed ||
             first.Result.Status != "read-failed" ||
             elapsed() >= maxScanTime)
             return first.Result;
+        attemptStarting?.Invoke();
         return scan().Result;
     }
 

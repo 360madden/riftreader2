@@ -12,6 +12,7 @@ public sealed class LiveAddonFreshnessTracker
     private readonly LiveFreshnessOptions options;
     private LiveAddonFrame? previous;
     private long previousObservedAt;
+    private long previousObservedThrough;
     private bool previousTimingUsable;
     private bool needsWarmup;
     private string? lastAdvanceEnvelopeSha256;
@@ -38,11 +39,26 @@ public sealed class LiveAddonFreshnessTracker
     public LiveAddonFreshness Observe(
         LiveAttachmentIdentity observedIdentity,
         LiveAddonSelection selection,
-        long observedAtTimestamp)
+        long observedAtTimestamp) =>
+        Observe(observedIdentity, selection, observedAtTimestamp, observedAtTimestamp);
+
+    public LiveAddonFreshness Observe(
+        LiveAttachmentIdentity observedIdentity,
+        LiveAddonSelection selection,
+        long observedAtTimestamp,
+        long observedThroughTimestamp)
     {
         ArgumentNullException.ThrowIfNull(selection);
         if (invalidated)
             return Invalidated(currentReason ?? "attachment-invalidated");
+
+        var intervalDuration = timeProvider.GetElapsedTime(observedAtTimestamp, observedThroughTimestamp);
+        if (intervalDuration < TimeSpan.Zero)
+            return Invalidate("observation-interval-invalid");
+        var now = timeProvider.GetTimestamp();
+        var completedAge = timeProvider.GetElapsedTime(observedThroughTimestamp, now);
+        if (completedAge < TimeSpan.Zero)
+            return Invalidate("observation-time-in-future");
 
         LiveAttachmentIdentity normalizedIdentity;
         try
@@ -67,14 +83,12 @@ public sealed class LiveAddonFreshnessTracker
         if (!string.Equals(candidate.Challenge, Identity.ReaderSessionNonce, StringComparison.Ordinal))
             return Invalidate("attachment-challenge-mismatch");
 
-        var now = timeProvider.GetTimestamp();
         var scanAge = timeProvider.GetElapsedTime(observedAtTimestamp, now);
-        if (scanAge < TimeSpan.Zero)
-            return Invalidate("observation-time-in-future");
 
         if (previous is null)
         {
-            SetBaseline(candidate, observedAtTimestamp, TryClock(candidate.Observation, out _));
+            SetBaseline(candidate, observedAtTimestamp, observedThroughTimestamp,
+                TryClock(candidate.Observation, out _));
             if (scanAge > options.FreshnessTimeout || !previousTimingUsable)
                 return Withhold(scanAge > options.FreshnessTimeout ? "observation-already-expired" : "source-clock-unavailable");
             needsWarmup = false;
@@ -98,17 +112,17 @@ public sealed class LiveAddonFreshnessTracker
 
         if (!TryClock(candidate.Observation, out var clock))
         {
-            SetBaseline(candidate, observedAtTimestamp, timingUsable: false);
+            SetBaseline(candidate, observedAtTimestamp, observedThroughTimestamp, timingUsable: false);
             return Withhold("source-clock-unavailable");
         }
         if (scanAge > options.FreshnessTimeout)
         {
-            SetBaseline(candidate, observedAtTimestamp, timingUsable: false);
+            SetBaseline(candidate, observedAtTimestamp, observedThroughTimestamp, timingUsable: false);
             return Withhold("observation-already-expired");
         }
         if (!previousTimingUsable || !TryClock(prior.Observation, out var priorClock))
         {
-            SetBaseline(candidate, observedAtTimestamp, timingUsable: true);
+            SetBaseline(candidate, observedAtTimestamp, observedThroughTimestamp, timingUsable: true);
             needsWarmup = false;
             currentStatus = LiveFreshnessStatus.Warming;
             currentReason = "baseline-warming";
@@ -117,27 +131,32 @@ public sealed class LiveAddonFreshnessTracker
         if (clock <= priorClock)
             return Invalidate("source-clock-not-advanced");
 
-        var receiptDelta = timeProvider.GetElapsedTime(previousObservedAt, observedAtTimestamp);
-        if (receiptDelta <= TimeSpan.Zero)
+        var acquisitionStartDelta = timeProvider.GetElapsedTime(previousObservedAt, observedAtTimestamp);
+        if (acquisitionStartDelta <= TimeSpan.Zero)
             return Invalidate("receiver-time-not-advanced");
+        var latestAcquisitionDelta = timeProvider.GetElapsedTime(previousObservedAt, observedThroughTimestamp);
+        var earliestAcquisitionDelta = timeProvider.GetElapsedTime(previousObservedThrough, observedAtTimestamp);
+        if (earliestAcquisitionDelta < TimeSpan.Zero)
+            earliestAcquisitionDelta = TimeSpan.Zero;
         var sourceDeltaSeconds = clock - priorClock;
         if (!double.IsFinite(sourceDeltaSeconds) ||
-            Math.Abs(sourceDeltaSeconds - receiptDelta.TotalSeconds) > options.MaxClockSkew.TotalSeconds)
+            sourceDeltaSeconds < earliestAcquisitionDelta.TotalSeconds - options.MaxClockSkew.TotalSeconds ||
+            sourceDeltaSeconds > latestAcquisitionDelta.TotalSeconds + options.MaxClockSkew.TotalSeconds)
             return Invalidate("source-clock-delta-implausible");
 
-        if (receiptDelta > options.FreshnessTimeout || needsWarmup)
+        if (latestAcquisitionDelta > options.FreshnessTimeout || needsWarmup)
         {
-            SetBaseline(candidate, observedAtTimestamp, timingUsable: true);
+            SetBaseline(candidate, observedAtTimestamp, observedThroughTimestamp, timingUsable: true);
             needsWarmup = false;
             fresh = null;
             currentStatus = LiveFreshnessStatus.Warming;
-            currentReason = receiptDelta > options.FreshnessTimeout
+            currentReason = latestAcquisitionDelta > options.FreshnessTimeout
                 ? "observation-gap-requires-warmup"
                 : "recovery-requires-warmup";
             return Snapshot(LiveFreshnessStatus.Warming, null, null, null, currentReason);
         }
 
-        SetBaseline(candidate, observedAtTimestamp, timingUsable: true);
+        SetBaseline(candidate, observedAtTimestamp, observedThroughTimestamp, timingUsable: true);
         fresh = candidate;
         freshObservedAt = observedAtTimestamp;
         currentStatus = LiveFreshnessStatus.Fresh;
@@ -201,10 +220,15 @@ public sealed class LiveAddonFreshnessTracker
         return new(status, Identity, observation, envelopeSha256, observedAt, age, reason);
     }
 
-    private void SetBaseline(LiveAddonFrame frame, long observedAtTimestamp, bool timingUsable)
+    private void SetBaseline(
+        LiveAddonFrame frame,
+        long observedAtTimestamp,
+        long observedThroughTimestamp,
+        bool timingUsable)
     {
         previous = frame;
         previousObservedAt = observedAtTimestamp;
+        previousObservedThrough = observedThroughTimestamp;
         previousTimingUsable = timingUsable;
         lastAdvanceEnvelopeSha256 = frame.EnvelopeSha256;
         lastAdvanceObservedAt = observedAtTimestamp;

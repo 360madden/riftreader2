@@ -314,6 +314,88 @@ public sealed class LiveAddonFreshnessTests
     }
 
     [Fact]
+    public void VariableScanDurationsUseAcquisitionIntervalsWithoutWideningClockSkew()
+    {
+        var time = new ManualTimeProvider();
+        var identity = Identity();
+        var tracker = new LiveAddonFreshnessTracker(identity, timeProvider: time);
+        var firstStartedAt = time.GetTimestamp();
+        time.Advance(TimeSpan.FromSeconds(2.4));
+        var firstCompletedAt = time.GetTimestamp();
+        Assert.Equal(LiveFreshnessStatus.Warming,
+            tracker.Observe(identity, Selected(1, 1, 10), firstStartedAt, firstCompletedAt).Status);
+        time.Advance(TimeSpan.FromMilliseconds(250));
+        var secondStartedAt = time.GetTimestamp();
+        time.Advance(TimeSpan.FromSeconds(1.2));
+        var secondCompletedAt = time.GetTimestamp();
+
+        var result = tracker.Observe(
+            identity, Selected(2, 1, 12.5), secondStartedAt, secondCompletedAt);
+
+        Assert.Equal(LiveFreshnessStatus.Fresh, result.Status);
+        Assert.Equal(2, result.Observation!.Sequence);
+        Assert.Equal(TimeSpan.FromSeconds(1.2), result.Age);
+    }
+
+    [Fact]
+    public void SourceClockOutsideAcquisitionIntervalsAndToleranceStillInvalidates()
+    {
+        var time = new ManualTimeProvider();
+        var identity = Identity();
+        var tracker = new LiveAddonFreshnessTracker(identity, timeProvider: time);
+        var firstStartedAt = time.GetTimestamp();
+        time.Advance(TimeSpan.FromSeconds(1));
+        tracker.Observe(identity, Selected(1, 1, 10), firstStartedAt, time.GetTimestamp());
+        time.Advance(TimeSpan.FromMilliseconds(500));
+        var secondStartedAt = time.GetTimestamp();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        var result = tracker.Observe(
+            identity, Selected(2, 1, 14), secondStartedAt, time.GetTimestamp());
+
+        Assert.Equal(LiveFreshnessStatus.Invalidated, result.Status);
+        Assert.Equal("source-clock-delta-implausible", result.Reason);
+    }
+
+    [Fact]
+    public void ReversedOrFutureAcquisitionIntervalInvalidates()
+    {
+        var time = new ManualTimeProvider();
+        var identity = Identity();
+        var reversed = new LiveAddonFreshnessTracker(identity, timeProvider: time);
+        var now = time.GetTimestamp();
+
+        var reversedResult = reversed.Observe(
+            identity, Selected(1, 1, 1), now + TimeSpan.TicksPerSecond, now);
+
+        Assert.Equal(LiveFreshnessStatus.Invalidated, reversedResult.Status);
+        Assert.Equal("observation-interval-invalid", reversedResult.Reason);
+
+        var future = new LiveAddonFreshnessTracker(identity, timeProvider: time);
+        var futureResult = future.Observe(
+            identity, Selected(1, 1, 1), now, now + TimeSpan.TicksPerSecond);
+        Assert.Equal(LiveFreshnessStatus.Invalidated, futureResult.Status);
+        Assert.Equal("observation-time-in-future", futureResult.Reason);
+    }
+
+    [Fact]
+    public void AcquisitionIntervalsMustAdvanceByStartTime()
+    {
+        var time = new ManualTimeProvider();
+        var identity = Identity();
+        var tracker = new LiveAddonFreshnessTracker(identity, timeProvider: time);
+        var firstStartedAt = time.GetTimestamp();
+        tracker.Observe(identity, Selected(1, 1, 1), firstStartedAt, firstStartedAt);
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        var result = tracker.Observe(
+            identity, Selected(2, 1, 2), firstStartedAt, time.GetTimestamp());
+
+        Assert.Equal(LiveFreshnessStatus.Invalidated, result.Status);
+        Assert.Equal("receiver-time-not-advanced", result.Reason);
+    }
+
+    [Fact]
     public void FutureObservedAtTimestampInvalidatesAttachment()
     {
         var time = new ManualTimeProvider();

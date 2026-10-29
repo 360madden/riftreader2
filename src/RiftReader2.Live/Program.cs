@@ -144,8 +144,10 @@ internal static class Program
                         nonce,
                         configuration.MaxScanBytes,
                         TimeSpan.FromSeconds(configuration.MaxScanSeconds),
-                        cancellation.Token),
+                        cancellation.Token,
+                        () => scanStartedAt = timeProvider.GetTimestamp()),
                     cancellation.Token);
+                var scanCompletedAt = timeProvider.GetTimestamp();
 
                 var after = await TargetDiscovery.DiscoverAsync(
                     configuration.ProcessName,
@@ -171,7 +173,8 @@ internal static class Program
                 var freshnessResult = tracker!.Observe(
                     after.Target?.Identity ?? attachedTarget.Identity,
                     lastSelection,
-                    scanStartedAt);
+                    scanStartedAt,
+                    scanCompletedAt);
                 var nativePower = after.Target is not null && SameProcess(attachedTarget, after.Target)
                     ? await LivePowerReader.ReadAsync(after.Target, timeProvider, cancellation.Token)
                     : new LivePowerRead(null, null, timeProvider.GetTimestamp(), "target-identity-changed-during-scan");
