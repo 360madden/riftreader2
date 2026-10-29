@@ -27,6 +27,11 @@ calculation and final report were not verified. Durable Workbridge job records,
 not the submitted-call UI or the missing answer, establish the command results.
 Chat: https://chatgpt.com/c/6ae380ed-0c54-83ea-8add-d86ec6bde003
 
+Follow-up: the original response was readable in the in-app browser and its
+arithmetic was correct. Its statement that doctor did not execute inside the
+guest is inaccurate: the implementation stages and runs a guest diagnostic as
+described above. See [follow-up test](browser-workbridge-codex-free-2026-10-29.md).
+
 In contrast, the [native Codex teamwork test](native-codex-teamwork-2026-10-29.md)
 sent prompts to existing Codex chats inside each lab and received readable
 answers plus a coordinator-relayed review. It did not use VMware-dispatched

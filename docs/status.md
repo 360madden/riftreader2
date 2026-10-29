@@ -2,6 +2,14 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Browser Workbridge guest probe - BOTH LABS PASSED:** Normal ChatGPT in the
+in-app browser launched two overlapping Workbridge jobs that independently
+listed guest processes through VMware GuestOps, without invoking guest Codex.
+Both returned exit 0 and the browser displayed the final report. Chrome showed
+completed response-load errors even for a simple control; its underlying issue
+is unresolved, while the in-app browser is a verified workaround. See
+[the test](validation/browser-workbridge-codex-free-2026-10-29.md).
+
 **Browser ChatGPT + Workbridge two-lab diagnostic - PARTIAL PASS:** A normal
 browser ChatGPT chat submitted both existing `lab_codex.py doctor` commands via
 Workbridge; separate overlapping jobs finished exit 0 with ready diagnostics
