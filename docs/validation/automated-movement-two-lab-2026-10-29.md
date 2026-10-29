@@ -5,6 +5,13 @@ bounded, reliable **closed-loop** player movement on both labs. Repeated key
 delivery alone is not success: every decision must use a newer exact-identity
 addon/API position, and each trial must stop safely on stale or contrary data.
 
+**Current result:** Lab-1 has one accepted bounded 2-D arrival. Repeatability
+and any accepted Lab-2 arrival remain unproved; Lab-2 is not reliably ready, so
+the two-lab goal is not yet met. Primary evidence is the current-identity
+[Lab-1 calibration](../../artifacts/two-lab-movement-20261029/lab1-calibration-run-06/result.json),
+[accepted goal result](../../artifacts/two-lab-movement-20261029/lab1-goal-run-05/result.json),
+and [final input status](../../artifacts/two-lab-movement-20261029/lab1-goal-run-05/final-status.json).
+
 ## Starting evidence and constraints
 
 The immediately preceding hour closed at 19:57Z with both final native hosts
@@ -56,9 +63,11 @@ are `movement_feedback` (fresh observation producer), `movement_controller`
    observation, recompute the feedback decision, and retain action/release/source
    evidence. The goal run must include at least two post-goal feedback decisions;
    open-loop replay of the calibrated sequence is insufficient.
-5. Stop only after two in-tolerance observations total: the final action's fresh
-   feedback plus one strictly advancing no-input settle sample. Finish with
-   explicit STOP, idle/disarmed/no-input status and free queue cleanup. Repeat
+5. Once the final action's fresh feedback is in tolerance, issue explicit STOP
+   and disarm within the 12-second motion budget. Then allow one separate,
+   bounded no-input confirmation of at most three seconds. It must strictly
+   advance and remain in tolerance; it cannot extend the arm or permit another
+   action. Finish with idle/no-input status and free queue cleanup. Repeat
    independently on the other lab; the two distinct receivers may run
    concurrently only with exact endpoint/token/source identities verified.
 
@@ -75,11 +84,12 @@ arm grant expires, or compensate by lengthening a blind key hold.
 | Evidence | Lab-1 | Lab-2 |
 | --- | --- | --- |
 | Distinct receiver endpoint/token/source isolation | Proved by concurrent cadence soak | Proved by concurrent cadence soak |
-| Fresh reader and exact-identity movement preflight | Rollover reader launched; rebind pending | Rollover reader launched; rebind pending |
-| Reviewed measured-key calibration with release and advancing positions | Blocked twice: no accepted after-feedback | Rejected: S measured, but Q was exactly zero; E remains unknown |
-| Separate one-arm goal run with at least two feedback decisions | Pending | Pending |
-| Final-action feedback plus advancing no-input settle within tolerance | Pending | Pending |
-| Per-attempt STOP/disarm/no-input/free-queue cleanup | Proved for failed attempts | Proved for failed attempts |
+| Fresh reader and exact-identity movement preflight | Third reader reliable in matched sample: 95/95 fresh | Bound/fresh observed, but unreliable: 40/56 fresh in three-minute sample |
+| Reviewed measured-key calibration with release and advancing positions | [Proved in run 06](../../artifacts/two-lab-movement-20261029/lab1-calibration-run-06/result.json): W 0.927, Q 0.934, cross 0.999969 | [Proved 1-D in run 07](../../artifacts/two-lab-movement-20261029/lab2-calibration-run-07/result.json): S 0.662 planar; exact profile `A0FCD163...` |
+| Separate one-arm goal run with at least two feedback decisions | [Proved by run 05](../../artifacts/two-lab-movement-20261029/lab1-goal-run-05/result.json): Q 74 ms + W 73 ms, two fresh feedback iterations | Goal runs 01 and 02 failed pre-ARM stale/no input |
+| Final-action feedback plus advancing no-input settle within tolerance | [Proved by run 05](../../artifacts/two-lab-movement-20261029/lab1-goal-run-05/feedback/next-734-735-receipt.json): final distance 0.118824, advancing same-position settle | Not reached |
+| Session STOP/disarm/no-input/free-queue cleanup | Run 05 and final system cleanup proved | Failed-attempt and final system cleanup proved |
+| Independent successful repeat for reliability | Run 06 failed post-Q stale; not proved | No accepted arrival to repeat |
 
 Success requires both columns through cleanup. A single pulse, endpoint-only
 comparison, visible scene change, or one lab completing does not qualify the
@@ -107,7 +117,7 @@ The first-reader calibration attempts produced only fail-closed results:
 
 - Lab-1 runs 01 and 02 encountered only feedback barriers and obtained no
   accepted after-observation, ending in bounded feedback timeouts at 3.0 and
-  4.5 seconds. No Lab-1 calibration is accepted.
+  4.5 seconds. At that stage, no Lab-1 calibration was accepted.
 - Lab-2 run 01 accepted an S response of approximately 0.890 planar units with
   -0.400 vertical change, then accepted exactly zero displacement for Q. The
   required independent action basis was correctly rejected.
@@ -123,9 +133,128 @@ window and 250 ms reader polling. Clean gate
 + 183 Live), ran 1,055 Python tests (1,053 passed, two skipped), and passed the
 native/Lua checks and 770 documentation links.
 
-Both replacement readers now run published executable SHA
-`A5B0D60DBB09CC1F2BE5DB0A9535F0EFB3A2CCE8D65765B3FAE6D68AF150C2E7`:
-Lab-1 PID 7120 and Lab-2 PID 4708, with distinct instances and nonces recorded
-in `receiver-ownership-rollover-02.json`. The old readers stopped cleanly.
-Reload/rebind and a new exact-identity preflight are in progress; no prior
-observation or arm grant carries into the replacement-reader trials.
+The rollover used published executable SHA
+`A5B0D60DBB09CC1F2BE5DB0A9535F0EFB3A2CCE8D65765B3FAE6D68AF150C2E7`.
+Lab-1 calibration run 05 then succeeded under reader PID 7120 and its pinned
+instance/nonce: a 150 ms W pulse displaced 1.019 planar units and a separately
+observed 150 ms Q pulse displaced 0.863, with normalized cross 0.99996, clean
+release and advancing exact-identity receipts. Its nonce later rotated before
+goal planning; the cause of that rotation was not retained. This is
+valid historical calibration evidence but not authority to act under a
+successor identity. Offline waypoint replay is reference-only.
+
+Lab-2's rollover challenge did not stay matched, and the Lab-1 reader continued
+streaming under a newly rotated nonce. That challenge change invalidated the
+historical calibration profile; it is not evidence that guest PID 7120 exited.
+Both feeds continued delivering receipts, but unbound delivery is not a usable
+position source. A third reader, fresh bind/preflight and new same-identity
+calibration are therefore required before either remaining goal run; no prior
+arm grant or position may carry over.
+
+Checkpoint `369303c` corrects the scan acquisition-interval clock. The prior
+timestamp defect is proved; treating it as the cause of every earlier binding
+loss would be inference. Clean gate
+`artifacts/validation/20261029T211217Z-4bd9b2b1` passed 549 .NET tests (366 core
++ 183 Live), ran 1,055 Python tests (1,053 passed, two skipped), and passed the
+native/Lua checks and 772 documentation links. Third-reader rollover is
+authorized with executable SHA
+`33A21D0B32BD1C3978CABDFE7EC9C43A0413DB3B4B0654C3BBF8516EAD07F71B`.
+The receipt journal retains each byte-distinct receipt it observes from both
+feeds; sequence gaps mean it is not proof that every producer receipt was
+captured. Third readers are now running as Lab-1 guest PID 6424 / nonce
+`906b999c...` and Lab-2 guest PID 7132 / nonce `5c65d5c6...`; both feeds reached
+bound/fresh state on their pinned source and expected game identity. Lab-2
+still needs a qualifying current-identity calibration and goal run; Lab-1 still
+needs a successful repeat for reliability.
+
+Lab-1 calibration run 06 is the first current-identity calibration accepted for
+goal use: under guest reader PID 6424 / nonce `906b999c...`, independent 150 ms
+W and Q actions displaced 0.927 and 0.934 planar units respectively, with
+normalized cross 0.999969, clean release and advancing pinned receipts. Lab-2
+run 03 has not yet produced a qualifying calibration result artifact. Lab-1
+goal preparation may use run 06 only while that exact reader identity remains
+current; the historical run-05 vectors remain excluded.
+
+Checkpoint `2235569` adds pre-arm waiting, explicit one-dimensional mode and
+starts the motion timer only after arming. Gate
+`artifacts/validation/20261029T213423Z-c1f112c7` passed 549 .NET tests and ran
+1,062 Python tests (1,060 passed, two skipped), plus the native/Lua and link
+checks. Lab-1 goal run 03 produced two accepted action-feedback iterations,
+ending 0.09578 units from its target, followed by a distinct fresh no-input
+same-position receipt. The run nevertheless failed because the settle check
+crossed the 12-second elapsed budget; it is **not** an accepted arrival.
+
+The then-required transport correction requires STOP/disarm before the bounded
+no-input confirmation and keeps that confirmation outside the 12-second motion
+budget without extending or renewing the arm. Lab-2 calibration run 04 failed
+before ARM on a 4.5-second stale initial observation and sent no input. Its
+calibration was unproved at that stage.
+
+[Lab-2 reader-03 reliability diagnosis](../../artifacts/two-lab-movement-20261029/lab2-reader03-reliability-diagnosis-20261029T214700Z.md)
+found a 56.7-second no-fresh outage overlapping calibration run 06, including
+two Win32 299 read failures and 6–9.4-second scans beyond the five-second
+freshness limit. Across three minutes, Lab-2 was fresh for 40/56 samples
+(71.4%), with p90 scan time 5.642 seconds and maximum 9.428; same-window Lab-1
+was 95/95 fresh, p90 1.501 seconds, maximum 2.698. The failure recurred after a
+short recovery (outer 615 timed out at 10.002 seconds; outer 616 completed in
+7.700 seconds but was already expired). A short readiness streak therefore
+does not qualify Lab-2. Tracked-range or cached-candidate scanning remains a
+future recovery candidate, not a proved fix.
+
+With that transport correction applied, Lab-1 goal run 05 is an accepted
+bounded 2-D arrival. It used exactly two feedback-driven actions—Q for 74 ms,
+then W for 73 ms—under the calibration's pinned reader/game/player identity.
+The final action feedback was 0.118824 units from the goal. A later no-input
+receipt strictly advanced outer sequence 734 to 735 and addon sequence 3685 to
+3689 while retaining the same XYZ, satisfying the settle condition. Total key
+hold was 147 ms. The retained final status proves disarm and no sampled inputs
+down; queue receipt sequence 169 succeeded with holder null and blocked count
+zero. The host's persistent console reservation is expected ownership, not a
+movement-session queue leak. One arrival does not yet establish repeatability;
+the final two-lab trial cleanup remains pending.
+
+Checkpoint `1a07583` corrects the final feedback barrier and released-settle
+sequence. Gate `artifacts/validation/20261029T214459Z-fb6d85e6` passed 549 .NET
+tests, ran 1,068 Python tests (1,066 passed, two skipped), and passed the
+native/Lua checks and 778 documentation links. Lab-2 calibration run 07 then
+accepted a bounded 1-D S profile: 150 ms displaced 0.662102 planar units with
+-0.419983 vertical change, exact profile SHA `A0FCD163...`, followed by clean
+cleanup. Lab-2 goal run 01 failed before ARM on stale data and sent no input.
+Lab-1 repeat goal run 06 failed on stale post-action feedback. Neither the
+Lab-1 reliability repeat nor a Lab-2 arrival is yet accepted.
+
+Lab-2 goal run 02 also failed before ARM on stale data and sent no actions,
+despite two preceding fresh readiness observations. Live input scope is now
+closed with no further movement attempts planned. The final outcome is partial:
+one Lab-1 2-D arrival, no successful repeat, and no Lab-2 arrival. Reliable
+automated movement on both labs is therefore **not proved**.
+
+The [accumulator microbenchmark](../../artifacts/two-lab-movement-20261029/accumulator-microbenchmark/README.md)
+supports a lower-risk next candidate: reuse the feed scanner's scratch buffer.
+Across 256 MiB, baseline checkpoint `1a07583` allocated 302,575,608 bytes
+(73,871 per 64 KiB chunk) and took 61.6–67.2 ms; the isolated reused-scratch
+prototype allocated
+40 bytes and took 14.1–15.1 ms while producing byte-identical cross-boundary
+output. A Lab-2 full scan extrapolates to about 2.71 GiB managed allocation.
+This is accumulator-only evidence, not proof of a fourfold whole-scan gain or
+that allocation caused Win32 299. The production reuse change and two focused
+tests were committed as `2d38866`; final gate
+`artifacts/validation/20261029T215649Z-6e2ed889` passed 551 .NET tests (366 core
++ 185 Live), ran 1,068 Python tests (1,066 passed, two skipped), and passed the
+native/Lua checks and 781 documentation links. It was **not deployed** to either
+lab: all reported live trials used reader SHA `33A21D0B...`, so live scan impact
+remains unmeasured. Tracked-range scanning remains a broader, higher-risk
+alternative.
+
+## Final cleanup
+
+Cleanup completed at 22:02:53Z. The authoritative
+[cleanup summary](../../artifacts/two-lab-movement-20261029/final-cleanup-02/summary.json)
+is `trial-cleanup-resumed-complete` and references the exact reader-stop receipts
+retained in `final-cleanup-partial-01`; Lab-2's receiver was stopped exactly,
+while Lab-1's receiver had already ended for an unobserved reason. Typed listener
+count was zero and terminal artifact hashes were retained. Independent
+[final host status](../../artifacts/two-lab-movement-20261029/root-final-host-status.json)
+confirms both native hosts connected/ready, disarmed, not busy, with no sampled
+inputs down, no recovery requirement and free queues. RIFT game PIDs 6876 and
+4200 and both control agents were intentionally preserved.

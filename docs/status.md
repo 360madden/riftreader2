@@ -2,16 +2,27 @@
 
 Updated: 2026-10-29 (America/New_York).
 
-**Automated two-lab movement trial — IN PROGRESS:** The reviewed session runner
-now calibrates actual key responses and makes bounded waypoint decisions from
-independently advancing addon XYZ. Code checkpoints `0e2af08` and `d382173`
-passed offline validation. Initial live calibration attempts exposed transient
-partial-memory reads, feedback cadence limits and a zero-displacement lateral
-response; no waypoint arrival is accepted yet. Each failed attempt released
-inputs and cleaned up its queue lease. Fresh readers with one complete-scan retry
-and 250 ms polling are being rebound. See the
+**Automated two-lab movement trial — PARTIAL LIVE RESULT:** Lab-1 completed one
+bounded 2-D waypoint arrival using two feedback-driven pulses (147 ms total),
+ending 0.119 units from its goal. STOP/disarm preceded an independently advancing
+stationary confirmation. Its repeat stopped after one pulse when fresh feedback
+became unavailable. Lab-2 qualified an explicit S-only 1-D calibration, but both
+goal attempts stopped before arming; no Lab-2 arrival is accepted. All attempted
+sessions released inputs and their queue leases. Reliable movement on both labs
+remains unproved: Lab-2's acquisition outages included a 56.7-second interval.
+Checkpoints through `1a07583` correct scan-interval timing, pre-arm readiness,
+post-action acquisition barriers and released arrival confirmation. The final
+movement code gate passed 549 .NET tests. A subsequent buffer-reuse optimization,
+`2d38866`, passed 551 .NET tests and ran 1,068 Python tests (1,066 passed, two
+skipped), plus native/Lua checks. It removes per-chunk accumulator allocations;
+it has not been deployed to the labs, and its live effect remains unmeasured. See the
 [movement trial report](validation/automated-movement-two-lab-2026-10-29.md)
-for current evidence and limitations. The authorized window ends at 22:04:30Z.
+for evidence, remaining acquisition work and final cleanup. Live input has ended;
+the bounded journal finished, both temporary guest readers were stopped, and
+both temporary receiver processes/listeners are absent. Terminal receipt hashes
+and cleanup were independently verified at 22:02:53Z.
+Both game processes remain running and their control hosts are connected/ready,
+disarmed and idle, with no sampled desktop inputs down.
 
 **Two-lab live guidance hour — ROUND TRIPS AND BOUNDED MOVEMENT VERIFIED:**
 Both labs accepted separate reader bindings and displayed independently calculated
