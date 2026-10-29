@@ -2,6 +2,17 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**VM Windows names and repeated reboot - VERIFIED:** Both guests now report
+`RIFT-LAB-1` and `RIFT-LAB-2`; final boots were 15:44:08Z and 15:45:07Z.
+The main app successfully read each existing native Codex host after reboot.
+Lab-2 required a normal signed-in Explorer-session host start; it then reported
+connected under its existing environment ID and the earlier HTTP 409 did not
+recur. Lab-2 automatic host startup is unverified. Name-bound control configs
+were repaired, and successor main control hosts are running with reconciliation
+required. RIFT and guest control agents were absent after the final reboot;
+game-input readiness remains unverified. See the
+[rename and reboot checkpoint](validation/vm-names-reboot-2026-10-29.md).
+
 **Native Codex device connections - BOTH PAIRED; REMOTE READS VERIFIED:**
 Both native guest daemons were already running and connected. Joey clarified
 that the main PC was at code entry and the Allow error was inside a VM.
