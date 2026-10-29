@@ -85,8 +85,12 @@ pcall(function()
                 accepted, reason = live:CanBind(nonce)
                 if accepted then accepted, reason = guidance:Bind(lab, nonce) end
                 if accepted then
-                    accepted, reason = live:Bind(nonce)
-                    if not accepted then guidance:Invalidate(reason) end
+                    local liveAccepted, liveReason = live:Bind(nonce)
+                    accepted = liveAccepted
+                    if not accepted then
+                        reason = liveReason
+                        guidance:Invalidate(reason)
+                    end
                 end
             elseif args == "status" then
                 reason = guidance:Text(producer and producer.Observation, clock())

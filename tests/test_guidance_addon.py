@@ -405,6 +405,8 @@ class GuidanceAddonTests(unittest.TestCase):
         self.assertEqual("unbound", globals_.RiftReader2_Guidance.state)
         self.slash(lua, "rr2guide", f"bind lab1 {NONCE}")
         self.assertIn("WAITING", globals_.TEST_FRAMES["RiftReader2GuidanceText"].text)
+        self.assertIn("Bound lab1; manual feedback only.",
+                      globals_.TEST_PRINT[len(globals_.TEST_PRINT)])
         self.slash(lua, "rr2guide", self.command(epoch=1, source_sequence=1))
         self.assertEqual("received", globals_.RiftReader2_Guidance.state)
         self.assertEqual(1, globals_.RiftReader2_Guidance.result.sourceSequence)
