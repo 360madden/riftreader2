@@ -2,6 +2,15 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Sequential reboot check - BOTH CODEX HOSTS PASSED:** Lab-1 and Lab-2
+automatically reconnected under their existing identities after fresh Windows
+boots. Lab-2's first reboot exposed a competing packaged desktop server and
+six HTTP 409 log rows; disabling its per-user `OpenAI.Codex` startup task,
+as already done on Lab-1, resolved the observed conflict on a second reboot.
+Both settled checks reported zero 409s and main-app exact-host reads succeeded.
+User logon is required; game readiness was not verified. See the
+[two-lab reboot check](validation/two-lab-codex-reboot-2026-10-29.md).
+
 **Both native Codex hosts - LOGON START VERIFIED:** Lab-1 now uses
 `RiftReader2-CodexRemote-Lab1`, an interactive limited logon task with an
 Explorer handoff, matching Lab-2's architecture. A fresh Lab-1 reboot at
