@@ -2,6 +2,42 @@
 
 Updated: 2026-10-28 (America/New_York).
 
+**Autonomous two-lab trial checkpoint — OCTOBER 28 EVENING:**
+Joey explicitly authorized helper-based command entry while away after reserving
+idle Lab-2. The new narrow console helper retains exact VM/game identity,
+single-controller mutex, whole-plan/screenshot review, one-use execution and
+key/mouse release. Live evidence disproved a leading-slash-to-open-chat
+assumption: command characters opened Guild/LFG and a target-required message.
+That path is retired. The corrected Enter/open-empty-focused-chat sequence and
+ordinary Readiness/Casting Hide buttons are qualified by separate screenshots.
+No deliberate combat or movement trial has been run in this pass.
+
+Autonomous reload and guidance binding succeeded; the new confirmation text
+reads **Bound lab2; manual feedback only.** Current API source is bound/fresh
+for `u035400012DFEB5BC`, exact native RIFT PID/start ticks
+`2700 / 639288075394270241` (CIM loses the last tick), build `1935...A4BE8`.
+Reader process `3524 / 639288320762861032` uses nonce
+`7330a96ab95c4d56bef125b5dcb30518`, bounded until
+`2026-10-29T01:24:36.2861032Z` (October 28, 21:24 ET). Host receiver PID 24144,
+native start ticks `639288285817563485`, owns `192.168.56.1:49712` for Lab-2 only.
+These are expiring session facts, not durable configuration.
+
+The first fresh calculation plan was prepared, but the image/model review
+round trip took 20.96 seconds; the eight-second helper source gate correctly
+blocked before input. Thus distance return/display is **not yet verified**.
+A typed destination intent with calculation after UI review is being added;
+the 2/8/10-second source gates are not relaxed. Raw evidence:
+`artifacts/bidirectional-20261028/`, especially `live-result-a331bb114bf94d8b9b8a998ad81d9a5d/`.
+The [live validation checkpoint](validation/bidirectional-hybrid-2026-10-28.md)
+distinguishes accepted findings and failed attempts. The older full gate below
+predates these helper changes; focused checks and independent review passed,
+and a new full gate is required after integration.
+
+Lab-1 Tools reports running using the scoped encrypted management route, but
+the one capped 15-second cached GuestOps validation still timed out. No new
+game identity or independent live reproduction is claimed there. Tools-service
+recovery remains preparatory work; no Lab-1 service or VM restart was sent.
+
 **Bidirectional guidance — SOURCE/OFFLINE GATES PASSED, LAB-2 INSTALLED; LIVE ACCEPTANCE PENDING:**
 The [fresh two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md)
 records both VM identities and read-only screenshots. Lab-1 is in game as
@@ -39,8 +75,14 @@ backup was verified. No input/reload/controller start occurred. The source
 matches commit `4d7e7c7`; the frozen manifest predates that commit and records
 parent `8273745`, so its six content hashes are the deployment authority.
 
-The user has been asked to physically enter `/reloadui`, then `/rr2guide status`
-in reserved Lab-2. Live reload, fresh advancing snapshot, manual receipt/display/latency/stale checks,
+The user physically entered `/reloadui`, then `/rr2guide status` in reserved
+Lab-2. Independent read-only screenshot review at about 19:54 ET shows
+**RR2 GUIDANCE UNBOUND**, its bind instruction, Casting **v0.4.0 initialized**
+and API Probe **0.6.0** startup. Evidence:
+`artifacts/bidirectional-20261028/lab2-after-install/` (image SHA and observation
+review retained). This proves the new guidance slash handler loaded; Casting
+drag/picker/protected-click acceptance remains separate. Next: bounded read-only
+reader with fresh nonce, fresh advancing snapshot, manual receipt/display/latency/stale checks,
 movement checkpoints and second-lab reproduction remain pending. Lab-1 guest
 access needs recovery. Patch recovery and direct Computer Use remain deferred;
 do not advance ordered routes, camera projection or actions before their gates.

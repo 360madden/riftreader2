@@ -56,6 +56,17 @@ Other input restrictions, patch-recovery deferral, V1 reference-only status and
 limits on dedicated gameplay automation remain in force. Roadmap targets are
 not implementation evidence or blanket action authorization.
 
+**Autonomous information-channel trial — user grant, October 28:** After reserving
+idle Lab-2 and manually loading the guidance addon, Joey explicitly authorized
+the agent to attempt the command-entry work itself, use or design helper apps,
+and work independently while he is away. This covers the bounded addon reload,
+guidance bind/status/clear and calculated-result delivery needed for this trial.
+Use a narrowly allowlisted repository console helper with fresh VM/game identity,
+an agent-reviewed screenshot, exclusive controller ownership and key release.
+It does not expand into arbitrary Lua/macros, protected clicks, unrestricted
+gameplay automation or previously deferred research. Keep direct ChatGPT Computer
+Use deferred; the authorized repository CLI/console-helper route remains available.
+
 ## Current durability policy — user decision, 2026-10-25
 
 Prioritize durable collection that survives **fully exiting RIFT and launching

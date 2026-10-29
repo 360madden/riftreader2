@@ -128,5 +128,8 @@ rechecked using the exact game identity above. Apply run
 All six installed content hashes matched; Casting's three hashes, game process
 and VM identity stayed unchanged. Backup:
 `C:\Users\Public\Documents\RR2CoreBackup-7c7948e806ef422d83dea4a9e4a400e7`.
-No input, UI reload or controller start was sent. The physical reload/status
-step is pending user observation. This proves installation, not live feedback.
+No input, UI reload or controller start was sent by the agent. The user then
+physically reloaded and ran `/rr2guide status`. Independent screenshot review
+in `lab2-after-install/` shows **RR2 GUIDANCE UNBOUND** and the bind instruction,
+plus Casting 0.4.0 and API Probe 0.6.0 initialization. This proves installation
+and the guidance slash handler loading, not completed live feedback.
