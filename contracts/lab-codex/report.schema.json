@@ -1,0 +1,24 @@
+{
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "summary": { "type": "string", "maxLength": 4000 },
+    "findings": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "properties": {
+          "claim": { "type": "string", "maxLength": 4000 },
+          "confidence": { "type": "string", "enum": ["observed", "inferred", "unverified"] },
+          "evidence": { "type": "array", "maxItems": 16, "items": { "type": "string", "maxLength": 1000 } }
+        },
+        "required": ["claim", "confidence", "evidence"],
+        "additionalProperties": false
+      }
+    },
+    "limitations": { "type": "array", "maxItems": 32, "items": { "type": "string", "maxLength": 2000 } }
+  },
+  "required": ["schemaVersion", "summary", "findings", "limitations"],
+  "additionalProperties": false
+}

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "vmrun": "C:\\Program Files\\VMware\\VMware Workstation\\vmrun.exe",
+  "labs": {
+    "lab1": {
+      "vmx": "C:\\rift modding\\VMs\\RIFT-Lab\\RIFT-Lab.vmx",
+      "vncPort": 5905,
+      "cliPath": "C:\\Users\\mrkoo\\.local\\bin\\codex\\codex.exe",
+      "guestRoot": "C:\\Users\\mrkoo\\AppData\\Local\\RiftReader2\\codex-jobs"
+    },
+    "lab2": {
+      "vmx": "C:\\rift modding\\VMs\\RIFT-Lab-2\\RIFT-Lab.vmx",
+      "vncPort": 5962,
+      "cliPath": "C:\\Users\\mrkoo\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+      "guestRoot": "C:\\Users\\mrkoo\\AppData\\Local\\RiftReader2\\codex-jobs"
+    }
+  }
+}
