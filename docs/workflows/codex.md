@@ -40,7 +40,8 @@ binary research, use the existing REA registration described in
 
 ## Git and checks
 
-Inspect current status and preserve unrelated edits. The branch is `main`. Use
+Inspect current status and preserve unrelated edits. Read the actual branch with
+`git branch --show-current`; do not infer it from an older handoff. Use
 small coherent local commits and explicit paths. Remote publishing is not part
 of the current local foundation work.
 

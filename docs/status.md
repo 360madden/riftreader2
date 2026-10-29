@@ -2,6 +2,11 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Resume package:** [Movement handoff](workflows/movement-handoff-2026-10-29.md)
+and [researched resume prompt](workflows/movement-resume-prompt-2026-10-29.md).
+Next priority: live-qualify the tested buffer optimization, then repeat bounded
+waypoint trials using fresh bindings and calibrations.
+
 **Automated two-lab movement trial — PARTIAL LIVE RESULT:** Lab-1 completed one
 bounded 2-D waypoint arrival using two feedback-driven pulses (147 ms total),
 ending 0.119 units from its goal. STOP/disarm preceded an independently advancing

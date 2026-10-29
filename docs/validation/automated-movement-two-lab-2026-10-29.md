@@ -161,11 +161,11 @@ authorized with executable SHA
 `33A21D0B32BD1C3978CABDFE7EC9C43A0413DB3B4B0654C3BBF8516EAD07F71B`.
 The receipt journal retains each byte-distinct receipt it observes from both
 feeds; sequence gaps mean it is not proof that every producer receipt was
-captured. Third readers are now running as Lab-1 guest PID 6424 / nonce
+captured. At that checkpoint, third readers were running as Lab-1 guest PID 6424 / nonce
 `906b999c...` and Lab-2 guest PID 7132 / nonce `5c65d5c6...`; both feeds reached
 bound/fresh state on their pinned source and expected game identity. Lab-2
-still needs a qualifying current-identity calibration and goal run; Lab-1 still
-needs a successful repeat for reliability.
+still needed a qualifying current-identity calibration and goal run; subsequent
+results and terminal cleanup are recorded below.
 
 Lab-1 calibration run 06 is the first current-identity calibration accepted for
 goal use: under guest reader PID 6424 / nonce `906b999c...`, independent 150 ms
@@ -211,7 +211,7 @@ hold was 147 ms. The retained final status proves disarm and no sampled inputs
 down; queue receipt sequence 169 succeeded with holder null and blocked count
 zero. The host's persistent console reservation is expected ownership, not a
 movement-session queue leak. One arrival does not yet establish repeatability;
-the final two-lab trial cleanup remains pending.
+the final two-lab trial cleanup was still pending at that checkpoint.
 
 Checkpoint `1a07583` corrects the final feedback barrier and released-settle
 sequence. Gate `artifacts/validation/20261029T214459Z-fb6d85e6` passed 549 .NET
@@ -251,7 +251,7 @@ alternative.
 Cleanup completed at 22:02:53Z. The authoritative
 [cleanup summary](../../artifacts/two-lab-movement-20261029/final-cleanup-02/summary.json)
 is `trial-cleanup-resumed-complete` and references the exact reader-stop receipts
-retained in `final-cleanup-partial-01`; Lab-2's receiver was stopped exactly,
+retained in `final-cleanup-01`; Lab-2's receiver was stopped exactly,
 while Lab-1's receiver had already ended for an unobserved reason. Typed listener
 count was zero and terminal artifact hashes were retained. Independent
 [final host status](../../artifacts/two-lab-movement-20261029/root-final-host-status.json)
