@@ -280,6 +280,34 @@ class GuidanceAddonTests(unittest.TestCase):
         self.assertEqual("unavailable", state)
         self.assertIsNone(guidance.Result)
 
+    def test_exact_result_age_limit_with_fresh_observation(self):
+        current = self.observation(sequence=21,
+                                   clock={"status": "ok", "value": 109})
+        for now, expected in ((110, True), (110.001, False)):
+            with self.subTest(now=now):
+                guidance = self.bound()
+                accepted, _ = self.receive(guidance, self.command(), current, now)
+                self.assertEqual(expected, accepted)
+                if expected:
+                    state, _ = self.status(guidance, current, 110.001)
+                    self.assertEqual("unavailable", state)
+                    self.assertIsNone(guidance.Result)
+
+    def test_exact_coordinate_limit_on_receipt_and_status(self):
+        for x, expected in ((10.5, True), (10.5001, False)):
+            with self.subTest(x=x):
+                fields = {"coordX": {"status": "ok", "value": x},
+                          "coordY": {"status": "ok", "value": 20},
+                          "coordZ": {"status": "ok", "value": 30}}
+                moved = self.observation(fields=fields)
+                fresh = self.bound()
+                accepted, _ = self.receive(fresh, self.command(), moved, 100.5)
+                self.assertEqual(expected, accepted)
+                existing = self.bound()
+                self.assertTrue(self.receive(existing, self.command(), self.observation(), 100.5)[0])
+                state, _ = self.status(existing, moved, 100.5)
+                self.assertEqual("received" if expected else "unavailable", state)
+
     def test_expired_result_is_removed_and_never_restored(self):
         guidance = self.bound()
         self.assertTrue(self.receive(

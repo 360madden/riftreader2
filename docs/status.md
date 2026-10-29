@@ -2,6 +2,14 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Native Codex pipeline collaboration - OFFLINE BOUNDARIES VERIFIED:** Lab-1
+traced installed observation production, Lab-2 traced guidance acceptance and
+invalidation, and the coordinator relayed a cross-review. The resulting
+focused Lua tests exercise exactly 10 seconds versus over, and exactly 0.5
+coordinate units versus over, with an independently fresh observation. These
+are offline source tests, not live movement or full-game restart proof. See
+[pipeline review](validation/native-codex-pipeline-boundaries-2026-10-29.md).
+
 **Native Codex complementary review - PASSED WITH LAB-1 FOLLOW-UP:** Both
 guest chats completed concurrent read-only tasks and a coordinator-relayed
 review. Lab-1 reported its guidance.lua offline/recall attributes despite a
