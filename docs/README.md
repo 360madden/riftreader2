@@ -51,6 +51,7 @@ topic below instead of loading every document for each task.
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |
 | Research | [Motion evidence review](research/motion-evidence-review-2026-10-18.md) | Saved negative example, timing evidence, and reproducibility gap. |
 | Workflow | [Codex](workflows/codex.md) | Open the project and resume efficiently. |
+| Workflow | [Lab Codex jobs](workflows/lab-codex.md) | Dispatch, collect and review bounded read-only Codex jobs in either RIFT lab. |
 | Workflow | [XYZ collection](workflows/xyz-collection.md) | Direct reads, reusable offline panel audit and separate restart/semantic evidence. |
 | Workflow | [Workbridge](workflows/workbridge.md) | Local access, edits, jobs, and Git. |
 | Workflow | [REA](workflows/rea.md) | Installed tooling and verified access limits. |

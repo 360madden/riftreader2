@@ -136,6 +136,14 @@ ask Joey to press movement keys when the authorized helper can perform the test.
 
 ## Tool and Git workflow
 
+- Guest Codex tasks use [the lab job workflow](docs/workflows/lab-codex.md).
+  Keep the main PC repository authoritative; dispatch explicit read-only tasks
+  and selected source snapshots with `scripts/lab_codex.py`. Collect reports
+  and review their claims before integrating findings. These jobs do not own
+  game input or replace the existing per-lab control host. Use the returned
+  absolute run path for status, collection or cancellation, never a guessed
+  "latest" job. Existing CLI sign-ins and VM-specific cached guest logins are
+  reused; do not copy authentication files between machines.
 - Codex uses its local tools. Browser ChatGPT uses Workbridge; see
   [its guide](docs/workflows/workbridge.md) for hashes, operation IDs, and jobs.
 - Inspect current Git status before edits. Preserve unrelated work.

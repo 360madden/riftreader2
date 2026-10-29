@@ -1,8 +1,9 @@
 # Codex workflow
 
-Current project state: see [the status handoff](../status.md). The modular
-offline foundation is implemented; it does not yet read a game process or
-reproduce V1 evidence.
+Current project state changes as live capabilities are validated; use
+[the status handoff](../status.md) rather than this workflow as the capability
+record. To delegate bounded read-only analysis to the existing Codex CLI in a
+RIFT guest, use the [Lab Codex jobs workflow](lab-codex.md).
 
 ## Open and orient
 
