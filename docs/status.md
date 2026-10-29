@@ -2,6 +2,15 @@
 
 Updated: 2026-10-29 (America/New_York).
 
+**Native Codex two-lab teamwork - SIMPLE TASK PASSED:** The main-PC chat sent
+read-only prompts to existing native remote chats in both labs. Each executed a
+local command, reported its distinct machine name and calculated the same
+guidance example. The main PC relayed Lab-1's result to Lab-2 for comparison;
+Lab-2 agreed and supplied a stale-position counterexample. Initial tasks
+overlapped; a narrow Lab-2 process check was corrected in a follow-up. This
+proves a small native chat/task/handoff cycle, not automatic file sharing or
+live RIFT readiness. See [verification](validation/native-codex-teamwork-2026-10-29.md).
+
 **VM snapshot baselines - CREATED:** Both powered-on labs now have verified
 named VMware snapshots, including memory; Lab-2's older snapshot remains.
 The script uses cached encrypted-VM credentials through a private console and
