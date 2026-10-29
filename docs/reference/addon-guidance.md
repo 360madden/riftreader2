@@ -54,6 +54,64 @@ Manually deliver the report's `slashCommand` in that same lab. Display and
 After movement, acquire a newer source frame and increment the result sequence.
 The receiver cannot continuously refresh distance without new delivered results.
 
+## Reviewed VM-console delivery helper
+
+`scripts/addon_command_console.py` is the bounded VNC delivery path for the two
+labs. It is not a general console controller. Every operation uses a new output
+directory, exact VM identity and pinned game identity, the shared controller mutex, a screenshot,
+an immutable whole-plan hash, and an exact root-agent review receipt. Execution
+rechecks review age and identity before input and records release certainty and
+an after-screen. Direct Computer Use remains deferred.
+
+Do not assume typing `/` opens RIFT chat through VNC; a live trial showed the
+letters reaching gameplay shortcuts instead. Establish UI state through separate
+freshly reviewed operations:
+
+- `--ui-step close-ui` sends one `Esc` only when the screenshot shows a closable
+  ordinary panel and closed text entry.
+- `--ui-step hide-addon --hide-frame readiness|casting --hide-x X --hide-y Y`
+  sends one left click only to the reviewed ordinary **Hide** button. The exact
+  frame, pixel and captured screen dimensions are plan- and receipt-bound. It
+  cannot express a general click or select protected Casting controls.
+- `--ui-step open-chat` sends one `Enter` only when no panel is visible and text
+  entry is closed.
+- A command is typed only after a new screenshot visibly establishes an open,
+  empty, focused chat entry. Closed, nonempty or unfocused chat fails closed.
+
+Stacked panels require one separately prepared and reviewed close/hide attempt
+per panel. An execution receipt proves only that the reviewed input and cleanup
+were attempted against the pinned identity. Inspect the next fresh screenshot
+before inferring that a panel closed, chat opened, or the addon accepted text.
+
+### Deferred fresh result calculation
+
+Human screenshot review can exceed the addon's ten-second source lifetime. For
+results, `--deferred-result-intent INTENT.json --fast-source-pin PIN.json`
+reviews an immutable calculation intent instead of an already-aging slash
+command. The strict intent binds lab, nonce, positive result sequence, reviewed
+destination XYZ, seed player/epoch/origin, the exact `dotnet` executable, and
+the six Release `net10.0` CLI/Application/Domain/Infrastructure/runtime/deps
+file hashes. Those six files are frozen into the operation output; arbitrary
+programs, arguments, directories and command strings are not accepted.
+
+After review, execution obtains a new authenticated live receipt no older than
+two seconds, requires the same receiver/reader/target/player/epoch stream and a
+position within 0.5 on each axis of the reviewed seed, then runs the fixed
+`guide-addon --snapshot` argument shape using the approved destination and
+sequence. It strictly verifies the generated report, source and destination,
+vector/distance, snapshot hash and exact slash command, and freezes the receipt,
+snapshot, report and command evidence before typing. Immediately before input,
+the stream must still be continuous, position must be within 0.5 of the actual
+calculation source, and effective source age—including the 250 ms clock-skew
+allowance—must remain below eight seconds. The Lua ten-second limit is not
+relaxed. The slow exact guest game check runs after Enter.
+
+Reader PID/start/hash in the fast source pin are a reviewed startup attestation,
+not facts proved by the HTTP receipt. The live receipt independently proves its
+receiver instance, authenticated source IP, reader instance/nonce and current
+target mapping. A completed helper execution is still not addon acceptance;
+retain the after-screen or subsequent `/rr2guide status` evidence separately.
+
 ## Version 1 bounded result
 
 ```text
