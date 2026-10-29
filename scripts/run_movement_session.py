@@ -203,10 +203,12 @@ def acquire(plan: dict) -> tuple[LiveQueueLease, dict]:
 
 def prepare(host_plan: Path, feedback_pin: Path, output: Path, mode: str,
             goal: Position | None = None, calibration_profile: Path | None = None,
-            keys: tuple[str, str] = ("w", "q")) -> dict:
-    require(isinstance(keys, (tuple, list)) and len(keys) == 2
-            and all(key in SAFE_KEY for key in keys) and keys[0] != keys[1],
-            "calibration keys must be two distinct w/q/s/e keys")
+            keys: tuple[str, ...] = ("w", "q"), dimension: str = "2d") -> dict:
+    require(dimension in ("1d", "2d"), "movement dimension must be 1d or 2d")
+    key_count = 1 if dimension == "1d" else 2
+    require(isinstance(keys, (tuple, list)) and len(keys) == key_count
+            and all(key in SAFE_KEY for key in keys) and len(set(keys)) == len(keys),
+            f"{dimension} calibration requires {key_count} distinct w/q/s/e key(s)")
     keys = tuple(keys)
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -223,7 +225,7 @@ def prepare(host_plan: Path, feedback_pin: Path, output: Path, mode: str,
         heartbeat = lease.heartbeat()
         session = {
             "schemaVersion": 1, "evidenceKind": "reviewed-movement-session/1",
-            "sessionId": uuid.uuid4().hex, "mode": mode,
+            "sessionId": uuid.uuid4().hex, "mode": mode, "movementDimension": dimension,
             "hostPlan": str(host.plan_path), "hostPlanSha256": sha(host.plan_path),
             "hostReceipt": str(host.receipt_path), "hostReceiptSha256": sha(host.receipt_path),
             "feedbackPin": str(pin), "feedbackPinSha256": sha(pin),
@@ -338,32 +340,66 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             and review.get("captureImageSha256") == session["captureImageSha256"]
             and isinstance(review.get("note"), str) and 12 <= len(review["note"].strip()) <= 400,
             "review does not approve the exact session and capture")
-    started = clock(); actions = []; samples = []; success = False; released = False
+    actions = []; samples = []; success = False; released = False
     try:
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
-        initial = feedback.read("initial"); samples.append(initial.to_dict())
+        initial = feedback.wait_initial(timeout_seconds=4.5); samples.append(initial.to_dict())
         mode = session["mode"]
-        profile = None
+        dimension = session.get("movementDimension", "2d")
+        require(dimension in ("1d", "2d"), "session movement dimension is invalid")
+        profile = calibrations = start = goal = None
         if mode == "movement":
             profile = load(Path(session["calibrationProfile"]))
+            profile_dimension = profile.get("movementDimension", "2d")
             require(profile.get("schemaVersion") == 1
                     and profile.get("evidenceKind") == "empirical-movement-calibration/1"
                     and profile.get("mode") == "calibration" and profile.get("status") == "calibrated"
+                    and profile_dimension == dimension
                     and profile.get("calibrationKeys") == session.get("allowedKeys")
                     and isinstance(session.get("allowedKeys"), list)
-                    and len(session["allowedKeys"]) == 2
+                    and len(session["allowedKeys"]) == (1 if dimension == "1d" else 2)
                     and set(profile.get("calibrations", {})) == set(session["allowedKeys"]),
-                    "calibration profile schema or reviewed key pair is invalid")
+                    "calibration profile schema, dimension, or reviewed keys are invalid")
             require(profile.get("calibrationIdentity") == _sample_identity(initial.to_dict()),
                     "calibration profile identity differs from current live feedback")
+            if dimension == "1d":
+                end = profile.get("calibrationEnd", {}).get("xyz")
+                require(isinstance(end, dict) and set(end) == {"x", "y", "z"}
+                        and planar_distance(Position(**end), _position(initial)) <= .10,
+                        "1d calibration endpoint differs from current start")
+            calibrations = {key: Calibration(**value) for key, value in profile["calibrations"].items()}
+            start = _position(initial); goal = Position(**session["goal"])
+            if dimension == "2d":
+                cross = validate_noncollinear(calibrations, *session["allowedKeys"])
+                require(abs(float(profile.get("normalizedCross")) - cross) <= 1e-12,
+                        "calibration profile cross-check differs")
+            else:
+                require(profile.get("normalizedCross") is None,
+                        "1d calibration profile must not claim a cross-check")
+                vector = calibrations[session["allowedKeys"][0]]
+                dx = vector.dx_per_ms * vector.calibration_hold_ms
+                dz = vector.dz_per_ms * vector.calibration_hold_ms
+                norm2 = dx * dx + dz * dz
+                require(math.isfinite(norm2) and norm2 > 0,
+                        "1d calibration vector is invalid")
+                gx, gz = goal.x - start.x, goal.z - start.z
+                alpha = (gx * dx + gz * dz) / norm2
+                residual = abs(gx * dz - gz * dx) / math.sqrt(norm2)
+                require(1.5 <= alpha <= 2.5 and residual <= .05 and gx * dx + gz * dz > 0,
+                        "1d goal is not a positive 1.5..2.5 calibrated displacement")
+                require((alpha - 1) * vector.horizontal_displacement > .35
+                        and (alpha - 2) * vector.horizontal_displacement <= .30,
+                        "1d goal does not require and permit exactly two calibrated actions")
         host.arm(session["capture"]["capture"], review["note"], output / "arm.private.json")
+        started = clock()
         if mode == "calibration":
             calibrations = {}
             prior = initial
             calibration_keys = session.get("allowedKeys")
-            require(isinstance(calibration_keys, list) and len(calibration_keys) == 2
+            require(isinstance(calibration_keys, list)
+                    and len(calibration_keys) == (1 if dimension == "1d" else 2)
                     and all(key in SAFE_KEY for key in calibration_keys)
-                    and calibration_keys[0] != calibration_keys[1],
+                    and len(set(calibration_keys)) == len(calibration_keys),
                     "session calibration keys are invalid")
             for index, key in enumerate(calibration_keys, 1):
                 require(clock() - started <= 12, "elapsed budget")
@@ -379,21 +415,19 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                                 "before": prior.to_dict(), "after": after.to_dict()})
                 prior = after
                 require(clock() - started <= 12, "elapsed budget")
-            cross = validate_noncollinear(calibrations, calibration_keys[0], calibration_keys[1])
+            cross = (validate_noncollinear(calibrations, calibration_keys[0], calibration_keys[1])
+                     if dimension == "2d" else None)
             result_payload = {"mode": mode, "status": "calibrated",
                               "schemaVersion": 1,
                               "evidenceKind": "empirical-movement-calibration/1",
+                              "movementDimension": dimension,
                               "calibrationIdentity": _sample_identity(initial.to_dict()),
+                              "calibrationEnd": prior.to_dict(),
                               "calibrationKeys": calibration_keys,
                               "calibrations": {key: asdict(value) for key, value in calibrations.items()},
                               "normalizedCross": cross}
             success = True
         else:
-            calibrations = {key: Calibration(**value) for key, value in profile["calibrations"].items()}
-            cross = validate_noncollinear(calibrations, *session["allowedKeys"])
-            require(abs(float(profile.get("normalizedCross")) - cross) <= 1e-12,
-                    "calibration profile cross-check differs")
-            start = _position(initial); goal = Position(**session["goal"])
             controller = controller_factory(calibrations, start, goal, tolerance=.30,
                 max_goal_actions=6, max_elapsed_seconds=12, max_total_hold_ms=900, max_radius=6)
             prior = initial; settles = 0
@@ -426,7 +460,8 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             require(controller.status == "arrived" and settles == 1
                     and controller.feedback_iterations >= 2,
                     "arrival lacks two action feedback iterations and a distinct confirmation")
-            result_payload = {"mode": mode, "status": "arrived", "goal": session["goal"],
+            result_payload = {"mode": mode, "status": "arrived",
+                              "movementDimension": dimension, "goal": session["goal"],
                               "actions": controller.action_count, "totalHoldMs": controller.total_hold_ms,
                               "feedbackIterations": controller.feedback_iterations,
                               "settles": settles, "arrivalObservations": 2}
@@ -499,8 +534,9 @@ def build_parser():
     prep = sub.add_parser("prepare"); prep.add_argument("--host-plan", type=Path, required=True)
     prep.add_argument("--feedback-pin", type=Path, required=True); prep.add_argument("--output", type=Path, required=True)
     prep.add_argument("--mode", choices=("calibration", "movement"), required=True)
-    prep.add_argument("--keys", nargs=2, choices=tuple(sorted(SAFE_KEY)), default=("w", "q"),
-                      metavar=("KEY1", "KEY2"))
+    prep.add_argument("--dimension", choices=("1d", "2d"), default="2d")
+    prep.add_argument("--keys", nargs="+", choices=tuple(sorted(SAFE_KEY)), default=("w", "q"),
+                      metavar="KEY")
     prep.add_argument("--goal", nargs=3, type=float, metavar=("X", "Y", "Z")); prep.add_argument("--calibration-profile", type=Path)
     run = sub.add_parser("run-reviewed"); run.add_argument("--session-plan", type=Path, required=True)
     run.add_argument("--review", type=Path, required=True); run.add_argument("--output", type=Path, required=True)
@@ -512,7 +548,7 @@ def main():
     if args.command == "prepare":
         goal = Position(*args.goal) if args.goal else None
         result = prepare(args.host_plan, args.feedback_pin, args.output, args.mode, goal,
-                         args.calibration_profile, tuple(args.keys))
+                         args.calibration_profile, tuple(args.keys), args.dimension)
     else: result = run_reviewed(args.session_plan, args.review, args.output)
     print(json.dumps(sanitized(result), sort_keys=True)); return 0
 

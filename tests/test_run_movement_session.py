@@ -52,8 +52,11 @@ def profile_document():
 class Feedback:
     def __init__(self, samples, failure=None):
         self.samples = iter(samples); self.failure = failure; self.waits = 0; self.next_waits = 0
-        self.wait_timeouts = []; self.next_wait_timeouts = []
+        self.initial_timeouts = []; self.wait_timeouts = []; self.next_wait_timeouts = []
     def read(self, _label): return next(self.samples)
+    def wait_initial(self, timeout_seconds=4.5):
+        self.initial_timeouts.append(timeout_seconds)
+        return next(self.samples)
     def wait_after(self, _completed, _prior, timeout_seconds=3.0):
         self.waits += 1; self.wait_timeouts.append(timeout_seconds)
         if self.failure is not None: raise self.failure
@@ -98,11 +101,12 @@ class Host:
         return {"stopped": not self.stop_fails, "recoveryRequired": self.stop_fails}
 
 
-def session(mode, profile=None, goal=None, keys=("w", "q")):
+def session(mode, profile=None, goal=None, keys=("w", "q"), dimension="2d"):
     return {"sessionId": "a" * 32, "sessionPlanSha256": "A" * 64,
             "mode": mode, "capture": {"captureId": "c" * 32, "capture": "capture.json"},
             "captureImageSha256": "B" * 64, "calibrationProfile": str(profile) if profile else None,
-            "goal": goal, "allowedKeys": list(keys), "target": dict(GAME_TARGET)}
+            "goal": goal, "allowedKeys": list(keys), "target": dict(GAME_TARGET),
+            "movementDimension": dimension}
 
 
 def review():
@@ -124,9 +128,20 @@ class MovementSessionTests(unittest.TestCase):
             clock=lambda: 1.0, now=lambda: NOW)
         self.assertTrue(result["success"]); self.assertEqual(result["status"], "calibrated")
         self.assertEqual([a.key for a in host.actions], ["w", "q"])
+        self.assertEqual(feedback.initial_timeouts, [4.5])
         self.assertEqual(feedback.wait_timeouts, [4.5, 4.5])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_armed_run_clock_does_not_include_prearm_setup(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2),
+                             Sample(.5, 0, .5, 3)])
+        result = execute_armed_session(session=session("calibration"), review=review(),
+            output=self.root / "run", host=host, lease=lease, feedback=feedback,
+            clock=lambda: 0.0 if host.arms == 1 else (_ for _ in ()).throw(
+                AssertionError("run clock sampled before ARM")), now=lambda: NOW)
+        self.assertTrue(result["success"])
 
     def test_goal_run_uses_feedback_then_two_advancing_arrival_settles(self):
         profile = self.root / "profile.json"
@@ -213,7 +228,7 @@ class MovementSessionTests(unittest.TestCase):
                       "calibration_hold_ms": 150, "horizontal_displacement": .75,
                       "vertical_displacement": 0}}}), encoding="utf-8")
         host, lease = Host(), Lease()
-        with self.assertRaisesRegex(MovementSessionError, "reviewed key pair"):
+        with self.assertRaisesRegex(MovementSessionError, "reviewed keys"):
             execute_armed_session(session=session("movement", profile,
                     {"x": 1, "y": 0, "z": 0}), review=review(), output=self.root / "run",
                     host=host, lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
@@ -261,6 +276,65 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(result["calibrationKeys"], ["s", "q"])
         self.assertEqual(set(result["calibrations"]), {"s", "q"})
         self.assertNotIn("w", result["calibrations"])
+
+    def test_explicit_1d_calibration_measures_only_reviewed_s(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.4, 0, 0, 2)])
+        result = execute_armed_session(
+            session=session("calibration", keys=("s",), dimension="1d"), review=review(),
+            output=self.root / "run", host=host, lease=lease, feedback=feedback,
+            clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual([action.key for action in host.actions], ["s"])
+        self.assertEqual(result["movementDimension"], "1d")
+        self.assertEqual(result["calibrationKeys"], ["s"])
+        self.assertEqual(set(result["calibrations"]), {"s"})
+        self.assertIsNone(result["normalizedCross"])
+        self.assertEqual(feedback.initial_timeouts, [4.5])
+
+    def test_explicit_1d_goal_uses_only_positive_measured_vector(self):
+        profile = self.root / "profile-1d.json"
+        document = {"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "movementDimension": "1d", "normalizedCross": None,
+            "calibrationIdentity": sample_identity(), "calibrationKeys": ["s"],
+            "calibrationEnd": {"xyz": {"x": 0, "y": 0, "z": 0}},
+            "calibrations": {"s": {"key": "s", "dx_per_ms": .4 / 150,
+                "dz_per_ms": 0, "calibration_hold_ms": 150,
+                "horizontal_displacement": .4, "vertical_displacement": 0}}}
+        profile.write_text(json.dumps(document), encoding="utf-8")
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.4, 0, 0, 2),
+                             Sample(.8, 0, 0, 3), Sample(.8, 0, 0, 4)])
+        result = execute_armed_session(
+            session=session("movement", profile, {"x": 1, "y": 0, "z": 0},
+                            keys=("s",), dimension="1d"),
+            review=review(), output=self.root / "run", host=host, lease=lease,
+            feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(result["movementDimension"], "1d")
+        self.assertEqual([action.key for action in host.actions], ["s", "s"])
+        self.assertEqual(result["feedbackIterations"], 2)
+
+    def test_1d_goal_rejects_off_axis_or_one_action_distance_before_arm(self):
+        profile = self.root / "profile-1d.json"
+        document = {"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "movementDimension": "1d", "normalizedCross": None,
+            "calibrationIdentity": sample_identity(), "calibrationKeys": ["s"],
+            "calibrationEnd": {"xyz": {"x": 0, "y": 0, "z": 0}},
+            "calibrations": {"s": {"key": "s", "dx_per_ms": .4 / 150,
+                "dz_per_ms": 0, "calibration_hold_ms": 150,
+                "horizontal_displacement": .4, "vertical_displacement": 0}}}
+        profile.write_text(json.dumps(document), encoding="utf-8")
+        for index, goal in enumerate(({"x": .6, "y": 0, "z": 0},
+                                      {"x": 1, "y": 0, "z": .06})):
+            host, lease = Host(), Lease()
+            with self.subTest(goal=goal), self.assertRaises(MovementSessionError):
+                execute_armed_session(
+                    session=session("movement", profile, goal, keys=("s",), dimension="1d"),
+                    review=review(), output=self.root / f"run-{index}", host=host,
+                    lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+            self.assertEqual(host.arms, 0); self.assertEqual(host.actions, [])
 
     def test_initial_in_tolerance_cannot_succeed_without_two_actions(self):
         profile = self.root / "profile.json"

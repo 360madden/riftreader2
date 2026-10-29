@@ -26,6 +26,7 @@ import addon_command_console as _console
 
 
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
+_MAX_INITIAL_WAIT_SECONDS = 4.5
 _MAX_ACTION_WAIT_SECONDS = 4.5
 _MAX_NEXT_WAIT_SECONDS = 3.0
 
@@ -95,6 +96,29 @@ class PinnedFeedback:
     def read(self, label: str) -> MovementSample:
         receipt, data, _ = self._receipt_reader(self._pin, initial=False)
         return _sample_from_receipt(self._pin, receipt, data, self.evidence_dir, label)
+
+    def wait_initial(
+        self,
+        timeout_seconds: float = _MAX_INITIAL_WAIT_SECONDS,
+    ) -> MovementSample:
+        """Wait boundedly for the pre-arm exact-pin receipt to become fresh."""
+        if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
+                or not math.isfinite(float(timeout_seconds))
+                or not 0 < float(timeout_seconds) <= _MAX_INITIAL_WAIT_SECONDS):
+            _console._fail("movement-feedback-invalid-timeout")
+        deadline = self._monotonic() + float(timeout_seconds)
+        while True:
+            try:
+                receipt, data, _ = self._receipt_reader(self._pin, initial=False)
+            except _console.Blocked as error:
+                if str(error) != "live-receipt-not-fresh":
+                    raise
+                if self._monotonic() >= deadline:
+                    _console._fail("movement-feedback-timeout")
+                self._sleep(0.05)
+                continue
+            return _sample_from_receipt(
+                self._pin, receipt, data, self.evidence_dir, "initial")
 
     def wait_after(
         self,

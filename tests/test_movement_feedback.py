@@ -119,6 +119,48 @@ class MovementFeedbackTests(unittest.TestCase):
             self.assertEqual({"x": 1.0, "y": 2.0, "z": 3.0}, sample.to_dict()["xyz"])
             self.assertEqual(1, reader.calls)
 
+    def test_wait_initial_retries_only_stale_then_preserves_accepted_receipt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            stale = module._console.Blocked("live-receipt-not-fresh")
+            accepted = self.receipt(outer=11, addon=21, clock=31)
+            adapter, reader = self.adapter(folder, [stale, stale, accepted])
+
+            sample = adapter.wait_initial()
+
+            self.assertEqual(11, sample.outer_sequence)
+            self.assertEqual(3, reader.calls)
+            self.assertEqual(
+                [Path(folder) / "initial-receipt.json"],
+                list(Path(folder).glob("*-receipt.json")))
+
+    def test_wait_initial_stale_timeout_and_identity_failure_are_fail_closed(self):
+        with tempfile.TemporaryDirectory() as folder:
+            clock = Clock()
+
+            class StaleReader:
+                def __call__(self, pin, *, initial):
+                    raise module._console.Blocked("live-receipt-not-fresh")
+
+            adapter = module.PinnedFeedback(
+                self.pin, Path(folder), receipt_reader=StaleReader(),
+                monotonic=clock.monotonic, sleep=clock.sleep)
+            with self.assertRaisesRegex(module._console.Blocked, "movement-feedback-timeout"):
+                adapter.wait_initial(timeout_seconds=0.1)
+            self.assertEqual([], list(Path(folder).glob("*-receipt.json")))
+
+            adapter, reader = self.adapter(
+                folder, [module._console.Blocked("live-reader-identity-mismatch")])
+            with self.assertRaisesRegex(module._console.Blocked, "live-reader-identity-mismatch"):
+                adapter.wait_initial(timeout_seconds=4.5)
+            self.assertEqual(1, reader.calls)
+            self.assertEqual([], list(Path(folder).glob("*-receipt.json")))
+
+    def test_wait_initial_has_exact_four_point_five_second_ceiling(self):
+        with tempfile.TemporaryDirectory() as folder:
+            adapter, _ = self.adapter(folder, [])
+            with self.assertRaisesRegex(module._console.Blocked, "invalid-timeout"):
+                adapter.wait_initial(timeout_seconds=4.5001)
+
     def test_wait_accepts_only_strict_post_action_advancement(self):
         with tempfile.TemporaryDirectory() as folder:
             prior = self.baseline(folder)
