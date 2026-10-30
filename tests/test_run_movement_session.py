@@ -292,6 +292,45 @@ class MovementSessionTests(unittest.TestCase):
         self.assertAlmostEqual(.5 / 150,
             result["calibrations"]["w"]["dx_per_ms"], places=12)
 
+    def test_readiness_precedes_slow_armed_status_then_status_precedes_input(self):
+        events = []
+        class TimingHost(Host):
+            def __init__(self):
+                super().__init__()
+                self.armed_status_calls = 0
+            def status(self, require_armed=None, **kwargs):
+                if require_armed:
+                    self.armed_status_calls += 1
+                    events.append("armed-status")
+                return super().status(require_armed=require_armed, **kwargs)
+            def action(self, action, output):
+                events.append("action")
+                return super().action(action, output)
+
+        class NarrowWindowFeedback(Feedback):
+            def __init__(self, samples, host):
+                super().__init__(samples)
+                self.host = host
+            def wait_action_ready(self, timeout_seconds=10.0):
+                self.ready_timeouts.append(timeout_seconds)
+                events.append(f"ready-{len(self.ready_timeouts)}")
+                if len(self.ready_timeouts) == 2 and self.host.armed_status_calls:
+                    raise MovementSessionError("same-anchor readiness window missed")
+                return self.current
+
+        host, lease = TimingHost(), Lease()
+        feedback = NarrowWindowFeedback(
+            [Sample(0, 0, 0, 1), Sample(0, 0, 0, 2)], host)
+        result = execute_armed_session(
+            session=session("turn", keys=("d",), turn_hold_ms=100),
+            review=review(), output=self.root / "same-anchor-window",
+            host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertTrue(result["success"])
+        self.assertEqual(host.armed_status_calls, 1)
+        self.assertEqual(len(host.actions), 1)
+        self.assertLess(events.index("ready-2"), events.index("armed-status"))
+        self.assertLess(events.index("armed-status"), events.index("action"))
+
     def test_goal_run_stops_then_confirms_one_advancing_released_settle(self):
         profile = self.root / "profile.json"
         profile.write_text(json.dumps({"calibrations": {

@@ -550,7 +550,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
         started = clock()
         if mode == "turn":
             require(clock() - started <= 12, "elapsed budget")
-            lease.check(); lease.heartbeat(); host.status(require_armed=True)
+            lease.check(); lease.heartbeat()
             ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
             require(clock() - started <= 12, "elapsed budget")
             lease.check(); lease.heartbeat(); host.status(require_armed=True)
@@ -590,7 +590,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                     "session calibration keys are invalid")
             for index, key in enumerate(calibration_keys, 1):
                 require(clock() - started <= 12, "elapsed budget")
-                lease.check(); lease.heartbeat(); host.status(require_armed=True)
+                lease.check(); lease.heartbeat()
                 ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
                 require(clock() - started <= 12, "elapsed budget")
                 lease.check(); lease.heartbeat(); host.status(require_armed=True)
@@ -627,7 +627,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             while controller.status != "arrived":
                 elapsed = clock() - started
                 require(elapsed <= 12, "elapsed budget")
-                lease.check(); lease.heartbeat(); host.status(require_armed=True)
+                lease.check(); lease.heartbeat()
                 ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
                 elapsed = clock() - started
                 require(elapsed <= 12, "elapsed budget")
