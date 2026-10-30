@@ -27,7 +27,13 @@ import addon_command_console as _console
 
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 _MAX_INITIAL_WAIT_SECONDS = 4.5
-_MAX_ACTION_WAIT_SECONDS = 4.5
+# A post-action observation can require three complete acquisition intervals:
+# one scan that began before the action and is therefore unusable, one strict
+# post-action barrier, and one later scan that proves the barrier was crossed.
+# Observed ~1.45 second scans leave too little transport/poll margin at 4.5s.
+# This changes only the bounded wait; all freshness, identity and advancement
+# checks below remain unchanged.
+_MAX_ACTION_WAIT_SECONDS = 6.0
 _MAX_NEXT_WAIT_SECONDS = 3.0
 
 

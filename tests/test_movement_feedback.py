@@ -352,7 +352,7 @@ class MovementFeedbackTests(unittest.TestCase):
             for completed, timeout, reason in (
                 (self.now.replace(tzinfo=None), 1, "action-time-must-be-aware"),
                 (self.now, 0, "invalid-timeout"),
-                (self.now, 4.6, "invalid-timeout"),
+                (self.now, 6.1, "invalid-timeout"),
             ):
                 with self.subTest(reason=reason), \
                         self.assertRaisesRegex(module._console.Blocked, reason):
@@ -362,17 +362,17 @@ class MovementFeedbackTests(unittest.TestCase):
             with self.assertRaisesRegex(module._console.Blocked, "prior-lab-mismatch"):
                 adapter.wait_after(self.now, changed)
 
-    def test_action_wait_allows_measured_four_point_five_second_bound_only(self):
+    def test_action_wait_allows_three_scan_intervals_with_six_second_bound(self):
         with tempfile.TemporaryDirectory() as folder:
             prior = self.baseline(folder)
             adapter, reader = self.adapter(
                 folder, [module._console.Blocked("live-target-identity-mismatch")])
             with self.assertRaisesRegex(module._console.Blocked, "live-target-identity-mismatch"):
-                adapter.wait_after(self.now, prior, timeout_seconds=4.5)
+                adapter.wait_after(self.now, prior, timeout_seconds=6.0)
             self.assertEqual(1, reader.calls)
             adapter, _ = self.adapter(folder, [])
             with self.assertRaisesRegex(module._console.Blocked, "invalid-timeout"):
-                adapter.wait_after(self.now, prior, timeout_seconds=4.5001)
+                adapter.wait_after(self.now, prior, timeout_seconds=6.0001)
 
     def test_no_input_wait_retains_three_second_ceiling(self):
         with tempfile.TemporaryDirectory() as folder:
