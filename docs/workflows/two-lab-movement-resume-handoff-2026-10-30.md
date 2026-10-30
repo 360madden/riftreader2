@@ -3,6 +3,10 @@ Date: October 30, 2026; observations around 13:42–13:53 UTC (09:42–09:53 EDT
 Repository: C:\work\riftreader2, branch codex/modular-foundation.
 Starting source commit: e1b9f1e; recheck Git HEAD, status and VM identities on resumption.
 
+## October 30 15:57 EDT — Lab1 reliability window and controller recovery
+
+See [Lab1 feedback and controller checkpoint](../validation/lab1-feedback-window-and-controller-2026-10-30.md). Eight-minute strict no-input window **NOT qualified** (5.043s and 4.542s observed no-new-receipt gaps; outer sequence +3 in each). Distinct receipts 297, stable player/epoch. Add source/receiver timestamp and monitor poll-duration evidence, not a larger movement timeout. New Lab1 detached host03 PID51076 is connected, disarmed, exclusive, no held keys, VM resource ready with no lease. Strict source advanced after controller restoration. Lab2 remains controller-offline and unbound; require safe scene, correct bind, reliable pin and new host before motion.
+
 ## October 30 telemetry milestone 1 (15:45 EDT)
 
 See [two-lab telemetry recovery validation](../validation/two-lab-telemetry-recovery-2026-10-30.md) for fresh game/reader identities, receiver verification, Lab-1 strict selected/advancing feedback, the pending eight-minute window, and Lab-2's correctly rejected rebind and unsafe hostile scene. The source pin is valid only for the exact current Lab-1 reader; Lab-2 is unbound. Both host controllers are offline for reviewed console work. Do not extrapolate this checkpoint into live movement readiness.
