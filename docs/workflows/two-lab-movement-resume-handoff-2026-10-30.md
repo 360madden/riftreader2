@@ -3,6 +3,20 @@ Date: October 30, 2026; observations around 13:42–13:53 UTC (09:42–09:53 EDT
 Repository: C:\work\riftreader2, branch codex/modular-foundation.
 Starting source commit: e1b9f1e; recheck Git HEAD, status and VM identities on resumption.
 
+## Later October 30 live addon repair (14:25 EDT; supersedes earlier error state)
+
+The earlier VM/host diagnostics below remain historical. Both RIFT clients were restored; Lab-1 game PID was 9928 and Lab-2 game PID 7220. Exact executable SHA for each: 1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8. Both live readers had new nonces before this repair but the Lab-1 addon load error blocked current Lab-1 reader binding.
+
+**Root cause:** Lab-1 installed guidance.lua was an Offline OneDrive/reparse placeholder. Its five other core files and manifest matched the repository SHA-256 exactly. Lab-2 had all six files readable and hash-identical to the Git-tracked six-file package. The manifest already lists guidance.lua before main.lua. Changing load order or borrowing an older VM snapshot is not a remedy.
+
+**Fix verified:** Original Lab-1 placeholder preserved as guidance.lua.offline-backup-6a5637e766fb. Only Lab-1 guidance.lua was replaced with the current repo source at C:\work\riftreader2\addon\RiftReader2\guidance.lua and guest-verified against SHA-256 184A9E86D9F493A147B521EF5D04AC02AFF8B8A2DBF948A91D11DD74132102CE. All six installed hashes now match repo sources and all six were verified pinned/non-Offline. No Lab-2 addon or source code was modified.
+
+**Live functional test:** Reviewed /reloadui succeeded with input released; fresh screenshot displayed the normal addon UI without the error popup. Separate reviewed /rr2guide status succeeded with input released, and game chat displayed RR2 GUIDANCE UNBOUND plus the binding instruction. This proves module/command initialization, not current reader binding or movement readiness. A new nonce binding and strict telemetry qualification are still required.
+
+Evidence: ignored artifacts/two-lab-resume-20261030/lab1-guidance-repair-01/, lab1-guidance-reload-01/, lab1-guidance-status-01/, lab1-readable-addon-hashes.json, lab2-readable-addon-hashes.json.
+
+Deployment practice: Git-tracked addon/RiftReader2/ is the six-file authoritative release source rather than another VM's mutable OneDrive installation. For future snapshot/OneDrive regressions inspect attributes/hashes, preserve offline old files with unique names, replace only defective files with Git-verified bytes, pin locally, reload, and require a live slash-command response. Package version 0.1.0 alone is not proof of contents. Recheck VM-specific cached credentials at EVERY login.
+
 ## Outcome: guest access recovered, game controllers still offline
 
 | Item | Lab 1 | Lab 2 |
