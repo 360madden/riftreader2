@@ -463,16 +463,92 @@ def console_password(vmx: Path) -> str:
         api.CredFree(pointer)
 
 
+def _vnc_connection_types(api_module, client_module):
+    """Build vncdotool types whose shutdown is scoped to one TCP connection.
+
+    ``vncdotool.api.connect`` returns before RFB authentication completes.  Its
+    stock proxy only registers ``disconnect`` after the authenticated factory
+    deferred fires, so a stalled pre-authentication connection is never closed.
+    Keep the earliest protocol/transport and close only that transport; the
+    process-wide Twisted reactor deliberately remains running for later clients.
+    """
+
+    class ConnectionFactory(client_module.VNCDoToolFactory):
+        protocol = None
+
+        def __init__(self):
+            super().__init__()
+            self._rr2_protocol = None
+            self._rr2_close_requested = False
+            self._rr2_close_scheduled = False
+            self._rr2_closed = threading.Event()
+
+        def clientConnectionLost(self, connector, reason):
+            try:
+                super().clientConnectionLost(connector, reason)
+            finally:
+                self._rr2_closed.set()
+
+        def clientConnectionFailed(self, connector, reason):
+            try:
+                super().clientConnectionFailed(connector, reason)
+            finally:
+                self._rr2_closed.set()
+
+    class ConnectionClient(client_module.VNCDoToolClient):
+        def connectionMade(self):
+            self.factory._rr2_protocol = self
+            super().connectionMade()
+            if (self.factory._rr2_close_requested
+                    and not self.factory._rr2_close_scheduled):
+                self.factory._rr2_close_scheduled = True
+                self.transport.abortConnection()
+
+    ConnectionFactory.protocol = ConnectionClient
+
+    class ConnectionProxy(api_module.ThreadedVNCClientProxy):
+        def disconnect(self):
+            factory = self.factory
+
+            def close_connection():
+                factory._rr2_close_requested = True
+                if factory._rr2_closed.is_set() or factory._rr2_close_scheduled:
+                    return
+                protocol = factory._rr2_protocol
+                if protocol is None:
+                    return
+                transport = getattr(protocol, "transport", None)
+                if transport is None:
+                    return
+                factory._rr2_close_scheduled = True
+                # Once RFB setup has completed, preserve the normal graceful
+                # close.  Before that point, abort the stalled socket so VMware
+                # releases its MKS console slot immediately.
+                if self.protocol is not None:
+                    transport.loseConnection()
+                else:
+                    transport.abortConnection()
+
+            api_module.reactor.callFromThread(close_connection)
+            factory._rr2_closed.wait(timeout=self.timeout)
+
+    return ConnectionFactory, ConnectionProxy
+
+
 def connect(config: Config):
     try:
         import warnings
 
         warnings.filterwarnings("ignore", message="TripleDES has been moved.*")
-        from vncdotool import api
+        from vncdotool import api, client
+
+        factory_class, proxy_class = _vnc_connection_types(api, client)
 
         return api.connect(
             f"127.0.0.1::{config.port}",
             password=console_password(config.vmx),
+            factory_class=factory_class,
+            proxy=proxy_class,
             timeout=3,
         )
     except Blocked:

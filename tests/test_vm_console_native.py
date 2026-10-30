@@ -196,6 +196,152 @@ class PathConfigTests(unittest.TestCase):
         self.assertEqual(args.actions, Path("actions.json"))
 
 
+class VncConnectionCleanupTests(unittest.TestCase):
+    class Reactor:
+        def __init__(self):
+            self.calls = 0
+
+        def callFromThread(self, callback, *args):
+            self.calls += 1
+            callback(*args)
+
+    class Api:
+        class ThreadedVNCClientProxy:
+            def __init__(self, factory, timeout=0):
+                self.factory = factory
+                self.timeout = timeout
+                self.protocol = None
+
+    class BaseFactory:
+        protocol = None
+
+        def __init__(self):
+            self.lost = 0
+            self.failed = 0
+
+        def clientConnectionLost(self, connector, reason):
+            self.lost += 1
+
+        def clientConnectionFailed(self, connector, reason):
+            self.failed += 1
+
+    class BaseClient:
+        def connectionMade(self):
+            self.made = True
+
+    class ClientModule:
+        VNCDoToolFactory = None
+        VNCDoToolClient = None
+
+    class Transport:
+        def __init__(self, factory):
+            self.factory = factory
+            self.aborts = 0
+            self.graceful = 0
+
+        def abortConnection(self):
+            self.aborts += 1
+            self.factory.clientConnectionLost(None, "aborted")
+
+        def loseConnection(self):
+            self.graceful += 1
+            self.factory.clientConnectionLost(None, "closed")
+
+    def types(self):
+        reactor = self.Reactor()
+        api = type(
+            "ApiModule",
+            (),
+            {
+                "ThreadedVNCClientProxy": self.Api.ThreadedVNCClientProxy,
+                "reactor": reactor,
+            },
+        )
+        clients = type(
+            "ClientModule",
+            (),
+            {
+                "VNCDoToolFactory": self.BaseFactory,
+                "VNCDoToolClient": self.BaseClient,
+            },
+        )
+        factory_type, proxy_type = console._vnc_connection_types(api, clients)
+        return reactor, factory_type, proxy_type
+
+    def connected(self, factory_type):
+        factory = factory_type()
+        protocol = factory.protocol()
+        protocol.factory = factory
+        protocol.transport = self.Transport(factory)
+        protocol.connectionMade()
+        return factory, protocol
+
+    def test_pre_auth_disconnect_aborts_only_its_raw_transport(self):
+        reactor, factory_type, proxy_type = self.types()
+        first, first_protocol = self.connected(factory_type)
+        second, second_protocol = self.connected(factory_type)
+        proxy = proxy_type(first, timeout=0.1)
+
+        proxy.disconnect()
+
+        self.assertEqual(first_protocol.transport.aborts, 1)
+        self.assertEqual(first_protocol.transport.graceful, 0)
+        self.assertTrue(first._rr2_closed.is_set())
+        self.assertEqual(second_protocol.transport.aborts, 0)
+        self.assertFalse(second._rr2_closed.is_set())
+        self.assertEqual(reactor.calls, 1)
+
+    def test_authenticated_disconnect_is_graceful_and_bounded(self):
+        _, factory_type, proxy_type = self.types()
+        factory, protocol = self.connected(factory_type)
+        proxy = proxy_type(factory, timeout=0.1)
+        proxy.protocol = protocol
+
+        proxy.disconnect()
+
+        self.assertEqual(protocol.transport.graceful, 1)
+        self.assertEqual(protocol.transport.aborts, 0)
+        self.assertTrue(factory._rr2_closed.is_set())
+
+    def test_repeated_disconnect_does_not_close_transport_twice(self):
+        _, factory_type, proxy_type = self.types()
+        factory, protocol = self.connected(factory_type)
+        proxy = proxy_type(factory, timeout=0.1)
+        proxy.protocol = protocol
+
+        proxy.disconnect()
+        proxy.disconnect()
+
+        self.assertEqual(protocol.transport.graceful, 1)
+        self.assertEqual(protocol.transport.aborts, 0)
+
+    def test_disconnect_before_tcp_connection_aborts_when_protocol_arrives(self):
+        _, factory_type, proxy_type = self.types()
+        factory = factory_type()
+        proxy = proxy_type(factory, timeout=0)
+
+        proxy.disconnect()
+        protocol = factory.protocol()
+        protocol.factory = factory
+        protocol.transport = self.Transport(factory)
+        protocol.connectionMade()
+
+        self.assertTrue(factory._rr2_close_requested)
+        self.assertEqual(protocol.transport.aborts, 1)
+        self.assertTrue(factory._rr2_closed.is_set())
+
+    def test_connection_failure_releases_only_that_waiter(self):
+        _, factory_type, _ = self.types()
+        first = factory_type()
+        second = factory_type()
+
+        first.clientConnectionFailed(None, "refused")
+
+        self.assertTrue(first._rr2_closed.is_set())
+        self.assertFalse(second._rr2_closed.is_set())
+        self.assertEqual(first.failed, 1)
+
+
 class ActionValidationTests(unittest.TestCase):
     def test_text_keypress_maps_uppercase_to_explicit_shift_chords(self):
         for character in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
