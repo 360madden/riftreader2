@@ -59,6 +59,9 @@ internal static class Program
         DiscoveredTarget? attachedTarget = null;
         LiveScanResult lastScan = EmptyScan("not-started", "No scan has completed.");
         LiveAddonSelection lastSelection = new(LiveAddonSelectionStatus.IncompleteScan, null, 0, 0, "scan-not-started");
+        var lastFullScanStartedAt = launchedAt;
+        FastObservationSession? fastSession = null;
+        FastObservationReport? lastFastObservation = null;
         long outerSequence = 0;
         var failed = false;
 
@@ -105,6 +108,8 @@ internal static class Program
                         cancellation.Token);
                     tracker = null;
                     attachedTarget = null;
+                    fastSession = null;
+                    lastFastObservation = null;
                     if (hadAttachment)
                     {
                         nonce = NewNonce();
@@ -136,45 +141,99 @@ internal static class Program
                             MaxClockSkew = TimeSpan.FromSeconds(1)
                         },
                         timeProvider);
+                    fastSession = null;
+                    lastFastObservation = null;
                 }
 
-                lastScan = await Task.Run(
-                    () => WindowsMemoryScanner.Scan(
-                        attachedTarget,
-                        nonce,
-                        configuration.MaxScanBytes,
-                        TimeSpan.FromSeconds(configuration.MaxScanSeconds),
-                        cancellation.Token,
-                        () => scanStartedAt = timeProvider.GetTimestamp()),
-                    cancellation.Token);
-                var scanCompletedAt = timeProvider.GetTimestamp();
-
-                var after = await TargetDiscovery.DiscoverAsync(
-                    configuration.ProcessName,
-                    nonce,
-                    cancellation.Token);
-                if (after.Target is null || !SameProcess(attachedTarget, after.Target))
+                var freshnessOptions = new LiveFreshnessOptions
                 {
-                    lastSelection = new(
-                        LiveAddonSelectionStatus.Conflict,
-                        null,
-                        0,
-                        0,
-                        after.Reason ?? "target-identity-changed-during-scan");
+                    FreshnessTimeout = TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds),
+                    MaxClockSkew = TimeSpan.FromSeconds(1)
+                };
+                LiveAddonFreshness freshnessResult;
+                TargetDiscoveryResult after;
+                if (fastSession is not null && fastSession.CanObserve(attachedTarget, scanStartedAt, out _))
+                {
+                    var scopedScan = await Task.Run(
+                        () => WindowsMemoryScanner.ScanCandidateRegions(
+                            attachedTarget,
+                            nonce,
+                            fastSession.Regions,
+                            FastObservationSession.MaximumRegionBytes,
+                            TimeSpan.FromSeconds(Math.Min(2, configuration.MaxScanSeconds)),
+                            cancellation.Token),
+                        cancellation.Token);
+                    var scopedCompletedAt = timeProvider.GetTimestamp();
+                    after = await TargetDiscovery.DiscoverAsync(
+                        configuration.ProcessName,
+                        nonce,
+                        cancellation.Token);
+                    var scopedTargetStable = after.Target is not null && SameProcess(attachedTarget, after.Target);
+                    var scopedSelection = !scopedTargetStable
+                        ? new LiveAddonSelection(
+                            LiveAddonSelectionStatus.Conflict, null, 0, 0,
+                            after.Reason ?? "target-identity-changed-during-scoped-scan")
+                        : LiveAddonCandidateSelector.Select(scopedScan.Candidates, nonce, scopedScan.Completed);
+                    var scopedTarget = after.Target ?? attachedTarget;
+                    lastFastObservation = fastSession.Observe(
+                        scopedTarget,
+                        scopedScan,
+                        scopedSelection,
+                        scanStartedAt,
+                        scopedCompletedAt,
+                        out var canContinue);
+                    if (!canContinue)
+                        fastSession = null;
+                    freshnessResult = scopedTargetStable
+                        ? tracker!.GetCurrent()
+                        : tracker!.Observe(
+                            after.Target?.Identity ?? attachedTarget.Identity,
+                            scopedSelection,
+                            scanStartedAt,
+                            scopedCompletedAt);
                 }
                 else
                 {
-                    lastSelection = LiveAddonCandidateSelector.Select(
-                        lastScan.Candidates,
+                    lastFullScanStartedAt = scanStartedAt;
+                    lastScan = await Task.Run(
+                        () => WindowsMemoryScanner.Scan(
+                            attachedTarget,
+                            nonce,
+                            configuration.MaxScanBytes,
+                            TimeSpan.FromSeconds(configuration.MaxScanSeconds),
+                            cancellation.Token,
+                            () => lastFullScanStartedAt = scanStartedAt = timeProvider.GetTimestamp()),
+                        cancellation.Token);
+                    var scanCompletedAt = timeProvider.GetTimestamp();
+                    after = await TargetDiscovery.DiscoverAsync(
+                        configuration.ProcessName,
                         nonce,
-                        lastScan.Completed);
+                        cancellation.Token);
+                    lastSelection = after.Target is null || !SameProcess(attachedTarget, after.Target)
+                        ? new LiveAddonSelection(
+                            LiveAddonSelectionStatus.Conflict, null, 0, 0,
+                            after.Reason ?? "target-identity-changed-during-scan")
+                        : LiveAddonCandidateSelector.Select(lastScan.Candidates, nonce, lastScan.Completed);
+                    freshnessResult = tracker!.Observe(
+                        after.Target?.Identity ?? attachedTarget.Identity,
+                        lastSelection,
+                        scanStartedAt,
+                        scanCompletedAt);
+                    lastFastObservation = null;
+                    fastSession = after.Target is not null && SameProcess(attachedTarget, after.Target) &&
+                        FastObservationSession.TryCreate(
+                            after.Target,
+                            lastScan,
+                            lastSelection,
+                            scanStartedAt,
+                            scanCompletedAt,
+                            freshnessOptions,
+                            timeProvider,
+                            out var createdFastSession,
+                            out _)
+                        ? createdFastSession
+                        : null;
                 }
-
-                var freshnessResult = tracker!.Observe(
-                    after.Target?.Identity ?? attachedTarget.Identity,
-                    lastSelection,
-                    scanStartedAt,
-                    scanCompletedAt);
                 var nativePower = after.Target is not null && SameProcess(attachedTarget, after.Target)
                     ? await LivePowerReader.ReadAsync(after.Target, timeProvider, cancellation.Token)
                     : new LivePowerRead(null, null, timeProvider.GetTimestamp(), "target-identity-changed-during-scan");
@@ -191,10 +250,11 @@ internal static class Program
                     freshnessResult,
                     lastSelection,
                     lastScan,
-                    scanStartedAt,
+                    lastFullScanStartedAt,
                     configuration,
                     delivery.State,
-                    timeProvider) with
+                    timeProvider,
+                    lastFastObservation) with
                 {
                     NativePower = nativePower.Present(timeProvider, TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds))
                 };
@@ -211,10 +271,11 @@ internal static class Program
                     tracker.GetCurrent(),
                     lastSelection,
                     lastScan,
-                    scanStartedAt,
+                    lastFullScanStartedAt,
                     configuration,
                     delivery.State,
-                    timeProvider) with
+                    timeProvider,
+                    lastFastObservation) with
                 {
                     NativePower = nativePower.Present(timeProvider, TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds))
                 };
@@ -225,6 +286,8 @@ internal static class Program
                 {
                     tracker = null;
                     attachedTarget = null;
+                    fastSession = null;
+                    lastFastObservation = null;
                     nonce = NewNonce();
                     PrintBindingInstruction(nonce);
                 }
@@ -285,7 +348,8 @@ internal static class Program
         long scanStartedAt,
         LiveConfiguration configuration,
         LiveDeliveryReport delivery,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        FastObservationReport? fastObservation)
     {
         var publishedAt = timeProvider.GetTimestamp();
         return new(
@@ -306,7 +370,12 @@ internal static class Program
                 publishedAt,
                 TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds),
                 timeProvider),
-            delivery);
+            delivery)
+        {
+            FastObservation = fastObservation is null
+                ? null
+                : LiveOutput.StampFastObservation(fastObservation, publishedAt, timeProvider)
+        };
     }
 
     private static async Task PublishUnavailableAsync(
@@ -452,12 +521,19 @@ internal static class Program
             "============================================================"
         };
 
-    private static void PrintStatus(LiveReaderSnapshot snapshot) =>
+    private static void PrintStatus(LiveReaderSnapshot snapshot)
+    {
+        var fast = snapshot.FastObservation is null
+            ? string.Empty
+            : $" fastScan={snapshot.FastObservation.Scan.Status}" +
+              $" fastFreshness={snapshot.FastObservation.FreshnessStatus}" +
+              $" fastAgeMs={snapshot.FastObservation.LastAdvanceAgeMilliseconds?.ToString("F0") ?? "-"}";
         Console.WriteLine(
             $"{snapshot.CapturedAtUtc} scan={snapshot.RiftReader2.Scan.Status} " +
             $"selection={snapshot.RiftReader2.SelectionStatus} freshness={snapshot.RiftReader2.FreshnessStatus} " +
-            $"ageMs={snapshot.RiftReader2.LastAdvanceAgeMilliseconds?.ToString("F0") ?? "-"} " +
-            $"delivery={snapshot.Delivery.Status}");
+            $"ageMs={snapshot.RiftReader2.LastAdvanceAgeMilliseconds?.ToString("F0") ?? "-"}" +
+            $"{fast} delivery={snapshot.Delivery.Status}");
+    }
 
     private static async Task DelayAsync(int milliseconds, CancellationToken cancellationToken)
     {

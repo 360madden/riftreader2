@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using RiftReader2.Infrastructure;
 
 namespace RiftReader2.Live;
 
@@ -14,7 +15,19 @@ public sealed record LiveScanResult(
     IReadOnlyList<ReadOnlyMemory<byte>> Candidates,
     int EndpointCandidateCount,
     int MalformedCandidateCount,
-    string? Reason);
+    string? Reason)
+{
+    public IReadOnlyList<LiveCandidateRegion> CandidateRegions { get; init; } = [];
+}
+
+public sealed record LiveCandidateRegion(
+    nint BaseAddress,
+    long Size,
+    nint AllocationBase,
+    uint AllocationProtect,
+    uint State,
+    uint Protect,
+    uint Type);
 
 public static class WindowsMemoryScanner
 {
@@ -69,6 +82,113 @@ public static class WindowsMemoryScanner
         }
     }
 
+    public static LiveScanResult ScanCandidateRegions(
+        DiscoveredTarget target,
+        string challenge,
+        IReadOnlyList<LiveCandidateRegion> regions,
+        long maxScanBytes,
+        TimeSpan maxScanTime,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(regions);
+        var stopwatch = Stopwatch.StartNew();
+        if (regions.Count == 0)
+            return Incomplete("scope-empty", 0, 0, 0, stopwatch.Elapsed, "Candidate-region scope is empty.");
+
+        long plannedBytes = 0;
+        foreach (var region in regions.Distinct())
+        {
+            if (region.Size <= 0)
+                return Incomplete("scope-invalid", 0, 0, regions.Count, stopwatch.Elapsed, "Candidate-region scope contains a nonpositive region size.");
+            plannedBytes = checked(plannedBytes + region.Size);
+            if (plannedBytes > maxScanBytes)
+                return Incomplete("byte-budget-exceeded", plannedBytes, 0, regions.Count, stopwatch.Elapsed,
+                    $"Candidate-region scope exceeds the configured {maxScanBytes} byte budget.");
+        }
+
+        var handle = NativeMethods.OpenProcess(
+            NativeMethods.ProcessAccess.VirtualMemoryRead |
+            NativeMethods.ProcessAccess.QueryInformation |
+            NativeMethods.ProcessAccess.QueryLimitedInformation,
+            false,
+            target.Identity.ProcessId);
+        if (handle == 0)
+            return Incomplete("open-failed", plannedBytes, 0, regions.Count, stopwatch.Elapsed, $"OpenProcess failed: {Win32Error()}");
+
+        try
+        {
+            var ordered = regions.Distinct().OrderBy(region => region.BaseAddress.ToInt64()).ToArray();
+            var accumulator = new EnvelopeCandidateAccumulator(challenge);
+            var buffer = GC.AllocateUninitializedArray<byte>(ChunkBytes);
+            long scannedBytes = 0;
+            LiveCandidateRegion? previous = null;
+            foreach (var region in ordered)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (stopwatch.Elapsed > maxScanTime)
+                    return Incomplete("time-budget-exceeded", plannedBytes, scannedBytes, ordered.Length, stopwatch.Elapsed,
+                        "Candidate-region scan exceeded its time budget.", accumulator);
+                if (!RegionMetadataMatches(handle, region))
+                    return Incomplete("scope-drifted", plannedBytes, scannedBytes, ordered.Length, stopwatch.Elapsed,
+                        $"Candidate region metadata changed at 0x{region.BaseAddress.ToInt64():X}.", accumulator);
+                if (previous is null || previous.BaseAddress.ToInt64() + previous.Size != region.BaseAddress.ToInt64())
+                    accumulator.ResetMemoryBoundary();
+
+                long offset = 0;
+                while (offset < region.Size)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (stopwatch.Elapsed > maxScanTime)
+                        return Incomplete("time-budget-exceeded", plannedBytes, scannedBytes, ordered.Length, stopwatch.Elapsed,
+                            "Candidate-region scan exceeded its time budget.", accumulator);
+                    var count = checked((int)Math.Min(buffer.Length, region.Size - offset));
+                    var address = checked(new nint(region.BaseAddress.ToInt64() + offset));
+                    var readResult = ReadChunkWithStableRegionRetry(
+                        () =>
+                        {
+                            var succeeded = NativeMethods.ReadProcessMemory(handle, address, buffer, (nuint)count, out var read);
+                            return new(succeeded, read, succeeded ? null : Marshal.GetLastWin32Error());
+                        },
+                        () => stopwatch.Elapsed <= maxScanTime && RegionStillCoversExactRead(handle, region, address, count),
+                        (nuint)count);
+                    if (!readResult.Succeeded || readResult.BytesRead != (nuint)count)
+                    {
+                        var detail = readResult.ErrorCode is { } code
+                            ? Win32Error(code)
+                            : $"ReadProcessMemory returned {readResult.BytesRead} of {count} requested bytes without a Win32 error.";
+                        return Incomplete("read-failed", plannedBytes, scannedBytes, ordered.Length, stopwatch.Elapsed,
+                            $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {detail}", accumulator);
+                    }
+                    accumulator.Feed(buffer.AsSpan(0, count));
+                    if (accumulator.BudgetExceeded)
+                        return Incomplete("candidate-budget-exceeded", plannedBytes, scannedBytes + count, ordered.Length,
+                            stopwatch.Elapsed, "Envelope endpoint or valid-candidate budget was exceeded.", accumulator);
+                    scannedBytes += count;
+                    offset += count;
+                }
+                if (!RegionMetadataMatches(handle, region))
+                    return Incomplete("scope-drifted", plannedBytes, scannedBytes, ordered.Length, stopwatch.Elapsed,
+                        $"Candidate region metadata changed while reading 0x{region.BaseAddress.ToInt64():X}.", accumulator);
+                previous = region;
+            }
+
+            return new(true, "complete", plannedBytes, scannedBytes, ordered.Length, stopwatch.Elapsed,
+                accumulator.ValidCandidates, accumulator.EndpointCandidateCount, accumulator.MalformedCandidateCount, null);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return Incomplete("scan-error", plannedBytes, 0, regions.Count, stopwatch.Elapsed, exception.Message);
+        }
+        finally
+        {
+            NativeMethods.CloseHandle(handle);
+        }
+    }
+
     internal static LiveScanResult RunWithPartialCopyRetry(
         Func<ScanAttemptResult> scan,
         Func<TimeSpan> elapsed,
@@ -110,11 +230,18 @@ public static class WindowsMemoryScanner
         var accumulator = new EnvelopeCandidateAccumulator(challenge);
         var buffer = GC.AllocateUninitializedArray<byte>(ChunkBytes);
         long scannedBytes = 0;
-        MemoryRegion? previous = null;
+        LiveCandidateRegion? previous = null;
+        var candidateRegions = new HashSet<LiveCandidateRegion>();
+        var contiguousTailRegions = new List<LiveCandidateRegion>();
+        long contiguousTailBytes = 0;
         foreach (var region in regions)
         {
             if (previous is null || previous.BaseAddress.ToInt64() + previous.Size != region.BaseAddress.ToInt64())
+            {
                 accumulator.ResetMemoryBoundary();
+                contiguousTailRegions.Clear();
+                contiguousTailBytes = 0;
+            }
             long offset = 0;
             while (offset < region.Size)
             {
@@ -148,12 +275,27 @@ public static class WindowsMemoryScanner
                     return new(Incomplete("read-failed", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
                         $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {detail}", accumulator), error);
                 }
+                var candidateCountBefore = accumulator.ValidCandidates.Count;
                 accumulator.Feed(buffer.AsSpan(0, count));
+                if (accumulator.ValidCandidates.Count > candidateCountBefore)
+                {
+                    candidateRegions.Add(region);
+                    foreach (var tailRegion in contiguousTailRegions)
+                        candidateRegions.Add(tailRegion);
+                }
                 if (accumulator.BudgetExceeded)
                     return new(Incomplete("candidate-budget-exceeded", plannedBytes, scannedBytes + count, regions.Count,
                         stopwatch.Elapsed, "Envelope endpoint or valid-candidate budget was exceeded.", accumulator), null);
                 scannedBytes += count;
                 offset += count;
+            }
+            contiguousTailRegions.Add(region);
+            contiguousTailBytes = checked(contiguousTailBytes + region.Size);
+            while (contiguousTailRegions.Count > 1 &&
+                   contiguousTailBytes - contiguousTailRegions[0].Size >= LiveAddonEnvelopeDecoder.MaxEnvelopeBytes - 1)
+            {
+                contiguousTailBytes -= contiguousTailRegions[0].Size;
+                contiguousTailRegions.RemoveAt(0);
             }
             previous = region;
         }
@@ -171,7 +313,10 @@ public static class WindowsMemoryScanner
             accumulator.ValidCandidates,
             accumulator.EndpointCandidateCount,
             accumulator.MalformedCandidateCount,
-            null), null);
+            null)
+        {
+            CandidateRegions = candidateRegions.OrderBy(region => region.BaseAddress.ToInt64()).ToArray()
+        }, null);
     }
 
     internal static ChunkReadResult ReadChunkWithStableRegionRetry(
@@ -200,7 +345,7 @@ public static class WindowsMemoryScanner
 
     private static bool RegionStillCoversExactRead(
         nint handle,
-        MemoryRegion original,
+        LiveCandidateRegion original,
         nint address,
         int count)
     {
@@ -222,7 +367,21 @@ public static class WindowsMemoryScanner
                readEnd <= regionEnd;
     }
 
-    private static List<MemoryRegion> EnumerateReadablePrivateRegions(
+    private static bool RegionMetadataMatches(nint handle, LiveCandidateRegion original)
+    {
+        var querySize = (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>();
+        var queried = NativeMethods.VirtualQueryEx(handle, original.BaseAddress, out var current, querySize);
+        return queried >= querySize && IsReadablePrivate(current) &&
+               current.BaseAddress == original.BaseAddress &&
+               (long)current.RegionSize == original.Size &&
+               current.AllocationBase == original.AllocationBase &&
+               current.AllocationProtect == original.AllocationProtect &&
+               current.State == original.State &&
+               current.Protect == original.Protect &&
+               current.Type == original.Type;
+    }
+
+    private static List<LiveCandidateRegion> EnumerateReadablePrivateRegions(
         nint handle,
         int processId,
         TimeSpan maxScanTime,
@@ -235,7 +394,7 @@ public static class WindowsMemoryScanner
         if (address == 0 || maximum <= address.ToInt64())
             throw new InvalidOperationException("GetNativeSystemInfo returned an invalid application range.");
         var querySize = (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>();
-        var regions = new List<MemoryRegion>();
+        var regions = new List<LiveCandidateRegion>();
         while (address.ToInt64() <= maximum)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -308,15 +467,6 @@ public static class WindowsMemoryScanner
         bool Succeeded,
         nuint BytesRead,
         int? ErrorCode);
-
-    private sealed record MemoryRegion(
-        nint BaseAddress,
-        long Size,
-        nint AllocationBase,
-        uint AllocationProtect,
-        uint State,
-        uint Protect,
-        uint Type);
 
     private static class NativeMethods
     {

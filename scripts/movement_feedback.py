@@ -55,6 +55,8 @@ class MovementSample:
     reader_instance: str
     reader_nonce: str
     receiver_instance: str
+    source_scope: str
+    source_provenance: str
     target: dict
     raw_receipt_path: Path
     raw_receipt_sha256: str
@@ -77,6 +79,8 @@ class MovementSample:
             "readerInstance": self.reader_instance,
             "readerNonce": self.reader_nonce,
             "receiverInstance": self.receiver_instance,
+            "sourceScope": self.source_scope,
+            "sourceProvenance": self.source_provenance,
             "target": dict(self.target),
             "rawReceiptPath": str(self.raw_receipt_path),
             "rawReceiptSha256": self.raw_receipt_sha256,
@@ -95,7 +99,7 @@ class PinnedFeedback:
     ):
         self._pin = copy.deepcopy(pin)
         self.evidence_dir = Path(evidence_dir)
-        self._receipt_reader = receipt_reader or _console._fast_receipt
+        self._receipt_reader = receipt_reader or _movement_receipt
         self._monotonic = monotonic
         self._sleep = sleep
 
@@ -170,13 +174,13 @@ class PinnedFeedback:
                         f"barrier-{prior.outer_sequence}-{current_outer}",
                         data)
                     barrier_outer = current_outer
-                    barrier_selected = _console._selected(receipt)
+                    barrier_selected = _selected(receipt)
                     barrier_addon_sequence = barrier_selected["sequence"]
                     barrier_addon_clock = float(barrier_selected["clock"]["value"])
             elif (_validate_advancing(prior, receipt, completed) == "accept"
                     and current_outer > barrier_outer
-                    and _console._selected(receipt)["sequence"] > barrier_addon_sequence
-                    and float(_console._selected(receipt)["clock"]["value"])
+                    and _selected(receipt)["sequence"] > barrier_addon_sequence
+                    and float(_selected(receipt)["clock"]["value"])
                     > barrier_addon_clock):
                 label = f"after-{prior.outer_sequence}-{current_outer}"
                 return _sample_from_receipt(
@@ -224,7 +228,7 @@ def _validate_advancing(
 ) -> str:
     """Return ``accept`` or ``wait``; permanent continuity failures raise."""
     observation = current["observation"]
-    selected = _console._selected(current)
+    selected = _selected(current)
     outer = observation.get("sequence")
     addon_sequence = selected.get("sequence")
     addon_clock = selected.get("clock", {}).get("value")
@@ -271,7 +275,7 @@ def _validate_barrier(
 
 def _validate_next(prior: MovementSample, current: dict) -> str:
     observation = current["observation"]
-    selected = _console._selected(current)
+    selected = _selected(current)
     outer = observation.get("sequence")
     addon_sequence = selected.get("sequence")
     addon_clock = selected.get("clock", {}).get("value")
@@ -329,7 +333,7 @@ def _sample_from_receipt(
 ) -> MovementSample:
     if not isinstance(label, str) or _LABEL.fullmatch(label) is None:
         _console._fail("movement-feedback-invalid-label")
-    selected = _console._selected(receipt)
+    selected = _selected(receipt)
     player = selected.get("player", {})
     clock = selected.get("clock", {})
     if player.get("status") != "ok" or not isinstance(player.get("value"), str) \
@@ -367,6 +371,8 @@ def _sample_from_receipt(
         reader_instance=observation["instanceId"],
         reader_nonce=observation["nonce"],
         receiver_instance=receipt["receiverInstance"],
+        source_scope=_source_scope(receipt)[0],
+        source_provenance=_source_scope(receipt)[1],
         target={
             "processId": target["processId"],
             "processStartUtcTicks": target["processStartUtcTicks"],
@@ -376,6 +382,130 @@ def _sample_from_receipt(
         raw_receipt_path=path.resolve(),
         raw_receipt_sha256=digest,
     )
+
+
+def _source_scope(receipt: dict) -> tuple[str, str]:
+    chosen = receipt.get("_movementSource")
+    if chosen == "full":
+        return "whole-readable-private", "nonce-bound-complete-process-scan/1"
+    if chosen == "fast":
+        fast = receipt["observation"]["fastObservation"]
+        return fast["scan"]["scope"], fast["provenance"]
+    report = receipt["observation"]["riftReader2"]
+    if report.get("bindingStatus") == "bound" and report.get("freshnessStatus") == "fresh":
+        return "whole-readable-private", "nonce-bound-complete-process-scan/1"
+    fast = receipt["observation"].get("fastObservation")
+    if isinstance(fast, dict) and fast.get("bindingStatus") == "bound-scoped" \
+            and fast.get("freshnessStatus") == "fresh-scoped":
+        return fast["scan"]["scope"], fast["provenance"]
+    _console._fail("movement-feedback-source-unavailable")
+
+
+def _selected(receipt: dict) -> dict:
+    chosen = receipt.get("_movementSource")
+    if chosen in ("full", "fast"):
+        return (receipt["observation"]["riftReader2"]["observation"]
+                if chosen == "full"
+                else receipt["observation"]["fastObservation"]["observation"])
+    scope, _ = _source_scope(receipt)
+    return (receipt["observation"]["riftReader2"]["observation"]
+            if scope == "whole-readable-private"
+            else receipt["observation"]["fastObservation"]["observation"])
+
+
+def _selected_contract(value) -> bool:
+    return isinstance(value, dict) \
+        and set(value) == {"schemaVersion", "addonVersion", "sequence", "epoch",
+                           "clock", "player", "fields"} \
+        and set(value.get("clock", {})) == {"status", "value"} \
+        and set(value.get("player", {})) == {"status", "value"}
+
+
+def _movement_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
+    """Validate both sources and explicitly carry the newest accepted source."""
+    _console._validate_receiver_host(pin["receiver"])
+    path = Path(pin["receiptPath"])
+    data = _console._read_regular(
+        path, _console._live_gate.MAX_RECEIPT_BYTES, "live-receipt-unavailable")
+    if initial and hashlib.sha256(data).hexdigest() != pin["receiptSha256"].lower():
+        _console._fail("live-receipt-sha256-mismatch")
+    receipt = _console._strict_json_bytes(data, "invalid-live-receipt")
+    if set(receipt) != {"schemaVersion", "receiverInstance", "receivedAtUtc",
+            "receivedMonotonicNs", "sourceAddress", "observation", "gameReady", "note"}:
+        _console._fail("unexpected-live-receipt-fields")
+    reader, receiver = pin.get("reader"), pin.get("receiver")
+    if not isinstance(reader, dict) or set(reader) != {"processId", "processStartUtcTicks",
+            "executableSha256", "instanceId", "nonce", "sourceAddress"}:
+        _console._fail("invalid-reader-pin")
+    observation = receipt.get("observation")
+    required = {"schemaVersion", "instanceId", "nonce", "sequence", "capturedAtUtc",
+        "monotonicMilliseconds", "readerStatus", "readerReason", "target", "riftReader2",
+        "delivery", "nativePower"}
+    if not isinstance(observation, dict) or not required.issubset(observation) \
+            or set(observation) - required - {"fastObservation"}:
+        _console._fail("unexpected-live-observation-fields")
+    if receipt.get("sourceAddress") != reader["sourceAddress"] \
+            or observation.get("instanceId") != reader["instanceId"]:
+        _console._fail("live-reader-identity-mismatch")
+    target = observation.get("target")
+    if not isinstance(target, dict) or set(target) != {"processId", "processStartUtcTicks",
+            "executablePath", "executableSha256", "readerSessionNonce"}:
+        _console._fail("unexpected-live-target-fields")
+    expected = pin.get("gameIdentity")
+    if not isinstance(expected, dict) or set(expected) != {"processId", "processStartUtcTicks",
+            "executablePath", "executableSha256"}:
+        _console._fail("invalid-source-pin")
+    if any(target.get(key).casefold() != value.casefold()
+            if key in ("executablePath", "executableSha256") else target.get(key) != value
+            for key, value in expected.items()):
+        _console._fail("live-target-identity-mismatch")
+
+    accepted = {}
+    try:
+        full_gate = _console._live_gate.evaluate_receipt(
+            receipt, reader["nonce"], receiver["instanceId"])
+        if _selected_contract(observation["riftReader2"].get("observation")):
+            accepted["full"] = full_gate
+    except _console._live_gate.GateError:
+        pass
+    if "fastObservation" in observation:
+        try:
+            fast_gate = _console._live_gate.evaluate_fast_observation(
+                receipt, reader["nonce"], receiver["instanceId"])
+            if _selected_contract(observation["fastObservation"].get("observation")):
+                accepted["fast"] = fast_gate
+        except _console._live_gate.GateError:
+            pass
+    if not accepted:
+        _console._fail("live-receipt-not-fresh")
+
+    chosen = "full" if "full" in accepted else "fast"
+    if set(accepted) == {"full", "fast"}:
+        full = observation["riftReader2"]["observation"]
+        fast = observation["fastObservation"]["observation"]
+        if fast["epoch"] != full["epoch"] \
+                or fast["player"]["value"] != full["player"]["value"]:
+            _console._fail("movement-feedback-source-conflict")
+        full_position = (full["sequence"], float(full["clock"]["value"]))
+        fast_position = (fast["sequence"], float(fast["clock"]["value"]))
+        if fast_position[0] > full_position[0] and fast_position[1] > full_position[1]:
+            chosen = "fast"
+        elif full_position[0] > fast_position[0] and full_position[1] > fast_position[1]:
+            chosen = "full"
+        elif full_position == fast_position and full != fast:
+            _console._fail("movement-feedback-source-conflict")
+        elif full_position != fast_position:
+            _console._fail("movement-feedback-source-conflict")
+
+    selected = (observation["riftReader2"]["observation"] if chosen == "full"
+                else observation["fastObservation"]["observation"])
+    if not _selected_contract(selected):
+        _console._fail("unexpected-live-selected-fields")
+    carried = copy.deepcopy(receipt)
+    carried["_movementSource"] = chosen
+    gate = dict(accepted[chosen])
+    gate["sourceBlock"] = "riftReader2" if chosen == "full" else "fastObservation"
+    return carried, data, gate
 
 
 def _write_receipt(evidence_dir: Path, label: str, data: bytes) -> tuple[Path, str]:

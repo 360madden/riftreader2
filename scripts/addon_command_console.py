@@ -380,9 +380,11 @@ def _fast_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
     except _live_gate.GateError:
         _fail("live-receipt-not-fresh")
     observation = receipt.get("observation")
-    if not isinstance(observation, dict) or set(observation) != {"schemaVersion", "instanceId",
+    required_observation = {"schemaVersion", "instanceId",
             "nonce", "sequence", "capturedAtUtc", "monotonicMilliseconds", "readerStatus",
-            "readerReason", "target", "riftReader2", "delivery", "nativePower"}:
+            "readerReason", "target", "riftReader2", "delivery", "nativePower"}
+    if not isinstance(observation, dict) or not required_observation.issubset(observation) \
+            or set(observation) - required_observation - {"fastObservation"}:
         _fail("unexpected-live-observation-fields")
     if (receipt.get("sourceAddress") != reader["sourceAddress"]
             or observation.get("instanceId") != reader["instanceId"]):

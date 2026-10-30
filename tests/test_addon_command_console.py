@@ -639,6 +639,19 @@ class FastResultTests(unittest.TestCase):
                 loaded, _, _ = module._fast_receipt(pin, initial=True)
             self.assertEqual("11111111-2222-4333-8444-555555555555", loaded["observation"]["instanceId"])
 
+    def test_full_gate_allows_but_does_not_consume_additive_fast_observation(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, receipt, _ = self.fixture(folder)
+            receipt["observation"]["fastObservation"] = {"untrustedByFullGate": True}
+            data = json.dumps(receipt).encode()
+            Path(pin["receiptPath"]).write_bytes(data)
+            pin["receiptSha256"] = module.hashlib.sha256(data).hexdigest()
+            with mock.patch.object(module, "_validate_receiver_host"):
+                loaded, _, gate = module._fast_receipt(pin, initial=True)
+            self.assertEqual("fresh", gate["status"])
+            self.assertEqual({"untrustedByFullGate": True},
+                             loaded["observation"]["fastObservation"])
+
     def test_deferred_calculation_uses_pinned_cli_and_current_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:
             pin, receipt, _ = self.fixture(folder)

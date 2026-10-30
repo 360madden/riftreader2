@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,7 +80,7 @@ class MovementFeedbackTests(unittest.TestCase):
                     "executablePath": "C:\\RIFT\\rift_x64.exe",
                     "executableSha256": "b" * 64,
                 },
-                "riftReader2": {"observation": {
+                "riftReader2": {"bindingStatus": "bound", "freshnessStatus": "fresh", "observation": {
                     "sequence": addon,
                     "epoch": epoch,
                     "clock": {"status": "ok", "value": clock},
@@ -92,6 +93,34 @@ class MovementFeedbackTests(unittest.TestCase):
                 }},
             },
         }
+
+    def wire_receipt(self, folder, *, full_addon=20, full_clock=30.0,
+                     fast_addon=21, fast_clock=31.0):
+        pin = copy.deepcopy(self.pin)
+        pin["receiptPath"] = str(Path(folder) / "latest.json")
+        pin["receiptSha256"] = hashlib.sha256(b"wire").hexdigest()
+        full = self.receipt(addon=full_addon, clock=full_clock)[
+            "observation"]["riftReader2"]["observation"]
+        full.update(schemaVersion=1, addonVersion="0.1.0")
+        fast = copy.deepcopy(full)
+        fast.update(sequence=fast_addon)
+        fast["clock"]["value"] = fast_clock
+        receipt = {
+            "schemaVersion": 1, "receiverInstance": "receiver-1",
+            "receivedAtUtc": self.now.isoformat(), "receivedMonotonicNs": 1,
+            "sourceAddress": "192.168.56.128", "gameReady": False, "note": "delivery",
+            "observation": {
+                "schemaVersion": 1, "instanceId": "reader-1", "nonce": "a" * 32,
+                "sequence": 10, "capturedAtUtc": self.now.isoformat(),
+                "monotonicMilliseconds": 1.0, "readerStatus": "running", "readerReason": None,
+                "target": {**self.pin["gameIdentity"], "readerSessionNonce": "a" * 32},
+                "riftReader2": {"bindingStatus": "bound", "freshnessStatus": "fresh",
+                                "observation": full},
+                "delivery": {}, "nativePower": {},
+                "fastObservation": {"observation": fast},
+            },
+        }
+        return pin, receipt
 
     def adapter(self, folder, values, clock=None):
         clock = clock or Clock()
@@ -117,7 +146,91 @@ class MovementFeedbackTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(expected).hexdigest(), sample.raw_receipt_sha256)
             self.assertEqual("lab1", sample.to_dict()["lab"])
             self.assertEqual({"x": 1.0, "y": 2.0, "z": 3.0}, sample.to_dict()["xyz"])
+            self.assertEqual("whole-readable-private", sample.source_scope)
+            self.assertEqual("nonce-bound-complete-process-scan/1", sample.source_provenance)
             self.assertEqual(1, reader.calls)
+
+    def test_read_accepts_explicit_scoped_selection_without_promoting_full_scan(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = self.receipt(outer=11, addon=21, clock=31, x=1.5)
+            selected = receipt["observation"]["riftReader2"]["observation"]
+            receipt["observation"]["riftReader2"]["bindingStatus"] = "unbound"
+            receipt["observation"]["riftReader2"]["freshnessStatus"] = "unavailable"
+            receipt["observation"]["fastObservation"] = {
+                "provenance": "recent-full-scan-anchored-candidate-regions/1",
+                "bindingStatus": "bound-scoped",
+                "freshnessStatus": "fresh-scoped",
+                "observation": selected,
+                "scan": {"scope": "candidate-regions"},
+            }
+            adapter, _ = self.adapter(folder, [receipt])
+
+            sample = adapter.read("scoped")
+
+            self.assertEqual((1.5, 2.0, 3.0), sample.xyz)
+            self.assertEqual("candidate-regions", sample.source_scope)
+            self.assertEqual(
+                "recent-full-scan-anchored-candidate-regions/1", sample.source_provenance)
+
+    def test_movement_scoped_reader_preserves_exact_reader_and_game_pins(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, receipt = self.wire_receipt(folder)
+            with mock.patch.object(module._console, "_validate_receiver_host"), \
+                    mock.patch.object(module._console, "_read_regular", return_value=b"wire"), \
+                    mock.patch.object(module._console, "_strict_json_bytes", return_value=receipt), \
+                    mock.patch.object(module._console._live_gate, "evaluate_receipt",
+                                      side_effect=module._console._live_gate.GateError("full stale")), \
+                    mock.patch.object(module._console._live_gate, "evaluate_fast_observation",
+                                      return_value={"status": "fresh-scoped"}):
+                loaded, data, gate = module._movement_receipt(pin, initial=True)
+                self.assertIsNot(receipt, loaded)
+                self.assertEqual("fast", loaded["_movementSource"])
+                self.assertEqual(b"wire", data)
+                self.assertEqual("fresh-scoped", gate["status"])
+
+                receipt["observation"]["instanceId"] = "other-reader"
+                with self.assertRaisesRegex(module._console.Blocked, "reader-identity-mismatch"):
+                    module._movement_receipt(pin, initial=True)
+
+    def test_movement_chooses_newest_validated_source_and_ignores_invalid_or_older_fast(self):
+        with tempfile.TemporaryDirectory() as folder:
+            pin, receipt = self.wire_receipt(folder)
+            common = (
+                mock.patch.object(module._console, "_validate_receiver_host"),
+                mock.patch.object(module._console, "_read_regular", return_value=b"wire"),
+                mock.patch.object(module._console, "_strict_json_bytes", return_value=receipt),
+            )
+            with common[0], common[1], common[2], \
+                    mock.patch.object(module._console._live_gate, "evaluate_receipt",
+                                      return_value={"status": "fresh"}), \
+                    mock.patch.object(module._console._live_gate, "evaluate_fast_observation",
+                                      return_value={"status": "fresh-scoped"}):
+                loaded, _, gate = module._movement_receipt(pin, initial=True)
+                self.assertEqual("fast", loaded["_movementSource"])
+                self.assertEqual("fastObservation", gate["sourceBlock"])
+
+            pin, receipt = self.wire_receipt(folder)
+            with mock.patch.object(module._console, "_validate_receiver_host"), \
+                    mock.patch.object(module._console, "_read_regular", return_value=b"wire"), \
+                    mock.patch.object(module._console, "_strict_json_bytes", return_value=receipt), \
+                    mock.patch.object(module._console._live_gate, "evaluate_receipt",
+                                      return_value={"status": "fresh"}), \
+                    mock.patch.object(module._console._live_gate, "evaluate_fast_observation",
+                                      side_effect=module._console._live_gate.GateError("bad fast")):
+                loaded, _, _ = module._movement_receipt(pin, initial=True)
+                self.assertEqual("full", loaded["_movementSource"])
+
+            pin, receipt = self.wire_receipt(
+                folder, full_addon=20, full_clock=30, fast_addon=19, fast_clock=29)
+            with mock.patch.object(module._console, "_validate_receiver_host"), \
+                    mock.patch.object(module._console, "_read_regular", return_value=b"wire"), \
+                    mock.patch.object(module._console, "_strict_json_bytes", return_value=receipt), \
+                    mock.patch.object(module._console._live_gate, "evaluate_receipt",
+                                      return_value={"status": "fresh"}), \
+                    mock.patch.object(module._console._live_gate, "evaluate_fast_observation",
+                                      return_value={"status": "fresh-scoped"}):
+                loaded, _, _ = module._movement_receipt(pin, initial=True)
+                self.assertEqual("full", loaded["_movementSource"])
 
     def test_wait_initial_retries_only_stale_then_preserves_accepted_receipt(self):
         with tempfile.TemporaryDirectory() as folder:
