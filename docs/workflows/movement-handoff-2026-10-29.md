@@ -124,10 +124,14 @@ revert either VM.
    ports 49813/49923 at 192.168.56.1. Keep tokens private. Use hidden background
    launch, new output directories and new PID/start/image/listener ownership
    receipts. The receiver is reused operationally; do not modify V1 source.
-3. Reuse `artifacts/two-lab-hour-20261029/reader_launcher.py`. Its inspected
+3. Use the tracked `scripts/launch_live_reader.py`. Its inspected
    arguments include `--lab`, `--expected-game-pid`, `--expected-game-start-ticks`,
    `--expected-game-sha256`, `--reader`, `--reader-sha256`, `--receiver-config`,
-   `--duration-seconds`, `--poll-interval-milliseconds`, and fresh `--output`.
+   `--duration-seconds`, `--poll-interval-milliseconds`, `--scan-limit-config`,
+   optional `--max-scan-bytes`, and fresh `--output`. The tracked
+   `config/live-reader-scan-limits.json` keeps the ordinary 4 GiB default and a
+   durable 6 GiB Lab-1 override. A one-run override remains bounded to the
+   reader's supported 1-8 GiB range.
    It requires an already-running receiver and cached credentials. Use bounded
    durations and the previous 250 ms poll setting for a comparable first trial.
 4. A new reader produces a new nonce. The ended reader's addon binding cannot
