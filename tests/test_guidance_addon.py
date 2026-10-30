@@ -495,11 +495,13 @@ class GuidanceAddonTests(unittest.TestCase):
         self.slash(lua, "rr2guide", self.command(epoch=1, source_sequence=1))
         globals_.TEST_HANDLERS["RiftReader2 update"]()
         self.assertIsNotNone(globals_.RiftReader2_LiveFrame)
+        self.assertEqual(1, len(globals_.RiftReader2_LiveFrames))
         self.assertIsNotNone(private.GuidanceInstance.Result)
 
         self.slash(lua, "rr2guide", f"rebind lab1 {OTHER_NONCE}")
 
         self.assertIsNone(globals_.RiftReader2_LiveFrame)
+        self.assertEqual(0, len(globals_.RiftReader2_LiveFrames))
         self.assertEqual(OTHER_NONCE, private.GuidanceInstance.Nonce)
         self.assertEqual("waiting", globals_.RiftReader2_Guidance.state)
         self.assertIsNone(globals_.RiftReader2_Guidance.result)
@@ -510,6 +512,9 @@ class GuidanceAddonTests(unittest.TestCase):
         globals_.TEST_STATE.clock = 100.5
         globals_.TEST_HANDLERS["RiftReader2 update"]()
         self.assertTrue(globals_.RiftReader2_LiveFrame.startswith(
+            f"RR2L1|{OTHER_NONCE}|"))
+        self.assertEqual(1, len(globals_.RiftReader2_LiveFrames))
+        self.assertTrue(globals_.RiftReader2_LiveFrames[1].startswith(
             f"RR2L1|{OTHER_NONCE}|"))
 
         self.slash(lua, "rr2guide", f"rebind lab1 {NONCE}")
@@ -530,6 +535,7 @@ class GuidanceAddonTests(unittest.TestCase):
         globals_.TEST_HANDLERS["RiftReader2 update"]()
 
         self.assertIsNone(globals_.RiftReader2_LiveFrame)
+        self.assertEqual(0, len(globals_.RiftReader2_LiveFrames))
         self.assertEqual("unavailable", private.GuidanceInstance.State)
         self.assertIn("failed closed", private.GuidanceInstance.Reason)
 
@@ -558,6 +564,30 @@ class GuidanceAddonTests(unittest.TestCase):
         self.assertIn("failed closed", private.GuidanceInstance.Reason)
         self.slash(lua, "rr2guide", self.command())
         self.assertIsNone(private.GuidanceInstance.Result)
+
+    def test_main_retains_eight_distinct_live_frames_without_duplicate_growth(self):
+        lua, _private = self.load_main()
+        globals_ = lua.globals()
+        self.slash(lua, "rr2guide", f"bind lab1 {NONCE}")
+
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+        first = globals_.RiftReader2_LiveFrame
+        for _index in range(3):
+            globals_.TEST_HANDLERS["RiftReader2 update"]()
+        self.assertEqual(1, len(globals_.RiftReader2_LiveFrames))
+        self.assertEqual(first, globals_.RiftReader2_LiveFrames[1])
+
+        published = []
+        for index in range(1, 10):
+            globals_.TEST_STATE.clock = 100 + index * 0.5
+            globals_.TEST_HANDLERS["RiftReader2 update"]()
+            published.append(globals_.RiftReader2_LiveFrame)
+
+        self.assertEqual(8, len(globals_.RiftReader2_LiveFrames))
+        retained = [globals_.RiftReader2_LiveFrames[index] for index in range(1, 9)]
+        self.assertEqual(published[-8:], retained)
+        self.assertEqual(retained[-1], globals_.RiftReader2_LiveFrame)
+        self.assertEqual(8, len(set(retained)))
 
     def test_guidance_sources_contain_no_action_or_message_dispatch(self):
         guidance = GUIDANCE.read_text(encoding="utf-8")

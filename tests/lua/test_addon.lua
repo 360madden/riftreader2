@@ -203,17 +203,20 @@ local function runTests(privateVars, mainSource)
     local oldCommand = Command
     local oldFrame = RiftReader2_Frame
     local oldLiveFrame = RiftReader2_LiveFrame
+    local oldLiveFrames = RiftReader2_LiveFrames
     local mainSucceeded, mainError = pcall(function()
         Inspect = nil
         Event = nil
         Command = nil
         RiftReader2_Frame = "stale"
         RiftReader2_LiveFrame = "stale"
+        RiftReader2_LiveFrames = { "stale" }
         local missingApiMain = assert(loadstring(mainSource))
         missingApiMain({ identifier = "RiftReader2" }, privateVars)
         assertTrue(privateVars.Instance ~= nil, "main did not create missing-API producer")
         assertEqual(nil, RiftReader2_Frame, "main retained stale global on load")
         assertEqual(nil, RiftReader2_LiveFrame, "main retained stale live global on load")
+        assertEqual(0, #RiftReader2_LiveFrames, "main retained stale live ring on load")
 
         local mainState = validState()
         Inspect = (newApi(mainState))
@@ -244,17 +247,20 @@ local function runTests(privateVars, mainSource)
         slashEvent[1][1](nonce)
         Event.System.Update.Begin[1][1]()
         assertEqual("RR2L1|" .. nonce .. "|" .. RiftReader2_Frame .. "|ENDRR2L1", RiftReader2_LiveFrame, "main did not wrap frame")
+        assertEqual(1, #RiftReader2_LiveFrames, "main did not retain wrapped frame")
 
         privateVars.Instance.Sequence = 9007199254740991
         mainState.clock = 10.5
         assertEqual(0, select("#", Event.System.Update.Begin[1][1]()), "update callback returned values")
         assertEqual(nil, RiftReader2_Frame, "counter exhaustion did not clear global")
         assertEqual(nil, RiftReader2_LiveFrame, "counter exhaustion retained live frame")
+        assertEqual(0, #RiftReader2_LiveFrames, "counter exhaustion retained live ring")
 
         local reloadChunk = assert(loadstring(mainSource))
         reloadChunk({ identifier = "RiftReader2" }, privateVars)
         assertEqual(nil, RiftReader2_Frame, "reload retained prior global")
         assertEqual(nil, RiftReader2_LiveFrame, "reload retained prior live global")
+        assertEqual(0, #RiftReader2_LiveFrames, "reload retained prior live ring")
         assertEqual(2, #Event.Addon.Startup.End, "reload startup hook count")
         Event.Addon.Startup.End[2][1]()
         assertEqual(1, privateVars.Instance.Observation.sequence, "reload did not reset sequence")
@@ -265,6 +271,7 @@ local function runTests(privateVars, mainSource)
     Command = oldCommand
     RiftReader2_Frame = oldFrame
     RiftReader2_LiveFrame = oldLiveFrame
+    RiftReader2_LiveFrames = oldLiveFrames
     if not mainSucceeded then
         error(mainError)
     end

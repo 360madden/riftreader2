@@ -8,7 +8,35 @@ privateVars.Instance = producer
 privateVars.GuidanceInstance = guidance
 RiftReader2_Frame = nil
 RiftReader2_LiveFrame = nil
+RiftReader2_LiveFrames = {}
 RiftReader2_Guidance = nil
+
+-- A complete native scan can take longer than one 0.5 second publication.
+-- Keep a few sequence-distinct envelopes reachable so the scanner can finish one
+-- pass, while the reader still selects the highest valid producer sequence.
+local LIVE_FRAME_RETENTION = 8
+local lastRetainedSequence
+local function clearLiveFrames()
+    RiftReader2_LiveFrame = nil
+    for index = #RiftReader2_LiveFrames, 1, -1 do
+        RiftReader2_LiveFrames[index] = nil
+    end
+    lastRetainedSequence = nil
+end
+
+local function publishLiveFrame(frame)
+    if type(frame) ~= "string" then
+        clearLiveFrames()
+        return
+    end
+    RiftReader2_LiveFrame = frame
+    if producer.Sequence == lastRetainedSequence then return end
+    RiftReader2_LiveFrames[#RiftReader2_LiveFrames + 1] = frame
+    if #RiftReader2_LiveFrames > LIVE_FRAME_RETENTION then
+        table.remove(RiftReader2_LiveFrames, 1)
+    end
+    lastRetainedSequence = producer.Sequence
+end
 
 local panel
 local lastText
@@ -46,7 +74,7 @@ end
 local function update()
     if not producer then
         RiftReader2_Frame = nil
-        RiftReader2_LiveFrame = nil
+        clearLiveFrames()
         return
     end
     local succeeded = pcall(function()
@@ -57,9 +85,9 @@ local function update()
     end
     RiftReader2_Frame = producer.Frame
     if rebindFailedClosed or (rebindAfterSequence and producer.Sequence <= rebindAfterSequence) then
-        RiftReader2_LiveFrame = nil
+        clearLiveFrames()
     else
-        RiftReader2_LiveFrame = live:Wrap(producer.Frame)
+        publishLiveFrame(live:Wrap(producer.Frame))
         if rebindAfterSequence and RiftReader2_LiveFrame then rebindAfterSequence = nil end
     end
     displayGuidance()
@@ -130,11 +158,11 @@ pcall(function()
                     if accepted then
                         -- Do not leave the old nonce globally visible until the
                         -- next producer update.
-                        RiftReader2_LiveFrame = nil
+                        clearLiveFrames()
                         rebindAfterSequence = producer.Sequence
                     else
                         rebindFailedClosed = true
-                        RiftReader2_LiveFrame = nil
+                        clearLiveFrames()
                         pcall(function()
                             guidance:Invalidate("Reader rebind failed closed; reload the UI before attaching another reader.")
                         end)
