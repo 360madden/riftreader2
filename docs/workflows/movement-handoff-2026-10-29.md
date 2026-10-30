@@ -140,9 +140,9 @@ revert either VM.
    live and guidance channels. Recheck foreground/chat/panels in a fresh capture.
    The standalone console helper conflicts with a native host's console mutex;
    use the established graceful ownership handoff and revalidate afterward.
-5. Build a NEW source pin with
-   `artifacts/two-lab-hour-20261029/guidance_inputs.py source-pin` from the NEW
-   reader summary, VM identity and fresh receipt. The optional read-only
+5. Build a NEW source pin with tracked
+   `scripts/build_live_source_pin.py` from the NEW reader summary, VM identity
+   and fresh receipt. The optional read-only
    `artifacts/two-lab-movement-20261029/wait_feed_ready.py` waits outside the
    movement lease/capture for two advancing fresh receipts; it does not prove
    sustained availability. Adapt the journal's source paths and deadline for
