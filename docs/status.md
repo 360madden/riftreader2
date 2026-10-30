@@ -1,11 +1,56 @@
 # Current status
 
-Updated: 2026-10-29 (America/New_York).
+Updated: 2026-10-30 (America/New_York).
 
 **Resume package:** [Movement handoff](workflows/movement-handoff-2026-10-29.md)
 and [researched resume prompt](workflows/movement-resume-prompt-2026-10-29.md).
-Next priority: live-qualify the tested buffer optimization, then repeat bounded
-waypoint trials using fresh bindings and calibrations.
+Next priority: restore Lab-1 console/game readiness, then repeat a bounded
+chosen-coordinate trial on safe terrain using fresh bindings and calibrations.
+
+**Fast feedback and chosen-coordinate follow-up — LAB-2 ACCEPTED; LAB-1
+CONSOLE RECOVERY NEEDED:** The former ignored 6 GiB Lab-1 wrapper is replaced
+by tracked [per-lab scan limits](../config/live-reader-scan-limits.json): 4 GiB
+by default and 6 GiB for Lab-1. Anchored 512 MiB candidate-region observations
+were measured at 155.45–175.69 ms (roughly 155–178 ms) in retained Lab-1
+[low](../artifacts/practical-movement-20261029/lab1-onegib-postturn-forward-run-01/feedback/next-1476-1477-receipt.json)
+and [high](../artifacts/practical-movement-20261029/lab1-onegib-postturn-forward-run-01/feedback/barrier-1473-1475-receipt.json)
+receipts,
+while the complete multi-gigabyte scan remains the fallback rather than being
+removed. Lab-2 accepted a reviewed `rebind` to reader nonce
+`9f9bbf86987d4b108a3218bcd47056dc` without `/reloadui`; the unchanged game
+process identity is in the [console execution receipt](../artifacts/practical-movement-20261029/lab2-headroom-rebind/execution.json),
+and the successor reader then produced a bound
+[calibration result](../artifacts/practical-movement-20261029/lab2-headroom-wcal-run-02/result.json).
+
+The current feedback-headroom and anchor-before-action ordering changes produced
+two accepted Lab-2 paths. A straight reviewed run arrived after two W pulses
+(208 ms total), ending 0.095 planar units from its chosen point
+([result](../artifacts/practical-movement-20261029/lab2-reorder-forward2-run-01/result.json)).
+A separate reviewed chain completed a 50 ms D turn without claiming heading,
+then a fresh 150 ms W calibration, then two W pulses (263 ms total), ending
+0.100 planar units from its chosen point
+([turn](../artifacts/practical-movement-20261029/lab2-reorder-turnforward-turn-run-01/result.json),
+[calibration](../artifacts/practical-movement-20261029/lab2-reorder-turnforward-cal-run-01/result.json),
+[arrival](../artifacts/practical-movement-20261029/lab2-reorder-turnforward-goal-run-01/result.json)).
+An independent repeat completed only its reviewed 50 ms D turn; the next
+[pre-input capture](../artifacts/practical-movement-20261029/lab2-reorder-repeat-cal-probe-01/capture/image.bmp)
+showed nearby bears, so the calibration and forward stages were deliberately
+not reviewed, armed or run. This is evidence for two successful bounded paths,
+not yet repeatability in changing world conditions.
+
+Lab-1's reviewed 96 ms W pulse was delivered and released, and a later retained
+fast observation placed the character at `(7417.4199, 2926.6099)`, 0.081 planar
+units from fixed chosen point `(7417.5, 2926.62)`
+([post-timeout observation](../artifacts/practical-movement-20261029/lab1-repeat-chosen-final-posttimeout-observe-01/next-2306-2307-receipt.json)).
+The synchronous runner timed out before accepting that observation, so this is
+physical arrival evidence, not an accepted movement result. After the later
+Lab-1 reset, the latest host check found no VNC listener and three guest audits
+found no RIFT process ([latest audit](../artifacts/practical-movement-20261029/lab1-cold-game-audit-01/result-03.json));
+Lab-1 therefore is not currently console/game ready. All arrival numbers above
+are planar X/Z evidence for the exact retained game/reader epochs, not 3-D,
+unattended navigation or patch-stable qualification. Next practical task:
+restore Lab-1's console listener and game, then obtain a clean independently
+reviewed repeat on safe terrain before expanding the steering workflow.
 
 **Practical two-lab waypoint follow-up — BOTH PLANAR TRIALS ARRIVED:** With the
 optimized reader, Lab-1 used its fresh W/Q calibration to reduce planar goal
