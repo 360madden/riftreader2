@@ -3,7 +3,8 @@
   "vmrun": "C:\\Program Files\\VMware\\VMware Workstation\\vmrun.exe",
   "labs": {
     "lab1": {
-      "vmx": "C:\\rift modding\\VMs\\RIFT-Lab\\RIFT-Lab.vmx",
+      "vmx": "C:\\rift modding\\VMs\\RIFT-Lab-1\\RIFT-Lab.vmx",
+      "legacyGuestVmx": "C:\\rift modding\\VMs\\RIFT-Lab\\RIFT-Lab.vmx",
       "vncPort": 5905,
       "cliPath": "C:\\Users\\mrkoo\\.local\\bin\\codex\\codex.exe",
       "guestRoot": "C:\\Users\\mrkoo\\AppData\\Local\\RiftReader2\\codex-jobs"

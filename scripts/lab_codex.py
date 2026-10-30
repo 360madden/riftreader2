@@ -213,12 +213,18 @@ def load_config(path: Path) -> tuple[Path, bytes, dict]:
     vnc_ports = set()
     for raw_name, raw in labs.items():
         name = _label(raw_name, "lab")
-        if not isinstance(raw, dict) or set(raw) != {"vmx", "vncPort", "cliPath", "guestRoot"}:
+        expected = {"vmx", "vncPort", "cliPath", "guestRoot"}
+        if not isinstance(raw, dict) or not (set(raw) == expected or
+                                             set(raw) == expected | {"legacyGuestVmx"}):
             raise LabCodexError("lab-config-fields-invalid")
         port = raw["vncPort"]
         if type(port) is not int or not 1 <= port <= 65535:
             raise LabCodexError("invalid-vnc-port")
         vmx = Path(_windows_path(raw["vmx"], "vmx"))
+        legacy_vmx = (Path(_windows_path(raw["legacyGuestVmx"], "legacy-guest-vmx"))
+                      if "legacyGuestVmx" in raw else None)
+        if legacy_vmx is not None and str(legacy_vmx).casefold() == str(vmx).casefold():
+            raise LabCodexError("duplicate-legacy-guest-vmx")
         vmx_key = str(PureWindowsPath(str(vmx))).replace("/", "\\").casefold()
         if vmx_key in vmx_paths:
             raise LabCodexError("duplicate-vmx")
@@ -230,7 +236,12 @@ def load_config(path: Path) -> tuple[Path, bytes, dict]:
             "vncPort": port,
             "cliPath": _windows_path(raw["cliPath"], "cli-path"),
             "guestRoot": _windows_path(raw["guestRoot"], "guest-root").rstrip("\\"),
+            "legacyGuestVmx": legacy_vmx,
         }
+    for entry in parsed.values():
+        legacy = entry["legacyGuestVmx"]
+        if legacy is not None and str(PureWindowsPath(str(legacy))).casefold() in vmx_paths:
+            raise LabCodexError("legacy-guest-vmx-active-conflict")
     return resolved, data, {"vmrun": vmrun, "labs": parsed}
 
 
@@ -290,10 +301,15 @@ class LabCodex:
 
     def _session(self, config, lab, identity, output):
         native = self._native(config, lab, output)
+        extra = {}
+        if lab.get("legacyGuestVmx") is not None:
+            extra["legacy_guest_credential_target"] = (
+                "RiftReader2 Guest Windows: " + str(lab["legacyGuestVmx"].resolve(strict=False))
+            )
         return self.session_factory(
             config["vmrun"], lab["vmx"],
             lambda: self.verify_identity(native, identity),
-            _guest_prompt=self._no_prompt,
+            _guest_prompt=self._no_prompt, **extra,
         )
 
     def doctor(self, lab_name: str) -> dict:

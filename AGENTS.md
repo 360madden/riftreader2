@@ -161,6 +161,14 @@ ask Joey to press movement keys when the authorized helper can perform the test.
   absolute run path for status, collection or cancellation, never a guessed
   "latest" job. Existing CLI sign-ins and VM-specific cached guest logins are
   reused; do not copy authentication files between machines.
+- **Mandatory cached-credential check for every VM logon (Joey, 2026-10-30):**
+  Before each and every attempt to log on to either RIFT lab guest, first
+  check that VM-specific cached-credential source using the existing approved
+  tools. Repeat the check for every attempt, including after reboots, snapshot
+  restores, configuration changes, or previous credential failures. No exceptions.
+  Never infer that credentials are absent solely from an earlier failure.
+  Do not disclose, recreate, or copy credentials between VMs. If genuinely
+  unavailable after the fresh check, report the blocker and ask Joey.
 - Codex uses its local tools. Browser ChatGPT uses Workbridge; see
   [its guide](docs/workflows/workbridge.md) for hashes, operation IDs, and jobs.
 - Inspect current Git status before edits. Preserve unrelated work.

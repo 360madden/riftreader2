@@ -19,6 +19,13 @@ Copy-Item config/lab-codex.example.json .local/lab-codex.json
 
 Review the VMX, VNC port, guest Codex CLI path and guest job root for each lab.
 Keep machine-specific paths in `.local/lab-codex.json`; do not commit that file.
+When a lab VMX moves, its prior guest-login cache may still use the original
+VMX path as the Windows Credential Manager lookup key. Set the optional
+`legacyGuestVmx` for that lab to its own previous absolute VMX path. On EVERY
+login the current path's cache is checked first; only if missing is the explicit
+old-path cache checked. Neither lookup copies, discloses, or rewrites credentials.
+Never point this setting to another active lab's VMX path.
+
 The labs already have authenticated Codex installations. This workflow neither
 signs in nor copies authentication material.
 

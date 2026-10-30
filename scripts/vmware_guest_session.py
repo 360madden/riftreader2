@@ -225,6 +225,7 @@ class GuestSession:
                  credential_target: str | None = None,
                  cache_guest_credentials: bool = False,
                  guest_credential_target: str | None = None,
+                 legacy_guest_credential_target: str | None = None,
                  _credential_reader=None, _guest_credential_reader=None,
                  _guest_credential_writer=None, _guest_prompt=None, _runner=None):
         self.vmrun = Path(vmrun)
@@ -234,6 +235,7 @@ class GuestSession:
         canonical_vmx = str(self.vmx.resolve(strict=False))
         self.guest_credential_target = (guest_credential_target or
                                         "RiftReader2 Guest Windows: " + canonical_vmx)
+        self.legacy_guest_credential_target = legacy_guest_credential_target
         self.cache_guest_credentials = cache_guest_credentials
         self._credential_reader = _credential_reader or _saved_secret
         self._guest_credential_reader = _guest_credential_reader or _saved_guest_credentials
@@ -254,6 +256,8 @@ class GuestSession:
             self._expected_identity = self.check_identity()
             self._vm_secret = self._credential_reader(self.credential_target)
             cached = self._guest_credential_reader(self.guest_credential_target)
+            if cached is None and self.legacy_guest_credential_target:
+                cached = self._guest_credential_reader(self.legacy_guest_credential_target)
             if cached is not None:
                 self._username, self._password = cached
                 self.credential_source = "cache"

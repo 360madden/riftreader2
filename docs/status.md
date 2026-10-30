@@ -2,6 +2,16 @@
 
 Updated: 2026-10-30 (America/New_York).
 
+**Post-reboot Lab-1 guest access restored (October 30):** VMX now resolves to
+`C:\\rift modding\\VMs\\RIFT-Lab-1\\RIFT-Lab.vmx`. The guest session checks
+its current cached-credential target on every login and falls back to the
+explicit old-path Lab-1 cache only when absent (no credential export or rewrite).
+`lab_codex.py doctor --lab lab1` passed with `status=ready`, guest login
+available, Codex CLI `0.165.0`, VM PID `11164`, VNC `5905`. Independent
+`lab_guest_probe.py --lab lab1` succeeded (161 guest processes) and confirmed
+RIFT was **not** running. Controller API/agent readiness has not been retested;
+this recovery verifies guest access, not the game controller.
+
 **Pre-reboot Lab-1 controller recovery:** The October 30 VMware rollback to
 `baseline-codex-connected-lab1-20261029` succeeded and the guest/Codex doctor
 is ready. Lab-1 RIFT was absent and main-PC controller API `127.0.0.1:49811`

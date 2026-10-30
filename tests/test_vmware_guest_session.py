@@ -291,5 +291,42 @@ class GuestSessionTests(unittest.TestCase):
         self.assertEqual(wiped[0].value, "")
 
 
+    def test_explicit_legacy_cache_is_checked_after_current_cache_miss(self):
+        checks = []
+        legacy = "RiftReader2 Guest Windows: C:\\VMs\\old\\RIFT-Lab.vmx"
+        current = "RiftReader2 Guest Windows: " + str(Path("C:/VMs/new/RIFT-Lab.vmx").resolve(strict=False))
+        def reader(target):
+            checks.append(target)
+            return prompt("old-user", "old-secret") if target == legacy else None
+        guest = session.GuestSession(
+            Path("vmrun.exe"), Path("C:/VMs/new/RIFT-Lab.vmx"), lambda: "same-vm",
+            legacy_guest_credential_target=legacy,
+            _credential_reader=lambda target: "vm-secret",
+            _guest_credential_reader=reader,
+            _guest_prompt=lambda: self.fail("must not prompt"),
+            _runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "ok", ""),
+        )
+        with guest:
+            self.assertEqual(guest.credential_source, "cache")
+            self.assertEqual(guest._username.value, "old-user")
+        self.assertEqual(checks, [current, legacy])
+
+    def test_new_cache_takes_precedence_over_legacy(self):
+        observed = []
+        legacy = "RiftReader2 Guest Windows: C:\\VMs\\old\\RIFT-Lab.vmx"
+        guest = session.GuestSession(
+            Path("vmrun.exe"), Path("C:/VMs/new/RIFT-Lab.vmx"), lambda: "same-vm",
+            legacy_guest_credential_target=legacy,
+            _credential_reader=lambda target: "vm-secret",
+            _guest_credential_reader=lambda target: observed.append(target) or prompt(),
+            _guest_prompt=lambda: self.fail("must not prompt"),
+            _runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "ok", ""),
+        )
+        with guest:
+            self.assertEqual(guest.credential_source, "cache")
+        self.assertEqual(len(observed), 1)
+        self.assertNotEqual(observed[0], legacy)
+
+
 if __name__ == "__main__":
     unittest.main()

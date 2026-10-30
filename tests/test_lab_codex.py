@@ -404,5 +404,36 @@ class LabCodexTests(unittest.TestCase):
         self.assertEqual(0, lab_codex._result_exit_code("collect", {"status": "failed"}))
 
 
+    def test_legacy_credential_target_is_scoped_to_configured_lab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = Fixture(Path(directory))
+            config = json.loads(f.config.read_text(encoding="utf-8"))
+            config["labs"]["lab1"]["legacyGuestVmx"] = r"C:\\VMs\\RIFT-Lab\\RIFT-Lab.vmx"
+            f.config.write_text(json.dumps(config), encoding="utf-8")
+            _, _, parsed, settings = f.tool._configuration("lab1")
+            self.assertIsNotNone(settings["legacyGuestVmx"])
+            f.tool._native = lambda *_args: object()
+            captured = {}
+            f.tool.session_factory = lambda *args, **kwargs: captured.update(kwargs)
+            f.tool._session(parsed, settings, f.identity, f.runs)
+            self.assertEqual(
+                captured["legacy_guest_credential_target"],
+                "RiftReader2 Guest Windows: " + str(settings["legacyGuestVmx"].resolve(strict=False)),
+            )
+            _, _, parsed2, settings2 = f.tool._configuration("lab2")
+            captured.clear()
+            f.tool._session(parsed2, settings2, f.identity, f.runs)
+            self.assertNotIn("legacy_guest_credential_target", captured)
+
+    def test_legacy_target_cannot_point_to_other_active_lab(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = Fixture(Path(directory))
+            config = json.loads(f.config.read_text(encoding="utf-8"))
+            config["labs"]["lab1"]["legacyGuestVmx"] = str(f.vmx2)
+            f.config.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(lab_codex.LabCodexError, "active-conflict"):
+                f.tool._configuration("lab1")
+
+
 if __name__ == "__main__":
     unittest.main()
