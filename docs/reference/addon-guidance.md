@@ -19,9 +19,27 @@ In the named lab, manually enter:
 /rr2guide bind lab2 REPLACE_WITH_FRESH_32_HEX_NONCE
 ```
 
-This also performs the existing live-reader binding. A conflicting existing
-`/rr2bind` cannot be replaced; reload then bind a new reader. A repeated identical
-bind does not reset replay protection. No binding or result is persisted.
+This also performs the existing live-reader binding. A repeated identical bind
+does not reset replay protection. No binding or result is persisted.
+
+When the addon is already bound and only the external reader has restarted,
+generate a nonce that has not been used during this addon load and enter:
+
+```text
+/rr2guide rebind lab2 REPLACE_WITH_FRESH_32_HEX_NONCE
+```
+
+Rebind must name the currently bound lab. It clears the prior guidance result
+and replay counters and suppresses live output until the producer publishes a
+strictly newer observation. The old reader receives no advancing old-nonce
+frames and therefore expires under its normal freshness rules. `/rr2bind`
+itself remains immutable; use `/reloadui` to recover a failed-closed rebind or
+to change the lab identity. A nonce previously used in the same addon load is
+never accepted again.
+
+The explicit rebind path has passed offline Lua 5.1 and synthetic integration
+tests but has not yet been installed or proved in the RIFT client. Until that
+live acceptance is recorded, treat reload-and-bind as the established path.
 
 Use the existing read-only reader's current `latest.json`. The external CLI
 consumes that normal reader output and generates a result:
@@ -148,7 +166,7 @@ retain the after-screen or subsequent `/rr2guide status` evidence separately.
 
 Only `lab1` and `lab2` are allowed. The Lua argument string and generated full
 command are bounded at 512 printable ASCII characters. The receiver requires
-exact token count, the immutable bound lab/nonce, positive counters no greater
+exact token count, the current bound lab/nonce, positive counters no greater
 than 9007199254740991, finite bounded values and an ASCII player identifier.
 Source/destination coordinates are bounded to +/-10000000, deltas to
 +/-20000000 and planar distance to 30000000. The receiver also checks the

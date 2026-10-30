@@ -21,8 +21,16 @@ Preserve RR2A1 unchanged and wrap it in the versioned
 [RR2L1 contract](../../contracts/addon/live-transport-v1.md). The external reader
 creates a fresh 32-lowercase-hex-character nonce. The addon command
 `/rr2bind <nonce>`
-accepts one binding per load. UI reload clears the binding and requires a newly
-generated reader nonce.
+remains immutable within one load. UI reload clears the binding and requires a
+newly generated reader nonce.
+
+An October 29, 2026 amendment adds one explicit rollover through
+`/rr2guide rebind lab1|lab2 NEW_NONCE`. It is limited to the already bound lab,
+rejects every nonce previously used in that addon load, clears the old wrapper
+and guidance/replay state, and waits for a strictly newer producer observation
+before publishing under the new nonce. Unexpected split mutation fails closed
+until reload. This preserves explicit operator intent without requiring UI
+reload solely because an external reader restarted.
 
 The RR2L1 envelope has its own version; it does not change the inner RR2A1
 `addonVersion` 0.1.0 contract. Its offline validation command is
@@ -51,6 +59,10 @@ RIFT process. See the
 [live transport record](../validation/live-transport-2026-10-18.md). Its host
 gate is snapshot-only and conditional on a 250 ms guest/host UTC skew bound;
 delivery remains `gameReady: false`.
+
+That retained live record used reload before rebinding. The newer explicit
+in-place rebind amendment currently has offline Lua and synthetic integration
+coverage only; it has not yet been deployed or proved in RIFT.
 
 The inner values remain addon API references. This decision establishes no
 native pointer, derived motion meaning, combat availability, guest file hash,

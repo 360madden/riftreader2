@@ -178,11 +178,24 @@ local function runTests(privateVars, mainSource)
     end
     assertEqual(true, live:Bind(nonce), "nonce bind failed")
     assertEqual(true, live:Bind(nonce), "same nonce is not idempotent")
-    assertEqual(false, live:Bind(string.rep("0", 32)), "load rebound to another reader")
+    local secondNonce = string.rep("0", 32)
+    assertEqual(false, live:Bind(secondNonce), "load rebound to another reader")
     assertEqual("RR2L1|" .. nonce .. "|" .. frame .. "|ENDRR2L1", live:Wrap(frame), "live envelope differs")
+    assertEqual(false, live:Rebind(nonce), "same nonce rebind accepted")
+    assertEqual(true, live:Rebind(secondNonce), "explicit reader rebind failed")
+    assertEqual("RR2L1|" .. secondNonce .. "|" .. frame .. "|ENDRR2L1", live:Wrap(frame), "rebound live envelope differs")
+    assertEqual(false, live:Rebind(nonce), "used nonce was accepted again")
     assertEqual(nil, live:Wrap(nil), "cleared source retained live frame")
     assertEqual(nil, live:Wrap(string.rep("a", 4097)), "oversize live source accepted")
     assertEqual(nil, privateVars.Live.New():Wrap(frame), "new load inherited binding")
+
+    local boundedLive = privateVars.Live.New()
+    assertEqual(false, boundedLive:Rebind(nonce), "unbound reader rebind accepted")
+    assertEqual(true, boundedLive:Bind(string.format("%032x", 0)), "initial bind failed")
+    for index = 1, 40 do
+        assertEqual(true, boundedLive:Rebind(string.format("%032x", index)), "practical repeated rebind failed")
+    end
+    assertEqual(false, boundedLive:Rebind(string.format("%032x", 1)), "old repeated nonce was accepted")
 
     assertTrue(type(mainSource) == "string", "main source missing")
     local oldInspect = Inspect

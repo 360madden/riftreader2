@@ -87,6 +87,10 @@ class GuidanceAddonTests(unittest.TestCase):
                          self.lua.table(identifier="RiftReader2"), self.private)
         self.new_guidance = self.private.Guidance.New
         self.bind = self.lua.eval("function(g, lab, nonce) return g:Bind(lab, nonce) end")
+        self.can_rebind = self.lua.eval(
+            "function(g, lab, nonce) return g:CanRebind(lab, nonce) end")
+        self.rebind = self.lua.eval(
+            "function(g, lab, nonce) return g:Rebind(lab, nonce) end")
         self.receive = self.lua.eval(
             "function(g, args, observation, now) return g:Receive(args, observation, now) end")
         self.status = self.lua.eval(
@@ -154,6 +158,40 @@ class GuidanceAddonTests(unittest.TestCase):
         self.assertFalse(self.bind(guidance, "lab1", OTHER_NONCE)[0])
         self.assertEqual("lab1", guidance.Lab)
         self.assertEqual(NONCE, guidance.Nonce)
+
+    def test_explicit_rebind_keeps_lab_and_resets_result_replay_state(self):
+        guidance = self.bound()
+        accepted, _ = self.receive(
+            guidance, self.command(), self.observation(), 100.5)
+        self.assertTrue(accepted)
+        self.assertEqual(1, guidance.LastSequence)
+        self.assertEqual(10, guidance.LastSourceSequence)
+
+        accepted, reason = self.rebind(guidance, "lab1", OTHER_NONCE)
+
+        self.assertTrue(accepted, reason)
+        self.assertEqual("lab1", guidance.Lab)
+        self.assertEqual(OTHER_NONCE, guidance.Nonce)
+        self.assertEqual("waiting", guidance.State)
+        self.assertIsNone(guidance.Result)
+        self.assertEqual(0, guidance.LastSequence)
+        self.assertIsNone(guidance.LastSourceSequence)
+        self.assert_rejected(guidance, self.command())
+        self.assertTrue(self.receive(
+            guidance, self.command(nonce=OTHER_NONCE), self.observation(), 100.5)[0])
+
+    def test_rebind_rejects_unbound_same_nonce_lab_change_and_malformed_nonce(self):
+        unbound = self.new_guidance()
+        self.assertFalse(self.can_rebind(unbound, "lab1", OTHER_NONCE)[0])
+
+        guidance = self.bound()
+        for lab, nonce in (("lab1", NONCE), ("lab2", OTHER_NONCE),
+                           ("lab1", OTHER_NONCE.upper()), ("lab1", "short")):
+            with self.subTest(lab=lab, nonce=nonce):
+                accepted, _ = self.rebind(guidance, lab, nonce)
+                self.assertFalse(accepted)
+                self.assertEqual("lab1", guidance.Lab)
+                self.assertEqual(NONCE, guidance.Nonce)
 
     def test_exact_token_ascii_and_length_contract(self):
         guidance = self.bound()
@@ -448,6 +486,77 @@ class GuidanceAddonTests(unittest.TestCase):
         self.assertEqual("unavailable", globals_.RiftReader2_Guidance.state)
         self.assertIn("UNAVAILABLE", globals_.TEST_FRAMES["RiftReader2GuidanceText"].text)
         self.assertEqual(0, len(globals_.TEST_MACROS))
+        self.assertIsNone(private.GuidanceInstance.Result)
+
+    def test_main_rebind_clears_stale_frame_and_result_then_publishes_new_nonce(self):
+        lua, private = self.load_main()
+        globals_ = lua.globals()
+        self.slash(lua, "rr2guide", f"bind lab1 {NONCE}")
+        self.slash(lua, "rr2guide", self.command(epoch=1, source_sequence=1))
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+        self.assertIsNotNone(globals_.RiftReader2_LiveFrame)
+        self.assertIsNotNone(private.GuidanceInstance.Result)
+
+        self.slash(lua, "rr2guide", f"rebind lab1 {OTHER_NONCE}")
+
+        self.assertIsNone(globals_.RiftReader2_LiveFrame)
+        self.assertEqual(OTHER_NONCE, private.GuidanceInstance.Nonce)
+        self.assertEqual("waiting", globals_.RiftReader2_Guidance.state)
+        self.assertIsNone(globals_.RiftReader2_Guidance.result)
+        self.assertEqual(0, private.GuidanceInstance.LastSequence)
+        self.assertIsNone(private.GuidanceInstance.LastSourceSequence)
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+        self.assertIsNone(globals_.RiftReader2_LiveFrame)
+        globals_.TEST_STATE.clock = 100.5
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+        self.assertTrue(globals_.RiftReader2_LiveFrame.startswith(
+            f"RR2L1|{OTHER_NONCE}|"))
+
+        self.slash(lua, "rr2guide", f"rebind lab1 {NONCE}")
+        self.assertEqual(OTHER_NONCE, private.GuidanceInstance.Nonce)
+        self.slash(lua, "rr2guide", f"rebind lab2 {NONCE}")
+        self.assertEqual("lab1", private.GuidanceInstance.Lab)
+
+    def test_main_rebind_split_failure_latches_live_publication_off(self):
+        lua, private = self.load_main()
+        globals_ = lua.globals()
+        self.slash(lua, "rr2guide", f"bind lab1 {NONCE}")
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+        private.GuidanceInstance.Rebind = lua.eval(
+            "function() return false, 'injected paired mutation failure' end")
+
+        self.slash(lua, "rr2guide", f"rebind lab1 {OTHER_NONCE}")
+        globals_.TEST_STATE.clock = 100.5
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+
+        self.assertIsNone(globals_.RiftReader2_LiveFrame)
+        self.assertEqual("unavailable", private.GuidanceInstance.State)
+        self.assertIn("failed closed", private.GuidanceInstance.Reason)
+
+        for command in (f"bind lab1 {NONCE}", f"rebind lab1 {'1' * 32}",
+                        self.command(), "clear"):
+            self.slash(lua, "rr2guide", command)
+            self.assertEqual("unavailable", private.GuidanceInstance.State)
+            self.assertIn("failed closed", private.GuidanceInstance.Reason)
+            self.assertIsNone(private.GuidanceInstance.Result)
+        self.slash(lua, "rr2guide", "status")
+        self.assertIn("failed closed", globals_.TEST_PRINT[len(globals_.TEST_PRINT)])
+
+    def test_main_rebind_thrown_mutation_also_fails_closed(self):
+        lua, private = self.load_main()
+        globals_ = lua.globals()
+        self.slash(lua, "rr2guide", f"bind lab1 {NONCE}")
+        private.GuidanceInstance.Rebind = lua.eval(
+            "function() error('injected paired mutation exception') end")
+
+        self.slash(lua, "rr2guide", f"rebind lab1 {OTHER_NONCE}")
+        globals_.TEST_STATE.clock = 100.5
+        globals_.TEST_HANDLERS["RiftReader2 update"]()
+
+        self.assertIsNone(globals_.RiftReader2_LiveFrame)
+        self.assertEqual("unavailable", private.GuidanceInstance.State)
+        self.assertIn("failed closed", private.GuidanceInstance.Reason)
+        self.slash(lua, "rr2guide", self.command())
         self.assertIsNone(private.GuidanceInstance.Result)
 
     def test_guidance_sources_contain_no_action_or_message_dispatch(self):

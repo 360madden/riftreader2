@@ -89,9 +89,9 @@ def validate_addon_command(command: str, expected_lab: str | None = None) -> str
         _fail("invalid-addon-command-text")
     if command in SIMPLE:
         return command
-    bind = re.fullmatch(r"/rr2guide bind (lab1|lab2) ([0-9a-f]{32})", command)
-    if bind:
-        if expected_lab is not None and bind.group(1) != expected_lab:
+    binding = re.fullmatch(r"/rr2guide (?:bind|rebind) (lab1|lab2) ([0-9a-f]{32})", command)
+    if binding:
+        if expected_lab is not None and binding.group(1) != expected_lab:
             _fail("addon-command-lab-mismatch")
         return command
     parts = command.split(" ")

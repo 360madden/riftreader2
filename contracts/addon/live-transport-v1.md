@@ -44,10 +44,22 @@ The external reader generates a new nonce and submits it through:
 /rr2bind <nonce>
 ```
 
-The addon accepts one nonce per load and publishes nonce-wrapped frames for that
-binding. A UI reload clears the binding. The reader must generate and submit a
-new nonce after reload; it must not carry the old nonce or freshness state into
-the new load.
+The low-level `/rr2bind` command remains immutable for one addon load. The
+combined guidance channel may explicitly roll an existing same-lab binding to a
+new reader without reloading:
+
+```text
+/rr2guide rebind lab1|lab2 <new reader nonce>
+```
+
+The addon accepts the command only for the currently bound lab and only when the
+nonce has never been used during that addon load. It clears the old live frame,
+guidance result, and guidance replay counters, then withholds the new wrapper
+until the RR2A1 producer sequence strictly advances. A failed paired live and
+guidance mutation disables further publication and guidance commands until UI
+reload; status remains available. A UI reload still clears all binding state.
+Every reader must start with a newly generated nonce and fresh receiver-side
+freshness state.
 
 A reader may treat a wrapper as belonging to its handshake only after validating
 the exact nonce and the complete inner contract. Freshness additionally requires
@@ -75,7 +87,8 @@ alone never establishes freshness or game readiness.
 
 ## Ownership
 
-- Lua owns the bounded RR2A1 producer, one-load bind command, and RR2L1 wrapper.
+- Lua owns the bounded RR2A1 producer, immutable low-level bind, explicit
+  same-lab guidance rebind, and RR2L1 wrapper.
 - Application analysis owns strict wrapper decoding and freshness tracking.
 - Windows I/O owns read-only acquisition and a standalone guest-side collector.
   It may reuse the existing V1 HTTP receiver as an external transport component,
@@ -92,3 +105,8 @@ input, output provenance, the actual Lua producer, the .NET decoder/tracker, and
 one guest-to-host delivery path. RIFT process restart, VM power cycle, loaded
 module verification, and production remote consumption remain separate future
 qualifications.
+
+The explicit in-place rebind path was implemented and exercised with Lua 5.1
+and synthetic cross-language tests on October 29, 2026. It has not yet been
+installed or proved in the RIFT client. The earlier live evidence used UI reload
+between reader bindings and does not qualify this newer path.

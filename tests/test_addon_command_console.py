@@ -30,6 +30,18 @@ class AddonCommandValidationTests(unittest.TestCase):
             value = f"/rr2guide bind {lab} " + "a" * 32
             self.assertEqual(value, module.validate_addon_command(value))
 
+    def test_exact_rebind_commands_use_the_bind_identity_rules(self):
+        for lab in ("lab1", "lab2"):
+            value = f"/rr2guide rebind {lab} " + "a" * 32
+            self.assertEqual(value, module.validate_addon_command(value, lab))
+            self.assertEqual(
+                {"type": "command", "command": value},
+                module.validate_operation(value, None, lab),
+            )
+            other_lab = "lab2" if lab == "lab1" else "lab1"
+            with self.assertRaisesRegex(module.Blocked, "addon-command-lab-mismatch"):
+                module.validate_addon_command(value, other_lab)
+
     def test_result_contract(self):
         value = ("/rr2guide result lab2 " + "b" * 32
                  + " 1 2 3 4 u800000000000001 10.5 -2 4.25 5 3 4 -12")
@@ -46,6 +58,8 @@ class AddonCommandValidationTests(unittest.TestCase):
         rejected = [
             "/say hello", "/script print(1)", "/rr2guide", "/rr2guide bind lab3 " + "a" * 32,
             "/rr2guide bind lab2 " + "A" * 32, "/reloadui ", "/reloadui\n",
+            "/rr2guide rebind lab3 " + "a" * 32, "/rr2guide rebind lab2 " + "A" * 32,
+            "/rr2guide rebind lab2 " + "a" * 31, "/rr2guide rebind  lab2 " + "a" * 32,
             "/rr2guide result lab2 " + "b" * 32
             + " 1 2 3 4 u800000000000001 10 -2 4 99 3 4 -12",
             "/" + "x" * 512,

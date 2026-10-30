@@ -12,6 +12,8 @@ RiftReader2_Guidance = nil
 
 local panel
 local lastText
+local rebindAfterSequence
+local rebindFailedClosed = false
 local function clock()
     local ok, value = pcall(function() return Inspect.Time.Frame() end)
     return ok and value or nil
@@ -54,7 +56,12 @@ local function update()
         producer:Clear("event callback failed", false)
     end
     RiftReader2_Frame = producer.Frame
-    RiftReader2_LiveFrame = live:Wrap(producer.Frame)
+    if rebindFailedClosed or (rebindAfterSequence and producer.Sequence <= rebindAfterSequence) then
+        RiftReader2_LiveFrame = nil
+    else
+        RiftReader2_LiveFrame = live:Wrap(producer.Frame)
+        if rebindAfterSequence and RiftReader2_LiveFrame then rebindAfterSequence = nil end
+    end
     displayGuidance()
 end
 
@@ -78,7 +85,13 @@ pcall(function()
     table.insert(Command.Slash.Register("rr2guide"), {
         function(args)
             if type(args) ~= "string" or #args > 512 then print("RiftReader2: malformed guidance command."); return end
+            if rebindFailedClosed and args ~= "status" then
+                print("RiftReader2: Reader rebind failed closed; reload the UI before using guidance commands.")
+                displayGuidance()
+                return
+            end
             local lab, nonce = string.match(args, "^bind (lab[12]) ([0-9a-f]+)$")
+            local rebindLab, rebindNonce = string.match(args, "^rebind (lab[12]) ([0-9a-f]+)$")
             local accepted, reason
             if lab then
                 -- Validate both bindings before changing the guidance identity.
@@ -92,6 +105,42 @@ pcall(function()
                         guidance:Invalidate(reason)
                     end
                 end
+            elseif rebindLab then
+                -- Prevalidate both sides. An unexpected split mutation below
+                -- latches publication off until the next UI reload.
+                accepted, reason = live:CanRebind(rebindNonce)
+                if accepted then accepted, reason = guidance:CanRebind(rebindLab, rebindNonce) end
+                if accepted then
+                    local priorSequence = producer and producer.Sequence
+                    if type(priorSequence) ~= "number" then
+                        accepted, reason = false, "Observation producer unavailable; reload the UI before rebinding."
+                    end
+                end
+                if accepted then
+                    local mutationSucceeded, liveAccepted, liveReason, guidanceAccepted, guidanceReason = pcall(function()
+                        local changedLive, changedLiveReason = live:Rebind(rebindNonce)
+                        if not changedLive then
+                            return changedLive, changedLiveReason, false, nil
+                        end
+                        local changedGuidance, changedGuidanceReason = guidance:Rebind(rebindLab, rebindNonce)
+                        return changedLive, changedLiveReason, changedGuidance, changedGuidanceReason
+                    end)
+                    accepted = mutationSucceeded and liveAccepted and guidanceAccepted
+                    reason = accepted and guidanceReason or liveReason or guidanceReason
+                    if accepted then
+                        -- Do not leave the old nonce globally visible until the
+                        -- next producer update.
+                        RiftReader2_LiveFrame = nil
+                        rebindAfterSequence = producer.Sequence
+                    else
+                        rebindFailedClosed = true
+                        RiftReader2_LiveFrame = nil
+                        pcall(function()
+                            guidance:Invalidate("Reader rebind failed closed; reload the UI before attaching another reader.")
+                        end)
+                        reason = "Reader rebind failed closed; reload the UI before attaching another reader."
+                    end
+                end
             elseif args == "status" then
                 reason = guidance:Text(producer and producer.Observation, clock())
             elseif args == "clear" then
@@ -100,7 +149,7 @@ pcall(function()
             elseif string.match(args, "^result ") then
                 accepted, reason = guidance:Receive(args, producer and producer.Observation, clock())
             else
-                reason = "Use /rr2guide bind lab1|lab2 NONCE, result ..., status, or clear. Results expire after 10s from source; movement invalidates them."
+                reason = "Use /rr2guide bind lab1|lab2 NONCE, rebind lab1|lab2 NEW_NONCE, result ..., status, or clear. Results expire after 10s from source; movement invalidates them."
             end
             print("RiftReader2: " .. tostring(reason))
             displayGuidance()

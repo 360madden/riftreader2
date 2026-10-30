@@ -66,6 +66,32 @@ function Guidance.New()
         return true, "Bound " .. lab .. "; manual feedback only."
     end
 
+    function instance:CanRebind(lab, nonce)
+        if (lab ~= "lab1" and lab ~= "lab2") or not validNonce(nonce) then
+            return false, "Expected rebind lab1|lab2 and a 32-character reader nonce."
+        end
+        if not self.Nonce then
+            return false, "Bind guidance before rebinding."
+        end
+        if self.Lab ~= lab then
+            return false, "Rebind must keep the currently bound lab."
+        end
+        if self.Nonce == nonce then
+            return false, "Rebind requires a new reader nonce."
+        end
+        return true
+    end
+
+    function instance:Rebind(lab, nonce)
+        local accepted, reason = self:CanRebind(lab, nonce)
+        if not accepted then return false, reason end
+        self.Lab, self.Nonce = lab, nonce
+        self.LastSequence, self.LastSourceSequence = 0, nil
+        self.Result = nil
+        self.State, self.Reason = "waiting", "No external result received."
+        return true, "Rebound " .. lab .. "; waiting for the new reader."
+    end
+
     function instance:Invalidate(reason)
         self.Result = nil
         self.State, self.Reason = "unavailable", reason
