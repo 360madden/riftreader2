@@ -2,10 +2,21 @@
 
 Updated: 2026-10-30 (America/New_York).
 
+**Pre-reboot Lab-1 controller recovery:** The October 30 VMware rollback to
+`baseline-codex-connected-lab1-20261029` succeeded and the guest/Codex doctor
+is ready. Lab-1 RIFT was absent and main-PC controller API `127.0.0.1:49811`
+still refused connections. VNC 5905 was identified under the restored VMX
+identity; older below references to a missing listener precede this rollback.
+All VM/game/controller PIDs become stale after Joey's planned host reboot.
+Read the [reboot handoff](workflows/lab1-controller-handoff-2026-10-30.md)
+and [full incident report](validation/lab1-controller-recovery-incident-2026-10-30.md)
+before recovery. No host controller was relaunched by the rollback.
+
 **Resume package:** [Movement handoff](workflows/movement-handoff-2026-10-29.md)
 and [researched resume prompt](workflows/movement-resume-prompt-2026-10-29.md).
-Next priority: restore Lab-1 console/game readiness, then repeat a bounded
-chosen-coordinate trial on safe terrain using fresh bindings and calibrations.
+Next priority: restore the Lab-1 main-PC controller and guest RIFT/agent
+readiness, then repeat a bounded chosen-coordinate trial on safe terrain using
+fresh bindings and calibrations.
 
 **Fast feedback and chosen-coordinate follow-up — LAB-2 ACCEPTED; LAB-1
 CONSOLE RECOVERY NEEDED:** The former ignored 6 GiB Lab-1 wrapper is replaced
