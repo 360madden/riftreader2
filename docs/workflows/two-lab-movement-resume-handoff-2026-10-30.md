@@ -3,6 +3,10 @@ Date: October 30, 2026; observations around 13:42–13:53 UTC (09:42–09:53 EDT
 Repository: C:\work\riftreader2, branch codex/modular-foundation.
 Starting source commit: e1b9f1e; recheck Git HEAD, status and VM identities on resumption.
 
+## October 30, 16:23 EDT — two hosts and two current readers restored; fast build candidate
+
+See [current controller/reader recovery](../validation/two-lab-current-controller-and-reader-recovery-2026-10-30.md). Lab1/2 detached host PIDs51076/57852 verified guest connected, disarmed, no held keys and distinct queue resources. New readers8120/7828 bound and strict source pins advancing. Lab1 second 480s forensic FAILED max16.214s accepted gap with selected/warming observations. Reader binary timestamp predates the fast candidate-region implementation by over five hours: build newest source after Lab2 current 480s window ends, preserve older binary, then use fresh guards and binding for live qualification. Lab2 long window pending. No movement done.
+
 ## October 30, 16:08 EDT — Lab1 reader source warmup traced
 
 See [freshness warmup investigation](../validation/lab1-freshness-warmup-investigation-2026-10-30.md). The reader/receiver delivered sequences 895–899 during the full-source strict acceptance gap (outer seq894→900 over 18.18sec), but source reported selection-selected, scan-complete, HTTP200 and **freshness=warming**, so strict-gate rejection is correct. A later 120s source window accepted 63 distinct samples max 3.174sec gap but does not override 8min failed qualification. Need record candidate sequence and tracker reason at transitions. Lab1 host PID51076 remains disarmed and exclusive, Lab2 no movement authorization.
