@@ -3,6 +3,10 @@ Date: October 30, 2026; observations around 13:42–13:53 UTC (09:42–09:53 EDT
 Repository: C:\work\riftreader2, branch codex/modular-foundation.
 Starting source commit: e1b9f1e; recheck Git HEAD, status and VM identities on resumption.
 
+## October 30, 16:08 EDT — Lab1 reader source warmup traced
+
+See [freshness warmup investigation](../validation/lab1-freshness-warmup-investigation-2026-10-30.md). The reader/receiver delivered sequences 895–899 during the full-source strict acceptance gap (outer seq894→900 over 18.18sec), but source reported selection-selected, scan-complete, HTTP200 and **freshness=warming**, so strict-gate rejection is correct. A later 120s source window accepted 63 distinct samples max 3.174sec gap but does not override 8min failed qualification. Need record candidate sequence and tracker reason at transitions. Lab1 host PID51076 remains disarmed and exclusive, Lab2 no movement authorization.
+
 ## October 30 15:57 EDT — Lab1 reliability window and controller recovery
 
 See [Lab1 feedback and controller checkpoint](../validation/lab1-feedback-window-and-controller-2026-10-30.md). Eight-minute strict no-input window **NOT qualified** (5.043s and 4.542s observed no-new-receipt gaps; outer sequence +3 in each). Distinct receipts 297, stable player/epoch. Add source/receiver timestamp and monitor poll-duration evidence, not a larger movement timeout. New Lab1 detached host03 PID51076 is connected, disarmed, exclusive, no held keys, VM resource ready with no lease. Strict source advanced after controller restoration. Lab2 remains controller-offline and unbound; require safe scene, correct bind, reliable pin and new host before motion.
