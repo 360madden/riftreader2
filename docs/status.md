@@ -2,6 +2,8 @@
 
 Updated: 2026-10-30 (America/New_York).
 
+**October 30 two-lab post-reboot diagnostic handoff (13:53 UTC):** Both guests passed their doctors with cached logins and Codex CLI 0.165.0. Guest process inventories succeeded (Lab-1 161; Lab-2 191) and showed **no RIFT process in either guest**. Lab-1's private controller host config was updated to its new VMX in RIFT-Lab-1 (Lab-2 unchanged); the static two-lab fleet now returns configuration-valid. BOTH authenticated host operator APIs still refuse connections (Lab-1 49811; Lab-2 49921); host controllers, game/agents and live feedback are **not ready**. The every-login cached credential fallback was previously fixed/committed at e1b9f1e; 40 focused tests passed. See [current two-lab movement handoff](workflows/two-lab-movement-resume-handoff-2026-10-30.md) and [superseding resume prompt](workflows/two-lab-movement-resume-prompt-2026-10-30.md). Historical Oct 29 Lab-2 arrivals are not current-run evidence.
+
 **Post-reboot Lab-1 guest access restored (October 30):** VMX now resolves to
 `C:\\rift modding\\VMs\\RIFT-Lab-1\\RIFT-Lab.vmx`. The guest session checks
 its current cached-credential target on every login and falls back to the
