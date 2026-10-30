@@ -53,19 +53,28 @@ class TraceSample:
 class TraceFeedback:
     def __init__(self, samples):
         self.samples = iter(samples)
+        self.current = None
 
     def read(self, _label):
-        return next(self.samples)
+        self.current = next(self.samples)
+        return self.current
 
     def wait_initial(self, timeout_seconds=4.5):
         if timeout_seconds != 4.5:
             raise AssertionError("unexpected initial feedback timeout")
-        return next(self.samples)
+        self.current = next(self.samples)
+        return self.current
+
+    def wait_action_ready(self, timeout_seconds=10.0):
+        if timeout_seconds != 10.0:
+            raise AssertionError("unexpected action-readiness timeout")
+        return self.current
 
     def wait_after(self, _completed, _prior, timeout_seconds=6.0):
         if timeout_seconds != 6.0:
             raise AssertionError("unexpected feedback timeout")
-        return next(self.samples)
+        self.current = next(self.samples)
+        return self.current
 
     def wait_next(self, _prior, timeout_seconds=3.0):
         if timeout_seconds != 3.0:

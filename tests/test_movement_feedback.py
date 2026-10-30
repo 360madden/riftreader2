@@ -35,8 +35,9 @@ class Reader:
         value = next(self.values)
         if isinstance(value, Exception):
             raise value
-        data = json.dumps(value, separators=(",", ":")).encode()
-        return value, data, {"status": "fresh"}
+        receipt, gate = value if isinstance(value, tuple) else (value, {"status": "fresh"})
+        data = json.dumps(receipt, separators=(",", ":")).encode()
+        return receipt, data, gate
 
 
 class MovementFeedbackTests(unittest.TestCase):
@@ -275,6 +276,78 @@ class MovementFeedbackTests(unittest.TestCase):
             adapter, _ = self.adapter(folder, [])
             with self.assertRaisesRegex(module._console.Blocked, "invalid-timeout"):
                 adapter.wait_initial(timeout_seconds=4.5001)
+
+    def test_action_ready_accepts_full_and_waits_for_fast_anchor_budget(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = self.receipt()
+            full = {"sourceBlock": "riftReader2"}
+            adapter, reader = self.adapter(folder, [(receipt, full)])
+            sample = adapter.wait_action_ready()
+            self.assertEqual(10, sample.outer_sequence)
+            self.assertEqual("ready-1-10-receipt.json", sample.raw_receipt_path.name)
+            self.assertTrue(sample.raw_receipt_path.is_file())
+            self.assertEqual(1, reader.calls)
+
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = self.receipt()
+            expiring = {"sourceBlock": "fastObservation",
+                        "anchorAgeMilliseconds": 7401.6,
+                        "anchorMaxAgeMilliseconds": 10000.0}
+            renewed = {"sourceBlock": "fastObservation",
+                       "anchorAgeMilliseconds": 3750.0,
+                       "anchorMaxAgeMilliseconds": 10000.0}
+            adapter, reader = self.adapter(folder, [
+                (receipt, expiring), (receipt, renewed)])
+            self.assertEqual(10, adapter.wait_action_ready().outer_sequence)
+            self.assertEqual(2, reader.calls)
+
+    def test_action_ready_rejects_bad_budget_and_times_out_without_action(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = self.receipt()
+            invalid = {"sourceBlock": "fastObservation",
+                       "anchorAgeMilliseconds": 1.0}
+            adapter, _ = self.adapter(folder, [(receipt, invalid)])
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-anchor-budget-invalid"):
+                adapter.wait_action_ready()
+
+        with tempfile.TemporaryDirectory() as folder:
+            clock = Clock()
+            expiring = {"sourceBlock": "fastObservation",
+                        "anchorAgeMilliseconds": 9500.0,
+                        "anchorMaxAgeMilliseconds": 10000.0}
+            receipt = self.receipt()
+            adapter, _ = self.adapter(
+                folder, [(receipt, expiring)] * 4, clock=clock)
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-anchor-budget-timeout"):
+                adapter.wait_action_ready(timeout_seconds=0.1)
+
+    def test_action_ready_timeout_has_exact_ten_second_ceiling(self):
+        with tempfile.TemporaryDirectory() as folder:
+            adapter, _ = self.adapter(folder, [])
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-invalid-timeout"):
+                adapter.wait_action_ready(timeout_seconds=10.0001)
+
+    def test_action_ready_headroom_boundary_is_inclusive_and_below_it_waits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = self.receipt()
+            boundary = {"sourceBlock": "fastObservation",
+                        "anchorAgeMilliseconds": 3750.0,
+                        "anchorMaxAgeMilliseconds": 10000.0}
+            adapter, _ = self.adapter(folder, [(receipt, boundary)])
+            self.assertEqual(10, adapter.wait_action_ready().outer_sequence)
+
+        with tempfile.TemporaryDirectory() as folder:
+            receipt = self.receipt()
+            below = {"sourceBlock": "fastObservation",
+                     "anchorAgeMilliseconds": 3750.001,
+                     "anchorMaxAgeMilliseconds": 10000.0}
+            adapter, _ = self.adapter(folder, [(receipt, below)] * 3)
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-anchor-budget-timeout"):
+                adapter.wait_action_ready(timeout_seconds=0.05)
 
     def test_wait_accepts_only_strict_post_action_advancement(self):
         with tempfile.TemporaryDirectory() as folder:

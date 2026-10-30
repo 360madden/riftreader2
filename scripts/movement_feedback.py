@@ -27,6 +27,10 @@ import addon_command_console as _console
 
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 _MAX_INITIAL_WAIT_SECONDS = 4.5
+_MAX_ACTION_READY_WAIT_SECONDS = 10.0
+# Preserve the complete six-second post-action evidence window plus the
+# worst-case reviewed 150 ms hold and a small dispatch margin.
+_MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS = 6_250.0
 # A post-action observation can require three complete acquisition intervals:
 # one scan that began before the action and is therefore unusable, one strict
 # post-action barrier, and one later scan that proves the barrier was crossed.
@@ -102,6 +106,7 @@ class PinnedFeedback:
         self._receipt_reader = receipt_reader or _movement_receipt
         self._monotonic = monotonic
         self._sleep = sleep
+        self._ready_index = 0
 
     def read(self, label: str) -> MovementSample:
         receipt, data, _ = self._receipt_reader(self._pin, initial=False)
@@ -129,6 +134,49 @@ class PinnedFeedback:
                 continue
             return _sample_from_receipt(
                 self._pin, receipt, data, self.evidence_dir, "initial")
+
+    def wait_action_ready(
+        self,
+        timeout_seconds: float = _MAX_ACTION_READY_WAIT_SECONDS,
+    ) -> MovementSample:
+        """Wait until the selected source can cover one action and its feedback."""
+        if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
+                or not math.isfinite(float(timeout_seconds))
+                or not 0 < float(timeout_seconds) <= _MAX_ACTION_READY_WAIT_SECONDS):
+            _console._fail("movement-feedback-invalid-timeout")
+        deadline = self._monotonic() + float(timeout_seconds)
+        while True:
+            try:
+                receipt, data, gate = self._receipt_reader(self._pin, initial=False)
+            except _console.Blocked as error:
+                if str(error) != "live-receipt-not-fresh":
+                    raise
+            else:
+                block = gate.get("sourceBlock")
+                ready = block == "riftReader2"
+                if block != "fastObservation":
+                    if block != "riftReader2":
+                        _console._fail("movement-feedback-source-unavailable")
+                else:
+                    anchor_age = gate.get("anchorAgeMilliseconds")
+                    anchor_max = gate.get("anchorMaxAgeMilliseconds")
+                    if (isinstance(anchor_age, bool) or not isinstance(anchor_age, (int, float))
+                            or not math.isfinite(float(anchor_age))
+                            or isinstance(anchor_max, bool) or not isinstance(anchor_max, (int, float))
+                            or not math.isfinite(float(anchor_max))
+                            or not 0 <= float(anchor_age) <= float(anchor_max)):
+                        _console._fail("movement-feedback-anchor-budget-invalid")
+                    ready = float(anchor_max) - float(anchor_age) \
+                        >= _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS
+                if ready:
+                    self._ready_index += 1
+                    outer = receipt["observation"]["sequence"]
+                    return _sample_from_receipt(
+                        self._pin, receipt, data, self.evidence_dir,
+                        f"ready-{self._ready_index}-{outer}")
+            if self._monotonic() >= deadline:
+                _console._fail("movement-feedback-anchor-budget-timeout")
+            self._sleep(0.05)
 
     def wait_after(
         self,

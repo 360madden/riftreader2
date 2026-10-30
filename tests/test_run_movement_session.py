@@ -56,15 +56,22 @@ class Feedback:
     def __init__(self, samples, failure=None):
         self.samples = iter(samples); self.failure = failure; self.waits = 0; self.next_waits = 0
         self.initial_timeouts = []; self.wait_timeouts = []; self.next_wait_timeouts = []
-        self.on_next = None
+        self.ready_timeouts = []
+        self.on_next = None; self.on_ready = None; self.current = None
     def read(self, _label): return next(self.samples)
     def wait_initial(self, timeout_seconds=4.5):
         self.initial_timeouts.append(timeout_seconds)
-        return next(self.samples)
+        self.current = next(self.samples)
+        return self.current
+    def wait_action_ready(self, timeout_seconds=10.0):
+        self.ready_timeouts.append(timeout_seconds)
+        if self.on_ready is not None: self.on_ready(len(self.ready_timeouts))
+        return self.current
     def wait_after(self, _completed, _prior, timeout_seconds=3.0):
         self.waits += 1; self.wait_timeouts.append(timeout_seconds)
         if self.failure is not None: raise self.failure
-        return next(self.samples)
+        self.current = next(self.samples)
+        return self.current
     def wait_next(self, _prior, timeout_seconds=3.0):
         self.next_waits += 1; self.next_wait_timeouts.append(timeout_seconds)
         if self.on_next is not None: self.on_next()
@@ -146,6 +153,7 @@ class MovementSessionTests(unittest.TestCase):
         self.assertTrue(result["success"]); self.assertEqual(result["status"], "calibrated")
         self.assertEqual([a.key for a in host.actions], ["w", "q"])
         self.assertEqual(feedback.initial_timeouts, [4.5])
+        self.assertEqual(feedback.ready_timeouts, [10.0, 10.0, 10.0])
         self.assertEqual(feedback.wait_timeouts, [6.0, 6.0])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
@@ -159,6 +167,130 @@ class MovementSessionTests(unittest.TestCase):
             clock=lambda: 0.0 if host.arms == 1 else (_ for _ in ()).throw(
                 AssertionError("run clock sampled before ARM")), now=lambda: NOW)
         self.assertTrue(result["success"])
+
+    def test_in_arm_readiness_failure_stops_without_input_or_rearm(self):
+        class ExpiringFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                if len(self.ready_timeouts) == 1:
+                    self.ready_timeouts.append(timeout_seconds)
+                    raise MovementSessionError("movement-feedback-anchor-budget-timeout")
+                return super().wait_action_ready(timeout_seconds)
+
+        host, lease = Host(), Lease()
+        feedback = ExpiringFeedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "anchor-budget-timeout"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "ready-fail", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(feedback.ready_timeouts, [10.0, 10.0])
+        self.assertEqual(host.arms, 1)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_prearm_readiness_failure_never_arms_or_sends_input(self):
+        class UnreadyFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                self.ready_timeouts.append(timeout_seconds)
+                raise MovementSessionError("movement-feedback-anchor-budget-timeout")
+
+        host, lease = Host(), Lease()
+        feedback = UnreadyFeedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "anchor-budget-timeout"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "prearm-ready-fail", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 0)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_lease_is_revalidated_after_prearm_readiness_wait(self):
+        host, lease = Host(), Lease(fail_check=2)
+        feedback = Feedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(RuntimeError, "lease lost"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "lease-expired-during-ready", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 0)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_arm_is_revalidated_after_readiness_wait_before_input(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1)])
+        feedback.on_ready = lambda call: setattr(host, "arm_expired", True) if call == 2 else None
+        with self.assertRaisesRegex(RuntimeError, "arm expired"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "arm-expired-during-ready", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 1)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_lease_is_revalidated_after_in_arm_readiness_wait(self):
+        host, lease = Host(), Lease(fail_check=4)
+        feedback = Feedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(RuntimeError, "lease lost"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "in-arm-lease-expired", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 1)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_prearm_ready_position_drift_stops_before_arm(self):
+        class DriftFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                self.ready_timeouts.append(timeout_seconds)
+                return Sample(.051, 0, 0, 2)
+
+        host, lease = Host(), Lease()
+        feedback = DriftFeedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "position drifted"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "prearm-position-drift", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 0)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_in_arm_ready_position_drift_stops_without_input(self):
+        class DriftFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                self.ready_timeouts.append(timeout_seconds)
+                if len(self.ready_timeouts) == 1:
+                    return self.current
+                return Sample(.051, 0, 0, 2)
+
+        host, lease = Host(), Lease()
+        feedback = DriftFeedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "position drifted"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "in-arm-position-drift", host=host,
+                lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 1)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_allowed_ready_drift_becomes_exact_calibration_baseline(self):
+        class SettlingFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                self.ready_timeouts.append(timeout_seconds)
+                if len(self.ready_timeouts) == 1:
+                    return self.current
+                return Sample(.04, 0, 0, 2)
+
+        host, lease = Host(), Lease()
+        feedback = SettlingFeedback([Sample(0, 0, 0, 1), Sample(.54, 0, 0, 3)])
+        result = execute_armed_session(
+            session=session("calibration", keys=("w",), dimension="1d"),
+            review=review(), output=self.root / "ready-calibration-baseline",
+            host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(.04, result["samples"][0]["xyz"]["x"])
+        self.assertEqual(.04, result["actionEvidence"][0]["before"]["xyz"]["x"])
+        self.assertEqual(.54, result["samples"][-1]["xyz"]["x"])
+        self.assertAlmostEqual(.5 / 150,
+            result["calibrations"]["w"]["dx_per_ms"], places=12)
 
     def test_goal_run_stops_then_confirms_one_advancing_released_settle(self):
         profile = self.root / "profile.json"
@@ -177,11 +309,10 @@ class MovementSessionTests(unittest.TestCase):
         feedback = Feedback([Sample(0, 0, 0, 1), Sample(.75, 0, 0, 2),
                              Sample(1.2, 0, 0, 3), Sample(1.2, 0, 0, 4)])
         feedback.on_next = lambda: self.assertEqual(host.stops, 1)
-        ticks = iter((0.0, 1.0, 4.0, 5.0, 9.0))
         result = execute_armed_session(session=session("movement", profile,
                     {"x": 1.2, "y": 0, "z": 0}), review=review(),
                     output=self.root / "run", host=host, lease=lease, feedback=feedback,
-                    clock=lambda: next(ticks), now=lambda: NOW)
+                    clock=lambda: 1.0, now=lambda: NOW)
         self.assertEqual(result["status"], "arrived"); self.assertEqual(result["settles"], 1)
         self.assertEqual(result["arrivalObservations"], 2); self.assertEqual(feedback.next_waits, 1)
         self.assertEqual(feedback.wait_timeouts, [6.0, 6.0])
@@ -655,7 +786,7 @@ class MovementSessionTests(unittest.TestCase):
             execute_armed_session(session=session("calibration"), review=review(),
                 output=self.root / "run", host=host, lease=lease, feedback=feedback,
                 clock=lambda: next(ticks), now=lambda: NOW)
-        self.assertEqual(len(host.actions), 2); self.assertEqual(host.stops, 1)
+        self.assertEqual(len(host.actions), 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "failed")
 
 

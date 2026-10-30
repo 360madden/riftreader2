@@ -43,6 +43,7 @@ TURN_KEY = frozenset(("a", "d"))
 ALL_KEY = SAFE_KEY | TURN_KEY
 INITIAL_FEEDBACK_TIMEOUT_SECONDS = 4.5
 ACTION_FEEDBACK_TIMEOUT_SECONDS = 6.0
+ACTION_READY_TIMEOUT_SECONDS = 10.0
 
 
 class MovementSessionError(RuntimeError):
@@ -444,6 +445,19 @@ def _stop_and_verify(host, output: Path) -> dict:
     return final_status
 
 
+def _require_action_ready_sample(prior, ready):
+    before, current = prior.to_dict(), ready.to_dict()
+    require(_sample_identity(current) == _sample_identity(before),
+            "action-ready feedback identity changed")
+    require(current["outerSequence"] >= before["outerSequence"]
+            and current["addonSequence"] >= before["addonSequence"]
+            and current["addonClock"] >= before["addonClock"],
+            "action-ready feedback regressed")
+    require(planar_distance(_position(ready), _position(prior)) <= .05,
+            "action-ready position drifted before input")
+    return ready
+
+
 def execute_armed_session(*, session: dict, review: dict, output: Path, host, lease,
                           feedback, clock=time.monotonic, now=utc_now,
                           controller_factory=WaypointController) -> dict:
@@ -460,6 +474,9 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
     try:
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
         initial = feedback.wait_initial(timeout_seconds=INITIAL_FEEDBACK_TIMEOUT_SECONDS)
+        ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+        initial = _require_action_ready_sample(initial, ready)
+        lease.check(); lease.heartbeat(); host.status(require_armed=False)
         samples.append(initial.to_dict())
         mode = session["mode"]
         require(mode in ("calibration", "movement", "turn"), "session mode is invalid")
@@ -528,11 +545,17 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                     for hold in range(20, 151))
                 require(distance - best_after_pulse >= .03,
                         "no bounded 1d pulse makes useful progress")
+        lease.check(); lease.heartbeat(); host.status(require_armed=False)
         host.arm(session["capture"]["capture"], review["note"], output / "arm.private.json")
         started = clock()
         if mode == "turn":
             require(clock() - started <= 12, "elapsed budget")
             lease.check(); lease.heartbeat(); host.status(require_armed=True)
+            ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+            require(clock() - started <= 12, "elapsed budget")
+            lease.check(); lease.heartbeat(); host.status(require_armed=True)
+            initial = _require_action_ready_sample(initial, ready)
+            samples[-1] = initial.to_dict()
             action = MovementAction(turn_keys[0], turn_hold, 0, 0)
             response = host.action(action, output / "action-1.json")
             _result, completed = _action_result(response)
@@ -568,6 +591,11 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             for index, key in enumerate(calibration_keys, 1):
                 require(clock() - started <= 12, "elapsed budget")
                 lease.check(); lease.heartbeat(); host.status(require_armed=True)
+                ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+                require(clock() - started <= 12, "elapsed budget")
+                lease.check(); lease.heartbeat(); host.status(require_armed=True)
+                prior = _require_action_ready_sample(prior, ready)
+                samples[-1] = prior.to_dict()
                 action = MovementAction(key, 150, 0, 0)
                 response = host.action(action, output / f"action-{index}.json")
                 _result, completed = _action_result(response)
@@ -599,6 +627,13 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             while controller.status != "arrived":
                 elapsed = clock() - started
                 require(elapsed <= 12, "elapsed budget")
+                lease.check(); lease.heartbeat(); host.status(require_armed=True)
+                ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+                elapsed = clock() - started
+                require(elapsed <= 12, "elapsed budget")
+                lease.check(); lease.heartbeat(); host.status(require_armed=True)
+                prior = _require_action_ready_sample(prior, ready)
+                samples[-1] = prior.to_dict()
                 decision = controller.decide(_position(prior), elapsed)
                 if decision is None:
                     require(controller.feedback_iterations >= 1,
@@ -615,7 +650,6 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                     prior = settle; settles += 1
                     require(controller.status == "arrived", "arrival did not confirm")
                     continue
-                lease.check(); lease.heartbeat(); host.status(require_armed=True)
                 response = host.action(decision, output / f"action-{len(actions)+1}.json")
                 _result, completed = _action_result(response)
                 after = _require_advancing(prior,
