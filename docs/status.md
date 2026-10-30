@@ -61,6 +61,19 @@ status was disarmed, idle, recovery-free and showed no sampled input down
 [final status](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/final-status.json)).
 This proves one fixed-before-turn reviewed coordinate arrival in the retained
 Lab-2 epoch; it does not establish arbitrary-coordinate routing or 3-D arrival.
+An independent second fixed-goal workflow then selected X/Z
+`(7138.650, 3192.951)` before another reviewed 20 ms D turn, preserved that
+exact point through a fresh 150 ms W calibration, and reported `ARRIVED` after
+one 52 ms W action. It ended 0.010 planar units from the goal; release succeeded,
+and final status was disarmed, idle, recovery-free and showed no sampled input
+down
+([pre-turn review](../artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-turn-plan-01/review.json),
+[calibration](../artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-cal-run-02/result.json),
+[arrival](../artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-goal-run-02/result.json)).
+This is a second independent reviewed success in the same retained Lab-2
+game/reader epoch. It improves repeatability evidence for this narrow planar
+procedure, but still does not prove arbitrary goal selection, 3-D navigation,
+changing-world reliability or operation on Lab-1.
 
 The stalled-VNC cleanup fix at `3253ece` then completed and saved a new Lab-2
 live capture through the patched client
