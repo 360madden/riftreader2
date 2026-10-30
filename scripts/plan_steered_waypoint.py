@@ -19,6 +19,12 @@ class SteeringPlanError(ValueError):
     pass
 
 
+ARRIVAL_TOLERANCE = .30
+MINIMUM_PULSE_MS = 20
+MAXIMUM_PULSE_MS = 150
+MINIMUM_PROGRESS = .03
+
+
 def require(value, message):
     if not value:
         raise SteeringPlanError(message)
@@ -234,7 +240,7 @@ def next_step(current_path: Path, goal_xz: tuple[float, float],
     after_turn = post_turn_pin(after_turn_path, current) if after_turn_path else None
     if after_turn:
         base["afterTurnResult"] = after_turn
-    if distance <= .30:
+    if distance <= ARRIVAL_TOLERANCE:
         return {**base, "decision": "arrived", "reason": "within-planar-tolerance"}
 
     fx, fz = current["step"]
@@ -249,16 +255,23 @@ def next_step(current_path: Path, goal_xz: tuple[float, float],
 
     if projection > 0 and abs(signed_cross_track) <= .05:
         alpha = projection / magnitude
-        if 1.5 <= alpha <= 2.5:
+        if alpha <= 2.5:
+            dx_per_ms = fx / current["holdMilliseconds"]
+            dz_per_ms = fz / current["holdMilliseconds"]
+            best_after_pulse = min(math.hypot(
+                error[0] - dx_per_ms * hold,
+                error[1] - dz_per_ms * hold,
+            ) for hold in range(MINIMUM_PULSE_MS, MAXIMUM_PULSE_MS + 1))
+            if distance - best_after_pulse < MINIMUM_PROGRESS:
+                return {**base, "decision": "blocked",
+                        "reason": "no-bounded-forward-pulse-makes-useful-progress",
+                        "bestAfterPulseDistance": best_after_pulse}
             target = {"x": gx, "y": y, "z": gz}
             kind = "chosen-planar-coordinate"
         elif alpha > 2.5:
             alpha = 2.0
             target = {"x": x + fx * alpha, "y": y, "z": z + fz * alpha}
             kind = "intermediate-forward-segment"
-        else:
-            return {**base, "decision": "blocked",
-                    "reason": "remaining-forward-distance-outside-1d-contract"}
         runner_arguments = ["prepare", "--mode", "movement", "--dimension", "1d",
                             "--keys", "w", "--calibration-profile",
                             str(Path(current_path).resolve())]

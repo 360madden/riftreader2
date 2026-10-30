@@ -22,7 +22,7 @@ def sample(x, y, z, sequence, *, nonce="nonce"):
             "readerNonce": nonce, "receiverInstance": "receiver", "target": dict(TARGET)}
 
 
-def calibration(start, end, first_sequence, step, *, nonce="nonce"):
+def calibration(start, end, first_sequence, step, *, nonce="nonce", hold=100):
     first = sample(*start, first_sequence, nonce=nonce)
     last = sample(*end, first_sequence + 1, nonce=nonce)
     return {"success": True, "mode": "calibration", "status": "calibrated",
@@ -33,8 +33,8 @@ def calibration(start, end, first_sequence, step, *, nonce="nonce"):
                 "readerProcessStartUtcTicks", "readerExecutableSha256", "readerInstance",
                 "readerNonce", "receiverInstance", "target")},
             "calibrationEnd": last, "normalizedCross": None,
-            "calibrations": {"w": {"key": "w", "dx_per_ms": step[0] / 100,
-                "dz_per_ms": step[1] / 100, "calibration_hold_ms": 100,
+            "calibrations": {"w": {"key": "w", "dx_per_ms": step[0] / hold,
+                "dz_per_ms": step[1] / hold, "calibration_hold_ms": hold,
                 "horizontal_displacement": math.hypot(*step), "vertical_displacement": 0}},
             "samples": [first, last]}
 
@@ -183,12 +183,36 @@ class SteeringPlannerTests(unittest.TestCase):
         with self.assertRaisesRegex(SteeringPlanError, "another identity"):
             next_step(current, (1, 5), [measured])
 
-    def test_next_blocks_short_or_cross_track_goal_without_turn_evidence(self):
+    def test_next_allows_short_final_segment_but_blocks_without_turn_evidence(self):
         current = self.write("current.json", calibration((0, 0, 0), (1, 0, 0), 1, (1, 0)))
         short = next_step(current, (1.5, 0), [])
-        self.assertEqual(short["reason"], "remaining-forward-distance-outside-1d-contract")
+        self.assertEqual(short["decision"], "forward")
+        self.assertEqual(short["targetKind"], "chosen-planar-coordinate")
+        self.assertAlmostEqual(short["calibratedDisplacements"], .5)
         off_axis = next_step(current, (3, .06), [])
         self.assertEqual(off_axis["reason"], "no-measured-turn-direction-reduces-error")
+
+    def test_retained_lab1_short_final_geometry_emits_exact_goal(self):
+        step = (.84033203125, -.52001953125)
+        current = self.write("lab1-current.json", calibration(
+            (7416.099609375, 863.5799560546875, 2927.43994140625),
+            (7416.93994140625, 863.5799560546875, 2926.919921875),
+            1, step, hold=150))
+        result = next_step(current, (7417.5, 2926.62), [])
+        self.assertEqual(result["decision"], "forward")
+        self.assertEqual(result["targetKind"], "chosen-planar-coordinate")
+        self.assertAlmostEqual(result["calibratedDisplacements"],
+                               .6416284796192829)
+        self.assertEqual(result["target"]["x"], 7417.5)
+        self.assertEqual(result["target"]["z"], 2926.62)
+
+    def test_next_blocks_short_goal_when_minimum_pulse_only_overshoots(self):
+        current = self.write("fast.json", calibration((0, 0, 0), (2, 0, 0), 1,
+                                                       (2, 0), hold=20))
+        result = next_step(current, (2.5, 0), [])
+        self.assertEqual(result["decision"], "blocked")
+        self.assertEqual(result["reason"],
+                         "no-bounded-forward-pulse-makes-useful-progress")
 
     def test_next_reports_planar_arrival_despite_y_difference(self):
         current = self.write("current.json", calibration((0, 5, 0), (1, 5, 0), 1, (1, 0)))

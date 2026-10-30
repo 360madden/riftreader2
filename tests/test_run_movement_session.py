@@ -208,6 +208,36 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
 
+    def test_retained_lab1_short_final_geometry_selects_bounded_96ms_pulse(self):
+        profile = self.root / "lab1-short-profile.json"
+        document = {"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "movementDimension": "1d", "normalizedCross": None,
+            "calibrationIdentity": sample_identity(), "calibrationKeys": ["w"],
+            "calibrationEnd": {"xyz": {"x": 7416.93994140625,
+                "y": 863.5799560546875, "z": 2926.919921875}},
+            "calibrations": {"w": {"key": "w",
+                "dx_per_ms": .005602213541666666, "dz_per_ms": -.003466796875,
+                "calibration_hold_ms": 150, "horizontal_displacement": .9882197304376293,
+                "vertical_displacement": 0}}}
+        profile.write_text(json.dumps(document), encoding="utf-8")
+        current = Sample(7416.93994140625, 863.5799560546875, 2926.919921875, 1)
+        goal = {"x": 7417.5, "y": 863.5799560546875, "z": 2926.62}
+        host, lease = Host(), Lease()
+        result = execute_armed_session(session=session("movement", profile, goal,
+                    keys=("w",), dimension="1d"), review=review(),
+                    output=self.root / "lab1-short", host=host, lease=lease,
+                    feedback=Feedback([current,
+                        Sample(goal["x"], goal["y"], goal["z"], 2),
+                        Sample(goal["x"], goal["y"], goal["z"], 3)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(result["status"], "arrived")
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(host.actions[0].hold_ms, 96)
+        self.assertAlmostEqual(host.actions[0].distance_before, .6353099712241329)
+        self.assertAlmostEqual(host.actions[0].predicted_distance_after,
+                               .039707453960399305)
+
     def test_one_action_arrival_rejects_stale_or_moving_released_settle(self):
         profile = self.root / "profile.json"
         profile.write_text(json.dumps(profile_document()), encoding="utf-8")
@@ -525,12 +555,12 @@ class MovementSessionTests(unittest.TestCase):
         profile.write_text(json.dumps(document), encoding="utf-8")
         host, lease = Host(), Lease()
         result = execute_armed_session(
-            session=session("movement", profile, {"x": .61, "y": 0, "z": 0},
+            session=session("movement", profile, {"x": .31, "y": 0, "z": 0},
                             keys=("s",), dimension="1d"),
             review=review(), output=self.root / "one-action-1d", host=host,
             lease=lease, feedback=Feedback([Sample(0, 0, 0, 1),
-                                            Sample(.4, 0, 0, 2),
-                                            Sample(.4, 0, 0, 3)]),
+                                            Sample(.31, 0, 0, 2),
+                                            Sample(.31, 0, 0, 3)]),
             clock=lambda: 1.0, now=lambda: NOW)
         self.assertEqual(result["feedbackIterations"], 1)
         self.assertEqual(len(host.actions), 1)
@@ -545,6 +575,35 @@ class MovementSessionTests(unittest.TestCase):
                     lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
                     clock=lambda: 1.0, now=lambda: NOW)
             self.assertEqual(host.arms, 0); self.assertEqual(host.actions, [])
+
+    def test_1d_goal_rejects_in_tolerance_or_minimum_pulse_overshoot_before_arm(self):
+        base = {"schemaVersion": 1, "evidenceKind": "empirical-movement-calibration/1",
+            "mode": "calibration", "status": "calibrated", "movementDimension": "1d",
+            "normalizedCross": None, "calibrationIdentity": sample_identity(),
+            "calibrationKeys": ["s"], "calibrationEnd": {"xyz": {"x": 0, "y": 0, "z": 0}}}
+        cases = (
+            ("in-tolerance", {"key": "s", "dx_per_ms": .01, "dz_per_ms": 0,
+                              "calibration_hold_ms": 100, "horizontal_displacement": 1,
+                              "vertical_displacement": 0}, {"x": .3, "y": 0, "z": 0},
+             "arrival tolerance"),
+            ("overshoot", {"key": "s", "dx_per_ms": .1, "dz_per_ms": 0,
+                            "calibration_hold_ms": 20, "horizontal_displacement": 2,
+                            "vertical_displacement": 0}, {"x": .5, "y": 0, "z": 0},
+             "no bounded 1d pulse"),
+        )
+        for name, vector, goal, message in cases:
+            profile = self.root / f"profile-{name}.json"
+            profile.write_text(json.dumps({**base, "calibrations": {"s": vector}}),
+                               encoding="utf-8")
+            host, lease = Host(), Lease()
+            with self.subTest(name=name), self.assertRaisesRegex(MovementSessionError, message):
+                execute_armed_session(session=session("movement", profile, goal,
+                    keys=("s",), dimension="1d"), review=review(),
+                    output=self.root / f"run-{name}", host=host, lease=lease,
+                    feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+            self.assertEqual(host.arms, 0)
+            self.assertEqual(host.actions, [])
 
     def test_initial_in_tolerance_cannot_succeed_without_action_feedback(self):
         profile = self.root / "profile.json"

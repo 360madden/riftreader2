@@ -517,8 +517,17 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 gx, gz = goal.x - start.x, goal.z - start.z
                 alpha = (gx * dx + gz * dz) / norm2
                 residual = abs(gx * dz - gz * dx) / math.sqrt(norm2)
-                require(1.5 <= alpha <= 2.5 and residual <= .05 and gx * dx + gz * dz > 0,
-                        "1d goal is not a positive 1.5..2.5 calibrated displacement")
+                distance = math.hypot(gx, gz)
+                require(distance > .30, "1d goal is already within arrival tolerance")
+                require(0 < alpha <= 2.5 and residual <= .05 and gx * dx + gz * dz > 0,
+                        "1d goal is not a positive aligned bounded calibrated displacement")
+                best_after_pulse = min(math.hypot(
+                    gx - vector.dx_per_ms * hold,
+                    gz - vector.dz_per_ms * hold,
+                )
+                    for hold in range(20, 151))
+                require(distance - best_after_pulse >= .03,
+                        "no bounded 1d pulse makes useful progress")
         host.arm(session["capture"]["capture"], review["note"], output / "arm.private.json")
         started = clock()
         if mode == "turn":
