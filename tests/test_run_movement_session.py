@@ -9,6 +9,7 @@ from scripts.run_movement_session import (
     execute_armed_session, require_post_turn_calibration, sha,
     validate_session_pins,
 )
+from scripts.movement_controller import MovementError
 
 
 NOW = datetime(2026, 10, 29, 20, 0, tzinfo=timezone.utc)
@@ -188,6 +189,43 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(len(host.actions), 2); self.assertEqual(result["feedbackIterations"], 2)
         self.assertEqual(host.arms, 1)
         self.assertEqual(host.stops, 1); self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_one_action_arrival_stops_then_requires_distinct_stationary_settle(self):
+        profile = self.root / "profile.json"
+        profile.write_text(json.dumps(profile_document()), encoding="utf-8")
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.8, 0, 0, 2),
+                             Sample(.81, 0, 0, 3)])
+        feedback.on_next = lambda: self.assertEqual(host.stops, 1)
+        result = execute_armed_session(session=session("movement", profile,
+                    {"x": 1, "y": 0, "z": 0}), review=review(),
+                    output=self.root / "one-action", host=host, lease=lease,
+                    feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(result["status"], "arrived")
+        self.assertEqual(result["feedbackIterations"], 1)
+        self.assertEqual(result["settles"], 1)
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_one_action_arrival_rejects_stale_or_moving_released_settle(self):
+        profile = self.root / "profile.json"
+        profile.write_text(json.dumps(profile_document()), encoding="utf-8")
+        cases = (("stale", Sample(.81, 0, 0, 2), MovementSessionError,
+                  "feedback did not advance"),
+                 ("moving", Sample(.86, 0, 0, 3), MovementError,
+                  "not planar-stationary"))
+        for name, settle, error, message in cases:
+            host, lease = Host(), Lease()
+            feedback = Feedback([Sample(0, 0, 0, 1), Sample(.8, 0, 0, 2), settle])
+            with self.subTest(name=name), self.assertRaisesRegex(error, message):
+                execute_armed_session(session=session("movement", profile,
+                    {"x": 1, "y": 0, "z": 0}), review=review(),
+                    output=self.root / f"one-action-{name}", host=host, lease=lease,
+                    feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+            self.assertEqual(len(host.actions), 1)
+            self.assertEqual(host.stops, 1)
+            self.assertEqual(lease.finishes[0][0], "failed")
 
     def test_ambiguous_action_stops_fails_and_never_retries(self):
         host, lease = Host(ambiguous=True), Lease()
@@ -474,7 +512,7 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual([action.key for action in host.actions], ["s", "s"])
         self.assertEqual(result["feedbackIterations"], 2)
 
-    def test_1d_goal_rejects_off_axis_or_one_action_distance_before_arm(self):
+    def test_1d_goal_allows_one_action_arrival_but_rejects_off_axis(self):
         profile = self.root / "profile-1d.json"
         document = {"schemaVersion": 1,
             "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
@@ -485,8 +523,20 @@ class MovementSessionTests(unittest.TestCase):
                 "dz_per_ms": 0, "calibration_hold_ms": 150,
                 "horizontal_displacement": .4, "vertical_displacement": 0}}}
         profile.write_text(json.dumps(document), encoding="utf-8")
-        for index, goal in enumerate(({"x": .6, "y": 0, "z": 0},
-                                      {"x": 1, "y": 0, "z": .06})):
+        host, lease = Host(), Lease()
+        result = execute_armed_session(
+            session=session("movement", profile, {"x": .61, "y": 0, "z": 0},
+                            keys=("s",), dimension="1d"),
+            review=review(), output=self.root / "one-action-1d", host=host,
+            lease=lease, feedback=Feedback([Sample(0, 0, 0, 1),
+                                            Sample(.4, 0, 0, 2),
+                                            Sample(.4, 0, 0, 3)]),
+            clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(result["feedbackIterations"], 1)
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+        for index, goal in enumerate(({"x": 1, "y": 0, "z": .06},)):
             host, lease = Host(), Lease()
             with self.subTest(goal=goal), self.assertRaises(MovementSessionError):
                 execute_armed_session(
@@ -496,7 +546,7 @@ class MovementSessionTests(unittest.TestCase):
                     clock=lambda: 1.0, now=lambda: NOW)
             self.assertEqual(host.arms, 0); self.assertEqual(host.actions, [])
 
-    def test_initial_in_tolerance_cannot_succeed_without_two_actions(self):
+    def test_initial_in_tolerance_cannot_succeed_without_action_feedback(self):
         profile = self.root / "profile.json"
         profile.write_text(json.dumps({"schemaVersion": 1,
             "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
@@ -510,7 +560,7 @@ class MovementSessionTests(unittest.TestCase):
                       "calibration_hold_ms": 150, "horizontal_displacement": .75,
                       "vertical_displacement": 0}}}), encoding="utf-8")
         host, lease, feedback = Host(), Lease(), Feedback([Sample(0, 0, 0, 1)])
-        with self.assertRaisesRegex(MovementSessionError, "two action"):
+        with self.assertRaisesRegex(MovementSessionError, "post-action feedback"):
             execute_armed_session(session=session("movement", profile, {"x": 0, "y": 0, "z": 0}),
                 review=review(), output=self.root / "run", host=host, lease=lease,
                 feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)

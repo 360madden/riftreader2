@@ -158,35 +158,48 @@ class WaypointControllerTests(unittest.TestCase):
         action = ctl.decide(Position(0, 0, 0), 0)
         ctl.record_feedback(Position(1, 0, 0), 11.9)
         self.assertEqual("confirming-arrival", ctl.status)
-        ctl.confirm_released_settle(Position(1, 0, 0))
+        ctl.confirm_released_settle(Position(1, 0, 0), Position(1, 0, 0))
         self.assertEqual("arrived", ctl.status)
 
     def test_released_settle_requires_no_pending_and_one_action_arrival(self):
         pending = WaypointController(basis(), Position(0, 0, 0), Position(1, 0, 0))
         pending.decide(Position(0, 0, 0), 0)
         with self.assertRaisesRegex(MovementError, "pending action"):
-            pending.confirm_released_settle(Position(1, 0, 0))
+            pending.confirm_released_settle(Position(1, 0, 0), Position(1, 0, 0))
 
         active = WaypointController(basis(), Position(0, 0, 0), Position(1, 0, 0))
         with self.assertRaisesRegex(MovementError, "one in-tolerance"):
-            active.confirm_released_settle(Position(1, 0, 0))
+            active.confirm_released_settle(Position(1, 0, 0), Position(1, 0, 0))
 
     def test_released_settle_still_enforces_geometry_and_can_revoke_arrival(self):
         ctl = WaypointController(basis(), Position(0, 0, 0), Position(1, 0, 0))
         ctl.decide(Position(0, 0, 0), 0)
         ctl.record_feedback(Position(1, 0, 0), 11.9)
-        ctl.confirm_released_settle(Position(.6, 0, 0))
-        self.assertEqual("active", ctl.status)
-        self.assertEqual(0, ctl.arrival_confirmations)
+        with self.assertRaisesRegex(MovementError, "not planar-stationary"):
+            ctl.confirm_released_settle(Position(.6, 0, 0), Position(1, 0, 0))
+        self.assertEqual("confirming-arrival", ctl.status)
+        self.assertEqual(1, ctl.arrival_confirmations)
+
+        ctl.confirm_released_settle(Position(.96, 0, 0), Position(1, 0, 0))
+        self.assertEqual("arrived", ctl.status)
+
+    def test_released_settle_inside_tolerance_still_requires_stationarity(self):
+        ctl = WaypointController(basis(), Position(0, 0, 0), Position(1, 0, 0))
+        ctl.decide(Position(0, 0, 0), 0)
+        ctl.record_feedback(Position(.8, 0, 0), 1)
+        with self.assertRaisesRegex(MovementError, "not planar-stationary"):
+            ctl.confirm_released_settle(Position(.9, 0, 0), Position(.8, 0, 0))
+        ctl.confirm_released_settle(Position(.84, 0, 0), Position(.8, 0, 0))
+        self.assertEqual("arrived", ctl.status)
 
     def test_released_settle_rejects_out_of_geometry_and_halted_controller(self):
         ctl = WaypointController(basis(), Position(0, 0, 0), Position(1, 0, 0))
         ctl.decide(Position(0, 0, 0), 0)
         ctl.record_feedback(Position(1, 0, 0), 11.9)
         with self.assertRaisesRegex(MovementHalted, "cross-track"):
-            ctl.confirm_released_settle(Position(1, 0, .51))
+            ctl.confirm_released_settle(Position(1, 0, .51), Position(1, 0, 0))
         with self.assertRaisesRegex(MovementHalted, "cross-track"):
-            ctl.confirm_released_settle(Position(1, 0, 0))
+            ctl.confirm_released_settle(Position(1, 0, 0), Position(1, 0, 0))
 
 
 if __name__ == "__main__":

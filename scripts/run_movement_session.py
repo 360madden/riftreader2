@@ -519,9 +519,6 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 residual = abs(gx * dz - gz * dx) / math.sqrt(norm2)
                 require(1.5 <= alpha <= 2.5 and residual <= .05 and gx * dx + gz * dz > 0,
                         "1d goal is not a positive 1.5..2.5 calibrated displacement")
-                require((alpha - 1) * vector.horizontal_displacement > .35
-                        and (alpha - 2) * vector.horizontal_displacement <= .30,
-                        "1d goal does not require and permit exactly two calibrated actions")
         host.arm(session["capture"]["capture"], review["note"], output / "arm.private.json")
         started = clock()
         if mode == "turn":
@@ -595,15 +592,17 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 require(elapsed <= 12, "elapsed budget")
                 decision = controller.decide(_position(prior), elapsed)
                 if decision is None:
-                    require(controller.feedback_iterations >= 2,
-                            "arrival is not eligible before two action feedback iterations")
+                    require(controller.feedback_iterations >= 1,
+                            "arrival is not eligible without advancing post-action feedback")
                     require(settles == 0, "arrival requires exactly one no-input confirmation")
-                    require(clock() - started <= 12, "elapsed budget")
+                    lease.check(); lease.heartbeat()
+                    _stop_and_verify(host, output); released = True
                     settle = _require_advancing(prior,
                         feedback.wait_next(prior, timeout_seconds=3.0))
                     require(planar_distance(_position(settle), goal) <= controller.tolerance,
                             "arrival settle left tolerance")
-                    samples.append(settle.to_dict()); controller.observe(_position(settle), clock() - started)
+                    samples.append(settle.to_dict())
+                    controller.confirm_released_settle(_position(settle), _position(prior))
                     prior = settle; settles += 1
                     require(controller.status == "arrived", "arrival did not confirm")
                     continue
@@ -617,7 +616,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 actions.append({"index": len(actions)+1, "decision": asdict(decision),
                                 "result": response, "before": prior.to_dict(), "after": after.to_dict()})
                 prior = after
-                if controller.status == "confirming-arrival" and controller.feedback_iterations >= 2:
+                if controller.status == "confirming-arrival" and controller.feedback_iterations >= 1:
                     lease.check(); lease.heartbeat()
                     _stop_and_verify(host, output); released = True
                     settle = _require_advancing(prior,
@@ -625,12 +624,12 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                     require(planar_distance(_position(settle), goal) <= controller.tolerance,
                             "arrival settle left tolerance")
                     samples.append(settle.to_dict())
-                    controller.confirm_released_settle(_position(settle))
+                    controller.confirm_released_settle(_position(settle), _position(prior))
                     prior = settle; settles += 1
                     require(controller.status == "arrived", "arrival did not confirm")
             require(controller.status == "arrived" and settles == 1
-                    and controller.feedback_iterations >= 2,
-                    "arrival lacks two action feedback iterations and a distinct confirmation")
+                    and controller.feedback_iterations >= 1,
+                    "arrival lacks advancing post-action feedback and a distinct released settle")
             result_payload = {"mode": mode, "status": "arrived",
                               "movementDimension": dimension, "goal": session["goal"],
                               "actions": controller.action_count, "totalHoldMs": controller.total_hold_ms,

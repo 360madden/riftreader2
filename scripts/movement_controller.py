@@ -239,7 +239,8 @@ class WaypointController:
             self._halt("vertical-drift")
         return position
 
-    def confirm_released_settle(self, position: Position) -> None:
+    def confirm_released_settle(self, position: Position,
+                                action_feedback_position: Position) -> None:
         """Confirm arrival after the caller has stopped and verified input release.
 
         The movement elapsed budget deliberately does not apply to this no-input
@@ -252,7 +253,11 @@ class WaypointController:
             raise MovementError("pending action cannot enter released settle phase")
         if self.status != "confirming-arrival" or self.arrival_confirmations != 1:
             raise MovementError("released settle requires one in-tolerance action feedback")
-        self.current = self._check_position(position)
+        prior = self._check_position(action_feedback_position)
+        settle = self._check_position(position)
+        if planar_distance(prior, settle) > .05:
+            raise MovementError("released settle was not planar-stationary")
+        self.current = settle
         self._note_arrival(self.current)
 
     def _cross_track(self, position: Position) -> float:
