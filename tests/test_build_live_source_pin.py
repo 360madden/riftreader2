@@ -74,12 +74,61 @@ class BuildLiveSourcePinTests(unittest.TestCase):
             vm = root / "vm.json"; vm.write_text(json.dumps({"machineName": "RIFT-LAB-1"}))
             receipt = root / "latest.json"; receipt.write_text(json.dumps(self.receipt()))
             output = root / "pin.json"
-            with mock.patch.object(builder.console, "_fast_receipt") as check:
+            gate = {"sourceBlock": "fastObservation", "scope": "candidate-regions",
+                    "provenance": "recent-full-scan-anchored-candidate-regions/1"}
+            with mock.patch.object(builder.movement, "_movement_receipt",
+                                   return_value=(self.receipt(), b"receipt", gate)) as check, \
+                    mock.patch.object(builder.console, "_fast_receipt",
+                                      side_effect=AssertionError("full-only gate used")):
                 self.assertEqual(0, builder.main(["--reader-summary", str(summary),
                     "--vm-identity", str(vm), "--receipt", str(receipt),
                     "--output", str(output)]))
             check.assert_called_once()
             self.assertEqual(NONCE, json.loads(output.read_text())["reader"]["nonce"])
+
+    def test_bootstrap_source_preserves_full_and_scoped_provenance(self):
+        self.assertEqual({
+            "sourceBlock": "riftReader2",
+            "scope": "whole-readable-private",
+            "provenance": "nonce-bound-complete-process-scan/1",
+        }, builder._bootstrap_source({"sourceBlock": "riftReader2"}))
+        self.assertEqual({
+            "sourceBlock": "fastObservation",
+            "scope": "candidate-regions",
+            "provenance": "recent-full-scan-anchored-candidate-regions/1",
+        }, builder._bootstrap_source({
+            "sourceBlock": "fastObservation",
+            "scope": "candidate-regions",
+            "provenance": "recent-full-scan-anchored-candidate-regions/1",
+        }))
+
+    def test_bootstrap_source_rejects_unrecognized_scope(self):
+        cases = (
+            {},
+            {"sourceBlock": "fastObservation", "scope": "whole-readable-private",
+             "provenance": "recent-full-scan-anchored-candidate-regions/1"},
+            {"sourceBlock": "fastObservation", "scope": "candidate-regions",
+             "provenance": "untrusted"},
+        )
+        for value in cases:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                builder._bootstrap_source(value)
+
+    def test_cli_reports_scoped_gate_failure_without_publishing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            image = root / "receiver.exe"; image.write_bytes(b"receiver")
+            summary = root / "summary.json"
+            summary.write_text(json.dumps(self.summary(image)), encoding="utf-8")
+            vm = root / "vm.json"; vm.write_text(json.dumps({"machineName": "RIFT-LAB-2"}))
+            receipt = root / "latest.json"; receipt.write_text(json.dumps(self.receipt()))
+            output = root / "pin.json"
+            with mock.patch.object(builder.movement, "_movement_receipt",
+                    side_effect=builder.movement._console.Blocked("live-receipt-not-fresh")):
+                self.assertEqual(2, builder.main(["--reader-summary", str(summary),
+                    "--vm-identity", str(vm), "--receipt", str(receipt),
+                    "--output", str(output)]))
+            self.assertFalse(output.exists())
 
 
 if __name__ == "__main__":

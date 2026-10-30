@@ -1,4 +1,4 @@
-"""Build the existing fast-source pin from a verified live-reader launch."""
+"""Build an identity source pin from a verified live-reader launch."""
 from __future__ import annotations
 
 import argparse
@@ -15,6 +15,7 @@ for search_path in (ROOT, ROOT / "scripts"):
         sys.path.insert(0, str(search_path))
 
 from scripts import addon_command_console as console
+from scripts import movement_feedback as movement
 from scripts.live_reader_config import MAX_SCAN_BYTES, MIN_SCAN_BYTES
 
 
@@ -113,7 +114,27 @@ def build_pin(summary: dict, vm_identity: dict, receipt_path: Path, receipt: dic
     }
 
 
-def publish(path: Path, value: dict) -> None:
+def _bootstrap_source(gate: dict) -> dict:
+    block = gate.get("sourceBlock")
+    if block == "riftReader2":
+        return {
+            "sourceBlock": block,
+            "scope": "whole-readable-private",
+            "provenance": "nonce-bound-complete-process-scan/1",
+        }
+    if block == "fastObservation" \
+            and gate.get("scope") == "candidate-regions" \
+            and gate.get("provenance") \
+            == "recent-full-scan-anchored-candidate-regions/1":
+        return {
+            "sourceBlock": block,
+            "scope": gate["scope"],
+            "provenance": gate["provenance"],
+        }
+    fail("validated receipt source is unavailable")
+
+
+def publish(path: Path, value: dict) -> dict:
     destination = path.resolve(strict=False)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
@@ -127,9 +148,11 @@ def publish(path: Path, value: dict) -> None:
             stream.write("\n")
             temporary = Path(stream.name)
         loaded, _ = console.load_source_pin(temporary)
-        console._fast_receipt(loaded, initial=True)
+        _, _, gate = movement._movement_receipt(loaded, initial=True)
+        bootstrap_source = _bootstrap_source(gate)
         os.replace(temporary, destination)
         temporary = None
+        return bootstrap_source
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -147,10 +170,11 @@ def main(argv: list[str] | None = None) -> int:
         vm_identity, _ = read_json(args.vm_identity)
         receipt, _ = read_json(args.receipt)
         pin = build_pin(summary, vm_identity, args.receipt, receipt)
-        publish(args.output, pin)
-        print(json.dumps({"status": "created", "output": str(args.output.resolve())}))
+        bootstrap_source = publish(args.output, pin)
+        print(json.dumps({"status": "created", "output": str(args.output.resolve()),
+                          "bootstrapSource": bootstrap_source}))
         return 0
-    except (OSError, ValueError, console.Blocked) as error:
+    except (OSError, ValueError, console.Blocked, movement._console.Blocked) as error:
         print(json.dumps({"status": "blocked", "reason": str(error)}), file=sys.stderr)
         return 2
 
