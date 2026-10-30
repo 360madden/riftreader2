@@ -21,6 +21,27 @@ class LiveReaderConfigTests(unittest.TestCase):
         self.assertEqual(6 * 1024**3, resolve_max_scan_bytes("lab1"))
         self.assertEqual(DEFAULT_SCAN_BYTES, resolve_max_scan_bytes("lab2"))
 
+    def test_vm_paths_and_cached_guest_fallback_are_scoped_per_lab(self):
+        self.assertEqual(
+            str(launch_live_reader.LABS["lab1"]["vmx"]),
+            r"C:\rift modding\VMs\RIFT-Lab-1\RIFT-Lab.vmx",
+        )
+        self.assertEqual(
+            str(launch_live_reader.LABS["lab2"]["vmx"]),
+            r"C:\rift modding\VMs\RIFT-Lab-2\RIFT-Lab.vmx",
+        )
+        self.assertEqual(
+            launch_live_reader.legacy_guest_target("lab1"),
+            "RiftReader2 Guest Windows: "
+            + str(launch_live_reader.LABS["lab1"]["legacyGuestVmx"].resolve(strict=False)),
+        )
+        self.assertIsNone(launch_live_reader.legacy_guest_target("lab2"))
+        self.assertNotEqual(
+            launch_live_reader.legacy_guest_target("lab1"),
+            "RiftReader2 Guest Windows: "
+            + str(launch_live_reader.LABS["lab2"]["vmx"].resolve(strict=False)),
+        )
+
     def test_explicit_override_wins_and_is_bounded(self):
         self.assertEqual(5 * 1024**3, resolve_max_scan_bytes("lab1", override=5 * 1024**3))
         for value in (0, MAX_SCAN_BYTES + 1, True):

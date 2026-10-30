@@ -50,7 +50,8 @@ SHA256 = re.compile(r"[0-9A-F]{64}")
 LABS = {
     "lab1": {
         "machine": "RIFT-LAB-1",
-        "vmx": Path(r"C:\rift modding\VMs\RIFT-Lab\RIFT-Lab.vmx"),
+        "vmx": Path(r"C:\rift modding\VMs\RIFT-Lab-1\RIFT-Lab.vmx"),
+        "legacyGuestVmx": Path(r"C:\rift modding\VMs\RIFT-Lab\RIFT-Lab.vmx"),
         "port": 5905,
     },
     "lab2": {
@@ -84,6 +85,13 @@ def write_new(path: Path, value: object) -> None:
 
 def no_prompt() -> tuple[object, object]:
     raise SessionError("cached-guest-login-required")
+
+def legacy_guest_target(lab_name: str) -> str | None:
+    """One old VM-specific cached-login key; never borrow another lab key."""
+    previous = LABS[lab_name].get("legacyGuestVmx")
+    if previous is None:
+        return None
+    return "RiftReader2 Guest Windows: " + str(previous.resolve(strict=False))
 
 
 def receiver_listener_owner(host: str, port: int) -> int:
@@ -256,7 +264,8 @@ def execute(args: argparse.Namespace) -> dict:
             run_id, endpoint, receiver_token, guest_output, args.duration_seconds,
             args.poll_interval_milliseconds, args.max_scan_bytes)
         with GuestSession(cfg.vmrun, cfg.vmx, check, cache_guest_credentials=False,
-                          _guest_prompt=no_prompt) as session:
+                          _guest_prompt=no_prompt,
+                          legacy_guest_credential_target=legacy_guest_target(args.lab)) as session:
             if session.credential_source != "cache":
                 fail("noncached-credentials-blocked")
             preflight = game_guard(args) + rf"""
