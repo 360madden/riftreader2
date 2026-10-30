@@ -136,6 +136,15 @@ def _sha(path: Path) -> str:
     return digest.hexdigest()
 
 
+def legacy_guest_target_for_vmx(vmx: Path) -> str | None:
+    """Resolve only the old Lab-1 VM-specific cached login after its VMX move."""
+    current = Path(r"C:\rift modding\VMs\RIFT-Lab-1\RIFT-Lab.vmx")
+    old = Path(r"C:\rift modding\VMs\RIFT-Lab\RIFT-Lab.vmx")
+    if str(Path(vmx).resolve(strict=False)).casefold() != str(current.resolve(strict=False)).casefold():
+        return None
+    return "RiftReader2 Guest Windows: " + str(old.resolve(strict=False))
+
+
 def query_game_identity(config: Config, expected_vm: dict) -> dict:
     """Read the exact native process StartTime ticks and executable hash in guest."""
     token = uuid.uuid4().hex
@@ -155,7 +164,8 @@ def query_game_identity(config: Config, expected_vm: dict) -> dict:
     cleanup = f"Remove-Item -LiteralPath '{quoted}' -Force -ErrorAction SilentlyContinue"
     try:
         with GuestSession(config.vmrun, config.vmx,
-                          lambda: verify_identity(config, expected_vm)) as session:
+                          lambda: verify_identity(config, expected_vm),
+                          legacy_guest_credential_target=legacy_guest_target_for_vmx(config.vmx)) as session:
             session.powershell(script)
             session.copy_from_guest(guest_path, host_path)
             session.powershell(cleanup)

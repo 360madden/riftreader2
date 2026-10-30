@@ -21,6 +21,17 @@ SPEC.loader.exec_module(module)
 
 
 class AddonCommandValidationTests(unittest.TestCase):
+    def test_guest_cache_alias_only_matches_relocated_lab1(self):
+        current = Path(r"C:\rift modding\VMs\RIFT-Lab-1\RIFT-Lab.vmx")
+        old = Path(r"C:\rift modding\VMs\RIFT-Lab\RIFT-Lab.vmx")
+        self.assertEqual(
+            module.legacy_guest_target_for_vmx(current),
+            "RiftReader2 Guest Windows: " + str(old.resolve(strict=False)),
+        )
+        self.assertIsNone(module.legacy_guest_target_for_vmx(
+            Path(r"C:\rift modding\VMs\RIFT-Lab-2\RIFT-Lab.vmx")))
+        self.assertIsNone(module.legacy_guest_target_for_vmx(old))
+
     def test_exact_simple_commands(self):
         for value in ("/reloadui", "/rr2guide status", "/rr2guide clear"):
             self.assertEqual(value, module.validate_addon_command(value))
