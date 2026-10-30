@@ -37,9 +37,14 @@ itself remains immutable; use `/reloadui` to recover a failed-closed rebind or
 to change the lab identity. A nonce previously used in the same addon load is
 never accepted again.
 
-The explicit rebind path has passed offline Lua 5.1 and synthetic integration
-tests but has not yet been installed or proved in the RIFT client. Until that
-live acceptance is recorded, treat reload-and-bind as the established path.
+The explicit rebind path passed offline Lua 5.1 and synthetic integration tests
+and was then qualified live from installed revision `919c2e2` on Lab-1 on
+October 29, 2026. Reader PID 10020 was stopped, reader PID 4016 bound a fresh
+nonce, and fresh observations advanced under the unchanged game process and
+addon epoch without a UI reload during the rollover. An independent audit
+confirmed the evidence. This does not qualify Lab-2: addon deployment and file
+verification are complete on disk, but no UI reload has activated the update.
+Activation and explicit rebind have not been verified there.
 
 Use the existing read-only reader's current `latest.json`. The external CLI
 consumes that normal reader output and generates a result:

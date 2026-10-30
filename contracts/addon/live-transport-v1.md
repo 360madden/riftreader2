@@ -106,7 +106,12 @@ one guest-to-host delivery path. RIFT process restart, VM power cycle, loaded
 module verification, and production remote consumption remain separate future
 qualifications.
 
-The explicit in-place rebind path was implemented and exercised with Lua 5.1
-and synthetic cross-language tests on October 29, 2026. It has not yet been
-installed or proved in the RIFT client. The earlier live evidence used UI reload
-between reader bindings and does not qualify this newer path.
+The explicit in-place rebind path passed Lua 5.1 and synthetic cross-language
+tests, then a Lab-1 live qualification of installed revision `919c2e2` on
+October 29, 2026. With the game process and addon epoch unchanged, reader PID
+10020 stopped and reader PID 4016 bound a fresh nonce through the explicit
+command. Fresh observations advanced without a UI reload during the rollover.
+An independent evidence audit confirmed the result. Lab-2 has not yet qualified
+this path. The updated addon files are installed and verified on its guest disk,
+but they have not been activated by UI reload; activation and explicit rebind
+remain unverified there.

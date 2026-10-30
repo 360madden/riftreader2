@@ -61,8 +61,13 @@ gate is snapshot-only and conditional on a 250 ms guest/host UTC skew bound;
 delivery remains `gameReady: false`.
 
 That retained live record used reload before rebinding. The newer explicit
-in-place rebind amendment currently has offline Lua and synthetic integration
-coverage only; it has not yet been deployed or proved in RIFT.
+in-place amendment was separately qualified from installed revision `919c2e2`
+on Lab-1 on October 29, 2026: reader PID 10020 stopped, reader PID 4016 bound a
+fresh nonce, and observations became fresh and advanced with the same game
+process and addon epoch and no UI reload during rollover. An independent audit
+confirmed the evidence. Lab-2 remains unverified for explicit rebind; its addon
+files are installed and verified on disk, but no UI reload has activated them.
+Activation and explicit rebind remain pending and are not acceptance evidence.
 
 The inner values remain addon API references. This decision establishes no
 native pointer, derived motion meaning, combat availability, guest file hash,
