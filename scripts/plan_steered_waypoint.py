@@ -56,14 +56,26 @@ def finite(value, name):
 IDENTITY_KEYS = (
     "lab", "player", "addonEpoch", "sourceAddress", "readerProcessId",
     "readerProcessStartUtcTicks", "readerExecutableSha256", "readerInstance",
-    "readerNonce", "receiverInstance", "target",
+    "readerNonce", "receiverInstance",
 )
 
 
 def identity(sample: dict) -> dict:
     require(isinstance(sample, dict) and all(key in sample for key in IDENTITY_KEYS),
             "sample identity is incomplete")
-    return {key: sample[key] for key in IDENTITY_KEYS}
+    target = sample.get("target")
+    require(isinstance(target, dict)
+            and all(key in target for key in
+                    ("processId", "processStartUtcTicks", "executableSha256")),
+            "sample target identity is incomplete")
+    result = {key: sample[key] for key in IDENTITY_KEYS}
+    result["target"] = {key: target[key] for key in
+                        ("processId", "processStartUtcTicks", "executableSha256")}
+    if isinstance(result.get("readerExecutableSha256"), str):
+        result["readerExecutableSha256"] = result["readerExecutableSha256"].upper()
+    if isinstance(result["target"].get("executableSha256"), str):
+        result["target"]["executableSha256"] = result["target"]["executableSha256"].upper()
+    return result
 
 
 def advancing(before: dict, after: dict):

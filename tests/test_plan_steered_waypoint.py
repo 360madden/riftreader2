@@ -19,7 +19,7 @@ def sample(x, y, z, sequence, *, nonce="nonce"):
             "player": "player", "addonEpoch": 1, "sourceAddress": "192.168.56.128",
             "readerProcessId": 33, "readerProcessStartUtcTicks": 44,
             "readerExecutableSha256": "B" * 64, "readerInstance": "reader",
-            "readerNonce": nonce, "receiverInstance": "receiver", "target": TARGET}
+            "readerNonce": nonce, "receiverInstance": "receiver", "target": dict(TARGET)}
 
 
 def calibration(start, end, first_sequence, step, *, nonce="nonce"):
@@ -27,7 +27,8 @@ def calibration(start, end, first_sequence, step, *, nonce="nonce"):
     last = sample(*end, first_sequence + 1, nonce=nonce)
     return {"success": True, "mode": "calibration", "status": "calibrated",
             "movementDimension": "1d", "calibrationKeys": ["w"],
-            "calibrationIdentity": {key: first[key] for key in (
+            "calibrationIdentity": {key: (dict(first[key]) if key == "target" else first[key])
+                                     for key in (
                 "lab", "player", "addonEpoch", "sourceAddress", "readerProcessId",
                 "readerProcessStartUtcTicks", "readerExecutableSha256", "readerInstance",
                 "readerNonce", "receiverInstance", "target")},
@@ -102,6 +103,15 @@ class SteeringPlannerTests(unittest.TestCase):
         current = self.write("mismatch.json", value)
         with self.assertRaisesRegex(SteeringPlanError, "differs from its sample"):
             next_step(current, (3, 0), [])
+
+    def test_descriptive_executable_path_is_not_identity(self):
+        value = calibration((0, 0, 0), (1, 0, 0), 1, (1, 0))
+        for retained_sample in value["samples"]:
+            retained_sample["target"]["executablePath"] = r"C:\RIFT\rift_x64.exe"
+        current = self.write("retained.json", value)
+        result = next_step(current, (3, 0), [])
+        self.assertEqual(result["decision"], "forward")
+        self.assertNotIn("executablePath", result["identity"]["target"])
 
     def turn_measurement(self, name, key, rate, identity):
         return self.write(name, {"schemaVersion": 1,
