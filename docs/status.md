@@ -7,6 +7,26 @@ and [researched resume prompt](workflows/movement-resume-prompt-2026-10-29.md).
 Next priority: live-qualify the tested buffer optimization, then repeat bounded
 waypoint trials using fresh bindings and calibrations.
 
+**Practical two-lab waypoint follow-up — BOTH PLANAR TRIALS ARRIVED:** With the
+optimized reader, Lab-1 used its fresh W/Q calibration to reduce planar goal
+distance from 0.648 to 0.071 units in two feedback-driven actions; Lab-2 used
+its explicit S-only calibration to reduce planar distance from 1.003 to 0.011
+units in two actions. Both results include verified release, STOP/disarm and a
+distinct advancing stationary confirmation. These are planar X/Z arrivals,
+not 3-D arrival evidence: Lab-2 was on a slope and its Y changed by about 0.64
+units while the 1-D controller intentionally evaluated planar distance. See
+the retained [Lab-1 result](../artifacts/practical-movement-20261029/lab1-goal-run/result.json)
+and [Lab-2 result](../artifacts/practical-movement-20261029/lab2-goal-run/result.json).
+The new addon files were installed on both guests without reloading the UI.
+Lab-1 then accepted a reviewed live `rebind` to a successor reader without a
+reload ([execution](../artifacts/practical-movement-20261029/lab1-rebind-01/execution.json));
+Lab-2's already-loaded addon did not expose the newly installed command until
+`/reloadui`, as expected for changed Lua source. Lab-1's scan used a temporary,
+ignored 6 GiB launcher wrapper after its readable-private-memory total crossed
+the prior 4 GiB budget; this is an experiment-specific workaround, not durable
+tracked configuration. The full repository gate passed; retained local evidence
+is `artifacts/validation/20261030T001410Z-5b54bcb9`.
+
 **Automated two-lab movement trial — PARTIAL LIVE RESULT:** Lab-1 completed one
 bounded 2-D waypoint arrival using two feedback-driven pulses (147 ms total),
 ending 0.119 units from its goal. STOP/disarm preceded an independently advancing
