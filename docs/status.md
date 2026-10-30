@@ -45,6 +45,30 @@ This establishes one independent repeat of the narrow reviewed
 turn-calibrate-forward flow, not arbitrary-coordinate steering, changing-world
 reliability or 3-D navigation.
 
+A stronger Lab-2 trial fixed X/Z goal `(7139.149, 3191.491)` before a reviewed
+20 ms D turn and kept that exact point through the fresh post-turn W calibration
+and all three movement preparations
+([pre-turn review](../artifacts/practical-movement-20261029/lab2-fixedgoal-turn-plan-01/review.json)).
+The first two movement executions expired at the lease/pre-arm boundary without
+an action artifact or input; both ended disarmed with no sampled input down
+([run 1 final](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-01/final-status.json),
+[run 2 final](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-02/final-status.json)).
+The third preparation preserved the same goal and reported `ARRIVED` after one
+44 ms W pulse, ending 0.057 planar units away. Release succeeded, and final
+status was disarmed, idle, recovery-free and showed no sampled input down
+([accepted result](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/result.json),
+[action](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/action-1.json),
+[final status](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/final-status.json)).
+This proves one fixed-before-turn reviewed coordinate arrival in the retained
+Lab-2 epoch; it does not establish arbitrary-coordinate routing or 3-D arrival.
+
+The stalled-VNC cleanup fix at `3253ece` then completed and saved a new Lab-2
+live capture through the patched client
+([capture receipt](../artifacts/practical-movement-20261029/lab2-patched-console-capture-01/capture/capture.json)).
+That is a Lab-2 console-path check only. Lab-1 still has no listener after its
+reset and remains a separate recovery task; the Lab-2 result does not qualify
+Lab-1's console.
+
 Lab-1's reviewed 96 ms W pulse was delivered and released, and a later retained
 fast observation placed the character at `(7417.4199, 2926.6099)`, 0.081 planar
 units from fixed chosen point `(7417.5, 2926.62)`
