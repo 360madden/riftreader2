@@ -44,6 +44,25 @@ try {
     $link=(New-Object -ComObject WScript.Shell).CreateShortcut((Get-RR2ShortcutPath))
     Check ($link.Arguments -eq (Get-RR2Arguments $mp $m.launcherPath)) 'shortcut launches tested entrypoint'
     Check ($link.TargetPath -ieq (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')) 'shortcut uses builtin interactive powershell'
+    $replaceFunction=${function:Invoke-RR2FileReplace};$script:ReplaceAttempts=0
+    function Invoke-RR2FileReplace([string]$Source,[string]$Destination) {
+        $script:ReplaceAttempts++
+        if ($script:ReplaceAttempts -le 2) { throw [IO.IOException]::new('fixture transient replacement denial') }
+        & $replaceFunction $Source $Destination
+    }
+    $retried=Publish-RR2State $m 'retry-fixture' @{}
+    Check ($retried.state -eq 'retry-fixture' -and $script:ReplaceAttempts -eq 3) 'transient atomic replacement is retried'
+    Check (-not @(Get-ChildItem -LiteralPath $m.stateDirectory -Filter 'status.json.*.tmp').Count) 'atomic replacement leaves no temporary file'
+    $statusPath=Join-Path $m.stateDirectory 'status.json';$preserved=[IO.File]::ReadAllBytes($statusPath);$script:ReplaceAttempts=0
+    function Invoke-RR2FileReplace([string]$Source,[string]$Destination) {
+        $script:ReplaceAttempts++
+        throw [IO.IOException]::new('fixture persistent replacement denial')
+    }
+    Throws {Publish-RR2State $m 'must-not-publish' @{}} 'fixture persistent replacement denial'
+    Check ($script:ReplaceAttempts -eq 6) 'persistent atomic replacement failure is bounded'
+    Check ([Convert]::ToBase64String([IO.File]::ReadAllBytes($statusPath)) -eq [Convert]::ToBase64String($preserved)) 'persistent failure preserves prior state bytes'
+    Check (-not @(Get-ChildItem -LiteralPath $m.stateDirectory -Filter 'status.json.*.tmp').Count) 'persistent failure cleans temporary file'
+    Set-Item -LiteralPath Function:Invoke-RR2FileReplace -Value $replaceFunction
     $repeat=Install-RR2Startup;Check ($repeat.state -eq 'already-installed') 'repeat install does not overwrite'
     $priorTarget=$link.TargetPath;$link.TargetPath=Join-Path $env:SystemRoot 'System32\cmd.exe';$link.Save()
     Throws {Install-RR2Startup} 'startup-shortcut-conflict'

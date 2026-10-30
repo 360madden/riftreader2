@@ -71,14 +71,40 @@ function Select-RR2LaunchDecision($Spec, $Context, [object[]]$Processes) {
     if ($g.window -eq 0) { return [pscustomobject]@{ state='waiting-for-game-window' } }
     return [pscustomobject]@{ state='start'; gamePid=$g.pid; gameStartUtc=$g.startUtc }
 }
+function Invoke-RR2FileReplace([string]$Source,[string]$Destination) {
+    [IO.File]::Replace($Source,$Destination,[NullString]::Value)
+}
+function Move-RR2PublishedState([string]$Temporary,[string]$Destination) {
+    $last=$null
+    for ($attempt=0; $attempt -lt 6; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $Destination) {
+                Invoke-RR2FileReplace $Temporary $Destination
+            } else {
+                [IO.File]::Move($Temporary,$Destination)
+            }
+            return
+        } catch [IO.IOException] {
+            $last=$_
+        } catch [UnauthorizedAccessException] {
+            $last=$_
+        }
+        if (-not (Test-Path -LiteralPath $Temporary) -or $attempt -eq 5) { throw $last }
+        Start-Sleep -Milliseconds (25 * [math]::Pow(2,$attempt))
+    }
+}
 function Publish-RR2State($Spec, [string]$State, $Details) {
     $c = Get-RR2Context
     $boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().ToString('o')
     $v = [ordered]@{ schemaVersion=1; installationId=$Spec.installationId; observedUtc=[DateTime]::UtcNow.ToString('o'); bootUtc=$boot; machineName=$c.machineName; ownerSid=$c.ownerSid; sessionId=$c.sessionId; state=$State; details=$Details; connectionVerified=$false }
     $json = $v | ConvertTo-Json -Depth 6 -Compress
     $dest = Join-Path $Spec.stateDirectory 'status.json'; $tmp = $dest + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
-    [IO.File]::WriteAllText($tmp,$json,[Text.UTF8Encoding]::new($false))
-    if (Test-Path -LiteralPath $dest) { [IO.File]::Replace($tmp,$dest,[NullString]::Value) } else { [IO.File]::Move($tmp,$dest) }
+    try {
+        [IO.File]::WriteAllText($tmp,$json,[Text.UTF8Encoding]::new($false))
+        Move-RR2PublishedState $tmp $dest
+    } finally {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    }
     # Diagnostic only. GuestInfo failure must not prevent a local receiver launch.
     $tool = Join-Path $env:ProgramFiles 'VMware\VMware Tools\vmtoolsd.exe'
     if (Test-Path -LiteralPath $tool) {
