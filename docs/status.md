@@ -35,8 +35,15 @@ then a fresh 150 ms W calibration, then two W pulses (263 ms total), ending
 An independent repeat completed only its reviewed 50 ms D turn; the next
 [pre-input capture](../artifacts/practical-movement-20261029/lab2-reorder-repeat-cal-probe-01/capture/image.bmp)
 showed nearby bears, so the calibration and forward stages were deliberately
-not reviewed, armed or run. This is evidence for two successful bounded paths,
-not yet repeatability in changing world conditions.
+not reviewed, armed or run. That safety stop remains valid. A later independent
+repeat on cleared terrain completed a fresh reviewed 50 ms A turn, a post-turn
+150 ms W calibration, and a calibration-derived 1.5-displacement forward goal.
+It reported `ARRIVED` after two W actions (219 ms total), ending 0.061 planar
+units from that point
+([result](../artifacts/practical-movement-20261029/lab2-reorder-repeat2-goal-run-01/result.json)).
+This establishes one independent repeat of the narrow reviewed
+turn-calibrate-forward flow, not arbitrary-coordinate steering, changing-world
+reliability or 3-D navigation.
 
 Lab-1's reviewed 96 ms W pulse was delivered and released, and a later retained
 fast observation placed the character at `(7417.4199, 2926.6099)`, 0.081 planar
