@@ -3,6 +3,71 @@ namespace RiftReader2.Live.Tests;
 public sealed class WindowsMemoryScannerRetryTests
 {
     [Fact]
+    public void StableExactRegion_RetriesOnlyTheFailedChunk()
+    {
+        var reads = new Queue<WindowsMemoryScanner.ChunkReadResult>([
+            Chunk(false, 0, 299), Chunk(true, 65536, null)]);
+        var revalidations = 0;
+
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionRetry(
+            reads.Dequeue, () => { revalidations++; return true; }, 65536);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal((nuint)65536, result.BytesRead);
+        Assert.Null(result.ErrorCode);
+        Assert.Empty(reads);
+        Assert.Equal(1, revalidations);
+    }
+
+    [Fact]
+    public void ChangedRegion_DoesNotRetryOrAcceptPartialBytes()
+    {
+        var reads = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionRetry(
+            () => { reads++; return Chunk(false, 4096, 299); },
+            () => false,
+            65536);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal((nuint)4096, result.BytesRead);
+        Assert.Equal(299, result.ErrorCode);
+        Assert.Equal(1, reads);
+    }
+
+    [Fact]
+    public void RepeatedPartialCopy_HasABoundedExactChunkRetryCount()
+    {
+        var reads = 0;
+        var revalidations = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionRetry(
+            () => { reads++; return Chunk(false, 0, 299); },
+            () => { revalidations++; return true; },
+            65536);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(3, reads);
+        Assert.Equal(2, revalidations);
+    }
+
+    [Fact]
+    public void NonPartialCopyAndShortSuccess_DoNotRetry()
+    {
+        foreach (var first in new[] { Chunk(false, 0, 5), Chunk(true, 4096, null) })
+        {
+            var reads = 0;
+            var revalidations = 0;
+            var result = WindowsMemoryScanner.ReadChunkWithStableRegionRetry(
+                () => { reads++; return first; },
+                () => { revalidations++; return true; },
+                65536);
+
+            Assert.Equal(first, result);
+            Assert.Equal(1, reads);
+            Assert.Equal(0, revalidations);
+        }
+    }
+
+    [Fact]
     public void PartialCopy_RetriesOnceAndReturnsOnlyTheSecondAttempt()
     {
         var first = Attempt(false, "read-failed", 1, 299);
@@ -114,4 +179,9 @@ public sealed class WindowsMemoryScannerRetryTests
                 0,
                 completed ? null : "test failure"),
             error);
+
+    private static WindowsMemoryScanner.ChunkReadResult Chunk(
+        bool succeeded,
+        nuint bytesRead,
+        int? error) => new(succeeded, bytesRead, error);
 }

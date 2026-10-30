@@ -20,6 +20,7 @@ public static class WindowsMemoryScanner
 {
     private const int ChunkBytes = 64 * 1024;
     private const int MaxRegionCount = 262_144;
+    private const int MaxStableChunkPartialCopyRetries = 2;
 
     public static LiveScanResult Scan(
         DiscoveredTarget target,
@@ -123,13 +124,27 @@ public static class WindowsMemoryScanner
                         $"Scan exceeded the configured {maxScanTime.TotalSeconds:F0} second budget.", accumulator), null);
                 var count = checked((int)Math.Min(buffer.Length, region.Size - offset));
                 var address = checked(new nint(region.BaseAddress.ToInt64() + offset));
-                var succeeded = NativeMethods.ReadProcessMemory(handle, address, buffer, (nuint)count, out var read);
-                if (!succeeded || read != (nuint)count)
+                var readResult = ReadChunkWithStableRegionRetry(
+                    () =>
+                    {
+                        var succeeded = NativeMethods.ReadProcessMemory(
+                            handle, address, buffer, (nuint)count, out var read);
+                        return new(succeeded, read,
+                            succeeded ? null : Marshal.GetLastWin32Error());
+                    },
+                    () =>
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        return stopwatch.Elapsed <= maxScanTime &&
+                               RegionStillCoversExactRead(handle, region, address, count);
+                    },
+                    (nuint)count);
+                if (!readResult.Succeeded || readResult.BytesRead != (nuint)count)
                 {
-                    int? error = succeeded ? null : Marshal.GetLastWin32Error();
+                    var error = readResult.ErrorCode;
                     var detail = error is { } code
                         ? Win32Error(code)
-                        : $"ReadProcessMemory returned {read} of {count} requested bytes without a Win32 error.";
+                        : $"ReadProcessMemory returned {readResult.BytesRead} of {count} requested bytes without a Win32 error.";
                     return new(Incomplete("read-failed", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
                         $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {detail}", accumulator), error);
                 }
@@ -157,6 +172,54 @@ public static class WindowsMemoryScanner
             accumulator.EndpointCandidateCount,
             accumulator.MalformedCandidateCount,
             null), null);
+    }
+
+    internal static ChunkReadResult ReadChunkWithStableRegionRetry(
+        Func<ChunkReadResult> read,
+        Func<bool> regionStillCoversExactRead,
+        nuint expectedBytes)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        ArgumentNullException.ThrowIfNull(regionStillCoversExactRead);
+        if (expectedBytes == 0)
+            throw new ArgumentOutOfRangeException(nameof(expectedBytes));
+
+        var result = read();
+        for (var retry = 0;
+             retry < MaxStableChunkPartialCopyRetries &&
+             (!result.Succeeded || result.BytesRead != expectedBytes) &&
+             result.ErrorCode == NativeMethods.ErrorPartialCopy;
+             retry++)
+        {
+            if (!regionStillCoversExactRead())
+                break;
+            result = read();
+        }
+        return result;
+    }
+
+    private static bool RegionStillCoversExactRead(
+        nint handle,
+        MemoryRegion original,
+        nint address,
+        int count)
+    {
+        var querySize = (nuint)Marshal.SizeOf<NativeMethods.MemoryBasicInformation>();
+        var queried = NativeMethods.VirtualQueryEx(handle, address, out var current, querySize);
+        if (queried < querySize || !IsReadablePrivate(current))
+            return false;
+        var readStart = address.ToInt64();
+        var readEnd = checked(readStart + count);
+        var regionEnd = checked(current.BaseAddress.ToInt64() + (long)current.RegionSize);
+        return current.BaseAddress == original.BaseAddress &&
+               (long)current.RegionSize == original.Size &&
+               current.AllocationBase == original.AllocationBase &&
+               current.AllocationProtect == original.AllocationProtect &&
+               current.State == original.State &&
+               current.Protect == original.Protect &&
+               current.Type == original.Type &&
+               readStart >= current.BaseAddress.ToInt64() &&
+               readEnd <= regionEnd;
     }
 
     private static List<MemoryRegion> EnumerateReadablePrivateRegions(
@@ -191,7 +254,8 @@ public static class WindowsMemoryScanner
             {
                 if (regions.Count >= MaxRegionCount)
                     throw new InvalidDataException($"Readable private region count exceeds {MaxRegionCount}.");
-                regions.Add(new(info.BaseAddress, size));
+                regions.Add(new(info.BaseAddress, size, info.AllocationBase,
+                    info.AllocationProtect, info.State, info.Protect, info.Type));
             }
             address = new nint(next);
         }
@@ -240,7 +304,19 @@ public static class WindowsMemoryScanner
 
     internal sealed record ScanAttemptResult(LiveScanResult Result, int? ReadErrorCode);
 
-    private sealed record MemoryRegion(nint BaseAddress, long Size);
+    internal readonly record struct ChunkReadResult(
+        bool Succeeded,
+        nuint BytesRead,
+        int? ErrorCode);
+
+    private sealed record MemoryRegion(
+        nint BaseAddress,
+        long Size,
+        nint AllocationBase,
+        uint AllocationProtect,
+        uint State,
+        uint Protect,
+        uint Type);
 
     private static class NativeMethods
     {
