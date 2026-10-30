@@ -3,6 +3,10 @@ Date: October 30, 2026; observations around 13:42–13:53 UTC (09:42–09:53 EDT
 Repository: C:\work\riftreader2, branch codex/modular-foundation.
 Starting source commit: e1b9f1e; recheck Git HEAD, status and VM identities on resumption.
 
+## October 30 telemetry milestone 1 (15:45 EDT)
+
+See [two-lab telemetry recovery validation](../validation/two-lab-telemetry-recovery-2026-10-30.md) for fresh game/reader identities, receiver verification, Lab-1 strict selected/advancing feedback, the pending eight-minute window, and Lab-2's correctly rejected rebind and unsafe hostile scene. The source pin is valid only for the exact current Lab-1 reader; Lab-2 is unbound. Both host controllers are offline for reviewed console work. Do not extrapolate this checkpoint into live movement readiness.
+
 ## Later October 30 live addon repair (14:25 EDT; supersedes earlier error state)
 
 The earlier VM/host diagnostics below remain historical. Both RIFT clients were restored; Lab-1 game PID was 9928 and Lab-2 game PID 7220. Exact executable SHA for each: 1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8. Both live readers had new nonces before this repair but the Lab-1 addon load error blocked current Lab-1 reader binding.
