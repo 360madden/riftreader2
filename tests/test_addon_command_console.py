@@ -643,6 +643,8 @@ class FastResultTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             pin, receipt, _ = self.fixture(folder)
             receipt["observation"]["fastObservation"] = {"untrustedByFullGate": True}
+            receipt["observation"]["fastObservationDiagnostic"] = {
+                "status": "rejected", "reason": "candidate-region-scope-too-large"}
             data = json.dumps(receipt).encode()
             Path(pin["receiptPath"]).write_bytes(data)
             pin["receiptSha256"] = module.hashlib.sha256(data).hexdigest()
@@ -651,6 +653,8 @@ class FastResultTests(unittest.TestCase):
             self.assertEqual("fresh", gate["status"])
             self.assertEqual({"untrustedByFullGate": True},
                              loaded["observation"]["fastObservation"])
+            self.assertEqual("rejected",
+                             loaded["observation"]["fastObservationDiagnostic"]["status"])
 
     def test_deferred_calculation_uses_pinned_cli_and_current_snapshot(self):
         with tempfile.TemporaryDirectory() as folder:

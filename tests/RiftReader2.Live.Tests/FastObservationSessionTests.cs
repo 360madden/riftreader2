@@ -23,7 +23,19 @@ public sealed class FastObservationSessionTests
         Assert.True(FastObservationSession.TryCreate(
             Target, fullScan, anchorSelection, 1_000_000, 2_000_000,
             new() { FreshnessTimeout = TimeSpan.FromSeconds(5), MaxClockSkew = TimeSpan.FromSeconds(1) },
-            time, out var session, out var reason), reason);
+            time, out var session, out var reason, out var diagnostic), reason);
+        Assert.Equal("created", diagnostic.Status);
+        Assert.Null(diagnostic.Reason);
+        Assert.Equal(2, diagnostic.CandidateRegionCount);
+        Assert.Equal(12_288, diagnostic.CandidateRegionBytes);
+        var diagnosticJson = JsonSerializer.SerializeToElement(diagnostic, JsonFormat.Options);
+        Assert.True(new HashSet<string>
+        {
+            "schemaVersion", "provenance", "status", "reason", "fullScanCompleted",
+            "fullScanStatus", "selectionStatus", "candidateRegionCount",
+            "candidateRegionBytes", "maximumRegionBytes", "maximumAnchorAgeMilliseconds"
+        }.SetEquals(diagnosticJson.EnumerateObject().Select(property => property.Name)));
+        Assert.DoesNotContain("address", diagnosticJson.GetRawText(), StringComparison.OrdinalIgnoreCase);
 
         time.Timestamp = 3_000_000;
         var scopedSelection = Selected(7, 2, 30, "unit-1", 'c', 'd');
@@ -69,7 +81,7 @@ public sealed class FastObservationSessionTests
         var fullScan = CompleteScan(Nonce) with { CandidateRegions = [Region(0x10000, 4096)] };
         Assert.True(FastObservationSession.TryCreate(
             Target, fullScan, anchorSelection, 1_000_000, 2_000_000,
-            new(), time, out var session, out _));
+            new(), time, out var session, out _, out _));
 
         time.Timestamp = 3_000_000;
         var report = session!.Observe(
@@ -94,13 +106,20 @@ public sealed class FastObservationSessionTests
         };
         Assert.False(FastObservationSession.TryCreate(
             Target, oversized, selection, 1_000_000, 2_000_000, new(), time,
-            out _, out var reason));
+            out _, out var reason, out var diagnostic));
         Assert.Equal("candidate-region-scope-too-large", reason);
+        Assert.Equal("rejected", diagnostic.Status);
+        Assert.Equal(reason, diagnostic.Reason);
+        Assert.Equal(1, diagnostic.CandidateRegionCount);
+        Assert.Equal(FastObservationSession.MaximumRegionBytes + 1,
+            diagnostic.CandidateRegionBytes);
+        Assert.Equal(FastObservationSession.MaximumRegionBytes,
+            diagnostic.MaximumRegionBytes);
 
         var valid = CompleteScan(Nonce) with { CandidateRegions = [Region(0x10000, 4096)] };
         Assert.True(FastObservationSession.TryCreate(
             Target, valid, selection, 1_000_000, 2_000_000, new(), time,
-            out var session, out _));
+            out var session, out _, out _));
         time.Timestamp = 12_000_001;
         Assert.False(session!.CanObserve(Target, time.Timestamp, out reason));
         Assert.Equal("full-scan-anchor-expired", reason);

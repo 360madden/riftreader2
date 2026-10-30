@@ -43,7 +43,8 @@ internal sealed class FastObservationSession
         LiveFreshnessOptions freshnessOptions,
         TimeProvider timeProvider,
         out FastObservationSession? session,
-        out string? reason)
+        out string? reason,
+        out FastObservationAnchorDiagnostic diagnostic)
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(fullScan);
@@ -52,41 +53,50 @@ internal sealed class FastObservationSession
         ArgumentNullException.ThrowIfNull(timeProvider);
         session = null;
 
-        if (!fullScan.Completed || fullSelection.Status != LiveAddonSelectionStatus.Selected || fullSelection.Frame is null)
-        {
-            reason = "full-scan-anchor-unavailable";
-            return false;
-        }
-        if (timeProvider.GetElapsedTime(fullScanStartedAt, fullScanCompletedAt) < TimeSpan.Zero)
-        {
-            reason = "full-scan-anchor-time-invalid";
-            return false;
-        }
         var regions = fullScan.CandidateRegions.Distinct().OrderBy(region => region.BaseAddress.ToInt64()).ToArray();
-        if (regions.Length == 0)
-        {
-            reason = "candidate-region-scope-empty";
-            return false;
-        }
-
-        long regionBytes = 0;
+        long? regionBytes = 0;
         try
         {
             foreach (var region in regions)
             {
                 if (region.Size <= 0)
                     throw new InvalidDataException();
-                regionBytes = checked(regionBytes + region.Size);
+                regionBytes = checked(regionBytes.Value + region.Size);
             }
         }
         catch (Exception exception) when (exception is OverflowException or InvalidDataException)
         {
-            reason = "candidate-region-scope-invalid";
+            regionBytes = null;
+        }
+
+        if (!fullScan.Completed || fullSelection.Status != LiveAddonSelectionStatus.Selected || fullSelection.Frame is null)
+        {
+            reason = "full-scan-anchor-unavailable";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
             return false;
         }
-        if (regionBytes > MaximumRegionBytes)
+        if (timeProvider.GetElapsedTime(fullScanStartedAt, fullScanCompletedAt) < TimeSpan.Zero)
+        {
+            reason = "full-scan-anchor-time-invalid";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
+            return false;
+        }
+        if (regions.Length == 0)
+        {
+            reason = "candidate-region-scope-empty";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
+            return false;
+        }
+        if (regionBytes is null)
+        {
+            reason = "candidate-region-scope-invalid";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
+            return false;
+        }
+        if (regionBytes.Value > MaximumRegionBytes)
         {
             reason = "candidate-region-scope-too-large";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
             return false;
         }
 
@@ -94,6 +104,7 @@ internal sealed class FastObservationSession
         if (!TryProducerIdentity(frame.Observation, out var playerId, out var clock))
         {
             reason = "anchor-producer-identity-unavailable";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
             return false;
         }
 
@@ -102,6 +113,7 @@ internal sealed class FastObservationSession
         if (baseline.Status == LiveFreshnessStatus.Invalidated)
         {
             reason = baseline.Reason ?? "full-scan-anchor-invalid";
+            diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
             return false;
         }
 
@@ -116,10 +128,11 @@ internal sealed class FastObservationSession
             clock,
             playerId,
             regions.Length,
-            regionBytes,
+            regionBytes.Value,
             MaximumAnchorAge.TotalMilliseconds);
         session = new(target.Identity, regions, anchor, freshnessTracker, freshnessOptions.FreshnessTimeout, timeProvider);
         reason = null;
+        diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, null);
         return true;
     }
 
@@ -188,4 +201,30 @@ internal sealed class FastObservationSession
                observation.Clock.Status == AddonFieldStatus.Ok &&
                double.IsFinite(clock) && clock >= 0;
     }
+
+    private static FastObservationAnchorDiagnostic Diagnostic(
+        LiveScanResult scan,
+        LiveAddonSelection selection,
+        int regionCount,
+        long? regionBytes,
+        string? reason) =>
+        new(
+            1,
+            "candidate-region-anchor-attempt/1",
+            reason is null ? "created" : "rejected",
+            reason,
+            scan.Completed,
+            scan.Status,
+            selection.Status switch
+            {
+                LiveAddonSelectionStatus.Selected => "selected",
+                LiveAddonSelectionStatus.NoMatchingCandidate => "no-matching-candidate",
+                LiveAddonSelectionStatus.IncompleteScan => "incomplete-scan",
+                LiveAddonSelectionStatus.Conflict => "conflict",
+                _ => "conflict"
+            },
+            regionCount,
+            regionBytes,
+            MaximumRegionBytes,
+            MaximumAnchorAge.TotalMilliseconds);
 }

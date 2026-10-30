@@ -384,7 +384,8 @@ def _fast_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
             "nonce", "sequence", "capturedAtUtc", "monotonicMilliseconds", "readerStatus",
             "readerReason", "target", "riftReader2", "delivery", "nativePower"}
     if not isinstance(observation, dict) or not required_observation.issubset(observation) \
-            or set(observation) - required_observation - {"fastObservation"}:
+            or set(observation) - required_observation - {
+                "fastObservation", "fastObservationDiagnostic"}:
         _fail("unexpected-live-observation-fields")
     if (receipt.get("sourceAddress") != reader["sourceAddress"]
             or observation.get("instanceId") != reader["instanceId"]):

@@ -442,7 +442,8 @@ def _movement_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
         "monotonicMilliseconds", "readerStatus", "readerReason", "target", "riftReader2",
         "delivery", "nativePower"}
     if not isinstance(observation, dict) or not required.issubset(observation) \
-            or set(observation) - required - {"fastObservation"}:
+            or set(observation) - required - {
+                "fastObservation", "fastObservationDiagnostic"}:
         _console._fail("unexpected-live-observation-fields")
     if receipt.get("sourceAddress") != reader["sourceAddress"] \
             or observation.get("instanceId") != reader["instanceId"]:

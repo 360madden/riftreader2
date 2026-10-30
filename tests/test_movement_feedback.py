@@ -175,6 +175,8 @@ class MovementFeedbackTests(unittest.TestCase):
     def test_movement_scoped_reader_preserves_exact_reader_and_game_pins(self):
         with tempfile.TemporaryDirectory() as folder:
             pin, receipt = self.wire_receipt(folder)
+            receipt["observation"]["fastObservationDiagnostic"] = {
+                "status": "created", "reason": None}
             with mock.patch.object(module._console, "_validate_receiver_host"), \
                     mock.patch.object(module._console, "_read_regular", return_value=b"wire"), \
                     mock.patch.object(module._console, "_strict_json_bytes", return_value=receipt), \

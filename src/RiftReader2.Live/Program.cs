@@ -62,6 +62,7 @@ internal static class Program
         var lastFullScanStartedAt = launchedAt;
         FastObservationSession? fastSession = null;
         FastObservationReport? lastFastObservation = null;
+        FastObservationAnchorDiagnostic? fastObservationDiagnostic = null;
         long outerSequence = 0;
         var failed = false;
 
@@ -110,6 +111,7 @@ internal static class Program
                     attachedTarget = null;
                     fastSession = null;
                     lastFastObservation = null;
+                    fastObservationDiagnostic = null;
                     if (hadAttachment)
                     {
                         nonce = NewNonce();
@@ -143,6 +145,7 @@ internal static class Program
                         timeProvider);
                     fastSession = null;
                     lastFastObservation = null;
+                    fastObservationDiagnostic = null;
                 }
 
                 var freshnessOptions = new LiveFreshnessOptions
@@ -220,6 +223,7 @@ internal static class Program
                         scanStartedAt,
                         scanCompletedAt);
                     lastFastObservation = null;
+                    fastObservationDiagnostic = null;
                     fastSession = after.Target is not null && SameProcess(attachedTarget, after.Target) &&
                         FastObservationSession.TryCreate(
                             after.Target,
@@ -230,7 +234,8 @@ internal static class Program
                             freshnessOptions,
                             timeProvider,
                             out var createdFastSession,
-                            out _)
+                            out _,
+                            out fastObservationDiagnostic)
                         ? createdFastSession
                         : null;
                 }
@@ -254,7 +259,8 @@ internal static class Program
                     configuration,
                     delivery.State,
                     timeProvider,
-                    lastFastObservation) with
+                    lastFastObservation,
+                    fastObservationDiagnostic) with
                 {
                     NativePower = nativePower.Present(timeProvider, TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds))
                 };
@@ -275,7 +281,8 @@ internal static class Program
                     configuration,
                     delivery.State,
                     timeProvider,
-                    lastFastObservation) with
+                    lastFastObservation,
+                    fastObservationDiagnostic) with
                 {
                     NativePower = nativePower.Present(timeProvider, TimeSpan.FromSeconds(configuration.FreshnessTimeoutSeconds))
                 };
@@ -288,6 +295,7 @@ internal static class Program
                     attachedTarget = null;
                     fastSession = null;
                     lastFastObservation = null;
+                    fastObservationDiagnostic = null;
                     nonce = NewNonce();
                     PrintBindingInstruction(nonce);
                 }
@@ -349,7 +357,8 @@ internal static class Program
         LiveConfiguration configuration,
         LiveDeliveryReport delivery,
         TimeProvider timeProvider,
-        FastObservationReport? fastObservation)
+        FastObservationReport? fastObservation,
+        FastObservationAnchorDiagnostic? fastObservationDiagnostic)
     {
         var publishedAt = timeProvider.GetTimestamp();
         return new(
@@ -374,7 +383,8 @@ internal static class Program
         {
             FastObservation = fastObservation is null
                 ? null
-                : LiveOutput.StampFastObservation(fastObservation, publishedAt, timeProvider)
+                : LiveOutput.StampFastObservation(fastObservation, publishedAt, timeProvider),
+            FastObservationDiagnostic = fastObservationDiagnostic
         };
     }
 

@@ -100,6 +100,19 @@ public sealed record FastObservationReport(
     IReadOnlyDictionary<string, object?>? Observation,
     FastObservationScanReport Scan);
 
+public sealed record FastObservationAnchorDiagnostic(
+    int SchemaVersion,
+    string Provenance,
+    string Status,
+    string? Reason,
+    bool FullScanCompleted,
+    string FullScanStatus,
+    string SelectionStatus,
+    int CandidateRegionCount,
+    long? CandidateRegionBytes,
+    long MaximumRegionBytes,
+    double MaximumAnchorAgeMilliseconds);
+
 public sealed record LiveReaderSnapshot(
     int SchemaVersion,
     Guid InstanceId,
@@ -119,6 +132,10 @@ public sealed record LiveReaderSnapshot(
     // A separately scoped, recent-full-scan-anchored observation. It is never a
     // replacement for the whole-process riftReader2 scan contract.
     public FastObservationReport? FastObservation { get; init; }
+
+    // Address-free explanation of the latest full-scan anchor attempt. This is
+    // diagnostic provenance only and never participates in freshness decisions.
+    public FastObservationAnchorDiagnostic? FastObservationDiagnostic { get; init; }
 }
 
 public static class LiveOutput
