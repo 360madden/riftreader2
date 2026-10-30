@@ -20,7 +20,7 @@ SHA256 = re.compile(r"^[0-9A-Fa-f]{64}$")
 FAST_PROVENANCE = "recent-full-scan-anchored-candidate-regions/1"
 FAST_SCOPE = "candidate-regions"
 FAST_MAX_ANCHOR_AGE_MILLISECONDS = 10_000
-FAST_MAX_REGION_BYTES = 64 * 1024 * 1024
+FAST_MAX_REGION_BYTES = 1024 * 1024 * 1024
 
 
 class GateError(ValueError):

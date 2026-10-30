@@ -222,6 +222,23 @@ class ReadLiveReceiptTests(unittest.TestCase):
                 with self.assertRaisesRegex(gate.GateError, reason):
                     self.evaluate_fast(receipt)
 
+    def test_fast_observation_accepts_one_gib_scope_and_rejects_one_byte_more(self):
+        receipt = valid_fast_receipt()
+        fast = receipt["observation"]["fastObservation"]
+        one_gib = 1024 * 1024 * 1024
+        fast["anchor"]["totalRegionBytes"] = one_gib
+        fast["scan"]["plannedBytes"] = one_gib
+        fast["scan"]["scannedBytes"] = one_gib
+        self.assertEqual("fresh-scoped", self.evaluate_fast(receipt)["status"])
+
+        too_large = valid_fast_receipt()
+        fast = too_large["observation"]["fastObservation"]
+        fast["anchor"]["totalRegionBytes"] = one_gib + 1
+        fast["scan"]["plannedBytes"] = one_gib + 1
+        fast["scan"]["scannedBytes"] = one_gib + 1
+        with self.assertRaisesRegex(gate.GateError, "region-byte bound"):
+            self.evaluate_fast(too_large)
+
     def test_fast_observation_requires_strict_source_advancement(self):
         for mutate in (
             lambda fast: fast["observation"].update(sequence=6),

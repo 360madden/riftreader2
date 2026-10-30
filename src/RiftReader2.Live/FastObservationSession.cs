@@ -5,7 +5,7 @@ namespace RiftReader2.Live;
 
 internal sealed class FastObservationSession
 {
-    internal const long MaximumRegionBytes = 64L * 1024 * 1024;
+    internal const long MaximumRegionBytes = 1024L * 1024 * 1024;
     internal static readonly TimeSpan MaximumAnchorAge = TimeSpan.FromSeconds(10);
 
     private readonly TimeProvider timeProvider;

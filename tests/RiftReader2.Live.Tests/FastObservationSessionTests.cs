@@ -125,6 +125,27 @@ public sealed class FastObservationSessionTests
         Assert.Equal("full-scan-anchor-expired", reason);
     }
 
+    [Theory]
+    [InlineData(512L * 1024 * 1024)]
+    [InlineData(1024L * 1024 * 1024)]
+    public void AllowsCandidateRegionScopeThroughOneGiBLimit(long regionBytes)
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var selection = Selected(6, 2, 29, "unit-1", 'a', 'b');
+        var scan = CompleteScan(Nonce) with
+        {
+            CandidateRegions = [Region(0x10000, regionBytes)]
+        };
+
+        Assert.True(FastObservationSession.TryCreate(
+            Target, scan, selection, 1_000_000, 2_000_000, new(), time,
+            out var session, out var reason, out var diagnostic), reason);
+        Assert.NotNull(session);
+        Assert.Equal("created", diagnostic.Status);
+        Assert.Equal(regionBytes, diagnostic.CandidateRegionBytes);
+        Assert.Equal(1024L * 1024 * 1024, diagnostic.MaximumRegionBytes);
+    }
+
     [Fact]
     public void ScopedScannerRejectsEmptyAndOversizedScopeBeforeOpeningProcess()
     {
