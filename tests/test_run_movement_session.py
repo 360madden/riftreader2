@@ -5,7 +5,8 @@ import tempfile
 import unittest
 
 from scripts.run_movement_session import (
-    MovementSessionError, _require_feedback_target, execute_armed_session, sha,
+    MovementSessionError, _require_feedback_target, build_parser, calibrated_relative_goal,
+    execute_armed_session, require_post_turn_calibration, sha,
     validate_session_pins,
 )
 
@@ -21,7 +22,8 @@ class Sample:
     def to_dict(self):
         return {"xyz": {"x": self.xyz[0], "y": self.xyz[1], "z": self.xyz[2]},
                 "outerSequence": self.sequence, "lab": "lab1", "player": "unit-1",
-                "addonEpoch": 7, "sourceAddress": "192.168.56.128",
+                "addonEpoch": 7, "addonSequence": self.sequence,
+                "addonClock": float(self.sequence), "sourceAddress": "192.168.56.128",
                 "readerProcessId": 333, "readerProcessStartUtcTicks": 444,
                 "readerExecutableSha256": "D" * 64, "readerInstance": "reader-1",
                 "readerNonce": "nonce-1", "receiverInstance": "receiver-1",
@@ -103,12 +105,13 @@ class Host:
         return {"stopped": not self.stop_fails, "recoveryRequired": self.stop_fails}
 
 
-def session(mode, profile=None, goal=None, keys=("w", "q"), dimension="2d"):
+def session(mode, profile=None, goal=None, keys=("w", "q"), dimension="2d",
+            turn_hold_ms=None):
     return {"sessionId": "a" * 32, "sessionPlanSha256": "A" * 64,
             "mode": mode, "capture": {"captureId": "c" * 32, "capture": "capture.json"},
             "captureImageSha256": "B" * 64, "calibrationProfile": str(profile) if profile else None,
             "goal": goal, "allowedKeys": list(keys), "target": dict(GAME_TARGET),
-            "movementDimension": dimension}
+            "movementDimension": dimension, "turnHoldMs": turn_hold_ms}
 
 
 def review():
@@ -122,6 +125,17 @@ class MovementSessionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    def test_prepare_cli_exposes_relative_goal_and_reviewed_turn(self):
+        common = ["prepare", "--host-plan", "host.json", "--feedback-pin", "pin.json",
+                  "--output", "out"]
+        relative = build_parser().parse_args(common + ["--mode", "movement",
+            "--dimension", "1d", "--keys", "w", "--calibration-profile", "profile.json",
+            "--calibrated-displacements", "2.0"])
+        self.assertEqual(relative.calibrated_displacements, 2.0)
+        turn = build_parser().parse_args(common + ["--mode", "turn", "--keys", "d",
+                                                   "--turn-hold-ms", "100"])
+        self.assertEqual(turn.keys, ["d"]); self.assertEqual(turn.turn_hold_ms, 100)
+
     def test_calibration_arms_once_and_measures_only_reviewed_w_q(self):
         host, lease = Host(), Lease()
         feedback = Feedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2), Sample(.5, 0, .5, 3)])
@@ -131,7 +145,7 @@ class MovementSessionTests(unittest.TestCase):
         self.assertTrue(result["success"]); self.assertEqual(result["status"], "calibrated")
         self.assertEqual([a.key for a in host.actions], ["w", "q"])
         self.assertEqual(feedback.initial_timeouts, [4.5])
-        self.assertEqual(feedback.wait_timeouts, [4.5, 4.5])
+        self.assertEqual(feedback.wait_timeouts, [6.0, 6.0])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
 
@@ -169,7 +183,7 @@ class MovementSessionTests(unittest.TestCase):
                     clock=lambda: next(ticks), now=lambda: NOW)
         self.assertEqual(result["status"], "arrived"); self.assertEqual(result["settles"], 1)
         self.assertEqual(result["arrivalObservations"], 2); self.assertEqual(feedback.next_waits, 1)
-        self.assertEqual(feedback.wait_timeouts, [4.5, 4.5])
+        self.assertEqual(feedback.wait_timeouts, [6.0, 6.0])
         self.assertEqual(feedback.next_wait_timeouts, [3.0])
         self.assertEqual(len(host.actions), 2); self.assertEqual(result["feedbackIterations"], 2)
         self.assertEqual(host.arms, 1)
@@ -251,6 +265,21 @@ class MovementSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(MovementSessionError, "calibration profile changed"):
             validate_session_pins(pinned)
 
+    def test_turn_result_mutation_breaks_post_turn_session_pin(self):
+        files = []
+        for name in ("host-plan.json", "host-receipt.json", "feedback.json",
+                     "profile.json", "turn.json"):
+            path = self.root / name; path.write_text('{}', encoding="utf-8"); files.append(path)
+        pinned = {"mode": "movement", "hostPlan": str(files[0]),
+                  "hostPlanSha256": sha(files[0]), "hostReceipt": str(files[1]),
+                  "hostReceiptSha256": sha(files[1]), "feedbackPin": str(files[2]),
+                  "feedbackPinSha256": sha(files[2]), "calibrationProfile": str(files[3]),
+                  "calibrationProfileSha256": sha(files[3]), "afterTurnResult": str(files[4]),
+                  "afterTurnResultSha256": sha(files[4])}
+        files[4].write_text('{"changed":true}', encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "turn result changed"):
+            validate_session_pins(pinned)
+
     def test_collinear_calibration_profile_is_rejected(self):
         vector = {"key": "w", "dx_per_ms": .005, "dz_per_ms": 0,
                   "calibration_hold_ms": 150, "horizontal_displacement": .75,
@@ -294,6 +323,133 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(set(result["calibrations"]), {"s"})
         self.assertIsNone(result["normalizedCross"])
         self.assertEqual(feedback.initial_timeouts, [4.5])
+
+    def test_calibrated_relative_goal_uses_one_measured_vector_and_endpoint(self):
+        profile = self.root / "profile-relative.json"
+        profile.write_text(json.dumps({"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "movementDimension": "1d", "normalizedCross": None,
+            "calibrationIdentity": sample_identity(), "calibrationKeys": ["w"],
+            "calibrationEnd": {"xyz": {"x": 10, "y": 3, "z": 20}},
+            "calibrations": {"w": {"key": "w", "dx_per_ms": .002,
+                "dz_per_ms": -.004, "calibration_hold_ms": 150,
+                "horizontal_displacement": .67, "vertical_displacement": 0}}}),
+            encoding="utf-8")
+        goal = calibrated_relative_goal(profile, "w", 2.0)
+        self.assertAlmostEqual(goal.x, 10.6)
+        self.assertEqual(goal.y, 3)
+        self.assertAlmostEqual(goal.z, 18.8)
+
+    def test_calibrated_relative_goal_rejects_bad_scale_or_profile(self):
+        profile = self.root / "profile-relative.json"
+        profile.write_text(json.dumps({"schemaVersion": 1,
+            "evidenceKind": "empirical-movement-calibration/1", "mode": "calibration",
+            "status": "calibrated", "movementDimension": "1d", "calibrationKeys": ["w"],
+            "calibrationEnd": {"xyz": {"x": 0, "y": 0, "z": 0}},
+            "calibrations": {"w": {"key": "w", "dx_per_ms": .002,
+                "dz_per_ms": 0, "calibration_hold_ms": 150}}}), encoding="utf-8")
+        for scale in (True, 1.49, 2.51, float("inf")):
+            with self.subTest(scale=scale), self.assertRaises(MovementSessionError):
+                calibrated_relative_goal(profile, "w", scale)
+        with self.assertRaisesRegex(MovementSessionError, "matching 1d"):
+            calibrated_relative_goal(profile, "s", 2.0)
+
+    def test_turn_sends_one_reviewed_pulse_gets_fresh_feedback_and_stops(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(10, 2, 20, 1), Sample(10.02, 2, 20.01, 2)])
+        result = execute_armed_session(
+            session=session("turn", keys=("d",), turn_hold_ms=100), review=review(),
+            output=self.root / "turn", host=host, lease=lease, feedback=feedback,
+            clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(result["status"], "turn-input-completed")
+        self.assertFalse(result["headingClaimed"])
+        self.assertEqual(result["profileInvalidationScope"],
+                         "explicit-after-turn-result-chain-only")
+        self.assertEqual(result["nextStep"],
+                         "review a fresh screenshot before forward calibration")
+        self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("d", 100)])
+        self.assertEqual(feedback.wait_timeouts, [6.0])
+        self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_turn_rejects_excess_translation_and_stops(self):
+        host, lease = Host(), Lease()
+        with self.assertRaisesRegex(MovementSessionError, "excessive planar"):
+            execute_armed_session(
+                session=session("turn", keys=("a",), turn_hold_ms=100), review=review(),
+                output=self.root / "turn", host=host, lease=lease,
+                feedback=Feedback([Sample(0, 0, 0, 1), Sample(.051, 0, 0, 2)]),
+                clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(len(host.actions), 1); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_invalid_turn_key_or_hold_is_rejected_before_arm(self):
+        for index, candidate in enumerate((
+                session("turn", keys=("w",), turn_hold_ms=100),
+                session("turn", keys=("a", "d"), turn_hold_ms=100),
+                session("turn", keys=("a",), turn_hold_ms=151))):
+            host, lease = Host(), Lease()
+            with self.subTest(candidate=candidate), self.assertRaises(MovementSessionError):
+                execute_armed_session(session=candidate, review=review(),
+                    output=self.root / f"bad-turn-{index}", host=host, lease=lease,
+                    feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+            self.assertEqual(host.arms, 0); self.assertEqual(host.actions, [])
+            self.assertEqual(host.stops, 1); self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_post_turn_workflow_requires_newer_same_identity_calibration(self):
+        turn_path = self.root / "turn-result.json"
+        profile_path = self.root / "post-turn-calibration.json"
+        turn = {"success": True, "mode": "turn", "status": "turn-input-completed",
+                "turnKey": "d", "headingClaimed": False,
+                "samples": [Sample(10, 0, 20, 8).to_dict(), Sample(10.01, 0, 20, 9).to_dict()]}
+        profile = {"schemaVersion": 1, "evidenceKind": "empirical-movement-calibration/1",
+                   "mode": "calibration", "status": "calibrated", "movementDimension": "1d",
+                   "calibrationIdentity": sample_identity(), "calibrationKeys": ["w"],
+                   "calibrationEnd": Sample(10.5, 0, 20, 11).to_dict(),
+                   "calibrations": {"w": {"key": "w", "dx_per_ms": .49 / 150,
+                       "dz_per_ms": 0, "calibration_hold_ms": 150,
+                       "horizontal_displacement": .49, "vertical_displacement": 0}},
+                   "normalizedCross": None,
+                   "samples": [Sample(10.01, 0, 20, 10).to_dict(),
+                               Sample(10.5, 0, 20, 11).to_dict()]}
+        turn_path.write_text(json.dumps(turn), encoding="utf-8")
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        require_post_turn_calibration(turn_path, profile_path)
+        profile["samples"][0]["outerSequence"] = 9
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "newer producer feedback"):
+            require_post_turn_calibration(turn_path, profile_path)
+
+        profile["samples"][0] = Sample(10.01, 0, 20, 10).to_dict()
+        profile["samples"][0]["addonSequence"] = 9
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "newer producer feedback"):
+            require_post_turn_calibration(turn_path, profile_path)
+
+        profile["samples"][0] = Sample(10.01, 0, 20, 10).to_dict()
+        profile["samples"][0]["addonClock"] = 9.0
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "newer producer feedback"):
+            require_post_turn_calibration(turn_path, profile_path)
+
+    def test_post_turn_workflow_rejects_foreign_or_moved_calibration(self):
+        turn_path = self.root / "turn-result.json"
+        profile_path = self.root / "post-turn-calibration.json"
+        turn = {"success": True, "mode": "turn", "status": "turn-input-completed",
+                "turnKey": "a", "headingClaimed": False,
+                "samples": [Sample(0, 0, 0, 1).to_dict(), Sample(0, 0, 0, 2).to_dict()]}
+        start = Sample(.11, 0, 0, 3).to_dict()
+        profile = {"samples": [start, Sample(.5, 0, 0, 4).to_dict()]}
+        turn_path.write_text(json.dumps(turn), encoding="utf-8")
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "moved away"):
+            require_post_turn_calibration(turn_path, profile_path)
+        profile["samples"][0] = Sample(0, 0, 0, 3).to_dict()
+        profile["samples"][0]["readerNonce"] = "other-reader"
+        profile_path.write_text(json.dumps(profile), encoding="utf-8")
+        with self.assertRaisesRegex(MovementSessionError, "identity differs"):
+            require_post_turn_calibration(turn_path, profile_path)
 
     def test_explicit_1d_goal_uses_only_positive_measured_vector(self):
         profile = self.root / "profile-1d.json"

@@ -39,6 +39,10 @@ from scripts.vm_console_native import process_identity
 
 SHA = re.compile(r"[A-F0-9]{64}\Z")
 SAFE_KEY = frozenset(("w", "q", "s", "e"))
+TURN_KEY = frozenset(("a", "d"))
+ALL_KEY = SAFE_KEY | TURN_KEY
+INITIAL_FEEDBACK_TIMEOUT_SECONDS = 4.5
+ACTION_FEEDBACK_TIMEOUT_SECONDS = 6.0
 
 
 class MovementSessionError(RuntimeError):
@@ -201,14 +205,102 @@ def acquire(plan: dict) -> tuple[LiveQueueLease, dict]:
     return LiveQueueLease(queue, request_id, grant["token"], plan["resource"]), grant
 
 
+def calibrated_relative_goal(calibration_profile: Path, key: str,
+                             displacements: float) -> Position:
+    require(key in SAFE_KEY, "relative goal requires one measured movement key")
+    require(not isinstance(displacements, bool) and isinstance(displacements, (int, float))
+            and math.isfinite(float(displacements)) and 1.5 <= float(displacements) <= 2.5,
+            "calibrated displacements must be finite and from 1.5 through 2.5")
+    profile = load(Path(calibration_profile).resolve(strict=True))
+    require(profile.get("schemaVersion") == 1
+            and profile.get("evidenceKind") == "empirical-movement-calibration/1"
+            and profile.get("mode") == "calibration" and profile.get("status") == "calibrated"
+            and profile.get("movementDimension") == "1d"
+            and profile.get("calibrationKeys") == [key]
+            and isinstance(profile.get("calibrations"), dict)
+            and set(profile["calibrations"]) == {key},
+            "relative goal requires a matching 1d calibration profile")
+    vector = profile["calibrations"][key]
+    end = profile.get("calibrationEnd", {}).get("xyz")
+    require(isinstance(vector, dict) and vector.get("key") == key
+            and isinstance(end, dict) and set(end) == {"x", "y", "z"},
+            "relative goal calibration vector or endpoint is invalid")
+    try:
+        hold = vector["calibration_hold_ms"]
+        dx, dz = float(vector["dx_per_ms"]), float(vector["dz_per_ms"])
+        endpoint = Position(float(end["x"]), float(end["y"]), float(end["z"]))
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise MovementSessionError("relative goal calibration values are invalid") from error
+    require(type(hold) is int and 20 <= hold <= 150
+            and all(math.isfinite(value) for value in (dx, dz, endpoint.x, endpoint.y, endpoint.z))
+            and math.hypot(dx, dz) > 0,
+            "relative goal calibration values are invalid")
+    alpha = float(displacements)
+    return Position(endpoint.x + alpha * dx * hold, endpoint.y,
+                    endpoint.z + alpha * dz * hold)
+
+
+def require_post_turn_calibration(turn_result: Path, calibration_profile: Path) -> None:
+    turn = load(Path(turn_result).resolve(strict=True))
+    profile = load(Path(calibration_profile).resolve(strict=True))
+    require(turn.get("success") is True and turn.get("mode") == "turn"
+            and turn.get("status") == "turn-input-completed"
+            and turn.get("turnKey") in TURN_KEY and turn.get("headingClaimed") is False,
+            "post-turn workflow requires a completed non-heading turn result")
+    turn_samples, calibration_samples = turn.get("samples"), profile.get("samples")
+    require(isinstance(turn_samples, list) and len(turn_samples) >= 2
+            and isinstance(calibration_samples, list) and len(calibration_samples) >= 2,
+            "post-turn workflow requires retained turn and calibration samples")
+    turn_after, calibration_start = turn_samples[-1], calibration_samples[0]
+    require(isinstance(turn_after, dict) and isinstance(calibration_start, dict)
+            and _sample_identity(turn_after) == _sample_identity(calibration_start),
+            "post-turn calibration identity differs from the turn result")
+    try:
+        _require_advancing_values(turn_after, calibration_start, require_addon=True)
+    except MovementSessionError as error:
+        raise MovementSessionError(
+            "post-turn calibration did not start on newer producer feedback") from error
+    try:
+        turn_position = Position(**turn_after["xyz"])
+        calibration_position = Position(**calibration_start["xyz"])
+    except (KeyError, TypeError) as error:
+        raise MovementSessionError("post-turn calibration positions are invalid") from error
+    require(planar_distance(turn_position, calibration_position) <= .10,
+            "post-turn calibration start moved away from the turn endpoint")
+
+
 def prepare(host_plan: Path, feedback_pin: Path, output: Path, mode: str,
             goal: Position | None = None, calibration_profile: Path | None = None,
-            keys: tuple[str, ...] = ("w", "q"), dimension: str = "2d") -> dict:
+            keys: tuple[str, ...] = ("w", "q"), dimension: str = "2d",
+            calibrated_displacements: float | None = None,
+            turn_hold_ms: int = 100,
+            after_turn_result: Path | None = None) -> dict:
     require(dimension in ("1d", "2d"), "movement dimension must be 1d or 2d")
+    require(mode in ("calibration", "movement", "turn"), "invalid movement mode")
     key_count = 1 if dimension == "1d" else 2
-    require(isinstance(keys, (tuple, list)) and len(keys) == key_count
-            and all(key in SAFE_KEY for key in keys) and len(set(keys)) == len(keys),
-            f"{dimension} calibration requires {key_count} distinct w/q/s/e key(s)")
+    if mode == "turn":
+        require(isinstance(keys, (tuple, list)) and len(keys) == 1 and keys[0] in TURN_KEY,
+                "turn requires exactly one reviewed a/d key")
+        require(type(turn_hold_ms) is int and 20 <= turn_hold_ms <= 150,
+                "turn hold must be an integer from 20 through 150 ms")
+        require(goal is None and calibration_profile is None and calibrated_displacements is None,
+                "turn does not accept a goal or calibration profile")
+        require(after_turn_result is None, "turn does not accept a prior turn result")
+    else:
+        require(isinstance(keys, (tuple, list)) and len(keys) == key_count
+                and all(key in SAFE_KEY for key in keys) and len(set(keys)) == len(keys),
+                f"{dimension} calibration requires {key_count} distinct w/q/s/e key(s)")
+        if calibrated_displacements is not None:
+            require(mode == "movement" and dimension == "1d" and calibration_profile is not None
+                    and goal is None and len(keys) == 1,
+                    "relative goal requires 1d movement, one key, and a calibration profile")
+            goal = calibrated_relative_goal(calibration_profile, keys[0], calibrated_displacements)
+        if after_turn_result is not None:
+            require(mode == "movement" and calibration_profile is not None,
+                    "post-turn result applies only to calibrated movement")
+            require_post_turn_calibration(after_turn_result, calibration_profile)
+        require((mode == "movement") == (goal is not None and calibration_profile is not None),
+                "movement requires a goal and calibration profile")
     keys = tuple(keys)
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
@@ -237,18 +329,26 @@ def prepare(host_plan: Path, feedback_pin: Path, output: Path, mode: str,
             "captureMetadataSha256": sha(Path(capture["capture"])),
             "captureImageSha256": sha(Path(capture["image"])),
             "allowedKeys": list(keys), "calibrationPulseMs": 150,
-            "budgets": {"maxElapsedSeconds": 12, "maxActions": 6,
-                        "maxTotalHoldMs": 900, "maxRadius": 6},
+            "turnHoldMs": turn_hold_ms if mode == "turn" else None,
+            "budgets": {"maxElapsedSeconds": 12,
+                        "maxActions": 1 if mode == "turn" else 6,
+                        "maxTotalHoldMs": turn_hold_ms if mode == "turn" else 900,
+                        "maxRadius": 6},
             "goal": asdict(goal) if goal else None,
+            "goalSource": ({"kind": "calibrated-relative", "key": keys[0],
+                            "displacements": float(calibrated_displacements)}
+                           if calibrated_displacements is not None else
+                           ({"kind": "explicit"} if goal is not None else None)),
             "calibrationProfile": str(Path(calibration_profile).resolve(strict=True))
                 if calibration_profile else None,
             "calibrationProfileSha256": sha(Path(calibration_profile).resolve(strict=True))
                 if calibration_profile else None,
+            "afterTurnResult": str(Path(after_turn_result).resolve(strict=True))
+                if after_turn_result else None,
+            "afterTurnResultSha256": sha(Path(after_turn_result).resolve(strict=True))
+                if after_turn_result else None,
             "preparedAtUtc": iso(utc_now()), "heartbeat": heartbeat,
         }
-        require(mode in ("calibration", "movement"), "invalid movement mode")
-        require((mode == "movement") == (goal is not None and calibration_profile is not None),
-                "movement requires a goal and calibration profile")
         save(output / "grant.private.json", {"request_id": lease.request_id, "token": lease.token}, private=True)
         save(output / "session-plan.json", session)
         save(output / "initial-status.json", sanitized(before))
@@ -306,14 +406,18 @@ def _require_feedback_target(session: dict, pin: dict):
             "feedback pin targets another game process")
 
 
-def _require_advancing(prior, current):
-    before, after = prior.to_dict(), current.to_dict()
+def _require_advancing_values(before: dict, after: dict, *, require_addon=False):
     require(type(before.get("outerSequence")) is int and type(after.get("outerSequence")) is int
             and after["outerSequence"] > before["outerSequence"], "feedback did not advance")
     for key in ("addonSequence", "addonClock"):
-        if key in before or key in after:
+        if require_addon or key in before or key in after:
             require(key in before and key in after and after[key] > before[key],
                     "addon feedback did not advance")
+
+
+def _require_advancing(prior, current):
+    before, after = prior.to_dict(), current.to_dict()
+    _require_advancing_values(before, after)
     return current
 
 
@@ -355,13 +459,29 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
     actions = []; samples = []; success = False; released = False
     try:
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
-        initial = feedback.wait_initial(timeout_seconds=4.5); samples.append(initial.to_dict())
+        initial = feedback.wait_initial(timeout_seconds=INITIAL_FEEDBACK_TIMEOUT_SECONDS)
+        samples.append(initial.to_dict())
         mode = session["mode"]
+        require(mode in ("calibration", "movement", "turn"), "session mode is invalid")
         dimension = session.get("movementDimension", "2d")
         require(dimension in ("1d", "2d"), "session movement dimension is invalid")
         profile = calibrations = start = goal = None
-        if mode == "movement":
+        turn_keys = None; turn_hold = None
+        if mode == "turn":
+            turn_keys = session.get("allowedKeys")
+            turn_hold = session.get("turnHoldMs")
+            require(isinstance(turn_keys, list) and len(turn_keys) == 1
+                    and turn_keys[0] in TURN_KEY,
+                    "turn session requires exactly one reviewed a/d key")
+            require(type(turn_hold) is int and 20 <= turn_hold <= 150,
+                    "turn session hold is invalid")
+            require(session.get("goal") is None and session.get("calibrationProfile") is None,
+                    "turn session cannot contain a goal or calibration profile")
+        elif mode == "movement":
             profile = load(Path(session["calibrationProfile"]))
+            if session.get("afterTurnResult") is not None:
+                require_post_turn_calibration(
+                    Path(session["afterTurnResult"]), Path(session["calibrationProfile"]))
             profile_dimension = profile.get("movementDimension", "2d")
             require(profile.get("schemaVersion") == 1
                     and profile.get("evidenceKind") == "empirical-movement-calibration/1"
@@ -404,7 +524,33 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                         "1d goal does not require and permit exactly two calibrated actions")
         host.arm(session["capture"]["capture"], review["note"], output / "arm.private.json")
         started = clock()
-        if mode == "calibration":
+        if mode == "turn":
+            require(clock() - started <= 12, "elapsed budget")
+            lease.check(); lease.heartbeat(); host.status(require_armed=True)
+            action = MovementAction(turn_keys[0], turn_hold, 0, 0)
+            response = host.action(action, output / "action-1.json")
+            _result, completed = _action_result(response)
+            after = _require_advancing(initial,
+                feedback.wait_after(completed, initial,
+                                    timeout_seconds=ACTION_FEEDBACK_TIMEOUT_SECONDS))
+            samples.append(after.to_dict())
+            planar = planar_distance(_position(initial), _position(after))
+            vertical = abs(_position(after).y - _position(initial).y)
+            require(clock() - started <= 12, "elapsed budget")
+            require(planar <= .05, "turn produced excessive planar displacement")
+            require(vertical <= .75, "turn produced excessive vertical displacement")
+            actions.append({"index": 1, "decision": asdict(action), "result": response,
+                            "before": initial.to_dict(), "after": after.to_dict()})
+            result_payload = {"mode": mode, "status": "turn-input-completed",
+                              "turnKey": turn_keys[0], "holdMs": turn_hold,
+                              "planarDisplacement": planar,
+                              "verticalDisplacement": vertical,
+                              "headingClaimed": False,
+                              "profileInvalidationScope":
+                                  "explicit-after-turn-result-chain-only",
+                              "nextStep": "review a fresh screenshot before forward calibration"}
+            success = True
+        elif mode == "calibration":
             calibrations = {}
             prior = initial
             calibration_keys = session.get("allowedKeys")
@@ -420,7 +566,8 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 response = host.action(action, output / f"action-{index}.json")
                 _result, completed = _action_result(response)
                 after = _require_advancing(prior,
-                    feedback.wait_after(completed, prior, timeout_seconds=4.5))
+                    feedback.wait_after(completed, prior,
+                                        timeout_seconds=ACTION_FEEDBACK_TIMEOUT_SECONDS))
                 samples.append(after.to_dict())
                 calibrations[key] = calibrate_displacement(key, _position(prior), _position(after), 150)
                 actions.append({"index": index, "decision": asdict(action), "result": response,
@@ -464,7 +611,8 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 response = host.action(decision, output / f"action-{len(actions)+1}.json")
                 _result, completed = _action_result(response)
                 after = _require_advancing(prior,
-                    feedback.wait_after(completed, prior, timeout_seconds=4.5))
+                    feedback.wait_after(completed, prior,
+                                        timeout_seconds=ACTION_FEEDBACK_TIMEOUT_SECONDS))
                 samples.append(after.to_dict()); controller.record_feedback(_position(after), clock() - started)
                 actions.append({"index": len(actions)+1, "decision": asdict(decision),
                                 "result": response, "before": prior.to_dict(), "after": after.to_dict()})
@@ -520,6 +668,9 @@ def validate_session_pins(session: dict):
     if session["mode"] == "movement":
         require(sha(Path(session["calibrationProfile"])) == session.get("calibrationProfileSha256"),
                 "calibration profile changed")
+        if session.get("afterTurnResult") is not None:
+            require(sha(Path(session["afterTurnResult"])) == session.get("afterTurnResultSha256"),
+                    "turn result changed")
 
 
 def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
@@ -549,11 +700,18 @@ def build_parser():
     parser = argparse.ArgumentParser(description=__doc__); sub = parser.add_subparsers(dest="command", required=True)
     prep = sub.add_parser("prepare"); prep.add_argument("--host-plan", type=Path, required=True)
     prep.add_argument("--feedback-pin", type=Path, required=True); prep.add_argument("--output", type=Path, required=True)
-    prep.add_argument("--mode", choices=("calibration", "movement"), required=True)
+    prep.add_argument("--mode", choices=("calibration", "movement", "turn"), required=True)
     prep.add_argument("--dimension", choices=("1d", "2d"), default="2d")
-    prep.add_argument("--keys", nargs="+", choices=tuple(sorted(SAFE_KEY)), default=("w", "q"),
+    prep.add_argument("--keys", nargs="+", choices=tuple(sorted(ALL_KEY)), default=("w", "q"),
                       metavar="KEY")
     prep.add_argument("--goal", nargs=3, type=float, metavar=("X", "Y", "Z")); prep.add_argument("--calibration-profile", type=Path)
+    prep.add_argument("--calibrated-displacements", type=float,
+                      help="derive a 1d goal 1.5 through 2.5 measured displacements ahead")
+    prep.add_argument("--turn-hold-ms", type=int, default=100,
+                      help="single reviewed a/d turn pulse, from 20 through 150 ms")
+    prep.add_argument("--after-turn-result", type=Path,
+                      help="explicitly require calibration to start after this exact turn result; "
+                           "turns outside this chain are not detected")
     run = sub.add_parser("run-reviewed"); run.add_argument("--session-plan", type=Path, required=True)
     run.add_argument("--review", type=Path, required=True); run.add_argument("--output", type=Path, required=True)
     return parser
@@ -564,7 +722,9 @@ def main():
     if args.command == "prepare":
         goal = Position(*args.goal) if args.goal else None
         result = prepare(args.host_plan, args.feedback_pin, args.output, args.mode, goal,
-                         args.calibration_profile, tuple(args.keys), args.dimension)
+                         args.calibration_profile, tuple(args.keys), args.dimension,
+                         args.calibrated_displacements, args.turn_hold_ms,
+                         args.after_turn_result)
     else: result = run_reviewed(args.session_plan, args.review, args.output)
     print(json.dumps(sanitized(result), sort_keys=True)); return 0
 
