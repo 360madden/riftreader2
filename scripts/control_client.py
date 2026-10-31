@@ -419,6 +419,12 @@ def run(args, *, opener=None) -> dict:
         if target is not None:
             try:
                 ensure(target)
+                # Live capture and reviewed actions need an authenticated guest,
+                # not merely a listening main-PC controller. Status and
+                # cleanup-only operations remain independently inspectable.
+                if args.command in ("capture", "arm", "action"):
+                    from scripts.ensure_guest_agent import ensure as ensure_guest_agent
+                    ensure_guest_agent(target)
             except DependencyUnavailable as error:
                 raise ClientError("dependency-unavailable", str(error)) from None
     access = None

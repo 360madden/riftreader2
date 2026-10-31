@@ -57,16 +57,31 @@ does not replace an in-game addon reload and functional check.
 ## On-demand controller prerequisite
 
 The standard `scripts/control_client.py` commands now check the matching
-Lab-1/Lab-2 main-PC controller and, when its local endpoint is absent, attempt
-one guarded detached startup using current VM identity and pinned code/config.
-The existing controller is reused; the durable coordination queue is preserved.
-Controllers start disarmed and no game input is sent. Persistent startup is
-blocked when the caller is a bounded Workbridge job; this needs a supported
-uncontained launcher capability, not a containment bypass. The response still needs
-an authenticated guest connection and independent fresh telemetry before live
-player data or movement can be claimed. For read-only troubleshooting without
-starting services, pass `--no-auto-start` before the subcommand. See the
-[operational dependencies guide](docs/workflows/operation-dependencies.md).
+Lab-1/Lab-2 main-PC controller and recover it on demand when the authenticated
+local endpoint is absent. They use the pre-existing Workbridge managed-helper
+lifecycle to register and start one **Limited, interactive, persistent** Windows
+Task Scheduler task per lab. The task has **no boot/logon trigger**; an operation
+starts it only when necessary, and a healthy instance is reused. The task itself
+runs the controller with fresh VM identity, source/config evidence, a preserved
+SQLite coordination queue, console ownership, and disarmed defaults. No VM/game
+startup or gameplay input is sent. This works even when the requesting Workbridge
+job is bounded because the controller runs directly as the managed task, rather
+than as a detached child of the job. An authenticated guest-agent connection and
+independently fresh telemetry are **separate** prerequisites for live player data
+or movement. For an inert diagnostic, pass `--no-auto-start` before the command.
+See the [operational dependencies guide](docs/workflows/operation-dependencies.md).
+
+For full authenticated controller **and guest-agent** readiness on the two labs:
+
+```powershell
+C:\Python314\python.exe scripts\ensure_guest_agent.py --lab all
+```
+
+This reuses connected, idle agents and recovers missing ones through each guest's
+current cached VMware login and a separate on-demand, triggerless task. The
+standard `control_client.py` live `capture`, reviewed `arm`, and `action` commands
+also check this prerequisite; inert `status` and cleanup commands do not start
+an absent guest agent. No game input is part of dependency startup.
 
 ## Fast known-build native XYZ sampling
 

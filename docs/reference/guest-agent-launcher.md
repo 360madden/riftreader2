@@ -12,6 +12,28 @@ The one-time migration also used a manually started Windows task with the
 existing interactive-user token, without storing another password. It does not
 change NAT, firewall settings, shared folders or the game installation.
 
+## Current two-lab on-demand recovery (October 31)
+
+Both lab guests retain the Oct29 fleet launcher at
+`C:\RIFT_TRANSFER\RiftReader2Control\managed-fleet-20261029`; the older
+`managed` root described below is a separate historical installation.
+A fresh main-PC controller alone does not reconnect the guest agent. Use:
+
+```powershell
+C:\Python314\python.exe scripts\ensure_guest_agent.py --lab all
+```
+
+This command ensures the per-lab main-PC controller, reuses any authenticated
+idle guest, or starts a missing agent under the existing signed-in Windows
+user through `Ensure-GuestAgentTask.ps1`. The task is registered **on demand**,
+with no logon/boot trigger, a Limited interactive token, unlimited lifetime
+and IgnoreNew duplicate policy. The installed release/launcher/game hashes,
+VM identity, per-lab port, pending input journal and task owner are checked
+before launch. October 31 live acceptance: both host/agent pairs connected,
+coordination ready, disarmed/idle and zero sampled held keys; independent
+guest task inspection confirmed these task settings. It does not validate
+live Lua/addon reader freshness or permit movement.
+
 ## Normal use
 
 With the controller and managed agent ready, use the cached guest login:

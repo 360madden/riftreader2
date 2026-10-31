@@ -61,15 +61,31 @@ class ControllerEnsureTests(unittest.TestCase):
     @patch.object(ensure_controller.HostConfig, "load")
     @patch.object(ensure_controller, "_probe")
     @patch.object(ensure_controller, "_launch_lock", side_effect=lambda _: _folder())
-    @patch.object(ensure_controller, "_launch", return_value=123)
+    @patch.object(ensure_controller, "_launch", return_value="rr2-controller-lab2")
     @patch.object(ensure_controller.time, "sleep")
     def test_missing_host_started_only_once(self, sleep, launch, lock, probe, config):
         probe.side_effect = [None, None, {"host": {"connected": False}}]
         value = ensure_controller.ensure("lab2")
         self.assertEqual(value["state"], "started")
-        self.assertEqual(value["pid"], 123)
+        self.assertEqual(value["helper"], "rr2-controller-lab2")
         launch.assert_called_once()
         self.assertEqual(probe.call_count, 3)
+
+    @patch.object(ensure_controller.HostConfig, "load")
+    @patch.object(ensure_controller, "_probe")
+    @patch.object(ensure_controller, "_launch_lock", side_effect=lambda _: _folder())
+    @patch.object(ensure_controller, "_launch", return_value="rr2-controller-lab1")
+    @patch.object(ensure_controller.time, "sleep")
+    def test_new_listener_warmup_does_not_create_duplicate(self, sleep, launch, lock, probe, config):
+        probe.side_effect = [
+            None, None,
+            DependencyUnavailable("controller", "existing-endpoint-unhealthy"),
+            {"host": {"connected": False}},
+        ]
+        value = ensure_controller.ensure("lab1")
+        self.assertEqual(value["state"], "started")
+        self.assertEqual(probe.call_count, 4)
+        launch.assert_called_once()
 
     def test_unknown_lab_never_launches(self):
         with self.assertRaisesRegex(DependencyUnavailable, "unknown-lab"):
