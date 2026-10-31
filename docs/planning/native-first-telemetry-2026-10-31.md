@@ -85,6 +85,27 @@ Do not silently turn combat logging on or treat packaged asset absence as
 database absence. Four inventory unit tests and ten reread tests pass.
 See [online research leads](native-telemetry-online-research-2026-10-31.md).
 
+## Writable main-module scope checkpoint — ~15:32 EDT
+
+`scripts/plan_native_module_scopes.py` parsed only exact-identity-pinned
+executable PE headers on both labs after exact game identity validation.
+The main image has a single writable section:
+`name=.data, RVA=0x2F56000, virtualSize=6903392,
+rawSize=4242432, characteristics=0xC0000040`.
+Module size is 63,164,416 bytes. Runtime section base is
+`0x7FF76C836000` (Lab1) or `0x7FF67B966000` (Lab2); ASLR
+makes absolute addresses epoch-specific. This is a 6.9 MB **proposed**
+scope, not a memory capture or a proven readable `MEM_IMAGE` region.
+The evidence hashes and ignored paths are recorded in `docs/status.md`.
+
+Existing application code already implements `MemoryDiscovery.FindPointerChains`
+(aligned 64-bit pointers, bounded depth/offset, module-rooted candidate
+chains) and CLI `find-pointers` on retained native memory snapshots.
+**Reuse this** after explicitly intersecting `.data` virtual bounds with
+committed/readable image pages; retain coverage and holes, cap request
+ranges/bytes, and do not silently scan the entire main module, other DLLs
+or private heaps. A module-rooted path can still lead to Lua/UI caches.
+
 ## Next bounded experiment
 
 Set aside the HP triplets as validation-only until ownership is demonstrated.
