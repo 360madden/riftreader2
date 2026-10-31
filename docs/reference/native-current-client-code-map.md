@@ -26,11 +26,46 @@ From the decompiled HealthMax path, the intermediate handle expression is `*( *(
 
 The Health core also reads the resolved object's `+0x48`, `+0x60`, `+0x68`, `+0x6C`, `+0x70` fields and references a separate global pointer slot at RVA `0x33DC2B0`. The getter calls the arithmetic leaf at RVA `0x133B150`; therefore the live `health` value must not be assumed to live as a single unchanged `int32` beside a naive max-HP marker. Member names, ownership, and runtime validity remain hypotheses.
 
+## HP arithmetic leaf: bounded static reconstruction
+
+The branch-complete leaf spans RVA `0x133B150..0x133B1D5` (inclusive; followed by `INT3` padding). Its multiplier constant at VA `0x14277F5E8` is the PE `float64` value **`-0.009999999776482582`**. Under ordinary positive maximum-health inputs, an assembly-level pseudocode reconstruction is:
+
+```text
+if base_value == 0: return 0
+delta = truncate_int64(modifier * (-0.009999999776482582) * clock_delta)
+bounded = min(max(base_value - delta, 0), maximum)
+if (bounded / maximum) > fractional_cap:
+    return truncate_int64(maximum * fractional_cap)
+if base_value > 0 and maximum > 0 and bounded <= 0:
+    return 1
+return bounded
+```
+
+At the call site, `base_value` comes from component `+0x48`, `maximum` from `+0x50`, `modifier` from `+0x60`, `fractional_cap` is the smaller of the float32 values at `+0x6C/+0x70`, and `clock_delta` derives from a global float32 at pointer-slot RVA `0x33DC2B0` plus `0x18`, relative to the wrapper's cached `+0x0C`. This is consistent with a time-scaled regeneration/adjustment mechanism and could explain slow visual HP recovery following a mentor-level increase, **but the meaning and units of these fields have not been tested live**. The actual code contains signed-boundary handling that this compact pseudocode suppresses.
+
 ## Relevance to movement and resources
 
 - The same native API's `Inspect.Unit.Detail` function exposes `coordX`, `coordY`, `coordZ` keys as documented by the original RIFT API, so those string/call references are the next offline movement-code anchors.
 - An earlier build (`7C356C9D...`) validated module RVA `0x32E0200` to player owner and float32 XYZ at owner `+0x320/+0x324/+0x328`, including a guarded movement comparison and a normal restart. **That root is not qualified on current SHA `1935A05C...`.** See [XYZ field catalog](xyz-field-catalog.md) and [native motion comparison](native-motion-pair-review.md).
 - Mana, energy, charge and ability/cast code are separate code-map tasks. Finding native CODE locations does not prove player DATA pointer ownership or production telemetry readiness.
+
+## Resource getter byte-slice cross-check
+
+A second pass extracted the **first 96 bytes** at each already-known current-build resource getter RVA from the exact installed `.text` section and disassembled them independently in the cloud. Max-getter return chains were complete within that slice; the longer current getters were **prefixes only**.
+
+| Native getter | RVA | Directly observed code evidence |
+|---|---:|---|
+| Mana | `0x133DD10` | Reads a resolved component `+0x20`, caches a revision-like `+0x1C`, uses global clock pointer slot `0x33DC2B0`. |
+| ManaMax | `0x133DE60` | Reads a resolved component `+0x18` and `+0x1C` during calculation; full return semantics not verified in 96 bytes. |
+| Energy | `0x133F2C0` | Reads a resolved component `+0x34` and `+0x20`; uses shared clock slot `0x33DC2B0`. |
+| **EnergyMax** | `0x133E450` | Calls resolver at `0x2320200`, takes **int32 at resolved `+0x24`**, releases temporary handle, returns it. |
+| Power | `0x133D1C0` | Reads a resolved component `+0x1C` and `+0x18`; uses shared clock slot `0x33DC2B0`. |
+| Charge | `0x133DAF0` | Reads a resolved component `+0x28` and `+0x34`; uses shared clock slot `0x33DC2B0`. |
+| **ChargeMax** | `0x133E020` | Calls resolver at `0x1CDC680`, takes **int32 at resolved `+0x2C`**, releases temporary handle, returns it. |
+
+The component object/owner, corresponding player identity and any runtime change response remain unqualified. The `+0x24` and `+0x2C` members are reached through **different resolver functions**; they must not be stitched into one generic player structure.
+
+For the next ability/cast pass, installed RiftReader2 scaffolding already uses `Inspect.Ability.New.List`/`.Detail`, `Inspect.Unit.Castbar`, current cooldown fields and `Event.Ability.New.Cooldown.Begin`/`.End` (see [casting readout](casting-readout.md) and [spell dump API reuse](spelldump-api-reuse.md)). Those are **API string anchors**, not yet native-code XREFs. Legacy `Inspect.Ability.Detail` should not be presumed supported.
 
 ## Promotion gates
 
