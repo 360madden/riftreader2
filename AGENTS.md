@@ -43,6 +43,31 @@ candidate fields for navigation, combat, casting, stats, and abilities) on
 outside this repository. Keep this a practical personal tool: reuse existing
 modules and selected lab tools, avoid new frameworks and unnecessary process.
 
+## On-demand operational dependencies — Joey's correction, 2026-10-31
+
+When Joey requests a RiftReader2 operation, its entry point owns the required
+operational dependencies. Do not tell Joey to manually start a controller,
+reader, receiver, or helper merely because a previously running process exited.
+Discover whether each dependency is necessary, inspect current health and
+identity, reuse healthy instances, and safely start or recover missing instances
+within the operation's authorized scope. This applies independently to both labs
+and to the repo-to-installed-addon sync, telemetry freshness, VM/guest reachability,
+receiver and reader sessions, and controller/queue ownership. A working VM or RIFT
+process alone never establishes player telemetry readiness.
+
+Implement dependency preflights in reusable code, not only AI instructions or
+human runbooks. Check the dependencies of *each* operation rather than eagerly
+starting every service for ordinary chat. Avoid duplicate owners and stale plans;
+reacquire exact VM, RIFT process, build, addon/session and lease identity after
+restarts. Start control hosts disarmed, with no gameplay input or automatic
+movement. Do not silently rebind an addon, restart a VM/game, reset a queue,
+clear a lease, or bypass reviewed-input gates. If recovery requires these actions
+or a new authority, stop and report the exact dependency/blocker; do not claim
+an unavailable service is a functioning telemetry source. Validate freshness and
+readiness at the end of recovery, not just process existence. Use bounded retries,
+clear status, and idempotent ownership. A missing automatic recovery implementation
+is a product defect to track and fix, not a routine manual prerequisite for Joey.
+
 ## Two-lab scope — user decision, 2026-10-28
 
 Both **RIFT-Lab-1 and RIFT-Lab-2** are available for the bidirectional hybrid

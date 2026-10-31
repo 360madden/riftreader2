@@ -54,6 +54,20 @@ C:\Python314\python.exe scripts\addon_sync.py verify --target all
 See the [addon-sync workflow](docs/workflows/addon-sync.md). File consistency
 does not replace an in-game addon reload and functional check.
 
+## On-demand controller prerequisite
+
+The standard `scripts/control_client.py` commands now check the matching
+Lab-1/Lab-2 main-PC controller and, when its local endpoint is absent, attempt
+one guarded detached startup using current VM identity and pinned code/config.
+The existing controller is reused; the durable coordination queue is preserved.
+Controllers start disarmed and no game input is sent. Persistent startup is
+blocked when the caller is a bounded Workbridge job; this needs a supported
+uncontained launcher capability, not a containment bypass. The response still needs
+an authenticated guest connection and independent fresh telemetry before live
+player data or movement can be claimed. For read-only troubleshooting without
+starting services, pass `--no-auto-start` before the subcommand. See the
+[operational dependencies guide](docs/workflows/operation-dependencies.md).
+
 ## Fast known-build native XYZ sampling
 
 The Windows Live executable can repeatedly read the previously discovered,

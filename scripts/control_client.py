@@ -373,6 +373,8 @@ def _simple(client: ControlClient, operation: str, output: Path | None) -> dict:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--no-auto-start", action="store_true",
+                        help="diagnostic mode: never start a missing controller")
     parser.add_argument("--lease", type=Path, help="private access pair or queue grant JSON; no automatic acquisition or renewal")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status")
@@ -404,6 +406,21 @@ def run(args, *, opener=None) -> dict:
         config = HOST.HostConfig.load(args.config)
     except (OSError, ValueError, HOST.ControlHostError) as error:
         raise ClientError("config-error", str(error)) from error
+    # Operational calls own their controller prerequisite. Test/openers and
+    # non-fleet configurations stay inert; never launch an unrecognized target.
+    if opener is None and not getattr(args, "no_auto_start", False):
+        repo_root = str(Path(__file__).resolve().parents[1])
+        if repo_root not in sys.path:
+            sys.path.insert(0, repo_root)
+        from scripts.ensure_controller import CONFIGS, ensure
+        from scripts.operation_dependencies import DependencyUnavailable
+        target = next((lab for lab, path in CONFIGS.items()
+                       if path.resolve() == args.config.resolve()), None)
+        if target is not None:
+            try:
+                ensure(target)
+            except DependencyUnavailable as error:
+                raise ClientError("dependency-unavailable", str(error)) from None
     access = None
     if args.command in HOST.PROTECTED_CONTROL_OPERATIONS and getattr(args, "lease", None) is not None:
         access = _read_private_lease(args.lease)
