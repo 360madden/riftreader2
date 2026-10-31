@@ -63,13 +63,43 @@ distinguish a player-owned root from caches/serialization or prove HP maximum.
 All results remain **candidate-only**, and no new native HP is exposed.
 Ignored source and live evidence paths are recorded in `docs/status.md`.
 
+## Extended-context and non-addon source checkpoint — ~15:22 EDT
+
+The reread helper now permits explicit source-validated addresses plus up to
+1,024 extra bytes on either side. Both exact game identities survived another
+read: **2/2 Lab-1** layouts and **10/14 Lab-2** layouts retained their HP
+triplets with 256 prefix/512 suffix bytes. None of the 16 enlarged contexts
+contained the earlier known unit ID as raw LE/BE 64-bit, ASCII or UTF-16.
+Several surrounding windows contain `<font...>SEQ...`, `LibString`,
+`MessageViewer`, zone or other UI text. This is evidence for a **UI/cache
+copy lead**, not a qualified engine-owned player field; neither proximity
+nor GUID absence settles ownership. Raw snapshots and reports remain ignored
+under `artifacts/native-current-health/`.
+
+The independent passive-source inventory confirms both exact game processes
+and reads only existing file metadata plus three named config keys. Both labs
+have `Rift.cfg` with `LogCombatConsole=False`, 0.5-second configured flush
+interval and a OneDrive DocumentsDirectory override. No existing combat log
+or standalone `telara.db` was found among the 11 checked candidate paths.
+Do not silently turn combat logging on or treat packaged asset absence as
+database absence. Four inventory unit tests and ten reread tests pass.
+See [online research leads](native-telemetry-online-research-2026-10-31.md).
+
 ## Next bounded experiment
 
-Narrow the **two Lab-1 and fourteen Lab-2 surviving structures** by read-only
-extended context and references toward a game/player-owned root; verify the
-source hierarchy, and compare against an independently observed change in
-current HP (passive if possible). Do not promote a field merely because HP
-appears three times or stays unchanged. Any reviewed controlled change needs
-separate input authorization and the existing screenshot/lease workflow;
-otherwise wait for passive change. Then qualify a restart-stable locator
-before emitting trusted live HP or attempting native resource/ability fields.
+Set aside the HP triplets as validation-only until ownership is demonstrated.
+Use a fresh independent (time-pinned) two-lab XYZ reference and construct an
+exact-build read-only multi-field native float32/float64 coordinate search;
+scope and cap bytes/time, preserve holes, compare cross-epoch and never
+claim source authority on numeric coincidence. In parallel, inspect only
+writable `MEM_IMAGE` sections of the exact RIFT module (PE RVAs + runtime
+base) for a scoped 64-bit owner/backreference root, subject to a separate
+read-only execution gate. Do not broaden the old MEM_PRIVATE int32 scout
+silently or reuse old-build Power offsets. A changed-state correlation,
+self-unit relationship and game-restart re-resolution still gate trusted HP.
+
+Combat-log parsing remains a useful **separate non-addon ability-event source**
+only after an existing log becomes available or Joey authorizes an explicit
+reviewed toggle under the screenshot/lease workflow. Do not edit config,
+issue `/combatlog`, trigger combat, move the player or rebind the addon
+implicitly.

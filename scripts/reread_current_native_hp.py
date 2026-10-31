@@ -101,13 +101,33 @@ def candidates(archive_path: Path, health: int, level: int, limit: int = 5) -> t
 
 def run(lab: str, reader_pid: int | None, reader_exe: str | None,
         reader_sha256: str | None, archive: Path, health: int,
-        level: int, limit: int = 5) -> dict:
+        level: int, limit: int = 5, before: int = 0, after: int = 0,
+        addresses: list[str] | None = None) -> dict:
     if lab not in ("lab1", "lab2") or (reader_pid is None) == (reader_exe is None) or (
             reader_pid is not None and reader_pid <= 0):
         raise ValueError("invalid-lab-or-reader")
     if reader_exe is not None and (not reader_sha256 or len(reader_sha256) != 64):
         raise ValueError("guest-reader-executable-sha-required")
-    target, ranges = candidates(archive, health, level, limit=limit)
+    if not 0 <= before <= 1024 or not 0 <= after <= 1024:
+        raise ValueError("invalid-context-padding")
+    if addresses is not None and (not 1 <= len(addresses) <= 16 or len(addresses) > limit):
+        raise ValueError("invalid-explicit-selection")
+    target, ranges = candidates(archive, health, level,
+                                limit=64 if addresses is not None else limit)
+    if addresses is not None:
+        try:
+            wanted = [int(raw, 16) for raw in addresses]
+        except ValueError as error:
+            raise ValueError("invalid-explicit-address") from error
+        available = {address for address, _ in ranges}
+        if len(wanted) != len(set(wanted)) or not set(wanted) <= available:
+            raise ValueError("explicit-address-not-in-source-candidates")
+        ranges = [(address, data) for address, data in ranges if address in wanted]
+    windows = sorted((address - before, len(original) + before + after)
+                     for address, original in ranges)
+    if any(start < previous_start + previous_size
+           for (previous_start, previous_size), (start, _) in zip(windows, windows[1:])):
+        raise ValueError("extended-context-overlap")
     api = LabCodex()
     _, _, config, settings = api._configuration(lab)
     native = api._native(config, settings, api.run_root / ".doctor")
@@ -119,7 +139,8 @@ def run(lab: str, reader_pid: int | None, reader_exe: str | None,
         "schemaVersion": 1, "evidenceKind": "native-memory-snapshot-request/1",
         "target": target, "maxDurationMilliseconds": 5000,
         "ranges": [{"addressKind": "absolute-session-address",
-                    "address": f"0x{address:X}", "byteLength": len(data)}
+                    "address": f"0x{address - before:X}",
+                    "byteLength": len(data) + before + after}
                    for address, data in ranges],
     }
     req_path = folder / "request.json"
@@ -163,16 +184,20 @@ def run(lab: str, reader_pid: int | None, reader_exe: str | None,
     compared = []
     for chunk, (address, original) in zip(snapshot["chunks"], ranges):
         data = base64.b64decode(chunk["bytesBase64"], validate=True)
-        if (chunk["status"] != "success" or int(chunk["address"], 16) != address
-                or len(data) != len(original)
-                or hashlib.sha256(data).hexdigest().upper() != chunk["bytesSha256"]):
+        if (chunk["status"] != "success" or
+                int(chunk["address"], 16) != address - before or
+                len(data) != len(original) + before + after or
+                hashlib.sha256(data).hexdigest().upper() != chunk["bytesSha256"]):
             raise ValueError("native-reread-chunk-invalid")
-        marker_ok = (struct.unpack_from("<i", data, 24)[0] == level and
-                     struct.unpack_from("<i", data, 28)[0] == 65536)
-        hps = [struct.unpack_from("<i", data, 32 + 8 * n)[0] for n in range(3)]
+        core = data[before:before + len(original)]
+        marker_ok = (struct.unpack_from("<i", core, 24)[0] == level and
+                     struct.unpack_from("<i", core, 28)[0] == 65536)
+        hps = [struct.unpack_from("<i", core, 32 + 8 * n)[0] for n in range(3)]
         compared.append({
-            "address": f"0x{address:X}", "unchanged": data == original,
-            "changedBytes": sum(a != b for a, b in zip(data, original)),
+            "address": f"0x{address:X}",
+            "capturedFrom": f"0x{address - before:X}", "capturedBytes": len(data),
+            "unchanged": core == original,
+            "changedBytes": sum(a != b for a, b in zip(core, original)),
             "layoutPreserved": marker_ok and len(set(hps)) == 1 and hps[0] > 0,
             "rereadHpTriplet": hps if marker_ok else None,
         })
@@ -180,6 +205,7 @@ def run(lab: str, reader_pid: int | None, reader_exe: str | None,
         "lab": lab, "gamePid": target["processId"],
         "gameStartUtcTicks": target["processStartUtcTicks"],
         "executableSha256": BUILD, "healthSeed": health, "levelSeed": level,
+        "contextBeforeBytes": before, "contextAfterBytes": after,
         "sourceArchiveSha256": hashlib.sha256(archive.read_bytes()).hexdigest().upper(),
         "snapshotSha256": hashlib.sha256(snapshot_raw).hexdigest().upper(),
         "snapshots": compared,
@@ -203,9 +229,14 @@ def main() -> None:
     p.add_argument("--health", type=int, required=True)
     p.add_argument("--level", type=int, required=True)
     p.add_argument("--limit", type=int, default=5, help="Maximum saved contexts to reread (1-64)")
+    p.add_argument("--context-before", type=int, default=0, help="Additional prefix bytes (0-1024)")
+    p.add_argument("--context-after", type=int, default=0, help="Additional suffix bytes (0-1024)")
+    p.add_argument("--address", action="append",
+                   help="Repeat for exact saved context addresses; cap 16, with --limit set high enough")
     a = p.parse_args()
     report = run(a.lab, a.reader_pid, a.reader_exe, a.reader_sha256,
-                 a.scout_archive, a.health, a.level, limit=a.limit)
+                 a.scout_archive, a.health, a.level, limit=a.limit,
+                 before=a.context_before, after=a.context_after, addresses=a.address)
     print(json.dumps({k: report[k] for k in
                       ("lab", "gamePid", "healthSeed", "levelSeed", "counts",
                        "qualification")}, indent=2))

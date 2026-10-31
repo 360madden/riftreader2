@@ -108,6 +108,25 @@ class NativeHealthRereadTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "guest-reader-executable-sha-required"):
             run("lab1", None, "RiftReader2.Live.exe", None, self.archive, 18208, 45)
 
+    def test_context_padding_fails_closed_before_guest(self):
+        self.make_archive()
+        for before, after in ((-1, 0), (0, -1), (1025, 0), (0, 1025)):
+            with self.subTest(before=before, after=after), self.assertRaisesRegex(
+                    ValueError, "invalid-context-padding"):
+                run("lab1", 1234, None, None, self.archive, 18208, 45,
+                    before=before, after=after)
+
+    def test_address_selection_must_come_from_hash_pinned_scout(self):
+        self.make_archive()
+        for addresses, expected in (([], "invalid-explicit-selection"),
+                                    (["invalid"], "invalid-explicit-address"),
+                                    (["0x200020000"], "explicit-address-not-in-source-candidates"),
+                                    (["0x200010000", "0x200010000"],
+                                     "explicit-address-not-in-source-candidates")):
+            with self.subTest(addresses=addresses), self.assertRaisesRegex(ValueError, expected):
+                run("lab1", 1234, None, None, self.archive, 18208, 45,
+                    limit=5, addresses=addresses)
+
     def test_guest_script_is_read_only_and_hash_checks_executable(self):
         self.assertIn("snapshot-native", GUEST)
         self.assertIn("native-reader-executable-sha-mismatch", GUEST)
