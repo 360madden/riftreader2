@@ -124,3 +124,27 @@ only after an existing log becomes available or Joey authorizes an explicit
 reviewed toggle under the screenshot/lease workflow. Do not edit config,
 issue `/combatlog`, trigger combat, move the player or rebind the addon
 implicitly.
+
+## Verified live image capture and pointer search — ~17:34 EDT
+
+The existing deployed native reader produced complete, SHA-bound two-lab
+snapshots of the writable .data virtual range (6,903,392 bytes each).
+Live memory-map intersection gave 43 Lab1 and 41 Lab2 readable MEM_IMAGE
+ranges, no holes, and 1,686/1,686 successful bounded reads per lab.
+See docs/status.md for exact ignored artifact paths and file SHA256 values.
+
+Existing find-pointers (depth one, max offset 2048) searched both Lab1 and
+ten Lab2 old HP-shaped field targets. Only one Lab2 target had two candidate
+RVA roots: 0x3363BF8 + 0x688 and 0x3364DE8 + 0x588. Exact-process live
+follow-pointer resolved both, but terminal int32 now read 365256408, not the
+old HP value 10635. These are pointer paths to an overwritten/cached
+candidate, not authoritative current HP; deeper private-memory chains and
+player ownership remain untested. Do not promote them into telemetry.
+
+Official current RIFT UI documentation confirms numeric Player Health and
+Ability bars when already displayed. The approved controller screenshot
+route needs its proper navigation queue lease; both raw VNC and protected
+API attempts stopped at ownership/lease gates. Never bypass the gate or
+silently reset a lease. Next: capture a fresh independently verified XYZ
+and named ability-resource reference, then require changed-state player
+identity and full-game-restart re-resolution for a native locator.

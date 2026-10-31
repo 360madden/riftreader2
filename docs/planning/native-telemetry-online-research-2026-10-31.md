@@ -49,3 +49,42 @@ distinguish historical behavior, available current files and hypotheses.
 - No live health, resources, cast, cooldown or learned-ability fields have
   been promoted from these leads. Do not silently expand the Lua addon.
 
+## Third/fourth research wave — implementation and validation guidance
+
+- Microsoft PE docs: https://learn.microsoft.com/en-us/windows/win32/debug/pe-format
+  confirm that writable in-memory VirtualSize, not on-disk raw size, bounds
+  the module section; image RVAs are resolved independently across ASLR bases.
+- Microsoft VirtualQueryEx and ReadProcessMemory docs:
+  https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualqueryex
+  https://learn.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-readprocessmemory
+  restrict readable committed MEM_IMAGE pages; preserve range gaps and report
+  one-hop absence only within the actually captured bytes.
+- Microsoft guard-page docs:
+  https://learn.microsoft.com/en-us/windows/win32/memory/creating-guard-pages
+  warn that even a failed access can clear the guard modifier. Never scan guards.
+- Current official RIFT UI guidance:
+  https://support.gamigo.com/en/support/solutions/articles/201000105477-customizing-the-user-interface
+  confirms numbers and percentages on already-visible player Health and
+  Ability bars. A current screenshot can validate HP/resource without a Lua
+  addon. Label the second bar ability resource until its specific type is
+  independently verified. Report screenshot time and OCR confidence.
+- Current RIFT display guide:
+  https://support.gamigo.com/en/support/solutions/articles/201000105443-display-settings
+  documents optional visible buff timers. Official /loc command:
+  https://support.gamigo.com/en/support/solutions/articles/201000105480-rift-slash-commands
+  can supply fresh coordinates, but in-game entry requires reviewed authority;
+  old X/Z/Y display ordering needs explicit axis verification.
+- Archived first-party /script behavior:
+  https://www.seebs.net/rift/pts/event_system_error.html
+  suggests a possible one-shot, non-installed-addon API reference, but current
+  command availability is unverified and no input is authorized by research.
+- Historical 32-bit RIFT character-base pointer discussion:
+  https://www.solarstrike.net/phpBB3/viewtopic.php?p=50941
+  explicitly had failures across sessions; never transplant old offsets.
+  Current game terms caution against reverse-engineering expansion:
+  https://www.trionworlds.com/en/legal/terms-of-use-games/
+
+The protected controller screenshot endpoint requires a reviewed navigation
+lease; the denial is a workflow gate, not a reason to seize the VNC mutex.
+Live .data root search found no usable current HP field; UI/cache copies
+remain plausible and unqualified.
