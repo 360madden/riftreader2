@@ -52,6 +52,7 @@ topic below instead of loading every document for each task.
 | Reference | [Casting readout](reference/casting-readout.md) | RIFT API readiness, effective cooldowns and bounded target-specific damage evidence. |
 | Continuity | [Casting v0.4.0 handoff](workflows/casting-handoff-2026-10-28.md) | Lab-2 deploy verified; live drag, CLI and protected-click acceptance pending. |
 | Addon | [Lua package guide](../addon/README.md) | Modules, configuration, and offline/client validation boundary. |
+| Workflow | [Three-installation addon sync](workflows/addon-sync.md) | Source-pinned deployment and per-VM OneDrive/local file verification. |
 | Research | [Research notes](research/README.md) | Evidence conventions and index. |
 | Research | [Motion evidence review](research/motion-evidence-review-2026-10-18.md) | Saved negative example, timing evidence, and reproducibility gap. |
 | Workflow | [Codex](workflows/codex.md) | Open the project and resume efficiently. |

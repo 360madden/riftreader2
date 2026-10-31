@@ -169,6 +169,13 @@ ask Joey to press movement keys when the authorized helper can perform the test.
   Never infer that credentials are absent solely from an earlier failure.
   Do not disclose, recreate, or copy credentials between VMs. If genuinely
   unavailable after the fresh check, report the blocker and ask Joey.
+- **Addon sync (Joey, 2026-10-31):** `addon/RiftReader2/` is the source of
+  truth for the main PC and both VM installations. After Lua changes or VM
+  restore/restart, and before live addon tests, use
+  `python scripts/addon_sync.py check --target all`, synchronize drift, then
+  verify exact hashes and OneDrive Offline/Pinned state on each installation.
+  File verification does not prove a live addon reload or binding. See
+  [addon-sync](docs/workflows/addon-sync.md); the tool sends no game input.
 - Codex uses its local tools. Browser ChatGPT uses Workbridge; see
   [its guide](docs/workflows/workbridge.md) for hashes, operation IDs, and jobs.
 - Inspect current Git status before edits. Preserve unrelated work.

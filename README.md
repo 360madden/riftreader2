@@ -42,6 +42,18 @@ The addon command requires an exact saved frame (no trailing newline); it report
 the frame hash with source binding and freshness explicitly unverified. See
 [the addon guide](addon/README.md) and [wire contract](contracts/addon/README.md).
 
+The Lua addon installed in RIFT is separate from the Git checkout. Compare,
+synchronize, and independently verify the main PC and both VM installations:
+
+```powershell
+C:\Python314\python.exe scripts\addon_sync.py check --target all
+C:\Python314\python.exe scripts\addon_sync.py sync --target all
+C:\Python314\python.exe scripts\addon_sync.py verify --target all
+```
+
+See the [addon-sync workflow](docs/workflows/addon-sync.md). File consistency
+does not replace an in-game addon reload and functional check.
+
 ## Fast known-build native XYZ sampling
 
 The Windows Live executable can repeatedly read the previously discovered,
