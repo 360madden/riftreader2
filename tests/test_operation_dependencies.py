@@ -87,6 +87,22 @@ class ControllerEnsureTests(unittest.TestCase):
         self.assertEqual(probe.call_count, 4)
         launch.assert_called_once()
 
+    @patch("scripts.control_client.ControlClient")
+    def test_authenticated_listener_with_failed_supervisor_is_not_reused(self, client):
+        client.return_value.request.return_value = {
+            "host": {"connected": True, "coordination": {
+                "state": "blocked", "errorCode": "watchdog-blocked",
+                "supervisor": {"state": "blocked", "threadAlive": False}}}}
+        with self.assertRaisesRegex(DependencyUnavailable, "supervision-blocked"):
+            ensure_controller._probe(Mock())
+
+    @patch("scripts.control_client.ControlClient")
+    def test_waiting_controller_can_be_recovered_by_guest_dependency(self, client):
+        status = {"host": {"connected": False, "coordination": {
+            "state": "waiting", "errorCode": None, "supervisor": None}}}
+        client.return_value.request.return_value = status
+        self.assertIs(ensure_controller._probe(Mock()), status)
+
     def test_unknown_lab_never_launches(self):
         with self.assertRaisesRegex(DependencyUnavailable, "unknown-lab"):
             ensure_controller.ensure("lab3")

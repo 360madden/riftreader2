@@ -1,7 +1,8 @@
 """Launch one bounded live RiftReader2 reader in an exact current lab session.
 
 This tracked operator helper does not start RIFT, type into the game, start a
-control host, or prompt for a guest password. It requires the existing
+control host, or prompt for a guest password. It safely ensures the exact
+on-demand host receiver when using the known per-lab private config. It requires the existing
 VM-specific cached GuestSession login.
 
 The receiver token is read from a private host configuration, written only to a
@@ -242,6 +243,11 @@ def execute(args: argparse.Namespace) -> dict:
     if sha(reader) != args.reader_sha256:
         fail("reader-source-hash-mismatch")
 
+    # A reader owns its host-side receiver dependency for the canonical per-lab
+    # config, but never starts arbitrary user-supplied endpoints.
+    from scripts.ensure_receiver import CONFIGS as RECEIVER_CONFIGS, ensure as ensure_receiver
+    if args.receiver_config.resolve() == RECEIVER_CONFIGS[args.lab].resolve():
+        ensure_receiver(args.lab)
     receiver, receiver_token, endpoint = receiver_preflight(args.receiver_config.resolve(strict=True))
     run_id = f"{args.lab}-{uuid.uuid4().hex}"
     write_new(output / "receiver.json", receiver)

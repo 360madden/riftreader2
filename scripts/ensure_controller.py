@@ -101,6 +101,16 @@ def _probe(config):
         return None
     if not isinstance(response, dict) or not isinstance(response.get("host"), dict):
         raise DependencyUnavailable("controller", "invalid-status-response")
+    # An authenticated HTTP listener can outlive its safety supervisor. Never
+    # report such an endpoint as healthy or replace its still-held owner.
+    coordination = response["host"].get("coordination")
+    if not isinstance(coordination, dict):
+        raise DependencyUnavailable("controller", "coordination-status-missing")
+    supervisor = coordination.get("supervisor")
+    if (coordination.get("state") == "blocked"
+            or coordination.get("errorCode") is not None
+            or isinstance(supervisor, dict) and supervisor.get("state") == "blocked"):
+        raise DependencyUnavailable("controller", "supervision-blocked")
     return response
 
 

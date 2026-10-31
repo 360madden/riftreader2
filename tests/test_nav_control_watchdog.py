@@ -167,6 +167,22 @@ class WatchdogTests(unittest.TestCase):
         self.assertEqual(self.watch.tick()["state"], "idle")
         self.assertEqual(self.guest.commands, [])
 
+    def test_idle_keepalive_reads_exact_guest_status_without_input(self):
+        self.clean()
+        self.watch._last_status_keepalive -= 46
+        self.assertEqual(self.watch.tick()["state"], "idle")
+        self.assertEqual([c["operation"] for c in self.guest.commands], ["status"])
+        self.assertEqual(self.watch.tick()["state"], "idle")
+        self.assertEqual([c["operation"] for c in self.guest.commands], ["status"])
+
+    def test_idle_keepalive_identity_drift_quarantines_no_input(self):
+        self.clean()
+        self.guest.target["processStartUtcTicks"] += 1
+        self.watch._last_status_keepalive -= 46
+        self.assert_blocked(self.watch.tick())
+        self.assertNotIn("action", [c["operation"] for c in self.guest.commands])
+        self.assertNotIn("stop", [c["operation"] for c in self.guest.commands])
+
     def test_expiry_stops_original_action_drains_it_and_never_replays(self):
         self.clean(); access = self.grant()
         self.queue.submit("b", "worker-b", "B", {self.resource: self.epoch})

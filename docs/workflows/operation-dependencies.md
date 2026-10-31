@@ -4,6 +4,8 @@
 RiftReader2 operations own their prerequisites. A missing process must not
 be handed back to Joey as a routine manual start instruction.
 
+Latest [October 31 live receiver/heartbeat handoff](live-controller-receiver-handoff-2026-10-31.md).
+
 ## Existing components and ownership
 
 - RIFT addon: `addon/RiftReader2/main.lua` runs inside the game. It cannot
@@ -12,11 +14,13 @@ be handed back to Joey as a routine manual start instruction.
   ownership are already implemented in `nav_host_runtime.py`.
 - Main-PC controller client: `control_client.py`; this is the current
   on-demand controller startup integration point.
-- Guest receiver: `guest_receiver_startup.ps1` manages its own guest startup.
+- Guest-side receiver bootstrap: `guest_receiver_startup.ps1` is separate from
+  the main-PC host-only observation receivers below.
 - Guest control agent: `ensure_guest_agent.py` uses a cached VM-specific guest
   login and the installed launcher to recover a safe, interactive agent on demand.
 - Live reader: `launch_live_reader.py` performs a bounded exact-build launch,
-  requires current game identity, and may require a reviewed addon binding.
+  requires current game identity, ensures the canonical per-lab host receiver,
+  and may require a reviewed addon binding.
 
 These are *separate* operational dependencies. Do not require the controller
 for a simple read-only guest process inventory, nor treat a controller's HTTP
@@ -57,6 +61,25 @@ duplicates. It waits for authenticated guest readiness. Invalid ownership,
 unsafe state or failed reconnection blocks without movement, VM/game restarts,
 queue reset or forced process termination.
 
+The host-only read-only observation receivers now use the same on-demand
+managed-helper ownership. `python scripts/ensure_receiver.py --lab all` checks
+private per-lab configs, the pinned unchanged V1 receiver source, exact
+192.168.56.1 ports 49813/49923, exclusive Windows listener PID/start and
+managed task receipt, then reuses or starts `rr2-receiver-lab1/lab2`. Each task
+has no logon trigger, no detached child and no input endpoint. The reader
+launcher calls `ensure_receiver` for those canonical private configs before
+staging a guest reader; arbitrary receiver config paths are never auto-started.
+The receiver's TCP listener alone does not prove any fresh addon/player feed.
+
+The guest control agent has a **120-second idle command-read timeout**.
+`nav_control_watchdog.LeaseWatchdog` now sends a pinned, read-only `status`
+request every 45 idle seconds, avoiding unintended session disconnects while
+retaining the same identity-fault quarantine and release checks. A controller
+with a blocked/failed supervisor must fail the authenticated health probe even
+if its HTTP port still responds. Deploy a watchdog source update only through
+a verified graceful, idle managed-task restart; never force-close the console
+mutex or clear the shared queue.
+
 The shared `operation_dependencies.ensure_ready` helper implements ordered
 health/recover/reprobe gating for additional operation adapters.
 
@@ -82,7 +105,7 @@ HTTP endpoint with `host.connected=false` must never be treated as game-ready.
 ## Verification
 
 Focused tests: `python -m unittest discover -s tests -p test_operation_dependencies.py -v`
-(11 passing on 2026-10-31), plus `test_control_client.py` (8 passing).
+(13 passing on 2026-10-31), plus `test_control_client.py` (8 passing).
 On October 31 the managed helper started both main-PC controllers, and
 separate on-demand guest tasks recovered both missing agents. Independent
 bounded jobs authenticated each API with `host.connected=true`, coordination
@@ -91,5 +114,16 @@ held keys. Both guest tasks were independently inspected in Windows Session 1:
 Running, Interactive/Limited, zero triggers, unlimited lifetime and IgnoreNew.
 A subsequent `ensure_guest_agent.py --lab all` reused both instances.
 Guest agent dependency tests (9 passing) cover wiring and fail-closed behavior.
-This qualifies *controller connectivity* only; fresh reader/addon source and
-sustained telemetry remain separate. No game input was performed.
+Additional October 31 live checks: both observation receivers started and were
+independently reused (PIDs 23264/37376); both readers launched and delivered
+new read-only observations but remained **unbound** to their addon nonces.
+Main-PC `guidance.lua` was re-offloaded by OneDrive and safely resynced/verified;
+Lab1/2 installed addon files still matched the repo. Both managed controllers
+were gracefully restarted with the new watchdog and independent journals showed
+45-second no-input status heartbeats past the former 120-second guest timeout.
+Nine receiver, 13 dependency and 43 watchdog tests passed. Foreground validation
+is still a separate gate: both games reported `isForeground=false`, and a
+coordinated read-only Lab1 screenshot request was correctly rejected. The queue
+lease was canceled and cleanup verified, with no gameplay input. Do not claim
+live player fields until foreground, reviewed addon binding and fresh source
+selection pass; Lab1 sustained movement feedback still needs requalification.

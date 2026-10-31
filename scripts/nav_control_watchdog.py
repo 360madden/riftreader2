@@ -79,6 +79,9 @@ def resource_epoch(identity):
     return "nav-" + hashlib.sha256(_finite_json(identity).encode("utf-8")).hexdigest()
 
 
+IDLE_STATUS_KEEPALIVE_SECONDS = 45.0  # Guest command-read timeout is 120 seconds.
+
+
 class LeaseWatchdog:
     """One pinned VM/session; cleanup of unrelated/shared-host resources is forbidden.
 
@@ -116,6 +119,7 @@ class LeaseWatchdog:
         self._run_lock = threading.Lock()
         self._fault = None
         self._shutdown = False
+        self._last_status_keepalive = self.monotonic()
         self._local_identity()
 
     def _local_identity(self):
@@ -242,6 +246,17 @@ class LeaseWatchdog:
                 code = str(error) if isinstance(error, WatchdogError) else "queue-unavailable"
                 return self._fail(code, try_stop=True)
             if not row["blocked"]:
+                # Keep the authenticated guest TCP session alive while idle.
+                # ReadLineAsync on the guest otherwise expires after 120 sec,
+                # disconnecting a perfectly healthy supervisor every two minutes.
+                # This request only reads pinned target/input status; no game input.
+                if self.monotonic() - self._last_status_keepalive >= IDLE_STATUS_KEEPALIVE_SECONDS:
+                    try:
+                        self._status()
+                        self._last_status_keepalive = self.monotonic()
+                    except Exception as error:
+                        code = str(error) if isinstance(error, WatchdogError) else "status-keepalive-failed"
+                        return self._fail(code, try_stop=True)
                 return {"state": "idle", "cleanupPublished": False, "resource": self.resource}
             return self._cleanup(row)
         finally:
