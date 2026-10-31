@@ -24,6 +24,15 @@ telemetry. The Lua producer and offline C# decoder have shared contract tests;
 live transport must establish freshness and reload/session identity. See the
 [addon contract](contracts/addon/README.md).
 
+**Native-first telemetry priority — Joey's decision, 2026-10-31:** For new
+player health, resources, abilities, cooldown and cast-state telemetry, prefer
+direct, read-only RIFT process-memory or other independently verified game data
+when practical. The Lua addon is scaffolding, an independent validation reference,
+or a fallback—not the default runtime prerequisite. Do not make a new Lua
+contract/deployment dependency before assessing native feasibility. Native
+numeric matches are candidates until changed-state and ownership evidence proves
+their meaning; bind every live locator to its exact build and process epoch.
+
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow
