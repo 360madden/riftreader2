@@ -175,11 +175,27 @@ class LiveQueueLease:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             requests, after, resources = [], 0, None
-            while True:
+            for _ in range(1000):
                 page = self.queue.status(after_sequence=after, limit=100)
-                requests.extend(page["requests"]); resources = resources or page["resources"]
-                if page["next_sequence"] is None: break
-                after = page["next_sequence"]
+                batch, current_resources = page.get("requests"), page.get("resources")
+                require(isinstance(batch, list) and isinstance(current_resources, list),
+                        "queue cleanup response invalid")
+                require(resources is None or current_resources == resources,
+                        "queue resource changed during cleanup")
+                resources = current_resources
+                require(all(isinstance(row, dict) and type(row.get("sequence")) is int
+                            and isinstance(row.get("request_id"), str) for row in batch),
+                        "queue cleanup request invalid")
+                requests.extend(batch)
+                cursor = page.get("next_sequence")
+                if cursor is None:
+                    break
+                require(batch and type(cursor) is int and cursor > after
+                        and cursor == batch[-1]["sequence"],
+                        "queue cleanup pagination stalled")
+                after = cursor
+            else:
+                raise MovementSessionError("queue cleanup scan incomplete")
             request = next((row for row in requests if row["request_id"] == self.request_id), None)
             resource = next((row for row in resources if row["name"] == self.resource), None)
             if (request is not None and request["state"] == outcome and resource is not None

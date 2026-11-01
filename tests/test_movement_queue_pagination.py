@@ -16,7 +16,7 @@ def resource(generation=1):
 
 
 def request(sequence, state="succeeded", resource_name=RESOURCE):
-    return {"sequence": sequence, "state": state,
+    return {"sequence": sequence, "request_id": f"request-{sequence}", "state": state,
             "specification": {"resources": {resource_name: "epoch"}}}
 
 
@@ -60,6 +60,9 @@ class FakeQueue:
     def check(self, request_id, token):
         self.checks.append((request_id, token))
         return {"request_id": request_id}
+
+    def finish(self, request_id, token, outcome, evidence):
+        return {"request_id": request_id, "state": outcome}
 
 
 class QueuePaginationTests(unittest.TestCase):
@@ -113,6 +116,32 @@ class QueuePaginationTests(unittest.TestCase):
             self.acquire(queue)
         self.assertEqual(queue.dispatches, 1)
         self.assertEqual(queue.checks, [])
+
+    def test_cleanup_finds_own_completed_request_on_later_page(self):
+        completed = request(101)
+        completed["request_id"] = "movement-own"
+        queue = FakeQueue(pages([completed], cursor=None))
+        lease = runner.LiveQueueLease(queue, "movement-own", "a" * 64, RESOURCE)
+        self.assertEqual(lease.finish("succeeded", ["test"]), {
+            "request_id": "movement-own", "state": "succeeded"})
+        self.assertEqual(queue.cursors, [0, 100])
+
+    def test_cleanup_rejects_stalled_pagination(self):
+        completed = request(101)
+        completed["request_id"] = "movement-own"
+        queue = FakeQueue(pages([completed], cursor=100))
+        lease = runner.LiveQueueLease(queue, "movement-own", "a" * 64, RESOURCE)
+        with self.assertRaisesRegex(runner.MovementSessionError, "cleanup pagination stalled"):
+            lease.finish("succeeded", ["test"])
+
+    def test_cleanup_rejects_resource_change(self):
+        completed = request(101)
+        completed["request_id"] = "movement-own"
+        queue = FakeQueue(pages([completed], cursor=None,
+                                second_resource=resource(generation=2)))
+        lease = runner.LiveQueueLease(queue, "movement-own", "a" * 64, RESOURCE)
+        with self.assertRaisesRegex(runner.MovementSessionError, "resource changed"):
+            lease.finish("succeeded", ["test"])
 
 
 if __name__ == "__main__":
