@@ -33,6 +33,26 @@ contract/deployment dependency before assessing native feasibility. Native
 numeric matches are candidates until changed-state and ownership evidence proves
 their meaning; bind every live locator to its exact build and process epoch.
 
+**Dual-method executable research — Joey's decision, 2026-11-01:** To
+learn the RIFT executable and qualify native fields, use **both** bounded,
+exact-build static analysis (REA/Ghidra/disassembly/retained PE evidence)
+and practical controlled live experiments that deliberately change the
+relevant game state. Do not impose a blanket "no game input" default on
+executable research. Static owner/offset candidates, unchanged numeric
+matches, and screenshots alone are not changed-state verification; compare
+native before/after observations with independent UI/API evidence, then test
+freshness and full-game restart recovery as applicable. The coordinator
+owns live game actions and serializes them per lab under fresh PID/start/SHA,
+reviewed foreground state, exclusive queue/controller lease, bounded input,
+STOP/key release and independently verified cleanup. Other research agents
+can analyze distinct static artifacts in parallel without taking live input
+ownership. Reuse existing supervised movement/turning and reviewed console
+authorizations; use new action classes (such as casting/combat) only within
+an expressly authorized, narrow experiment. No game-memory writes,
+injection, debugger attachment, uncontrolled automation, or bypass of
+existing input/freshness gates is implied. Prefer useful measurements and
+small reproducible experiments over prolonged planning.
+
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow
