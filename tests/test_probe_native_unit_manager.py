@@ -6,7 +6,8 @@ import unittest
 
 from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_health, checked_health_type, encoded, entity_hash, find_entity,
-    health_record_fields, inspection_identity, pointer,
+    health_record_fields, inspection_identity, pointer, resource_record_fields,
+    RESOURCE_LAYOUTS,
     sha, snapshot_bytes,
 )
 
@@ -180,6 +181,75 @@ class NativeUnitManagerTests(unittest.TestCase):
         for fields, clock in cases:
             with self.subTest(fields=fields, clock=clock):
                 self.assertEqual("unavailable", calculate_health(fields, clock)["status"])
+
+    @staticmethod
+    def resource_pair(kind: int):
+        layout = RESOURCE_LAYOUTS[kind]
+        record, wrapper = bytearray(64), bytearray(48)
+        struct.pack_into("<i", record, layout["base"], 123)
+        struct.pack_into("<i", record, layout["maximum"], 200)
+        struct.pack_into("<i", record, layout["rate"], -15)
+        struct.pack_into("<i", record, layout["revision"], 7)
+        struct.pack_into("<i", wrapper, layout["wrapperRevision"], 7)
+        struct.pack_into("<f", wrapper, layout["wrapperClock"], 24.5)
+        return record, wrapper
+
+    def test_mana_resource_layout_is_kind_three_and_untyped(self):
+        record, wrapper = self.resource_pair(3)
+        result = resource_record_fields(3, record, wrapper)
+        self.assertEqual("mana", result["name"])
+        self.assertEqual("0x072A", result["expectedNativeResolverTypeUnverified"])
+        self.assertEqual((123, 200, -15),
+                         (result["baseRaw"], result["maximumRaw"], result["rateRaw"]))
+        self.assertEqual(24.5, result["wrapperClock"])
+        self.assertTrue(result["revisionConsistent"])
+        self.assertNotIn("current", result)
+        self.assertNotIn("currentMana", result)
+
+    def test_energy_resource_layout_is_kind_four_and_untyped(self):
+        record, wrapper = self.resource_pair(4)
+        result = resource_record_fields(4, record, wrapper)
+        self.assertEqual("energy", result["name"])
+        self.assertEqual("0x072B", result["expectedNativeResolverTypeUnverified"])
+        self.assertEqual((123, 200, -15),
+                         (result["baseRaw"], result["maximumRaw"], result["rateRaw"]))
+        self.assertTrue(result["revisionConsistent"])
+        self.assertNotIn("current", result)
+
+    def test_resource_kinds_never_share_a_faked_type_check(self):
+        mana, m_wrapper = self.resource_pair(3)
+        energy, e_wrapper = self.resource_pair(4)
+        self.assertNotEqual(resource_record_fields(3, mana, m_wrapper)[
+                            "expectedNativeResolverTypeUnverified"],
+                            resource_record_fields(4, energy, e_wrapper)[
+                            "expectedNativeResolverTypeUnverified"])
+        self.assertEqual({3, 4}, set(RESOURCE_LAYOUTS))
+
+    def test_other_resource_kind_is_not_applicable_not_zero(self):
+        for kind in (0, 2, 5, -1, 100, None, "3"):
+            with self.subTest(kind=kind):
+                self.assertEqual({"status": "not-applicable", "kind": kind},
+                                 resource_record_fields(kind, b"", b""))
+
+    def test_resource_revision_mismatch_remains_unqualified(self):
+        for kind in (3, 4):
+            record, wrapper = self.resource_pair(kind)
+            struct.pack_into("<i", record, RESOURCE_LAYOUTS[kind]["revision"], 8)
+            result = resource_record_fields(kind, record, wrapper)
+            self.assertFalse(result["revisionConsistent"])
+            self.assertNotIn("current", result)
+
+    def test_resource_short_or_nonfinite_record_is_rejected(self):
+        for kind in (3, 4):
+            record, wrapper = self.resource_pair(kind)
+            with self.subTest(kind=kind):
+                with self.assertRaisesRegex(ValueError, "resource-candidate-read-hole"):
+                    resource_record_fields(kind, record[:63], wrapper)
+                with self.assertRaisesRegex(ValueError, "resource-candidate-read-hole"):
+                    resource_record_fields(kind, record, wrapper[:47])
+                struct.pack_into("<f", wrapper, RESOURCE_LAYOUTS[kind]["wrapperClock"], float("nan"))
+                with self.assertRaisesRegex(ValueError, "resource-candidate-nonfinite-clock"):
+                    resource_record_fields(kind, record, wrapper)
 
     @staticmethod
     def inspection():

@@ -284,6 +284,12 @@ public sealed class FastObservationSessionTests
         };
         Assert.False(session.TryBridgeCompletedFullScan(
             otherBuild, full, valid, 12_100_000, 12_800_000, prior, out _));
+        var reusedPid = Target with
+        {
+            Identity = Identity with { ProcessStartUtcTicks = Identity.ProcessStartUtcTicks + 1 }
+        };
+        Assert.False(session.TryBridgeCompletedFullScan(
+            reusedPid, full, valid, 12_100_000, 12_800_000, prior, out _));
 
         var wrongNonceFrame = valid.Frame! with { Challenge = new string('f', 32) };
         var wrongNonce = valid with { Frame = wrongNonceFrame };
@@ -291,6 +297,35 @@ public sealed class FastObservationSessionTests
         Assert.False(session.TryBridgeCompletedFullScan(
             Target, full, wrongNonce, 12_100_000, 12_800_000, prior, out _));
         Assert.Equal(LiveFreshnessStatus.Invalidated, session.VerifiedTracker.GetCurrent().Status);
+    }
+
+    [Fact]
+    public void CompletedFlagDoesNotOverridePartialFullScanStatus()
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var selection = Selected(6, 2, 29, "unit-1", 'a', 'b');
+        var incomplete = CompleteScan(Nonce) with
+        {
+            Status = "partial",
+            CandidateRegions = [Region(0x10000, 4096)]
+        };
+        Assert.False(FastObservationSession.TryCreate(
+            Target, incomplete, selection, 1_000_000, 2_000_000,
+            new(), time, out _, out var reason, out var diagnostic));
+        Assert.Equal("full-scan-anchor-unavailable", reason);
+        Assert.Equal("rejected", diagnostic.Status);
+        Assert.Equal("partial", diagnostic.FullScanStatus);
+
+        var session = FreshSession(time);
+        time.Timestamp = 12_100_000;
+        var prior = session.CaptureFullScanRenewal(Target);
+        Assert.NotNull(prior);
+        time.Timestamp = 12_800_000;
+        Assert.False(session.TryBridgeCompletedFullScan(
+            Target, incomplete, Selected(10, 2, 39, "unit-1", 'j', 'k'),
+            12_100_000, 12_800_000, prior, out var bridged));
+        Assert.Null(bridged);
+        Assert.Equal(9, session.VerifiedTracker.GetCurrent().Observation!.Sequence);
     }
 
     [Fact]

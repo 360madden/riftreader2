@@ -69,7 +69,8 @@ internal sealed class FastObservationSession
             regionBytes = null;
         }
 
-        if (!fullScan.Completed || fullSelection.Status != LiveAddonSelectionStatus.Selected || fullSelection.Frame is null)
+        if (!fullScan.Completed || !string.Equals(fullScan.Status, "complete", StringComparison.Ordinal) ||
+            fullSelection.Status != LiveAddonSelectionStatus.Selected || fullSelection.Frame is null)
         {
             reason = "full-scan-anchor-unavailable";
             diagnostic = Diagnostic(fullScan, fullSelection, regions.Length, regionBytes, reason);
@@ -165,6 +166,7 @@ internal sealed class FastObservationSession
         if (priorFresh?.Status != LiveFreshnessStatus.Fresh ||
             priorFresh.Identity != Identity || priorFresh.Observation is null ||
             target.Identity != Identity || !fullScan.Completed ||
+            !string.Equals(fullScan.Status, "complete", StringComparison.Ordinal) ||
             fullSelection.Status != LiveAddonSelectionStatus.Selected || fullSelection.Frame is null ||
             !TryProducerIdentity(priorFresh.Observation, out var priorPlayer, out var priorClock) ||
             !TryProducerIdentity(fullSelection.Frame.Observation, out var playerId, out var clock) ||

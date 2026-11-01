@@ -175,6 +175,38 @@ def f32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
+RESOURCE_LAYOUTS = {
+    3: {"name": "mana", "resolverType": "0x072A", "base": 0x1C,
+        "maximum": 0x24, "rate": 0x18, "revision": 0x20,
+        "wrapperRevision": 0x1C, "wrapperClock": 0x24},
+    4: {"name": "energy", "resolverType": "0x072B", "base": 0x20,
+        "maximum": 0x24, "rate": 0x28, "revision": 0x34,
+        "wrapperRevision": 0x18, "wrapperClock": 0x1C},
+}
+
+
+def resource_record_fields(kind: int, record: bytes, wrapper: bytes) -> dict:
+    """Untyped native resource candidates; never treat a resolver constant as type proof."""
+    layout = RESOURCE_LAYOUTS.get(kind) if type(kind) is int else None
+    if layout is None:
+        return {"status": "not-applicable", "kind": kind}
+    if len(record) != 64 or len(wrapper) != 48:
+        raise ValueError("resource-candidate-read-hole")
+    cached_clock = struct.unpack_from("<f", wrapper, layout["wrapperClock"])[0]
+    if not math.isfinite(cached_clock):
+        raise ValueError("resource-candidate-nonfinite-clock")
+    fields = {"kind": kind, "name": layout["name"],
+              "expectedNativeResolverTypeUnverified": layout["resolverType"],
+              "baseRaw": struct.unpack_from("<i", record, layout["base"])[0],
+              "maximumRaw": struct.unpack_from("<i", record, layout["maximum"])[0],
+              "rateRaw": struct.unpack_from("<i", record, layout["rate"])[0],
+              "recordRevision": struct.unpack_from("<i", record, layout["revision"])[0],
+              "wrapperRevision": struct.unpack_from("<i", wrapper, layout["wrapperRevision"])[0],
+              "wrapperClock": cached_clock}
+    fields["revisionConsistent"] = fields["recordRevision"] == fields["wrapperRevision"]
+    return fields
+
+
 def calculate_health(fields: dict, clock: float) -> dict:
     """Current-build arithmetic for finite ordinary inputs, never a cache write."""
     unavailable = lambda reason: {"status": "unavailable", "reason": reason}
@@ -213,7 +245,7 @@ def calculate_health(fields: dict, clock: float) -> dict:
             "clock": clock, "elapsedWholeSeconds": elapsed,
             "formulaRva": "0x133B150", "scope": "finite-normal-values-only"}
 
-def run(lab: str, *, health_record: bool = False) -> dict:
+def run(lab: str, *, health_record: bool = False, resource_record: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
     sys.path.insert(0, str(ROOT))
@@ -303,8 +335,10 @@ def run(lab: str, *, health_record: bool = False) -> dict:
 
             roots_ranges = [(MANAGER_RVA, 8), (PLAYER_SYSTEM_RVA, 8),
                             (POSITION_INDEX_RVA, 4), (HEALTH_INDEX_RVA, 4)]
+            if health_record or resource_record:
+                roots_ranges.append((0x33DC2B0, 8))
             if health_record:
-                roots_ranges += [(0x33DC2B0, 8), (0x355F430, 8), (0x2C281B8, 8)]
+                roots_ranges += [(0x355F430, 8), (0x2C281B8, 8)]
             roots = take("roots", roots_ranges, relative=True)
             manager = pointer(struct.unpack("<Q", roots[base + MANAGER_RVA])[0])
             player_system = pointer(struct.unpack("<Q", roots[base + PLAYER_SYSTEM_RVA])[0])
@@ -336,8 +370,8 @@ def run(lab: str, *, health_record: bool = False) -> dict:
             components = {kind: pointer(struct.unpack("<Q", component_raw[
                           component_table + slot * 8])[0]) for kind, slot in slots.items()}
             value_ranges = [(components["position"], 0x110)]
-            if health_record:
-                value_ranges.append((components["health"], 0x38))
+            if health_record or resource_record:
+                value_ranges.append((components["health"], 0x48 if resource_record else 0x38))
             values = take("component-values", value_ranges)
             xyz = struct.unpack_from("<fff", values[components["position"]], 0x48)
             if not all(math.isfinite(value) for value in xyz):
@@ -376,7 +410,7 @@ def run(lab: str, *, health_record: bool = False) -> dict:
                     "ownerObject": f"0x{owner_object:X}", "container": f"0x{container:X}",
                     "vtableRva": f"0x{vtable - base:X}",
                     "descriptorGetterRva": f"0x{getter - base:X}",
-                    "fields": health_record_fields(record_raw, wrapper),
+                    "fields": health_record_fields(record_raw, wrapper[:0x38]),
                     "typeValidation": "exact-build-vtable-and-metadata-path; no native function called",
                     "typeCode": f"0x{type_code:X}", "observedAtUtc": observation_times["health-record"],
                     "gameClock": game_clock,
@@ -384,6 +418,61 @@ def run(lab: str, *, health_record: bool = False) -> dict:
                 health_anchors = {owner_slot: owner_raw, record_slot: slot_raw,
                                   getter_slot: getter_raw,
                                   components["health"] + 0x28: wrapper[0x28:0x38]}
+
+            resource = None
+            resource_anchors = {}
+            resource_record_address = None
+            resource_record_raw = None
+            if resource_record:
+                component = values[components["health"]]
+                kind_owner = pointer(struct.unpack_from("<Q", component, 0x40)[0])
+                kind_raw = take("resource-kind", [(kind_owner + 0x168, 4)])[kind_owner + 0x168]
+                kind = struct.unpack("<i", kind_raw)[0]
+                resource_anchors[components["health"] + 0x40] = component[0x40:0x48]
+                resource_anchors[kind_owner + 0x168] = kind_raw
+                resource = {"kind": kind, "status": "not-applicable",
+                            "qualifier": "current-build-static-kind-only; no typed live resource"}
+                if kind in RESOURCE_LAYOUTS:
+                    resource_wrapper = pointer(struct.unpack_from("<Q", component, 0x38)[0], 48)
+                    resource_anchors[components["health"] + 0x38] = component[0x38:0x40]
+                    resource_wrapper_raw = take(
+                        "resource-wrapper", [(resource_wrapper, 48)])[resource_wrapper]
+                    ref_slot = pointer(struct.unpack_from("<Q", resource_wrapper_raw, 0x10)[0], 8)
+                    ref_raw = take("resource-ref-slot", [(ref_slot, 8)])[ref_slot]
+                    resource_record_address = pointer(struct.unpack("<Q", ref_raw)[0], 64)
+                    clock_owner = pointer(struct.unpack("<Q", roots[base + 0x33DC2B0])[0])
+                    resource_capture = take(
+                        "resource-record", [(resource_record_address, 64),
+                                            (clock_owner + 0x18, 4)])
+                    resource_record_raw = resource_capture[resource_record_address]
+                    game_clock = struct.unpack("<f", resource_capture[clock_owner + 0x18])[0]
+                    vtable = pointer(struct.unpack_from("<Q", resource_record_raw)[0], 72)
+                    if not base <= vtable < base + identity["moduleSize"] - 0x48:
+                        raise ValueError("resource-vtable-outside-exact-module")
+                    getter_slot = vtable + 0x40
+                    getter_raw = take("resource-type-getter", [(getter_slot, 8)])[getter_slot]
+                    getter = struct.unpack("<Q", getter_raw)[0]
+                    if not base <= getter < base + identity["moduleSize"]:
+                        raise ValueError("resource-type-getter-outside-exact-module")
+                    fields = resource_record_fields(kind, resource_record_raw, resource_wrapper_raw)
+                    resource.update({
+                        "status": ("untyped-record-candidate" if fields["revisionConsistent"]
+                                   and math.isfinite(game_clock) else "unavailable"),
+                        "reason": (None if fields["revisionConsistent"] and math.isfinite(game_clock)
+                                   else "inconsistent-revision-or-game-clock"),
+                        "name": fields["name"],
+                        "resourceWrapper": f"0x{resource_wrapper:X}",
+                        "referenceSlot": f"0x{ref_slot:X}",
+                        "record": f"0x{resource_record_address:X}",
+                        "recordVtableRva": f"0x{vtable - base:X}",
+                        "candidateDescriptorGetterRva": f"0x{getter - base:X}",
+                        "fields": fields, "gameClock": game_clock,
+                        "observedAtUtc": observation_times["resource-record"],
+                        "typeValidation": "NOT PERFORMED; vtable/descriptor/type fingerprints pending",
+                    })
+                    resource_anchors[resource_wrapper] = resource_wrapper_raw
+                    resource_anchors[ref_slot] = ref_raw
+                    resource_anchors[getter_slot] = getter_raw
 
             # Recheck every ownership anchor after staged reads. This is NOT an
             # atomic snapshot or proof that no transient ABA change occurred.
@@ -393,8 +482,11 @@ def run(lab: str, *, health_record: bool = False) -> dict:
             checks.update({step["address"]: 24 for step in found["path"]})
             checks.update({p: 8 for p in component_addresses})
             checks.update({address: len(raw) for address, raw in health_anchors.items()})
+            checks.update({address: len(raw) for address, raw in resource_anchors.items()})
             if health is not None:
                 checks[record_address] = 128
+            if resource_record_raw is not None:
+                checks[resource_record_address] = 64
             final = take("anchors-after", sorted(checks.items()))
             if any(final[address] != raw for address, raw in roots.items()):
                 raise ValueError("module-root-changed")
@@ -417,6 +509,17 @@ def run(lab: str, *, health_record: bool = False) -> dict:
                 health["calculatedHealth"] = (calculate_health(health["fields"], health["gameClock"])
                     if health["inputsStable"] else {"status": "unavailable", "reason": "inputs-changed"})
                 review["healthRecordCandidate"] = health
+            if resource is not None:
+                if any(final[address] != raw for address, raw in resource_anchors.items()):
+                    raise ValueError("resource-ownership-anchor-changed")
+                if resource_record_raw is not None:
+                    if final[resource_record_address][:8] != resource_record_raw[:8]:
+                        raise ValueError("resource-record-vtable-changed")
+                    resource["inputsStable"] = (final[resource_record_address][0x18:0x38]
+                                                 == resource_record_raw[0x18:0x38])
+                    if not resource["inputsStable"]:
+                        resource["status"] = "changed-input-record-candidate"
+                review["resourceRecordCandidate"] = resource
             after = native("inspect-native", "inspect-after")
             after_identity, after_target = inspection_identity(after)
             if after_identity != identity or after_target != target:
@@ -453,10 +556,13 @@ def main() -> None:
     parser.add_argument("--lab", choices=("lab1", "lab2", "all"), required=True)
     parser.add_argument("--health-record", action="store_true",
                         help="Also capture/type-check the health record and calculate ordinary-value HP candidates.")
+    parser.add_argument("--resource-record", action="store_true",
+                        help="Capture raw, UNTYPECHECKED mana/energy candidates; never calculate trusted values.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
-        print(json.dumps(run(lab, health_record=args.health_record), indent=2), flush=True)
+        print(json.dumps(run(lab, health_record=args.health_record,
+                             resource_record=args.resource_record), indent=2), flush=True)
 
 
 if __name__ == "__main__":

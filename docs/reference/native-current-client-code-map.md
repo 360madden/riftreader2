@@ -1,6 +1,6 @@
-# Current RIFT client code map — native health (2026-10-31)
+# Current RIFT client code map — health, resources and ability fields (2026-11-01)
 
-Status: **current-build static code plus a bracketed, untyped Lab1 raw-record capture**. The exact-build type interpretation and guarded calculator are implemented and synthetically tested; a fresh typed two-lab HP read, independent value comparison, passive freshness and restart qualification remain pending. Unless explicitly labeled as a captured session address, addresses below are RVAs relative to `rift_x64.exe`.
+Status: **current-build static health/resource/ability code paths plus a historical, untyped Lab1 HP record capture**. HP's guarded type/candidate calculator and an opt-in **untyped** mana/energy raw-record collector are implemented and synthetically tested. No fresh typed two-lab HP read or **any live mana/energy/cooldown observation** was made in this offline pass. Independent UI/API comparison, passive freshness and restart qualification remain pending. Unless explicitly labeled as a captured session address, addresses below are RVAs relative to `rift_x64.exe`.
 
 ## Exact source and reproduction
 
@@ -124,39 +124,69 @@ At the call site, `base_value` comes from component `+0x48`, `maximum` from `+0x
 
 - The same native API's `Inspect.Unit.Detail` function exposes `coordX`, `coordY`, `coordZ` keys as documented by the original RIFT API, so those string/call references are the next offline movement-code anchors.
 - An earlier build (`7C356C9D...`) validated module RVA `0x32E0200` to player owner and float32 XYZ at owner `+0x320/+0x324/+0x328`, including a guarded movement comparison and a normal restart. **That root is not qualified on current SHA `1935A05C...`.** See [XYZ field catalog](xyz-field-catalog.md) and [native motion comparison](native-motion-pair-review.md).
-- Mana, energy, charge and ability/cast code are separate code-map tasks. Finding native CODE locations does not prove player DATA pointer ownership or production telemetry readiness.
+- Current-build mana/energy resource ownership and ability/cast field-builders are now statically traced below, but their record type fingerprints, live values and restart-safe addresses are not qualified.
 
-## Resource getter byte-slice cross-check
+## Resource ownership and getter paths — exact-build static validation, 2026-11-01
 
-A second pass extracted the **first 96 bytes** at each already-known current-build resource getter RVA from the exact installed `.text` section and disassembled them independently in the cloud. Max-getter return chains were complete within that slice; the longer current getters were **prefixes only**.
+A new, longer extraction and independent x64 instruction-boundary disassembly resolved the current `Inspect.Unit.Detail` **owner** of resource getters. These are verified **code paths** in the pinned executable, **not** a sampled or validated resource pointer from either running lab:
 
-| Native getter | RVA | Directly observed code evidence |
+```text
+module+0x33623E0 -> playerSystem+0x360 -> native self key
+module+0x33624A8 -> manager+0x50 -> full-key hashed entity
+health component = entity's dynamic selector (module+0x2F57850)
+resource kind = int32(*(healthComponent+0x40) + 0x168)
+resource wrapper = *(healthComponent+0x38)
+record reference slot = *(resourceWrapper+0x10)
+record pointer = *(record reference slot), accepted only through a native type check
+```
+
+At `0x9B8A0A`, `R13` receives the selected health component from the entity component table. Function `0x5E36D0` fetches the resource-kind value. The **kind-3** branch (`0x9BA0AC/0x9BA0BA`) takes wrapper `[R13+0x38]` at `0x9BA0C3`; the **kind-4** branch (`0x9BA19C/0x9BA1AA`) takes the same wrapper offset at `0x9BA1B3`. Missing wrapper or other kind must yield **unavailable/not applicable**, never an invented zero or a guess that all resource kinds coexist.
+
+| Native field | Kind | Getter called by Unit.Detail | Resolver / expected low16 type | Record / wrapper inputs |
+|---|---:|---|---|---|
+| 🟣 `mana` | **3** | call site `0x9BA0D3` → **`0x133DD10`** | `0x1CDC680` / **`0x072A`** | Record rate `+0x18`, base `+0x1C`, revision `+0x20`, maximum `+0x24`; wrapper revision `+0x1C`, cached clock `+0x24` |
+| 🟣 `manaMax` | **3** | `0x9BA0FF` → **`0x133E050`** | `0x1CDC680` / **`0x072A`** | Signed int32 record `+0x24` |
+| 🟣 `charge` / conditional `chargeMax` | **3** | `0x9BA136` → `0x133DAF0`; `0x9BA162/0x9BA173` → `0x133E020` | Kind-3 wrapper; `ChargeMax` invokes `0x1CDC680` / **`0x072A`** | Charge-specific record fields distinct from simple max; `ChargeMax` reads `+0x2C`, and is not always emitted |
+| 🟡 `energy` | **4** | `0x9BA1C3` → **`0x133F2C0`** | `0x2320200` / **`0x072B`** | Record base `+0x20`, maximum `+0x24`, rate `+0x28`, revision `+0x34`; wrapper revision `+0x18`, cached clock `+0x1C` |
+| 🟡 `energyMax` | **4** | `0x9BA1EF` → **`0x133E450`** | `0x2320200` / **`0x072B`** | Signed int32 record `+0x24` |
+| Other resource getter | Not assigned here | **`0x133DE60`** (earlier mislabeled `ManaMax`) | Different resolver `0x1FE8420` | Not the **kind-3 Unit.Detail ManaMax** branch; no player-field claim |
+
+Both resource resolvers call native type helper `0x127303C`, but require **different** low16 types: mana/charge `0x072A`; energy `0x072B`. The getters manage temporary reference counts and may update cached clock/revision. RiftReader2's external native probe must **never invoke them, touch refcounts or write caches**. Current-value getters involve the shared game-clock pointer at `module+0x33DC2B0`, float32 arithmetic and native constant **`-0.009999999776482582`** (4-byte constant at RVA `0x26B08A4`). Full boundary behavior and read-only type-fingerprint paths for these resource records are **not qualified**. Offset `+0x24` has a meaning only within its particular resolved, type-checked record.
+
+Static evidence, all passed on exact SHA `1935A05C...`: `rr2-serialized-energy-owner-pe-slices-20261101-01`, `rr2-serialized-resource-wrapper-owner-pe-slices-20261101-01`, `rr2-serialized-mana-type-and-maximum-pe-slices-20261101-01`. These byte ranges were independently decoded as x86-64 machine instructions, not inferred from API names. Earlier 96-byte getter prefixes were insufficient to classify `0x133DE60` and caused the **corrected ManaMax mapping**.
+
+### Resource API-key assignments
+
+Saved current-build static key scan `rr2-static-api-text-xrefs-20261031-a` confirms `energyMax` literal RVA `0x26D3C30` at setter `0x9BA204`, `chargeMax` RVA `0x26D3C18` at `0x9BA188`, and `healthCap` RVA `0x26D3BF0` at `0x9BA017`. The new branch/getter disassembly corroborates which wrapper feeds the assignments. This does **not** type-check a runtime object or establish fresh current/max readings.
+
+### Abilities, costs, cooldown and castbar: native field-builders, not yet data owners
+
+The bounded, exact-SHA `scripts/find_native_api_xrefs.py` run `rr2-serialized-native-ability-field-xrefs-20261101-01` passed. Separate longer code extractions `rr2-serialized-ability-code-owners-pe-slices-20261101-01` independently confirmed RIP-relative `LEA R8,[RIP+field string]` at these real instruction boundaries, followed by Lua field-setting calls:
+
+| API field | Literal RVA | Verified native code assignment RVAs |
 |---|---:|---|
-| Mana | `0x133DD10` | Reads a resolved component `+0x20`, caches a revision-like `+0x1C`, uses global clock pointer slot `0x33DC2B0`. |
-| ManaMax | `0x133DE60` | Reads a resolved component `+0x18` and `+0x1C` during calculation; full return semantics not verified in 96 bytes. |
-| Energy | `0x133F2C0` | Reads a resolved component `+0x34` and `+0x20`; uses shared clock slot `0x33DC2B0`. |
-| **EnergyMax** | `0x133E450` | Calls resolver at `0x2320200`, takes **int32 at resolved `+0x24`**, releases temporary handle, returns it. |
-| Power | `0x133D1C0` | Reads a resolved component `+0x1C` and `+0x18`; uses shared clock slot `0x33DC2B0`. |
-| Charge | `0x133DAF0` | Reads a resolved component `+0x28` and `+0x34`; uses shared clock slot `0x33DC2B0`. |
-| **ChargeMax** | `0x133E020` | Calls resolver at `0x1CDC680`, takes **int32 at resolved `+0x2C`**, releases temporary handle, returns it. |
+| `idNew` | `0x26D6420` | `0x995FF8` |
+| `currentCooldownPaused` | `0x26D64B8` | `0x99658E` |
+| `currentCooldownBegin` | `0x26D64D0` | `0x99659F` |
+| `currentCooldownDuration` | `0x26D64E8` | `0x9965C4` |
+| `currentCooldownExpired` | `0x26D6500` | `0x9965F6` |
+| `currentCooldownRemaining` | `0x26D6518` | `0x99661D` |
+| `costPower` | `0x26D6590` | `0x996859` |
+| `costMana` | `0x26D65A0` | `0x9968C3`, `0x996B50` |
+| `costEnergy` | `0x26D65B0` | `0x996939` |
+| `uninterruptible` | `0x26D8D50` | `0x9B8385`, `0x9B8728` |
 
-### Exact-build resource key xrefs — saved static check, no resource pointer yet
+The cooldown cluster `0x99655B..0x99662C` also references the **same game-clock global slot** `0x33DC2B0`. Cooldown remaining is at least partly derived through native math and clock reads; field-string pointer `R8` is **not** an ability/cooldown data pointer. The cost and castbar clusters are separate functions/paths, and repeated fields do not establish duplicate player records. Next purely static task: identify containing `.pdata` function ranges, then trace the *value-producing* register and owner-acquisition call before each setter. No native ability/cooldown/castbar object has been accepted as live or restart-safe.
 
-Retained exact-SHA job `rr2-static-api-text-xrefs-20261031-a` passed (exit 0). A fresh read of its preserved output confirms these **field-name assignment references** in current `Inspect.Unit.Detail`, not backing-object locations:
+The retained **API-only** Atank Light's Decree sample shows Power 100→80→81 while a cooldown declined about 11.977→11.863 s (`artifacts/casting-20261025-01/ranged-evidence-03/evidence.json`, observations 5498–5500). Its executable SHA was not saved; it remains historic behavior reference only, not a native memory corroboration.
 
-| API output field | Literal RVA | `Inspect.Unit.Detail` code-reference RVA |
-|---|---:|---:|
-| `energyMax` | `0x26D3C30` | **`0x9BA204`** |
-| `chargeMax` | `0x26D3C18` | **`0x9BA188`** |
-| `healthCap` | `0x26D3BF0` | `0x9BA017` |
+### Offline resource-candidate collector — no new live reads
 
-Smallest next static pass: extract and independently decode exact-build `.text` RVA `0x9BA080..0x9BA290`; backtrack from the `energyMax` field assignment to its getter and the actual wrapper passed in `RCX`. Decode EnergyMax resolver `0x2320200` and its type validation separately. Only then connect a dynamically selected resource wrapper through the established live self-key/entity lookup. The old-build `unit-detail-analysis.txt` decompile refers to a *different* executable and cannot qualify current resource ownership.
+`scripts/probe_native_unit_manager.py --lab lab1|lab2 --resource-record` is now an **opt-in** extension of the existing SHA/PID/start-pinned native snapshot workflow; it was **not executed against a lab**. It walks the current-build selected component → kind-owner → resource-wrapper → reference-slot → record path, captures the game-clock input, and rechecks kind, wrapper, reference, vtable, mutable record inputs and process identity. For kind 3 it preserves raw mana offsets and unverified expected resolver type `0x072A`; for kind 4 it uses the **different** energy layout/type `0x072B`; all other kinds report `not-applicable`. Mismatched revisions are reported unavailable; nonfinite clock inputs fail closed instead of producing a value. The record remains `untyped-record-candidate` even with a stable raw read, and **no native current/max value is calculated, published as trusted telemetry, or written back** until the full resource type fingerprint is established.
 
-A retained API-only comparison sample records Atank casting Light's Decree: Power fell 100→80 and began recovering to81 while a roughly 12s cooldown ticked 11.9766→11.8633s. Source `artifacts/casting-20261025-01/ranged-evidence-03/evidence.json` (observations 5498–5500). That saved capture's game-build SHA was not recorded, and the readings came through API/Lua; they are **historical expected-behavior evidence**, not current native ability or power pointers. Current-build ability/castbar XREFs still need to be traced from distinctive keys such as `currentCooldownRemaining` and `uninterruptible`.
+**31/31 Python synthetic tests passed**, job `rr2-offline-native-resource-candidate-tests-20261101-01` (exit 0). Existing offline receipt, movement, source-pin and on-demand receiver contract suite also passed **63/63**, job `rr2-offline-reader-receipt-py-contracts-20261101-01`. These tests require no game, VMware, controller or network access.
 
-The component object/owner, corresponding player identity and any runtime change response remain unqualified. The `+0x24` and `+0x2C` members are reached through **different resolver functions**; they must not be stitched into one generic player structure.
-
-For the next ability/cast pass, installed RiftReader2 scaffolding already uses `Inspect.Ability.New.List`/`.Detail`, `Inspect.Unit.Castbar`, current cooldown fields and `Event.Ability.New.Cooldown.Begin`/`.End` (see [casting readout](casting-readout.md) and [spell dump API reuse](spelldump-api-reuse.md)). Those are **API string anchors**, not yet native-code XREFs. Legacy `Inspect.Ability.Detail` should not be presumed supported.
+**Remaining validation:** trace per-resource record vtable → descriptor getter → descriptor vtable → type getter; qualify no-write record values under explicit live-operation approval; compare independently sourced native and Lua/UI readings across changes; prove passive freshness and normal restart qualification. No new game/VM/memory read, controller/screenshot operation or addon edit occurred in these offline static and code passes.
 
 ## Promotion gates
 
