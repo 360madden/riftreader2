@@ -1,6 +1,6 @@
 # Current RIFT client code map — health, resources and ability fields (2026-11-01)
 
-Status: **current-build static health/resource/ability code paths plus a historical, untyped Lab1 HP record capture**. HP's guarded type/candidate calculator and an opt-in **untyped** mana/energy raw-record collector are implemented and synthetically tested. No fresh typed two-lab HP read or **any live mana/energy/cooldown observation** was made in this offline pass. Independent UI/API comparison, passive freshness and restart qualification remain pending. Unless explicitly labeled as a captured session address, addresses below are RVAs relative to `rift_x64.exe`.
+Status: **current-build static health/resource/ability code paths, a newly type-checked Lab2 HP calculation candidate, a live but untyped Lab2 Energy record candidate, and a historical untyped Lab1 HP record**. Both authorized Lab2 captures completed on 2026-11-01 UTC, but neither independent live UI/API correlation nor passive freshness/restart qualification has passed. A mana/energy record's numerical fields are **not typed or promoted** yet; no live cooldown owner has been identified. Unless explicitly labeled as a captured session address, addresses below are RVAs relative to `rift_x64.exe`.
 
 ## Exact source and reproduction
 
@@ -99,9 +99,27 @@ Evidence directory: `artifacts/native-unit-manager/lab1/880371d2ed0c49dcbda28162
 
 **25 focused synthetic tests passed**, job `rr2-serialized-native-typed-health-tests-20261101-01`, exit0 at 01:43:35 UTC. Independent read-only review found no blocking defect in the declared arithmetic domain or ownership rechecks. Sequential reads still are not atomic and cannot exclude an ABA change.
 
-The new typed Lab2 live command `rr2-serialized-native-typed-health-lab2-20261101-01` was **rejected at the tool approval step**. It was not retried or routed through another tool. No new typed-health live run or screenshot comparison completed. Lab2 raw health has not yet been captured by this path. Await explicit approval, then run Lab2 and Lab1 serially and compare against fresh protected controller captures. Do not relabel the retained raw capture or a synthetic test as that missing live validation.
+Historical approval boundary: the initial typed Lab2 live command `rr2-serialized-native-typed-health-lab2-20261101-01` was **rejected at the tool approval step** and was never retried through another route. On November 1 Joey granted **fresh explicit Lab2 access**; new separate commands `rr2-approved-lab2-typed-hp-20261101-01` and `rr2-approved-lab2-untyped-resource-20261101-01` subsequently completed successfully. Their evidence is recorded below. Approval does **not** remove the independent UI/API, passive freshness, restart or other-lab verification gates.
 
 For screenshots, reuse existing capture/queue primitives, not the full old XYZ workflow guard: `run_xyz_workflow.read_config` pins obsolete coordinate-profile RVAs. Direct `control_client._capture` also does not perform dependency startup by itself; the normal `control_client.run` capture entrypoint does. Acquire against current authenticated identity/epoch, never arm or send input, and wait for watchdog cleanup rather than treating `q.finish` as completed release. No bypass of an occupied queue, foreground failure, or permission denial.
+
+### First authorized Lab2 live type-checked HP and untyped Energy — 2026-11-01 UTC
+
+The two opt-in, *read-only* guest native snapshot workflows completed on **the same Lab2 client process identity**: PID **7012**, process-start ticks **639290507554340644**, exact installed executable SHA **`1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`**, native player ID **`u035400012DFEB5BC`**. Both probes returned `status=complete`, stable ownership and mutable-input rechecks, and exit code **0**. Captures were **separate sequential collections**, not an atomic paired HP/resource frame.
+
+| Lab2 evidence | HP capture 06:35:29 UTC | Energy capture 06:36:57 UTC |
+|---|---|---|
+| Native record candidate | `0x2186C54CFB0` (session address) | `0x21806591350` (session address) |
+| Record vtable RVA / descriptor getter RVA | `0x2C0EE88` / `0x20CCC60` | **`0x2D19498` / `0x231BEB0`** (untyped fingerprint starting points) |
+| Type and record consistency | Verified exact-build **`0x02C2`** health chain; record/wrapper revision **74/74** | Selected kind **4** Energy; expected resolver type `0x072B` **not yet verified**; revision **56/56** |
+| Raw fields | HP base **10,635**, max **10,635**, modifier **14,250**, caps 1.0/1.0 | Energy base **100**, max **100**, rate **2,000**; raw only |
+| Derived output | Finite ordinary-case **calculated HP candidate 10,635/10,635** | **No trusted current/max calculation**; type fingerprint incomplete |
+| Ownership/input stability | Passed | Passed |
+
+- Guarded HP job: `rr2-approved-lab2-typed-hp-20261101-01` → `artifacts/native-unit-manager/lab2/16994df05b7f495b8959477f9e253477/review.json`, SHA-256 **`A94E9053800599F2F4369B93BF03ED358B94D6D1E75A83379A83BFC1B2027B3D`**.
+- Raw Energy job: `rr2-approved-lab2-untyped-resource-20261101-01` → `artifacts/native-unit-manager/lab2/d6757494c51b4bf782ac310697460ec8/review.json`, SHA-256 **`ED2BAAF1F71E364C45FC98323B16C3FB649813B15F8328A4A07959AAD7842E90`**.
+- The historic Bolinao screenshot shared by Joey also displays **10,635/10,635** HP, but it is *not timestamp-synchronized to this snapshot* and does not qualify current HP. A safe new UI capture needs the controller's true exclusive queue lease, proper foreground/identity checks, a screenshot-only operation without input, and observed watchdog cleanup; the old XYZ workflow's pointer-profile guard is obsolete for this SHA.
+- Next static resource step: starting **only** from the observed Energy record vtable/getter, trace the exact PE descriptor initializer → descriptor vtable → type getter and prove type `0x072B` before computing Energy. No mana or cooldown sample was collected. No game input, addon deployment, process-memory writes, restart or native getter invocation took place.
 
 ## HP arithmetic leaf: bounded static reconstruction
 
@@ -194,7 +212,17 @@ The bounded, exact-SHA `scripts/find_native_api_xrefs.py` run `rr2-serialized-na
 
 The code immediately before cost assignments uses **`[RSP+0x58]` as an unverified ability-template/context pointer**; from it, it reads a child-reference vector at `+0x6D0` (`[header]` begin, `[header+0x08]` end, elements supplying child references). The owner of the stack value and element stride still need tracing; it calls native type helper `0x127303C` and branches on **`0x1E29` before Power cost, `0x1E2A` before Mana cost and `0x1E2C` before Energy cost**. A further nearby branch checks `0x1E2B`, whose output is not assigned here. These are **expected types in this particular ability-cost enumeration**; they must not be conflated with player resource record types `0x072A/0x072B`, and no cost child object is live-type-validated. The Power/Mana/Energy amount producers include calls `0x49EF10`, `0x49D600`, and `0x49F000` respectively. Their caller handles references and even mutates flags/refcounts; an external reader must never invoke these getters.
 
-The cooldown builder invokes **`0x5A5E40`** with `RCX=RSI` and `EDX=R12D`, then computes `T - [RSP+0x54]` and `T - gameClock` from its float32 return `T`. An **expiry, start, duration and remaining** interpretation fits the historical Light's Decree API sample, but is still an inference until upstream RSI/selector/stack-local provenance and paused/expired branches are fully traced. This is **not** a free-standing cooldown pointer. The cooldown and cost unwind ranges begin without ordinary function prologues; they may be split pieces of one larger marshaller.
+The cooldown builder invokes **`0x5A5E40`** with `RCX=RSI`, `EDX=R12D` and `R8=&[RSP+0x54]`. Its float32 return `T` and optional float32 output `D` are **two distinct values**, not one memory field or pointer. Independent instruction disassembly of retained exact-build code establishes how the native Lua marshaller constructs four fields:
+
+| Native Lua field | Verified calculation in the field builder | Key RVA evidence |
+|---|---|---|
+| `currentCooldownBegin` | **`T - D`** | `0x996565` subtraction → `0x99659F` assignment |
+| `currentCooldownDuration` | **`D`**, the producer's optional out value | `0x996543` out-argument setup → `0x9965C4` assignment |
+| `currentCooldownExpired` | **`-(T - gameClock)` on the negative branch**; positive branch behavior needs full path/context | `0x996571` clock subtraction; `0x9965D8..0x9965F6` sign/assignment path |
+| `currentCooldownRemaining` | **`max(T - gameClock, XMM7 threshold)`**, threshold value not yet qualified | `0x99660A` float max → `0x99661D` assignment |
+| `currentCooldownPaused` | Conditional comparison involving **`T - D`**; predicate/threshold not yet established | `0x99657A..0x996595` |
+
+These are verified **field-construction formulas**, not independently located live data addresses. The return `T` may represent a timer deadline, but its originating ability object, optional duration source, pause threshold and native time-base mapping are not yet proven. The cooldown and cost unwind ranges begin without ordinary function prologues; they may be split pieces of one larger marshaller. Saved source job: `rr2-serialized-ability-code-owners-pe-slices-20261101-01`.
 
 #### Downstream native cooldown resolution — read-only PE evidence
 
@@ -217,13 +245,13 @@ The cooldown cluster `0x99655B..0x99662C` also references the **same game-clock 
 
 The retained **API-only** Atank Light's Decree sample shows Power 100→80→81 while a cooldown declined about 11.977→11.863 s (`artifacts/casting-20261025-01/ranged-evidence-03/evidence.json`, observations 5498–5500). Its executable SHA was not saved; it remains historic behavior reference only, not a native memory corroboration.
 
-### Offline resource-candidate collector — no new live reads
+### Read-only resource-candidate collector — first Lab2 live raw capture completed
 
-`scripts/probe_native_unit_manager.py --lab lab1|lab2 --resource-record` is now an **opt-in** extension of the existing SHA/PID/start-pinned native snapshot workflow; it was **not executed against a lab**. It walks the current-build selected component → kind-owner → resource-wrapper → reference-slot → record path, captures the game-clock input, and rechecks kind, wrapper, reference, vtable, mutable record inputs and process identity. For kind 3 it preserves raw mana offsets and unverified expected resolver type `0x072A`; for kind 4 it uses the **different** energy layout/type `0x072B`; all other kinds report `not-applicable`. Mismatched revisions are reported unavailable; nonfinite clock inputs fail closed instead of producing a value. The record remains `untyped-record-candidate` even with a stable raw read, and **no native current/max value is calculated, published as trusted telemetry, or written back** until the full resource type fingerprint is established.
+`scripts/probe_native_unit_manager.py --lab lab1|lab2 --resource-record` is an **opt-in** extension of the existing SHA/PID/start-pinned native snapshot workflow; its first **Lab2** run completed at 06:37 UTC as documented above. It walks the current-build selected component → kind-owner → resource-wrapper → reference-slot → record path, captures the game-clock input, and rechecks kind, wrapper, reference, vtable, mutable record inputs and process identity. For kind 3 it preserves raw mana offsets and unverified expected resolver type `0x072A`; for kind 4 it uses the **different** energy layout/type `0x072B`; all other kinds report `not-applicable`. Mismatched revisions are reported unavailable; nonfinite clock inputs fail closed instead of producing a value. The record remains `untyped-record-candidate` even with a stable raw read, and **no native current/max value is calculated, published as trusted telemetry, or written back** until the full resource type fingerprint is established.
 
 **31/31 initial Python synthetic tests passed**, job `rr2-offline-native-resource-candidate-tests-20261101-01` (exit 0); subsequent record-alias and hardened `--function-bounds` tests yield **47/47 combined native-probe/scanner tests** (`rr2-offline-strict-pdata-native-gate-tests-20261101-01`, exit0). Existing offline receipt, movement, source-pin and on-demand receiver contract suite also passed **63/63**, job `rr2-offline-reader-receipt-py-contracts-20261101-01`. These tests require no game, VMware, controller or network access.
 
-**Remaining validation:** trace per-resource record vtable → descriptor getter → descriptor vtable → type getter; qualify no-write record values under explicit live-operation approval; compare independently sourced native and Lua/UI readings across changes; prove passive freshness and normal restart qualification. No new live game-process memory read, VM/controller/screenshot operation or addon edit occurred in these offline static and code passes.
+**Remaining validation:** trace the captured Energy record vtable → descriptor getter → descriptor vtable → type getter; independently verify native Energy and HP against fresh Lua/UI values across changes; prove passive freshness and normal restart qualification. The new Lab2 guest native reads were authorized and completed **after** the offline code passes above; no controller/screenshot operation, addon edit, game input or game restart was part of those captures.
 
 ## Promotion gates
 
@@ -232,4 +260,4 @@ The retained **API-only** Atank Light's Decree sample shows Power 100→80→81 
 3. Reuse the existing exclusive controller, screenshot, lease, and freshness gates for any later movement trial. Lab 1's prior eight-minute freshness failure blocks that trial until repaired.
 4. Requalify a candidate through a normal game restart, then integrate a version-gated native reader. No live pointer was promoted by this offline decompilation.
 
-No game binary patching, process-memory write, debugger attach, gameplay input, VM restart, or addon edit occurred in this research.
+No game binary patching, process-memory write, debugger attach, gameplay input, VM restart, or addon edit occurred. Only the explicitly authorized bounded Lab2 read-only native memory captures above were added after the earlier offline research.
