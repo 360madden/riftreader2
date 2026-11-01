@@ -247,6 +247,9 @@ ask Joey to press movement keys when the authorized helper can perform the test.
   [addon-sync](docs/workflows/addon-sync.md); the tool sends no game input.
 - Codex uses its local tools. Browser ChatGPT uses Workbridge; see
   [its guide](docs/workflows/workbridge.md) for hashes, operation IDs, and jobs.
+  For new sessions, check Workbridge approval settings and verify a small,
+  genuinely needed write early before long-running work; follow
+  [the approval preflight](docs/workflows/workbridge-approval-preflight.md).
 - Inspect current Git status before edits. Preserve unrelated work.
 - Use explicit paths and literal argument arrays for Workbridge terminal jobs.
   Poll to a terminal state and inspect actual exit code and output.
