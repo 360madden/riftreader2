@@ -423,8 +423,10 @@ class AccessQueue:
             self._event(database, now, "submitted", request_id, specification=specification)
             return self._public(database.execute("SELECT * FROM requests WHERE request_id=?", (request_id,)).fetchone())
 
-    def dispatch(self):
-        """Grant one eligible request; never start an experiment or replay a lease."""
+    def dispatch(self, *, request_id=None):
+        """Grant the winning eligible request, optionally only if its ID matches."""
+        if request_id is not None:
+            _identifier(request_id, "request_id")
         with self._transaction() as (database, now):
             candidates = []
             for row in database.execute("SELECT * FROM requests WHERE state='queued' ORDER BY sequence").fetchall():
@@ -449,6 +451,8 @@ class AccessQueue:
             if not candidates:
                 return None
             _, row, spec = min(candidates, key=lambda item: item[0])
+            if request_id is not None and row["request_id"] != request_id:
+                return None
             token = secrets.token_hex(32)
             lease = {}
             for resource, epoch in sorted(spec["resources"].items()):

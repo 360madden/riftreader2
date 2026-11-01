@@ -135,6 +135,39 @@ class QueueTests(unittest.TestCase):
         self.submit("b", "B", {"vm:lab-2": "epoch-2"})
         self.assertEqual({self.queue.dispatch()["request_id"], self.queue.dispatch()["request_id"]}, {"a", "b"})
 
+    def test_targeted_dispatch_refuses_foreign_winner_without_granting_it(self):
+        self.queue.register("vm:lab-2", "epoch-2")
+        self.clean("vm:lab-2")
+        self.submit("foreign", "A", {"vm:lab-2": "epoch-2"}, priority=10)
+        self.submit("own", "C", {"vm:lab-1": "epoch-1"}, priority=0)
+        before_one = self.resource("vm:lab-1")
+        before_two = self.resource("vm:lab-2")
+        self.assertIsNone(self.queue.dispatch(request_id="own"))
+        self.assertEqual(self.resource("vm:lab-1"), before_one)
+        self.assertEqual(self.resource("vm:lab-2"), before_two)
+        self.assertEqual(self.state("foreign")["state"], "queued")
+        self.assertEqual(self.state("own")["state"], "queued")
+        self.assertEqual(self.queue.dispatch(request_id="foreign")["request_id"], "foreign")
+        self.assertEqual(self.queue.dispatch(request_id="own")["request_id"], "own")
+
+    def test_targeted_dispatch_validates_id_and_does_not_grant_unknown(self):
+        self.submit("ordinary")
+        before = self.resource("vm:lab-1")
+        with self.assertRaises(nav.QueueError):
+            self.queue.dispatch(request_id="invalid id")
+        self.assertIsNone(self.queue.dispatch(request_id="unknown"))
+        self.assertEqual(self.resource("vm:lab-1"), before)
+        self.assertEqual(self.state("ordinary")["state"], "queued")
+        self.assertEqual(self.queue.dispatch()["request_id"], "ordinary")
+
+    def test_targeted_dispatch_respects_same_resource_priority(self):
+        self.submit("urgent", priority=10)
+        self.submit("lower", priority=0)
+        self.assertIsNone(self.queue.dispatch(request_id="lower"))
+        self.assertEqual(self.state("urgent")["state"], "queued")
+        self.assertEqual(self.queue.dispatch(request_id="urgent")["request_id"], "urgent")
+        self.assertIsNone(self.queue.dispatch(request_id="lower"))
+
     def test_shared_host_input_resource_prevents_parallel_vm_conflict(self):
         self.queue.register("host:desktop-input", "host-1")
         self.clean("host:desktop-input")
