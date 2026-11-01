@@ -29,6 +29,19 @@ The native sample and HUD screenshot were approximately **46.50 seconds apart**.
 
 No movement, keypresses, macro, arm, game memory write, native getter invocation, game restart, VM restart or addon deployment was performed. The screenshot helper sends a release-only STOP as part of cleanup. Its code and offline guard tests are committed in `95ea6ed`; the related four-module offline integration run `rr2-hp-screenshot-integration-offline-tests-20261101-01` passed **104/104**, exit 0.
 
+## Follow-up combined HP + Energy baseline (13:47 UTC)
+
+A separate guarded read-only probe captured **both** native types in the same game process, followed by another queue-leased screenshot and a new visual inspection of the original-BMP-derived HUD crop.
+
+- Native job `rr2-resume-lab2-fresh-typed-hp-energy-20261101-01`: exit **0**, `status=complete`, same exact PID/start/SHA. Review `artifacts/native-unit-manager/lab2/74d4209587794a8c9ffae0559517db6f/review.json`, SHA-256 `E5197C7D6ED7BD00F025AD44A74644D342BD17B80B579837E03D646D4B2FB3C4`.
+- HP: observed `2026-11-01T13:46:25.7952313Z`; native type `0x2C2`, stable revision **66/66**, calculated **10,635/10,635** candidate.
+- Energy: observed `2026-11-01T13:46:47.8531713Z`; kind **4**, independently guarded type `0x072B`, stable revision **64/64**, base/max **100/100**, rate **2000**, pure-read ordinary-domain calculated **100/100** candidate.
+- Screenshot job `rr2-resume-lab2-hp-energy-screenshot-20261101-01`: exit **0**, `captured-after-watchdog-release`, captured `2026-11-01T13:47:36.1118575Z`, same exact PID/start/SHA and foreground game. Screenshot `artifacts/native-hp-screenshots/lab2/hp-energy-20261101-1347/image.bmp`, SHA-256 `1E1D9802384519EACF79B508C9A8C06F657DAFCDB80B56284AA14D9AED463D22`; `capture.json` SHA-256 `AB6B5C0A0414DD731EAF3847635F0356FE96986CDF3CD13654CCF3D05A2BDC67`, capture ID `e0f328e814784995b609110c9f768efc`.
+- Independently inspected second screenshot HUD: green **10,635/10,635 (100%)**, purple **100/100 (100%)**. HP-to-HUD skew **70.32s**; Energy-to-HUD skew **48.26s**. The screenshot does not itself label the purple resource as Energy.
+- No input, process write, native getter call, VM/game restart or addon change; STOP and watchdog release attested.
+
+This extends evidence to one native Energy ↔ HUD numeric baseline in addition to the repeat HP baseline. It **does not establish advancing/dynamic values, tight synchronization, passive freshness, a restart-safe locator, or a trusted production field**.
+
 ## Still unresolved
 
 1. Demonstrate at least two distinct, independently time-correlated HP values under the same exact game process; unchanged 10,635 is only a baseline.
