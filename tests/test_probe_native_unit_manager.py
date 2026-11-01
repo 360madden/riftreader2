@@ -8,7 +8,7 @@ import unittest
 
 from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_energy, calculate_health, checked_energy_type, checked_health_type, encoded, entity_hash, find_entity,
-    health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
+    actor_render_pose_candidates, health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
     RESOURCE_LAYOUTS, require_disjoint_records,
     sha, snapshot_bytes,
 )
@@ -169,6 +169,88 @@ class NativeUnitManagerTests(unittest.TestCase):
                 self.assertEqual(reason, result["reason"])
                 self.assertNotIn("matrices", result)
                 json.dumps(result, allow_nan=False)
+
+    @staticmethod
+    def actor_render_fixture():
+        position = bytearray(0x70)
+        struct.pack_into("<3f", position, 0, 5, 6, 7)
+        struct.pack_into("<3f", position, 0x40, 10, 20, 30)
+        yaw_y_90 = (0, 0, -1, 0, 1, 0, 1, 0, 0)
+        pitch_x_90 = (1, 0, 0, 0, 0, -1, 0, 1, 0)
+        struct.pack_into("<9f", position, 0x4C, *yaw_y_90)
+        actor = bytearray(0x30)
+        struct.pack_into("<9f", actor, 0, *yaw_y_90)
+        struct.pack_into("<3f", actor, 0x24, 7, 23, 39)
+        model = struct.pack("<9f", *pitch_x_90)
+        first = struct.pack("<3f", 1, -2, 3)
+        second = struct.pack("<3f", -4, 5, 6)
+        render = bytearray(0x30)
+        struct.pack_into("<9f", render, 0, 0, -1, 0, 0, 0, -1, 1, 0, 0)
+        struct.pack_into("<3f", render, 0x24, 7, 23, 39)
+        return position, actor, model, first, second, render
+
+    def test_actor_render_pose_row_major_noncommuting_and_xyz_offsets(self):
+        parts = self.actor_render_fixture()
+        result = actor_render_pose_candidates(*parts, normal_render_branch=True)
+        self.assertEqual("candidate-only", result["status"])
+        self.assertEqual([[0, -1, 0], [0, 0, -1], [1, 0, 0]],
+                         result["computedRenderRows"])
+        reverse_product = [[0, 0, -1], [-1, 0, 0], [0, 1, 0]]
+        self.assertNotEqual(reverse_product, result["computedRenderRows"])
+        self.assertEqual([5, 6, 7], result["primaryXyzCandidate"])
+        self.assertEqual([10, 20, 30], result["secondaryXyzCandidate"])
+        self.assertEqual([7, 23, 39], result["computedActorXyz"])
+        self.assertEqual(0, result["positionToActorMatrixMaxAbsDelta"])
+        self.assertEqual(0, result["actorXyzMaxAbsDelta"])
+        self.assertEqual(0, result["renderComparison"]["matrixMaxAbsDelta"])
+        self.assertEqual(0, result["renderComparison"]["xyzMaxAbsDelta"])
+        self.assertAlmostEqual(1, result["matrixShape"]["composition"]["determinant"])
+        self.assertNotIn("facingDegrees", result)
+        json.dumps(result, allow_nan=False)
+
+    def test_actor_render_pose_missing_or_alternate_renderer_is_unqualified(self):
+        position, actor, model, first, second, render = self.actor_render_fixture()
+        result = actor_render_pose_candidates(position, actor, model, first, second,
+                                               None, normal_render_branch=True)
+        self.assertEqual("not-captured", result["renderComparison"]["status"])
+        result = actor_render_pose_candidates(position, actor, model, first, second,
+                                               None, normal_render_branch=False)
+        self.assertEqual("alternate-branch-unqualified",
+                         result["renderComparison"]["status"])
+        with self.assertRaisesRegex(ValueError, "actor-render-alternate-branch"):
+            actor_render_pose_candidates(position, actor, model, first, second,
+                                         render, normal_render_branch=False)
+        with self.assertRaisesRegex(ValueError, "actor-render-branch-flag"):
+            actor_render_pose_candidates(position, actor, model, first, second,
+                                         None, normal_render_branch=1)
+
+    def test_actor_render_pose_rejects_short_or_nonfinite_captured_fields(self):
+        original = self.actor_render_fixture()
+        for index in range(6):
+            with self.subTest(short_field=index):
+                parts = list(original)
+                parts[index] = parts[index][:-1]
+                with self.assertRaisesRegex(ValueError, "actor-render-read-hole"):
+                    actor_render_pose_candidates(*parts, normal_render_branch=True)
+        for index in range(6):
+            with self.subTest(nonfinite_field=index):
+                parts = [bytearray(part) for part in original]
+                struct.pack_into("<f", parts[index], 0, float("nan"))
+                result = actor_render_pose_candidates(*parts, normal_render_branch=True)
+                self.assertEqual("unavailable", result["status"])
+                self.assertIn("nonfinite-", result["reason"])
+                json.dumps(result, allow_nan=False)
+
+    def test_actor_render_pose_scaled_actor_remains_candidate_only(self):
+        position, actor, model, first, second, render = self.actor_render_fixture()
+        struct.pack_into("<f", actor, 0, 2.0)
+        result = actor_render_pose_candidates(position, actor, model, first, second,
+                                               render, normal_render_branch=True)
+        self.assertEqual("candidate-only", result["status"])
+        self.assertGreater(result["matrixShape"]["actor"]["orthonormalError"], 0.1)
+        self.assertGreater(result["positionToActorMatrixMaxAbsDelta"], 0.1)
+        self.assertGreater(result["renderComparison"]["matrixMaxAbsDelta"], 0.1)
+        self.assertNotIn("facingDegrees", result)
 
     def test_health_fields_preserve_raw_inputs_without_claiming_hp(self):
         record = bytearray(128)

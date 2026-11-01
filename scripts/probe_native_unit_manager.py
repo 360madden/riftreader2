@@ -234,6 +234,81 @@ def position_transform_candidates(component: bytes, post_read: bytes) -> dict:
     return result
 
 
+def actor_render_pose_candidates(position_pose: bytes, actor_pose: bytes,
+                                 model_matrix: bytes, offset_a: bytes,
+                                 offset_b: bytes, render_pose: bytes | None,
+                                 *, normal_render_branch: bool) -> dict:
+    """Compose saved float32 pose fragments; never resolve or read live pointers."""
+    scope = "candidate-only; owner/facing/passive-freshness/restart-unverified"
+    if type(normal_render_branch) is not bool:
+        raise ValueError("actor-render-branch-flag")
+    required = ((position_pose, 0x70), (actor_pose, 0x30),
+                (model_matrix, 0x24), (offset_a, 0x0C), (offset_b, 0x0C))
+    if any(len(data) != size for data, size in required) or (
+            render_pose is not None and len(render_pose) != 0x30):
+        raise ValueError("actor-render-read-hole")
+    if render_pose is not None and not normal_render_branch:
+        raise ValueError("actor-render-alternate-branch")
+
+    fields = {"position": struct.unpack("<28f", position_pose),
+              "actor": struct.unpack("<12f", actor_pose),
+              "model": struct.unpack("<9f", model_matrix),
+              "offsetA": struct.unpack("<3f", offset_a),
+              "offsetB": struct.unpack("<3f", offset_b)}
+    if render_pose is not None:
+        fields["render"] = struct.unpack("<12f", render_pose)
+    for name, values in fields.items():
+        if not all(math.isfinite(value) for value in values):
+            return {"status": "unavailable", "reason": f"nonfinite-{name}",
+                    "scope": scope}
+
+    def rows(values: tuple) -> list[list[float]]:
+        return [list(values[start:start + 3]) for start in (0, 3, 6)]
+
+    def shape(matrix: list[list[float]]) -> dict:
+        dot = lambda a, b: sum(x * y for x, y in zip(a, b))
+        orthogonal_error = max(abs(dot(matrix[i], matrix[j]) - (i == j))
+                               for i in range(3) for j in range(3))
+        (a, b, c), (d, e, f), (g, h, k) = matrix
+        determinant = a * (e * k - f * h) - b * (d * k - f * g) + c * (d * h - e * g)
+        return {"orthonormalError": orthogonal_error, "determinant": determinant}
+
+    position = fields["position"]
+    secondary_matrix = rows(position[0x4C // 4:])
+    secondary_xyz = position[0x40 // 4:0x4C // 4]
+    actor_matrix = rows(fields["actor"][:9])
+    actor_xyz = fields["actor"][9:12]
+    model = rows(fields["model"])
+    composed = [[sum(actor_matrix[i][k] * model[k][j] for k in range(3))
+                 for j in range(3)] for i in range(3)]
+    expected_xyz = [secondary_xyz[i] + fields["offsetA"][i] + fields["offsetB"][i]
+                    for i in range(3)]
+    matrix_delta = lambda a, b: max(abs(a[i][j] - b[i][j])
+                                   for i in range(3) for j in range(3))
+    xyz_delta = lambda a, b: max(abs(a[i] - b[i]) for i in range(3))
+    comparison = {"status": ("not-captured" if normal_render_branch
+                             else "alternate-branch-unqualified")}
+    if render_pose is not None:
+        render_matrix = rows(fields["render"][:9])
+        render_xyz = fields["render"][9:12]
+        comparison = {"status": "normal-branch-numeric-candidate",
+                      "matrixMaxAbsDelta": matrix_delta(composed, render_matrix),
+                      "xyzMaxAbsDelta": xyz_delta(expected_xyz, render_xyz),
+                      "matrixShape": shape(render_matrix)}
+    return {"status": "candidate-only", "scope": scope,
+            "normalRenderBranch": normal_render_branch,
+            "primaryXyzCandidate": list(position[:3]),
+            "secondaryXyzCandidate": list(secondary_xyz),
+            "computedActorXyz": expected_xyz,
+            "computedRenderRows": composed,
+            "positionToActorMatrixMaxAbsDelta": matrix_delta(secondary_matrix, actor_matrix),
+            "actorXyzMaxAbsDelta": xyz_delta(expected_xyz, actor_xyz),
+            "matrixShape": {"positionSecondary": shape(secondary_matrix),
+                            "actor": shape(actor_matrix), "model": shape(model),
+                            "composition": shape(composed)},
+            "renderComparison": comparison}
+
+
 RESOURCE_LAYOUTS = {
     3: {"name": "mana", "resolverType": "0x072A", "base": 0x1C,
         "maximum": 0x24, "rate": 0x18, "revision": 0x20,

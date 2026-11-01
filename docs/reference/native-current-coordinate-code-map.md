@@ -239,6 +239,8 @@ after hundredth-unit quantization, with native-before/API/native-after
 ordering. No slot17 or renderer bytes were sampled in this trace,
 nor was a controlled turn or full restart performed.
 
+**Saved-byte composition helper (2026-11-01; offline only):** `actor_render_pose_candidates` in `scripts/probe_native_unit_manager.py` reads pre-captured fragments only: position +0x48 (0x70 bytes), actor +0x398 (0x30), actor/model +0x3EC (0x24), offsets +0x4F8 and +0x770 (0x0C each), optional normal-branch render +0xA0 (0x30). It computes actor×model row-major 3×3, secondary-position XYZ + both offsets, and numerical deltas from actor/render stored values. It rejects nonfinite and truncated fields and refuses renderer comparison when the caller reports the bit0 alternate branch; ownership, bit0 and pointer safety must be independently verified before passing saved bytes. Synthetic 90-degree Y×X (noncommuting) and XYZ cases pass with 46/46 native-unit tests (`rr2-actor-render-native-tests-20261101-01`). **All outputs remain candidates, not measured facing, input response, passive freshness or restart validation.**
+
 Original source JSON files and independently verified SHA256 digests:
 - Lab1 artifacts/native-unit-manager/lab1/5a654fbadb324803a6bba83520329d46/component-values.json — E5DBE57BBE80B9D6D03228630CBD5E96DF80975B5263D01CDD6B91FDA0B26971
 - Lab2 artifacts/native-unit-manager/lab2/a4e8474dbfef4a1490b7cee6655e46c8/component-values.json — FE34732A410CDF3098635F42563F8F5B43757A7AE4981783F8992C2ED6B41253
