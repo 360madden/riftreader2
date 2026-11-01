@@ -36,6 +36,19 @@ def fixture() -> bytes:
     return bytes(data)
 
 
+def fixture_with_pdata(entries=((0x1020, 0x1040, 0x3010),)) -> bytes:
+    data = bytearray(fixture())
+    struct.pack_into("<H", data, 0x86, 3)  # Add a bounded .pdata section.
+    struct.pack_into("<I", data, 0x98 + 108, 16)  # PE32+ data-directory count.
+    struct.pack_into("<II", data, 0x98 + 112 + 3 * 8, 0x3000, len(entries) * 12)
+    section_at = 0x80 + 24 + 0xF0 + 2 * 40
+    data[section_at:section_at + 8] = b".pdata".ljust(8, bytes([0]))
+    struct.pack_into("<IIII", data, section_at + 8, 0x200, 0x3000, 0x200, 0x600)
+    for index, entry in enumerate(entries):
+        struct.pack_into("<III", data, 0x600 + index * 12, *entry)
+    return bytes(data)
+
+
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest().upper()
 
@@ -72,6 +85,49 @@ class NativeApiXrefTests(unittest.TestCase):
             with self.subTest(fields=fields):
                 with self.assertRaises(ValueError):
                     scan_image(data, sha(data), fields)
+
+    def test_function_bounds_from_actual_exception_directory(self):
+        data = fixture_with_pdata()
+        result = scan_image(data, sha(data), ["coordX"], include_function_bounds=True)
+        self.assertEqual(1, result["exceptionFunctionDirectory"]["entryCount"])
+        xref = result["references"][0]
+        self.assertEqual("unique", xref["functionBoundaryStatus"])
+        self.assertEqual([{"beginRva": "0x1020", "endRvaExclusive": "0x1040",
+                           "unwindInfoRva": "0x3010", "offsetWithinFunction": 16}],
+                         xref["runtimeFunctions"])
+        self.assertIn("static-opcode-candidate", result["qualification"])
+
+    def test_missing_exception_directory_does_not_invent_function(self):
+        data = fixture()
+        result = scan_image(data, sha(data), ["coordX"], include_function_bounds=True)
+        self.assertEqual(0, result["exceptionFunctionDirectory"]["entryCount"])
+        self.assertEqual("unmapped", result["references"][0]["functionBoundaryStatus"])
+        self.assertEqual([], result["references"][0]["runtimeFunctions"])
+
+    def test_overlap_kept_ambiguous_instead_of_selecting_winner(self):
+        data = fixture_with_pdata(((0x1020, 0x1040, 0x3010),
+                                   (0x1028, 0x1038, 0x3030)))
+        result = scan_image(data, sha(data), ["coordX"], include_function_bounds=True)
+        self.assertEqual("ambiguous", result["references"][0]["functionBoundaryStatus"])
+        self.assertEqual(2, len(result["references"][0]["runtimeFunctions"]))
+
+    def test_exception_directory_bounds_and_padding_rejected(self):
+        original = bytearray(fixture_with_pdata())
+        bounds = bytearray(original)
+        struct.pack_into("<I", bounds, 0x98 + 112 + 3 * 8 + 4, 0x201)
+        with self.assertRaisesRegex(ValueError, "pdata-directory-outside"):
+            scan_image(bytes(bounds), sha(bytes(bounds)), ["coordX"], include_function_bounds=True)
+        padded = bytearray(original)
+        struct.pack_into("<I", padded, 0x98 + 112 + 3 * 8 + 4, 13)
+        padded[0x60C] = 1
+        with self.assertRaisesRegex(ValueError, "pdata-directory-nonzero-padding"):
+            scan_image(bytes(padded), sha(bytes(padded)), ["coordX"], include_function_bounds=True)
+
+    def test_unordered_runtime_entries_fail_closed(self):
+        data = fixture_with_pdata(((0x1050, 0x1070, 0x3020),
+                                   (0x1020, 0x1040, 0x3010)))
+        with self.assertRaisesRegex(ValueError, "pdata-function-range-invalid"):
+            scan_image(data, sha(data), ["coordX"], include_function_bounds=True)
 
     def test_bogus_section_bounds_rejected(self):
         data = bytearray(fixture())

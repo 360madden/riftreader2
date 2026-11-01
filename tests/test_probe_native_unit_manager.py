@@ -7,7 +7,7 @@ import unittest
 from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_health, checked_health_type, encoded, entity_hash, find_entity,
     health_record_fields, inspection_identity, pointer, resource_record_fields,
-    RESOURCE_LAYOUTS,
+    RESOURCE_LAYOUTS, require_disjoint_records,
     sha, snapshot_bytes,
 )
 
@@ -230,6 +230,14 @@ class NativeUnitManagerTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 self.assertEqual({"status": "not-applicable", "kind": kind},
                                  resource_record_fields(kind, b"", b""))
+
+    def test_health_and_resource_record_alias_fails_closed(self):
+        self.assertIsNone(require_disjoint_records(None, None))
+        self.assertIsNone(require_disjoint_records(0x10000, None))
+        self.assertIsNone(require_disjoint_records(None, 0x10000))
+        self.assertIsNone(require_disjoint_records(0x10000, 0x20000))
+        with self.assertRaisesRegex(ValueError, "health-resource-record-alias"):
+            require_disjoint_records(0x10000, 0x10000)
 
     def test_resource_revision_mismatch_remains_unqualified(self):
         for kind in (3, 4):

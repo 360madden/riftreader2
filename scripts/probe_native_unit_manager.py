@@ -185,6 +185,12 @@ RESOURCE_LAYOUTS = {
 }
 
 
+def require_disjoint_records(health_address: int | None, resource_address: int | None) -> None:
+    """Distinct resolver types must never alias the same live record address."""
+    if health_address is not None and resource_address is not None and health_address == resource_address:
+        raise ValueError("health-resource-record-alias")
+
+
 def resource_record_fields(kind: int, record: bytes, wrapper: bytes) -> dict:
     """Untyped native resource candidates; never treat a resolver constant as type proof."""
     layout = RESOURCE_LAYOUTS.get(kind) if type(kind) is int else None
@@ -431,6 +437,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                 resource_anchors[components["health"] + 0x40] = component[0x40:0x48]
                 resource_anchors[kind_owner + 0x168] = kind_raw
                 resource = {"kind": kind, "status": "not-applicable",
+                            "observedAtUtc": observation_times["resource-kind"],
                             "qualifier": "current-build-static-kind-only; no typed live resource"}
                 if kind in RESOURCE_LAYOUTS:
                     resource_wrapper = pointer(struct.unpack_from("<Q", component, 0x38)[0], 48)
@@ -473,6 +480,9 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                     resource_anchors[resource_wrapper] = resource_wrapper_raw
                     resource_anchors[ref_slot] = ref_raw
                     resource_anchors[getter_slot] = getter_raw
+
+            require_disjoint_records(
+                record_address if health is not None else None, resource_record_address)
 
             # Recheck every ownership anchor after staged reads. This is NOT an
             # atomic snapshot or proof that no transient ABA change occurred.

@@ -7,6 +7,7 @@ This does not open a game process, run RIFT, or promote a live pointer.
 from __future__ import annotations
 
 import argparse
+import bisect
 import hashlib
 import json
 from pathlib import Path
@@ -62,6 +63,69 @@ def _sections(data: bytes) -> dict[str, tuple[int, int, int]]:
     return result
 
 
+def _runtime_functions(data: bytes, sections: dict[str, tuple[int, int, int]]) -> list[tuple[int, int, int]]:
+    """Parse PE32+ exception directory entries, not raw .pdata section padding."""
+    pe = _unpack(data, "<I", 0x3C)[0]
+    optional = pe + 24
+    optional_bytes = _unpack(data, "<H", pe + 20)[0]
+    if optional_bytes < 112 + 4 * 8 or _unpack(data, "<I", optional + 108)[0] < 4:
+        return []
+    directory_rva, directory_size = _unpack(data, "<II", optional + 112 + 3 * 8)
+    if directory_rva == 0 and directory_size == 0:
+        return []
+    if directory_rva == 0 or directory_size < 12 or directory_size > MAX_FILE_BYTES:
+        raise ValueError("pdata-directory-invalid")
+    mapped = None
+    for section_rva, raw_at, raw_size in sections.values():
+        if section_rva <= directory_rva and directory_size <= raw_size - (directory_rva - section_rva):
+            mapped = raw_at + directory_rva - section_rva
+            break
+    if mapped is None:
+        raise ValueError("pdata-directory-outside-raw-sections")
+    aligned_size = directory_size - directory_size % 12
+    if any(data[mapped + aligned_size:mapped + directory_size]):
+        raise ValueError("pdata-directory-nonzero-padding")
+    entries = []
+    previous = -1
+    for offset in range(mapped, mapped + aligned_size, 12):
+        begin, end, unwind = _unpack(data, "<III", offset)
+        if not begin and not end and not unwind:
+            if any(data[offset:mapped + aligned_size]):
+                raise ValueError("pdata-directory-internal-zero-entry")
+            break
+        if begin >= end or begin < previous:
+            raise ValueError("pdata-function-range-invalid")
+        entries.append((begin, end, unwind))
+        previous = begin
+    return entries
+
+
+def _assign_function_bounds(references: list[dict], entries: list[tuple[int, int, int]]) -> None:
+    """Use prefix maximums so overlapping unwind ranges stay explicitly ambiguous."""
+    begins = [entry[0] for entry in entries]
+    prefix_max = []
+    last_max = 0
+    for _, end, _ in entries:
+        last_max = max(last_max, end)
+        prefix_max.append(last_max)
+    for reference in references:
+        rva = int(reference["instructionRva"], 16)
+        at = bisect.bisect_right(begins, rva) - 1
+        matches = []
+        while at >= 0 and prefix_max[at] > rva:
+            begin, end, unwind = entries[at]
+            if begin <= rva < end:
+                matches.append({"beginRva": f"0x{begin:X}",
+                                "endRvaExclusive": f"0x{end:X}",
+                                "unwindInfoRva": f"0x{unwind:X}",
+                                "offsetWithinFunction": rva - begin})
+            at -= 1
+        matches.reverse()
+        reference["functionBoundaryStatus"] = ("unique" if len(matches) == 1 else
+                                               "ambiguous" if matches else "unmapped")
+        reference["runtimeFunctions"] = matches
+
+
 def _valid_field(name: str) -> bool:
     return bool(FIELD_RE.fullmatch(name))
 
@@ -69,6 +133,7 @@ def _valid_field(name: str) -> bool:
 def scan_image(
     data: bytes, expected_sha: str, fields: list[str],
     start_rva: int = 0, end_rva: int = 0x100000000,
+    include_function_bounds: bool = False,
 ) -> dict:
     """Return literal matches and candidate RIP-relative LEA xrefs only."""
     if len(data) > MAX_FILE_BYTES:
@@ -138,7 +203,10 @@ def scan_image(
                 "instructionBytes": encoded,
             })
     refs.sort(key=lambda x: (int(x["instructionRva"], 16), x["field"]))
-    return {
+    functions = _runtime_functions(data, sections) if include_function_bounds else []
+    if include_function_bounds:
+        _assign_function_bounds(refs, functions)
+    result = {
         "schemaVersion": 1,
         "evidenceKind": "offline-pe-rip-lea-field-candidates/1",
         "executableSha256": sha,
@@ -150,6 +218,12 @@ def scan_image(
         "qualification": "static-opcode-candidate-only-not-function-or-live-pointer-proof",
         "limitations": "RIP-relative LEA byte patterns only; misses other encoding forms and may include false instruction boundaries.",
     }
+    if include_function_bounds:
+        result["exceptionFunctionDirectory"] = {
+            "entryCount": len(functions),
+            "qualification": "PE32+ .pdata unwind ranges, not semantic functions or data owners",
+        }
+    return result
 
 
 def main() -> int:
@@ -159,13 +233,15 @@ def main() -> int:
     parser.add_argument("--fields", nargs="+", required=True, help="Exact Lua field keys")
     parser.add_argument("--start-rva", type=lambda x: int(x, 0), default=0)
     parser.add_argument("--end-rva", type=lambda x: int(x, 0), default=0x100000000)
+    parser.add_argument("--function-bounds", action="store_true",
+                        help="Annotate references with SHA-pinned PE32+ .pdata unwind bounds.")
     args = parser.parse_args()
     if not args.exe.is_file() or args.exe.stat().st_size > MAX_FILE_BYTES:
         parser.error("offline-executable-missing-or-too-large")
     try:
         result = scan_image(
             args.exe.read_bytes(), args.sha256, args.fields,
-            args.start_rva, args.end_rva,
+            args.start_rva, args.end_rva, args.function_bounds,
         )
     except ValueError as error:
         parser.error(str(error))

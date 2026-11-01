@@ -153,6 +153,8 @@ At `0x9B8A0A`, `R13` receives the selected health component from the entity comp
 
 Both resource resolvers call native type helper `0x127303C`, but require **different** low16 types: mana/charge `0x072A`; energy `0x072B`. The getters manage temporary reference counts and may update cached clock/revision. RiftReader2's external native probe must **never invoke them, touch refcounts or write caches**. Current-value getters involve the shared game-clock pointer at `module+0x33DC2B0`, float32 arithmetic and native constant **`-0.009999999776482582`** (4-byte constant at RVA `0x26B08A4`). Full boundary behavior and read-only type-fingerprint paths for these resource records are **not qualified**. Offset `+0x24` has a meaning only within its particular resolved, type-checked record.
 
+An independent pre-vtable RTTI sanity check (`rr2-serialized-hp-vtable-rtti-sanity-20261101-01`) found that the eight bytes at **HP vtable RVA `0x2C0EE88 - 8`** point to executable code RVA `0x71610`, **not** an MSVC Complete Object Locator. Static resource type discovery must therefore prove the descriptor path directly; an adjacent-RTTI-table shortcut is not available at this positive control. This does not prove that every class lacks RTTI.
+
 Static evidence, all passed on exact SHA `1935A05C...`: `rr2-serialized-energy-owner-pe-slices-20261101-01`, `rr2-serialized-resource-wrapper-owner-pe-slices-20261101-01`, `rr2-serialized-mana-type-and-maximum-pe-slices-20261101-01`. These byte ranges were independently decoded as x86-64 machine instructions, not inferred from API names. Earlier 96-byte getter prefixes were insufficient to classify `0x133DE60` and caused the **corrected ManaMax mapping**.
 
 ### Resource API-key assignments
@@ -176,6 +178,24 @@ The bounded, exact-SHA `scripts/find_native_api_xrefs.py` run `rr2-serialized-na
 | `costEnergy` | `0x26D65B0` | `0x996939` |
 | `uninterruptible` | `0x26D8D50` | `0x9B8385`, `0x9B8728` |
 
+### Verified exception/unwind ranges and value-producer clues
+
+`scripts/find_native_api_xrefs.py --function-bounds` now parses the SHA-pinned PE32+ exception directory and annotates static field-string references with their containing `.pdata` unwind-function ranges. The **303,143** entries in the exact installed EXE were accepted; all 12 field assignments matched exactly **one** range. This is a function/funclet boundary, **not** proof of semantic ownership, instruction boundaries by itself, or a live value address.
+
+| Native function / funclet range (end exclusive) | Covered field references | Inference allowed |
+|---|---|---|
+| `0x995E5A..0x9962A6` | `idNew` | Ability identity field's enclosing code |
+| `0x996548..0x996639` | **All five** current-cooldown fields | Shared timer-field builder; same RIFT clock-slot input |
+| `0x99664D..0x996E11` | `costPower`, `costMana` **twice**, `costEnergy` | One cost-builder range with multiple branches; not duplicate records |
+| `0x9B8347..0x9B84E2` | First `uninterruptible` | Castbar code path A |
+| `0x9B84F0..0x9B88CD` | Second `uninterruptible` | Separate castbar code path B |
+
+The code immediately before cost assignments iterates a child-reference range reachable near **a candidate ability object `+0x6D0`**; it calls native type helper `0x127303C` and branches on **`0x1E29` before Power cost, `0x1E2A` before Mana cost and `0x1E2C` before Energy cost**. A further nearby branch checks `0x1E2B`, whose output is not assigned here. These are **expected types in this particular ability-cost enumeration**; they must not be conflated with player resource record types `0x072A/0x072B`, and no cost child object is live-type-validated. The Power/Mana/Energy amount producers include calls `0x49EF10`, `0x49D600`, and `0x49F000` respectively. Their caller handles references and even mutates flags/refcounts; an external reader must never invoke these getters.
+
+The cooldown builder invokes **`0x5A5E40`** with `RCX=RSI` and `EDX=R12D`, then combines float32 values from that result, stack state, and the global clock. Its upstream owning pointer/stack provenance still needs tracing; it is not yet a free-standing cooldown address.
+
+Reproduction: original exact-SHA function-range job `rr2-serialized-ability-pdata-function-bounds-20261101-02`; committed reusable scanner verification `rr2-serialized-current-ability-pdata-reproduction-20261101-01` (exit0, **12/12 unique function matches**). The scanner and native candidate tests passed **42/42** offline Python synthetic regressions (`rr2-offline-pdata-and-resource-regression-tests-20261101-01`). Ambiguous, missing, malformed or overlapped unwind ranges are explicitly handled by the tool, not interpreted as data owners.
+
 The cooldown cluster `0x99655B..0x99662C` also references the **same game-clock global slot** `0x33DC2B0`. Cooldown remaining is at least partly derived through native math and clock reads; field-string pointer `R8` is **not** an ability/cooldown data pointer. The cost and castbar clusters are separate functions/paths, and repeated fields do not establish duplicate player records. Next purely static task: identify containing `.pdata` function ranges, then trace the *value-producing* register and owner-acquisition call before each setter. No native ability/cooldown/castbar object has been accepted as live or restart-safe.
 
 The retained **API-only** Atank Light's Decree sample shows Power 100→80→81 while a cooldown declined about 11.977→11.863 s (`artifacts/casting-20261025-01/ranged-evidence-03/evidence.json`, observations 5498–5500). Its executable SHA was not saved; it remains historic behavior reference only, not a native memory corroboration.
@@ -184,7 +204,7 @@ The retained **API-only** Atank Light's Decree sample shows Power 100→80→81 
 
 `scripts/probe_native_unit_manager.py --lab lab1|lab2 --resource-record` is now an **opt-in** extension of the existing SHA/PID/start-pinned native snapshot workflow; it was **not executed against a lab**. It walks the current-build selected component → kind-owner → resource-wrapper → reference-slot → record path, captures the game-clock input, and rechecks kind, wrapper, reference, vtable, mutable record inputs and process identity. For kind 3 it preserves raw mana offsets and unverified expected resolver type `0x072A`; for kind 4 it uses the **different** energy layout/type `0x072B`; all other kinds report `not-applicable`. Mismatched revisions are reported unavailable; nonfinite clock inputs fail closed instead of producing a value. The record remains `untyped-record-candidate` even with a stable raw read, and **no native current/max value is calculated, published as trusted telemetry, or written back** until the full resource type fingerprint is established.
 
-**31/31 Python synthetic tests passed**, job `rr2-offline-native-resource-candidate-tests-20261101-01` (exit 0). Existing offline receipt, movement, source-pin and on-demand receiver contract suite also passed **63/63**, job `rr2-offline-reader-receipt-py-contracts-20261101-01`. These tests require no game, VMware, controller or network access.
+**31/31 initial Python synthetic tests passed**, job `rr2-offline-native-resource-candidate-tests-20261101-01` (exit 0); subsequent record-alias and `--function-bounds` tests yield **42/42 combined native-probe/scanner tests** (`rr2-offline-pdata-and-resource-regression-tests-20261101-01`, exit0). Existing offline receipt, movement, source-pin and on-demand receiver contract suite also passed **63/63**, job `rr2-offline-reader-receipt-py-contracts-20261101-01`. These tests require no game, VMware, controller or network access.
 
 **Remaining validation:** trace per-resource record vtable → descriptor getter → descriptor vtable → type getter; qualify no-write record values under explicit live-operation approval; compare independently sourced native and Lua/UI readings across changes; prove passive freshness and normal restart qualification. No new game/VM/memory read, controller/screenshot operation or addon edit occurred in these offline static and code passes.
 
