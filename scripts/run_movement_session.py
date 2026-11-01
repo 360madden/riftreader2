@@ -246,10 +246,13 @@ def acquire(plan: dict) -> tuple[LiveQueueLease, dict]:
         request_id = "movement-" + uuid.uuid4().hex[:16]
         queue.submit(request_id, "movement-session", "C", {plan["resource"]: resource["epoch"]},
                      ttl_ms=30000, max_ms=120000, estimated_ms=12000)
-        grant = queue.dispatch()
-        require(isinstance(grant, dict) and grant.get("request_id") == request_id
-                and isinstance(grant.get("token"), str) and grant["token"],
-                "movement lease unavailable")
+        grant = queue.dispatch(request_id=request_id)
+        if not (isinstance(grant, dict) and grant.get("request_id") == request_id
+                and isinstance(grant.get("token"), str) and grant["token"]):
+            cancelled = queue.cancel(request_id, "movement-session")
+            require(cancelled.get("state") in ("cancelled", "cleanup"),
+                    "movement lease cancellation unverified")
+            raise MovementSessionError("movement lease unavailable")
         queue.check(request_id, grant["token"])
     return LiveQueueLease(queue, request_id, grant["token"], plan["resource"]), grant
 

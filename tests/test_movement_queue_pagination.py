@@ -31,12 +31,15 @@ def pages(second, *, first_resource=None, second_resource=None, cursor=100):
 
 
 class FakeQueue:
-    def __init__(self, page_map, *, other_grant=False):
+    def __init__(self, page_map, *, other_grant=False, no_grant=False):
         self.page_map = page_map
         self.other_grant = other_grant
+        self.no_grant = no_grant
         self.cursors = []
         self.submissions = []
         self.dispatches = 0
+        self.dispatch_targets = []
+        self.cancellations = []
         self.checks = []
 
     @contextmanager
@@ -52,10 +55,17 @@ class FakeQueue:
     def submit(self, request_id, *args, **kwargs):
         self.submissions.append(request_id)
 
-    def dispatch(self):
+    def dispatch(self, *, request_id=None):
         self.dispatches += 1
+        self.dispatch_targets.append(request_id)
+        if self.no_grant:
+            return None
         return {"request_id": "another-request" if self.other_grant
                 else self.submissions[-1], "token": "a" * 64}
+
+    def cancel(self, request_id, owner):
+        self.cancellations.append((request_id, owner))
+        return {"request_id": request_id, "state": "cancelled"}
 
     def check(self, request_id, token):
         self.checks.append((request_id, token))
@@ -115,6 +125,16 @@ class QueuePaginationTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.MovementSessionError, "lease unavailable"):
             self.acquire(queue)
         self.assertEqual(queue.dispatches, 1)
+        self.assertEqual(queue.dispatch_targets, queue.submissions)
+        self.assertEqual(queue.cancellations, [(queue.submissions[0], "movement-session")])
+        self.assertEqual(queue.checks, [])
+
+    def test_targeted_dispatch_none_cancels_own_pending_request(self):
+        queue = FakeQueue(pages([], cursor=None), no_grant=True)
+        with self.assertRaisesRegex(runner.MovementSessionError, "lease unavailable"):
+            self.acquire(queue)
+        self.assertEqual(queue.dispatch_targets, queue.submissions)
+        self.assertEqual(queue.cancellations, [(queue.submissions[0], "movement-session")])
         self.assertEqual(queue.checks, [])
 
     def test_cleanup_finds_own_completed_request_on_later_page(self):
