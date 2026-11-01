@@ -140,6 +140,20 @@ A second pass extracted the **first 96 bytes** at each already-known current-bui
 | Charge | `0x133DAF0` | Reads a resolved component `+0x28` and `+0x34`; uses shared clock slot `0x33DC2B0`. |
 | **ChargeMax** | `0x133E020` | Calls resolver at `0x1CDC680`, takes **int32 at resolved `+0x2C`**, releases temporary handle, returns it. |
 
+### Exact-build resource key xrefs — saved static check, no resource pointer yet
+
+Retained exact-SHA job `rr2-static-api-text-xrefs-20261031-a` passed (exit 0). A fresh read of its preserved output confirms these **field-name assignment references** in current `Inspect.Unit.Detail`, not backing-object locations:
+
+| API output field | Literal RVA | `Inspect.Unit.Detail` code-reference RVA |
+|---|---:|---:|
+| `energyMax` | `0x26D3C30` | **`0x9BA204`** |
+| `chargeMax` | `0x26D3C18` | **`0x9BA188`** |
+| `healthCap` | `0x26D3BF0` | `0x9BA017` |
+
+Smallest next static pass: extract and independently decode exact-build `.text` RVA `0x9BA080..0x9BA290`; backtrack from the `energyMax` field assignment to its getter and the actual wrapper passed in `RCX`. Decode EnergyMax resolver `0x2320200` and its type validation separately. Only then connect a dynamically selected resource wrapper through the established live self-key/entity lookup. The old-build `unit-detail-analysis.txt` decompile refers to a *different* executable and cannot qualify current resource ownership.
+
+A retained API-only comparison sample records Atank casting Light's Decree: Power fell 100→80 and began recovering to81 while a roughly 12s cooldown ticked 11.9766→11.8633s. Source `artifacts/casting-20261025-01/ranged-evidence-03/evidence.json` (observations 5498–5500). That saved capture's game-build SHA was not recorded, and the readings came through API/Lua; they are **historical expected-behavior evidence**, not current native ability or power pointers. Current-build ability/castbar XREFs still need to be traced from distinctive keys such as `currentCooldownRemaining` and `uninterruptible`.
+
 The component object/owner, corresponding player identity and any runtime change response remain unqualified. The `+0x24` and `+0x2C` members are reached through **different resolver functions**; they must not be stitched into one generic player structure.
 
 For the next ability/cast pass, installed RiftReader2 scaffolding already uses `Inspect.Ability.New.List`/`.Detail`, `Inspect.Unit.Castbar`, current cooldown fields and `Event.Ability.New.Cooldown.Begin`/`.End` (see [casting readout](casting-readout.md) and [spell dump API reuse](spelldump-api-reuse.md)). Those are **API string anchors**, not yet native-code XREFs. Legacy `Inspect.Ability.Detail` should not be presumed supported.

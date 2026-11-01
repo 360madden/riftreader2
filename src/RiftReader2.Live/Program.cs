@@ -185,7 +185,9 @@ internal static class Program
                         scanStartedAt,
                         scopedCompletedAt,
                         out var canContinue);
-                    if (!canContinue)
+                    if (!canContinue &&
+                        (lastFastObservation.Reason != "full-scan-anchor-expired" ||
+                         fastSession.CaptureFullScanRenewal(scopedTarget) is null))
                         fastSession = null;
                     freshnessResult = scopedTargetStable
                         ? tracker!.GetCurrent()
@@ -197,6 +199,10 @@ internal static class Program
                 }
                 else
                 {
+                    // Only a still-fresh, identity-bound scoped history can be a
+                    // renewal candidate. Capture BEFORE the potentially long full scan.
+                    var renewalSession = fastSession;
+                    var priorFresh = renewalSession?.CaptureFullScanRenewal(attachedTarget);
                     lastFullScanStartedAt = scanStartedAt;
                     lastScan = await Task.Run(
                         () => WindowsMemoryScanner.Scan(
@@ -217,11 +223,25 @@ internal static class Program
                             LiveAddonSelectionStatus.Conflict, null, 0, 0,
                             after.Reason ?? "target-identity-changed-during-scan")
                         : LiveAddonCandidateSelector.Select(lastScan.Candidates, nonce, lastScan.Completed);
-                    freshnessResult = tracker!.Observe(
+                    var fullFreshness = tracker!.Observe(
                         after.Target?.Identity ?? attachedTarget.Identity,
                         lastSelection,
                         scanStartedAt,
                         scanCompletedAt);
+                    freshnessResult = fullFreshness;
+                    if (fullFreshness.Status == LiveFreshnessStatus.Warming &&
+                        renewalSession is not null &&
+                        after.Target is not null &&
+                        renewalSession.TryBridgeCompletedFullScan(
+                            after.Target, lastScan, lastSelection,
+                            scanStartedAt, scanCompletedAt, priorFresh, out var bridged))
+                    {
+                        // The promoted last observation is this completed FULL scan.
+                        // Scoped history merely proves continuity; neither full-scan
+                        // report publishes a prior scoped frame.
+                        tracker = renewalSession.VerifiedTracker;
+                        freshnessResult = bridged!;
+                    }
                     lastFastObservation = null;
                     fastObservationDiagnostic = null;
                     fastSession = after.Target is not null && SameProcess(attachedTarget, after.Target) &&

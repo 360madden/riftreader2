@@ -162,6 +162,171 @@ public sealed class FastObservationSessionTests
         Assert.Equal("byte-budget-exceeded", oversized.Status);
     }
 
+    [Fact]
+    public void FullRenewalPromotesOnlyNewCompleteFullScanAfterStrictAdvance()
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var session = FreshSession(time);
+        time.Timestamp = 12_100_000;
+        Assert.False(session.CanObserve(Target, time.Timestamp, out var reason));
+        Assert.Equal("full-scan-anchor-expired", reason);
+        var prior = session.CaptureFullScanRenewal(Target);
+        Assert.NotNull(prior);
+        Assert.Equal(9, prior!.Observation!.Sequence);
+
+        time.Timestamp = 12_800_000;
+        var full = CompleteScan(Nonce);
+        var selected = Selected(10, 2, 39, "unit-1", 'j', 'k');
+        Assert.True(session.TryBridgeCompletedFullScan(
+            Target, full, selected, 12_100_000, 12_800_000, prior, out var bridged));
+        Assert.NotNull(bridged);
+        Assert.Equal(LiveFreshnessStatus.Fresh, bridged!.Status);
+        Assert.Equal(10, bridged.Observation!.Sequence);
+        Assert.Equal(selected.Frame!.EnvelopeSha256, bridged.EnvelopeSha256);
+        Assert.Equal(10, session.VerifiedTracker.GetCurrent().Observation!.Sequence);
+
+        // Full-scan reporting must show the NEW full selection, not a scoped frame.
+        var fullReport = LiveOutput.CreateRiftReader2Report(
+            bridged, selected, full, 12_100_000, time.Timestamp,
+            TimeSpan.FromSeconds(5), time);
+        Assert.Equal("fresh", fullReport.FreshnessStatus);
+        Assert.Equal(10, fullReport.CandidateSequence);
+        Assert.True(fullReport.Scan.Completed);
+        var afterDeliveryReport = LiveOutput.CreateRiftReader2Report(
+            session.VerifiedTracker.GetCurrent(), selected, full,
+            12_100_000, time.Timestamp, TimeSpan.FromSeconds(5), time);
+        Assert.Equal(fullReport.FreshnessStatus, afterDeliveryReport.FreshnessStatus);
+        Assert.Equal(fullReport.CandidateSequence, afterDeliveryReport.CandidateSequence);
+        Assert.Equal(fullReport.EnvelopeSha256, afterDeliveryReport.EnvelopeSha256);
+    }
+
+    [Fact]
+    public void ScopedCompletionAfterAnchorExpiryDoesNotAdvancePrivateTracker()
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var session = FreshSession(time);
+        time.Timestamp = 12_100_000;
+        var expired = session.Observe(
+            Target, CompleteScan(Nonce), Selected(10, 2, 38, "unit-1", 'j', 'k'),
+            11_950_000, 12_100_000, out var canContinue);
+        Assert.False(canContinue);
+        Assert.Equal("unavailable", expired.FreshnessStatus);
+        Assert.Equal("full-scan-anchor-expired", expired.Reason);
+        Assert.Null(expired.Observation);
+        Assert.Null(expired.CandidateSequence);
+        Assert.Null(expired.AddonFrameSha256);
+        Assert.Null(expired.EnvelopeSha256);
+        Assert.Equal(9, session.VerifiedTracker.GetCurrent().Observation!.Sequence);
+
+        var prior = session.CaptureFullScanRenewal(Target);
+        Assert.NotNull(prior);
+        time.Timestamp = 12_800_000;
+        Assert.True(session.TryBridgeCompletedFullScan(
+            Target, CompleteScan(Nonce), Selected(11, 2, 39, "unit-1", 'l', 'm'),
+            12_100_000, 12_800_000, prior, out var bridged));
+        Assert.Equal(11, bridged!.Observation!.Sequence);
+    }
+
+    [Fact]
+    public void FullRenewalRejectsConflictsDuplicatesAndStaleFullAcquisition()
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var session = FreshSession(time);
+        time.Timestamp = 12_100_000;
+        var prior = session.CaptureFullScanRenewal(Target);
+        Assert.NotNull(prior);
+        var complete = CompleteScan(Nonce);
+        var bad = new[]
+        {
+            Selected(9, 2, 39, "unit-1", 'j', 'k'),
+            Selected(10, 2, 36, "unit-1", 'j', 'k'),
+            Selected(10, 3, 39, "unit-1", 'j', 'k'),
+            Selected(10, 2, 39, "unit-2", 'j', 'k')
+        };
+        foreach (var selection in bad)
+        {
+            Assert.False(session.TryBridgeCompletedFullScan(
+                Target, complete, selection, 12_100_000, 12_800_000, prior, out _));
+        }
+        var valid = Selected(10, 2, 39, "unit-1", 'j', 'k');
+        var otherTarget = Target with { Identity = Identity with { ProcessId = 124 } };
+        Assert.False(session.TryBridgeCompletedFullScan(
+            otherTarget, complete, valid, 12_100_000, 12_800_000, prior, out _));
+        Assert.False(session.TryBridgeCompletedFullScan(
+            Target, complete with { Completed = false }, valid,
+            12_100_000, 12_800_000, prior, out _));
+        Assert.False(session.TryBridgeCompletedFullScan(
+            Target, complete,
+            new(LiveAddonSelectionStatus.NoMatchingCandidate, null, 0, 0, "missing"),
+            12_100_000, 12_800_000, prior, out _));
+
+        // Even a retained pre-scan ticket cannot override the unchanged 5s gap.
+        time.Timestamp = 14_100_000;
+        Assert.False(session.TryBridgeCompletedFullScan(
+            Target, complete, valid, 12_100_000, 14_100_000, prior, out _));
+        Assert.Equal(LiveFreshnessStatus.Warming, session.VerifiedTracker.GetCurrent().Status);
+        Assert.Null(session.CaptureFullScanRenewal(Target));
+    }
+
+    [Fact]
+    public void FullRenewalRejectsChangedBuildAndReaderNonce()
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var session = FreshSession(time);
+        time.Timestamp = 12_100_000;
+        var prior = session.CaptureFullScanRenewal(Target);
+        Assert.NotNull(prior);
+        var full = CompleteScan(Nonce);
+        var valid = Selected(10, 2, 39, "unit-1", 'j', 'k');
+        var otherBuild = Target with
+        {
+            Identity = Identity with { ExecutableSha256 = new string('B', 64) }
+        };
+        Assert.False(session.TryBridgeCompletedFullScan(
+            otherBuild, full, valid, 12_100_000, 12_800_000, prior, out _));
+
+        var wrongNonceFrame = valid.Frame! with { Challenge = new string('f', 32) };
+        var wrongNonce = valid with { Frame = wrongNonceFrame };
+        time.Timestamp = 12_800_000;
+        Assert.False(session.TryBridgeCompletedFullScan(
+            Target, full, wrongNonce, 12_100_000, 12_800_000, prior, out _));
+        Assert.Equal(LiveFreshnessStatus.Invalidated, session.VerifiedTracker.GetCurrent().Status);
+    }
+
+    [Fact]
+    public void AlreadyExpiredContinuityCannotStartFullRenewal()
+    {
+        var time = new ManualTimeProvider(2_000_000);
+        var session = FreshSession(time);
+        time.Timestamp = 14_100_000;
+        Assert.Equal(LiveFreshnessStatus.Expired, session.VerifiedTracker.GetCurrent().Status);
+        Assert.Null(session.CaptureFullScanRenewal(Target));
+    }
+
+    private static FastObservationSession FreshSession(ManualTimeProvider time)
+    {
+        time.Timestamp = 2_000_000;
+        var anchor = Selected(6, 2, 29, "unit-1", 'a', 'b');
+        var full = CompleteScan(Nonce) with { CandidateRegions = [Region(0x10000, 4096)] };
+        Assert.True(FastObservationSession.TryCreate(
+            Target, full, anchor, 1_000_000, 2_000_000,
+            new() { FreshnessTimeout = TimeSpan.FromSeconds(5), MaxClockSkew = TimeSpan.FromSeconds(1) },
+            time, out var session, out _, out _));
+        foreach (var (sequence, completed, clock) in new[]
+        {
+            (7L, 3_000_000L, 30.0), (8L, 6_000_000L, 33.0), (9L, 9_000_000L, 36.0)
+        })
+        {
+            time.Timestamp = completed;
+            var report = session!.Observe(
+                Target, CompleteScan(Nonce), Selected(sequence, 2, clock, "unit-1", 'c', 'd'),
+                completed - 500_000, completed, out var canContinue);
+            Assert.True(canContinue);
+            Assert.Equal("fresh-scoped", report.FreshnessStatus);
+        }
+        return session!;
+    }
+
     private static LiveCandidateRegion Region(long address, long size) =>
         new(new nint(address), size, new nint(address), 4, 0x1000, 4, 0x20000);
 

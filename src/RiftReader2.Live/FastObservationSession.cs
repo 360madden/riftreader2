@@ -136,6 +136,59 @@ internal sealed class FastObservationSession
         return true;
     }
 
+    // A full-scan renewal may use validated fast-scoped history as continuity,
+    // but only the NEW completed whole-process scan is ever published as full-source data.
+    // Capture this ticket before the full scan: its prior sample may expire during acquisition.
+    internal LiveAddonFreshness? CaptureFullScanRenewal(DiscoveredTarget target)
+    {
+        if (target.Identity != Identity)
+            return null;
+        var freshness = tracker.GetCurrent();
+        if (freshness.Status != LiveFreshnessStatus.Fresh || freshness.Observation is null ||
+            !TryProducerIdentity(freshness.Observation, out var playerId, out _) ||
+            !string.Equals(playerId, Anchor.PlayerId, StringComparison.Ordinal) ||
+            freshness.Observation.Epoch != Anchor.CandidateEpoch)
+            return null;
+        return freshness;
+    }
+
+    internal bool TryBridgeCompletedFullScan(
+        DiscoveredTarget target,
+        LiveScanResult fullScan,
+        LiveAddonSelection fullSelection,
+        long startedAt,
+        long completedAt,
+        LiveAddonFreshness? priorFresh,
+        out LiveAddonFreshness? bridged)
+    {
+        bridged = null;
+        if (priorFresh?.Status != LiveFreshnessStatus.Fresh ||
+            priorFresh.Identity != Identity || priorFresh.Observation is null ||
+            target.Identity != Identity || !fullScan.Completed ||
+            fullSelection.Status != LiveAddonSelectionStatus.Selected || fullSelection.Frame is null ||
+            !TryProducerIdentity(priorFresh.Observation, out var priorPlayer, out var priorClock) ||
+            !TryProducerIdentity(fullSelection.Frame.Observation, out var playerId, out var clock) ||
+            !string.Equals(priorPlayer, Anchor.PlayerId, StringComparison.Ordinal) ||
+            !string.Equals(playerId, Anchor.PlayerId, StringComparison.Ordinal) ||
+            fullSelection.Frame.Observation.Epoch != Anchor.CandidateEpoch ||
+            priorFresh.Observation.Epoch != Anchor.CandidateEpoch ||
+            fullSelection.Frame.Observation.Sequence <= priorFresh.Observation.Sequence ||
+            clock <= priorClock)
+            return false;
+
+        // This enforces nonce, process identity, monotonic clock/sequence and the
+        // existing acquisition-gap timeout. It never relaxes or resets freshness.
+        var verified = tracker.Observe(target.Identity, fullSelection, startedAt, completedAt);
+        if (verified.Status != LiveFreshnessStatus.Fresh ||
+            verified.Observation?.Sequence != fullSelection.Frame.Observation.Sequence ||
+            !string.Equals(verified.EnvelopeSha256, fullSelection.Frame.EnvelopeSha256, StringComparison.Ordinal))
+            return false;
+        bridged = verified;
+        return true;
+    }
+
+    internal LiveAddonFreshnessTracker VerifiedTracker => tracker;
+
     internal bool CanObserve(DiscoveredTarget target, long now, out string? reason)
     {
         if (target.Identity != Identity)
@@ -174,6 +227,29 @@ internal sealed class FastObservationSession
             scopedSelection = new(LiveAddonSelectionStatus.Conflict, null,
                 scopedSelection.MatchingCandidateCount, scopedSelection.IdenticalCopyCount,
                 "scoped-producer-identity-mismatch");
+        }
+
+        // A scoped scan finishing after the ten-second anchor boundary must not
+        // become an accepted fast observation or advance its continuity tracker.
+        // A previously valid fresh sample can still bridge the NEXT full scan.
+        if (scopedScan.Completed &&
+            scopedSelection.Status == LiveAddonSelectionStatus.Selected &&
+            !CanObserve(target, completedAt, out var anchorReason) &&
+            anchorReason == "full-scan-anchor-expired")
+        {
+            canContinue = false;
+            return LiveOutput.CreateFastObservationReport(
+                Anchor, tracker.GetCurrent(), scopedSelection, scopedScan,
+                startedAt, completedAt, freshnessTimeout, timeProvider) with
+            {
+                FreshnessStatus = "unavailable",
+                Reason = anchorReason,
+                Observation = null,
+                EnvelopeSha256 = null,
+                AddonFrameSha256 = null,
+                CandidateSequence = null,
+                CandidateEpoch = null
+            };
         }
 
         var freshness = tracker.Observe(target.Identity, scopedSelection, startedAt, completedAt);

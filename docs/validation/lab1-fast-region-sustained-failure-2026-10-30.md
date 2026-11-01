@@ -43,3 +43,18 @@ Early 60-second checkpoint already exceeded the deadline (4.5373sec); 180-second
 2. Identify the smallest supported source/anchor transition problem; prioritize **correctness and continuous verified feedback**, not artificially increasing anchor lifetime or freshness timeouts.
 3. Add focused C#/Python positive and negative transition regressions with exact player/epoch, nonce, scan timing and fail-closed state. Preserve old published bundle; rebuild and full test as required for production code changes.
 4. Requalify eight-minute fixed window on a fresh reader and separately on Lab 2 before any movement. Existing Lab 2 prior-build accepted window 4.036s does not qualify this reader or Lab1.
+
+## Offline follow-up — guarded fast-to-full renewal (2026-11-01 04:09 UTC)
+
+A separate review of the existing program loop isolated one credible **handoff** mechanism: while scoped fast scans continuously advance their private freshness tracker, the full-scan tracker only calls `GetCurrent()`, then often has a gap greater than its original 5s timeout at the 10s full-anchor turnover. Full-scan `Observe()` correctly returns warming, while the next private scoped tracker starts with a warming baseline. This mechanism is confirmed by source inspection, **not proven to explain every observed 7.5649s gap**.
+
+Source-only correction in `src/RiftReader2.Live/Program.cs` and `FastObservationSession.cs`:
+
+1. Snapshot identity-bound, genuinely Fresh scoped history **before** a new full scan starts. Never pass scoped data as the new full result.
+2. After the full scan completes, accept continuity only if the actual new **completed, uniquely selected full-scan** frame matches exact process/build/nonce, player and epoch, advances sequence and clock, and passes the existing tracker’s original acquisition-gap and clock-skew checks. Only then promote that tracker for **both** the outgoing report and the saved after-delivery snapshot.
+3. A scoped read that finishes after the 10s anchor expires is explicitly **withheld** and does not advance continuity. An older still-Fresh private sample may serve as renewal history. Reports of withheld scoped frames omit their candidate IDs/hashes to prevent mixing prior accepted envelopes with expired candidates.
+4. Reject incomplete/missing/conflicting scans, wrong identity/nonce, stale or regressed sources, and full scans beyond the original 5s freshness window. **No 10s anchor, 5s freshness or 4.5s movement acceptance threshold was increased.**
+
+Focused positive/negative regressions were added to `tests/RiftReader2.Live.Tests/FastObservationSessionTests.cs`. The offline command `dotnet test tests\\RiftReader2.Live.Tests\\RiftReader2.Live.Tests.csproj --no-restore --nologo --verbosity quiet` passed **200/200 tests, 0 failed**, job `rr2-offline-fresh-renewal-dotnet-tests-20261101-02`, exit0; net10.0-windows, Debug. An independent read-only code review found no blocking state/provenance defect and its recommended nonce, expiry and outgoing/saved parity tests were added.
+
+**Not yet done:** no rebuilt/deployed Windows guest reader, no new addon bind, no current controller action or RIFT input, no eight-minute live Lab1/Lab2 validation, and no full-game restart qualification. The prior 480-second **FAIL** remains the operational gate. The separate native typed-HP Lab2 live read was declined at tool approval earlier and was not retried. This offline fix does not change that authorization boundary.
