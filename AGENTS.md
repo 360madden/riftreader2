@@ -215,6 +215,13 @@ ask Joey to press movement keys when the authorized helper can perform the test.
 - Inspect current Git status before edits. Preserve unrelated work.
 - Use explicit paths and literal argument arrays for Workbridge terminal jobs.
   Poll to a terminal state and inspect actual exit code and output.
+- For parallel native research, serialize heavyweight main-PC Workbridge terminal
+  extraction/Ghidra jobs; let other agents work on independent references or
+  retained outputs. Several simultaneous read-only PE jobs stalled without a
+  result for ~1,000 seconds on 2026-10-31; **the root cause is unconfirmed**.
+  On a missing/late job handle, record the exact request ID, inspect job status,
+  and stop or reschedule before retrying. Never claim code evidence from a
+  stalled command or launch many retries to saturate the shared host.
 - Reuse the installed REA for relevant binary research; follow
   [the REA guide](docs/workflows/rea.md) and installed provider capabilities.
 - Joey subsequently authorized installing/validating the addon in RIFT and
