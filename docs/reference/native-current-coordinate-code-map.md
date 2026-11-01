@@ -207,6 +207,38 @@ bytes have yet been sampled. Next: exact-epoch bounded read with
 rechecked ownership, controlled A/D before/after and independent
 visual/camera negative control, then full game restart.
 
+**Actor/world transform refinement, exact SHA offline:** Accessors
+`0x698410` and `0x698440` provide the secondary position matrix
+`position+0x94` (nine float32) and XYZ `position+0x88`,
+respectively. `0x687320` copies the secondary matrix to
+`actor+0x398` and computes `actor+0x3BC..0x3C4` as
+`positionSecondaryXYZ + actor(+0x4F8/+0x4FC/+0x500)
++ actor(+0x770/+0x774/+0x778)` by axis. Matrix helper `0x676B40`
+performs ordinary row-major multiplication:
+`renderMatrix = (actor+0x398) × (actor+0x3EC)`; `0x688F20`
+writes this 3×3 at `render+0xA0` and actor XYZ at `render+0xC4`.
+Therefore render XYZ is *not* necessarily the same as Lua's
+hundredth-quantized primary XYZ at position `+0x48`, and a simple
+angle extracted from either cached position matrix is **not
+absolute player body facing**. If actor bit0 at `+0x1C0` is set,
+`0x67BA80` uses indirect reference helpers `0x98040/0x103970`;
+these are unqualified for passive pointer following.
+
+A future **read-only, identity-bracketed** sample should resolve actor
+and position selectors from current module metadata and full player
+key (historical slot17/slot6 are only evidence), assert aligned,
+non-null, disjoint owner pointers, then record bounded `position+0x48`
+length `0x70`, `position+0x100` length9, actor regions
+`+0x1C0` length4, `+0x398` length0x30, `+0x3EC` length0x24,
+`+0x410` length8 and translation triplets. Follow the renderer
+pointer only when the normal bit0-clear branch holds. Check all
+matrices finite/near-orthonormal and multiplication/XYZ relationships,
+then re-read every ownership anchor and relevant matrix. Correlate
+native-primary XYZ to an independent same-unit addon coordinate read
+after hundredth-unit quantization, with native-before/API/native-after
+ordering. No slot17 or renderer bytes were sampled in this trace,
+nor was a controlled turn or full restart performed.
+
 Original source JSON files and independently verified SHA256 digests:
 - Lab1 artifacts/native-unit-manager/lab1/5a654fbadb324803a6bba83520329d46/component-values.json — E5DBE57BBE80B9D6D03228630CBD5E96DF80975B5263D01CDD6B91FDA0B26971
 - Lab2 artifacts/native-unit-manager/lab2/a4e8474dbfef4a1490b7cee6655e46c8/component-values.json — FE34732A410CDF3098635F42563F8F5B43757A7AE4981783F8992C2ED6B41253
