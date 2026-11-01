@@ -107,17 +107,23 @@ class ManagedReceiptTests(unittest.TestCase):
         host.config = SimpleNamespace(ui_port=49921)
         return host, vm, identity
 
-    def verify(self, host, vm, identity, *, listener_pid=123):
+    def verify(self, host, vm, identity, *, listener_pid=123,
+               required_sources=None, stop_requested=False):
+        import scripts.ensure_controller as dependency
         guard = SimpleNamespace(
             enabled=True,
             config="native-config",
             module=SimpleNamespace(collect_identity=lambda config: vm),
         )
+        sources = (tuple(host.plan["sourceHashes"]) if required_sources is None
+                   else tuple(required_sources))
         with patch.object(runner, "sha", return_value="A" * 64), \
              patch.object(runner, "process_identity", return_value=identity), \
              patch.object(runner, "listener_owner", return_value=listener_pid), \
              patch.object(runner, "VmEpochGuard", return_value=guard), \
-             patch.object(Path, "exists", return_value=False):
+             patch.object(dependency, "RUNTIME_FILES", sources), \
+             patch.object(Path, "exists", autospec=True,
+                          side_effect=lambda path: stop_requested and path.name == "stop.request"):
             host.check()
 
     def test_exact_live_task_receipt_passes(self):
@@ -139,6 +145,17 @@ class ManagedReceiptTests(unittest.TestCase):
         host, vm, identity = self.fixture()
         with self.assertRaisesRegex(runner.MovementSessionError, "listener owner"):
             self.verify(host, vm, identity, listener_pid=999)
+
+    def test_missing_one_runtime_source_is_rejected_even_with_eight_hashes(self):
+        host, vm, identity = self.fixture()
+        required = tuple(host.plan["sourceHashes"]) + ("scripts/required.py",)
+        with self.assertRaisesRegex(runner.MovementSessionError, "source hash set invalid"):
+            self.verify(host, vm, identity, required_sources=required)
+
+    def test_stop_requested_live_task_is_refused(self):
+        host, vm, identity = self.fixture()
+        with self.assertRaisesRegex(runner.MovementSessionError, "exited or failed"):
+            self.verify(host, vm, identity, stop_requested=True)
 
 
 class ManagedCliTests(unittest.TestCase):
@@ -203,6 +220,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.output = self.root / "output"
         self.output.mkdir()
         self.dependency = dependency
+        self.admission_calls = []
 
     def create_receipt(self, name):
         import json
@@ -210,21 +228,28 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         folder.mkdir()
         (folder / "process.json").write_text(json.dumps(self.receipt), encoding="utf-8")
 
-    def generate(self):
+    def generate(self, *, reject_strict=False):
         fake_guard = SimpleNamespace(
             enabled=True, config="native-config",
             module=SimpleNamespace(collect_identity=lambda config: self.vm),
         )
         fake_client = SimpleNamespace(request=lambda path, method: self.status_value)
+        def admission(*args):
+            self.admission_calls.append(args)
+            if reject_strict:
+                raise runner.MovementSessionError("managed task ownership refused")
         with patch.object(runner, "ROOT", self.root), \
              patch.dict(self.dependency.CONFIGS, {"lab2": self.config_path}, clear=True), \
              patch.object(self.dependency, "QUEUE", self.queue_path), \
+             patch.object(self.dependency, "RUNTIME_FILES", tuple(self.source_hashes)), \
              patch.object(runner.HostConfig, "load", return_value=SimpleNamespace(ui_port=49921)), \
              patch.object(runner, "ControlClient", return_value=fake_client), \
              patch.object(runner, "listener_owner", return_value=123), \
              patch.object(runner, "process_identity", return_value=self.identity), \
              patch.object(runner, "VmEpochGuard", return_value=fake_guard), \
-             patch.object(runner.PinnedHost, "status", return_value=self.status_value):
+             patch.object(runner.PinnedHost, "status", return_value=self.status_value), \
+             patch.object(runner, "_require_exact_managed_task",
+                          side_effect=admission):
             return runner.write_managed_host_plan("lab2", self.output)
 
     def test_discovers_unique_matching_live_receipt_and_writes_exact_plan(self):
@@ -235,6 +260,13 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.assertEqual(plan["hostInstance"], "host-1")
         self.assertEqual(plan["receiptSha256"], runner.sha(
             self.task_dir / "first/process.json"))
+        self.assertEqual(len(self.admission_calls), 2)
+        self.assertEqual([call[0] for call in self.admission_calls], ["lab2", "lab2"])
+
+    def test_missing_owned_task_refuses_plan_before_publishing(self):
+        with self.assertRaisesRegex(runner.MovementSessionError, "ownership refused"):
+            self.generate(reject_strict=True)
+        self.assertFalse((self.output / "managed-host-plan.json").exists())
 
     def test_ambiguous_live_receipts_are_rejected(self):
         self.create_receipt("second")

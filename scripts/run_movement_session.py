@@ -161,6 +161,20 @@ class PinnedHost:
 
 
 
+def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict) -> None:
+    """Verify task registration and the sole live generation at admission time."""
+    from scripts.managed_controller_receipt import (
+        ManagedReceiptError, resolve_current_managed_controller,
+    )
+    try:
+        actual_path, actual_receipt, _ = resolve_current_managed_controller(
+            lab, expected_receipt_path=receipt_path)
+    except (ManagedReceiptError, OSError, RuntimeError) as error:
+        raise MovementSessionError("managed task ownership or generation refused") from error
+    require(actual_path == Path(receipt_path).resolve(strict=True)
+            and actual_receipt == receipt, "managed task receipt was altered")
+
+
 class ManagedPinnedHost(PinnedHost):
     """A reviewed movement host bound to one exact managed task generation."""
 
@@ -185,6 +199,7 @@ class ManagedPinnedHost(PinnedHost):
                 and plan["resource"] == "vm:rift-lab-" + lab[-1],
                 "managed host plan paths or resource mismatch")
         self.receipt = load(self.receipt_path)
+        _require_exact_managed_task(lab, self.receipt_path, self.receipt)
         self.config = HostConfig.load(config_path)
         self.client = ControlClient(self.config)
         self.target = plan.get("target")
@@ -207,12 +222,14 @@ class ManagedPinnedHost(PinnedHost):
                 and type(receipt.get("session")) is int and receipt["session"] > 0,
                 "managed host task receipt differs from plan")
         require(not (self.receipt_path.parent / "exited.json").exists()
-                and not (self.receipt_path.parent / "failure.json").exists(),
+                and not (self.receipt_path.parent / "failure.json").exists()
+                and not (self.receipt_path.parent / "stop.request").exists(),
                 "managed host task has exited or failed")
         require(sha(Path(plan["configPath"])) == plan["configSha256"],
                 "managed host config changed")
         hashes = plan["sourceHashes"]
-        require(isinstance(hashes, dict) and len(hashes) >= 8,
+        from scripts.ensure_controller import RUNTIME_FILES
+        require(isinstance(hashes, dict) and set(hashes) == set(RUNTIME_FILES),
                 "managed host source hash set invalid")
         for relative, expected in hashes.items():
             path = Path(relative)
@@ -299,6 +316,7 @@ def write_managed_host_plan(lab: str, output: Path) -> Path:
             matches.append((receipt_path, receipt))
     require(len(matches) == 1, "managed controller task receipt missing or ambiguous")
     receipt_path, receipt = matches[0]
+    _require_exact_managed_task(lab, receipt_path, receipt)
     target = guest.get("target", {})
     target_pin = {key: target.get(key) for key in
                   ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
