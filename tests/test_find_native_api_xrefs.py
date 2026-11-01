@@ -5,7 +5,7 @@ import hashlib
 import struct
 import unittest
 
-from scripts.find_native_api_xrefs import scan_image
+from scripts.find_native_api_xrefs import _assign_function_bounds, scan_image
 
 
 def fixture() -> bytes:
@@ -46,6 +46,10 @@ def fixture_with_pdata(entries=((0x1020, 0x1040, 0x3010),)) -> bytes:
     struct.pack_into("<IIII", data, section_at + 8, 0x200, 0x3000, 0x200, 0x600)
     for index, entry in enumerate(entries):
         struct.pack_into("<III", data, 0x600 + index * 12, *entry)
+    struct.pack_into("<I", data, 0x98 + 56, 0x4000)  # SizeOfImage
+    table = 0x80 + 24 + 0xF0
+    for index, flags in enumerate((0x60000020, 0x40000040, 0x40000040)):
+        struct.pack_into("<I", data, table + 40 * index + 36, flags)
     return bytes(data)
 
 
@@ -92,6 +96,7 @@ class NativeApiXrefTests(unittest.TestCase):
         self.assertEqual(1, result["exceptionFunctionDirectory"]["entryCount"])
         xref = result["references"][0]
         self.assertEqual("unique", xref["functionBoundaryStatus"])
+        self.assertFalse(xref["instructionBoundaryVerified"])
         self.assertEqual([{"beginRva": "0x1020", "endRvaExclusive": "0x1040",
                            "unwindInfoRva": "0x3010", "offsetWithinFunction": 16}],
                          xref["runtimeFunctions"])
@@ -128,6 +133,56 @@ class NativeApiXrefTests(unittest.TestCase):
                                    (0x1020, 0x1040, 0x3010)))
         with self.assertRaisesRegex(ValueError, "pdata-function-range-invalid"):
             scan_image(data, sha(data), ["coordX"], include_function_bounds=True)
+
+    def test_invalid_unwind_sections_and_out_of_image_functions_rejected(self):
+        cases = [
+            (((0, 0xFFFFFFFF, 0),), "pdata-function-range-invalid"),
+            (((0x2020, 0x2040, 0x3010),), "pdata-function-outside-executable"),
+            (((0x1020, 0x1040, 0),), "pdata-unwind-unmapped"),
+            (((0x1020, 0x1040, 0x3FFF),), "pdata-unwind-unmapped"),
+        ]
+        for entries, reason in cases:
+            with self.subTest(entries=entries), self.assertRaisesRegex(ValueError, reason):
+                data = fixture_with_pdata(entries)
+                scan_image(data, sha(data), ["coordX"], include_function_bounds=True)
+
+    def test_pdata_directory_cannot_map_virtual_padding(self):
+        data = bytearray(fixture_with_pdata())
+        section_at = 0x80 + 24 + 0xF0 + 2 * 40
+        struct.pack_into("<I", data, section_at + 8, 8)
+        with self.assertRaisesRegex(ValueError, "pdata-directory-outside-mapped"):
+            scan_image(bytes(data), sha(bytes(data)), ["coordX"], include_function_bounds=True)
+
+    def test_overlapping_virtual_sections_are_rejected(self):
+        data = bytearray(fixture_with_pdata())
+        section_at = 0x80 + 24 + 0xF0 + 2 * 40
+        struct.pack_into("<I", data, section_at + 12, 0x2000)
+        struct.pack_into("<I", data, 0x98 + 112 + 3 * 8, 0x2000)
+        with self.assertRaisesRegex(ValueError, "pdata-section-virtual-overlap"):
+            scan_image(bytes(data), sha(bytes(data)), ["coordX"], include_function_bounds=True)
+
+    def test_pdata_exact_boundaries_and_three_way_overlap(self):
+        refs = [{"instructionRva": "0x1020"}, {"instructionRva": "0x1040"}]
+        _assign_function_bounds(refs, [(0x1020, 0x1040, 0x3010)])
+        self.assertEqual("unique", refs[0]["functionBoundaryStatus"])
+        self.assertEqual(0, refs[0]["runtimeFunctions"][0]["offsetWithinFunction"])
+        self.assertEqual("unmapped", refs[1]["functionBoundaryStatus"])
+        refs = [{"instructionRva": "0x1030"}]
+        _assign_function_bounds(refs, [(0x1000, 0x1050, 0x3010),
+                                       (0x1010, 0x1020, 0x3020),
+                                       (0x1020, 0x1040, 0x3030)])
+        self.assertEqual("ambiguous", refs[0]["functionBoundaryStatus"])
+        self.assertEqual(2, len(refs[0]["runtimeFunctions"]))
+
+    def test_previous_byte_rex_heuristic_is_explicitly_unverified(self):
+        data = bytearray(fixture_with_pdata(((0x1030, 0x1040, 0x3010),)))
+        data[0x22F] = 0x48  # Adjacent prior instruction byte, not a REX prefix.
+        data[0x230:0x236] = bytes([0x8D, 0x05]) + struct.pack("<i", 0x2020 - 0x1036)
+        result = scan_image(bytes(data), sha(bytes(data)), ["coordX"], include_function_bounds=True)
+        xref = result["references"][0]
+        self.assertEqual("0x102F", xref["instructionRva"])  # Speculative shift.
+        self.assertFalse(xref["instructionBoundaryVerified"])
+        self.assertEqual("unmapped", xref["functionBoundaryStatus"])
 
     def test_bogus_section_bounds_rejected(self):
         data = bytearray(fixture())

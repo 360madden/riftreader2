@@ -64,7 +64,7 @@ def _sections(data: bytes) -> dict[str, tuple[int, int, int]]:
 
 
 def _runtime_functions(data: bytes, sections: dict[str, tuple[int, int, int]]) -> list[tuple[int, int, int]]:
-    """Parse PE32+ exception directory entries, not raw .pdata section padding."""
+    """Validate PE32+ image sections and unwind entries before mapping any code xref."""
     pe = _unpack(data, "<I", 0x3C)[0]
     optional = pe + 24
     optional_bytes = _unpack(data, "<H", pe + 20)[0]
@@ -75,16 +75,38 @@ def _runtime_functions(data: bytes, sections: dict[str, tuple[int, int, int]]) -
         return []
     if directory_rva == 0 or directory_size < 12 or directory_size > MAX_FILE_BYTES:
         raise ValueError("pdata-directory-invalid")
-    mapped = None
-    for section_rva, raw_at, raw_size in sections.values():
-        if section_rva <= directory_rva and directory_size <= raw_size - (directory_rva - section_rva):
-            mapped = raw_at + directory_rva - section_rva
-            break
-    if mapped is None:
-        raise ValueError("pdata-directory-outside-raw-sections")
+
+    image_size = _unpack(data, "<I", optional + 56)[0]
+    table = optional + optional_bytes
+    layouts = []
+    for index in range(_unpack(data, "<H", pe + 6)[0]):
+        item = table + 40 * index
+        virtual_size, rva, raw_size, raw_at = _unpack(data, "<IIII", item + 8)
+        flags = _unpack(data, "<I", item + 36)[0]
+        if not virtual_size or not rva or not image_size or rva + virtual_size > image_size:
+            raise ValueError("pdata-section-virtual-range-invalid")
+        layouts.append((rva, virtual_size, raw_at, raw_size, bool(flags & 0x20000000)))
+    by_virtual = sorted(layouts)
+    for previous, current in zip(by_virtual, by_virtual[1:]):
+        if previous[0] + previous[1] > current[0]:
+            raise ValueError("pdata-section-virtual-overlap")
+    by_raw = sorted((at, size) for _, _, at, size, _ in layouts if size)
+    for previous, current in zip(by_raw, by_raw[1:]):
+        if previous[0] + previous[1] > current[0]:
+            raise ValueError("pdata-section-raw-overlap")
+
+    directory_matches = [
+        at + directory_rva - rva for rva, virtual_size, at, raw_size, _ in layouts
+        if rva <= directory_rva and
+        directory_size <= min(virtual_size, raw_size) - (directory_rva - rva)
+    ]
+    if len(directory_matches) != 1:
+        raise ValueError("pdata-directory-outside-mapped-virtual-sections")
+    mapped = directory_matches[0]
     aligned_size = directory_size - directory_size % 12
     if any(data[mapped + aligned_size:mapped + directory_size]):
         raise ValueError("pdata-directory-nonzero-padding")
+
     entries = []
     previous = -1
     for offset in range(mapped, mapped + aligned_size, 12):
@@ -93,8 +115,16 @@ def _runtime_functions(data: bytes, sections: dict[str, tuple[int, int, int]]) -
             if any(data[offset:mapped + aligned_size]):
                 raise ValueError("pdata-directory-internal-zero-entry")
             break
-        if begin >= end or begin < previous:
+        if begin >= end or begin < previous or end > image_size:
             raise ValueError("pdata-function-range-invalid")
+        if not any(executable and rva <= begin and end <= rva + virtual_size
+                   for rva, virtual_size, _, _, executable in layouts):
+            raise ValueError("pdata-function-outside-executable-section")
+        if not unwind or not any(
+            rva <= unwind and unwind + 4 <= rva + min(virtual_size, raw_size)
+            for rva, virtual_size, _, raw_size, _ in layouts
+        ):
+            raise ValueError("pdata-unwind-unmapped")
         entries.append((begin, end, unwind))
         previous = begin
     return entries
@@ -124,6 +154,7 @@ def _assign_function_bounds(references: list[dict], entries: list[tuple[int, int
         reference["functionBoundaryStatus"] = ("unique" if len(matches) == 1 else
                                                "ambiguous" if matches else "unmapped")
         reference["runtimeFunctions"] = matches
+        reference["instructionBoundaryVerified"] = False  # RIP-LEA is still a byte-pattern candidate.
 
 
 def _valid_field(name: str) -> bool:
@@ -221,7 +252,7 @@ def scan_image(
     if include_function_bounds:
         result["exceptionFunctionDirectory"] = {
             "entryCount": len(functions),
-            "qualification": "PE32+ .pdata unwind ranges, not semantic functions or data owners",
+            "qualification": "Image/section-checked PE32+ unwind ranges; byte-pattern instruction boundaries and semantic owners remain unverified",
         }
     return result
 
