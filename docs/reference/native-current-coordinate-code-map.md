@@ -200,7 +200,27 @@ The missing identity conversion is now decoded from the **same pinned build**. T
 - The explicit-ID branch requires `u` followed by 16 hexadecimal characters, then NUL or a dot. Import `api-ms-win-crt-convert-l1-1-0.dll!_strtoui64` at IAT RVA `0x25F00C0` parses `input+1` in base 16. Thus a **bare** `u035400012FA2D207` parses to key `0x035400012FA2D207`. Additional validity checks remain, and dotted suffixes enter further resolution; do not apply bare-ID semantics to those suffixes.
 - Other exact literals include focus, mouseover, group, and target. **Important correction:** in this parser target is a **dotted suffix**, not a proven initial standalone alias. The parser handles focus via 0x54F2C0, mouseover via 0x550420, and group via 0x54F2D0; these are distinct sources.
 
-**Native player.target follow-up:** After a base unit key, 0xA0722E..0xA07359 parses the dotted target suffix at literal RVA 0x26A5E84, resolves the base entity using manager 0x6A0040, selects its health-associated component using module selector 0x2F57850 and entity+0x78 component table, then calls native getter **0x5ECCA0** to produce the next key. Missing entity (0xA07322), absent selector (0xA0733D) or null component (0xA0734E) produce a zero key without necessarily invalidating syntax; a genuinely invalid expression instead clears the validity flag at 0xA075A4. The getter's data ownership and live target change behavior remain unproven. Next static check: decode 0x5ECCA0; dynamic check: selected-target changes and no-target case through the guarded controller and independent native/API observations.
+**Native player.target follow-up:** After a base unit key, 0xA0722E..0xA07359 parses the dotted target suffix at literal RVA 0x26A5E84, resolves the base entity using manager 0x6A0040, selects its health-associated component using module selector 0x2F57850 and entity+0x78 component table, then calls native getter **0x5ECCA0** to produce the next key. Missing entity (0xA07322), absent selector (0xA0733D) or null component (0xA0734E) produce a zero key without necessarily invalidating syntax; a genuinely invalid expression instead clears the validity flag at 0xA075A4. Its data ownership and live target change behavior remain unproven. The getter's conditional source paths are decoded below; next static check is its fallback-key writer, and the dynamic check is: selected-target changes and no-target case through the guarded controller and independent native/API observations.
+
+**The exact native target getter 0x5ECCA0 is now decoded farther:**
+its default/fallback key is the qword at
+**QWORD(QWORD(healthComponent+0x40)+0x20)**, loaded at
+0x5ECCB4..0x5ECCBC. It resolves a separate selection component using
+module selector 0x2F57260 and checks presence of selector 0x2F582E0.
+Conditional alternate candidates are reference pairs at selection
+component +0x280/+0x288 and +0x290/+0x298. If 0x49C170 accepts either,
+the result is QWORD(QWORD(candidate+0x18)+0x18). If both are absent,
+a state check 0x4AA9D0 accepts 6..11 before considering a +0x2A0
+candidate and 0x49C2B0, which can return QWORD(candidate+0x18).
+Otherwise the direct fallback key is returned. **These branches are
+not a single fixed target pointer chain**; the canonical writer and
+correct branch under each gameplay state remain unknown. Reference
+helpers update counts, and 0x49C170/0x49C2B0 set a cache flag bit
+0x10 and increment counters. A passive reader must NEVER invoke
+0x5ECCA0; reimplement only specifically validated, bounded read
+branches, with exact type/epoch checks and observed target changes.
+All claims are from the current full-SHA PE, no live target selection
+or game input in this static trace.
 
 ### Hash table, not a fixed player-object pointer
 
