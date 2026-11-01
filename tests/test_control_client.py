@@ -155,6 +155,38 @@ class ArtifactTests(unittest.TestCase):
             })
             self.assertNotIn("secret", json.dumps(redacted))
 
+    def test_arm_rejects_capture_id_changed_after_review_without_live_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = root / "capture.json"
+            capture.write_text('{"captureId":"replaced-capture"}', encoding="utf-8")
+            output = root / "arm.json"
+            config = type("Config", (), {"ui_port":49713, "operator_token":"secret"})()
+            opener = FakeOpener(FakeResponse({"armToken":"unused", "expiresInSeconds":15}))
+            transport = client.ControlClient(config, opener)
+            with self.assertRaisesRegex(client.ClientError,
+                                        "capture ID differs from reviewed session"):
+                client._arm(transport, capture, "RIFT in world and chat closed",
+                            output, expected_capture_id="reviewed-capture")
+            self.assertEqual(opener.calls, [])
+            self.assertFalse(output.exists())
+
+    def test_arm_accepts_the_exact_reviewed_capture_id(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            capture = root / "capture.json"
+            capture.write_text('{"captureId":"reviewed-capture"}', encoding="utf-8")
+            output = root / "arm.json"
+            config = type("Config", (), {"ui_port":49713, "operator_token":"secret"})()
+            opener = FakeOpener(FakeResponse({"armToken":"private-token", "expiresInSeconds":15}))
+            transport = client.ControlClient(config, opener)
+            result = client._arm(transport, capture, "RIFT in world and chat closed",
+                                 output, expected_capture_id="reviewed-capture")
+            self.assertTrue(result["armed"])
+            self.assertEqual(len(opener.calls), 1)
+            self.assertEqual(json.loads(opener.calls[0][0].data)["captureId"], "reviewed-capture")
+            self.assertEqual(json.loads(output.read_text())["captureId"], "reviewed-capture")
+
     def test_existing_action_output_prevents_live_request(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); config_path = write_config(root)

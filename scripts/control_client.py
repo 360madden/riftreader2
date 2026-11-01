@@ -272,11 +272,15 @@ def _capture(client: ControlClient, output: Path) -> dict:
     }
 
 
-def _arm(client: ControlClient, capture_path: Path, review_note: str, output: Path) -> dict:
+def _arm(client: ControlClient, capture_path: Path, review_note: str, output: Path,
+         *, expected_capture_id: str | None = None) -> dict:
     capture = _read_json(capture_path, "capture artifact")
     capture_id = capture.get("captureId")
     if not isinstance(capture_id, str):
         raise ClientError("input-error", "capture artifact has no captureId")
+    if expected_capture_id is not None and (
+            not isinstance(expected_capture_id, str) or capture_id != expected_capture_id):
+        raise ClientError("input-error", "capture ID differs from reviewed session")
     output, descriptor = _reserve_output(Path(output), private=True)
     try:
         response = client.request("/api/arm", method="POST", payload={

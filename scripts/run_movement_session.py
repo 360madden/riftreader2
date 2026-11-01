@@ -934,10 +934,14 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
 
 
 class LiveHostAdapter:
-    def __init__(self, pinned: PinnedHost, client: ControlClient):
+    def __init__(self, pinned: PinnedHost, client: ControlClient,
+                 expected_capture_id: str | None = None):
         self.pinned, self.client = pinned, client
+        self.expected_capture_id = expected_capture_id
     def status(self, **kwargs): return self.pinned.status(**kwargs)
-    def arm(self, capture, note, output): return _arm(self.client, Path(capture), note, Path(output))
+    def arm(self, capture, note, output):
+        return _arm(self.client, Path(capture), note, Path(output),
+                    expected_capture_id=self.expected_capture_id)
     def action(self, decision, output):
         response = _action(self.client, SimpleNamespace(
             arm=Path(output).parent / "arm.private.json", keys=decision.key,
@@ -991,7 +995,7 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
     from scripts.movement_feedback import PinnedFeedback
     feedback = PinnedFeedback(load(Path(session["feedbackPin"])), Path(output).resolve() / "feedback")
     result = execute_armed_session(session=session, review=review, output=Path(output),
-             host=LiveHostAdapter(pinned, client), lease=queue, feedback=feedback)
+             host=LiveHostAdapter(pinned, client, expected_capture_id=session["capture"]["captureId"]), lease=queue, feedback=feedback)
     save(Path(output) / "result.json", sanitized(result))
     return sanitized(result)
 
