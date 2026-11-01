@@ -172,11 +172,40 @@ and stores a result-like value at component+0xF0, with a +0xF4 flag.
 These are **native instruction facts**, not proof of canonical owner,
 a reliable angle, or passively advancing facing.
 
-Which matrix is current versus cached,
-the angular sign/axis, and **whether either is character-body facing**
-remain unverified. The reviewed snapshots did not include a deliberate
-turn. These player-owned buffers are separate from dimension-item Lua
-yaw/pitch/roll strings, which are a known negative control.
+Which matrix is current versus cached, the angular sign/axis, and
+**whether either is character-body facing** remain unverified. The
+reviewed snapshots did not include a deliberate turn. These buffers
+are separate from dimension-item Lua yaw/pitch/roll.
+
+**2026-11-01 static disconfirmation of passive matrix freshness:** The
+exact-build `0x6996C0` refresh branches test position component
+`QWORD(+0x100)` and then `BYTE(+0x108)`; when both are zero the accessor
+returns without consulting a pose provider. Both were zero in retained
+Lab2 samples. The optional provider selector metadata indexes 22/46
+are absent (`0xFF`) on both retained self entities. Provider helpers
+`0x612960` (quaternion to 3×3) and `0x612B50` (XYZ) call a
+`+0x58` provider vtable slot when available, but otherwise copy a
+cached fallback. `0x698480` writes the shared game clock to position
+component `+0xD4`; that timestamp advance **does not prove fresh
+rotation**. Thus the nearly identical 32.81° matrices remain
+stale-capable, and may not encode live body heading.
+
+**Separate actor/model world-transform candidate (offline exact PE):**
+Function `0x613800` selects self entity metadata index 30
+(`module+0x2F58490`, retained player component-table slot **17**)
+and position index 34 (slot 6), then calls `0x687320` to copy the
+secondary position matrix/XYZ to slot-17 `+0x398..+0x3B8` (nine
+float32) and `+0x3BC..+0x3C4`. `0x688F20` obtains a conditional
+render object via `0x67BA80`, multiplies slot-17 matrices at
+`+0x398` and `+0x3EC` via `0x676B40`, and writes the composed 3×3
+to render-object `+0xA0..+0xC0`, XYZ to `+0xC4..+0xCC`.
+Normal render pointer is `QWORD(slot17+0x410)` only when
+`(slot17+0x1C0)&1==0`; alternate reference paths have NOT been
+runtime-qualified. This is a plausible **model/world rotation
+candidate**, not established avatar-body heading. No slot-17/render
+bytes have yet been sampled. Next: exact-epoch bounded read with
+rechecked ownership, controlled A/D before/after and independent
+visual/camera negative control, then full game restart.
 
 Original source JSON files and independently verified SHA256 digests:
 - Lab1 artifacts/native-unit-manager/lab1/5a654fbadb324803a6bba83520329d46/component-values.json — E5DBE57BBE80B9D6D03228630CBD5E96DF80975B5263D01CDD6B91FDA0B26971
@@ -274,6 +303,6 @@ Concurrent host extraction is a suspected but **unproven** cause of the stalls. 
 - Travel bearing computed from changing XYZ is **not** player facing while stationary; RIFT addon authors report facing is unavailable through those coordinate APIs. Treat native rotation/heading as a separate investigation.
 - The old verified module `+0x32E0200` → player owner → XYZ `+0x320/+0x324/+0x328` recipe applies to executable SHA `7C356C9D...`, **not** this build. See [XYZ field catalog](xyz-field-catalog.md).
 - Both labs already passed the bounded native self-key/entity probe; next correlate the player-owned XYZ and rotation-matrix candidates with fresh independent same-unit observations and a controlled state change. Getter offsets and ownership lookup code are now decoded; they are not by themselves production telemetry. Reject UI/cache copies and require independent changed-state and full-restart tests before promoting a locator.
-- Lab 1's last eight-minute source-freshness gate failed and Lab 2's earlier passing gate is from a prior epoch. No supervised movement pulse should occur until current-epoch freshness and exclusive controller/screenshot/lease checks pass; reuse the existing workflow.
+- Lab1's historical eight-minute source-freshness gate failed. A later Lab2 current-game-epoch 480.057-second strict observer PASSED (684 advancing samples, max gap 4.21128 seconds), documented in `docs/status.md`, but its reader nonce expired at 16:14:53 UTC on 2026-11-01. Do not use stale source pins for input; reacquire a fresh, qualified reader and enforce exact controller/foreground/screenshot/lease gates.
 
 See [current health/resource code map](native-current-client-code-map.md) for the companion static fields and the distinct no-live-pointer limitation.
