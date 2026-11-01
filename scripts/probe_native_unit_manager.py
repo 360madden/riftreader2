@@ -171,6 +171,21 @@ def checked_health_type(base: int, record_vtable: int, descriptor_getter: int,
     return (0x6A3BBB7C ^ 0xB9BE) & 0xFFFF
 
 
+def checked_energy_type(base: int, record_vtable: int, descriptor_getter: int,
+                        descriptor_vtable: int, type_getter: int) -> int:
+    """Pure-read Energy type guard for the exact SHA; no game helper is invoked.
+
+    The installed PE proves 231BEB0 -> 232FDC0 -> 35AEB80, whose initialized
+    vtable is 2D1D420 and +8 type getter 233E9B0. The leaf passes seed
+    002239C5 to 23354F0. Its first unsigned compare is <=17E6D245 and that
+    taken branch returns 2DD59D90; low16 XOR 9ABB yields 072B.
+    """
+    if (record_vtable != base + 0x2D19498 or descriptor_getter != base + 0x231BEB0
+            or descriptor_vtable != base + 0x2D1D420 or type_getter != base + 0x233E9B0):
+        raise ValueError("energy-type-fingerprint-mismatch")
+    return (0x2DD59D90 ^ 0x9ABB) & 0xFFFF
+
+
 def f32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
@@ -250,6 +265,47 @@ def calculate_health(fields: dict, clock: float) -> dict:
     return {"status": "calculated-candidate", "current": value, "maximum": maximum,
             "clock": clock, "elapsedWholeSeconds": elapsed,
             "formulaRva": "0x133B150", "scope": "finite-normal-values-only"}
+
+
+def calculate_energy(fields: dict, clock: float) -> dict:
+    """Read-only ordinary-domain emulation of exact RVA 133F2C0 (kind-4 Energy).
+
+    Native uses CVTDQ2PS, two separately rounded MULSS operations, CVTTSS2SI
+    and signed 32-bit SUB before clamping. We reject overflow/undefined cases,
+    never call the native getter or update its revision/clock cache.
+    """
+    unavailable = lambda reason: {"status": "unavailable", "reason": reason}
+    if fields.get("kind") != 4:
+        return unavailable("not-energy-kind-four")
+    if fields["recordRevision"] != fields["wrapperRevision"]:
+        return unavailable("revision-mismatch-needs-native-cache-write")
+    base, maximum, rate = (fields[key] for key in ("baseRaw", "maximumRaw", "rateRaw"))
+    if (any(type(value) is not int or not -(1 << 31) <= value < 1 << 31
+            for value in (base, maximum, rate)) or base < 0 or maximum <= 0):
+        return unavailable("outside-normal-integer-domain")
+    cached = fields["wrapperClock"]
+    if not all(type(value) in (int, float) and math.isfinite(value)
+               for value in (clock, cached)):
+        return unavailable("invalid-float-input")
+    try:
+        elapsed = f32(f32(clock) - f32(cached))
+        native_multiplier = struct.unpack("<f", bytes.fromhex("0ad723bc"))[0]
+        product = f32(f32(f32(rate) * native_multiplier) * elapsed)
+    except (OverflowError, struct.error, ValueError):
+        return unavailable("float32-overflow")
+    if not (math.isfinite(elapsed) and 0 <= elapsed < (1 << 31)):
+        return unavailable("clock-delta-outside-normal-domain")
+    if not math.isfinite(product) or not -(1 << 31) < product < (1 << 31) - 1:
+        return unavailable("int32-conversion-overflow-or-sentinel")
+    change = math.trunc(product)
+    adjusted = base - change
+    if not -(1 << 31) <= adjusted < (1 << 31):
+        return unavailable("signed32-subtraction-overflow")
+    return {"status": "calculated-candidate", "current": min(max(adjusted, 0), maximum),
+            "maximum": maximum, "clock": clock, "elapsedSeconds": elapsed,
+            "truncatedRateAdjustment": change, "formulaRva": "0x133F2C0",
+            "scope": "finite-normal-int32-values-only"}
+
 
 def run(lab: str, *, health_record: bool = False, resource_record: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
@@ -462,12 +518,26 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                     if not base <= getter < base + identity["moduleSize"]:
                         raise ValueError("resource-type-getter-outside-exact-module")
                     fields = resource_record_fields(kind, resource_record_raw, resource_wrapper_raw)
+                    energy_type_code = None
+                    if kind == 4:
+                        # The Energy descriptor singleton is read, never initialized.
+                        # Mana kind 3 has a DIFFERENT, still-untraced type chain.
+                        energy_slots = take("energy-static-type", [(0x35AEB80, 8),
+                                                                    (0x2D1D428, 8)], relative=True)
+                        energy_type_code = checked_energy_type(
+                            base, vtable, getter,
+                            struct.unpack("<Q", energy_slots[base + 0x35AEB80])[0],
+                            struct.unpack("<Q", energy_slots[base + 0x2D1D428])[0])
+                        resource_anchors.update(energy_slots)
+                    stable_inputs = fields["revisionConsistent"] and math.isfinite(game_clock)
                     resource.update({
-                        "status": ("untyped-record-candidate" if fields["revisionConsistent"]
-                                   and math.isfinite(game_clock) else "unavailable"),
-                        "reason": (None if fields["revisionConsistent"] and math.isfinite(game_clock)
-                                   else "inconsistent-revision-or-game-clock"),
+                        "status": ("type-checked-raw-record-candidate" if energy_type_code is not None
+                                   else "untyped-record-candidate") if stable_inputs else "unavailable",
+                        "reason": None if stable_inputs else "inconsistent-revision-or-game-clock",
                         "name": fields["name"],
+                        "qualifier": ("exact-build-type-matched-energy-raw-record; current-value-unqualified"
+                                      if energy_type_code is not None else
+                                      "current-build-static-kind-only; no typed live resource"),
                         "resourceWrapper": f"0x{resource_wrapper:X}",
                         "referenceSlot": f"0x{ref_slot:X}",
                         "record": f"0x{resource_record_address:X}",
@@ -475,7 +545,10 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                         "candidateDescriptorGetterRva": f"0x{getter - base:X}",
                         "fields": fields, "gameClock": game_clock,
                         "observedAtUtc": observation_times["resource-record"],
-                        "typeValidation": "NOT PERFORMED; vtable/descriptor/type fingerprints pending",
+                        "typeCode": f"0x{energy_type_code:04X}" if energy_type_code is not None else None,
+                        "typeValidation": ("exact-build-vtable-and-metadata-path; no native function called"
+                                           if energy_type_code is not None else
+                                           "NOT PERFORMED; vtable/descriptor/type fingerprints pending"),
                     })
                     resource_anchors[resource_wrapper] = resource_wrapper_raw
                     resource_anchors[ref_slot] = ref_raw
@@ -529,6 +602,11 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                                                  == resource_record_raw[0x18:0x38])
                     if not resource["inputsStable"]:
                         resource["status"] = "changed-input-record-candidate"
+                if resource["kind"] == 4:
+                    resource["calculatedEnergy"] = (
+                        calculate_energy(resource["fields"], resource["gameClock"])
+                        if (resource.get("inputsStable") and resource.get("typeCode") == "0x072B")
+                        else {"status": "unavailable", "reason": "untyped-or-changed-energy-inputs"})
                 review["resourceRecordCandidate"] = resource
             after = native("inspect-native", "inspect-after")
             after_identity, after_target = inspection_identity(after)
@@ -567,7 +645,7 @@ def main() -> None:
     parser.add_argument("--health-record", action="store_true",
                         help="Also capture/type-check the health record and calculate ordinary-value HP candidates.")
     parser.add_argument("--resource-record", action="store_true",
-                        help="Capture raw, UNTYPECHECKED mana/energy candidates; never calculate trusted values.")
+                        help="Capture raw resource records; Energy gets exact-build type/ordinary-value candidates, not production-qualified current.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:

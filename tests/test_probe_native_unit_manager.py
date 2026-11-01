@@ -5,7 +5,7 @@ import struct
 import unittest
 
 from scripts.probe_native_unit_manager import (
-    BUILD_SHA, calculate_health, checked_health_type, encoded, entity_hash, find_entity,
+    BUILD_SHA, calculate_energy, calculate_health, checked_energy_type, checked_health_type, encoded, entity_hash, find_entity,
     health_record_fields, inspection_identity, pointer, resource_record_fields,
     RESOURCE_LAYOUTS, require_disjoint_records,
     sha, snapshot_bytes,
@@ -142,6 +142,24 @@ class NativeUnitManagerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "health-type-fingerprint"):
                 checked_health_type(base, *changed)
 
+    def test_energy_type_matches_exact_build_metadata_chain(self):
+        base = 0x7FF000000000
+        code = checked_energy_type(base, base + 0x2D19498,
+                                   base + 0x231BEB0, base + 0x2D1D420, base + 0x233E9B0)
+        self.assertEqual(0x072B, code)
+        self.assertNotEqual(0x072A, code)  # Mana's untraced type must not be borrowed.
+
+    def test_energy_type_mismatch_fails_closed(self):
+        base = 0x140000000
+        expected = [base + value for value in (0x2D19498, 0x231BEB0, 0x2D1D420, 0x233E9B0)]
+        for index in range(4):
+            changed = list(expected)
+            changed[index] = 0
+            with self.subTest(field=index), self.assertRaisesRegex(ValueError, "energy-type-fingerprint"):
+                checked_energy_type(base, *changed)
+        with self.assertRaisesRegex(ValueError, "energy-type-fingerprint"):
+            checked_energy_type(base + 0x1000, *expected)  # Reject mismatched module image base.
+
     @staticmethod
     def health_fields(**updates):
         result = {"baseRaw": 100, "maximumRaw": 200, "modifierRaw": 10000,
@@ -215,6 +233,58 @@ class NativeUnitManagerTests(unittest.TestCase):
                          (result["baseRaw"], result["maximumRaw"], result["rateRaw"]))
         self.assertTrue(result["revisionConsistent"])
         self.assertNotIn("current", result)
+
+    @staticmethod
+    def energy_fields(**updates):
+        fields = {"kind": 4, "baseRaw": 80, "maximumRaw": 100, "rateRaw": 2000,
+                  "recordRevision": 5, "wrapperRevision": 5, "wrapperClock": 100.0}
+        fields.update(updates)
+        return fields
+
+    def test_energy_calculation_regeneration_and_drain(self):
+        regenerated = calculate_energy(self.energy_fields(), 101.0)
+        self.assertEqual("calculated-candidate", regenerated["status"])
+        self.assertEqual((100, 100, -20), (regenerated["current"],
+                         regenerated["maximum"], regenerated["truncatedRateAdjustment"]))
+        self.assertEqual("0x133F2C0", regenerated["formulaRva"])
+        drained = calculate_energy(self.energy_fields(rateRaw=-2000), 101.0)
+        self.assertEqual((60, 20), (drained["current"], drained["truncatedRateAdjustment"]))
+        self.assertEqual(0, calculate_energy(self.energy_fields(rateRaw=-20000), 101.0)["current"])
+
+    def test_energy_calculation_finite_fractional_live_record_replay(self):
+        # Reuses *recorded raw inputs*; not a fresh game/API truth comparison.
+        fields = self.energy_fields(baseRaw=100, maximumRaw=100, rateRaw=2000,
+                                    wrapperClock=60910.4375)
+        before = dict(fields)
+        result = calculate_energy(fields, 61062.40625)
+        self.assertEqual((100, 100, -3039), (result["current"], result["maximum"],
+                         result["truncatedRateAdjustment"]))
+        self.assertEqual(151.96875, result["elapsedSeconds"])
+        self.assertEqual(before, fields)  # Read-only calculator cannot mutate record/cache.
+
+    def test_energy_calculation_preserves_cvtdq2ps_rounding(self):
+        # 16,777,217 is not exactly representable as float32: native rounds to 16,777,216.
+        result = calculate_energy(self.energy_fields(baseRaw=100, maximumRaw=200000000,
+                                                     rateRaw=16777217), 1100.0)
+        self.assertEqual("calculated-candidate", result["status"])
+        self.assertEqual(-167772160, result["truncatedRateAdjustment"])
+        self.assertEqual(167772260, result["current"])
+
+    def test_energy_calculation_fails_closed_for_unsafe_domains(self):
+        unsafe = [(self.energy_fields(kind=3), 101),
+                  (self.energy_fields(recordRevision=4), 101),
+                  (self.energy_fields(wrapperRevision=4), 101),
+                  (self.energy_fields(maximumRaw=0), 101),
+                  (self.energy_fields(baseRaw=-1), 101),
+                  (self.energy_fields(wrapperClock=float("nan")), 101),
+                  (self.energy_fields(), float("inf")),
+                  (self.energy_fields(), True),
+                  (self.energy_fields(), 99),
+                  (self.energy_fields(baseRaw=(1 << 31) - 1), 101),
+                  (self.energy_fields(rateRaw=(1 << 31) - 1), 10000)]
+        for fields, clock in unsafe:
+            with self.subTest(fields=fields, clock=clock):
+                self.assertEqual("unavailable", calculate_energy(fields, clock)["status"])
 
     def test_resource_kinds_never_share_a_faked_type_check(self):
         mana, m_wrapper = self.resource_pair(3)
