@@ -133,6 +133,14 @@ class MovementSessionTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
+    def _capture_pins(self):
+        metadata = self.root / "capture.json"
+        image = self.root / "screen.png"
+        metadata.write_text('{"captureId":"reviewed"}', encoding="utf-8")
+        image.write_bytes(b"reviewed-image")
+        return {"capture": {"capture": str(metadata), "image": str(image)},
+                "captureMetadataSha256": sha(metadata), "captureImageSha256": sha(image)}
+
     def test_prepare_cli_exposes_relative_goal_and_reviewed_turn(self):
         common = ["prepare", "--host-plan", "host.json", "--feedback-pin", "pin.json",
                   "--output", "out"]
@@ -499,6 +507,7 @@ class MovementSessionTests(unittest.TestCase):
                   "hostReceipt": str(files[1]), "hostReceiptSha256": sha(files[1]),
                   "feedbackPin": str(files[2]), "feedbackPinSha256": sha(files[2]),
                   "calibrationProfile": str(files[3]), "calibrationProfileSha256": sha(files[3])}
+        pinned.update(self._capture_pins())
         files[3].write_text('{"changed":true}', encoding="utf-8")
         with self.assertRaisesRegex(MovementSessionError, "calibration profile changed"):
             validate_session_pins(pinned)
@@ -514,8 +523,44 @@ class MovementSessionTests(unittest.TestCase):
                   "feedbackPinSha256": sha(files[2]), "calibrationProfile": str(files[3]),
                   "calibrationProfileSha256": sha(files[3]), "afterTurnResult": str(files[4]),
                   "afterTurnResultSha256": sha(files[4])}
+        pinned.update(self._capture_pins())
         files[4].write_text('{"changed":true}', encoding="utf-8")
         with self.assertRaisesRegex(MovementSessionError, "turn result changed"):
+            validate_session_pins(pinned)
+
+    def test_modified_reviewed_capture_files_fail_before_arm(self):
+        source_paths = []
+        for name in ("host-plan.json", "host-receipt.json", "feedback.json"):
+            path = self.root / name
+            path.write_text("{}", encoding="utf-8")
+            source_paths.append(path)
+        base = {"mode": "turn", "hostPlan": str(source_paths[0]),
+                "hostPlanSha256": sha(source_paths[0]),
+                "hostReceipt": str(source_paths[1]),
+                "hostReceiptSha256": sha(source_paths[1]),
+                "feedbackPin": str(source_paths[2]),
+                "feedbackPinSha256": sha(source_paths[2])}
+        for target in ("capture", "image"):
+            with self.subTest(target=target):
+                pinned = {**base, **self._capture_pins()}
+                validate_session_pins(pinned)
+                Path(pinned["capture"][target]).write_bytes(b"tampered-after-review")
+                with self.assertRaisesRegex(MovementSessionError, "reviewed capture artifact changed"):
+                    validate_session_pins(pinned)
+
+    def test_missing_reviewed_capture_pin_is_rejected(self):
+        source_paths = []
+        for name in ("host-plan.json", "host-receipt.json", "feedback.json"):
+            path = self.root / name
+            path.write_text("{}", encoding="utf-8")
+            source_paths.append(path)
+        pinned = {"mode": "turn", "hostPlan": str(source_paths[0]),
+                  "hostPlanSha256": sha(source_paths[0]),
+                  "hostReceipt": str(source_paths[1]),
+                  "hostReceiptSha256": sha(source_paths[1]),
+                  "feedbackPin": str(source_paths[2]),
+                  "feedbackPinSha256": sha(source_paths[2])}
+        with self.assertRaisesRegex(MovementSessionError, "reviewed capture pin missing"):
             validate_session_pins(pinned)
 
     def test_collinear_calibration_profile_is_rejected(self):

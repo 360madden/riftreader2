@@ -951,6 +951,16 @@ def validate_session_pins(session: dict):
     require(sha(Path(session["hostPlan"])) == session["hostPlanSha256"]
             and sha(Path(session["hostReceipt"])) == session["hostReceiptSha256"]
             and sha(Path(session["feedbackPin"])) == session["feedbackPinSha256"], "session pin changed")
+    capture = session.get("capture")
+    require(isinstance(capture, dict)
+            and isinstance(capture.get("capture"), str)
+            and isinstance(capture.get("image"), str)
+            and isinstance(session.get("captureMetadataSha256"), str)
+            and isinstance(session.get("captureImageSha256"), str),
+            "reviewed capture pin missing")
+    require(sha(Path(capture["capture"])) == session["captureMetadataSha256"]
+            and sha(Path(capture["image"])) == session["captureImageSha256"],
+            "reviewed capture artifact changed")
     if session["mode"] == "movement":
         require(sha(Path(session["calibrationProfile"])) == session.get("calibrationProfileSha256"),
                 "calibration profile changed")
