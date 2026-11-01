@@ -1,0 +1,323 @@
+"""Read-only, exact-build native player-to-component probe for either lab.
+
+Uses the existing native reader and VM credential/identity workflow. No game
+input, addon call, service startup, injection, or process write. Cached XYZ is
+reported as a candidate, not qualified passive-fresh/restart-safe telemetry.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import math
+from pathlib import Path, PureWindowsPath
+import re
+import struct
+import sys
+import time
+import uuid
+
+ROOT = Path(__file__).resolve().parents[1]
+BUILD_SHA = "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8"
+MANAGER_RVA = 0x33624A8
+PLAYER_SYSTEM_RVA = 0x33623E0
+POSITION_INDEX_RVA = 0x2F588A0
+HEALTH_INDEX_RVA = 0x2F57850
+MAX_USER = 0x7FFFFFFFFFFF
+
+
+def sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest().upper()
+
+
+def encoded(value: dict) -> bytes:
+    return json.dumps(value, separators=(",", ":")).encode("utf-8")
+
+
+def pointer(value: int, length: int = 8) -> int:
+    if type(value) is not int or value < 0x10000 or value + length - 1 > MAX_USER:
+        raise ValueError("invalid-user-pointer")
+    if value % 8:
+        raise ValueError("unaligned-pointer")
+    return value
+
+
+def signed32(value: int) -> int:
+    value &= 0xFFFFFFFF
+    return value - 0x100000000 if value & 0x80000000 else value
+
+
+def entity_hash(key: int) -> int:
+    """Exact Windows ldiv/IMUL/SUB/CMOVNS pipeline at current RVA 0x58C990."""
+    seed = signed32(key)
+    quotient = abs(seed) // 127773
+    if seed < 0:
+        quotient = -quotient
+    remainder = seed - quotient * 127773
+    value = signed32(signed32(remainder * 16807) - signed32(quotient * 2836))
+    return (value if value >= 0 else value + 2147483647) & 0xFFFFFFFF
+
+
+def find_entity(header: bytes, key: int, read, *, max_nodes: int = 8) -> dict:
+    """Read only the computed bucket and bounded collision chain; no scan."""
+    if len(header) != 24 or type(key) is not int or not 0 < key <= 0xFFFFFFFFFFFFFFFF:
+        raise ValueError("invalid-table-header-or-player-key")
+    if not 1 <= max_nodes <= 64:
+        raise ValueError("invalid-node-budget")
+    buckets, stride, count = struct.unpack("<QQQ", header)
+    if not 24 <= stride <= 4096 or stride % 8 or not 1 <= count <= 1 << 24:
+        raise ValueError("invalid-table-shape")
+    pointer(buckets)
+    index = entity_hash(key) % count
+    bucket = pointer(buckets + index * stride, 24)
+    seen = set()
+    path = []
+    current = bucket
+    for ordinal in range(max_nodes):
+        if current in seen:
+            raise ValueError("lookup-pointer-cycle")
+        seen.add(current)
+        raw = read(current, 24)
+        if len(raw) != 24:
+            raise ValueError("lookup-read-hole")
+        path.append({"address": current, "bytes": raw.hex()})
+        link, stored_key, entity = struct.unpack("<QQQ", raw)
+        if (ordinal != 0 or not link & 1) and stored_key == key:
+            return {"bucket": bucket, "bucketIndex": index, "node": current,
+                    "entity": pointer(entity, 128), "visitedNodes": len(seen),
+                    "nodeBytes": raw.hex(), "bucketCount": count, "stride": stride, "path": path}
+        current = link & ~1
+        if not current:
+            raise ValueError("player-key-not-found")
+        pointer(current, 24)
+    raise ValueError("lookup-node-budget-exceeded")
+
+
+def inspection_identity(report: dict) -> tuple[dict, dict]:
+    if report.get("schemaVersion") != 1 or report.get("contractVersion") != "native-target-inspection/1":
+        raise ValueError("invalid-inspection-kind")
+    identity = dict(report["target"])
+    target = report["suggestedRequest"]["target"]
+    if (identity["executableSha256"] != BUILD_SHA or
+            any(identity[k] != target[k] for k in ("processId", "processStartUtcTicks", "executableSha256")) or
+            type(target["processId"]) is not int or target["processId"] <= 0 or
+            type(target["processStartUtcTicks"]) is not int or target["processStartUtcTicks"] <= 0):
+        raise ValueError("wrong-build-or-process-identity")
+    identity["moduleBaseAddress"] = int(identity["moduleBaseAddress"], 16)
+    pointer(identity["moduleBaseAddress"], identity["moduleSize"])
+    return identity, dict(target)
+
+
+def snapshot_bytes(report: dict, request: dict, identity: dict) -> dict[int, bytes]:
+    if (report.get("schemaVersion") != 1 or report.get("evidenceKind") != "native-memory-snapshot/1"
+            or report.get("status") != "complete" or report.get("identity") != identity):
+        raise ValueError("snapshot-incomplete-or-identity-mismatch")
+    if report["source"]["requestSha256"] != sha(encoded(request)):
+        raise ValueError("snapshot-request-hash-mismatch")
+    expected = {}
+    for region in request["ranges"]:
+        address = int(region["address"], 16)
+        if region["addressKind"] == "module-relative-rva":
+            address += identity["moduleBaseAddress"]
+        length = region["byteLength"]
+        if not 1 <= length <= 4096 or address in expected:
+            raise ValueError("unsupported-probe-range")
+        expected[address] = length
+    chunks = {}
+    for chunk in report["chunks"]:
+        address = int(chunk["address"], 16)
+        length = expected.get(address)
+        if (address in chunks or length is None or chunk["status"] != "success" or
+                chunk["requestedByteLength"] != length or chunk["bytesRead"] != length):
+            raise ValueError("snapshot-chunk-hole-or-shape")
+        raw = base64.b64decode(chunk["bytesBase64"], validate=True)
+        if len(raw) != length or sha(raw) != chunk["bytesSha256"]:
+            raise ValueError("snapshot-chunk-hash-mismatch")
+        chunks[address] = raw
+    if set(chunks) != set(expected):
+        raise ValueError("snapshot-missing-chunk")
+    return chunks
+
+
+def run(lab: str) -> dict:
+    if lab not in ("lab1", "lab2"):
+        raise ValueError("unknown-lab")
+    sys.path.insert(0, str(ROOT))
+    from scripts.lab_codex import LabCodex
+    from scripts.inventory_passive_rift_sources import ps_literal
+    from scripts.vmware_guest_session import SessionError
+
+    workflow_path = ROOT / "artifacts" / "control-fleet-live" / lab / "workflow.json"
+    workflow_raw = workflow_path.read_bytes()
+    workflow = json.loads(workflow_raw)
+    reader = str(PureWindowsPath(workflow["guestDirectory"]) / "RiftReader2.Live.exe")
+    reader_sha = workflow["readerSha256"]
+    if not re.fullmatch(r"[0-9A-F]{64}", reader_sha):
+        raise ValueError("invalid-reader-sha")
+
+    api = LabCodex()
+    _, _, config, settings = api._configuration(lab)
+    vm_identity = api.collect_identity(api._native(config, settings, api.run_root / ".doctor"))
+    token = uuid.uuid4().hex
+    folder = ROOT / "artifacts" / "native-unit-manager" / lab / token
+    folder.mkdir(parents=True, exist_ok=False)
+    prefix = settings["guestRoot"] + "\\unit-manager-" + token
+    evidence = {}
+    deadline = time.monotonic() + 240
+    review = {"schemaVersion": 1, "lab": lab, "output": str(folder),
+              "readerExe": reader, "readerSha256": reader_sha,
+              "workflowSha256": sha(workflow_raw), "status": "incomplete",
+              "qualification": "candidate-only; no passive-freshness or restart qualification"}
+    try:
+        with api._session(config, settings, vm_identity, folder) as guest:
+            def native(mode: str, name: str, request: dict | None = None) -> dict:
+                if time.monotonic() >= deadline:
+                    raise ValueError("probe-operation-budget-exceeded")
+                if mode not in ("inspect-native", "snapshot-native"):
+                    raise ValueError("unsupported-native-mode")
+                output = folder / (name + ".json")
+                guest_output = prefix + "-" + name + ".json"
+                command = (
+                    "$ErrorActionPreference='Stop';$e=" + ps_literal(reader) + ";"
+                    "if(!(Test-Path -LiteralPath $e -PathType Leaf)){throw 'reader-missing'};"
+                    "if((Get-FileHash -LiteralPath $e -Algorithm SHA256).Hash -ne " +
+                    ps_literal(reader_sha) + "){throw 'reader-sha-mismatch'};"
+                    "if(Test-Path -LiteralPath " + ps_literal(guest_output) +
+                    "){throw 'output-exists'};"
+                )
+                arguments = ""
+                if request is not None:
+                    request_path = folder / (name + "-request.json")
+                    payload = encoded(request)
+                    with request_path.open("xb") as stream:
+                        stream.write(payload)
+                    guest_request = prefix + "-" + name + "-request.json"
+                    guest.run("copyFileFromHostToGuest", str(request_path), guest_request)
+                    command += ("if((Get-FileHash -LiteralPath " + ps_literal(guest_request) +
+                                ").Hash -ne " + ps_literal(sha(payload)) +
+                                "){throw 'request-sha-mismatch'};")
+                    arguments = " --request " + ps_literal(guest_request)
+                    evidence[request_path.name] = sha(payload)
+                command += ("& $e " + mode + arguments + " --output " +
+                            ps_literal(guest_output) +
+                            " | Out-Null;if($LASTEXITCODE -notin @(0,3)){throw 'native-command-failed'}")
+                guest.powershell(command, timeout=60)
+                guest.copy_from_guest(guest_output, output, timeout=60)
+                raw = output.read_bytes()
+                if len(raw) > 1024 * 1024:
+                    raise ValueError("probe-report-size-exceeded")
+                evidence[output.name] = sha(raw)
+                return json.loads(raw.decode("utf-8-sig"))
+
+            before = native("inspect-native", "inspect-before")
+            identity, target = inspection_identity(before)
+            review["identity"] = identity
+            base = identity["moduleBaseAddress"]
+
+            def take(name: str, ranges: list[tuple[int, int]], *, relative=False):
+                request = {"schemaVersion": 1, "evidenceKind": "native-memory-snapshot-request/1",
+                           "target": target, "maxDurationMilliseconds": 10000,
+                           "ranges": [{"addressKind": ("module-relative-rva" if relative else
+                                                     "absolute-session-address"),
+                                       "address": f"0x{address:X}", "byteLength": length}
+                                      for address, length in ranges]}
+                return snapshot_bytes(native("snapshot-native", name, request), request, identity)
+
+            roots_ranges = [(MANAGER_RVA, 8), (PLAYER_SYSTEM_RVA, 8),
+                            (POSITION_INDEX_RVA, 4), (HEALTH_INDEX_RVA, 4)]
+            roots = take("roots", roots_ranges, relative=True)
+            manager = pointer(struct.unpack("<Q", roots[base + MANAGER_RVA])[0])
+            player_system = pointer(struct.unpack("<Q", roots[base + PLAYER_SYSTEM_RVA])[0])
+            position_index = struct.unpack("<i", roots[base + POSITION_INDEX_RVA])[0]
+            health_index = struct.unpack("<i", roots[base + HEALTH_INDEX_RVA])[0]
+            if not all(0 <= value < 0x60 for value in (position_index, health_index)):
+                raise ValueError("component-index-outside-selector-area")
+            owner = take("owner", [(manager + 0x50, 8), (player_system + 0x360, 8)])
+            table = pointer(struct.unpack("<Q", owner[manager + 0x50])[0], 24)
+            key = struct.unpack("<Q", owner[player_system + 0x360])[0]
+            header = take("table", [(table, 24)])[table]
+            lookup_counter = 0
+
+            def read_node(address: int, length: int) -> bytes:
+                nonlocal lookup_counter
+                lookup_counter += 1
+                return take("lookup-" + str(lookup_counter), [(address, length)])[address]
+
+            found = find_entity(header, key, read_node)
+            entity = found["entity"]
+            entity_bytes = take("entity", [(entity, 128)])[entity]
+            component_table = pointer(struct.unpack_from("<Q", entity_bytes, 0x78)[0])
+            slots = {"position": entity_bytes[0x18 + position_index],
+                     "health": entity_bytes[0x18 + health_index]}
+            if 0xFF in slots.values():
+                raise ValueError("required-component-missing")
+            component_addresses = sorted({component_table + slot * 8 for slot in slots.values()})
+            component_raw = take("component-pointers", [(p, 8) for p in component_addresses])
+            components = {kind: pointer(struct.unpack("<Q", component_raw[
+                          component_table + slot * 8])[0]) for kind, slot in slots.items()}
+            values = take("component-values", [(components["position"], 0x110)])
+            xyz = struct.unpack_from("<fff", values[components["position"]], 0x48)
+            if not all(math.isfinite(value) for value in xyz):
+                raise ValueError("nonfinite-position-candidate")
+
+            # Recheck every ownership anchor after staged reads. This is NOT an
+            # atomic snapshot or proof that no transient ABA change occurred.
+            checks = {base + rva: length for rva, length in roots_ranges}
+            checks.update({manager + 0x50: 8, player_system + 0x360: 8, table: 24,
+                           found["node"]: 24, entity: 128})
+            checks.update({step["address"]: 24 for step in found["path"]})
+            checks.update({p: 8 for p in component_addresses})
+            final = take("anchors-after", sorted(checks.items()))
+            if any(final[address] != raw for address, raw in roots.items()):
+                raise ValueError("module-root-changed")
+            if (final[manager + 0x50] != owner[manager + 0x50] or
+                    final[player_system + 0x360] != owner[player_system + 0x360] or
+                    final[table] != header or
+                    any(final[step["address"]].hex() != step["bytes"] for step in found["path"]) or
+                    final[entity][0x78:0x80] != entity_bytes[0x78:0x80] or
+                    any(final[entity][0x18 + index] != entity_bytes[0x18 + index]
+                        for index in (position_index, health_index)) or
+                    any(final[p] != component_raw[p] for p in component_addresses)):
+                raise ValueError("player-ownership-anchor-changed")
+            after = native("inspect-native", "inspect-after")
+            after_identity, after_target = inspection_identity(after)
+            if after_identity != identity or after_target != target:
+                raise ValueError("process-epoch-changed")
+            review.update({"status": "complete", "nativePlayerUnitId": f"u{key:016X}",
+                           "manager": f"0x{manager:X}", "playerSystem": f"0x{player_system:X}",
+                           "table": f"0x{table:X}", "lookup": found,
+                           "componentTable": f"0x{component_table:X}",
+                           "componentIndexes": {"position": position_index, "health": health_index},
+                           "componentSlots": slots,
+                           "components": {k: f"0x{v:X}" for k, v in components.items()},
+                           "cachedXyzCandidate": dict(zip(("x", "y", "z"), xyz)),
+                           "completedAtUtc": after.get("capturedAtUtc"),
+                           "limitations": ["Sequential reads are not atomic; ABA changes are not excluded.",
+                                           "Native self key was not independently correlated with Lua in this run.",
+                                           "No Lua query was made; cache passive freshness is unproven.",
+                                           "No HP/resource value or full-game restart was qualified."]})
+    except Exception as error:
+        review["errorType"] = type(error).__name__
+        # Existing session errors are sanitized; don't serialize arbitrary exceptions.
+        if isinstance(error, (ValueError, SessionError)):
+            review["error"] = str(error)[:200]
+        raise
+    finally:
+        review["evidence"] = evidence
+        with (folder / "review.json").open("xb") as stream:
+            stream.write(json.dumps(review, indent=2).encode("utf-8"))
+    return review
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--lab", choices=("lab1", "lab2", "all"), required=True)
+    args = parser.parse_args()
+    labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
+    for lab in labs:
+        print(json.dumps(run(lab), indent=2), flush=True)
+
+
+if __name__ == "__main__":
+    main()

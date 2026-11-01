@@ -1,6 +1,6 @@
 # Current-build RIFT native coordinate code map — 2026-10-31
 
-**Status: verified offline CODE path, no live-qualified player DATA pointer.** This note applies only to executable SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8` (`rift_x64.exe`, 60,493,640 file bytes). All offsets are **module RVAs**, not process absolute addresses.
+**Status: verified native CODE path and two-lab current-process lookup candidates; no production-qualified passive-fresh/restart-safe DATA locator.** This note applies only to executable SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8` (`rift_x64.exe`, 60,493,640 file bytes). All offsets are **module RVAs**, not process absolute addresses.
 
 ## Repeatable evidence
 
@@ -97,7 +97,7 @@ Both accessors are now decoded at real instruction boundaries from the exact ins
 
 **Unit-to-position-component selector now decoded:** Inside current `Inspect.Unit.Detail`, RVA `0x9B8FA1` reads signed `int32` component-index metadata at **module RVA `0x2F588A0`**. With the unit-entity pointer in `R15`, it selects the byte at `unitEntity + 0x18 + thatIndex`; if the selector is not `0xFF`, it reads `componentTable = *(unitEntity+0x78)` then `component = *(componentTable+selector*8)` and stores that position component pointer at stack `[rbp-0x60]` (RVA `0x9B8FBB`). At `0x9BA947` this same stack slot is loaded into `RDI` and passed to the accessor `0x698460`. The missing-selector branch instead records null (`0x9B8FC1`). This is a verified **native code lookup topology**: *unit entity → dynamic component selector → component table → position-component object → XYZ cache fields*.
 
-**Manager root and entity lookup:** The entity pointer in `R15` comes from native call **`0x69FFD0`** at `0x9B8A36`, using a manager returned by **`0x4A4750`** and the current unit-identity/handle stack argument. `0x4A4750` first loads a singleton pointer from exact current-build **module RVA `0x33624A8`**, performing lazy initialization when it is null. `0x69FFD0` then uses an identity lookup structure under the manager's `+0x50` (via helper `0x58C990`) to find and return an entity pointer; `0x6A0040` is the related out-param lookup used elsewhere. This establishes an offline **module-rooted native lookup *code path***: `module+0x33624A8 → manager/handle lookup → unit entity → dynamic component selector (module+0x2F588A0) → position component → +0x48 XYZ`. It is **not yet a complete live player pointer recipe**: the mapping from actual player unit ID to lookup key, the manager's current runtime value, and changed-state freshness still need verification. Both manager and selector module RVAs belong only to the exact pinned build; they are not the old SHA `7C356...` player root. Passed exact-SHA jobs `rr2-serialized-unit-object-slot-20261031-01`, `rr2-serialized-unit-select-context-20261031-01`, `rr2-serialized-unit-entity-origin-20261031-01`, and `rr2-serialized-unit-manager-root-20261031-01`, with independently decoded instruction boundaries.
+**Manager root and entity lookup:** The entity pointer in `R15` comes from native call **`0x69FFD0`** at `0x9B8A36`, using a manager returned by **`0x4A4750`** and the current unit-identity/handle stack argument. `0x4A4750` first loads a singleton pointer from exact current-build **module RVA `0x33624A8`**, performing lazy initialization when it is null. `0x69FFD0` then uses an identity lookup structure under the manager's `+0x50` (via helper `0x58C990`) to find and return an entity pointer; `0x6A0040` is the related out-param lookup used elsewhere. This establishes an offline **module-rooted native lookup *code path***: `module+0x33624A8 → manager/handle lookup → unit entity → dynamic component selector (module+0x2F588A0) → position component → +0x48 XYZ`. It is **not by itself a production-qualified player locator**: the static key mapping and native self-key root are now decoded below, but actual runtime ownership, changed-state freshness and restart qualification remain separate gates. Both manager and selector module RVAs belong only to the exact pinned build; they are not the old SHA `7C356...` player root. Passed exact-SHA jobs `rr2-serialized-unit-object-slot-20261031-01`, `rr2-serialized-unit-select-context-20261031-01`, `rr2-serialized-unit-entity-origin-20261031-01`, and `rr2-serialized-unit-manager-root-20261031-01`, with independently decoded instruction boundaries.
 
 **Historical two-lab memory corroboration (read-only retained snapshots, not live telemetry):** Both complete, SHA-verified main-EXE `.data` captures from 2026-10-31 ~21:27 UTC contain nonzero values at the manager pointer slot and the same signed component-index value `34` at module RVA `0x2F588A0`. Each 4 KiB source chunk's byte SHA was independently rechecked before extracting these values:
 
@@ -114,6 +114,53 @@ Provenance: passed job `rr2-serialized-two-lab-manager-slot-20261031-01`; snapsh
 
 The adjacent function at `0x698480` reads the same global clock slot `module+0x33DC2B0` used by health/resource code and writes an object timestamp-like member `+0xD4`; that reinforces a shared timebase, **not** a proven shared HP/XYZ player owner. Exact SHA-gated passed jobs: `rr2-serialized-native-xyz-accessor-20261031-01`, `rr2-serialized-native-xyz-refresh-20261031-01`, and `rr2-serialized-native-xyz-refresh-full-20261031-01`; independently disassembled with GNU objdump. Next trace targets: object origin in `Inspect.Unit.Detail`, underlying entity source calls `0x612EE0`/`0x612B50`, and a version-gated module-root locator validated against separately advancing player API data in both labs.
 
+## Native self identity and deterministic entity lookup — 2026-11-01 UTC
+
+The missing identity conversion is now decoded from the **same pinned build**. The actual `Inspect.Unit.Detail` prologue starts at RVA `0x9B8960`; its unwind records split at `0x9B89BA`, which was previously mistaken for the full routine's start.
+
+- At `0x9B89A7`, helper `0xA1AAA0` converts the Lua argument to a 64-bit key saved at `[rsp+0x48]`. It accepts a Lua string and delegates to `0xA07060`.
+- The literal at `0x26D0D3C` is **`player`**. Its branch calls singleton accessor `0x49A020` and reads the key at returned object **`+0x360`**. The accessor's nonnull path loads **`[module+0x33623E0]`** and returns it. This is a native self-key root, distinct from entity-manager root `0x33624A8`.
+- The explicit-ID branch requires `u` followed by 16 hexadecimal characters, then NUL or a dot. Import `api-ms-win-crt-convert-l1-1-0.dll!_strtoui64` at IAT RVA `0x25F00C0` parses `input+1` in base 16. Thus a **bare** `u035400012FA2D207` parses to key `0x035400012FA2D207`. Additional validity checks remain, and dotted suffixes enter further resolution; do not apply bare-ID semantics to those suffixes.
+- Other exact literals are `focus`, `mouseover`, `group`, and `target`; their separate branches are not a qualified current target-HP locator.
+
+### Hash table, not a fixed player-object pointer
+
+`0x69FFD0` reads (not takes the address of) `*(manager+0x50)` and passes that table pointer to `0x58C990`. The table header is `{bucketBase:u64, stride:u64, count:u64}` at offsets `0/8/0x10`.
+
+The hash uses signed low32(key). Exact imported Windows `ldiv(seed,127773)` returns quotient/remainder; native 32-bit arithmetic computes `z = remainder*16807 - quotient*2836`, selecting `z` when nonnegative or `z+2147483647` otherwise. Unsigned `hash % count` selects a bucket at `bucketBase + index*stride`.
+
+Each bucket/node is `{taggedNext:u64, fullKey:u64, entity:u64}`. An inline bucket is checked only when its next word's low bit is clear. Otherwise, or after an inline-key mismatch, the lookup follows `next & ~1`, comparing the **entire 64-bit key** at each node. Entity payload `node+0x10` is valid only after equality; the native not-found iterator is not an entity.
+
+The committed `scripts/probe_native_unit_manager.py` reproduces this lookup with **eight-node limit, cycle detection, no broad scanning**, exact build/PID/start gates, byte/request hashes, and final rereads of all traversed links and ownership anchors. It uses the existing installed reader and `LabCodex._session` cached-credential/VM-identity workflow; no controller, receiver, addon, input, process writes, or game helper execution is involved. Original requests/reports are retained separately per lab under `artifacts/native-unit-manager/`.
+
+```powershell
+C:\Python314\python.exe -B scripts\probe_native_unit_manager.py --lab lab1
+C:\Python314\python.exe -B scripts\probe_native_unit_manager.py --lab lab2
+```
+
+The probe's `nativePlayerUnitId` is the native self key formatted in the decoded bare-ID notation, **not a newly sampled Lua correlation**. Its XYZ values are explicitly cached candidates. Stable ownership anchors across sequential reads do not exclude transient ABA changes or establish passive freshness/restart durability. A first-lab failure does not authorize carrying its addresses or identity into the other lab.
+
+Static provenance: passed exact-SHA jobs `rr2-serialized-manager-lookup-code-20261101-01`, `rr2-serialized-manager-hash-health-prologue-20261101-01`, `rr2-serialized-unit-key-parser-20261101-01`, `rr2-serialized-unit-string-parser-20261101-01`, `rr2-serialized-player-identity-root-20261101-01`, and `rr2-serialized-player-root-return-20261101-01`. Original byte slices were independently decoded with GNU objdump; import names and literals came from the exact PE. Fifteen focused synthetic tests passed, including negative hash seeds, tagged inline slots, full-key collisions, cycles, holes, corrupt hashes and wrong epochs.
+
+**Avoid circular freshness validation:** `Inspect.Unit.Detail` itself invokes the XYZ refresh path. Sampling the native cache only *after* querying Lua may prove merely that Lua refreshed it. A later comparison must include native-before / API / native-after observations and independently changed state. The nearby `+0xD4` timestamp-like field has not been proven to timestamp XYZ refresh.
+
+### First two-lab live lookup check — 2026-11-01 01:30–01:32 UTC
+
+Both probes completed through independently checked VM credentials and current game identities; all requests, chunk hashes, pointer-chain anchors and end-of-run identities passed. This is **live current-process ownership evidence**, not merely the earlier retained module snapshots.
+
+| Lab | PID / start ticks | Native self key | Entity | Position / health component slots | Cached XYZ candidate |
+|---|---|---|---|---|---|
+| Lab1 | `8164 / 639290507142219120` | `u035400012FA2D207` | `0x23D7D333610` | `6 / 15` | `7415.63671875, 863.5847778320312, 2928.161376953125` |
+| Lab2 | `7012 / 639290507554340644` | `u035400012DFEB5BC` | `0x2186DD41C10` | `6 / 15` | `7153.22265625, 825.9457397460938, 3162.858642578125` |
+
+Both metadata indexes were position `34` and health `6`; runtime table bucket counts differed (`681` versus `303`), and each full player key matched its computed inline bucket. Position/health components were distinct in each lab: Lab1 `0x23D011C0150 / 0x23D011C1BB0`; Lab2 `0x2187FE4F400 / 0x2187FE4F650`. The native IDs match prior retained identities, **not a fresh independent Lua observation**.
+
+Original evidence:
+- Lab1 `artifacts/native-unit-manager/lab1/5a654fbadb324803a6bba83520329d46/review.json`, SHA `B24487B1857502D0D6DA3688A99AEB7344B46478B6B1D26D05D9FCC18035CF32`; completion `01:30:58.868 UTC`.
+- Lab2 `artifacts/native-unit-manager/lab2/a4e8474dbfef4a1490b7cee6655e46c8/review.json`, SHA `761BCC15D1F66E7EFB18EFA13F42DBC995D8E39D8BEDA7517D5E61E1BD72D114`; completion `01:32:41.552 UTC`.
+- Passed bounded jobs `rr2-serialized-native-unit-manager-lab1-20261101-01` and `rr2-serialized-native-unit-manager-lab2-20261101-01`; reader executable SHA `362ECD5A1BE3F10BD3AE9E78B66FA0B56D390E5DD7234B4B5997649926B83A53` checked before every invocation.
+- No addon query, controller startup, gameplay input, game function invocation, game/VM restart, or process-memory write occurred. The already-running addon may still refresh the cache; this test does not prove addon-independent passive freshness.
+
 ## Follow-up trace failures and serialized recovery
 
 Parallel workers attempted bounded, **read-only** current-build extraction, but several Windows terminal invocations stalled for roughly 1,000 seconds without returning results. **The stalled attempts themselves yielded no evidence:** `rr2-child-coordtransform-20261031-01` (helper bytes), `rr2-coord-owner-pdata-20261031-01` (getter function boundaries), plus alternate XYZ and shared-resource ownership requests. No new unit-owner root or stable data offset was found. Native HP/mana/energy/power/charge getters share clock slot `+0x33DC2B0`, but **a common time source is not a common player-owned component**; see [health/resource map](native-current-client-code-map.md).
@@ -127,7 +174,7 @@ Concurrent host extraction is a suspected but **unproven** cause of the stalls. 
 - The original RIFT `Inspect.Unit.Detail` API documents `coordX`, `coordY`, and `coordZ`, and `Event.Unit.Detail.Coord` provides changed-coordinate values keyed by unit ID. Original ArtifactTracker source describes X as east, Y as vertical, Z as south. Those are independent validation references, not native locator proofs.
 - Travel bearing computed from changing XYZ is **not** player facing while stationary; RIFT addon authors report facing is unavailable through those coordinate APIs. Treat native rotation/heading as a separate investigation.
 - The old verified module `+0x32E0200` → player owner → XYZ `+0x320/+0x324/+0x328` recipe applies to executable SHA `7C356C9D...`, **not** this build. See [XYZ field catalog](xyz-field-catalog.md).
-- Next offline step: decompile `+0x698460` and related helper functions to find a current-build unit-owner path. Then use the existing exact-build/PID/start-gated native reader for **read-only** same-unit observations in both labs. Reject UI/cache copies and require independent changed-state and full-restart tests before promoting a locator.
+- Next step: run the bounded native self-key/entity probe independently in both labs, then correlate the selected component with fresh independent same-unit observations. Getter offsets and ownership lookup code are now decoded; they are not by themselves production telemetry. Reject UI/cache copies and require independent changed-state and full-restart tests before promoting a locator.
 - Lab 1's last eight-minute source-freshness gate failed and Lab 2's earlier passing gate is from a prior epoch. No supervised movement pulse should occur until current-epoch freshness and exclusive controller/screenshot/lease checks pass; reuse the existing workflow.
 
 See [current health/resource code map](native-current-client-code-map.md) for the companion static fields and the distinct no-live-pointer limitation.

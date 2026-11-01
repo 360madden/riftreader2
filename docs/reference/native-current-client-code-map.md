@@ -22,9 +22,34 @@ Status: **offline static-code evidence only**. No player-owned live HP pointer i
 | Reference release | `0x75C7F0` (41 bytes) | Decrements its reference count and clears the temporary handle. |
 | HP calculator | `0x133B150` | Receives current/base input, maximum, modifiers and a fractional cap; contains arithmetic and bounding logic. Its complete field semantics need validation. |
 
-From the decompiled HealthMax path, the intermediate handle expression is `*( *(unit + 0x28) + 0x40 ) + 0x640`. The resolver interprets that address as a reference-counted pointer slot, performs a type-like check, and returns a temporary handle; `*(resolved + 0x50)` is the value returned by `HealthMax`. Parentheses here describe **pointer dereferences**, not a validated static module-rooted locator.
+From the decompiled HealthMax path, the intermediate handle expression is `*( *(healthComponent + 0x28) + 0x40 ) + 0x640`; `healthComponent` is the selected component described below, not the raw entity. The resolver interprets that address as a reference-counted pointer slot, performs a type-like check, and returns a temporary handle; `*(resolved + 0x50)` is the value returned by `HealthMax`. Parentheses here describe **pointer dereferences**, not a validated static module-rooted locator.
 
 The Health core also reads the resolved object's `+0x48`, `+0x60`, `+0x68`, `+0x6C`, `+0x70` fields and references a separate global pointer slot at RVA `0x33DC2B0`. The getter calls the arithmetic leaf at RVA `0x133B150`; therefore the live `health` value must not be assumed to live as a single unchanged `int32` beside a naive max-HP marker. Member names, ownership, and runtime validity remain hypotheses.
+
+## Current native self-key/entity to health component — 2026-11-01 UTC
+
+The current `Inspect.Unit.Detail` routine selects the **health component**, not the raw unit entity, before calling Health/HealthMax:
+
+1. The same native 64-bit unit key is resolved through the manager's `0x6A0040` out-parameter lookup at `0x9B89E8`.
+2. RVA `0x9B89F1` loads signed selector-index metadata from **`module+0x2F57850`**.
+3. It reads `slot = byte(entity+0x18+index)`; `0xFF` means absent.
+4. It reads `componentTable = *(entity+0x78)`, then `R13 = *(componentTable+slot*8)` at `0x9B8A0A`.
+5. `0x9B9F18 MOV RCX,R13; 0x9B9F1B CALL 0x5E8400` invokes Health, and `0x9B9F44 MOV RCX,R13; 0x9B9F47 CALL 0x5E8C80` invokes HealthMax.
+
+Position uses **different selector metadata**, `module+0x2F588A0`, through the same entity's component table. The selector globals and slot values must be read dynamically; a shared clock does not imply shared components. The new [coordinate ownership map](native-current-coordinate-code-map.md) documents native self-key root **`module+0x33623E0 -> system+0x360`**, manager root `module+0x33624A8`, the full-key hash lookup, and the read-only probe.
+
+Given selected `healthComponent`, the known raw-read topology is:
+
+```text
+ownerObject = read_u64(healthComponent + 0x28)
+container   = read_u64(ownerObject + 0x40)
+record      = read_u64(container + 0x640)
+maximum     = read_i64(record + 0x50)
+```
+
+This reproduces pointer traversal only. Resolver `0x20CF270` calls type helper **`0x127303C`** and accepts low16 result `0x2C2`; the helper still needs a pure-read interpretation before promoting a record. Never invoke the game resolver, change refcounts, or write the getter's cached revision/clock. Core-wrapper revision/clock are at `healthComponent+0x30/+0x34` (the core's adjusted wrapper `+0x8/+0x0C`); the record revision is `+0x68`. A read-only reconstruction must reject inconsistent mutable fields or handle their semantics explicitly.
+
+Evidence: passed exact-build jobs `rr2-serialized-manager-lookup-code-20261101-01` and `rr2-serialized-manager-hash-health-prologue-20261101-01`, plus retained Ghidra files named above. The ordinary finite calculator reconstruction does not establish exact boundary behavior, stable live ownership, or passive freshness.
 
 ## HP arithmetic leaf: bounded static reconstruction
 
