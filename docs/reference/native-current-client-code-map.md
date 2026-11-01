@@ -254,6 +254,40 @@ The bounded, exact-SHA `scripts/find_native_api_xrefs.py` run `rr2-serialized-na
 | `0x9B8347..0x9B84E2` | First `uninterruptible` | Castbar code path A |
 | `0x9B84F0..0x9B88CD` | Second `uninterruptible` | Separate castbar code path B |
 
+**2026-11-01 castbar owner/producer follow-up (saved exact PE, no live reads):**
+The two castbar Lua marshalling paths at `0x9B8300` and `0x9B86B0`
+consume the **same-shaped temporary result** in stack buffers shifted by
+`+0x30`, not two established heap records. They use the same
+`uninterruptible` literal `0x26D8D50`, numeric-field builders,
+ability-like ID calls `0x49FA20/0x1357250`, and an object helper.
+Both pass the native unit key returned by `0xA1AAA0` into
+**cast-state producer `0x91DED0`** (with a caller-owned output buffer).
+This producer uses manager `0x4A4750`, key→entity `0x6A0040`, and
+dynamic component selector **module RVA `0x2F57260`** through
+`entity+0x18+index` and the `entity+0x78` table. It is therefore
+a native player-key-owned cast-associated component branch, **not**
+an unqualified static pointer chain.
+
+Two small native accessors are concrete:
+`0x5A75C0` reads a nullable child pointer at **component+0x280**
+then returns `DWORD(child+0x08)` via helper `0x58B30`;
+`0x5A7570` does the same at **component+0x290**.
+`0x91DED0` requires at least one nonzero child+8 value before
+marshalling cast state. **`0x5A9940` is not a passive getter:**
+it copies the smart reference at component `+0x280/+0x288`
+into an out-buffer and **increments the reference control's
+refcount**. Never invoke it in an external reader. Native timers and
+boolean fields are calculated through downstream helpers
+`0x5A6CB0`, `0x49F960`, `0x49D440`, `0x49DFE0`,
+`0x49D210`, and `0x4948E0`; no persistent cast timer,
+component type/vtable, or changed-state correspondence is qualified.
+The Casting addon independently reads `Inspect.Unit.Castbar(player)`
+but omits `uninterruptible`, so it cannot validate that particular
+flag. The source was the independently SHA-pinned 60,493,640-byte
+saved current executable; bounded snapshot byte anchors matched the
+retained disassembly. All claims remain **static candidate** facts,
+not live record addresses or permission to cast.
+
 The code immediately before cost assignments uses **`[RSP+0x58]` as an unverified ability-template/context pointer**; from it, it reads a child-reference vector at `+0x6D0` (`[header]` begin, `[header+0x08]` end, elements supplying child references). The owner of the stack value and element stride still need tracing; it calls native type helper `0x127303C` and branches on **`0x1E29` before Power cost, `0x1E2A` before Mana cost and `0x1E2C` before Energy cost**. A further nearby branch checks `0x1E2B`, whose output is not assigned here. These are **expected types in this particular ability-cost enumeration**; they must not be conflated with player resource record types `0x072A/0x072B`, and no cost child object is live-type-validated. The Power/Mana/Energy amount producers include calls `0x49EF10`, `0x49D600`, and `0x49F000` respectively. Their caller handles references and even mutates flags/refcounts; an external reader must never invoke these getters.
 
 The cooldown builder invokes **`0x5A5E40`** with `RCX=RSI`, `EDX=R12D` and `R8=&[RSP+0x54]`. Its float32 return `T` and optional float32 output `D` are **two distinct values**, not one memory field or pointer. Independent instruction disassembly of retained exact-build code establishes how the native Lua marshaller constructs four fields:
