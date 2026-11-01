@@ -251,6 +251,37 @@ branches, with exact type/epoch checks and observed target changes.
 All claims are from the current full-SHA PE, no live target selection
 or game input in this static trace.
 
+### Shared native player health-owner fields — 2026-11-01 static follow-up
+
+The exact-build player health component resolves one owner pointer,
+`owner = QWORD(healthComponent+0x40)`, for three independently decoded
+getters:
+
+| Field | Owner-relative read | Native path | Confidence |
+|---|---|---|---|
+| `player.target` | `QWORD(owner+0x20)` fallback key | `0x5ECCA0`, with conditional selection-component overrides | Getter/branch proven; target changes unmeasured |
+| `level` | `DWORD(owner+0x100)` | `0x9200C0` via `Inspect.Unit.Detail`, unless alternate selector present | Current Lab2 self selector22=`0xFF`, direct branch |
+| `combat` | `BYTE(owner+0x19D) != 0` | `0x5F2FB0`; `Inspect.Unit.Detail` emits `combat=true` only when nonzero | Getter proven; authoritative writer unknown |
+
+Retained Lab2 self entity has health selector metadata index6→slot15,
+alternate-level metadata index22→`0xFF`, and target selector metadata
+index24→5. Historical owner `0x2180657DBA0` gives candidate reads at
+`0x2180657DBC0`, `0x2180657DCA0`, `0x2180657DD3D`,
+respectively; **do not reuse these as unvalidated current pointers**.
+The target change handler `0x5FE9B0` stores a replacement key in the
+same owner at `0x5FEAD8`, but alternate target branches still matter.
+A bounded exact-PE 12MiB displacement scan found no authoritative
+`combat` field writer; an apparent `+0x19D` store at `0xDFED1E`
+addresses a stack local. `0x603F60` compares state and performs
+side effects, not a proven field write.
+
+Next validation is a read-only, identity-bracketed triad capture with
+health component type/vtable and owner rereads, correlated with
+independent live `Inspect.Unit.Detail(player)` and
+`Inspect.Unit.Lookup("player.target")`. The current Casting addon
+exposes target and combat but not `level`. No changed-state, restart,
+passive freshness or direct heading claim follows from these getters.
+
 ### Hash table, not a fixed player-object pointer
 
 `0x69FFD0` reads (not takes the address of) `*(manager+0x50)` and passes that table pointer to `0x58C990`. The table header is `{bucketBase:u64, stride:u64, count:u64}` at offsets `0/8/0x10`.
