@@ -192,17 +192,49 @@ class LiveQueueLease:
 def acquire(plan: dict) -> tuple[LiveQueueLease, dict]:
     queue = AccessQueue(plan["database"])
     with queue.dispatch_fence(timeout=5):
-        state = queue.status(limit=100)
-        resource = next((row for row in state["resources"] if row["name"] == plan["resource"]), None)
+        resource, after = None, 0
+        for _ in range(1000):
+            page = queue.status(after_sequence=after, limit=100)
+            batch, resources = page.get("requests"), page.get("resources")
+            require(isinstance(batch, list) and isinstance(resources, list),
+                    "control queue response invalid")
+            matches = [row for row in resources if isinstance(row, dict)
+                       and row.get("name") == plan["resource"]]
+            require(len(matches) == 1, "control resource unavailable")
+            if resource is None:
+                resource = dict(matches[0])
+            require(matches[0] == resource, "control resource changed during queue scan")
+            last = after
+            for row in batch:
+                require(isinstance(row, dict), "control queue request invalid")
+                sequence = row.get("sequence")
+                require(type(sequence) is int and sequence > last, "control queue sequence invalid")
+                last = sequence
+                if row.get("state") in ("queued", "active", "cleanup"):
+                    specification = row.get("specification")
+                    require(isinstance(specification, dict)
+                            and isinstance(specification.get("resources"), dict),
+                            "control queue request invalid")
+                    require(plan["resource"] not in specification["resources"],
+                            "control resource has pending work")
+            cursor = page.get("next_sequence")
+            if cursor is None:
+                break
+            require(batch and type(cursor) is int and cursor == last and cursor > after,
+                    "control queue pagination stalled")
+            after = cursor
+        else:
+            raise MovementSessionError("control queue scan incomplete")
         require(resource is not None and not resource["blocked"] and resource["holder"] is None,
                 "control resource unavailable")
-        require(not any(row["state"] in ("queued", "active", "cleanup") for row in state["requests"]),
-                "control queue occupied")
         request_id = "movement-" + uuid.uuid4().hex[:16]
         queue.submit(request_id, "movement-session", "C", {plan["resource"]: resource["epoch"]},
                      ttl_ms=30000, max_ms=120000, estimated_ms=12000)
         grant = queue.dispatch()
-        require(grant and grant["request_id"] == request_id, "movement lease unavailable")
+        require(isinstance(grant, dict) and grant.get("request_id") == request_id
+                and isinstance(grant.get("token"), str) and grant["token"],
+                "movement lease unavailable")
+        queue.check(request_id, grant["token"])
     return LiveQueueLease(queue, request_id, grant["token"], plan["resource"]), grant
 
 
