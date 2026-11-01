@@ -1,12 +1,13 @@
 """Synthetic tests: no RIFT process, VM, controller, or credentials required."""
 import base64
 import copy
+import math
 import struct
 import unittest
 
 from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_energy, calculate_health, checked_energy_type, checked_health_type, encoded, entity_hash, find_entity,
-    health_record_fields, inspection_identity, pointer, resource_record_fields,
+    health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
     RESOURCE_LAYOUTS, require_disjoint_records,
     sha, snapshot_bytes,
 )
@@ -100,6 +101,60 @@ class NativeUnitManagerTests(unittest.TestCase):
         for value in (0, -1, 0x10001, 0x800000000000, 0x7FFFFFFFFFF8):
             with self.assertRaises(ValueError):
                 pointer(value, 24)
+
+    @staticmethod
+    def position_component(first_degrees=3.465055, second_degrees=3.464628):
+        raw = bytearray(0x110)
+        xyz = (7415.63671875, 863.5847778320312, 2928.161376953125)
+        struct.pack_into("<fff", raw, 0x48, *xyz)
+        struct.pack_into("<fff", raw, 0x88, *xyz)
+        for offset, angle in ((0x60, first_degrees), (0x94, second_degrees)):
+            c, s = math.cos(math.radians(angle)), math.sin(math.radians(angle))
+            struct.pack_into("<9f", raw, offset, c, 0, -s, 0, 1, 0, s, 0, c)
+        return raw
+
+    def test_position_transform_candidates_are_structural_only(self):
+        raw = self.position_component()
+        result = position_transform_candidates(raw, raw[0x48:0xB8])
+        self.assertEqual("structural-rotation-candidate", result["status"])
+        self.assertTrue(result["inputsStable"])
+        self.assertEqual(["0x60", "0x94"],
+                         [matrix["sourceOffset"] for matrix in result["matrices"]])
+        self.assertAlmostEqual(3.465055, result["matrices"][0]["planarAngleDegreesCandidate"],
+                               places=4)
+        self.assertAlmostEqual(3.464628, result["matrices"][1]["planarAngleDegreesCandidate"],
+                               places=4)
+        self.assertLess(result["matrices"][0]["orthonormalError"], 1e-6)
+        self.assertAlmostEqual(1, result["matrices"][0]["determinant"], places=5)
+        self.assertAlmostEqual(7415.63671875,
+                               result["secondaryCachedXyzCandidate"]["x"])
+        self.assertIn("facing/axis/passive-freshness/restart-unverified", result["scope"])
+        self.assertNotIn("facingDegrees", result)
+
+    def test_position_transform_changes_are_withheld_without_harming_other_data(self):
+        raw = self.position_component()
+        after = bytearray(raw[0x48:0xB8])
+        after[0x60 - 0x48] ^= 1
+        result = position_transform_candidates(raw, after)
+        self.assertEqual("changed-during-probe", result["status"])
+        self.assertFalse(result["inputsStable"])
+        self.assertNotIn("matrices", result)
+        for component, final in ((raw[:0xB7], raw[0x48:0xB8]), (raw, b""),):
+            with self.subTest(length=(len(component), len(final))):
+                with self.assertRaisesRegex(ValueError, "read-hole"):
+                    position_transform_candidates(component, final)
+
+    def test_position_transform_nonfinite_or_nonrotation_is_unqualified(self):
+        raw = self.position_component()
+        struct.pack_into("<f", raw, 0x60, float("nan"))
+        result = position_transform_candidates(raw, raw[0x48:0xB8])
+        self.assertEqual("unavailable", result["status"])
+        self.assertEqual("nonfinite-transform", result["reason"])
+        raw = self.position_component()
+        struct.pack_into("<f", raw, 0x64, 2.0)
+        result = position_transform_candidates(raw, raw[0x48:0xB8])
+        self.assertEqual("unqualified-matrix-shape", result["status"])
+        self.assertIsNone(result["matrices"][0]["planarAngleDegreesCandidate"])
 
     def test_health_fields_preserve_raw_inputs_without_claiming_hp(self):
         record = bytearray(128)

@@ -114,6 +114,83 @@ Provenance: passed job `rr2-serialized-two-lab-manager-slot-20261031-01`; snapsh
 
 The adjacent function at `0x698480` reads the same global clock slot `module+0x33DC2B0` used by health/resource code and writes an object timestamp-like member `+0xD4`; that reinforces a shared timebase, **not** a proven shared HP/XYZ player owner. Exact SHA-gated passed jobs: `rr2-serialized-native-xyz-accessor-20261031-01`, `rr2-serialized-native-xyz-refresh-20261031-01`, and `rr2-serialized-native-xyz-refresh-full-20261031-01`; independently disassembled with GNU objdump. Next trace targets: object origin in `Inspect.Unit.Detail`, underlying entity source calls `0x612EE0`/`0x612B50`, and a version-gated module-root locator validated against separately advancing player API data in both labs.
 
+## Player-owned transform-matrix candidates — 2026-11-01 UTC
+
+Six read-only specialist tracks found two **nine-float32 Y-rotation-like matrices**
+in the already verified native player position component. The coordinator
+independently decoded the original retained component snapshot bytes:
+
+| Position-component offset | Raw interpretation | Evidence status |
+|---|---|---|
+| +0x48/+0x4C/+0x50 | Float32 XYZ | Previously decoded position cache |
+| +0x60..+0x83 | First row-major 3×3 float32 matrix | Strong structural orientation candidate |
+| +0x88/+0x8C/+0x90 | Second XYZ copy | Equal to first XYZ in inspected frames |
+| +0x94..+0xB7 | Second, nearly identical 3×3 matrix | Strong structural orientation candidate |
+
+Each matrix closely fits [cos(theta),0,-sin(theta); 0,1,0; sin(theta),0,cos(theta)].
+Using atan2(m[2,0],m[0,0]) as a *numeric descriptor*, not qualified game yaw:
+
+| Retained native frame | First matrix angle | Second matrix angle |
+|---|---:|---:|
+| Lab1 01:30 UTC, PID8164 | 3.465055° | 3.464628° |
+| Lab2 01:32 UTC, PID7012 | 32.810855° | 32.810213° |
+| Lab2 13:46 UTC, same PID7012 | 32.810855° | 32.810213° |
+
+The off-axis terms are approximately zero; unit cosine/sine norm error is
+about 10^-7. The already disassembled native accessor RVA 0x6983F0 returns
+positionComponent+0x60; its caller copies 0x24 bytes. This independently
+supports the first matrix layout.
+
+**New decisive exact-PE code evidence:** RVA 0x612960 reads a
+provider-returned float32 quaternion (x,y,z,w) and computes all nine
+components of the canonical row-major 3×3 rotation matrix, with
+diagonal terms 1−2(y²+z²), 1−2(x²+z²), 1−2(x²+y²) and cross terms
+2(xy±wz), 2(xz±wy), 2(yz±wx); the constant at RVA 0x26A33D8 is
+float32 1.0. The native function writes those nine floats at output
+offsets +0..+0x20 (RVA 0x612A9E..0x612B15). If its provider is
+null, RVA 0x612B1C..0x612B30 **copies a cached 36-byte fallback**;
+this explains why a passive cached matrix alone is not freshness proof.
+Within position refresh 0x6996C0, RVA 0x6999FE writes the first
+matrix's ninth float at component+0x80; an R9=1 follow-up
+0x699A04..0x699A21 writes the second matrix at +0x94..+0xB4.
+The active branch also constructs the second matrix via
+0x613080/0x698EC0. This is full SHA-pinned, bounded instruction
+decoding of the saved PE, not a live behavior claim.
+
+**Upstream active-handle source:** The fully decoded 0x613080 path
+calls 0x6126F0 and, when its source flag at object+0x35 is set,
+copies a 36-byte rotation matrix from resolved object
+**+0xD4..+0xF7**; the already verified 0x612EE0 reads XYZ
+immediately after that at **+0xF8/+0xFC/+0x100**. The matrix and
+position therefore occupy one contiguous candidate source layout.
+If this source is unavailable, 0x613080 instead finds the entity
+position component via selector module+0x2F588A0 and copies its
+cached +0x60 matrix (circular freshness fallback). The intermediate
+0x698EC0 compares and copies nine floats to component+0x60..+0x80,
+then computes a third-column dot product involving the +0x94 matrix
+and stores a result-like value at component+0xF0, with a +0xF4 flag.
+These are **native instruction facts**, not proof of canonical owner,
+a reliable angle, or passively advancing facing.
+
+Which matrix is current versus cached,
+the angular sign/axis, and **whether either is character-body facing**
+remain unverified. The reviewed snapshots did not include a deliberate
+turn. These player-owned buffers are separate from dimension-item Lua
+yaw/pitch/roll strings, which are a known negative control.
+
+Original source JSON files and independently verified SHA256 digests:
+- Lab1 artifacts/native-unit-manager/lab1/5a654fbadb324803a6bba83520329d46/component-values.json — E5DBE57BBE80B9D6D03228630CBD5E96DF80975B5263D01CDD6B91FDA0B26971
+- Lab2 artifacts/native-unit-manager/lab2/a4e8474dbfef4a1490b7cee6655e46c8/component-values.json — FE34732A410CDF3098635F42563F8F5B43757A7AE4981783F8992C2ED6B41253
+- Lab2 later artifacts/native-unit-manager/lab2/74d4209587794a8c9ffae0559517db6f/component-values.json — 77882FB170113031A241EE36D2805FF5C465DDE4A58BE9EFD297D21C65C87
+
+**Next dual-method experiment:** Under fresh current-epoch source freshness
+and sole-owner reviewed controller lease, read native-before, execute one
+short stationary A/D turn with STOP/release, read native-after, and inspect
+independent visual change. Require matrix rotation coherent with the actual
+turn while XYZ stays approximately unchanged; separately establish passive
+freshness and full game exit/relaunch recovery. The historical Lab1 480s
+FAIL and prior-epoch Lab2 pin cannot be bypassed.
+
 ## Native self identity and deterministic entity lookup — 2026-11-01 UTC
 
 The missing identity conversion is now decoded from the **same pinned build**. The actual `Inspect.Unit.Detail` prologue starts at RVA `0x9B8960`; its unwind records split at `0x9B89BA`, which was previously mistaken for the full routine's start.
@@ -121,7 +198,9 @@ The missing identity conversion is now decoded from the **same pinned build**. T
 - At `0x9B89A7`, helper `0xA1AAA0` converts the Lua argument to a 64-bit key saved at `[rsp+0x48]`. It accepts a Lua string and delegates to `0xA07060`.
 - The literal at `0x26D0D3C` is **`player`**. Its branch calls singleton accessor `0x49A020` and reads the key at returned object **`+0x360`**. The accessor's nonnull path loads **`[module+0x33623E0]`** and returns it. This is a native self-key root, distinct from entity-manager root `0x33624A8`.
 - The explicit-ID branch requires `u` followed by 16 hexadecimal characters, then NUL or a dot. Import `api-ms-win-crt-convert-l1-1-0.dll!_strtoui64` at IAT RVA `0x25F00C0` parses `input+1` in base 16. Thus a **bare** `u035400012FA2D207` parses to key `0x035400012FA2D207`. Additional validity checks remain, and dotted suffixes enter further resolution; do not apply bare-ID semantics to those suffixes.
-- Other exact literals are `focus`, `mouseover`, `group`, and `target`; their separate branches are not a qualified current target-HP locator.
+- Other exact literals include focus, mouseover, group, and target. **Important correction:** in this parser target is a **dotted suffix**, not a proven initial standalone alias. The parser handles focus via 0x54F2C0, mouseover via 0x550420, and group via 0x54F2D0; these are distinct sources.
+
+**Native player.target follow-up:** After a base unit key, 0xA0722E..0xA07359 parses the dotted target suffix at literal RVA 0x26A5E84, resolves the base entity using manager 0x6A0040, selects its health-associated component using module selector 0x2F57850 and entity+0x78 component table, then calls native getter **0x5ECCA0** to produce the next key. Missing entity (0xA07322), absent selector (0xA0733D) or null component (0xA0734E) produce a zero key without necessarily invalidating syntax; a genuinely invalid expression instead clears the validity flag at 0xA075A4. The getter's data ownership and live target change behavior remain unproven. Next static check: decode 0x5ECCA0; dynamic check: selected-target changes and no-target case through the guarded controller and independent native/API observations.
 
 ### Hash table, not a fixed player-object pointer
 
@@ -174,7 +253,7 @@ Concurrent host extraction is a suspected but **unproven** cause of the stalls. 
 - The original RIFT `Inspect.Unit.Detail` API documents `coordX`, `coordY`, and `coordZ`, and `Event.Unit.Detail.Coord` provides changed-coordinate values keyed by unit ID. Original ArtifactTracker source describes X as east, Y as vertical, Z as south. Those are independent validation references, not native locator proofs.
 - Travel bearing computed from changing XYZ is **not** player facing while stationary; RIFT addon authors report facing is unavailable through those coordinate APIs. Treat native rotation/heading as a separate investigation.
 - The old verified module `+0x32E0200` → player owner → XYZ `+0x320/+0x324/+0x328` recipe applies to executable SHA `7C356C9D...`, **not** this build. See [XYZ field catalog](xyz-field-catalog.md).
-- Next step: run the bounded native self-key/entity probe independently in both labs, then correlate the selected component with fresh independent same-unit observations. Getter offsets and ownership lookup code are now decoded; they are not by themselves production telemetry. Reject UI/cache copies and require independent changed-state and full-restart tests before promoting a locator.
+- Both labs already passed the bounded native self-key/entity probe; next correlate the player-owned XYZ and rotation-matrix candidates with fresh independent same-unit observations and a controlled state change. Getter offsets and ownership lookup code are now decoded; they are not by themselves production telemetry. Reject UI/cache copies and require independent changed-state and full-restart tests before promoting a locator.
 - Lab 1's last eight-minute source-freshness gate failed and Lab 2's earlier passing gate is from a prior epoch. No supervised movement pulse should occur until current-epoch freshness and exclusive controller/screenshot/lease checks pass; reuse the existing workflow.
 
 See [current health/resource code map](native-current-client-code-map.md) for the companion static fields and the distinct no-live-pointer limitation.

@@ -64,6 +64,11 @@ def native_review(lab, path, now=None):
             and isinstance(hp.get("calculatedHealth"), dict)
             and hp["calculatedHealth"].get("status") == "calculated-candidate",
             "native HP candidate not type-checked/stable")
+    candidate = hp["calculatedHealth"]
+    current, maximum = candidate.get("current"), candidate.get("maximum")
+    require(type(current) is int and type(maximum) is int
+            and 0 < maximum < (1 << 31) and 0 <= current <= maximum,
+            "native HP candidate lacks valid numeric current/maximum")
     require(identity.get("executableSha256") == BUILD_SHA
             and type(identity.get("processId")) is int and identity["processId"] > 0
             and type(identity.get("processStartUtcTicks")) is int

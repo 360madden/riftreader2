@@ -190,6 +190,45 @@ def f32(value: float) -> float:
     return struct.unpack("<f", struct.pack("<f", value))[0]
 
 
+def position_transform_candidates(component: bytes, post_read: bytes) -> dict:
+    """Raw cached 3x3 transforms only; neither matrix is qualified player facing."""
+    if len(component) < 0xB8 or len(post_read) != 0x70:
+        raise ValueError("position-transform-read-hole")
+    scope = "candidate-only; facing/axis/passive-freshness/restart-unverified"
+    if component[0x48:0xB8] != post_read:
+        return {"status": "changed-during-probe", "scope": scope,
+                "inputsStable": False}
+    result = {"scope": scope, "inputsStable": True,
+              "secondaryCachedXyzCandidate": dict(zip(("x", "y", "z"),
+                                                       struct.unpack_from("<fff", component, 0x88)))}
+    matrices = []
+    for offset in (0x60, 0x94):
+        values = struct.unpack_from("<9f", component, offset)
+        if not all(math.isfinite(value) for value in values):
+            return {"status": "unavailable", "reason": "nonfinite-transform",
+                    "inputsStable": True, "scope": scope}
+        rows = [list(values[i:i + 3]) for i in (0, 3, 6)]
+        dot = lambda a, b: sum(x * y for x, y in zip(a, b))
+        orthonormal_error = max(
+            abs(dot(rows[i], rows[j]) - (1 if i == j else 0))
+            for i in range(3) for j in range(3))
+        a, b, c, d, e, f, g, h, k = values
+        determinant = a * (e * k - f * h) - b * (d * k - f * g) + c * (d * h - e * g)
+        y_rotation_error = max(abs(b), abs(d), abs(f), abs(h), abs(e - 1),
+                               abs(k - a), abs(c + g))
+        matrices.append({"sourceOffset": f"0x{offset:X}", "rowsF32": rows,
+                         "orthonormalError": orthonormal_error,
+                         "determinant": determinant, "yRotationError": y_rotation_error,
+                         "planarAngleDegreesCandidate": math.degrees(math.atan2(g, a))
+                         if max(orthonormal_error, abs(determinant - 1),
+                                y_rotation_error) < 0.01 else None})
+    result["matrices"] = matrices
+    result["status"] = ("structural-rotation-candidate"
+                        if all(matrix["planarAngleDegreesCandidate"] is not None
+                               for matrix in matrices) else "unqualified-matrix-shape")
+    return result
+
+
 RESOURCE_LAYOUTS = {
     3: {"name": "mana", "resolverType": "0x072A", "base": 0x1C,
         "maximum": 0x24, "rate": 0x18, "revision": 0x20,
@@ -566,6 +605,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
             checks.update({p: 8 for p in component_addresses})
             checks.update({address: len(raw) for address, raw in health_anchors.items()})
             checks.update({address: len(raw) for address, raw in resource_anchors.items()})
+            checks[components["position"] + 0x48] = 0x70
             if health is not None:
                 checks[record_address] = 128
             if resource_record_raw is not None:
@@ -582,6 +622,10 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                         for index in (position_index, health_index)) or
                     any(final[p] != component_raw[p] for p in component_addresses)):
                 raise ValueError("player-ownership-anchor-changed")
+            transform = position_transform_candidates(
+                values[components["position"]], final[components["position"] + 0x48])
+            transform["observedAtUtc"] = observation_times["component-values"]
+            review["positionTransformCandidate"] = transform
             if health is not None:
                 if (any(final[address] != raw for address, raw in health_anchors.items()) or
                         final[record_address][:8] != record_raw[:8]):

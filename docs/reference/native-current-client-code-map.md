@@ -152,6 +152,19 @@ Native **revision mismatch writes** wrapper revision and clock, so the read-only
 
 Read-only **offline replay**, `rr2-offline-typed-energy-native-formula-replay-20261101-01` (exit0), validated the source report SHA and exact prior Lab2 identity/type/inputs, then calculated from the **06:49:42 UTC** retained type-checked record: game clock **61827.53515625**, wrapper clock **61610.41796875**, elapsed **217.1171875s**, rate **2000**, truncated adjustment **-4342**, base **100**, max **100** → **candidate current Energy 100/100**. The replay adds **no new simultaneous live measurement**. Independent Lua/UI comparison and at least two correctly correlated value changes remain outstanding; a full-bar baseline alone is weak evidence. No game input, process-memory write, addon deployment, VM restart or controller screenshot occurred.
 
+### Exact native getter cache-write sites, not game-resource writers
+
+Independent replay of retained Energy getter disassembly establishes:
+record revision at +0x34 is compared to wrapper revision +0x18 at
+RVA 0x133F2F0. On mismatch, 0x133F2F5 copies the revision to wrapper
++0x18, and 0x133F2F8–0x133F302 copies shared game clock from
+[module+0x33DC2B0] object's +0x18 to wrapper +0x1C. The analogous
+HP wrapper revision/clock cache writes occur at 0x5E845B and 0x5E8468.
+**These getters update wrappers, not the underlying HP/Energy record's
+revision fields**; use an independent static writer trace to find the
+producer of actual record updates. No game code was executed or memory
+modified for this result.
+
 ## HP arithmetic leaf: bounded static reconstruction
 
 The branch-complete leaf spans RVA `0x133B150..0x133B1D5` (inclusive; followed by `INT3` padding). Its multiplier constant at VA `0x14277F5E8` is the PE `float64` value **`-0.009999999776482582`**. Under ordinary positive maximum-health inputs, an assembly-level pseudocode reconstruction is:
@@ -263,8 +276,45 @@ A subsequent exact-SHA extraction and independent x64 disassembly of the **actua
 |---|---|---|
 | `0x1353620` | Looks up a reference and tests the first child of an object `+0x5F0` vector against expected type **`0x078A`** | This is a cooldown-eligibility/type test, not proof of a live cooldown-record type |
 | `0x5A6F20` | Resolves another ability-related object and reads a `+0x5F0` reference path; sets flags and manages references | Upstream player/ability key and element ownership remain unverified |
-| `0x5A9440` | Secondary float producer, including an optional output pointer; its first unwind segment branches to later code | Need full read-only source-input/return-path decoding |
+| `0x5A9440` | Decoded secondary float producer: resolves state, loops its +0x4B8/+0x4C0 ID vector, selects max result of keyed timer lookups `0x5A7450`; optional duration uses conditional branches | Live ability context and resolver-owned state pointer still unverified; details below |
 | `0x5526F0` | Reuses unit lookup `0x6A0040`, dynamic health selector **`module+0x2F57850`**, component table `entity+0x78` and further accessor `0x5ECCA0` | Shared selector does **not** mean an HP pointer is a cooldown pointer |
+
+#### Additional cooldown timer-table decoding — 2026-11-01 read-only follow-up
+
+After independently hashing the entire saved 60,493,640-byte PE at
+artifacts/lab2-rift-exe-20261027-01-copy.exe against the pinned installed
+SHA (passed job rr2-exe-research-saved-copy-sha-20261101-01, exit 0), a
+specialist inspected bounded raw instruction slices without invoking RIFT.
+
+- RVA 0x5A9440 accepts an ability context (RCX), 32-bit ID (EDX), and
+  optional duration output (R8). The resolved state object's [0x4B8,0x4C0)
+  span holds a four-byte-stride ID vector. Each ID is passed to 0x5A7450,
+  and 0x5A9440 returns the **maximum float32 timer value** across IDs.
+- RVA 0x5A7450 does a keyed lookup using the original context's +0x240
+  table root, +0x248 stride, +0x250 count/capacity, compares entry +0x08
+  to ID, and reads the matched float32 value at entry +0x10; no match
+  yields zero. These are instruction-derived offsets, **not** yet a
+  located live cooldown table.
+- Duration comes from conditional paths involving 0x5A8E00, a float
+  member +0x14, child integer +0x18, or resolved integer +0x54.
+  Float32 constant at RVA 0x26A33C8 is 0.001 (milliseconds-to-seconds
+  is plausible, not independently qualified). Do not claim one
+  unconditional duration offset.
+- Module-rooted context discovery proceeds through 0x4A4250 reading
+  [module+0x33624C8], and 0x1274AD8 reading [module+0x3372C18]
+  with a 16-bit selector at context +0x40. The lookup 0x129043C /
+  0x129045C tests mode owner+0x274 and conditionally selects a
+  collection, with owner+0x200 as one fallback. **The conditional
+  collection/ability-key mapping and returned object type are still
+  unresolved**; a fixed pointer chain is unsafe. Lazy singleton
+  initialization and refcount-changing native functions must not be
+  invoked by an external reader.
+
+The next shortest static task is finishing conditional lookup 0x129045C
+and caller's numeric ability ID provenance; dynamic qualification then
+requires independently changed cooldown values, native-before/after
+with an approved controlled ability action, and a fresh exact-process pin.
+No live ability object was read or game input issued in this follow-up.
 
 A related ability **Energy cost** getter at `0x49F000` also selects a component through a different metadata index (`module+0x2F57260`) and in an alternate path checks resource kind `4` before accessing wrapper `+0x38`. Cost is a context-dependent calculation, not necessarily a literal independent mana/energy cost field in player memory. These getters contain flag/refcount updates; an external read-only reconstruction must source the same data by static ownership and passive memory reads alone.
 

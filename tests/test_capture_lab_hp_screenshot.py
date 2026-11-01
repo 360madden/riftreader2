@@ -130,6 +130,29 @@ class ScreenshotSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(cap.CaptureBlocked, "unsupported native"):
                 cap.native_review("lab2", wrong_sha, self.now)
 
+    def test_native_review_requires_real_bounded_hp_numbers(self):
+        invalid = [
+            {"status": "calculated-candidate"},
+            {"status": "calculated-candidate", "current": True, "maximum": 10635},
+            {"status": "calculated-candidate", "current": 10635, "maximum": False},
+            {"status": "calculated-candidate", "current": "10635", "maximum": 10635},
+            {"status": "calculated-candidate", "current": 10635.0, "maximum": 10635},
+            {"status": "calculated-candidate", "current": -1, "maximum": 10635},
+            {"status": "calculated-candidate", "current": 10636, "maximum": 10635},
+            {"status": "calculated-candidate", "current": 0, "maximum": 0},
+            {"status": "calculated-candidate", "current": 1, "maximum": 1 << 31},
+        ]
+        with patch.object(cap, "ROOT", self.root):
+            review = self.make_review_file()
+            original = json.loads(review.read_text(encoding="utf-8"))
+            for candidate in invalid:
+                with self.subTest(candidate=candidate):
+                    data = json.loads(json.dumps(original))
+                    data["healthRecordCandidate"]["calculatedHealth"] = candidate
+                    review.write_text(json.dumps(data), encoding="utf-8")
+                    with self.assertRaisesRegex(cap.CaptureBlocked, "valid numeric"):
+                        cap.native_review("lab2", review, self.now)
+
     def test_recent_review_boundaries(self):
         observation = {"observedAtUtc": self.now.isoformat()}
         cap.require_recent_review(observation, self.now + timedelta(seconds=300))
