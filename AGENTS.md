@@ -53,6 +53,21 @@ injection, debugger attachment, uncontrolled automation, or bypass of
 existing input/freshness gates is implied. Prefer useful measurements and
 small reproducible experiments over prolonged planning.
 
+**Continuous parallel-agent utilization — Joey's decision, 2026-11-01:**
+For substantive ongoing work, use the maximum **useful** subagent
+concurrency available, keeping the worker queue filled with independent,
+specific, verifiable tasks. Reassign completed agents promptly; give each
+worker a bounded evidence target, source/file ownership and a clear
+handoff. Prefer complementary static executable analysis, offline tests,
+freshness monitoring, source/control safety reviews and documentation
+over redundant investigations. Do not fabricate tasks just to occupy
+slots or let background workers take independent live game input.
+The root coordinator retains the sole input/controller owner per lab,
+orders shared-host heavy work, reconciles worker findings, commits durable
+results and keeps work moving through non-blocking stalls. Respect
+tool approval, source-mutation and safety boundaries; worker count never
+overrides one-input-owner, exclusive queue or freshness safeguards.
+
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow
