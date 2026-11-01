@@ -198,9 +198,14 @@ def position_transform_candidates(component: bytes, post_read: bytes) -> dict:
     if component[0x48:0xB8] != post_read:
         return {"status": "changed-during-probe", "scope": scope,
                 "inputsStable": False}
+    primary_xyz = struct.unpack_from("<fff", component, 0x48)
+    secondary_xyz = struct.unpack_from("<fff", component, 0x88)
+    for label, xyz in (("primary", primary_xyz), ("secondary", secondary_xyz)):
+        if not all(math.isfinite(value) for value in xyz):
+            return {"status": "unavailable", "reason": f"nonfinite-{label}-xyz",
+                    "inputsStable": True, "scope": scope}
     result = {"scope": scope, "inputsStable": True,
-              "secondaryCachedXyzCandidate": dict(zip(("x", "y", "z"),
-                                                       struct.unpack_from("<fff", component, 0x88)))}
+              "secondaryCachedXyzCandidate": dict(zip(("x", "y", "z"), secondary_xyz))}
     matrices = []
     for offset in (0x60, 0x94):
         values = struct.unpack_from("<9f", component, offset)
@@ -664,6 +669,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                            "componentSlots": slots,
                            "components": {k: f"0x{v:X}" for k, v in components.items()},
                            "cachedXyzCandidate": dict(zip(("x", "y", "z"), xyz)),
+                           "cachedXyzInputsStable": (final[components["position"] + 0x48][:12]
+                                                      == values[components["position"]][0x48:0x54]),
                            "cachedXyzObservedAtUtc": observation_times["component-values"],
                            "completedAtUtc": after.get("capturedAtUtc"),
                            "limitations": ["Sequential reads are not atomic; ABA changes are not excluded.",

@@ -1,6 +1,7 @@
 """Synthetic tests: no RIFT process, VM, controller, or credentials required."""
 import base64
 import copy
+import json
 import math
 import struct
 import unittest
@@ -155,6 +156,19 @@ class NativeUnitManagerTests(unittest.TestCase):
         result = position_transform_candidates(raw, raw[0x48:0xB8])
         self.assertEqual("unqualified-matrix-shape", result["status"])
         self.assertIsNone(result["matrices"][0]["planarAngleDegreesCandidate"])
+
+    def test_position_transform_nonfinite_xyz_cannot_enter_complete_review(self):
+        for offset, value, reason in ((0x48, float("nan"), "nonfinite-primary-xyz"),
+                                      (0x88, float("nan"), "nonfinite-secondary-xyz"),
+                                      (0x8C, float("inf"), "nonfinite-secondary-xyz")):
+            with self.subTest(offset=offset):
+                raw = self.position_component()
+                struct.pack_into("<f", raw, offset, value)
+                result = position_transform_candidates(raw, raw[0x48:0xB8])
+                self.assertEqual("unavailable", result["status"])
+                self.assertEqual(reason, result["reason"])
+                self.assertNotIn("matrices", result)
+                json.dumps(result, allow_nan=False)
 
     def test_health_fields_preserve_raw_inputs_without_claiming_hp(self):
         record = bytearray(128)
