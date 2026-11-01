@@ -34,7 +34,7 @@ from scripts.movement_controller import (
 )
 from scripts.nav_access_queue import AccessQueue
 from scripts.nav_control_watchdog import bind_identity, resource_epoch
-from scripts.vm_console_native import process_identity
+from scripts.vm_console_native import listener_owner, process_identity
 
 
 SHA = re.compile(r"[A-F0-9]{64}\Z")
@@ -158,6 +158,176 @@ class PinnedHost:
                 require(float(guest.get("expiresInSeconds", 0)) > 0.5, "arm is expiring")
         self.check()
         return value
+
+
+
+class ManagedPinnedHost(PinnedHost):
+    """A reviewed movement host bound to one exact managed task generation."""
+
+    def __init__(self, plan_path: Path):
+        self.plan_path = Path(plan_path).resolve(strict=True)
+        self.plan = load(self.plan_path)
+        plan = self.plan
+        require(plan.get("kind") == "managed-controller/1"
+                and plan.get("lab") in ("lab1", "lab2"),
+                "managed host plan is invalid")
+        from scripts.ensure_controller import CONFIGS, QUEUE
+        lab = plan["lab"]
+        config_path = CONFIGS[lab].resolve(strict=True)
+        self.receipt_path = Path(plan["receiptPath"]).resolve(strict=True)
+        task_root = ROOT / "artifacts/controller-tasks" / lab
+        require(self.receipt_path.name == "process.json"
+                and self.receipt_path.parent.parent == task_root.resolve()
+                and not self.receipt_path.is_symlink(),
+                "managed host receipt path is not an owned task")
+        require(Path(plan["configPath"]).resolve(strict=True) == config_path
+                and Path(plan["database"]).resolve(strict=True) == QUEUE.resolve(strict=True)
+                and plan["resource"] == "vm:rift-lab-" + lab[-1],
+                "managed host plan paths or resource mismatch")
+        self.receipt = load(self.receipt_path)
+        self.config = HostConfig.load(config_path)
+        self.client = ControlClient(self.config)
+        self.target = plan.get("target")
+        require(isinstance(self.target, dict) and set(self.target) ==
+                {"processId", "processStartUtcTicks", "executableSha256", "windowHandle"},
+                "managed host target pin invalid")
+        self.check()
+
+    def check(self):
+        plan, receipt = self.plan, self.receipt
+        require(sha(self.receipt_path) == plan.get("receiptSha256"),
+                "managed host task receipt changed")
+        require(receipt.get("lab") == plan["lab"]
+                and receipt.get("task") == "rr2-controller-" + plan["lab"]
+                and receipt.get("vmIdentity") == plan.get("vmIdentity")
+                and receipt.get("configSha256") == plan.get("configSha256")
+                and receipt.get("sourceHashes") == plan.get("sourceHashes")
+                and type(receipt.get("pid")) is int and receipt["pid"] > 0
+                and isinstance(receipt.get("processIdentity"), dict)
+                and type(receipt.get("session")) is int and receipt["session"] > 0,
+                "managed host task receipt differs from plan")
+        require(not (self.receipt_path.parent / "exited.json").exists()
+                and not (self.receipt_path.parent / "failure.json").exists(),
+                "managed host task has exited or failed")
+        require(sha(Path(plan["configPath"])) == plan["configSha256"],
+                "managed host config changed")
+        hashes = plan["sourceHashes"]
+        require(isinstance(hashes, dict) and len(hashes) >= 8,
+                "managed host source hash set invalid")
+        for relative, expected in hashes.items():
+            path = Path(relative)
+            require(isinstance(relative, str) and not path.is_absolute()
+                    and path.parts and path.parts[0] == "scripts"
+                    and ".." not in path.parts and SHA.fullmatch(str(expected)),
+                    "managed host source path or hash invalid")
+            require(sha(ROOT / path) == expected, "managed host runtime changed")
+        require(process_identity(receipt["pid"]) == receipt["processIdentity"],
+                "managed host process epoch changed")
+        require(listener_owner(self.config.ui_port) == receipt["pid"],
+                "managed host operator listener owner changed")
+        guard = VmEpochGuard(self.config)
+        require(guard.enabled and guard.module.collect_identity(guard.config)
+                == plan["vmIdentity"], "managed host VM epoch changed")
+
+    def status(self, **kwargs):
+        value = super().status(**kwargs)
+        host, guest = value["host"], value["guest"]
+        coord = host["coordination"]
+        supervisor = coord.get("supervisor")
+        require(isinstance(supervisor, dict), "managed supervisor status invalid")
+        reservation = host.get("consoleReservation", {})
+        require(reservation.get("closing") is False
+                and coord.get("shutdownRequested") is False
+                and supervisor.get("terminationPending") is False,
+                "managed controller is closing or terminating")
+        require(coord.get("hostInstance") == self.plan["hostInstance"]
+                and coord.get("connection") == self.plan["connection"]
+                and coord.get("errorCode") is None
+                and supervisor.get("epoch") == self.plan["supervisorEpoch"]
+                and supervisor.get("state") == "running"
+                and supervisor.get("threadAlive") is True
+                and supervisor.get("initialCleanupVerified") is True
+                and supervisor.get("errorCode") is None
+                and host.get("instanceId") == self.plan["guestInstance"]
+                and guest.get("instanceId") == self.plan["guestInstance"],
+                "managed controller generation or supervisor changed")
+        return value
+
+
+def write_managed_host_plan(lab: str, output: Path) -> Path:
+    """Pin an already-ready controller. Never start/rebind one implicitly."""
+    from scripts.ensure_controller import CONFIGS, QUEUE
+    require(lab in CONFIGS, "unknown managed lab")
+    config_path = CONFIGS[lab].resolve(strict=True)
+    config_sha = sha(config_path)
+    config = HostConfig.load(config_path)
+    listener_pid = listener_owner(config.ui_port)
+    status = ControlClient(config).request("/api/status", method="GET")
+    host, guest = status.get("host", {}), status.get("guest", {})
+    coord = host.get("coordination", {})
+    require(host.get("connected") is True and isinstance(host.get("vmIdentity"), dict)
+            and coord.get("resource") == "vm:rift-lab-" + lab[-1]
+            and coord.get("state") == "ready"
+            and isinstance(coord.get("hostInstance"), str)
+            and type(coord.get("connection")) is int
+            and isinstance(guest.get("instanceId"), str),
+            "managed controller is not ready for a pinned plan")
+    task_root = ROOT / "artifacts/controller-tasks" / lab
+    require(task_root.is_dir() and not task_root.is_symlink(),
+            "managed controller task receipts unavailable")
+    folders = list(task_root.iterdir())
+    require(len(folders) <= 128, "managed controller receipt scan too large")
+    matches = []
+    for folder in folders:
+        if not folder.is_dir() or folder.is_symlink():
+            continue
+        receipt_path = folder / "process.json"
+        if not receipt_path.is_file() or (folder / "exited.json").exists() \
+                or (folder / "failure.json").exists():
+            continue
+        try:
+            receipt = load(receipt_path, limit=65536)
+            identity = process_identity(receipt["pid"])
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError):
+            continue
+        if (receipt.get("lab") == lab
+                and receipt.get("task") == "rr2-controller-" + lab
+                and receipt.get("configSha256") == config_sha
+                and receipt.get("vmIdentity") == host["vmIdentity"]
+                and receipt.get("pid") == listener_pid
+                and identity == receipt.get("processIdentity")):
+            matches.append((receipt_path, receipt))
+    require(len(matches) == 1, "managed controller task receipt missing or ambiguous")
+    receipt_path, receipt = matches[0]
+    target = guest.get("target", {})
+    target_pin = {key: target.get(key) for key in
+                  ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
+    supervisor = coord.get("supervisor", {})
+    require(isinstance(supervisor, dict) and isinstance(supervisor.get("epoch"), str),
+            "managed controller supervisor has no epoch")
+    plan = {
+        "kind": "managed-controller/1", "lab": lab,
+        "configPath": str(config_path), "configSha256": config_sha,
+        "database": str(QUEUE.resolve(strict=True)),
+        "resource": "vm:rift-lab-" + lab[-1],
+        "vmIdentity": host["vmIdentity"], "hostInstance": coord["hostInstance"],
+        "connection": coord["connection"], "supervisorEpoch": supervisor["epoch"],
+        "guestInstance": guest["instanceId"], "target": target_pin,
+        "receiptPath": str(receipt_path.resolve(strict=True)),
+        "receiptSha256": sha(receipt_path), "sourceHashes": receipt["sourceHashes"],
+    }
+    destination = Path(output) / "managed-host-plan.json"
+    save(destination, plan)
+    ManagedPinnedHost(destination).status(require_armed=False)
+    return destination
+
+
+def open_host(plan_path: Path) -> PinnedHost:
+    kind = load(Path(plan_path)).get("kind")
+    if kind == "managed-controller/1":
+        return ManagedPinnedHost(plan_path)
+    require(kind is None, "unknown host plan kind")
+    return PinnedHost(plan_path)
 
 
 class LiveQueueLease:
@@ -321,12 +491,13 @@ def require_post_turn_calibration(turn_result: Path, calibration_profile: Path) 
             "post-turn calibration start moved away from the turn endpoint")
 
 
-def prepare(host_plan: Path, feedback_pin: Path, output: Path, mode: str,
+def prepare(host_plan: Path | None, feedback_pin: Path, output: Path, mode: str,
             goal: Position | None = None, calibration_profile: Path | None = None,
             keys: tuple[str, ...] = ("w", "q"), dimension: str = "2d",
             calibrated_displacements: float | None = None,
             turn_hold_ms: int = 100,
-            after_turn_result: Path | None = None) -> dict:
+            after_turn_result: Path | None = None,
+            managed_lab: str | None = None) -> dict:
     require(dimension in ("1d", "2d"), "movement dimension must be 1d or 2d")
     require(mode in ("calibration", "movement", "turn"), "invalid movement mode")
     key_count = 1 if dimension == "1d" else 2
@@ -356,7 +527,11 @@ def prepare(host_plan: Path, feedback_pin: Path, output: Path, mode: str,
     keys = tuple(keys)
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=False)
-    host = PinnedHost(host_plan)
+    require((host_plan is None) != (managed_lab is None),
+            "select exactly one legacy host plan or managed lab")
+    if managed_lab is not None:
+        host_plan = write_managed_host_plan(managed_lab, output)
+    host = open_host(host_plan)
     before = host.status(require_armed=False)
     pin = Path(feedback_pin).resolve(strict=True)
     pin_value = load(pin)
@@ -775,9 +950,13 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
     grant = load(Path(session["privateGrant"]), limit=8192)
     require(set(grant) == {"request_id", "token"} and grant["request_id"] == session["lease"]["request_id"],
             "private grant differs from session")
-    pinned = PinnedHost(Path(session["hostPlan"])); pinned.target = {
-        key: session["target"][key] for key in
-        ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
+    pinned = open_host(Path(session["hostPlan"]))
+    reviewed_target = {key: session["target"][key] for key in
+                       ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
+    if isinstance(pinned, ManagedPinnedHost):
+        require(pinned.plan["target"] == reviewed_target,
+                "managed host plan target differs from reviewed session")
+    pinned.target = reviewed_target
     queue = LiveQueueLease(AccessQueue(pinned.plan["database"]), grant["request_id"], grant["token"],
                            pinned.plan["resource"])
     client = ControlClient(pinned.config, access=grant)
@@ -791,7 +970,11 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__); sub = parser.add_subparsers(dest="command", required=True)
-    prep = sub.add_parser("prepare"); prep.add_argument("--host-plan", type=Path, required=True)
+    prep = sub.add_parser("prepare")
+    owner = prep.add_mutually_exclusive_group(required=True)
+    owner.add_argument("--host-plan", type=Path, help="existing legacy controller plan")
+    owner.add_argument("--managed-lab", choices=("lab1", "lab2"),
+                       help="pin an already-ready on-demand managed controller")
     prep.add_argument("--feedback-pin", type=Path, required=True); prep.add_argument("--output", type=Path, required=True)
     prep.add_argument("--mode", choices=("calibration", "movement", "turn"), required=True)
     prep.add_argument("--dimension", choices=("1d", "2d"), default="2d")
@@ -817,7 +1000,7 @@ def main():
         result = prepare(args.host_plan, args.feedback_pin, args.output, args.mode, goal,
                          args.calibration_profile, tuple(args.keys), args.dimension,
                          args.calibrated_displacements, args.turn_hold_ms,
-                         args.after_turn_result)
+                         args.after_turn_result, args.managed_lab)
     else: result = run_reviewed(args.session_plan, args.review, args.output)
     print(json.dumps(sanitized(result), sort_keys=True)); return 0
 
