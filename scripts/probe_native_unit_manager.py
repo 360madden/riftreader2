@@ -140,7 +140,80 @@ def snapshot_bytes(report: dict, request: dict, identity: dict) -> dict[int, byt
     return chunks
 
 
-def run(lab: str) -> dict:
+
+def health_record_fields(record: bytes, wrapper: bytes) -> dict:
+    """Raw code-derived candidates only; a type check is still required."""
+    if len(record) != 128 or len(wrapper) != 56:
+        raise ValueError("health-candidate-read-hole")
+    caps = struct.unpack_from("<ff", record, 0x6C)
+    cached_clock = struct.unpack_from("<f", wrapper, 0x34)[0]
+    if not all(math.isfinite(value) for value in (*caps, cached_clock)):
+        raise ValueError("health-candidate-nonfinite")
+    return {
+        "baseRaw": struct.unpack_from("<q", record, 0x48)[0],
+        "maximumRaw": struct.unpack_from("<q", record, 0x50)[0],
+        "modifierRaw": struct.unpack_from("<q", record, 0x60)[0],
+        "recordRevision": struct.unpack_from("<i", record, 0x68)[0],
+        "wrapperRevision": struct.unpack_from("<i", wrapper, 0x30)[0],
+        "wrapperClock": cached_clock,
+        "caps": list(caps),
+    }
+
+
+def checked_health_type(base: int, record_vtable: int, descriptor_getter: int,
+                        descriptor_vtable: int, type_getter: int) -> int:
+    # Exact-SHA static path: 20CCC60 -> 20E0DE0 returns &355F430;
+    # descriptor vtable 2C281B0 +8 ->20F2480, seed00560291 ->20E64C0
+    # returns6A3BBB7C, XOR low16 B9BE ->02C2. Never call these functions.
+    if (record_vtable != base + 0x2C0EE88 or descriptor_getter != base + 0x20CCC60
+            or descriptor_vtable != base + 0x2C281B0 or type_getter != base + 0x20F2480):
+        raise ValueError("health-type-fingerprint-mismatch")
+    return (0x6A3BBB7C ^ 0xB9BE) & 0xFFFF
+
+
+def f32(value: float) -> float:
+    return struct.unpack("<f", struct.pack("<f", value))[0]
+
+
+def calculate_health(fields: dict, clock: float) -> dict:
+    """Current-build arithmetic for finite ordinary inputs, never a cache write."""
+    unavailable = lambda reason: {"status": "unavailable", "reason": reason}
+    if fields["recordRevision"] != fields["wrapperRevision"]:
+        return unavailable("revision-mismatch")
+    base, maximum, modifier = (fields[key] for key in ("baseRaw", "maximumRaw", "modifierRaw"))
+    if (any(type(value) is not int or not -(1 << 31) <= value < 1 << 31
+            for value in (base, maximum, modifier)) or maximum <= 0):
+        return unavailable("outside-normal-integer-domain")
+    caps = fields["caps"]
+    cached = fields["wrapperClock"]
+    if (len(caps) != 2 or not all(math.isfinite(value) for value in (*caps, clock, cached))
+            or not all(0 <= cap <= 1 for cap in caps)):
+        return unavailable("invalid-float-input")
+    try:
+        delta = f32(f32(clock) - f32(cached))
+    except (OverflowError, struct.error):
+        return unavailable("float32-overflow")
+    if not 0 <= delta < 2147483647:
+        return unavailable("clock-delta-outside-normal-domain")
+    elapsed = f32(math.floor(delta))
+    rate = f32(modifier)
+    adjustment = math.trunc(float(rate) * -0.009999999776482582 * float(elapsed))
+    adjusted = base - adjustment
+    if not -(1 << 63) <= adjusted < 1 << 63:
+        return unavailable("integer-conversion-or-subtraction-overflow")
+    cap = min(caps)
+    value = min(max(adjusted, 0), maximum)
+    if base == 0:
+        value = 0
+    elif float(value) / float(maximum) > cap:
+        value = math.trunc(float(maximum) * float(cap))
+    elif base > 0 and value <= 0:
+        value = 1
+    return {"status": "calculated-candidate", "current": value, "maximum": maximum,
+            "clock": clock, "elapsedWholeSeconds": elapsed,
+            "formulaRva": "0x133B150", "scope": "finite-normal-values-only"}
+
+def run(lab: str, *, health_record: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
     sys.path.insert(0, str(ROOT))
@@ -164,10 +237,12 @@ def run(lab: str) -> dict:
     folder.mkdir(parents=True, exist_ok=False)
     prefix = settings["guestRoot"] + "\\unit-manager-" + token
     evidence = {}
+    observation_times = {}
     deadline = time.monotonic() + 240
     review = {"schemaVersion": 1, "lab": lab, "output": str(folder),
               "readerExe": reader, "readerSha256": reader_sha,
-              "workflowSha256": sha(workflow_raw), "status": "incomplete",
+              "workflowSha256": sha(workflow_raw), "probeSha256": sha(Path(__file__).read_bytes()),
+              "status": "incomplete",
               "qualification": "candidate-only; no passive-freshness or restart qualification"}
     try:
         with api._session(config, settings, vm_identity, folder) as guest:
@@ -208,7 +283,9 @@ def run(lab: str) -> dict:
                 if len(raw) > 1024 * 1024:
                     raise ValueError("probe-report-size-exceeded")
                 evidence[output.name] = sha(raw)
-                return json.loads(raw.decode("utf-8-sig"))
+                parsed = json.loads(raw.decode("utf-8-sig"))
+                observation_times[name] = parsed.get("completedAtUtc", parsed.get("capturedAtUtc"))
+                return parsed
 
             before = native("inspect-native", "inspect-before")
             identity, target = inspection_identity(before)
@@ -226,6 +303,8 @@ def run(lab: str) -> dict:
 
             roots_ranges = [(MANAGER_RVA, 8), (PLAYER_SYSTEM_RVA, 8),
                             (POSITION_INDEX_RVA, 4), (HEALTH_INDEX_RVA, 4)]
+            if health_record:
+                roots_ranges += [(0x33DC2B0, 8), (0x355F430, 8), (0x2C281B8, 8)]
             roots = take("roots", roots_ranges, relative=True)
             manager = pointer(struct.unpack("<Q", roots[base + MANAGER_RVA])[0])
             player_system = pointer(struct.unpack("<Q", roots[base + PLAYER_SYSTEM_RVA])[0])
@@ -256,10 +335,55 @@ def run(lab: str) -> dict:
             component_raw = take("component-pointers", [(p, 8) for p in component_addresses])
             components = {kind: pointer(struct.unpack("<Q", component_raw[
                           component_table + slot * 8])[0]) for kind, slot in slots.items()}
-            values = take("component-values", [(components["position"], 0x110)])
+            value_ranges = [(components["position"], 0x110)]
+            if health_record:
+                value_ranges.append((components["health"], 0x38))
+            values = take("component-values", value_ranges)
             xyz = struct.unpack_from("<fff", values[components["position"]], 0x48)
             if not all(math.isfinite(value) for value in xyz):
                 raise ValueError("nonfinite-position-candidate")
+
+
+            health = None
+            health_anchors = {}
+            if health_record:
+                wrapper = values[components["health"]]
+                owner_object = pointer(struct.unpack_from("<Q", wrapper, 0x28)[0])
+                owner_slot = owner_object + 0x40
+                owner_raw = take("health-owner", [(owner_slot, 8)])[owner_slot]
+                container = pointer(struct.unpack("<Q", owner_raw)[0])
+                record_slot = container + 0x640
+                slot_raw = take("health-slot", [(record_slot, 8)])[record_slot]
+                record_address = pointer(struct.unpack("<Q", slot_raw)[0], 128)
+                clock_object = pointer(struct.unpack("<Q", roots[base + 0x33DC2B0])[0])
+                record_capture = take("health-record", [(record_address, 128), (clock_object + 0x18, 4)])
+                record_raw = record_capture[record_address]
+                game_clock = struct.unpack("<f", record_capture[clock_object + 0x18])[0]
+                vtable = pointer(struct.unpack_from("<Q", record_raw)[0])
+                if not base <= vtable < base + identity["moduleSize"] - 0x48:
+                    raise ValueError("health-vtable-outside-exact-module")
+                getter_slot = vtable + 0x40
+                getter_raw = take("health-type-getter", [(getter_slot, 8)])[getter_slot]
+                getter = struct.unpack("<Q", getter_raw)[0]  # x64 code need not be 8-byte aligned.
+                if not base <= getter < base + identity["moduleSize"]:
+                    raise ValueError("health-type-getter-outside-exact-module")
+                type_code = checked_health_type(
+                    base, vtable, getter, struct.unpack("<Q", roots[base + 0x355F430])[0],
+                    struct.unpack("<Q", roots[base + 0x2C281B8])[0])
+                health = {
+                    "status": "type-checked-record-candidate",
+                    "record": f"0x{record_address:X}",
+                    "ownerObject": f"0x{owner_object:X}", "container": f"0x{container:X}",
+                    "vtableRva": f"0x{vtable - base:X}",
+                    "descriptorGetterRva": f"0x{getter - base:X}",
+                    "fields": health_record_fields(record_raw, wrapper),
+                    "typeValidation": "exact-build-vtable-and-metadata-path; no native function called",
+                    "typeCode": f"0x{type_code:X}", "observedAtUtc": observation_times["health-record"],
+                    "gameClock": game_clock,
+                }
+                health_anchors = {owner_slot: owner_raw, record_slot: slot_raw,
+                                  getter_slot: getter_raw,
+                                  components["health"] + 0x28: wrapper[0x28:0x38]}
 
             # Recheck every ownership anchor after staged reads. This is NOT an
             # atomic snapshot or proof that no transient ABA change occurred.
@@ -268,6 +392,9 @@ def run(lab: str) -> dict:
                            found["node"]: 24, entity: 128})
             checks.update({step["address"]: 24 for step in found["path"]})
             checks.update({p: 8 for p in component_addresses})
+            checks.update({address: len(raw) for address, raw in health_anchors.items()})
+            if health is not None:
+                checks[record_address] = 128
             final = take("anchors-after", sorted(checks.items()))
             if any(final[address] != raw for address, raw in roots.items()):
                 raise ValueError("module-root-changed")
@@ -280,6 +407,16 @@ def run(lab: str) -> dict:
                         for index in (position_index, health_index)) or
                     any(final[p] != component_raw[p] for p in component_addresses)):
                 raise ValueError("player-ownership-anchor-changed")
+            if health is not None:
+                if (any(final[address] != raw for address, raw in health_anchors.items()) or
+                        final[record_address][:8] != record_raw[:8]):
+                    raise ValueError("health-ownership-anchor-changed")
+                health["inputsStable"] = final[record_address][0x48:0x74] == record_raw[0x48:0x74]
+                if not health["inputsStable"]:
+                    health["status"] = "changed-input-record-candidate"
+                health["calculatedHealth"] = (calculate_health(health["fields"], health["gameClock"])
+                    if health["inputsStable"] else {"status": "unavailable", "reason": "inputs-changed"})
+                review["healthRecordCandidate"] = health
             after = native("inspect-native", "inspect-after")
             after_identity, after_target = inspection_identity(after)
             if after_identity != identity or after_target != target:
@@ -292,11 +429,12 @@ def run(lab: str) -> dict:
                            "componentSlots": slots,
                            "components": {k: f"0x{v:X}" for k, v in components.items()},
                            "cachedXyzCandidate": dict(zip(("x", "y", "z"), xyz)),
+                           "cachedXyzObservedAtUtc": observation_times["component-values"],
                            "completedAtUtc": after.get("capturedAtUtc"),
                            "limitations": ["Sequential reads are not atomic; ABA changes are not excluded.",
                                            "Native self key was not independently correlated with Lua in this run.",
                                            "No Lua query was made; cache passive freshness is unproven.",
-                                           "No HP/resource value or full-game restart was qualified."]})
+                                           "No independent HP/API change or full-game restart was qualified."]})
     except Exception as error:
         review["errorType"] = type(error).__name__
         # Existing session errors are sanitized; don't serialize arbitrary exceptions.
@@ -313,10 +451,12 @@ def run(lab: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lab", choices=("lab1", "lab2", "all"), required=True)
+    parser.add_argument("--health-record", action="store_true",
+                        help="Also capture/type-check the health record and calculate ordinary-value HP candidates.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
-        print(json.dumps(run(lab), indent=2), flush=True)
+        print(json.dumps(run(lab, health_record=args.health_record), indent=2), flush=True)
 
 
 if __name__ == "__main__":

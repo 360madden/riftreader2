@@ -1,6 +1,6 @@
 # Current RIFT client code map — native health (2026-10-31)
 
-Status: **offline static-code evidence only**. No player-owned live HP pointer is qualified on the current build. All addresses below are RVAs relative to `rift_x64.exe`, not absolute process addresses.
+Status: **current-build static code plus a bracketed, untyped Lab1 raw-record capture**. The exact-build type interpretation and guarded calculator are implemented and synthetically tested; a fresh typed two-lab HP read, independent value comparison, passive freshness and restart qualification remain pending. Unless explicitly labeled as a captured session address, addresses below are RVAs relative to `rift_x64.exe`.
 
 ## Exact source and reproduction
 
@@ -47,9 +47,61 @@ record      = read_u64(container + 0x640)
 maximum     = read_i64(record + 0x50)
 ```
 
-This reproduces pointer traversal only. Resolver `0x20CF270` calls type helper **`0x127303C`** and accepts low16 result `0x2C2`; the helper still needs a pure-read interpretation before promoting a record. Never invoke the game resolver, change refcounts, or write the getter's cached revision/clock. Core-wrapper revision/clock are at `healthComponent+0x30/+0x34` (the core's adjusted wrapper `+0x8/+0x0C`); the record revision is `+0x68`. A read-only reconstruction must reject inconsistent mutable fields or handle their semantics explicitly.
+This reproduces pointer traversal only. Resolver `0x20CF270` calls type helper **`0x127303C`** and accepts low16 result `0x2C2`; its exact-build pure-read interpretation is now documented below. Fresh live type/value validation is still required before promoting a record. Never invoke the game resolver, change refcounts, or write the getter's cached revision/clock. Core-wrapper revision/clock are at `healthComponent+0x30/+0x34` (the core's adjusted wrapper `+0x8/+0x0C`); the record revision is `+0x68`. A read-only reconstruction must reject inconsistent mutable fields or handle their semantics explicitly.
 
 Evidence: passed exact-build jobs `rr2-serialized-manager-lookup-code-20261101-01` and `rr2-serialized-manager-hash-health-prologue-20261101-01`, plus retained Ghidra files named above. The ordinary finite calculator reconstruction does not establish exact boundary behavior, stable live ownership, or passive freshness.
+
+## Read-only type interpretation and first raw health record — October 31, 21:43 EDT
+
+The exact-build type path is now resolved statically. This supersedes the earlier unresolved-type note; it does **not** retroactively type-validate the first live record capture.
+
+| Step | Exact-build evidence |
+|---|---|
+| Record virtual table | The first Lab1 raw record has vtable RVA `0x2C0EE88`; slot `+0x40` contains getter RVA `0x20CCC60`. |
+| Descriptor getter | `0x20CCC60` jumps to `0x20E0DE0`, whose initialized return is the address `module+0x355F430`. Never invoke its lazy initializer. |
+| Descriptor table | The static initializer assigns vtable `module+0x2C281B0`; its `+0x08` slot contains type getter `0x20F2480`. |
+| Type result | `0x20F2480` calls `0x20E64C0` with seed `0x00560291`. That branch returns `0x6A3BBB7C`; low16 XOR `0xB9BE` gives **`0x02C2`**, exactly the resolver's accepted type. |
+
+This is a function-derived constant, **not a type field at descriptor+0x08**. The implemented read-only guard requires the record vtable, descriptor getter, initialized descriptor vtable and type getter to match all four exact-build fingerprints. It does not call game code, initialize metadata, increment references, or accept other untraced derived types.
+
+Passed static source jobs (exact installed SHA above; bounded original PE byte slices, independently disassembled):
+- `rr2-serialized-health-type-and-arithmetic-20261101-01`
+- `rr2-serialized-health-concrete-descriptor-20261101-01`
+- `rr2-serialized-health-descriptor-root-20261101-01`
+- `rr2-serialized-health-type-id-leaf-20261101-01`
+- `rr2-serialized-health-type-id-transform-20261101-01`
+
+### Retained Lab1 raw observation — not a new current HP reading
+
+The earlier raw-record run completed at **2026-10-31 21:38:12 EDT / 2026-11-01 01:38:12 UTC**, on PID8164/start639290507142219120, native self ID `u035400012FA2D207`. Its status is deliberately still `untyped-record-candidate` because the descriptor/type guard and game-clock capture were added afterward.
+
+| Field | Captured value |
+|---|---:|
+| Base candidate | 14,830 |
+| Maximum candidate | 14,830 |
+| Modifier candidate | 13,138 |
+| Record / wrapper revision | 9 / 9 |
+| Wrapper clock (float32) | 43139.0546875 |
+| Fractional caps | 1.0 / 1.0 |
+| Ownership anchors and relevant inputs | Stable across the bracketed reads |
+
+Selected health component/owner `0x23D011C1BB0` led to container `0x23D7C711BE0`, record `0x23D51951290`. These are session addresses, never portable locators.
+
+Evidence directory: `artifacts/native-unit-manager/lab1/880371d2ed0c49dcbda28162f3a6e6f5/`.
+- `review.json` SHA256 `47572B9CFDA6A87E8724BAC3F6D5236DF30105A839A16E2CCF718EB3751D6760`.
+- `health-record.json` SHA256 `EE2667BDD26D8EE3A80BE5BDE243EC8AB205C7C685710F392C43F9473B83E630`.
+- `health-type-getter.json` SHA256 `8A10188F11AA400303BB259D4712B3E45374E52B631CBEEECAF44BC1269C6BE7`.
+- `anchors-after.json` SHA256 `4B63E776FEB4BBC8A234CC4DEBE490C70558E231F47B656027E0F86BE4B55368`.
+
+### Implementation and validation boundary
+
+`scripts/probe_native_unit_manager.py --lab lab1|lab2 --health-record` now adds the type fingerprints, clock capture, revision/input consistency checks and a finite ordinary-value HP calculation. It retains float32 rounding and the native `-0.009999999776482582` multiplier, rejects nonpositive maximum/out-of-domain values, and preserves the native cap-before-alive-floor ordering. It never updates the game's cached revision/clock. Matching stable inputs yield `calculated-candidate`, not production-qualified HP.
+
+**25 focused synthetic tests passed**, job `rr2-serialized-native-typed-health-tests-20261101-01`, exit0 at 01:43:35 UTC. Independent read-only review found no blocking defect in the declared arithmetic domain or ownership rechecks. Sequential reads still are not atomic and cannot exclude an ABA change.
+
+The new typed Lab2 live command `rr2-serialized-native-typed-health-lab2-20261101-01` was **rejected at the tool approval step**. It was not retried or routed through another tool. No new typed-health live run or screenshot comparison completed. Lab2 raw health has not yet been captured by this path. Await explicit approval, then run Lab2 and Lab1 serially and compare against fresh protected controller captures. Do not relabel the retained raw capture or a synthetic test as that missing live validation.
+
+For screenshots, reuse existing capture/queue primitives, not the full old XYZ workflow guard: `run_xyz_workflow.read_config` pins obsolete coordinate-profile RVAs. Direct `control_client._capture` also does not perform dependency startup by itself; the normal `control_client.run` capture entrypoint does. Acquire against current authenticated identity/epoch, never arm or send input, and wait for watchdog cleanup rather than treating `q.finish` as completed release. No bypass of an occupied queue, foreground failure, or permission denial.
 
 ## HP arithmetic leaf: bounded static reconstruction
 

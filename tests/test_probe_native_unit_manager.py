@@ -5,7 +5,8 @@ import struct
 import unittest
 
 from scripts.probe_native_unit_manager import (
-    BUILD_SHA, encoded, entity_hash, find_entity, inspection_identity, pointer,
+    BUILD_SHA, calculate_health, checked_health_type, encoded, entity_hash, find_entity,
+    health_record_fields, inspection_identity, pointer,
     sha, snapshot_bytes,
 )
 
@@ -98,6 +99,87 @@ class NativeUnitManagerTests(unittest.TestCase):
         for value in (0, -1, 0x10001, 0x800000000000, 0x7FFFFFFFFFF8):
             with self.assertRaises(ValueError):
                 pointer(value, 24)
+
+    def test_health_fields_preserve_raw_inputs_without_claiming_hp(self):
+        record = bytearray(128)
+        wrapper = bytearray(56)
+        struct.pack_into("<q", record, 0x48, 100)
+        struct.pack_into("<q", record, 0x50, 200)
+        struct.pack_into("<q", record, 0x60, 1234)
+        struct.pack_into("<i", record, 0x68, 7)
+        struct.pack_into("<ff", record, 0x6C, 1.0, 0.5)
+        struct.pack_into("<if", wrapper, 0x30, 7, 12.75)
+        result = health_record_fields(record, wrapper)
+        self.assertEqual(100, result["baseRaw"])
+        self.assertEqual(200, result["maximumRaw"])
+        self.assertEqual(1234, result["modifierRaw"])
+        self.assertEqual([1.0, 0.5], result["caps"])
+        self.assertEqual(12.75, result["wrapperClock"])
+        self.assertNotIn("currentHp", result)
+
+    def test_health_fields_missing_bytes_rejected(self):
+        with self.assertRaisesRegex(ValueError, "health-candidate-read-hole"):
+            health_record_fields(bytes(127), bytes(56))
+
+    def test_health_fields_nonfinite_rejected(self):
+        record = bytearray(128)
+        struct.pack_into("<f", record, 0x6C, float("nan"))
+        with self.assertRaisesRegex(ValueError, "health-candidate-nonfinite"):
+            health_record_fields(record, bytes(56))
+
+    def test_health_type_matches_exact_build_metadata_chain(self):
+        base = 0x7FF000000000
+        self.assertEqual(0x2C2, checked_health_type(base, base + 0x2C0EE88,
+                         base + 0x20CCC60, base + 0x2C281B0, base + 0x20F2480))
+
+    def test_health_type_mismatch_fails_closed(self):
+        base = 0x140000000
+        expected = [base + value for value in (0x2C0EE88, 0x20CCC60, 0x2C281B0, 0x20F2480)]
+        for index in range(4):
+            changed = list(expected)
+            changed[index] = 0
+            with self.assertRaisesRegex(ValueError, "health-type-fingerprint"):
+                checked_health_type(base, *changed)
+
+    @staticmethod
+    def health_fields(**updates):
+        result = {"baseRaw": 100, "maximumRaw": 200, "modifierRaw": 10000,
+                  "recordRevision": 7, "wrapperRevision": 7,
+                  "wrapperClock": 100.0, "caps": [1.0, 1.0]}
+        result.update(updates)
+        return result
+
+    def test_health_calculation_preserves_native_float_constant(self):
+        fields = self.health_fields()
+        # Native float-derived -0.01 is slightly smaller in magnitude:
+        # trunc(10000 * -0.009999999776482582) == -99, not -100.
+        self.assertEqual(199, calculate_health(fields, 101.75)["current"])
+        self.assertEqual(200, calculate_health(fields, 102.0)["current"])
+
+    def test_health_base_zero_and_alive_floor(self):
+        self.assertEqual(0, calculate_health(self.health_fields(baseRaw=0), 101)["current"])
+        self.assertEqual(1, calculate_health(self.health_fields(modifierRaw=-20000), 101)["current"])
+
+    def test_health_fraction_cap_returns_before_alive_floor(self):
+        self.assertEqual(50, calculate_health(self.health_fields(caps=[1.0, 0.25]), 102)["current"])
+        self.assertEqual(0, calculate_health(self.health_fields(caps=[0.0, 1.0]), 102)["current"])
+
+    def test_full_health_stays_bounded(self):
+        fields = self.health_fields(baseRaw=14830, maximumRaw=14830, modifierRaw=13138,
+                                    wrapperClock=43139.0546875)
+        self.assertEqual(14830, calculate_health(fields, 50000)["current"])
+
+    def test_health_calculation_rejects_unqualified_domains(self):
+        cases = [(self.health_fields(wrapperRevision=6), 101),
+                 (self.health_fields(), 99),
+                 (self.health_fields(maximumRaw=0), 101),
+                 (self.health_fields(caps=[float("nan"), 1]), 101),
+                 (self.health_fields(caps=[1.1, 1]), 101),
+                 (self.health_fields(modifierRaw=1 << 40), 101),
+                 (self.health_fields(wrapperClock=-3e38), 3e38)]
+        for fields, clock in cases:
+            with self.subTest(fields=fields, clock=clock):
+                self.assertEqual("unavailable", calculate_health(fields, clock)["status"])
 
     @staticmethod
     def inspection():
