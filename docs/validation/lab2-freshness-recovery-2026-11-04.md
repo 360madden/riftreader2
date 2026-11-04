@@ -1,0 +1,21 @@
+# RR2 Lab2 freshness recovery checkpoint — 2026-11-04
+
+Scope: `C:\work\riftreader2`; reviewed only the current RR2 receivers/game/control identities, consulted RRE and REA-Lab1 evidence **before** considering runtime recovery, and started one bounded read-only Lab2 reader. **No game input, addon reload, movement, controller restart, queue reset, or cross-repo edit.** This is not a live XYZ/freshness qualification.
+
+## Read-only diagnosis (23:36–23:40 UTC)
+
+- `scripts.ensure_receiver._probe` confirmed independently owned observation receivers: Lab1 PID **23264** / Lab2 PID **37376**, stable original process starts; status is transport-only, not source-freshness.
+- Persisted `observations/latest.json` over a 3-second repeat was unchanged for both labs. Lab1 last receipt **2026-10-31T18:42:56Z**, outer **3747**, historical game PID **8164**; Lab2 last receipt **2026-11-01T22:58:49Z**, outer **3544**, historical game PID **7012**. Both explicitly report `bindingStatus=unbound`, `freshnessStatus=unavailable`, `reason=reader-terminated`. No usable current XYZ.
+- Current guest `RiftReader2.Live.exe` processes were **control-agent only**: Lab1 PID **8160**, Lab2 PID **1912**. There was **no standalone live observation reader**. Lab2 controller no-auto-start status confirmed connected/ready, supervisor running, RIFT foreground, disarmed, no sampled held inputs, current game PID **11572**, start ticks **639293038821710082**, SHA256 **1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8**.
+- Before recovery, reviewed RRE `docs/REA-RIFT-SPELLCASTING-SC103-ABILITY-EVENT-SOURCE-CONTRACT-2026-11-03.md`: a prior complete saved `latest` can survive a failed attempt, so file completeness is not freshness. Reviewed REA-Lab1 `CONTROLLER-L1-001.md` and `LUA-L1-001.md`: old receiver receipts and process/reader nonces are not current, and the nonce-bound Lua path requires fresh binding; REA static/source data do not replace a qualified live RR2 feed.
+
+## Bounded fresh Lab2 reader launch (23:40–23:43 UTC)
+
+- Reused published, hash-pinned November 1 `artifacts/dual-method-live-reader-20261101-01/publish/RiftReader2.Live.exe`, SHA256 **6ABD9686858F806E58FC0B181F004EA829129F2A03AA9FE0E72446333FBBFB2E**, and canonical Lab2 receiver config.
+- `scripts/launch_live_reader.py` with current exact game identity, `--duration-seconds 1800`, `--poll-interval-milliseconds 500`, output `artifacts/freshness-recovery-20261104/lab2-reader-01`. Workbridge job `rr2_fresh_20261104_launch_reader_lab2_v1` **PASS exit0**: `reader-running-postflight-verified`, reader PID **12140**, start ticks **639294325445802193**, new nonce **49d2cb83b3ba4d21b14bf3e32d67f128**, expiry **2026-11-05T00:12:24.5802193Z**, VM identity stable, no input, agent not stopped.
+- Live receiver receipt pair at **23:43:29/32Z**: new nonce/game PID matched, advancing outer sequence **37→39**, but `bindingStatus=unbound`, `freshnessStatus=unavailable`, `reason=matching-challenge-not-found`, no selected addon sequence or current XYZ. This is new transport delivery only.
+- Focused offline Python checks: `test_observe_live_reader_freshness.py` **14/14**, `test_movement_feedback.py` **27/27**, `test_build_live_source_pin.py` **6/6**, `test_ensure_receiver.py` **9/9**, combined **56/56 PASS**. Requested `test_launch_live_reader.py` pattern found **zero tests** (exit5); do not report that test as passed.
+
+## Next exact gate
+
+The current *one-use* reader needs the **reviewed game-side** `/rr2guide rebind lab2 49d2cb83b3ba4d21b14bf3e32d67f128` before it expires. Do not perform an unreviewed/competing console input or `/reloadui`. If input review is unavailable, an operator can enter the exact slash command manually in **Lab2 RIFT game chat**. Once bound, independently inspect new receiver and addon sequence, clock, player/epoch, current game/reader PID-start-SHA/nonce, and XYZ. Require the full **480-second** observer on this same reader with >=45s expiry margin before movement. **Never reuse this nonce after expiry, or claim the old 2026-11-01 calibration remains current.** If a new bound reader stalls, consult the existing RRE/REA historical evidence and RR2's saved Nov1 failure receipts before changing readers, timeouts or controller architecture.
