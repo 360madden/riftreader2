@@ -1,0 +1,1565 @@
+{
+  "_comment": "Cross-project research intake for RiftReader2. This file is STRICT JSON (not JSONC); keys prefixed _comment are explanatory and may be ignored by consumers. Read-only evidence map: NOT executable instructions, not a runtime connector, not a grant of new game input, and not proof of current telemetry.",
+  "schema_id": "rr2.cross_project_rift_evidence_intake.v1",
+  "schema_version": "1.0.0",
+  "snapshot_date_local": "2026-11-04",
+  "created_for": "C:\\work\\riftreader2\\docs\\research\\rre-rea-cross-project-evidence-intake-2026-11-04.json",
+  "purpose": "Source-linked intake of reusable research from RRE, REA-Lab1, REA tooling, Rift API, LuaPadModern and adjacent projects; recover RR2 freshness safely and focus new discovery.",
+  "scope": {
+    "_comment": "No source code/VM/game mutation is authorized by this document. Cross-project reports may be stale while their original bytes remain valid.",
+    "rr2_repo_read_only_except_this_document": true,
+    "external_projects_read_only": true,
+    "this_file_is_not_a_runtime_dependency": true,
+    "source_boundary": "RRE physical-PC research; REA-Lab1 VMware Lab1; RR2 both labs; other projects separately owned.",
+    "exclude": [
+      "live addresses and saved process pointer values",
+      "private account identifiers and credentials",
+      "copied binaries or raw guest saves",
+      "unverified server-side behavior",
+      "automatic game input or control"
+    ]
+  },
+  "snapshot": {
+    "_comment": "Versions and status reflect a point-in-time evidence check, not live status at consumption time.",
+    "rr2": {
+      "root": "C:\\work\\riftreader2",
+      "branch": "codex/modular-foundation",
+      "head": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "git_status": "clean when inspected",
+      "scope": "hybrid Lua/.NET reader and supervised two-lab discovery"
+    },
+    "rre": {
+      "root": "C:\\work\\rre",
+      "branch": "main",
+      "head": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "git_status": "dirty: 2 modified task registers and untracked backup/probe files; preserve"
+    },
+    "rea_lab1": {
+      "root": "C:\\work\\REA-Lab1",
+      "branch": "main",
+      "head": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "git_status": "dirty handoff/tasks and untracked native verifier; preserve"
+    },
+    "rea_tool": {
+      "root": "C:\\work\\tools\\rea",
+      "type": "installed npm distribution, not source Git checkout",
+      "package": "rea-agents@6.5.0",
+      "provider": "Ghidra 12.1.2"
+    },
+    "workbridge": {
+      "version": "0.16.4-dev",
+      "root": "C:\\work",
+      "command_capacity": 36,
+      "agent_capacity_note": "36 job/assignment slots are not 36 independent reasoning agents"
+    },
+    "game_build": {
+      "sha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+      "size_bytes": 60493640,
+      "scope": "reported matching on physical host and both labs in November 4 reconciliation; a disk hash does not prove current live process/addon binding"
+    }
+  },
+  "evidence_semantics": {
+    "_comment": "Each transfer item must state what it proves and what it does not prove.",
+    "claim_tiers": {
+      "G0": "source/hash/byte-exact artifact",
+      "G1": "API/UI descriptions, offline details",
+      "G2": "qualified in-game observation tied to epoch and role",
+      "G3": "exact-build native code/dataflow with independent verification",
+      "G4": "end-to-end mechanism tied to G2 and G3 plus unknown server boundary"
+    },
+    "transfer_states": [
+      "accepted_static_fact",
+      "reusable_offline_result",
+      "candidate_hypothesis",
+      "runtime_observation_historical",
+      "blocked_pending_freshness",
+      "workflow_or_tool_reference"
+    ],
+    "tri_state_facts": [
+      "true",
+      "false",
+      "unknown"
+    ],
+    "never_infer": [
+      "currently known from static catalog membership",
+      "learnable or locked from missing Detail",
+      "cast accepted from a cooldown timer alone",
+      "native type identity from shared offset",
+      "fresh addon telemetry from matching installed files",
+      "facing/LOS from visual orientation candidate alone",
+      "full restart durability from UI reload or process existence"
+    ],
+    "historical_navigation_build_sha256": "7c356c9dde9e12fcbff3c08d953b0630b48b1510a0ffb36e4ec164606e7b17bd",
+    "historical_navigation_build_size_bytes": 59963840,
+    "historical_navigation_build_matches_current": false
+  },
+  "source_registry": [
+    {
+      "id": "SRC-LP20",
+      "repo": "LuaPadModern",
+      "path": "README.md",
+      "commit": "4a531583659c0ee6ebf04c9567c5d3ecdc2abdeb",
+      "sha256": null,
+      "status": "current repo note, disk-installed Preview20; game load unverified",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-LP-BRIDGE",
+      "repo": "LuaPadModern",
+      "path": "contracts/bridge-envelope-v1.schema.json",
+      "commit": "4a531583659c0ee6ebf04c9567c5d3ecdc2abdeb",
+      "sha256": null,
+      "status": "source-only schema; supplied hash abbreviated, rehash before acceptance",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-LP-TAIL",
+      "repo": "LuaPadModern",
+      "path": "HostCore/NoncombatLogTailer.cs",
+      "commit": "4a531583659c0ee6ebf04c9567c5d3ecdc2abdeb",
+      "sha256": null,
+      "status": "offline-verified synthetic log tailer, no actual RIFT marker proof",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-RAC",
+      "repo": "Rift API",
+      "path": "addon/RiftApiCollector/main.lua",
+      "commit": "752e133b8ecc9cbcb091f83fcfd9ce6b7f550693",
+      "sha256": "47755e48c8616a423eb69c2d4b1adf74c560a8d49d96e5b3f9a446fe0ec880be",
+      "status": "v0.5.0 source, current game load unverified",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-RAC-LIST",
+      "repo": "Rift API",
+      "path": "docs/handoff-2026-10-27-live-ability-list-proof.md",
+      "commit": "752e133b8ecc9cbcb091f83fcfd9ce6b7f550693",
+      "sha256": null,
+      "status": "Oct27 physical manual 55 IDs, historical",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-RAC-DETAIL",
+      "repo": "Rift API",
+      "path": "docs/handoff-2026-10-28-live-ability-detail-proof.md",
+      "commit": "752e133b8ecc9cbcb091f83fcfd9ce6b7f550693",
+      "sha256": null,
+      "status": "Oct28 one manual Detail, historical",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-RAC-SCHEMA",
+      "repo": "Rift API",
+      "path": "docs/ability-detail-schema-v1.md",
+      "commit": "752e133b8ecc9cbcb091f83fcfd9ce6b7f550693",
+      "sha256": null,
+      "status": "field-level present/missing/invalid contract",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-RAC-FEEDBACK",
+      "repo": "Rift API",
+      "path": "src/Rift.Automation.Windows/VmSustainedFeedback.cs",
+      "commit": "752e133b8ecc9cbcb091f83fcfd9ce6b7f550693",
+      "sha256": null,
+      "status": "offline policy comparator derived from RR2 freshness design",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-AF-PORT",
+      "repo": "AutoFight",
+      "path": "docs/M1-standalone-guest-port-2026-10-31.md",
+      "commit": "5e42c085ebe8622fcb6133516f13effbcf6ed8eb",
+      "sha256": null,
+      "status": "standalone RR2-derived source port, no new native discovery",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-AF-INGEST",
+      "repo": "AutoFight",
+      "path": "src/Rift.Automation.Windows/StandaloneTelemetryIngest.cs",
+      "commit": "5e42c085ebe8622fcb6133516f13effbcf6ed8eb",
+      "sha256": null,
+      "status": "source snapshot, no standalone live qualification",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-WB-GUI",
+      "repo": "workbridge-mcp",
+      "path": "investigations/windows-desktop-automation/DECISIONS.md",
+      "commit": "4300718a05d4b8993d20866370caf728ed48205e",
+      "sha256": null,
+      "status": "experimental desktop UIA candidate; quarantined lease not cleared",
+      "_comment": "SHA pins apply to source file bytes only; rehash and check repo HEAD before using this entry."
+    },
+    {
+      "id": "SRC-RR2-DISC-DOC",
+      "repo": "riftreader2",
+      "path": "docs/reference/discovery-compilation.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "e46714613169550272984332b1508311aaa2d66615747f2ff7108e79489904f4",
+      "status": "implemented offline ingestion contract"
+    },
+    {
+      "id": "SRC-RR2-DISC-SOURCES",
+      "repo": "riftreader2",
+      "path": "src/RiftReader2.Infrastructure/DiscoverySourcesFile.cs",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "bbe8257364b1c443a6fa04f69ba24e0f877e1bfcd8eeaed37379fc164a178ac6",
+      "status": "source manifest hash validator"
+    },
+    {
+      "id": "SRC-RR2-DISC-ADAPTER",
+      "repo": "riftreader2",
+      "path": "src/RiftReader2.Infrastructure/DiscoveryReportAdapter.cs",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "7a1efc6bdbbac1bc531de5cb4d82897772cd31c1ef14dcc43d7e32d4b7757cde",
+      "status": "strict discovery record adapter"
+    },
+    {
+      "id": "SRC-RR2-DISC-TYPES",
+      "repo": "riftreader2",
+      "path": "src/RiftReader2.Domain/DiscoveryTypes.cs",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "4962e3500917f9dec99d783e8eee53da28d2283e6bef047511b7b5594a5daae9",
+      "status": "typed discovery record domain model"
+    },
+    {
+      "id": "SRC-RR2-DISC-EXPORT",
+      "repo": "riftreader2",
+      "path": "src/RiftReader2.Cli/DiscoveryExportCommand.cs",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "f95b3d64aeef5b717b1b7f8c2ac98dc649718b456d679b0b29ac832584070a78",
+      "status": "export JSON/CSV/JSONL"
+    },
+    {
+      "id": "SRC-RR2-ADDON-CONTRACT",
+      "repo": "riftreader2",
+      "path": "contracts/addon/README.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "2a8af7f07e05967863b305b3242254ddb60d5c6bc732569118c4ddd6c573d905",
+      "status": "wire RR2A1; typed statuses"
+    },
+    {
+      "id": "SRC-RR2-LIVE-CONTRACT",
+      "repo": "riftreader2",
+      "path": "contracts/addon/live-transport-v1.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "53c7c4a3d13e21593c8ad4fb924526b00a646e9670612647ac8d127bca6f9cc4",
+      "status": "wire RR2L1 nonce and source freshness"
+    },
+    {
+      "id": "SRC-RR2-CAST",
+      "repo": "riftreader2",
+      "path": "docs/reference/casting-readout.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": "e9ffd345b4af2553ea13ba010b85c14217a944f89affba97f2d30a1128d5b02a",
+      "status": "casting addon capability and limitations"
+    },
+    {
+      "id": "SRC-RR2-RUNTIME",
+      "repo": "riftreader2",
+      "path": "docs/validation/runtime-reconciliation-2026-11-04.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": null,
+      "status": "Nov4 identity and controller checkpoint; not current live feed"
+    },
+    {
+      "id": "SRC-RR2-NATIVE-HEALTH",
+      "repo": "riftreader2",
+      "path": "docs/reference/native-current-client-code-map.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": null,
+      "status": "current-build native HP/Energy candidates; no synchronized semantic proof"
+    },
+    {
+      "id": "SRC-RR2-NATIVE-XYZ",
+      "repo": "riftreader2",
+      "path": "docs/reference/native-current-coordinate-code-map.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": null,
+      "status": "exact-build position getter topology; live locator not production qualified"
+    },
+    {
+      "id": "SRC-RR2-SPELLDUMP",
+      "repo": "riftreader2",
+      "path": "docs/reference/spelldump-api-reuse.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": null,
+      "status": "original installed SpellDump batch API reuse"
+    },
+    {
+      "id": "SRC-RR2-RIFTMETER",
+      "repo": "riftreader2",
+      "path": "docs/reference/riftmeter-api-reuse.md",
+      "commit": "c448cc7257b8691cd08911da86064874f38d2bc3",
+      "sha256": null,
+      "status": "original installed combat event attribution"
+    },
+    {
+      "id": "SRC-RRE-NAV-RESEARCH",
+      "repo": "rre",
+      "path": "docs/navigation-research-2026-10-18.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "650e6a584b01cce3c234325ac668ad75489b1122361379b841b073f476bc6185",
+      "status": "historical old-build native leads"
+    },
+    {
+      "id": "SRC-RRE-NAV-PATH",
+      "repo": "rre",
+      "path": "docs/agents/pathfinding.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "4a496fb81601afba1e4a78b08b6d55a289f06c10ea2314977af156390316543a",
+      "status": "type-7 pathfinding lead, old build"
+    },
+    {
+      "id": "SRC-RRE-NAV-INTEGRATE",
+      "repo": "rre",
+      "path": "docs/navigation-integration-2026-10-19.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "08c820ff1a58bdeec4a5089554fda0800ee860eb3761c637539c3494dfc58627",
+      "status": "historical C2M/follow/collision integration"
+    },
+    {
+      "id": "SRC-RRE-NAV-FINDINGS",
+      "repo": "rre",
+      "path": "docs/navigation-findings.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "653ab5ef5bdb16840c8e1355772b7ebfb3dd2b70bc139a04bcefab17b1ec1a45",
+      "status": "machine-readable historical finding index"
+    },
+    {
+      "id": "SRC-RRE-NAV-STOP",
+      "repo": "rre",
+      "path": "tools/navigation_stop_evidence.py",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "f31c8635da124820ce1d21ab61e4ccce70b92c95870d9b11478f375f603d6378",
+      "status": "offline evaluator; synthetic 67 focused tests"
+    },
+    {
+      "id": "SRC-RRE-NAV-READY",
+      "repo": "rre",
+      "path": "tools/navigation_receipt_readiness.py",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "44321fbd85d772004fb2eb3a400aea4cc14577bcaa6bf2b0df58a91ef7447e35",
+      "status": "offline readiness audit; 12 focused tests"
+    },
+    {
+      "id": "SRC-RRE-NAV-BRIDGE",
+      "repo": "rre",
+      "path": "tools/navigation_evidence_bridge.py",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "8930eef247c2524752cb3ae39b8770ee94263362a35a6c96b5b70435eb1758e0",
+      "status": "offline action/capture association; 9 tests"
+    },
+    {
+      "id": "SRC-RRE-NAV-ASSEMBLE",
+      "repo": "rre",
+      "path": "tools/navigation_evidence_assemble.py",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "1bf14e1b0cc87dfc44f2ea3696740d6fd57e40e2d36dce1a71ca0ca258342c57",
+      "status": "offline hash-bound evidence assembly"
+    },
+    {
+      "id": "SRC-L1-008",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-008.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "53263e0ade4a2ac6855afef3f98c1eeda6704cf6a609acf22e63722090b5ddff",
+      "status": "tracked exact-build tooltip discriminator"
+    },
+    {
+      "id": "SRC-L1-005",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-005.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "eaad3d908f3653fbb2ddabd8e8dfa6cbb392a0edb01353bb1ea921f4a10a6cf1",
+      "status": "tracked continuous field native serialization"
+    },
+    {
+      "id": "SRC-L1-030",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-030.md",
+      "commit": null,
+      "sha256": "62e806ade7c4609bb1145e766524818249fb7e5db9603fe157b42787e125d1dd",
+      "status": "UNTRACKED uncommitted same-object constructor observation",
+      "worktree_state": "untracked",
+      "observed_head": "7784c316d81bdde249011248009fc85fe4a0b7f4"
+    },
+    {
+      "id": "SRC-L1-028",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-028.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "0743210c0cc2361299e60049ee13d7725b68e5ab39eba91f9a885c0e69c03c0d",
+      "status": "tracked corrected +0x88 REX-aware writer scan"
+    },
+    {
+      "id": "SRC-L1-027",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-027.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "542229955523d8b0c8f0c0b1958bc7a8deea95d0b7f9eb5efb3ad4ffe9dd7060",
+      "status": "tracked corrected +0x848 REX-aware writer scan"
+    },
+    {
+      "id": "SRC-L1-024",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-024.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "4ca80e39e6bf764a1f619a325877669544a365e267a6bec4b0ac6d6c613a4b6d",
+      "status": "tracked factory/handle allocations"
+    },
+    {
+      "id": "SRC-L1-025",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-025.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "efee565dc8c6785cbd7a5509ee2e6aba397205c1875f8bf401c95da56de8ec14",
+      "status": "tracked constructor field layout"
+    },
+    {
+      "id": "SRC-L1-026",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-026.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "722c91c71c19a3d94219461b879aba57280a92fdaee93f78220983a86a7a222c",
+      "status": "tracked distinct virtual globals/common constructor"
+    },
+    {
+      "id": "SRC-L1-029",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-029.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "e9e3a1fea72b884d4d06785f259c89cf240ad49bfdc43602a6891a8a685d8bff",
+      "status": "tracked Lua-linked +0x88 writer candidate"
+    },
+    {
+      "id": "SRC-L1-021",
+      "repo": "REA-Lab1",
+      "path": "NATIVE-L1-021.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "d56fdb3ab21591c1ce097aa7453ad643ba0dad9458f6ab13969cd77ca266bd1b",
+      "status": "tracked virtual operation numeric 0x0A"
+    },
+    {
+      "id": "SRC-L1-TOOLCHAIN",
+      "repo": "REA-Lab1",
+      "path": "TOOLCHAIN-L1.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "a19271c8f2ae187daaf3063d35e5e2975369225d02fa3ff91a413907e8e74285",
+      "status": "tracked exact-SHA Capstone/iced-x86/Ghidra workflow"
+    },
+    {
+      "id": "SRC-L1-CATALOG",
+      "repo": "REA-Lab1",
+      "path": "CATALOG-L1-001.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "a060f8511d3ed22cbf366ceeb40611d22cdbf645d879a509d62b7b59e751e736",
+      "status": "historical guest saved ability catalog, not current"
+    },
+    {
+      "id": "SRC-L1-EXPORT-FAIL",
+      "repo": "REA-Lab1",
+      "path": "ABILITY_EXPORT_DIAGNOSTIC_L1_003.md",
+      "commit": "7784c316d81bdde249011248009fc85fe4a0b7f4",
+      "sha256": "2bdcf55b62beae77e15a42b9e8e59239c36f085902eae23785b794853c3eca24",
+      "status": "empty export fail-closed evidence"
+    },
+    {
+      "id": "SRC-RRE-ATLAS",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC103-353-ID-DETAIL-ATLAS-2026-11-03.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "5da0b32bc6fd67e86b883d44155c86fb5ff05cab1655b216ebed2fb4e5cd5fb7",
+      "status": "accepted historical research atlas, 353 IDs"
+    },
+    {
+      "id": "SRC-RRE-FIELDS",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC103-RUNTIME-ABILITY-DETAIL-FIELDS-2026-11-03.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "34fffcb0db863a4d816d2acf30d6bd568b04e8f7dba5b872b218dc69cca7472e",
+      "status": "exact 34-field runtime API detail contract"
+    },
+    {
+      "id": "SRC-RRE-CROSSWALK",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC103-EXACT-ID-CROSSWALK-2026-11-02.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "00c1cc8896591bd2c7dfedf0a831f689179fbfb0ac5369dcc63cfcf8b5ec79f5",
+      "status": "source-hashed 96 static / 69 known crosswalk"
+    },
+    {
+      "id": "SRC-RRE-EVENTS",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC502-EVENT-ATTRIBUTION-2026-11-01.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "73bfe67b4a79f3c6c983113d439ef503ba622235f362a2cb16e39e803714ea16",
+      "status": "exact caster/ability/target event attribution"
+    },
+    {
+      "id": "SRC-RRE-MECHANISM",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC604-INTERIM-MECHANISM-2026-11-01.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "963774ae669970767b4267a10b75a835d4d24e90954a814494f3c504e695c824",
+      "status": "interim 14-source evidence graph, not end-to-end"
+    },
+    {
+      "id": "SRC-RRE-DELTA",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC604-EVIDENCE-DELTA-2026-11-04.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "dbb2bace0ad37c8ec0556bb98ec4a1e2cfd94aa9fd5716688a940eddba2ecfef",
+      "status": "latest source-index supplement, not updated graph"
+    },
+    {
+      "id": "SRC-RRE-ABILITY-EVENT-SOURCE",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC103-ABILITY-EVENT-SOURCE-CONTRACT-2026-11-03.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "8c24bd36553b9824de02751385602ea6d08dcd1a79b6ad363e24174ebcf4c13e",
+      "status": "unproven live callback routing"
+    },
+    {
+      "id": "SRC-RRE-QUEUE",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC306-QUEUE-ENUM-GAP-2026-10-27.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "64bfa4174c4a78d28c1410dfc7c24fc4af6464f7619e00b2994629db884f990e",
+      "status": "queue setting/UI numeric enum unresolved"
+    },
+    {
+      "id": "SRC-RRE-CLOCK",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC304-CLOCK-EVIDENCE-2026-10-27.json",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "c6f6f59b71de3a12d844dbf45723c52a80d8762b9fa985777c2a1cc3e2ff5fab",
+      "status": "historical ~105-107ms median sampling, not GCD"
+    },
+    {
+      "id": "SRC-RRE-CASTENTRY",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC407-CAST-ENTRY-2026-10-27.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "3c9b94dc2aa1358a6d2e6d52fbb72d5494218b0eb26497b395b03a50e8d0adbc",
+      "status": "exact-build native /cast /use static entrypoints"
+    },
+    {
+      "id": "SRC-RRE-LEGENDARY",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SC103-PROTECTORS-FURY-VARIANT-GAP-2026-11-03.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "224ea23036fda275dd303f888d750fce44f747e25aab04ea2f589d0dc803ecbe",
+      "status": "Legendary vs normal ID unqualified"
+    },
+    {
+      "id": "SRC-RRE-HANDOFF",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-SESSION-HANDOFF-2026-11-04.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "4fb8667c95bd84f482248a29ac0b56f1489dfd14853fcd56a6343a3c53b3204a",
+      "status": "latest RRE physical research state"
+    },
+    {
+      "id": "SRC-RRE-BRIDGE",
+      "repo": "rre",
+      "path": "docs/REA-RIFT-SPELLCASTING-CROSS-PROJECT-EVIDENCE-TOOL-ROUTING-PLAN-2026-11-03.md",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "487ccd05566f5dc9189393d56567c2f966925756bc7cffbcf11c6e6888baac1f",
+      "status": "REA-Lab1 read-only crossproject evidence routing"
+    },
+    {
+      "id": "SRC-RRE-ADDON-ABIL",
+      "repo": "rre",
+      "path": "addons/RRECollector/abilities.lua",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "d181ba0061a5959474dd3487b41c114f631122375a8b67421817fd54fdc1c510",
+      "status": "source for 34 API fields"
+    },
+    {
+      "id": "SRC-RRE-ADDON-MAIN",
+      "repo": "rre",
+      "path": "addons/RRECollector/main.lua",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "3aca63c501686fca5ab6bef8a72d81e3b4fe9fdca4ca3558d379e0cf24a1e5c6",
+      "status": "saved latest may remain old on incomplete newer capture"
+    },
+    {
+      "id": "SRC-RRE-READER",
+      "repo": "rre",
+      "path": "tools/read-rrecollector-saved.mjs",
+      "commit": "ebba07480169cd90789b9acef55dd23751a1a213",
+      "sha256": "095c5f277205a84d58c2d031da65fe2bf3d6ef2279a5552eee4ac9c1514405f1",
+      "status": "saved data parser structural-only, not live freshness"
+    }
+  ],
+  "rr2_consumption_points": [
+    {
+      "id": "RR2-CP-01",
+      "domain": "discovery_import",
+      "priority": "P0",
+      "source_ids": [
+        "SRC-RR2-DISC-DOC",
+        "SRC-RR2-DISC-SOURCES",
+        "SRC-RR2-DISC-ADAPTER",
+        "SRC-RR2-DISC-TYPES",
+        "SRC-RR2-DISC-EXPORT"
+      ],
+      "components": [
+        "samples/discovery-sources.json",
+        "samples/discoveries-records.json",
+        "src/RiftReader2.Infrastructure/DiscoverySourcesFile.cs",
+        "src/RiftReader2.Infrastructure/DiscoveryReportAdapter.cs",
+        "src/RiftReader2.Application/DiscoveryQuery.cs",
+        "src/RiftReader2.Cli/DiscoveryExportCommand.cs"
+      ],
+      "current_capability": "Implemented hash-pinned offline discovery sources, typed record adapter, filters, JSON/CSV/JSONL export.",
+      "intake_note": "Use strict RR2 discovery-record-set/1 plus discovery-sources/1 when integration is separately requested; this master document is research metadata, not itself an importer input."
+    },
+    {
+      "id": "RR2-CP-02",
+      "domain": "freshness",
+      "priority": "P0",
+      "source_ids": [
+        "SRC-RR2-ADDON-CONTRACT",
+        "SRC-RR2-LIVE-CONTRACT",
+        "SRC-RR2-RUNTIME"
+      ],
+      "components": [
+        "contracts/addon/README.md",
+        "contracts/addon/live-transport-v1.md",
+        "src/RiftReader2.Infrastructure/LiveAddonEnvelopeDecoder.cs",
+        "src/RiftReader2.Infrastructure/LiveAddonFreshnessTracker.cs",
+        "scripts/observe_live_reader_freshness.py"
+      ],
+      "current_capability": "RR2A1 typed Lua payload and RR2L1 nonce-bound live wrapper; strict changing epoch/player/sequence/clock and source-read windows.",
+      "intake_note": "Imported source evidence never inherits a valid runtime nonce, process anchor, or verified advancing feed."
+    },
+    {
+      "id": "RR2-CP-03",
+      "domain": "health_resource",
+      "priority": "P0",
+      "source_ids": [
+        "SRC-RR2-NATIVE-HEALTH"
+      ],
+      "components": [
+        "src/RiftReader2.Infrastructure/PowerCandidateReader.cs",
+        "src/RiftReader2.Infrastructure/NativeValueScout.cs",
+        "scripts/probe_native_unit_manager.py"
+      ],
+      "current_capability": "Exact-build HP record type 0x2C2 and Energy 0x072B native candidates; no synchronized changed-state proof.",
+      "intake_note": "RRE/REA field-like findings must retain object ancestry, exact type fingerprint, source SHA, same-session correlation and full restart gate."
+    },
+    {
+      "id": "RR2-CP-04",
+      "domain": "casting_abilities",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RR2-CAST",
+        "SRC-RR2-SPELLDUMP",
+        "SRC-RR2-RIFTMETER"
+      ],
+      "components": [
+        "addon/RiftReader2Casting/model.lua",
+        "docs/reference/casting-readout.md"
+      ],
+      "current_capability": "API List/Detail, readiness fields, castbar, cooldown and exact-target combat event recording; metadata and effects separate.",
+      "intake_note": "RRE 69-known, 353-ID atlas and native leads can enrich research, not silently replace live known catalog."
+    },
+    {
+      "id": "RR2-CP-05",
+      "domain": "position_motion",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RR2-NATIVE-XYZ"
+      ],
+      "components": [
+        "src/RiftReader2.Infrastructure/NativeCaptureRunner.cs",
+        "src/RiftReader2.Infrastructure/PositionCandidateSampler.cs",
+        "docs/reference/native-current-coordinate-code-map.md"
+      ],
+      "current_capability": "Position/transform native code map and bounded read/movement experiments; no fully qualified passive fresh facing or LOS.",
+      "intake_note": "Use navigation findings as static hypotheses until controlled movement plus visual/API before/after and restart validate."
+    },
+    {
+      "id": "RR2-CP-06",
+      "domain": "addon_deployment",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RR2-RUNTIME"
+      ],
+      "components": [
+        "scripts/addon_sync.py",
+        "scripts/ensure_guest_agent.py",
+        "scripts/control_client.py"
+      ],
+      "current_capability": "Source-to-host-and-two-guest addon hash checks and managed controller recovery.",
+      "intake_note": "File parity never establishes addon load, current game visibility, nonce binding or telemetry."
+    }
+  ],
+  "transfer_items": [
+    {
+      "id": "XFER-ADJ-01",
+      "title": "Typed independent API ability readout",
+      "domain": "ability_catalog",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-RAC",
+        "SRC-RAC-LIST",
+        "SRC-RAC-DETAIL",
+        "SRC-RAC-SCHEMA"
+      ],
+      "state": "runtime_observation_historical",
+      "proof_tier": "G1",
+      "benefit": "Compare RR2 List/Detail field completeness and exact-ID handling with RAC's older 55-key catalog and 15-field schema.",
+      "supported": "Manual Oct27 55/55 candidate IDs and one Oct28 3–20m range/~15s cooldown matched UI; field-present/missing/invalid schema exists.",
+      "not_supported": "55 equals currently known list, same character/role/epoch as RRE 69, or live v0.5.0 addon load.",
+      "rr2_target": "addon/RiftReader2Casting/model.lua and RR2 typed evidence/export schema",
+      "next_verification": "Rehash source, read schema; compare exact IDs only when build, role, player and source epochs are equivalent. Preserve field absence as unknown."
+    },
+    {
+      "id": "XFER-ADJ-02",
+      "title": "Independent freshness policy/ingest cross-check",
+      "domain": "freshness",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RAC-FEEDBACK",
+        "SRC-AF-INGEST",
+        "SRC-AF-PORT"
+      ],
+      "state": "workflow_or_tool_reference",
+      "proof_tier": "G0",
+      "benefit": "Offline failure-path comparison against RR2 480-second observer and November 1 stalled addon publication sequence.",
+      "supported": "Rift API sustained feedback policy 480000ms and strict sub-4500ms advancement gaps; AutoFight separates transport acceptance from fresh bound XYZ.",
+      "not_supported": "New live freshness success, independent native field discovery, or proof that either project fixes RR2 stall.",
+      "rr2_target": "scripts/observe_live_reader_freshness.py; receiver/addon ingestion",
+      "next_verification": "Read-only compare logic and replay bounded saved failure receipts; file targeted RR2 defects only if differing handling is demonstrated."
+    },
+    {
+      "id": "XFER-ADJ-03",
+      "title": "LuaPadModern bounded diagnostic channel",
+      "domain": "lua_instrumentation",
+      "priority": "P3",
+      "source_ids": [
+        "SRC-LP20",
+        "SRC-LP-BRIDGE",
+        "SRC-LP-TAIL"
+      ],
+      "state": "workflow_or_tool_reference",
+      "proof_tier": "G0",
+      "benefit": "Potential operator-invoked, versioned, one-way noncombat API result channel for probes without repeated reloads.",
+      "supported": "Preview20 disk source, versioned JSON schema, source-only Lua router/slash, .NET10 log tailer and synthetic tests.",
+      "not_supported": "In-game Preview20 loaded, slash bridge operational, real /log marker flush and fresh host delivery.",
+      "rr2_target": "optional diagnostics/evidence import, not default transport",
+      "next_verification": "Under separate operator approval validate one physical /log marker with exact PID/HWND/epoch/nonce; no live integration until observed."
+    },
+    {
+      "id": "XFER-ADJ-04",
+      "title": "Desktop UIA backend evaluation",
+      "domain": "ui_capture",
+      "priority": "P4",
+      "source_ids": [
+        "SRC-WB-GUI"
+      ],
+      "state": "candidate_hypothesis",
+      "proof_tier": "G0",
+      "benefit": "Potential future screenshot/UI automation alternative if RR2's existing reviewed VM captures show a reproducible shortfall.",
+      "supported": "WinApp CLI 0.7.1 and other candidates inventoried, not adopted.",
+      "not_supported": "Safe/available exclusive GUI lease; host UIA equals guest UIA; new input permission.",
+      "rr2_target": "existing screenshot/control wrappers only if a tested gap arises",
+      "next_verification": "Retain quarantine, obtain explicit desktop owner reconciliation and a bounded, non-game pilot before changing RR2."
+    },
+    {
+      "id": "XFER-NAV-01",
+      "title": "Legacy click-to-move/pathfinding dispatch taxonomy",
+      "domain": "navigation",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-RRE-NAV-RESEARCH",
+        "SRC-RRE-NAV-PATH",
+        "SRC-RRE-NAV-FINDINGS"
+      ],
+      "state": "candidate_hypothesis",
+      "proof_tier": "G0",
+      "source_build_sha256": "7c356c9dde9e12fcbff3c08d953b0630b48b1510a0ffb36e4ec164606e7b17bd",
+      "legacy_rva_leads": [
+        "TtPathfinding type 7 queue +0x210, dispatch RVA 0xF41A3",
+        "TtRayCast Query type 3, code reference RVA 0xF4123",
+        "type 1/subtype 0x0F and type 3/subtype 7 producers"
+      ],
+      "benefit": "Targeted current-build static search anchor to avoid broad native scan.",
+      "supported": "Source-bound historical code/dispatch symbols and producer taxonomy.",
+      "not_supported": "Current-build RVAs, type-7 handler ABI, native path route generation or click-to-move activation; subtype 7 is not dispatcher type 7.",
+      "rr2_target": "native navigation research and existing controlled movement suite",
+      "next_verification": "Re-find candidate functions on 1935a05c build from actual bytes before any RVA/ABI use; no direct gameplay invocation inferred."
+    },
+    {
+      "id": "XFER-NAV-02",
+      "title": "C2M/follow/collision object leads",
+      "domain": "navigation",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-RRE-NAV-INTEGRATE",
+        "SRC-RRE-NAV-FINDINGS"
+      ],
+      "state": "candidate_hypothesis",
+      "proof_tier": "G0",
+      "source_build_sha256": "7c356c9dde9e12fcbff3c08d953b0630b48b1510a0ffb36e4ec164606e7b17bd",
+      "legacy_rva_leads": [
+        "Follow clear RVA 0x534200, +0xB60 field cleared at 0x53494F",
+        "C2M steering state +0x60/+0x68 destination, +0x70/+0x78 auxiliary",
+        "Havok hkpMultiThreadedSimulation vtable .rdata RVA 0x2725568"
+      ],
+      "benefit": "Constrain current-build reverse tracing for requested follow, collision and world-motion features.",
+      "supported": "Historical static accesses and identifiers.",
+      "not_supported": "Auxiliary object is a navmesh/route array, stopping-follow physically cancels velocity, obstacle collision or LOS behavior confirmed.",
+      "rr2_target": "native movement/follow/raycast discovery",
+      "next_verification": "Requalify current PE and trace actual object aliases; use independent changed-state or collision scene tests before semantic promotion."
+    },
+    {
+      "id": "XFER-NAV-03",
+      "title": "NAV-003..006 offline evidence evaluators",
+      "domain": "evidence_validation",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RRE-NAV-STOP",
+        "SRC-RRE-NAV-READY",
+        "SRC-RRE-NAV-BRIDGE",
+        "SRC-RRE-NAV-ASSEMBLE"
+      ],
+      "state": "reusable_offline_result",
+      "proof_tier": "G0",
+      "benefit": "Reuse stop-evidence normalization, readiness audits, action/capture linking and six-fragment source-hash assembly on saved RR2 receipts.",
+      "supported": "Reported 67/12/9 focused offline tests and synthetic assembly success; source hashes pinned.",
+      "not_supported": "Verified native route activation/cancel, current live control, original image bytes verified, authenticated physical provenance.",
+      "rr2_target": "docs/validation and offline trace review; do not copy tool code without explicit separate change",
+      "next_verification": "Apply on already saved RR2 action/XYZ/clock receipts, inspect coverage and mismatches; preserve false `t0Accepted`, `nativeRoutingVerified` when no trial proof exists."
+    },
+    {
+      "id": "XFER-NAV-04",
+      "title": "NAV-002 supervised click-to-move evidence gap",
+      "domain": "navigation",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-RRE-NAV-INTEGRATE",
+        "SRC-RRE-NAV-BRIDGE",
+        "SRC-RRE-NAV-READY"
+      ],
+      "state": "blocked_pending_freshness",
+      "proof_tier": "G1",
+      "benefit": "Concrete acceptance protocol for first real ground point, movement and cancellation.",
+      "supported": "NAV-B01..04 identify missing current scene/binding, exact reviewed click, advancing XYZ and exclusive recovery; historical right-click camera test did not establish ground click.",
+      "not_supported": "Current playable-scene readiness, click delivered at ground point, actual routing or post-cancel stop.",
+      "rr2_target": "existing one-input-owner controlled trial pipeline",
+      "next_verification": "After current reader freshness, validate scene/binding, exact point press/release and time-aligned samples through a separately authorized one-action T0 trial."
+    },
+    {
+      "id": "XFER-L1-01",
+      "title": "Tooltip object +0x88 type-5 branch",
+      "domain": "ability_native",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-L1-008",
+        "SRC-L1-005"
+      ],
+      "state": "accepted_static_fact",
+      "proof_tier": "G3",
+      "source_build_sha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+      "exact_rvas": [
+        "0xEF614C cmp dword [rax+0x88],5",
+        "0xEF6153 jne 0xEF62F5",
+        "Toggled/Instant/InstantNoGlobal/TooltipRolloverAbility strings",
+        "Lua-facing continuous field, separate branch"
+      ],
+      "benefit": "Targeted native ability/toggle/instant metadata and descriptor research for RR2 casting model.",
+      "supported": "Exact-build instruction and string/serialization association; some branch emits true versus enabled string.",
+      "not_supported": "5 is a named toggle enum, spell known/active, ready, exact GCD state, accepted cast or live owner.",
+      "rr2_target": "addon/RiftReader2Casting/model.lua; native ability metadata dossiers",
+      "next_verification": "Cross-check original bytes independently, correlate exact ID/role and runtime API continuous/toggled flags; separate binary branch from semantic interpretation."
+    },
+    {
+      "id": "XFER-L1-02",
+      "title": "One constructor writes offsets +0x88 and +0x848",
+      "domain": "native_object_provenance",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-L1-030"
+      ],
+      "state": "candidate_hypothesis",
+      "proof_tier": "G3",
+      "source_build_sha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+      "source_worktree_state": "untracked",
+      "exact_rvas": [
+        "0x675210..0x6759CC single unwind fragment",
+        "0x675265 byte [rcx+0x88]=1",
+        "0x675953 qword [rbx+0x848]=0",
+        "code pointer table 0x26B44C8"
+      ],
+      "benefit": "Constrain construction/field-ownership tracing without searching the entire PE.",
+      "supported": "One object receives both offsets in same constructor, saved RBX alias across inspected code.",
+      "not_supported": "Same type-5 object, same E89 root, populated +0x848 pointer or real ability field meaning.",
+      "rr2_target": "static native owner investigation",
+      "next_verification": "First obtain a stable committed Lab1 report or snapshot current hash; independently trace caller-to-object owner and runtime alias, not offset coincidence."
+    },
+    {
+      "id": "XFER-L1-03",
+      "title": "Corrected REX-aware +0x88/+0x848 field-store survey",
+      "domain": "native_methods",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-L1-028",
+        "SRC-L1-027"
+      ],
+      "state": "accepted_static_fact",
+      "proof_tier": "G3",
+      "source_build_sha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+      "counts": {
+        "plus_0x88_raw": 1539,
+        "plus_0x88_qualified": 1483,
+        "qword_88": 1077,
+        "dword_88": 341,
+        "word_88": 65,
+        "plus_0x848_raw": 19,
+        "plus_0x848_qualified": 18,
+        "qword_848": 16
+      },
+      "benefit": "Avoid historical false negative caused by starting at MOV opcode instead of preceding REX prefix.",
+      "supported": "Exact-build bounded instruction qualifying counts and regression method.",
+      "not_supported": "Exhaustive all-store scan, alias of all stores to one class, or positive identity of the type-5 writer.",
+      "rr2_target": "native field/writer scanners and test fixtures",
+      "next_verification": "Use corrected decoder on scoped RR2 field candidate regions; record no-unwind/skip exclusions, prefix widths and source SHA."
+    },
+    {
+      "id": "XFER-L1-04",
+      "title": "Separate Path-A/B manager-root factory graph",
+      "domain": "native_object_provenance",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-L1-024",
+        "SRC-L1-025",
+        "SRC-L1-026",
+        "SRC-L1-029",
+        "SRC-L1-021"
+      ],
+      "state": "accepted_static_fact",
+      "proof_tier": "G3",
+      "source_build_sha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+      "exact_rvas": [
+        "Path-A 0x33E0BE0 virtual global",
+        "Path-B 0x33624C8 virtual global",
+        "shared 0x50-byte manager initializer 0x12746C8",
+        "0x78-byte separate handle initializer",
+        "0x992410 dword [r13+0x88]=eax, from 0x9879B0 Lua-linked helper",
+        "virtual operation numeric 0x0A in separate backend"
+      ],
+      "benefit": "Provide bounded candidate owner/alias chain relevant to ability readiness and native field identification.",
+      "supported": "Distinct virtual global slots, shared constructor, field writes and Lua-linked routine literals.",
+      "not_supported": "Same live manager object instance, pointer value on PE disk, semantic name for E89/E29/0x51/0x64/0x0A or cast submission.",
+      "rr2_target": "native cast/ability owner trace",
+      "next_verification": "Trace exact runtime object provenance and write-to-read aliases before proposing any RR2 read-only locator."
+    },
+    {
+      "id": "XFER-L1-05",
+      "title": "Reusable SHA-checked targeted disassembly/decompilation",
+      "domain": "research_tooling",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-L1-TOOLCHAIN"
+      ],
+      "state": "workflow_or_tool_reference",
+      "proof_tier": "G0",
+      "benefit": "Reuse Capstone 5.0.7 + iced-x86 1.21.0 crosscheck, pefile, Ghidra 12.1.2 targeted readonly -noanalysis up to four unwind-function starts.",
+      "supported": "Reported exact-PE byte canaries, differential decoder and synthetic fixture tests; RRE/RR2 matching PE static comparisons feasible.",
+      "not_supported": "A current live data locator, semantic field validation or broad full-program Ghidra approval.",
+      "rr2_target": "existing RR2 native research and Ghidra project artifacts/power-locator-20261025-01",
+      "next_verification": "Use existing read-only project and scripts; source-hash-gate every function, keep generated decompile output hash distinct from exe hash."
+    },
+    {
+      "id": "XFER-L1-06",
+      "title": "Lab1 historical 43-ability catalog and empty-export trap",
+      "domain": "ability_catalog",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-L1-CATALOG",
+        "SRC-L1-EXPORT-FAIL"
+      ],
+      "state": "runtime_observation_historical",
+      "proof_tier": "G1",
+      "benefit": "Provide actual historical saved-record sample and an important negative test for RR2 ability exporter.",
+      "supported": "43 unique IDs, 2 continuous=true entries (Entropic Veil, Living Energy), 3 unusable=true historical flags; later empty abilities with large poll sequence.",
+      "not_supported": "Current known spells, current 9010 HP/3980 mana, 41 continuous=false, successful empty List/Detail, loaded addon, cast acceptance.",
+      "rr2_target": "casting parser and freshness tracker tests",
+      "next_verification": "Require fresh game PID/start/build, addon loaded/nonce, role, exact successful List/Detail evidence and post-session save; reject poll-sequence-only freshness."
+    },
+    {
+      "id": "XFER-RRE-01",
+      "title": "SC-103 exact-ID historical 353-ability research atlas",
+      "domain": "ability_catalog",
+      "priority": "P0",
+      "source_ids": [
+        "SRC-RRE-ATLAS",
+        "SRC-RRE-CROSSWALK"
+      ],
+      "state": "reusable_offline_result",
+      "proof_tier": "G1",
+      "counts": {
+        "historical_static_ids": 323,
+        "historical_souls": 11,
+        "previous_api_known_ids": 69,
+        "overlap_static_and_known": 39,
+        "union_unique_ids": 353,
+        "three_soul_static_candidates": 96,
+        "three_soul_unlisted": 57,
+        "candidate_lookups_detail_returned": 51,
+        "listed_not_queried": 38,
+        "no_detail": 7,
+        "extra_unlisted_detail_returns": 50,
+        "eligibility_resolved": 0,
+        "casting_success_verified": 0
+      },
+      "benefit": "Source-pinned exact-ID/name/soul candidate atlas for RR2 catalog reconciliation and independent field discovery.",
+      "supported": "353 union IDs with provenance; names may collide (Building Fury nine IDs, Changing Role four).",
+      "not_supported": "353 spells currently learned, usable, bound, unlocked, same selected role, or current physical game process.",
+      "rr2_target": "offline discovery reference and casting model reconciliation",
+      "next_verification": "Preserve ID as primary key and per-source membership; capture current role/build/ID List/Detail before comparing live known catalog."
+    },
+    {
+      "id": "XFER-RRE-02",
+      "title": "34-field Inspect.Ability.New.Detail contract",
+      "domain": "ability_metadata",
+      "priority": "P0",
+      "source_ids": [
+        "SRC-RRE-FIELDS",
+        "SRC-RRE-ADDON-ABIL"
+      ],
+      "state": "reusable_offline_result",
+      "proof_tier": "G1",
+      "field_allowlist": [
+        "autoattack",
+        "castingTime",
+        "channeled",
+        "continuous",
+        "cooldown",
+        "costCharge",
+        "costEnergy",
+        "costMana",
+        "costPlanarCharge",
+        "costPower",
+        "costSpirit",
+        "currentCooldownBegin",
+        "currentCooldownDuration",
+        "currentCooldownExpired",
+        "currentCooldownPaused",
+        "currentCooldownRemaining",
+        "description",
+        "focusMax",
+        "focusMin",
+        "gainCharge",
+        "icon",
+        "id",
+        "idNew",
+        "name",
+        "outOfRange",
+        "passive",
+        "positioned",
+        "racial",
+        "rangeMax",
+        "rangeMin",
+        "stealthRequired",
+        "target",
+        "unusable",
+        "weapon"
+      ],
+      "not_documented_fields": [
+        "legendary",
+        "rank",
+        "requiredLevel",
+        "soulPoints",
+        "unlockState",
+        "variant"
+      ],
+      "benefit": "Audit completeness of RR2 ability model, costs, cooldown timestamps, targeting and field presence semantics.",
+      "supported": "Collector source allowlist exactly records these 34 fields when returned.",
+      "not_supported": "Undocumented fields impossible or absent values equal zero/false; no direct Normal/Legendary/learnability property proven.",
+      "rr2_target": "addon/RiftReader2Casting/model.lua; typed observation and discovery exports",
+      "next_verification": "Crosscheck RR2 current List/Detail raw fields, preserve missing/null/false/0 separately, append only source-backed fields."
+    },
+    {
+      "id": "XFER-RRE-03",
+      "title": "SC-502 exact-ID cast outcome attribution",
+      "domain": "cast_events",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RRE-EVENTS",
+        "SRC-RR2-RIFTMETER"
+      ],
+      "state": "reusable_offline_result",
+      "proof_tier": "G2",
+      "historical_example": {
+        "ability": "Light's Decree",
+        "ability_id": "A6B8B16CD6F8B3DB9",
+        "target_damage": 402,
+        "other_dummy_damage": 726,
+        "total_aoe_damage": 1128,
+        "auto_attack_id": "A4FDE7DEC3FDF0909"
+      },
+      "benefit": "Avoid wrong-target, AoE/self, autoattack and missing-modern-ID false-positive cast verdicts.",
+      "supported": "Historical outcome replay keyed by event caster+abilityNew+target, distinct AoE/autoattack and dodge.",
+      "not_supported": "Current-session cast acceptance, same-build event timing, or inference from legacy/no-ID event name.",
+      "rr2_target": "addon/RiftReader2Casting/model.lua; combat event classifier/tests",
+      "next_verification": "For each new trial require exact player ID, modern ability ID and target ID; classify outcome separately from request acceptance and resource/cooldown."
+    },
+    {
+      "id": "XFER-RRE-04",
+      "title": "SC-604 interim spellcasting mechanism evidence graph",
+      "domain": "casting_native",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RRE-MECHANISM",
+        "SRC-RRE-DELTA"
+      ],
+      "state": "reusable_offline_result",
+      "proof_tier": "G0",
+      "evidence_refs": 14,
+      "source_graph_sha256": "963774ae669970767b4267a10b75a835d4d24e90954a814494f3c504e695c824",
+      "benefit": "Use known cast/queue/tooltip paths and unresolved edges to choose bounded RR2 native probes instead of repeating broad binary imports.",
+      "supported": "Immutable 14-source graph plus six supplemental sources, Nov4 6/6 source and 9/9 regression verification.",
+      "not_supported": "SC-601/602 final end-to-end cast submit/effect, server acknowledgment, verified native executor or GCD.",
+      "rr2_target": "offline mechanism research and source-hashed hypotheses only",
+      "next_verification": "Select one unresolved edge; verify original exact PE and current evidence; preserve graph immutability and add a qualified independent delta."
+    },
+    {
+      "id": "XFER-RRE-05",
+      "title": "SC-306 queue setting and SC-304 clock disambiguation",
+      "domain": "queue_gcd_timing",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RRE-QUEUE",
+        "SRC-RRE-CLOCK",
+        "SRC-RRE-CASTENTRY"
+      ],
+      "state": "candidate_hypothesis",
+      "proof_tier": "G3",
+      "source_build_sha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+      "exact_rvas": [
+        "queue handler 0xBD2D6F",
+        "queue getter 0xBD7153",
+        "global setting pointer 0x33958C0 +0xA4",
+        "/cast entry 0x6C7450",
+        "/use entry 0x6C7B90",
+        "/stopattack entry 0x6C73F0"
+      ],
+      "benefit": "Bounded current-build starting points for RR2 native readiness, queue/ability-clock investigation.",
+      "supported": "Exact-build static entrypoint and sampled native numeric 1; historical ~105-107ms frame-cadence samples.",
+      "not_supported": "Raw 1 means Full/Short/None, duration of queue/GCD, server submission, stable latency or semantic helper names.",
+      "rr2_target": "native cooldown/queue owner; casting telemetry timestamps",
+      "next_verification": "Same-settings-epoch visible UI label, exact-key Inspect.Setting.Detail read and independently observed native value; at least two same-clock ability readiness contrasts."
+    },
+    {
+      "id": "XFER-RRE-06",
+      "title": "Legendary Protector's Fury exact variant gap",
+      "domain": "legendary_identity",
+      "priority": "P1",
+      "source_ids": [
+        "SRC-RRE-LEGENDARY",
+        "SRC-RRE-ATLAS"
+      ],
+      "state": "blocked_pending_freshness",
+      "proof_tier": "G1",
+      "historical_id": "A0E2112FD6FE262EE",
+      "benefit": "High-value target to discover whether normal/Legendary is one id or variant; prevent wrong-name/tooltip indexing.",
+      "supported": "Historical disabled Paladin source ID; separate native tooltip showed normal and Legendary descriptions.",
+      "not_supported": "Current selected Legendary status, modern ID, distinct variant ID or current role state.",
+      "rr2_target": "casting model identity/variant and UI capture",
+      "next_verification": "Current same-epoch Atank role/soul allocation, selected Legendary counters and native tooltip; then exact API/hover ID correlation; 454 offline tests are not live proof."
+    },
+    {
+      "id": "XFER-RRE-07",
+      "title": "Ability event source names without live callback confirmation",
+      "domain": "ability_events",
+      "priority": "P2",
+      "source_ids": [
+        "SRC-RRE-ABILITY-EVENT-SOURCE"
+      ],
+      "state": "candidate_hypothesis",
+      "proof_tier": "G1",
+      "events": [
+        "Event.Ability.New.Add",
+        "Event.Ability.New.Remove",
+        "Event.Ability.New.Usable.True",
+        "Event.Ability.New.Usable.False"
+      ],
+      "benefit": "Potential incremental learned/removed/usable change feed to supplement full list scans.",
+      "supported": "Four event names identified by source study.",
+      "not_supported": "Current game callback delivery, exact payload, role scope, or complete state transitions.",
+      "rr2_target": "optional event monitoring with raw receipt and fallback full List/Detail",
+      "next_verification": "One manually controlled current session event with captured payload and verified causal match; otherwise remain names-only."
+    },
+    {
+      "id": "XFER-RRE-08",
+      "title": "RRECollector completeness and RC-30 runtime freeze",
+      "domain": "freshness",
+      "priority": "P0",
+      "source_ids": [
+        "SRC-RRE-ADDON-MAIN",
+        "SRC-RRE-READER",
+        "SRC-RRE-HANDOFF"
+      ],
+      "state": "blocked_pending_freshness",
+      "proof_tier": "G0",
+      "physical_addon_version": "0.4.10",
+      "benefit": "Negative control to stop RR2 from treating an older complete SavedVariables `latest` as a new current capture.",
+      "supported": "Saved parser structural qualification only; captureComplete can coexist with a retained old latest after newer failed capture. RC-30 install freeze and Pin→Undo→Reload gate pending.",
+      "not_supported": "Current saved data freshness, loaded addon version, full eight-slot restoration, deployed RC-31/32 fixes.",
+      "rr2_target": "freshness tracker, addon/session normalization and saved-ability parser tests",
+      "next_verification": "Require process/session/build/role, actual load version, time/sequence and post-capture save, independent API result; distinguish latest complete from latest attempted."
+    }
+  ],
+  "freshness_recovery": {
+    "_comment": "November 4 RR2 runtime reconciliation is authoritative for this snapshot; it is not a reusable live lease.",
+    "source": "riftreader2/docs/validation/runtime-reconciliation-2026-11-04.md",
+    "observed_at_utc": "2026-11-04T22:31:00Z",
+    "observed": {
+      "physical_rift": "not present in a 22:27 UTC host process snapshot; no claim about later state",
+      "lab1": {
+        "game_pid_observed": 1952,
+        "game_start_local": "2026-11-04 14:57:17 EST",
+        "controller": "connected, ready, idle, disarmed, supervisor running after on-demand guest-agent recovery",
+        "foreground": false,
+        "telemetry": "not current-qualified"
+      },
+      "lab2": {
+        "game_pid_observed": 11572,
+        "game_start_local": "2026-11-03 06:58:02 EST",
+        "controller": "connected, ready, idle, disarmed, supervisor running",
+        "foreground": true,
+        "telemetry": "not current-qualified"
+      },
+      "addon_files": "three installations matched all six source files in addon_sync check; no live addon init/binding proof",
+      "latest_success_historical": "November 1 Lab2 reviewed 100ms turn and 150ms W calibration; later goal trial failed elapsed-budget with stalled addon sequence",
+      "current_live_reader_nonce": null,
+      "current_advancing_xyz": false,
+      "qualified_live_cast_hp_resource": false
+    },
+    "ordered_recovery_gates": [
+      {
+        "id": "FR-01",
+        "mode": "read_only",
+        "check": "Re-read current RR2 git/status and exact host/guest process PID, start, executable SHA, VM identity, addon installation hashes, changed service identity.",
+        "pass": "All pins contemporaneous and internally consistent; changed build or process invalidates historical addresses/nonces."
+      },
+      {
+        "id": "FR-02",
+        "mode": "existing_managed_dependency_preflight",
+        "check": "Inspect authenticated per-lab controller, receiver and reader liveness, addon session, controller queue and foreground. Prefer RR2's existing on-demand helpers only where authorized.",
+        "pass": "Single controller owner, ready/disarmed, no unqualified takeover. Process existence alone is not enough."
+      },
+      {
+        "id": "FR-03",
+        "mode": "controlled_binding_if_qualified",
+        "check": "Bind one new reader nonce to current addon/receiver through the existing reviewed exclusive console path if rebind is actually required.",
+        "pass": "Current nonce, session, player, epoch and source are explicitly matched; never reuse November 1 nonces. This document does not authorize performing input."
+      },
+      {
+        "id": "FR-04",
+        "mode": "no_game_input_observation",
+        "check": "Require strictly advancing receiver and addon sequence/time stamps and fresh XYZ, reject Win32-299/anchor failures and the prior stalled-addon-sequence pattern.",
+        "pass": "Configured 480-second strict observer passes on one current epoch with acceptable receipt gaps, stable identity and adequate expiry margin."
+      },
+      {
+        "id": "FR-05",
+        "mode": "separately_reviewed_experiment",
+        "check": "Only after fresh gates pass, a single lab owner may perform an independently approved bounded state change with before/after native plus API/UI evidence and independent STOP/release.",
+        "pass": "Changed-state verification, exact outcome/effect and independent cleanup; no silent automatic re-arm or action extrapolation."
+      },
+      {
+        "id": "FR-06",
+        "mode": "full_restart_qualification",
+        "check": "Fully terminate and relaunch RIFT only under separate authorized workflow; resolve owner, data locator and reader in NEW process epoch.",
+        "pass": "Fresh data recovers on new PID/start, not merely after /reloadui or relog."
+      }
+    ],
+    "stop_rules": [
+      "No current source nonce/reader or stale addon publication -> do offline analysis, not gameplay.",
+      "Controller lease, GUI desktop quarantine, foreground or approval uncertainty -> stop and ask owner.",
+      "Build mismatch or changed process -> invalidate live RVAs/pointers and rebuild exact source pins.",
+      "An installed addon hash match never qualifies a live feed.",
+      "A failed/expired trial is not evidence of goal arrival, spellcast acceptance, native field meaning or freshness."
+    ]
+  },
+  "research_priorities": [
+    {
+      "rank": 1,
+      "tier": "P0",
+      "id": "NEXT-001",
+      "title": "Restore RR2 current reader/addon feedback freshness",
+      "source_ids": [
+        "SRC-RR2-RUNTIME",
+        "SRC-RR2-LIVE-CONTRACT",
+        "SRC-RAC-FEEDBACK",
+        "SRC-AF-INGEST"
+      ],
+      "why": "Nov4 controllers/addon files qualified; no current advancing nonce-bound telemetry. Nov1 receiver outer sequence advanced while inner addon sequence stalled.",
+      "safe_now": "Offline replay saved stall/Win32-299/scan-latency evidence; compare RR2 and independent typed ingestion implementations without touching runtime.",
+      "after_freshness": "Use existing on-demand managed path and qualified binding, then strict 480s current-epoch observer; report precise failure phase if blocked.",
+      "definition_of_done": "Current game/reader/addon/receiver PID+start+nonce+player+epoch pinned, inner and outer advances observed within budgets, no contradictory stale receipts."
+    },
+    {
+      "rank": 2,
+      "tier": "P0",
+      "id": "NEXT-002",
+      "title": "Convert accepted external static claims into RR2 discovery-record-set/1",
+      "source_ids": [
+        "SRC-RR2-DISC-DOC",
+        "SRC-RR2-DISC-ADAPTER",
+        "SRC-L1-008",
+        "SRC-RRE-NAV-STOP"
+      ],
+      "why": "RR2 already implements hash-bound offline discovery ingestion and export; missing work is claim-specific source normalization.",
+      "safe_now": "Review this inventory, select one stable source and rehash. Prepare separate importer-ready record-set/1 plus discovery-sources/1 only when implementation is requested.",
+      "after_freshness": "None required for static import; live evidence stays recorded-only until separately qualified.",
+      "definition_of_done": "Exact source SHA and build pinned, original source review passed, parser accepts record and fail-closed negative tests reject changed source; no live semantic promotion."
+    },
+    {
+      "rank": 3,
+      "tier": "P1",
+      "id": "NEXT-003",
+      "title": "Qualify native HP/Energy and discover Mana",
+      "source_ids": [
+        "SRC-RR2-NATIVE-HEALTH",
+        "SRC-L1-TOOLCHAIN"
+      ],
+      "why": "RR2 native HP type 0x2C2 and Energy type 0x072B have same-process unchanged baselines but no synchronized changed-state, passive freshness or restart proof; Mana kind3 unresolved.",
+      "safe_now": "Replay exact-PE getter/record arithmetic, owner path and boundary tests; use REA-Lab1 bounded double-decoder method only where concrete gaps exist.",
+      "after_freshness": "Time-align at least two distinct state observations against independently trusted UI/API with correct role/player and same process; then separate full restart re-resolution.",
+      "definition_of_done": "Typed field meanings and source location survive changed-state and new-process validation, with explicit limits; stale snapshots cannot pass."
+    },
+    {
+      "rank": 4,
+      "tier": "P1",
+      "id": "NEXT-004",
+      "title": "Improve casting ID/availability and native queue/cooldown discovery",
+      "source_ids": [
+        "SRC-RR2-CAST",
+        "SRC-RR2-SPELLDUMP",
+        "SRC-RR2-RIFTMETER",
+        "SRC-L1-008",
+        "SRC-L1-CATALOG"
+      ],
+      "why": "Known-versus-learnable, selected Legendary variants, queue Full/Short/None mapping, cooldown owner and cast/effect chain remain disjoint.",
+      "safe_now": "Use source-backed RRE crosswalk, typed status rules and static type-5/continuous branches; stage experiments without sending input.",
+      "after_freshness": "One verified role/build/selected Legendary snapshot; match exact ID/tooltip and API; controlled same-clock queue/readiness and effect observations when authorized.",
+      "definition_of_done": "Exact modern IDs and role/availability dimensions independently supported; GCD/queue and cast outcome not inferred from one timer or UI text."
+    },
+    {
+      "rank": 5,
+      "tier": "P1",
+      "id": "NEXT-005",
+      "title": "Qualify position, yaw/facing and target-of-target/LOS",
+      "source_ids": [
+        "SRC-RR2-NATIVE-XYZ",
+        "SRC-RR2-RUNTIME",
+        "SRC-RRE-NAV-INTEGRATE"
+      ],
+      "why": "Coordinate code topology is exact-build but passive-fresh and restart-safe data locators, render/body yaw, hostile LOS and target health are incomplete.",
+      "safe_now": "Review existing exact-PE position/target getters, matrix composition and native trial receipts; use historical navigation/collision anchors only after current PE relocation.",
+      "after_freshness": "Single-owner bounded turn/movement/target change with synchronized native+API/UI readings and stable scene; separately validate target-of-target field and LOS on actual source.",
+      "definition_of_done": "Changed-state + independent evidence + new process re-resolution for each promoted native field; yaw/body/camera and visible/targetable kept separate."
+    },
+    {
+      "rank": 6,
+      "tier": "P2",
+      "id": "NEXT-006",
+      "title": "Reassess C2M/pathfinding and cancellation with existing control pipeline",
+      "source_ids": [
+        "SRC-RRE-NAV-FINDINGS",
+        "SRC-RRE-NAV-READY",
+        "SRC-RRE-NAV-BRIDGE",
+        "SRC-RRE-NAV-STOP"
+      ],
+      "why": "RRE NAV-B01..04 gaps and old-build RVAs leave native click-to-move/cancel unproven.",
+      "safe_now": "Run offline readiness/association/stop-evidence tools on saved RR2 receipts; rebase static leads to current PE only after byte checks.",
+      "after_freshness": "One separately authorized point-bound ground click, cancel and continued observation, preserving queue/STOP and exact source clock.",
+      "definition_of_done": "True reviewed ground-point delivery and demonstrated routing/cancellation distinct from camera movement, stale screenshots and idle-only stop."
+    },
+    {
+      "rank": 7,
+      "tier": "P3",
+      "id": "NEXT-007",
+      "title": "Evaluate optional LuaPadModern log bridge only after real flush proof",
+      "source_ids": [
+        "SRC-LP20",
+        "SRC-LP-BRIDGE",
+        "SRC-LP-TAIL"
+      ],
+      "why": "Synthetic bridge and log-tail code may reduce operator copy/paste, but in-game Preview20 load and /log marker delivery are unproven.",
+      "safe_now": "Schema/codec source review and offline synthetic tests; no RR2 transport substitution.",
+      "after_freshness": "Separate operator-run one-message /log test, verify byte-exact marker/session and bounded host tail; opt-in only.",
+      "definition_of_done": "One current session marker reaches host under exact source binding, no duplicate/stale deliveries, no new game automation implied."
+    }
+  ],
+  "validation": {
+    "_comment": "These are intended checks; the validation.result field is set only from actual operation receipts.",
+    "checks": [
+      {
+        "id": "V-01",
+        "purpose": "strict JSON parse",
+        "expected": "JSON.parse succeeds"
+      },
+      {
+        "id": "V-02",
+        "purpose": "source referential integrity",
+        "expected": "every transfer/priority/consumer source_id resolves to one unique registry entry"
+      },
+      {
+        "id": "V-03",
+        "purpose": "source hash syntax",
+        "expected": "every populated sha256 is lowercase 64 hex"
+      },
+      {
+        "id": "V-04",
+        "purpose": "transfer claim shape",
+        "expected": "every item has source, state, tier, benefit, supported/not_supported, RR2 target and next verification"
+      },
+      {
+        "id": "V-05",
+        "purpose": "single intended path",
+        "expected": "only docs/research/rre-rea-cross-project-evidence-intake-2026-11-04.json modified"
+      },
+      {
+        "id": "V-06",
+        "purpose": "scoped Git commit",
+        "expected": "one local documentation-only commit after rechecking HEAD"
+      }
+    ],
+    "result": "source_inventory_validated",
+    "artifacts": [
+      {
+        "kind": "git_commit",
+        "value": null,
+        "comment": "Commit is recorded by Git history; do not infer from this source evidence manifest itself."
+      }
+    ],
+    "actual_receipts": [
+      {
+        "job_id": "rr2_rre_rea_inventory_validate_20261104_v1",
+        "exit_code": 0,
+        "observed_utc": "2026-11-04T22:49:44Z",
+        "result": "61 paths exist, 0 missing references, 0 duplicate IDs, 0 malformed populated SHA values; 22 transfers, 6 consumer points, 7 priorities"
+      },
+      {
+        "job_id": "rr2_rre_rea_inventory_rehash_20261104_v1",
+        "exit_code": 0,
+        "observed_utc": "2026-11-04T22:50:04Z",
+        "result": "46/46 SHA-pinned source files rehashed exact; 15 explicitly unpinned; 0 mismatches"
+      }
+    ]
+  },
+  "rr2_native_ingestion_contract": {
+    "_comment": "Existing RR2 import accepts these schemas; it does not ingest this broad master cross-project inventory directly. A future narrow converter can generate strict records after claim review.",
+    "manifest_contract": "discovery-sources/1",
+    "manifest_required": [
+      "schemaVersion=1",
+      "contractVersion=discovery-sources/1",
+      "sources[].sourceId",
+      "sources[].kind",
+      "sources[].path",
+      "sources[].byteLength",
+      "sources[].sha256"
+    ],
+    "accepted_source_kinds": [
+      "field-catalog",
+      "typed-wire",
+      "native-position-review",
+      "native-motion-review",
+      "record-set"
+    ],
+    "record_set_contract": "discovery-record-set/1",
+    "record_set_required": [
+      "schemaVersion=1",
+      "contractVersion=discovery-record-set/1",
+      "records[].recordId",
+      "records[].fieldId",
+      "records[].category",
+      "records[].sourceKind",
+      "records[].status",
+      "records[].meaning",
+      "records[].limitations"
+    ],
+    "record_source_kinds": [
+      "addon",
+      "native",
+      "derived",
+      "synthetic"
+    ],
+    "record_statuses": [
+      "hypothesis",
+      "observed",
+      "rejected",
+      "unqualified"
+    ],
+    "limits": {
+      "manifest_bytes_max": 65536,
+      "source_bytes_max": 8388608,
+      "aggregate_bytes_max": 67108864,
+      "record_count_max": 4096,
+      "record_id_chars_max": 128,
+      "field_id_chars_max": 128,
+      "meaning_chars_max": 512,
+      "limitations_per_record_max": 32
+    },
+    "adapter_ceiling": "All imported records are recorded-only qualification; cannot promote native meaning automatically.",
+    "recommended_flow": [
+      "Cross-project master inventory (this document)",
+      "Choose one reviewable finding and rehash exact source",
+      "Normalize to domain record with limitations",
+      "Write separate discovery-record-set/1 and hash-pinned discovery-sources/1",
+      "Run existing parser/negative tests",
+      "Use query/export; retain source proof tier and old/current epoch distinction"
+    ]
+  },
+  "field_guide": {
+    "_comment": "These labels define how a future RR2 agent or importer should interpret transfer records; this is an inventory, not a schema for direct importer execution.",
+    "priority": "P0 immediate high-value blocker or canonical intake; P1 next qualified research; P2 useful when predecessors satisfied; P3 optional/deferred; P4 research-only.",
+    "source_ids": "Refer to IDs in source_registry; a missing source SHA means not independently pinned and must be rehashed before promotion.",
+    "state": "Use one of evidence_semantics.transfer_states; no state automatically grants current runtime proof.",
+    "proof_tier": "G0 source byte; G1 API/UI or offline description; G2 qualified historical runtime observation; G3 exact-build static native; G4 combined end-to-end. A high static tier does not override a low live tier.",
+    "supported": "Narrowest evidence-backed claim; interpret literally and retain timestamps/build limits.",
+    "not_supported": "Explicit false inference boundaries; these prevent automated status promotion.",
+    "next_verification": "A proposed future research/validation step, not a runnable command or action approval.",
+    "source_build_sha256": "Required for native RVAs; old RRE NAV SHA and current SHA differ. Do not port offsets by name or numerical equality.",
+    "commit": "Observed repository HEAD for a tracked source path, not proof the file was introduced by that commit. Null for untracked files.",
+    "sha256": "Exact file bytes when populated; a null value is intentional and requires fresh hashing.",
+    "observed": "Historical observation and receipt, not necessarily current process identity.",
+    "currentness": "No source listed here is a substitute for current PID/start/reader nonce/addon epoch/player/role and independent sequence advancement."
+  },
+  "integration_guardrails": {
+    "_comment": "Rules for a consumer converting this broad manifest into RR2's strict discovery-record-set/1 format or research tasks.",
+    "source_verification": [
+      "Resolve repo/path exactly; read current file and compute SHA256",
+      "Verify it matches the registry value when non-null",
+      "For tracked sources, check expected Git commit/HEAD ancestry and any dirty state",
+      "For untracked sources, do not cite observed HEAD as containing file bytes",
+      "For native RVA claim, verify 64-hex target PE SHA and exact original instruction bytes"
+    ],
+    "normalization": [
+      "Preserve original IDs, variant source and role; do not use name as primary key",
+      "Store nullable known/learnable/usable/bound/selected separately",
+      "Preserve omitted vs false vs zero vs invalid field statuses",
+      "Separate source-time, host-receive-time and export-time clocks",
+      "Retain current process and addon identity only from a fresh contemporaneous receipt",
+      "Map source static proof G0/G3 independently of RR2's live G2 proof"
+    ],
+    "avoid_duplicate_work": [
+      "Use existing RR2 discovery adapter and JSON/CSV/JSONL export; do not create new service",
+      "Use existing RR2 guarded controllers and publisher rather than copying RRE/REA controls",
+      "Read RRE's accepted SC604 graph before native rescan; do not rerun timed-out whole-program REA imports",
+      "Use bounded Capstone/iced-x86/Ghidra function starts for static leads",
+      "Review RRE and REA-Lab1 claims separately; no cross-project writes or automatic model/agent launch"
+    ],
+    "authorization_boundary": "This inventory authorizes no game input, addon reload, process attach, automation, VM control, network publishing, source edit or protected lease reset."
+  }
+}
