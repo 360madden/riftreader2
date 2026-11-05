@@ -59,6 +59,45 @@ must be copied last and its independent package/hash gates must pass.
 - The physical AddOns folder has 48 entries including disabled folders and
   archives. Do not blindly mirror that full tree.
 
+## Passive three-machine AddOns inventory
+
+Run on demand from `C:\work\riftreader2`:
+
+```powershell
+C:\Python314\python.exe scripts\rift_addon_inventory.py --target all
+```
+
+This is a metadata-only, one-level inspection, not a sync command. It reads
+addon folder names and immediate TOC names, lengths, modification times and
+Offline/reparse flags; it never opens Lua/TOC contents, copies addon code,
+modifies SavedVariables, reloads a game or restarts a client. Guest reports
+are copied from separate guest-local folders using existing LabCodex sessions.
+Cloud-backed reparse directories are inspected only if Windows' built-in
+`fsutil reparsepoint query` confirms a Microsoft Cloud Files tag and the
+folder is pinned and not Offline. Unknown junctions/mountpoints are skipped;
+unknown reparse roots fail closed. A cloud tag alone does not prove a file is
+locally hydrated. No administrative elevation, network/share reconfiguration,
+or OneDrive sync trigger is attempted.
+
+Exit codes: `0` = every target inventoried completely; `3` = tools ran but
+at least one target is incomplete (inspect warnings); `2` = one or more
+failed targets. A successful inventory proves metadata coverage only.
+The report includes machine identity, original root, UTC time, reparse flags,
+per-target warnings, and separate raw report paths.
+
+**2026-11-05 live result:** PC, Lab-1 and Lab-2 each returned 48 top-level
+entries, `success=true`, `complete=true`, no Offline TOCs, and no differences
+in directory/file names or TOC name/length metadata. Eight addons had TOC
+timestamp differences: AnotherClock, ApiAtlas, ApiAtlasConsumer, luapad,
+RiftApiCollector, RiftReader2, RiftReader2Casting and RRECollector.
+Latest three-machine tag-guarded check: exit `0`, all three complete,
+48/48/48 entries, no name differences or warnings. Evidence:
+`artifacts/addon-inventory/20261105T173351Z-9295b9dc/`.
+Earlier metadata and timing comparison:
+`artifacts/addon-inventory/20261105T172552Z-00c81069/`.
+Offline unit tests: **11/11 passed** on 2026-11-05.
+Matching metadata is **not** proof of identical Lua files or loaded behavior.
+
 ## Future LLM run sequence
 
 1. Read this playbook, the relevant addon source repository's instructions,
