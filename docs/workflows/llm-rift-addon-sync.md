@@ -120,6 +120,15 @@ snapshots agreed on file names and byte lengths; all files were cloud-reparse
 ambiguous, and no contents were hashed. The candidate development source is
 `C:\work\API Atlas\addon\ApiAtlas`; no source was selected for deployment.
 Evidence: `artifacts/addon-inventory/20261105T180356Z-3aee577c/`.
+The `API Atlas` addon source is unchanged within Git; last source-path commit:
+`ee612b114a3b8a7cc21856f73b3bcc78a319193f` (2026-10-30). **Source/install
+byte-length gaps on all three machines** (source vs installed):
+`Collector.lua` 16963/15338, `Public.lua` 2742/2225,
+`RiftAddon.toc` 728/722, `UI.lua` 28877/27841,
+`Version.lua` 99/93. Remaining immediate files have matching lengths,
+not necessarily matching bytes. Local source SHA-256 was collected separately;
+installed contents were not read. Investigate source precedence and preserve
+three-machine evidence before any deployment.
 
 The command also emits a `tocComparison` with machine coverage and
 case-insensitive per-addon TOC drift, distinguishing missing TOCs, bytes,
