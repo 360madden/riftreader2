@@ -92,10 +92,24 @@ timestamp differences: AnotherClock, ApiAtlas, ApiAtlasConsumer, luapad,
 RiftApiCollector, RiftReader2, RiftReader2Casting and RRECollector.
 Latest three-machine tag-guarded check: exit `0`, all three complete,
 48/48/48 entries, no name differences or warnings. Evidence:
-`artifacts/addon-inventory/20261105T173351Z-9295b9dc/`.
+`artifacts/addon-inventory/20261105T174204Z-b127ec41/`.
 Earlier metadata and timing comparison:
 `artifacts/addon-inventory/20261105T172552Z-00c81069/`.
-Offline unit tests: **11/11 passed** on 2026-11-05.
+Offline inventory unit tests: **17/17 passed** on 2026-11-05; the existing
+addon sync tests separately passed **7/7** (24/24 total).
+
+The command also emits a `tocComparison` with machine coverage and
+case-insensitive per-addon TOC drift, distinguishing missing TOCs, bytes,
+modified UTC time, Offline and reparse flags. Partially inspected/failed
+targets are explicitly excluded; `conclusive=false` means fewer than two
+complete inventories were available. Analysis of the saved three-machine
+reports identified **seven subsecond-only timestamp differences**
+(`modifiedUtcSubsecond`, low significance) and **one whole-second/date
+TOC timestamp difference** (`modifiedUtc`: RRECollector, physical PC
+versus both VMware labs). There was no TOC filename or byte-size drift.
+These signals do not establish which Lua files differ; neither timestamp
+class determines which machine is authoritative. RRECollector deployment is
+being handled separately. No deployment is implied.
 Matching metadata is **not** proof of identical Lua files or loaded behavior.
 
 ## Future LLM run sequence

@@ -96,6 +96,77 @@ class InventoryTests(unittest.TestCase):
         data["warnings"] = ["toc-uninspected:OfflineAddon"]
         self.assertFalse(inventory.validate_report(data, "pc")["complete"])
 
+    @staticmethod
+    def _toc(name="Example.toc", bytes=10, modified="2026-11-05T17:00:00Z",
+             offline=False, reparse=False):
+        return {"name": name, "bytes": bytes, "modifiedUtc": modified,
+                "offline": offline, "reparse": reparse}
+
+    def test_toc_comparison_identical_casefolded_names(self):
+        pc = report("PC", ["Example"])
+        lab = report("RIFT-LAB-1", ["example"])
+        pc["entries"][0]["toc"] = [self._toc("Example.TOC")]
+        lab["entries"][0]["toc"] = [self._toc("example.toc")]
+        results = {"pc": pc, "lab1": lab}
+        for value in results.values():
+            value["success"] = value["complete"] = True
+        comparison = inventory.compare_toc_metadata(results)
+        self.assertTrue(comparison["complete"])
+        self.assertTrue(comparison["conclusive"])
+        self.assertEqual(comparison["differences"], [])
+
+    def test_subsecond_timestamp_only_is_low_significance(self):
+        pc = report("PC", ["Example"])
+        lab = report("RIFT-LAB-1", ["Example"])
+        pc["entries"][0]["toc"] = [self._toc(modified="2026-11-05T17:00:00.9271270Z")]
+        lab["entries"][0]["toc"] = [self._toc(modified="2026-11-05T17:00:00.0000000Z")]
+        comparison = inventory.compare_toc_metadata({"pc": pc, "lab1": lab})
+        fields = comparison["differences"][0]["tocDifferences"][0]["differingFields"]
+        self.assertEqual(fields, ["modifiedUtcSubsecond"])
+
+    def test_toc_drift_classifies_size_time_and_cloud_flags(self):
+        pc = report("PC", ["Example"])
+        lab = report("RIFT-LAB-1", ["Example"])
+        pc["entries"][0]["toc"] = [self._toc()]
+        lab["entries"][0]["toc"] = [self._toc(
+            bytes=11, modified="2026-11-05T17:01:00Z", offline=True, reparse=True)]
+        comparison = inventory.compare_toc_metadata({"pc": pc, "lab1": lab})
+        difference = comparison["differences"][0]["tocDifferences"][0]
+        self.assertEqual(difference["differingFields"],
+                         ["bytes", "modifiedUtc", "offline", "reparse"])
+        self.assertEqual(difference["missingOn"], [])
+
+    def test_toc_comparison_detects_missing_toc_not_addon(self):
+        pc = report("PC", ["Example"])
+        lab = report("RIFT-LAB-1", ["Example"])
+        pc["entries"][0]["toc"] = [self._toc()]
+        comparison = inventory.compare_toc_metadata({"pc": pc, "lab1": lab})
+        difference = comparison["differences"][0]["tocDifferences"][0]
+        self.assertEqual(difference["differingFields"], ["presence"])
+        self.assertEqual(difference["missingOn"], ["lab1"])
+
+    def test_toc_comparison_excludes_partial_or_failed_targets(self):
+        pc = report("PC", ["Example"])
+        pc["entries"][0]["toc"] = [self._toc()]
+        partial = report("RIFT-LAB-1", ["Example"])
+        partial["complete"] = False
+        partial["warnings"] = ["toc-uninspected:Example"]
+        comparison = inventory.compare_toc_metadata({
+            "pc": pc, "lab1": partial, "lab2": {"success": False, "error": "offline"}})
+        self.assertFalse(comparison["complete"])
+        self.assertFalse(comparison["conclusive"])
+        self.assertEqual(comparison["comparedTargets"], ["pc"])
+        self.assertEqual(comparison["excludedTargets"], ["lab1", "lab2"])
+        self.assertEqual(comparison["differences"], [])
+
+    def test_toc_comparison_reports_kind_mismatch(self):
+        pc = report("PC", ["Example"])
+        lab = report("RIFT-LAB-1", ["Example"])
+        lab["entries"][0]["kind"] = "file"
+        comparison = inventory.compare_toc_metadata({"pc": pc, "lab1": lab})
+        self.assertEqual(comparison["differences"][0]["kindDifferences"],
+                         {"pc": "directory", "lab1": "file"})
+
     def test_name_diff_is_presence_only_not_file_parity(self):
         values = {
             "pc": {"success": True, "entries": report("PC", ["RiftReader2", "RRECollector"])["entries"]},

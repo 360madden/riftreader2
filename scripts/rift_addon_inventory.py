@@ -151,6 +151,76 @@ def compare_names(results: dict) -> list[dict]:
     return rows
 
 
+def compare_toc_metadata(results: dict) -> dict:
+    """Compare only fully inspected targets; never treat skipped TOCs as absent."""
+    ready = {target: row for target, row in results.items()
+             if row.get("success") is True and row.get("complete") is True}
+    summary = {
+        "complete": len(ready) == len(results),
+        "conclusive": len(ready) >= 2,
+        "comparedTargets": list(ready),
+        "excludedTargets": [target for target in results if target not in ready],
+        "differences": [],
+    }
+    if len(ready) < 2:
+        return summary
+
+    indexes = {target: {item["name"].casefold(): item for item in row["entries"]}
+               for target, row in ready.items()}
+    common = set.intersection(*(set(index) for index in indexes.values()))
+    fields = ("bytes", "modifiedUtc", "offline", "reparse")
+    for addon_key in sorted(common):
+        copies = {target: index[addon_key] for target, index in indexes.items()}
+        name = copies[next(iter(copies))]["name"]
+        kinds = {target: item["kind"] for target, item in copies.items()}
+        if len(set(kinds.values())) > 1:
+            summary["differences"].append({
+                "addon": name, "kindDifferences": kinds, "tocDifferences": []})
+            continue
+        if next(iter(kinds.values())) != "directory":
+            continue
+        toc_index = {
+            target: {toc["name"].casefold(): toc for toc in item["toc"]}
+            for target, item in copies.items()
+        }
+        toc_keys = set.union(*(set(index) for index in toc_index.values()))
+        differences = []
+        for key in sorted(toc_keys):
+            observed = {
+                target: {field: toc[field] for field in fields}
+                for target, index in toc_index.items() if (toc := index.get(key))
+            }
+            missing = [target for target in toc_index if target not in observed]
+            differing_fields = []
+            if missing:
+                differing_fields.append("presence")
+            else:
+                for field in fields:
+                    values = {value[field] for value in observed.values()}
+                    if len(values) < 2:
+                        continue
+                    if field == "modifiedUtc":
+                        try:
+                            seconds = {datetime.fromisoformat(value).astimezone(timezone.utc)
+                                       .replace(microsecond=0) for value in values}
+                            if len(seconds) == 1:
+                                differing_fields.append("modifiedUtcSubsecond")
+                                continue
+                        except ValueError:
+                            pass
+                    differing_fields.append(field)
+            if differing_fields:
+                toc_name = next(index[key]["name"] for index in toc_index.values()
+                                if key in index)
+                differences.append({
+                    "toc": toc_name, "differingFields": differing_fields,
+                    "observedOn": observed, "missingOn": missing,
+                })
+        if differences:
+            summary["differences"].append({"addon": name, "tocDifferences": differences})
+    return summary
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="all")
@@ -181,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
                     | ({"count": len(row["entries"])} if row.get("success") else {})
                     for t, row in results.items()},
         "nameDifferences": compare_names(results),
+        "tocComparison": compare_toc_metadata(results),
         "note": "Names and TOC metadata only; no Lua content parity or game-load proof."
     }
     print(json.dumps(output, indent=2))
