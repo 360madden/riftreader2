@@ -65,6 +65,8 @@ Run on demand from `C:\work\riftreader2`:
 
 ```powershell
 C:\Python314\python.exe scripts\rift_addon_inventory.py --target all
+# Optional: immediate per-file attribute preflight for one selected addon.
+C:\Python314\python.exe scripts\rift_addon_inventory.py --target all --detail-addon RiftReader2
 ```
 
 This is a metadata-only, one-level inspection, not a sync command. It reads
@@ -72,6 +74,12 @@ addon folder names and immediate TOC names, lengths, modification times and
 Offline/reparse flags; it never opens Lua/TOC contents, copies addon code,
 modifies SavedVariables, reloads a game or restarts a client. Guest reports
 are copied from separate guest-local folders using existing LabCodex sessions.
+`--detail-addon NAME` inspects only that package's immediate children, up to 200
+entries, and records file names, bytes, modified UTC and Windows Offline,
+Pinned, Unpinned, Reparse, RecallOnOpen and RecallOnDataAccess flags. Unknown
+nested subdirectories are not descended into. Classification
+`cloud-reparse-ambiguous` explicitly **does not** establish that reading
+contents would avoid OneDrive hydration. The command never hashes a file.
 Cloud-backed reparse directories are inspected only if Windows' built-in
 `fsutil reparsepoint query` confirms a Microsoft Cloud Files tag and the
 folder is pinned and not Offline. Unknown junctions/mountpoints are skipped;
@@ -95,8 +103,16 @@ Latest three-machine tag-guarded check: exit `0`, all three complete,
 `artifacts/addon-inventory/20261105T174204Z-b127ec41/`.
 Earlier metadata and timing comparison:
 `artifacts/addon-inventory/20261105T172552Z-00c81069/`.
-Offline inventory unit tests: **17/17 passed** on 2026-11-05; the existing
-addon sync tests separately passed **7/7** (24/24 total).
+Offline inventory unit tests: **20/20 passed** on 2026-11-05; the existing
+addon sync tests separately passed **8/8** (28/28 total).
+
+Selected-addon live preflight on 2026-11-05: PC, Lab 1 and Lab 2 all returned
+`complete=true` for `RiftReader2`, with six expected files and seven older
+backup/alternate files each. All 13 entries on each machine were pinned,
+not Offline, but cloud-reparse ambiguous; matching lengths alone does not prove
+identical contents. Evidence:
+`artifacts/addon-inventory/20261105T175919Z-ad4b9d4d/`.
+Preserve the extra backup/alternate files pending separate review.
 
 The command also emits a `tocComparison` with machine coverage and
 case-insensitive per-addon TOC drift, distinguishing missing TOCs, bytes,

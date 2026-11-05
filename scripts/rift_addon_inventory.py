@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -79,6 +80,33 @@ def validate_report(data: dict, target: str) -> dict:
     if (type(data.get("complete")) is not bool or not isinstance(data.get("warnings"), list)
             or any(not isinstance(w, str) for w in data["warnings"])):
         raise InventoryError("invalid-completeness:" + target)
+    detail = data.get("detailAddon", "")
+    details = data.get("detailFiles", [])
+    if (not isinstance(detail, str) or type(data.get("detailFound", False)) is not bool
+            or not isinstance(details, list) or len(details) > 200):
+        raise InventoryError("invalid-detail-report:" + target)
+    seen_files = set()
+    for file in details:
+        if not isinstance(file, dict):
+            raise InventoryError("invalid-detail-entry:" + target)
+        name = file.get("name")
+        if (not isinstance(name, str) or not name or name in (".", "..")
+                or any(c in name for c in ("/", "\\", "\x00"))
+                or name.casefold() in seen_files):
+            raise InventoryError("invalid-detail-name:" + target)
+        seen_files.add(name.casefold())
+        if file.get("kind") not in ("file", "directory"):
+            raise InventoryError("invalid-detail-kind:" + target)
+        if file["kind"] == "file" and (type(file.get("bytes")) is not int or file["bytes"] < 0):
+            raise InventoryError("invalid-detail-length:" + target)
+        for field in ("offline", "pinned", "unpinned", "reparse",
+                      "recallOnOpen", "recallOnDataAccess"):
+            if type(file.get(field)) is not bool:
+                raise InventoryError("invalid-detail-flags:" + target)
+        if file.get("residency") not in (
+                "subdirectory-uninspected", "cloud-recall-risk",
+                "cloud-reparse-ambiguous", "regular-file"):
+            raise InventoryError("invalid-detail-residency:" + target)
     data["target"] = target
     return data
 
@@ -91,21 +119,24 @@ def read_report(path: Path, target: str) -> dict:
     return validate_report(raw, target)
 
 
-def run_pc(run_root: Path, folder: Path | None = None) -> dict:
+def run_pc(run_root: Path, folder: Path | None = None,
+           *, detail_addon: str | None = None) -> dict:
     addon_root = folder or (Path.home() / "OneDrive" / "Documents" / "RIFT"
                             / "Interface" / "AddOns")
     report = run_root / "pc.json"
-    completed = subprocess.run(
-        [HOST_PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-         "-File", str(GUEST_SCRIPT), "-AddonRoot", str(addon_root),
-         "-ReportPath", str(report)],
-        capture_output=True, text=True, timeout=90, check=False)
+    command = [HOST_PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+               "-File", str(GUEST_SCRIPT), "-AddonRoot", str(addon_root),
+               "-ReportPath", str(report)]
+    if detail_addon:
+        command.extend(("-DetailAddon", detail_addon))
+    completed = subprocess.run(command, capture_output=True, text=True,
+                               timeout=90, check=False)
     if completed.returncode:
         raise InventoryError("pc-inspector-exited:" + str(completed.returncode))
     return read_report(report, "pc")
 
 
-def run_lab(target: str, run_root: Path) -> dict:
+def run_lab(target: str, run_root: Path, *, detail_addon: str | None = None) -> dict:
     from lab_codex import LabCodex
     from vmware_guest_session import POWERSHELL
 
@@ -124,10 +155,12 @@ def run_lab(target: str, run_root: Path) -> dict:
         guest.powershell("$ErrorActionPreference='Stop';[void](New-Item -ItemType Directory "
                          "-Path '" + work + "' -Force)", timeout=90)
         guest.run("copyFileFromHostToGuest", str(GUEST_SCRIPT), script_path, timeout=90)
-        guest.run("runProgramInGuest", POWERSHELL, "-NoProfile", "-NonInteractive",
-                  "-ExecutionPolicy", "Bypass", "-File", script_path,
-                  "-AddonRoot", GUEST_ADDONS, "-ReportPath", report_path,
-                  timeout=150)
+        command = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                   "-File", script_path, "-AddonRoot", GUEST_ADDONS,
+                   "-ReportPath", report_path]
+        if detail_addon:
+            command.extend(("-DetailAddon", detail_addon))
+        guest.run("runProgramInGuest", POWERSHELL, *command, timeout=150)
         guest.copy_from_guest(report_path, report, timeout=90)
     return read_report(report, target)
 
@@ -225,7 +258,10 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=("pc", "lab1", "lab2", "all"), default="all")
     parser.add_argument("--pc-folder", type=Path, help="Local test/alternate AddOns directory")
+    parser.add_argument("--detail-addon", help="Inspect immediate file metadata of one addon")
     args = parser.parse_args(argv)
+    if args.detail_addon and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,79}", args.detail_addon):
+        parser.error("detail-addon must be a single safe addon folder name")
 
     run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8]
     run_root = ROOT / "artifacts" / "addon-inventory" / run_id
@@ -234,8 +270,10 @@ def main(argv: list[str] | None = None) -> int:
     results = {}
     for target in targets:
         try:
-            report = (run_pc(run_root, args.pc_folder) if target == "pc"
-                      else run_lab(target, run_root))
+            report = (run_pc(run_root, args.pc_folder, detail_addon=args.detail_addon)
+                      if target == "pc" else run_lab(target, run_root, detail_addon=args.detail_addon))
+            if args.detail_addon and report.get("detailAddon", "").casefold() != args.detail_addon.casefold():
+                raise InventoryError("detail-report-selection-mismatch:" + target)
             results[target] = {
                 "success": True, "complete": report["complete"],
                 "machine": report["machine"], "entries": report["entries"],
@@ -243,10 +281,14 @@ def main(argv: list[str] | None = None) -> int:
                 "rootReparse": report["rootReparse"],
                 "warnings": report["warnings"], "report": str(run_root / (target + ".json"))
             }
+            if args.detail_addon:
+                results[target]["detailFound"] = report["detailFound"]
+                results[target]["detailFiles"] = report["detailFiles"]
         except Exception as error:
             results[target] = {"success": False, "error": str(error)}
     output = {
         "schemaVersion": 1, "method": "metadata-only", "run": str(run_root),
+        "detailAddon": args.detail_addon,
         "targets": {t: {k: v for k, v in row.items() if k != "entries"}
                     | ({"count": len(row["entries"])} if row.get("success") else {})
                     for t, row in results.items()},

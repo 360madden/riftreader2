@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory=$true)][string]$AddonRoot,
-    [Parameter(Mandatory=$true)][string]$ReportPath
+    [Parameter(Mandatory=$true)][string]$ReportPath,
+    [string]$DetailAddon = ''
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -26,10 +27,16 @@ $result = [ordered]@{
     complete = $false
     success = $false
     entries = @()
+    detailAddon = $DetailAddon
+    detailFound = $false
+    detailFiles = @()
     warnings = @()
     error = $null
 }
 try {
+    if ($DetailAddon -and ($DetailAddon -notmatch '^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$')) {
+        throw 'invalid-detail-addon-name'
+    }
     $root = Get-Item -LiteralPath $AddonRoot -Force -ErrorAction Stop
     if (-not $root.PSIsContainer) { throw 'addon-root-not-directory' }
     $result.rootReparse = (([int64]$root.Attributes -band 1024) -ne 0)
@@ -66,6 +73,41 @@ try {
                 }
             }
         }
+        if ($DetailAddon -and $item.Name -ieq $DetailAddon) {
+            $result.detailFound = $true
+            if (-not $canInspect) {
+                $warnings += 'detail-uninspected:' + [string]$item.Name
+            } else {
+                # Shallow metadata only: never open contents or enter subdirectories.
+                $children = @(Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop)
+                if ($children.Count -gt 200) { throw 'detail-too-many-files' }
+                foreach ($child in ($children | Sort-Object Name)) {
+                    $flags = [int64]$child.Attributes
+                    $offlineFile = ($flags -band 4096) -ne 0
+                    $reparseFile = ($flags -band 1024) -ne 0
+                    $recallOpen = ($flags -band 262144) -ne 0
+                    $recallData = ($flags -band 4194304) -ne 0
+                    $unpinnedFile = ($flags -band 1048576) -ne 0
+                    $risk = if ($child.PSIsContainer) { 'subdirectory-uninspected' }
+                            elseif ($offlineFile -or $recallOpen -or $recallData -or $unpinnedFile) { 'cloud-recall-risk' }
+                            elseif ($reparseFile) { 'cloud-reparse-ambiguous' }
+                            else { 'regular-file' }
+                    $result.detailFiles += [pscustomobject]@{
+                        name = [string]$child.Name
+                        kind = $(if ($child.PSIsContainer) { 'directory' } else { 'file' })
+                        bytes = $(if ($child.PSIsContainer) { $null } else { [long]$child.Length })
+                        modifiedUtc = $child.LastWriteTimeUtc.ToString('o')
+                        offline = $offlineFile
+                        pinned = ($flags -band 524288) -ne 0
+                        unpinned = $unpinnedFile
+                        reparse = $reparseFile
+                        recallOnOpen = $recallOpen
+                        recallOnDataAccess = $recallData
+                        residency = $risk
+                    }
+                }
+            }
+        }
         if ($item.PSIsContainer -and -not $canInspect) {
             $warnings += 'toc-uninspected:' + [string]$item.Name
         }
@@ -78,6 +120,9 @@ try {
             cloudReparse = [bool]$cloudFolder
             toc = @($toc)
         }
+    }
+    if ($DetailAddon -and -not $result.detailFound) {
+        $warnings += 'detail-addon-not-found:' + $DetailAddon
     }
     $result.entries = @($entries)
     $result.warnings = @($warnings)

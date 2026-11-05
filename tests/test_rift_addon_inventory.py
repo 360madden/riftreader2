@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
-from contextlib import redirect_stdout
+from contextlib import redirect_stdout, redirect_stderr
 from io import StringIO
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -73,6 +73,51 @@ class InventoryTests(unittest.TestCase):
             self.assertEqual(exit_code, 3)
             self.assertIn('"complete": false', output.getvalue())
             self.assertIn('"timestampUtc"', output.getvalue())
+
+    @staticmethod
+    def _detail_file(name="main.lua", **overrides):
+        result = {"name": name, "kind": "file", "bytes": 100,
+                  "modifiedUtc": "2026-11-05T17:00:00Z", "offline": False,
+                  "pinned": True, "unpinned": False, "reparse": True,
+                  "recallOnOpen": False, "recallOnDataAccess": False,
+                  "residency": "cloud-reparse-ambiguous"}
+        result.update(overrides)
+        return result
+
+    def test_detail_report_validates_file_flags_and_unique_names(self):
+        data = report("PC", ["RiftReader2"])
+        data["detailAddon"] = "RiftReader2"
+        data["detailFound"] = True
+        data["detailFiles"] = [self._detail_file()]
+        self.assertEqual(len(inventory.validate_report(data, "pc")["detailFiles"]), 1)
+        data["detailFiles"] = [self._detail_file(), self._detail_file("MAIN.LUA")]
+        with self.assertRaisesRegex(inventory.InventoryError, "invalid-detail-name"):
+            inventory.validate_report(data, "pc")
+        data["detailFiles"] = [self._detail_file(recallOnDataAccess="yes")]
+        with self.assertRaisesRegex(inventory.InventoryError, "invalid-detail-flags"):
+            inventory.validate_report(data, "pc")
+
+    def test_detail_arg_rejects_path_escape(self):
+        for name in ("../RiftReader2", "RiftReader2\\bad", "."):
+            with self.subTest(name=name):
+                with redirect_stderr(StringIO()):
+                    with self.assertRaises(SystemExit) as caught:
+                        inventory.main(["--detail-addon", name])
+                self.assertEqual(caught.exception.code, 2)
+
+    def test_detail_main_reports_metadata_without_game_access(self):
+        data = report("PC", ["RiftReader2"])
+        data["detailAddon"] = "RiftReader2"
+        data["detailFound"] = True
+        data["detailFiles"] = [self._detail_file()]
+        with TemporaryDirectory() as directory:
+            with patch.object(inventory, "ROOT", Path(directory)):
+                with patch.object(inventory, "run_pc", return_value=data):
+                    with redirect_stdout(StringIO()) as output:
+                        code = inventory.main(["--target", "pc", "--detail-addon", "RiftReader2"])
+        self.assertEqual(code, 0)
+        self.assertIn('"detailFiles"', output.getvalue())
+        self.assertIn('"cloud-reparse-ambiguous"', output.getvalue())
 
     def test_cloud_tag_mask_rejects_junctions(self):
         mask, cloud = 0xFFFF0FFF, 0x9000001A
