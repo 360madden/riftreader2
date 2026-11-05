@@ -40,6 +40,14 @@ class ManifestTests(unittest.TestCase):
             with self.assertRaisesRegex(sync.AddonSyncError, "load-order-changed"):
                 sync.manifest(source)
 
+    def test_guest_recall_flags_block_hash_preflight(self):
+        guest = sync.GUEST_SCRIPT.read_text(encoding="utf-8")
+        inspect = guest[guest.index("function Inspect-Installed"):guest.index("\ntry {\n", guest.index("function Inspect-Installed"))]
+        self.assertIn("recallOnOpen=($flags -band 262144)", inspect)
+        self.assertIn("recallOnDataAccess=($flags -band 4194304)", inspect)
+        self.assertIn("unpinned=($flags -band 1048576)", inspect)
+        self.assertLess(inspect.index("cloud-recall-risk"), inspect.index("Hash-File $p"))
+
     def test_incomplete_report_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory) / "report.json"

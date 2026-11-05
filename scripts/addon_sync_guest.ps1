@@ -24,13 +24,23 @@ function Hash-File([string]$Path) {
 function Inspect-Installed([string]$Name,[string]$Expected) {
     $p = Join-Path $Destination $Name
     $entry = [ordered]@{name=$Name; present=$false; offline=$false; pinned=$false;
+        unpinned=$false; recallOnOpen=$false; recallOnDataAccess=$false;
         sha256=$null; expectedSha256=$Expected; matches=$false; reason='missing'}
     if ([IO.File]::Exists($p)) {
         $i=Get-Item -LiteralPath $p -Force -ErrorAction Stop
         $entry.present=$true
-        $entry.offline=([int64]$i.Attributes -band 4096) -ne 0
-        $entry.pinned=([int64]$i.Attributes -band 524288) -ne 0
+        $flags=[int64]$i.Attributes
+        $entry.offline=($flags -band 4096) -ne 0
+        $entry.pinned=($flags -band 524288) -ne 0
+        $entry.unpinned=($flags -band 1048576) -ne 0
+        $entry.recallOnOpen=($flags -band 262144) -ne 0
+        $entry.recallOnDataAccess=($flags -band 4194304) -ne 0
         if ($entry.offline) { $entry.reason='offline' }
+        elseif ($entry.unpinned) { $entry.reason='not-pinned' }
+        elseif ($entry.recallOnOpen -or $entry.recallOnDataAccess) {
+            # Never invoke Hash-File on files Windows says may require recall.
+            $entry.reason='cloud-recall-risk'
+        }
         else {
             try {
                 $entry.sha256=Hash-File $p
