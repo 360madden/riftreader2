@@ -144,6 +144,28 @@ class determines which machine is authoritative. RRECollector deployment is
 being handled separately. No deployment is implied.
 Matching metadata is **not** proof of identical Lua files or loaded behavior.
 
+## Selected ApiAtlas code-hash comparison (read-only)
+
+From `C:\work\riftreader2`: `C:\Python314\python.exe scripts\rift_addon_hash.py --target all`.
+Only nine explicitly listed ApiAtlas Lua/TOC files are hashed against
+`C:\work\API Atlas\addon\ApiAtlas`; the `fonts` subtree is excluded.
+The helper checks size (128 KiB/file, 256 KiB total), file-recall attributes,
+supported pinned Cloud Files reparse tags, pre/post file metadata and the
+identity and cached credentials for each VM. Reports remain in local AppData
+and repo `artifacts/`, never installed AddOns or SavedVariables.
+**Reading pinned OneDrive files may hydrate their contents.**
+
+**2026-11-05 at 13:44 EST:** exit `0` in 25.8 seconds, 27/27 hashes collected.
+Physical `AMD-DESKTOP`, `RIFT-LAB-1` and `RIFT-LAB-2` have **identical SHA-256**
+for all nine files. Compared to the candidate development source, four match
+(`Bootstrap.lua`, `Theme.lua`, `Navigation.lua`, `Presentation.lua`) and five differ
+(`RiftAddon.toc`, `Version.lua`, `Collector.lua`, `UI.lua`, `Public.lua`).
+Evidence: `artifacts/addon-hash/20261105T184359Z-39fee431/` with separate
+`pc.json`, `lab1.json`, `lab2.json` and aggregate `summary.json`.
+Four focused offline hash tests passed. No code deployed, no game reload/restart,
+and no Windows/VM reboot. Matching installed code does not establish the current
+loaded Lua version; three-way agreement does not by itself choose source precedence.
+
 ## Future LLM run sequence
 
 1. Read this playbook, the relevant addon source repository's instructions,
