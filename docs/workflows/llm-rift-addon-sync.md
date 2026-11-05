@@ -114,6 +114,13 @@ identical contents. Evidence:
 `artifacts/addon-inventory/20261105T175919Z-ad4b9d4d/`.
 Preserve the extra backup/alternate files pending separate review.
 
+`ApiAtlas` selected-addon metadata pilot on 2026-11-05: each machine had nine
+immediate files and one `fonts` subdirectory (not traversed). The three
+snapshots agreed on file names and byte lengths; all files were cloud-reparse
+ambiguous, and no contents were hashed. The candidate development source is
+`C:\work\API Atlas\addon\ApiAtlas`; no source was selected for deployment.
+Evidence: `artifacts/addon-inventory/20261105T180356Z-3aee577c/`.
+
 The command also emits a `tocComparison` with machine coverage and
 case-insensitive per-addon TOC drift, distinguishing missing TOCs, bytes,
 modified UTC time, Offline and reparse flags. Partially inspected/failed
