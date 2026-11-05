@@ -280,7 +280,9 @@ class MovementFeedbackTests(unittest.TestCase):
     def test_action_ready_accepts_full_and_waits_for_fast_anchor_budget(self):
         with tempfile.TemporaryDirectory() as folder:
             receipt = self.receipt()
-            full = {"sourceBlock": "riftReader2"}
+            full = {"sourceBlock": "riftReader2",
+                    "effectiveInnerAgeMilliseconds": 800.0,
+                    "freshnessTimeoutMilliseconds": 5000.0}
             adapter, reader = self.adapter(folder, [(receipt, full)])
             sample = adapter.wait_action_ready()
             self.assertEqual(10, sample.outer_sequence)
@@ -348,6 +350,69 @@ class MovementFeedbackTests(unittest.TestCase):
             with self.assertRaisesRegex(module._console.Blocked,
                                         "movement-feedback-anchor-budget-timeout"):
                 adapter.wait_action_ready(timeout_seconds=0.05)
+
+    def test_action_ready_waits_for_new_addon_sample_after_previous_ready(self):
+        with tempfile.TemporaryDirectory() as folder:
+            clock = Clock()
+            full = {"sourceBlock": "riftReader2",
+                    "effectiveInnerAgeMilliseconds": 900.0,
+                    "freshnessTimeoutMilliseconds": 5000.0}
+            baseline = self.receipt(outer=1594, addon=4878, clock=118117.414)
+            repeated = self.receipt(outer=1597, addon=4878, clock=118117.414)
+            adapter, reader = self.adapter(
+                folder, [(baseline, full)] + [(repeated, full)] * 4, clock=clock)
+            self.assertEqual(4878, adapter.wait_action_ready().addon_sequence)
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-anchor-budget-timeout"):
+                adapter.wait_action_ready(timeout_seconds=0.1)
+            self.assertEqual(4, reader.calls)
+            self.assertEqual(1, len(list(Path(folder).glob("ready-*-receipt.json"))))
+
+        with tempfile.TemporaryDirectory() as folder:
+            full = {"sourceBlock": "riftReader2",
+                    "effectiveInnerAgeMilliseconds": 900.0,
+                    "freshnessTimeoutMilliseconds": 5000.0}
+            baseline = self.receipt(outer=1594, addon=4878, clock=118117.414)
+            repeated = self.receipt(outer=1595, addon=4878, clock=118117.414,
+                                    captured=self.now + timedelta(seconds=1))
+            advanced = self.receipt(outer=1596, addon=4879, clock=118118.0,
+                                    captured=self.now + timedelta(seconds=2))
+            adapter, reader = self.adapter(
+                folder, [(baseline, full), (repeated, full), (advanced, full)])
+            adapter.wait_action_ready()
+            self.assertEqual(4879, adapter.wait_action_ready().addon_sequence)
+            self.assertEqual(3, reader.calls)
+
+    def test_action_ready_full_source_needs_headroom_before_pulse(self):
+        with tempfile.TemporaryDirectory() as folder:
+            clock = Clock()
+            expired_soon = {"sourceBlock": "riftReader2",
+                            "effectiveInnerAgeMilliseconds": 3596.7175,
+                            "freshnessTimeoutMilliseconds": 5000.0}
+            adapter, reader = self.adapter(
+                folder, [(self.receipt(), expired_soon)] * 3, clock=clock)
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-anchor-budget-timeout"):
+                adapter.wait_action_ready(timeout_seconds=0.05)
+            self.assertEqual(2, reader.calls)
+            self.assertEqual([], list(Path(folder).glob("ready-*-receipt.json")))
+
+        with tempfile.TemporaryDirectory() as folder:
+            full_at_boundary = {"sourceBlock": "riftReader2",
+                                "effectiveInnerAgeMilliseconds": 2500.0,
+                                "freshnessTimeoutMilliseconds": 5000.0}
+            adapter, reader = self.adapter(
+                folder, [(self.receipt(), full_at_boundary)])
+            self.assertEqual(10, adapter.wait_action_ready().outer_sequence)
+            self.assertEqual(1, reader.calls)
+
+    def test_action_ready_rejects_missing_full_source_budget(self):
+        with tempfile.TemporaryDirectory() as folder:
+            adapter, _ = self.adapter(folder, [(self.receipt(), {
+                "sourceBlock": "riftReader2"})])
+            with self.assertRaisesRegex(module._console.Blocked,
+                                        "movement-feedback-full-budget-invalid"):
+                adapter.wait_action_ready()
 
     def test_wait_accepts_only_strict_post_action_advancement(self):
         with tempfile.TemporaryDirectory() as folder:

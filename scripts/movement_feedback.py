@@ -31,6 +31,12 @@ _MAX_ACTION_READY_WAIT_SECONDS = 10.0
 # Preserve the complete six-second post-action evidence window plus the
 # worst-case reviewed 150 ms hold and a small dispatch margin.
 _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS = 6_250.0
+# A full-scan result is still technically fresh just before its five-second
+# expiry. Require enough remaining lifetime to dispatch an action and receive
+# the next fresh observation instead of arming on an almost-expired sample.
+# Historical Lab2 full scan reached 3596.7ms while its separate fast source
+# advanced; this full-only guard is not a claimed fix for that elapsed-budget run.
+_MIN_FULL_ACTION_FRESHNESS_REMAINING_MILLISECONDS = 2_500.0
 # A post-action observation can require three complete acquisition intervals:
 # one scan that began before the action and is therefore unusable, one strict
 # post-action barrier, and one later scan that proves the barrier was crossed.
@@ -107,6 +113,7 @@ class PinnedFeedback:
         self._monotonic = monotonic
         self._sleep = sleep
         self._ready_index = 0
+        self._last_action_ready: MovementSample | None = None
 
     def read(self, label: str) -> MovementSample:
         receipt, data, _ = self._receipt_reader(self._pin, initial=False)
@@ -153,11 +160,18 @@ class PinnedFeedback:
                     raise
             else:
                 block = gate.get("sourceBlock")
-                ready = block == "riftReader2"
-                if block != "fastObservation":
-                    if block != "riftReader2":
-                        _console._fail("movement-feedback-source-unavailable")
-                else:
+                if block == "riftReader2":
+                    inner_age = gate.get("effectiveInnerAgeMilliseconds")
+                    inner_max = gate.get("freshnessTimeoutMilliseconds")
+                    if (isinstance(inner_age, bool) or not isinstance(inner_age, (int, float))
+                            or not math.isfinite(float(inner_age))
+                            or isinstance(inner_max, bool) or not isinstance(inner_max, (int, float))
+                            or not math.isfinite(float(inner_max))
+                            or not 0 <= float(inner_age) < float(inner_max)):
+                        _console._fail("movement-feedback-full-budget-invalid")
+                    ready = float(inner_max) - float(inner_age) \
+                        >= _MIN_FULL_ACTION_FRESHNESS_REMAINING_MILLISECONDS
+                elif block == "fastObservation":
                     anchor_age = gate.get("anchorAgeMilliseconds")
                     anchor_max = gate.get("anchorMaxAgeMilliseconds")
                     if (isinstance(anchor_age, bool) or not isinstance(anchor_age, (int, float))
@@ -168,12 +182,21 @@ class PinnedFeedback:
                         _console._fail("movement-feedback-anchor-budget-invalid")
                     ready = float(anchor_max) - float(anchor_age) \
                         >= _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS
+                else:
+                    _console._fail("movement-feedback-source-unavailable")
+                if ready and self._last_action_ready is not None:
+                    # A later outer transport receipt can replay the same Lua
+                    # frame. Never accept it as readiness for another pulse.
+                    _require_prior_pin(self._pin, self._last_action_ready)
+                    ready = _validate_next(self._last_action_ready, receipt) == "accept"
                 if ready:
                     self._ready_index += 1
                     outer = receipt["observation"]["sequence"]
-                    return _sample_from_receipt(
+                    sample = _sample_from_receipt(
                         self._pin, receipt, data, self.evidence_dir,
                         f"ready-{self._ready_index}-{outer}")
+                    self._last_action_ready = sample
+                    return sample
             if self._monotonic() >= deadline:
                 _console._fail("movement-feedback-anchor-budget-timeout")
             self._sleep(0.05)
