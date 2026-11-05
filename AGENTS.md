@@ -112,6 +112,22 @@ readiness at the end of recovery, not just process existence. Use bounded retrie
 clear status, and idempotent ownership. A missing automatic recovery implementation
 is a product defect to track and fix, not a routine manual prerequisite for Joey.
 
+## Stale-data research preflight — Joey's decision, 2026-11-04
+
+If a RiftReader2 reader reports stale, expired, unbound, non-advancing or
+contradictory player data, first inspect the relevant **RRE** and **REA-Lab1**
+source-hashed findings and existing RR2 forensic receipts before choosing
+a new recovery action, redesign or additional experiment. Prefer reusing
+qualified historical diagnostics and eliminating an already-understood cause
+over repeating broad scans or rebuilding tooling. Distinguish full-scan
+freshness from candidate-region fast freshness and compare exact source
+epochs; a stale full scan is not proof that fast addon production stopped.
+RRE and REA historical/static facts never become live RR2 data without fresh
+process/build/nonce/player/epoch and independent advancing receipt proof.
+Keep their repositories read-only from RR2 work and preserve their owners.
+This research lookup must not delay an already-required STOP/key release or
+verified cleanup; all live actions still require the usual guards.
+
 ## Two-lab scope — user decision, 2026-10-28
 
 Both **RIFT-Lab-1 and RIFT-Lab-2** are available for the bidirectional hybrid
