@@ -166,6 +166,22 @@ Four focused offline hash tests passed. No code deployed, no game reload/restart
 and no Windows/VM reboot. Matching installed code does not establish the current
 loaded Lua version; three-way agreement does not by itself choose source precedence.
 
+**2026-11-05 at 13:50 EST, follow-up read-only semantic diff:**
+Workbridge job `apia-semantic-diff-20261105-1` exited `0`. The five PC
+installed files and development source were reread under 128 KiB/file with
+SHA-256 matched to the above report; no labs were reread because their
+installed hashes were already identical. `RiftAddon.toc` and `Version.lua`
+change only the version `0.3.0` -> `0.4.0-dev.3`. `Collector.lua` adds
+attempted/target/limited counters, guarded elapsed timing and protection
+against callbacks from replaced captures. `UI.lua` adds a two-line collection
+footer and status-aware button availability; `Public.lua` enriches `/atlas status`.
+API Atlas `README.md`, `docs/roadmap.md` and `docs/validation.md` explicitly
+identify **installed 0.3.0** as the live-checked release and **0.4.0-dev.3**
+as an undeployed development increment awaiting live collection-feedback
+acceptance. This is intentional release separation, not failed PC/VM sync.
+Do not promote the development files merely because their hashes differ.
+No AddOns content was modified and no RIFT reload/restart was performed.
+
 ## Future LLM run sequence
 
 1. Read this playbook, the relevant addon source repository's instructions,
