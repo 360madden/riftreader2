@@ -279,40 +279,38 @@ criteria, and the exact validation command. Point it to
 [the architecture](../architecture.md), current status, and one relevant topic;
 avoid loading the entire repository history.
 
-Apply Joey's 2026-11-06 worker strategy to minimize elapsed time to an accepted,
-verified result while preserving final product quality, including the cost of
-review, correction and rework:
+Apply Joey's 2026-11-06 correction: prioritize practical development speed,
+retain good architecture, and refine after actual use.
 
-1. Choose the model and effort for each bounded task. Start routine implementation
-   with `gpt-6.1-sol` or `gpt-6.1-terra` at low/medium reasoning. Use `gpt-6-luna`
-   for mechanical work with unambiguous acceptance checks. With explicit
-   model/effort overrides, spawn using `fork_turns: "none"` and provide the task,
-   relevant source context, owned files, constraints and validation commands.
-2. Engage `gpt-6-astra` at high reasoning early for difficult architecture or
-   consequential review: build/session identity, evidence meaning, compatibility,
-   hashes/atomic I/O, concurrency, native access, unsafe code, experiment controls
-   and module boundaries. Resolve consequential design questions before dependent
-   implementation; require elevated review of substantive code in small batches
-   as they become ready. Keep independent work moving while those decisions or
-   reviews are pending. Keep review proportional; trivial docs do not require
-   an expensive review worker.
-3. Verify each implementation promptly with the relevant focused checks and
-   correct failures before building on it. Escalate effort/model or reduce scope
-   after repeated failure or unresolved ambiguity. Judge the route by time to
-   accepted, verified output, not initial generation speed alone. Documentation
-   changes need scoped content/link checks; use the full gate when applicable.
-4. Have the root reconcile findings and integrate changes. Keep file ownership
-   explicit, serialize shared-host heavy work, and retain the root as sole
-   live-input owner per lab under all existing identity and input guards.
+1. Before each batch, give a short plan (3–5 bullets is enough) covering the
+   outcome, independent goals, file ownership/shared interfaces and focused
+   checks. Decide core ownership and contracts early; defer optional polish.
+   Run independent segmented goals in parallel and keep them moving while
+   another slice needs a decision or review. Use existing tools, not a new
+   scheduler or framework.
+2. Start routine workers with `gpt-6.1-sol` or `gpt-6.1-terra` at low/medium
+   reasoning; use `gpt-6-luna` for mechanical tasks with clear checks. For model
+   overrides, use `fork_turns: "none"` and provide task context, owned files,
+   shared interfaces, constraints and checks. The root handles routine review.
+   Use `gpt-6-astra` at high reasoning for targeted difficult architecture and
+   high-consequence native identity, concurrency or control review, not every
+   substantive patch. Escalate when repeated failures or consequential ambiguity
+   make the fast route slower.
+3. Run focused checks, correct failures and integrate useful slices promptly.
+   Broaden checks when scope warrants; run the authoritative script before
+   claiming full repository validation. Ship useful candidate output with honest
+   labels, refine after actual use. Live qualification governs live capability
+   claims; it does not block implementing raw candidate output. Retain module
+   boundaries and versioned contracts.
+4. Record concise evidence for meaningful results, material limitations and the
+   next useful step; no per-edit report or new manifest is needed. Keep file
+   ownership explicit, serialize shared-host heavy work, and retain the root as
+   sole live-input owner per lab under existing authority, identity, freshness
+   and input guards. Preserve unrelated work and integrate explicit files.
 
-Terra is a preferred candidate for suitable coding and authorized computer-use/UI
-tasks based on Joey's reported guidance, not a measured model benchmark. The
-direct ChatGPT Computer Use restriction inside VMware remains in force; model
-selection grants no new live-input or lab authorization.
-
-Record what changed, what was actually verified, limitations, and the next
-authorized task in `docs/status.md`. Commit only coherent explicit files with
-the repository-local author identity.
+Terra's preference for suitable coding and authorized UI work is Joey's guidance,
+not a measured benchmark. The direct ChatGPT Computer Use restriction inside
+VMware remains in force; model selection grants no new lab or input authority.
 
 ## Timely evidence checkpoints
 
@@ -324,13 +322,13 @@ to reconstruct after a timeout. A small evidence-only commit is worthwhile even
 when no product code changes. Do not delay every such checkpoint until a large
 implementation milestone or mix unrelated work merely to make a commit.
 
-Before committing, retain a concise tracked evidence note with source/time,
-exact test or observation, relevant process/build/session identity, retained
-artifact references and hashes, uncertainty, known limitations, and the next
-reproducible step. Use terms such as candidate, blocked, or negative result when
-the evidence does not qualify a capability. Validate the scoped document and
-links for documentation-only changes; code changes require their appropriate
-focused checks and the full repository gate before claiming full validation.
+For a meaningful result, retain a concise evidence note with the observation or
+check, relevant source/build/session identity, useful artifact references and
+material limitations. Include hashes when they bind the evidence; do not create
+per-edit reports or manifests. Label candidate, blocked and negative findings
+honestly. Documentation changes need scoped content/link checks; code changes
+need focused checks, with broader checks when scope warrants and the full gate
+before claiming full repository validation.
 Use explicit Git paths, preserve other work, and do not commit credentials,
 private settings, or large generated captures. These commits are local; they
 do not imply permission to push, deploy, or alter Git history.

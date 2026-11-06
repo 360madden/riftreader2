@@ -1,183 +1,176 @@
-# Practical discovery roadmap — November 6, 2026
+# Parallel discovery backlog — November 6, 2026
 
-Goal: make useful player information available to other programs through durable,
-read-only native collection. Use the addon as an independent reference or fallback;
-do not create a new addon dependency before testing native feasibility. This is a
-plan, not new runtime evidence or authorization. Start with XYZ qualification while
-independent health/resource and ability-owner research keeps moving.
+Deliver useful native readers now; refine semantics, continuity and restart evidence
+as separate work. This backlog replaces the sequential discovery plan. Packages
+can finish independently; an unavailable live reference must not idle implementation
+or static research. Planning describes intended work, not demonstrated capability
+or additional live-action authority.
 
-## Evidence baseline
+## Known baseline
 
-The current exact executable is SHA-256
+Exact-build research applies to SHA-256
 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
-Recheck it and PID/start identity for each live batch; the identities in notes are
-historical observations, not reusable process pins.
+Reacquire actual build and PID/start identity for each live operation.
 
-| Area | Demonstrated | Still missing |
+| Area | Useful starting result | Remaining uncertainty |
 | --- | --- | --- |
-| Native XYZ | Both labs re-resolved the current self-key/entity/component chain; Lab2 Nov 6 completed 30/30 unchanged samples over 61.08 s, max start gap 2.139 s | Fresh independent same-unit correlation, controlled changes, API-refresh dependence, sustained continuity and same-build restart |
-| HP / Energy | Current-build Lab2 type-checked HP and Energy raw records; ordinary HP calculation candidate; Energy type `0x072B` and offline 100/100 calculation | Synchronized UI/API comparison, changed values, passive freshness and restart; Mana kind3 type remains unresolved |
-| Abilities / cooldown / cast | Static cost builders, cooldown table lookup and unit-key cast-component branches mapped | Live ability/context ownership, type/ID mapping, timer semantics and changed-state correspondence |
-| Orientation | Player-owned matrix candidates and upstream/cache paths traced | Stationary-turn freshness, body-facing meaning, angular sign/axis; camera and LOS remain separate questions |
-| Tools | Both labs have matching checked Sysinternals files and working developer CLI probes | Tool presence alone proves neither runtime suitability nor field semantics |
+| XYZ | Both labs re-resolved self-key/entity/component; Lab2 Nov 6 sampled 30/30 unchanged values over 61.08 s | Same-unit changed-state meaning, passive freshness, continuity and restart |
+| HP / Energy | Type-checked Lab2 raw records; ordinary HP math and offline Energy 100/100 candidate | Synchronized correlation, changed values, passive freshness and restart; Mana kind3 type unresolved |
+| Ability / cooldown / cast | Static cost, cooldown lookup and unit-key cast paths mapped | Live ownership, IDs, timer meanings and changed-state correspondence |
+| Orientation | Player-owned matrix/upstream/cache candidates traced | Stationary body-facing meaning, freshness and angular convention |
 
-Old SHA `7C356C9D...` had changed-state XYZ and Warrior Power evidence including
-one full game restart. Reuse the experimental method, not its root RVA, offsets,
-class assumptions or qualification. Current resource leads are substantially
-beyond blind numeric scans, but remain candidates.
+Old SHA `7C356C9D...` XYZ/Warrior Power changed-state and one full-game restart
+results remain historical; reuse methods, not offsets or qualification.
+`Inspect.Unit.Detail` calls the refresh path for cached XYZ at component `+0x48`
+through RVA `0x6996C0`; API-active agreement cannot prove passive native freshness.
+A labeled API-dependent candidate can still be useful. Never call game getters,
+initializers or refcount-changing functions to obtain a supposedly passive read.
 
-Sources: [status](../status.md), [Nov 6 sampler](../validation/native-current-sampler-2026-11-06.md),
-[tool inventory](../validation/lab-discovery-tools-2026-11-06.md),
+Starting evidence: [status](../status.md), [Nov 6 sampler](../validation/native-current-sampler-2026-11-06.md),
 [coordinate map](../reference/native-current-coordinate-code-map.md),
-[HP/resource/ability map](../reference/native-current-client-code-map.md),
-[old-build Power](../reference/native-power-locator.md).
+[HP/resource/ability map](../reference/native-current-client-code-map.md).
 
-## Targets, workers and bounded recovery
+## Small architecture, concurrent delivery
 
-Default roles: **Lab1 discovers, Lab2 independently validates, physical PC supplies
-supplemental read-only/static evidence or eligible failover**. Roles are swappable
-according to readiness and user interference. Reserve one live-input owner per
-target; workers never acquire independent gameplay control. Use fresh target-specific
-identities, player/source evidence and artifact directories; never transfer heap
-addresses between targets. Labs are preferred for controlled experiments.
+Keep existing Domain/Application/Infrastructure/Live/CLI boundaries and versioned
+reader/catalog contracts. Share only the proven exact-build unit lookup, memory
+session and identity checks; keep XYZ, health/resource, ability, cooldown and cast
+interpretation in separately owned modules. Do not introduce a universal discovery
+framework, scheduler or mandatory new Lua contract. New shared extraction needs a
+short early design check so concurrent workers do not fork ownership logic.
 
-Before each batch state its outcome, steps, assignments, primary/alternate target
-and checks. Use small task-specific workers: Sol/Terra low/medium for bounded
-implementation, Luna for mechanical extraction/format checks, Astra high early for
-ambiguous ownership/architecture and substantive code review. Review small code
-batches before dependent changes accumulate; escalate after repeated ambiguity or
-rework. The coordinator integrates evidence and owns live input. This allocation
-is a workflow choice, not a model-performance claim.
+Every output identifies source, exact build/process epoch, acquisition time,
+qualification and unavailable reason using existing sample/JSON/catalog patterns.
+Raw candidate output is a supported research deliverable before full semantics;
+consumers choose the qualifications they require. Memory, addon and derived values
+remain distinguishable. An advancing host counter or repeated number is not proof
+that the game source advanced. Promote meaning, freshness and restart separately.
 
-Start with adjustable planning budgets: 10–15 minutes for reference readiness,
-20–40 minutes per static ownership question, 15–30 minutes for one live comparison,
-and one focused implementation/review cycle per tool gap. These are pivot points,
-not deadlines or authorization to skip checks. After one diagnosis and a bounded
-recovery attempt, classify the blocker as target-specific or shared. Switch an
-eligible target or continue independent static/offline work; do not repeat scans
-without a new hypothesis. A denied action or shared missing prerequisite cannot
-be bypassed by switching targets/tools. STOP/release and verify cleanup before
-leaving active input; quarantine unknown cleanup while independent work continues.
-Serialize heavy scans/Ghidra jobs on the shared host and inspect exact job handles.
+Default allocation: root plus up to six workers: five implementation/research
+workers and one elevated reviewer. Root integrates, reviews routine changes and
+alone operates live controls. Sol/Terra low/medium fit bounded implementation;
+Astra high handles early consequential architecture/ownership decisions and focused
+review of substantive risky batches. Routine patches use focused checks and root
+review; do not require an expensive review cycle for every patch. Keep independent
+workers moving during review; escalate repeated ambiguity or rework.
 
-## 1. Establish a fresh independent same-unit reference
+## First dispatch: five independent packages
 
-Assess existing `RRAPIVAL2` [inline capture](../reference/typed-inline-capture.md)
-and [strict inspection](../reference/typed-wire-snapshot.md) before adding transport.
-Check the actual producer, current executable/process, source identity and frame
-requirements. Obtain complete advancing frames from the same player and epoch;
-a marker, old frame, screenshot or advancing receiver counter is insufficient.
-Freshness recovery first consults the source-hashed RRE/REA findings and retained
-RR2 receipts, including fast-versus-full scan evidence. Keep those repos read-only.
+Start P1–P5 together with explicit file ownership. Root checks eligible live targets
+and reference readiness concurrently; the reviewer first checks shared lookup versus
+field boundaries and candidate output compatibility. Agree any necessary shared-file
+edit once, then let workers deliver independently. Root owns shared registration,
+command runners and shared lookup edits; workers own separate field modules and
+fixtures, and consult the common probe read-only. Build/publish and heavy PE/Ghidra
+work share host resources and are scheduled one at a time, not all research work.
 
-Accept a reference when independent frames establish current player/zone, advancing
-producer time/sequence and acquisition intervals suitable for pairing with native
-reads. Record the pairing window and coordinate tolerance before comparing changes.
-If binding is required, use only the permitted reviewed route; the earlier GUI-bind
-tool rejection is not resolved by this plan. If unavailable, preserve raw native
-acquisition and static progress while marking semantic comparison blocked.
+### P1 — Ship useful XYZ candidate consumption
 
-**Dependency:** this reference gates claims of same-unit meaning and input flows
-that require it. It does not gate bounded read-only raw captures or static analysis.
-Save the accepted reference recipe or exact blocker in the existing evidence catalog.
+- **Own/start:** `src/RiftReader2.Live/CurrentBuildPositionSampleCommand.cs`,
+  `scripts/sample_current_native_xyz.py`; `sample-current-position` already works.
+- **Deliver:** improve the smallest demonstrated consumer/sampling gap; expose the
+  existing candidate values with honest timing, owner and unavailable status. Reuse
+  existing output before inventing another interface; do not claim a stream yet.
+- **Done:** focused command/host checks cover valid reads, owner/epoch loss and
+  timing; retained sample replays cleanly. No independent Lua prerequisite.
+- **Dependencies/fallback:** none for candidate work; replay retained captures if
+  live acquisition is blocked. If existing output meets the consumer need, keep it,
+  report the verified invocation and move the worker to P6/P7; do not invent a gap. Semantic/live comparison is P7, continuity is P9.
 
-## 2. Qualify native XYZ, then test API-refresh dependence
+### P2 — HP/Energy candidate reader
 
-On the discovery lab pair current native samples with the independent reference
-at stationary endpoints before and after a short authorized guarded movement;
-verify release and settling before the final read. The current sampler aborts
-if XYZ changes inside its bracketed read; record that failure rather than treating
-it as motion evidence. Concurrent motion sampling needs a suitable reviewed method. Require coherent displacement direction/magnitude, matching unit,
-stable ownership brackets and explicit unavailable outcomes on lost identity/read
-failure. Use at least two distinct changed observations to reject coincidental
-stationary matches. Repeat independently on the validation lab using its own lookup.
-Acquire native-before ahead of the paired API query where possible, but label this
-trial **API-active**: an already-running typed producer may have refreshed the cache.
+- **Own/start:** new field-specific reader beside the existing Live readers;
+  `scripts/probe_native_unit_manager.py`, `scripts/reread_current_native_hp.py`,
+  `scripts/scout_current_native_health.py` and the client code map supply lookup/type/math evidence.
+- **Deliver:** bounded read-only candidate HP and Energy inputs/calculations with
+  type/owner/revision checks and explicit unavailable outcomes. Keep Mana unresolved
+  until its applicable typed owner is traced; do not generalize Energy to all power.
+- **Done:** retained typed records reproduce expected arithmetic; mismatched type,
+  changed owner and inconsistent mutable inputs fail explicitly in focused tests.
+- **Dependencies/fallback:** none on XYZ qualification or Lua. Use retained records
+  for implementation; fresh baseline correlation can follow through P7.
 
-Then separate cache agreement from native runtime independence. The current
-`Inspect.Unit.Detail` invokes the refresh path for `positionComponent+0x48` XYZ
-at `0x6996C0`;
-upstream `0x612EE0` and `0x612B50` sources are candidates. Design controlled
-query-on/query-quiet intervals with independent visual evidence of actual motion,
-followed by API reacquisition. If query isolation needs an addon change, reload or
-a different action class, establish that specific permission before executing it. Verify which reference/addon queries really stopped;
-another addon can still refresh the cache. Retain existing action gates: if query
-isolation removes required movement feedback, keep this experiment blocked until
-an authorized independent observation/control route exists. Do not call native
-getters or write caches.
-If XYZ stalls until an API query, label it API-dependent and trace the upstream
-owner/source instead of claiming passive freshness. If isolation cannot be shown,
-report dependence unresolved. An observed API-dependent locator can still be useful
-as an honestly labeled fallback. Catalog each result, including negative results.
+### P3 — Ability ownership and costs
 
-## 3. Separate stream continuity from meaning and restart durability
+- **Own/start:** ability section/findings in the client code map and an isolated
+  ability candidate module when justified; trace existing cost-builder/context and
+  cost-child-vector paths rather than broad numeric scans.
+- **Deliver:** one bounded player/context-to-ability ID/cost locating recipe, with
+  enough retained evidence for a passive reader or a precise missing owner edge.
+- **Done:** distinguish live player records from templates; match IDs/cost inputs
+  independently where available. Static-only findings remain labeled static.
+- **Dependencies/fallback:** none on P1/P2; finish source/type/writer evidence if
+  live ownership cannot yet be observed. Root owns any ability activation.
 
-After useful changed-state evidence, run a bounded sustained native observation
-using existing limits or a reviewed minimal sampler extension. Report actual span,
-sample count, maximum gap/read duration, failures, owner changes and observed state
-changes. Select duration/cadence for the intended consumer; a 480 s native run would
-prove only what that run measures. The existing strict 480 s addon observer remains
-an input prerequisite where the selected control flow requires it, not a universal
-gate for raw native reads. Repeated stationary values alone prove no freshness.
+### P4 — Cooldown ownership and timer reconstruction
 
-Once a locator is worth preserving, plan one full same-build game exit/relaunch
-under the applicable approval; do not restart as incidental setup. Resolve new
-PID/start/owners from scratch, compare independently again, and reject old-process
-or absent-process reads. Record observed restart count and limits. Patch recovery
-stays deferred; a new SHA fails closed. Catalog semantic, continuity and restart
-assessments separately so one success does not silently promote the others.
+- **Own/start:** separate cooldown findings/module; conditional lookup `0x129045C`,
+  upstream collection/ID mapping and `0x5A7450` table `+0x240/+0x248/+0x250`.
+- **Deliver:** bounded ownership recipe and offline timer reconstruction, then a
+  candidate reader only when the owner/type route supports passive access.
+- **Done:** show collection/key provenance and timer inputs; synthetic/retained
+  cases distinguish timer arithmetic from live cooldown/GCD qualification.
+- **Dependencies/fallback:** no XYZ/HP dependency. P3 ID findings may help later;
+  missing owner means a concrete static finding, not invented live telemetry.
 
-## 4. Run native HP/resource and ability research in parallel
+### P5 — Cast-state ownership and reader feasibility
 
-These lanes do not wait for XYZ continuity or restart. Share verified unit lookup
-code where appropriate, while preserving each component's ownership/type checks.
+- **Own/start:** separate cast findings/module; unit-key producer `0x91DED0`, dynamic
+  selector `0x2F57260`, children `+0x280/+0x290` and downstream timer helpers.
+- **Deliver:** unit-owned cast candidate topology, state/timer inputs and a minimal
+  passive reader where supported. Current Casting addon omits `uninterruptible`.
+- **Done:** absence/idle is explicit; retained logic separates start/progress/stop
+  hypotheses and flags. An idle zero does not establish cast semantics.
+- **Dependencies/fallback:** none on other initial packages; source tracing and
+  fixtures continue while an expressly authorized cast-time trial is unavailable.
 
-| Lane | Shortest useful next work | Acceptance / pivot |
+## Refill the queue as workers finish
+
+| ID / owner lane | Starting point and deliverable | Focused done check; true dependency / blocked fallback |
 | --- | --- | --- |
-| HP | Reacquire typed `0x02C2` record; pair ordinary-domain calculation with fresh same-unit UI/API; trace actual record writers separately from getter cache writes | Baseline agreement is a candidate result. Health-change testing remains deferred; do not manufacture damage. State changed-HP qualification blocked until separately authorized |
-| Resource | Reacquire kind4 Energy/type `0x072B`; compare raw inputs, calculated value and independent reference; trace missing Mana type only on an applicable player | Full-bar 100/100 alone is weak. Consumption/regen requires an expressly authorized narrow ability experiment; otherwise continue writer/type/static research |
-| Ability / cost | Finish context and ability-ID provenance, including cost-child vector ownership/type; distinguish templates from live player state | Locate a bounded player/ability-owned typed record and independently match IDs/costs; abandon broad value scans when ownership evidence is available |
-| Cooldown | Finish conditional lookup `0x129045C`, collection/type and ID mapping upstream of `0x5A7450` table (`+0x240/+0x248/+0x250`) | Static table math is not live ownership. Require changed cooldown plus independent timer/GCD comparison in an expressly authorized experiment before qualification |
-| Cast state | Follow unit-key producer `0x91DED0`, dynamic selector `0x2F57260`, child paths `+0x280/+0x290` and downstream timer helpers | Idle zero is only a baseline. Distinguish start/progress/stop and flags using an authorized cast-time trial; current Casting addon omits `uninterruptible` |
+| P6 Orientation | Coordinate code map's player matrix/upstream paths; isolated orientation candidate decoder and locating recipe | Static owner/axis evidence plus fixture math first; stationary-turn/body-versus-camera correlation needs root's live gates. Continue static work if blocked; XYZ travel bearing and dimension-item yaw are not body facing |
+| P7 Independent reference / pairing | `src/RiftReader2.Live/TypedApiInlineCapturePass.cs`, `src/RiftReader2.Cli/TypedWireSnapshotCommand.cs`; `scout-copy-typed-native`, `inspect-typed-wire` and existing UI/API evidence | Complete advancing same-player/epoch reference and explicit pairing window/tolerance, or precise blocker. Needed for semantic claims and whichever action flow requires it, never for raw read research; prepare offline pair review if blocked |
+| P8 XYZ source independence | Coordinate map: refresh `0x6996C0`, upstream `0x612EE0` / `0x612B50`; trace writers and test query-on/query-quiet only through an eligible route | Identify which producers/queries stopped and compare actual motion; report API-dependent or unresolved honestly. Depends on relevant observation/control gates, not on P9; trace upstream statically if isolation is unavailable |
+| P9 Stream / consumer integration | Existing Live output and delivery paths, `src/RiftReader2.Domain/FieldCatalogTypes.cs`, `src/RiftReader2.Application/FieldQualificationEvaluator.cs` | Deliver bounded candidate continuity/consumer path with sample span, count, max gap/read duration, owner/identity loss and unavailable behavior. Depends only on a selected reader, not every field's semantics; offline failure/replay checks if live blocked |
+| P10 Recovery / independent reproduction | `src/RiftReader2.Live/TargetDiscovery.cs`, `WindowsNativeMemorySession.cs`, existing host sampler and [restart policy](../decisions/0008-full-game-restart-durability.md) | Recover necessary reader dependencies on demand without duplicate owners; fresh process/owner resolution and old-process rejection. Use a useful reader first; implement/replay recovery now, perform full-game exit/relaunch only under applicable authority |
 
-Never invoke refcount-changing getters, lazy initializers or game code. Native
-functions that marshal Lua fields are research anchors, not callable passive readers.
-For each lane save one concise finding with build, locating recipe, evidence hashes,
-interpretation/limits and next experiment. Do not wait for every field to finish.
+P7 readiness/pairing can be prepared by root immediately and handed to a free worker;
+it is not a sixth implementation prerequisite for P1–P5. Hand back one useful result,
+focused check outcome, limitation and next action, then refill with P6–P10. Keep shared
+code-map edits section-scoped or give root short findings for integration.
 
-## 5. Keep facing, camera, LOS and consumption distinct
+## Deliver now; refine when use exposes a need
 
-Facing research can run statically in parallel; controlled stationary turns need
-fresh input prerequisites and independent body evidence. Test matrix changes while
-XYZ stays still, then distinguish body rotation from camera-only movement. Travel
-bearing is not stationary facing; dimension-item yaw/pitch strings are a false lead.
-Camera view/projection is a separate owner/calibration task. LOS requires its own
-defined source or controlled evidence; distance, facing and a successful cast do not
-establish a general native LOS field. Do not make these prerequisites for useful XYZ.
+| Deliver in the first useful slice | Improve afterward |
+| --- | --- |
+| Bounded candidate reader or precise locating result | Broader field coverage and additional characters/classes |
+| Existing JSON output with clear source/status | UI polish, richer exports and convenience wrappers |
+| Focused failure checks for actual owner/type/epoch risks | Wider endurance/performance coverage justified by use |
+| One concise finding with reusable evidence | Further cross-lab and restart qualification, labeled separately |
 
-Promote fields incrementally through the existing catalog and reader contracts:
-explicit source/build/process epoch, acquisition time, units, qualification level
-and unavailable reason. Keep raw candidates consumable as labeled research output;
-trusted consumers opt into the qualifications they need. Reuse existing JSON/sample
-paths and add only the smallest needed reader; avoid a new scheduler or framework.
+Do not defer correct ownership, exact-build checks or honest output contracts;
+those prevent expensive rework. Do defer generic abstractions, elaborate dashboards,
+automatic scheduling and documentation expansion without a demonstrated need.
 
-## First three concrete batches
+## Live scheduling and practical completion
 
-1. **Reference + owner work:** coordinator assesses fresh typed-frame readiness on
-   Lab1 with Lab2 alternate using `scout-copy-typed-native` then `inspect-typed-wire`;
-   use `scripts/sample_current_native_xyz.py` for a separately pinned native capture
-   and `scripts/probe_native_unit_manager.py` for typed HP/resource snapshots.
-   Workers independently trace cooldown conditional owner,
-   resource writer/type questions and retained XYZ refresh paths. Deliver advancing
-   same-unit reference or precise blocker, plus bounded static findings. No new input
-   class or runtime restart is implied.
-2. **One XYZ changed-state pair:** if its reference/control gates pass, coordinator
-   runs one short guarded discovery-lab comparison and verifies cleanup; validation
-   lab repeats independently. Workers review pairing/timing and implement only a
-   demonstrated tool gap with focused tests and elevated code review. If blocked,
-   finish HP/Energy baseline correlation or static owner evidence instead.
-3. **Dependence and next useful field:** test XYZ API-refresh dependence with verified
-   query isolation; choose continuity measurement after semantic evidence. In parallel
-   reacquire typed HP/Energy and ability owners, preserving deferred health changes
-   and casting boundaries. Deliver catalog updates and a concrete same-build restart
-   experiment for applicable approval once a useful locator merits it.
+Lab1 discovery and Lab2 independent reproduction are initial roles, freely swappable
+when readiness changes. Physical RIFT supplements read-only/reference work while
+Joey uses the PC. Root retains sole live-input ownership; workers can concurrently
+analyze static artifacts, implement modules and inspect eligible retained/read-only
+evidence. Serialize heavy shared-host jobs and conflicting acquisitions/control.
+
+Exact identity, source freshness and existing controller/action gates still apply.
+Use [AGENTS](../../AGENTS.md) and [development scheduling](../workflows/development.md#three-target-discovery-scheduling)
+for operational rules: stale-source RRE/REA lookup, credential checks, STOP/cleanup,
+health-change deferral, narrow casting authority, restart scope, deferred patch
+recovery and direct VMware Computer Use. A denied action is not a failover trigger.
+The strict addon observer remains required where its control flow requires it;
+it is not a universal gate for raw native candidates.
+
+After one diagnosis and bounded recovery, switch an eligible target or continue an
+independent package. Stop a scan without a new hypothesis; stop a module at a useful
+candidate plus known limitation instead of waiting for universal qualification.
+Accept each working reader/finding after its focused checks and proportional review.
+Refine correlation, freshness, continuity and restart incrementally. Do not invent
+new approval rituals, expand live action classes or restart games as incidental setup.

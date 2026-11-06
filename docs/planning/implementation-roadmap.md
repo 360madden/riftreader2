@@ -9,7 +9,7 @@ work or the isolated Windows Live executable for live acquisition. Each
 increment should leave a useful artifact and a compact handoff so a
 later model does not need to rediscover the reasoning.
 
-**November 6 discovery sequence:** Use the [current discovery roadmap](discovery-roadmap-2026-11-06.md)
+**November 6 parallel development priorities:** Use the [current discovery roadmap](discovery-roadmap-2026-11-06.md)
 for present-build research priorities and three-target work allocation. The
 October qualification results below retain their original build and evidence
 scope; they do not qualify the current executable automatically. Existing
