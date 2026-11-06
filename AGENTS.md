@@ -24,6 +24,14 @@ telemetry. The Lua producer and offline C# decoder have shared contract tests;
 live transport must establish freshness and reload/session identity. See the
 [addon contract](contracts/addon/README.md).
 
+**Self-contained runtime — Joey's decision, 2026-11-06:** Current tools and
+applications must use RiftReader2-owned implementations and observations. The
+older RiftReader checkout and RiftReaderApiProbe are historical/reference
+material only, never operational prerequisites. Preserve explicit historical
+replay without silently falling back to legacy producers. The RR2R1 migration
+and pending installed-addon acceptance are recorded in
+[the migration note](docs/reference/self-contained-api-reference.md).
+
 **Native-first telemetry priority — Joey's decision, 2026-10-31:** For new
 player health, resources, abilities, cooldown and cast-state telemetry, prefer
 direct, read-only RIFT process-memory or other independently verified game data

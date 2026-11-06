@@ -1,0 +1,163 @@
+{
+  "nonce": "0123456789abcdef0123456789abcdef",
+  "before": {
+    "schemaVersion": 1,
+    "addon": "RiftReader2",
+    "addonVersion": "0.2.0",
+    "source": "rift-api",
+    "sessionId": "0123456789abcdef0123456789abcdef",
+    "sequence": 1,
+    "epoch": 1,
+    "clock": {
+      "status": "ok",
+      "value": 1
+    },
+    "player": {
+      "status": "ok",
+      "value": "player_1"
+    },
+    "fields": {
+      "coordX": {
+        "status": "ok",
+        "value": 0
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 2
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": -3
+      },
+      "health": {
+        "status": "ok",
+        "value": 100
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 100
+      },
+      "mana": {
+        "status": "ok",
+        "value": 20
+      },
+      "manaMax": {
+        "status": "ok",
+        "value": 40
+      },
+      "power": {
+        "status": "ok",
+        "value": 0
+      },
+      "combo": {
+        "status": "ok",
+        "value": 0
+      },
+      "planar": {
+        "status": "ok",
+        "value": 0
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 5
+      },
+      "combat": {
+        "status": "ok",
+        "value": false
+      },
+      "dead": {
+        "status": "ok",
+        "value": false
+      },
+      "mounted": {
+        "status": "ok",
+        "value": false
+      },
+      "zone": {
+        "status": "ok",
+        "value": "Sanctum"
+      }
+    }
+  },
+  "after": {
+    "schemaVersion": 1,
+    "addon": "RiftReader2",
+    "addonVersion": "0.2.0",
+    "source": "rift-api",
+    "sessionId": "0123456789abcdef0123456789abcdef",
+    "sequence": 2,
+    "epoch": 1,
+    "clock": {
+      "status": "ok",
+      "value": 2
+    },
+    "player": {
+      "status": "ok",
+      "value": "player_1"
+    },
+    "fields": {
+      "coordX": {
+        "status": "ok",
+        "value": 0
+      },
+      "coordY": {
+        "status": "ok",
+        "value": 2
+      },
+      "coordZ": {
+        "status": "ok",
+        "value": -3
+      },
+      "health": {
+        "status": "ok",
+        "value": 100
+      },
+      "healthMax": {
+        "status": "ok",
+        "value": 100
+      },
+      "mana": {
+        "status": "ok",
+        "value": 0
+      },
+      "manaMax": {
+        "status": "ok",
+        "value": 40
+      },
+      "power": {
+        "status": "ok",
+        "value": 0
+      },
+      "combo": {
+        "status": "ok",
+        "value": 0
+      },
+      "planar": {
+        "status": "ok",
+        "value": 0
+      },
+      "planarMax": {
+        "status": "ok",
+        "value": 5
+      },
+      "combat": {
+        "status": "ok",
+        "value": true
+      },
+      "dead": {
+        "status": "ok",
+        "value": false
+      },
+      "mounted": {
+        "status": "ok",
+        "value": false
+      },
+      "zone": {
+        "status": "ok",
+        "value": "Sanctum"
+      }
+    }
+  },
+  "beforeFrame": "RR2R1|{\"schemaVersion\":1,\"addon\":\"RiftReader2\",\"addonVersion\":\"0.2.0\",\"source\":\"rift-api\",\"sessionId\":\"0123456789abcdef0123456789abcdef\",\"sequence\":1,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":1},\"player\":{\"status\":\"ok\",\"value\":\"player_1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":2},\"coordZ\":{\"status\":\"ok\",\"value\":-3},\"health\":{\"status\":\"ok\",\"value\":100},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"mana\":{\"status\":\"ok\",\"value\":20},\"manaMax\":{\"status\":\"ok\",\"value\":40},\"power\":{\"status\":\"ok\",\"value\":0},\"combo\":{\"status\":\"ok\",\"value\":0},\"planar\":{\"status\":\"ok\",\"value\":0},\"planarMax\":{\"status\":\"ok\",\"value\":5},\"combat\":{\"status\":\"ok\",\"value\":false},\"dead\":{\"status\":\"ok\",\"value\":false},\"mounted\":{\"status\":\"ok\",\"value\":false},\"zone\":{\"status\":\"ok\",\"value\":\"Sanctum\"}}}|ENDRR2R1",
+  "afterFrame": "RR2R1|{\"schemaVersion\":1,\"addon\":\"RiftReader2\",\"addonVersion\":\"0.2.0\",\"source\":\"rift-api\",\"sessionId\":\"0123456789abcdef0123456789abcdef\",\"sequence\":2,\"epoch\":1,\"clock\":{\"status\":\"ok\",\"value\":2},\"player\":{\"status\":\"ok\",\"value\":\"player_1\"},\"fields\":{\"coordX\":{\"status\":\"ok\",\"value\":0},\"coordY\":{\"status\":\"ok\",\"value\":2},\"coordZ\":{\"status\":\"ok\",\"value\":-3},\"health\":{\"status\":\"ok\",\"value\":100},\"healthMax\":{\"status\":\"ok\",\"value\":100},\"mana\":{\"status\":\"ok\",\"value\":0},\"manaMax\":{\"status\":\"ok\",\"value\":40},\"power\":{\"status\":\"ok\",\"value\":0},\"combo\":{\"status\":\"ok\",\"value\":0},\"planar\":{\"status\":\"ok\",\"value\":0},\"planarMax\":{\"status\":\"ok\",\"value\":5},\"combat\":{\"status\":\"ok\",\"value\":true},\"dead\":{\"status\":\"ok\",\"value\":false},\"mounted\":{\"status\":\"ok\",\"value\":false},\"zone\":{\"status\":\"ok\",\"value\":\"Sanctum\"}}}|ENDRR2R1"
+}

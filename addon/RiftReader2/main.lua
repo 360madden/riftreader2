@@ -3,6 +3,7 @@ local _, privateVars = ...
 local inspectApi = type(Inspect) == "table" and Inspect or {}
 local producer = privateVars.Producer.New(inspectApi, { intervalSeconds = 0.5 })
 local live = privateVars.Live.New()
+local reference = privateVars.Reference and privateVars.Reference.New(inspectApi, { intervalSeconds = 0.5 })
 local guidance = privateVars.Guidance.New()
 privateVars.Instance = producer
 privateVars.GuidanceInstance = guidance
@@ -10,6 +11,8 @@ RiftReader2_Frame = nil
 RiftReader2_LiveFrame = nil
 RiftReader2_LiveFrames = {}
 RiftReader2_Guidance = nil
+RiftReader2_ReferenceFrame = nil
+RiftReader2_ReferenceFrames = {}
 
 -- A complete native scan can take longer than one 0.5 second publication.
 -- Keep a few sequence-distinct envelopes reachable so the scanner can finish one
@@ -38,10 +41,39 @@ local function publishLiveFrame(frame)
     lastRetainedSequence = producer.Sequence
 end
 
+local referenceEpoch, referencePlayerStatus, referencePlayerId
+local function clearReferenceFrames()
+    RiftReader2_ReferenceFrame = nil
+    referenceEpoch, referencePlayerStatus, referencePlayerId = nil, nil, nil
+    for index = #RiftReader2_ReferenceFrames, 1, -1 do
+        RiftReader2_ReferenceFrames[index] = nil
+    end
+end
+
+local rebindFailedClosed = false
+local function updateReference()
+    if not reference or rebindFailedClosed then return end
+    local nonce = live:SessionId()
+    if not nonce then return end
+    reference:Bind(nonce)
+    local frame, observation = reference:Update()
+    if frame then
+        local player = observation.player
+        if referenceEpoch ~= observation.epoch or referencePlayerStatus ~= player.status or referencePlayerId ~= player.value then
+            clearReferenceFrames()
+        end
+        referenceEpoch, referencePlayerStatus, referencePlayerId = observation.epoch, player.status, player.value
+        RiftReader2_ReferenceFrame = frame
+        RiftReader2_ReferenceFrames[#RiftReader2_ReferenceFrames + 1] = frame
+        if #RiftReader2_ReferenceFrames > 8 then table.remove(RiftReader2_ReferenceFrames, 1) end
+    elseif not reference.Frame then
+        clearReferenceFrames()
+    end
+end
+
 local panel
 local lastText
 local rebindAfterSequence
-local rebindFailedClosed = false
 local function clock()
     local ok, value = pcall(function() return Inspect.Time.Frame() end)
     return ok and value or nil
@@ -90,6 +122,7 @@ local function update()
         publishLiveFrame(live:Wrap(producer.Frame))
         if rebindAfterSequence and RiftReader2_LiveFrame then rebindAfterSequence = nil end
     end
+    updateReference()
     displayGuidance()
 end
 
@@ -159,10 +192,12 @@ pcall(function()
                         -- Do not leave the old nonce globally visible until the
                         -- next producer update.
                         clearLiveFrames()
+                        clearReferenceFrames()
                         rebindAfterSequence = producer.Sequence
                     else
                         rebindFailedClosed = true
                         clearLiveFrames()
+                        clearReferenceFrames()
                         pcall(function()
                             guidance:Invalidate("Reader rebind failed closed; reload the UI before attaching another reader.")
                         end)

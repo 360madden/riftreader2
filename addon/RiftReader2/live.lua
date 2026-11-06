@@ -56,6 +56,10 @@ function Live.New()
         return true
     end
 
+    function instance:SessionId()
+        return sessionId
+    end
+
     function instance:Wrap(frame)
         if not sessionId or type(frame) ~= "string" or #frame > 4096 then
             return nil

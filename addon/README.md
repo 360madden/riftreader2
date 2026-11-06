@@ -10,13 +10,14 @@ for the prepared return channel and its live-validation limits.
 
 ## Package
 
-`RiftAddon.toc` loads five Lua modules in order. Together with the manifest, the
-current package contains six files:
+`RiftAddon.toc` loads six Lua modules in order. Together with the manifest, the
+current package contains seven files (package version `0.2.0`):
 
 | File | Responsibility |
 |---|---|
 | `wire.lua` | Strict bounded ASCII/JSON encoding for the version-1 frame. |
 | `producer.lua` | API acquisition, validation, sequence/epoch state, throttling, and publication. |
+| `reference.lua` | Additive nonce-bound RR2R1 player API reference, with independent counters and explicit field states. |
 | `live.lua` | One-load nonce binding and the version-1 live envelope. |
 | `guidance.lua` | Bounded manual result validation, freshness and display model. |
 | `main.lua` | Minimal RIFT startup/update event hookup and error containment. |
@@ -32,6 +33,15 @@ revision and corresponding fixtures. Sampling and serialization retain only the
 current observation.
 
 ## Observation contract
+
+The package also publishes [RR2R1](../contracts/addon/reference-v1.md) for current
+API reference discovery and native comparison. This is a separate contract,
+bound through the existing reader nonce, with 15 player fields including Mana
+and Power. `RiftReader2_ReferenceFrame` and a bounded eight-frame retention ring
+are its publication surfaces. Current capture tools explicitly select `RR2R1|`;
+historical `RRAPIVAL2` replay remains available. See the
+[migration workflow and pending live gate](../docs/reference/self-contained-api-reference.md).
+Package 0.2.0 has not been installed or accepted in RIFT by this migration.
 
 The exact frozen contract is [documented with its shared fixtures](../contracts/addon/README.md).
 Addon version `0.1.0` publishes schema 1 as one ASCII frame no larger than 4096

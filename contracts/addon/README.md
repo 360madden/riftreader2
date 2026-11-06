@@ -1,5 +1,9 @@
 # Addon observation contract, version 1
 
+This RR2A1 contract is frozen. Package 0.2.0 adds the separate
+[RR2R1 API reference contract](reference-v1.md) for current discovery and native
+comparison, preserving RR2A1 and RR2L1 meaning and version allowlists below.
+
 Status: implemented producer/decoder contract and verified in one actual-client
 session. The selected nonce-bound wrapper is specified separately in
 [the RR2L1 contract](live-transport-v1.md).
