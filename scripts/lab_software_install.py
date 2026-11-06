@@ -20,7 +20,7 @@ from vmware_guest_session import POWERSHELL
 ROOT = Path(__file__).resolve().parents[1]
 GUEST_SCRIPT = ROOT / "scripts" / "lab_software_install_guest.ps1"
 ARTIFACTS = ROOT / "artifacts" / "lab-software-install"
-PACKAGES = ("Git.Git", "Python.Python.3.14", "Microsoft.DotNet.SDK.10", "OpenJS.NodeJS.LTS", "Microsoft.WinAppCli")
+PACKAGES = ("Git.Git", "Python.Python.3.14", "Microsoft.DotNet.SDK.10", "OpenJS.NodeJS.LTS", "Microsoft.WinAppCli", "Microsoft.Sysinternals.Suite")
 
 
 def validate_report(report: dict, lab_name: str, package_id: str) -> dict:

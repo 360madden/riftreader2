@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet('Git.Git', 'Python.Python.3.14', 'Microsoft.DotNet.SDK.10', 'OpenJS.NodeJS.LTS', 'Microsoft.WinAppCli')]
+    [ValidateSet('Git.Git', 'Python.Python.3.14', 'Microsoft.DotNet.SDK.10', 'OpenJS.NodeJS.LTS', 'Microsoft.WinAppCli', 'Microsoft.Sysinternals.Suite')]
     [string]$PackageId,
     [Parameter(Mandatory=$true)][string]$ReportPath
 )
