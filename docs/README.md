@@ -10,6 +10,7 @@ topic below instead of loading every document for each task.
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Continuity | [Movement handoff](workflows/movement-handoff-2026-10-29.md) | Verified partial trial, cleanup, exact build, reusable bootstrap and remaining acquisition work. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |
+| Planning | [Current discovery roadmap](planning/discovery-roadmap-2026-11-06.md) | Prioritized current-build discovery, three-target allocation, evidence gates and first work batches. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
 | Planning | [Bidirectional hybrid prompt and two-lab roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md) | Saved implementation prompt; both labs authorized for parallel discovery/validation; return-channel feasibility first. |
 | Planning | [Two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md) | Fresh VM/guest limits, ownership and first manual-feedback acceptance. |
