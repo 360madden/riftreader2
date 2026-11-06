@@ -36,8 +36,8 @@ CONFIGS = {
 }
 PORTS = {"lab1": 49813, "lab2": 49923}
 BIND = "192.168.56.1"
-SOURCE = Path(r"C:\rift modding\RiftReader\tools\riftreader_workflow\guest_observation_receiver.py")
-SOURCE_SHA256 = "C7EF8F7685611D7B497FB2A43333BEA44DA9FF4E19AAB98A1F38F12B67A13AE5"
+SOURCE = ROOT / "scripts" / "observation_receiver.py"
+SOURCE_SHA256 = "8861B7E3EAC244C5C924F6F1F4B8C36A7D926142D6146B897A69AFBFF1D56DD6"
 MANAGER = Path(r"C:\work\workbridge-mcp\scripts\Manage-HelperTask.ps1")
 ENTRY = ROOT / "scripts" / "receiver_task_entry.py"
 TASKS = ROOT / "artifacts" / "receiver-tasks"
@@ -71,7 +71,7 @@ def _config(lab):
     except (OSError, ValueError, TypeError, KeyError):
         _blocked("private-config-invalid")
     if not SOURCE.is_file() or sha(SOURCE) != SOURCE_SHA256:
-        _blocked("reference-receiver-source-drift")
+        _blocked("receiver-source-drift")
     if not ENTRY.is_file() or not MANAGER.is_file():
         _blocked("managed-helper-unavailable")
     return path

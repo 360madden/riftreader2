@@ -9,7 +9,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
-$names = @('RiftAddon.toc','wire.lua','producer.lua','live.lua','guidance.lua','main.lua')
+$names = @('RiftAddon.toc','wire.lua','producer.lua','reference.lua','live.lua','guidance.lua','main.lua')
 $manifest=$null
 $phase='initial'
 $result = [ordered]@{ schemaVersion=1; mode=$Mode; machine=$env:COMPUTERNAME;

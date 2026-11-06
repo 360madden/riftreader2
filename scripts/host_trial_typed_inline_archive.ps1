@@ -1,6 +1,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$Executable,
     [Parameter(Mandatory=$true)][string]$TrialRoot,
+    [Parameter(Mandatory=$true)][ValidatePattern('^[0-9A-F]{64}$')][string]$ExpectedBundleSha256,
+    [ValidateSet('RR2R1|','RRAPIVAL2|')][string]$Marker = 'RR2R1|',
     [string]$Python = 'C:\Python314\python.exe'
 )
 $ErrorActionPreference = 'Stop'
@@ -13,7 +15,7 @@ if (-not (Test-Path -LiteralPath $Executable -PathType Leaf) -or
     -not (Test-Path -LiteralPath $Python -PathType Leaf)) {
     throw 'Pinned executable or Python not found.'
 }
-$expectedBundle = '484FC6A0980BCAC823154229B974B0BD18412A9053903A542BC0313EB5EF1716'
+$expectedBundle = $ExpectedBundleSha256
 $bundle = (Get-FileHash -LiteralPath $Executable -Algorithm SHA256).Hash
 if ($bundle -ne $expectedBundle) { throw 'Published executable SHA-256 differs.' }
 
@@ -25,9 +27,9 @@ try {
     $raw = [UInt64]$allocation.ToInt64()
     $aligned = [UInt64]([Math]::Floor(([double]$raw + 4095.0) / 4096.0) * 4096.0)
     $data = New-Object byte[] $allocBytes
-    $marker = [Text.Encoding]::ASCII.GetBytes('RRAPIVAL2|{')
+    $markerBytes = [Text.Encoding]::ASCII.GetBytes($Marker + '{')
     $markerOffset = 2 * 4096 + 100
-    [Array]::Copy($marker, 0, $data, $markerOffset, $marker.Length)
+    [Array]::Copy($markerBytes, 0, $data, $markerOffset, $markerBytes.Length)
     [Runtime.InteropServices.Marshal]::Copy($data, 0, [IntPtr]([Int64]$aligned), 65536)
     $expectedMarker = '0x' + ($aligned + $markerOffset).ToString('X')
 
@@ -36,6 +38,7 @@ try {
     $req = [ordered]@{
         schemaVersion = 1
         evidenceKind = 'native-typed-inline-capture-request/1'
+        marker = $Marker
         target = [ordered]@{
             processId = $current.Id
             processStartUtcTicks = $current.StartTime.ToUniversalTime().Ticks
@@ -105,7 +108,8 @@ try {
         '--process-id', ([string]$current.Id),
         '--process-start-ticks', ([string]$current.StartTime.ToUniversalTime().Ticks),
         '--game-sha256', $req.target.executableSha256,
-        '--bundle-sha256', $expectedBundle
+        '--bundle-sha256', $expectedBundle,
+        '--marker', $Marker
     )
     $review = & $Python @reviewArgs 2>&1
     if ($LASTEXITCODE -ne 0) { throw ('Archive verification failed: ' + ($review -join ' ')) }

@@ -43,7 +43,8 @@ public static class TypedApiPrefixScout
         Func<ulong, byte[], int, TypedApiScanReadResult> readChunk,
         Func<bool> timeBudgetExceeded,
         CancellationToken cancellationToken = default,
-        Action<ulong>? onMatch = null)
+        Action<ulong>? onMatch = null,
+        string marker = TypedApiPrefixMatcher.MarkerText)
     {
         ArgumentNullException.ThrowIfNull(regions);
         ArgumentNullException.ThrowIfNull(readChunk);
@@ -53,7 +54,7 @@ public static class TypedApiPrefixScout
         if (maxScanBytes is < ChunkBytes or > MaxScanBytes)
             throw new ArgumentOutOfRangeException(nameof(maxScanBytes));
 
-        var matcher = new TypedApiPrefixMatcher(maxMatchCount);
+        var matcher = new TypedApiPrefixMatcher(maxMatchCount, marker);
         var scopes = new List<(ulong Begin, ulong End)>();
         long eligibleBytes = 0;
         ulong lastRegionEnd = 0;
@@ -86,7 +87,7 @@ public static class TypedApiPrefixScout
 
         ulong ResumeAt(ulong address)
         {
-            var overlap = (ulong)(TypedApiPrefixMatcher.MarkerText.Length - 1);
+            var overlap = (ulong)(marker.Length - 1);
             return address - startAddress > overlap ? address - overlap : startAddress;
         }
 
@@ -138,7 +139,7 @@ public static class TypedApiPrefixScout
                     if (matcher.MatchBudgetExceeded)
                     {
                         var firstUnretainedEnd = checked(matcher.FirstUnretainedAddress!.Value +
-                            (ulong)TypedApiPrefixMatcher.MarkerText.Length);
+                            (ulong)marker.Length);
                         consumed = checked((int)(firstUnretainedEnd - address));
                     }
                     AddCovered(covered, address, consumed);

@@ -48,6 +48,9 @@ internal static class TypedWireSnapshotCommand
         if (!options.TryGetValue("--before", out var beforePath) || !options.TryGetValue("--after", out var afterPath))
             throw new ArgumentException("--before and --after are required.");
 
+        options.TryGetValue("--session-id", out var sessionId);
+        if (sessionId is not null && (sessionId.Length != 32 || sessionId.Any(c => !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))))
+            throw new ArgumentException("--session-id must be 32 lowercase hexadecimal characters.");
         var before = await NativeMemorySnapshotFile.LoadAsync(beforePath, cancellationToken);
         var after = await NativeMemorySnapshotFile.LoadAsync(afterPath, cancellationToken);
         if (before.File.Status == "identity-invalidated" || after.File.Status == "identity-invalidated")
@@ -61,8 +64,8 @@ internal static class TypedWireSnapshotCommand
         if (beforeEnd >= afterStart)
             throw new InvalidDataException("Typed-wire comparison requires nonoverlapping chronological capture windows.");
 
-        var first = Scan(before.Snapshot, cancellationToken);
-        var second = Scan(after.Snapshot, cancellationToken);
+        var first = Scan(before.Snapshot, cancellationToken, sessionId);
+        var second = Scan(after.Snapshot, cancellationToken, sessionId);
         var firstSelected = Select(first, out var firstError);
         var secondSelected = Select(second, out var secondError);
         var status = "blocked";
@@ -74,6 +77,8 @@ internal static class TypedWireSnapshotCommand
             status = "unavailable";
             reason = firstSelected is null ? "before:no-complete-usable-frame-in-covered-scope" : "after:no-complete-usable-frame-in-covered-scope";
         }
+        else if (firstSelected.Wire!.Epoch != secondSelected.Wire!.Epoch)
+            reason = "source-epoch-changed";
         else if (firstSelected.Wire!.PlayerUnitId != secondSelected.Wire!.PlayerUnitId)
             reason = "player-identity-changed";
         else if (secondSelected.Wire.FrameTime <= firstSelected.Wire.FrameTime ||
@@ -156,6 +161,13 @@ internal static class TypedWireSnapshotCommand
         candidate.Wire.Sequence,
         candidate.Wire.FrameTime,
         candidate.Wire.PlayerUnitId,
+        addon = candidate.Wire.Addon,
+        addonVersion = candidate.Wire.Protocol == "RR2R1" ? "0.2.0" : "0.6.0",
+        protocol = candidate.Wire.Protocol,
+        source = "rift-api",
+        candidate.Wire.SessionId,
+        candidate.Wire.Epoch,
+        fields = candidate.Wire.Fields,
         xyz = new { x = candidate.Wire.X, y = candidate.Wire.Y, z = candidate.Wire.Z }
     };
 
@@ -180,10 +192,23 @@ internal static class TypedWireSnapshotCommand
         var candidates = scan.Candidates.Where(candidate => candidate.Wire is not null).ToArray();
         if (candidates.Length == 0)
             return null;
-        var selected = candidates.OrderByDescending(c => c.Wire!.FrameTime)
-            .ThenByDescending(c => c.Wire!.Sequence).First();
-        if (candidates.Any(c => c.Wire!.FrameTime == selected.Wire!.FrameTime &&
-                                c.Wire.Sequence == selected.Wire.Sequence &&
+        var reference = candidates.Any(c => c.Wire!.Protocol == "RR2R1");
+        if (reference && (candidates.Select(c => c.Wire!.Epoch).Distinct().Count() != 1 ||
+                          candidates.Select(c => c.Wire!.PlayerUnitId).Distinct().Count() != 1))
+        {
+            error = "mixed-source-epoch-or-player";
+            return null;
+        }
+        var selected = reference
+            ? candidates.OrderByDescending(c => c.Wire!.Sequence).ThenByDescending(c => c.Wire!.FrameTime).First()
+            : candidates.OrderByDescending(c => c.Wire!.FrameTime).ThenByDescending(c => c.Wire!.Sequence).First();
+        if (reference && candidates.Any(c => c.Wire!.Sequence < selected.Wire!.Sequence && c.Wire.FrameTime > selected.Wire.FrameTime))
+        {
+            error = "source-clock-regression-within-epoch";
+            return null;
+        }
+        if (candidates.Any(c => (reference || c.Wire!.FrameTime == selected.Wire!.FrameTime) &&
+                                c.Wire!.Sequence == selected.Wire!.Sequence &&
                                 c.WireSha256 != selected.WireSha256))
         {
             error = "conflicting-latest-frames";
@@ -192,21 +217,24 @@ internal static class TypedWireSnapshotCommand
         return selected;
     }
 
-    private static ScanResult Scan(MemorySnapshot snapshot, CancellationToken cancellationToken)
+    private static ScanResult Scan(MemorySnapshot snapshot, CancellationToken cancellationToken, string? sessionId)
+
     {
+        var prefix = sessionId is null ? Prefix : "RR2R1|"u8.ToArray();
+        var suffix = sessionId is null ? Suffix : "|ENDRR2R1"u8.ToArray();
         var candidates = new List<Candidate>();
         foreach (var segment in snapshot.Segments)
         {
             var bytes = segment.Bytes.AsSpan();
             var next = 0;
-            while (next <= bytes.Length - Prefix.Length)
+            while (next <= bytes.Length - prefix.Length)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var offset = bytes[next..].IndexOf(Prefix);
+                var offset = bytes[next..].IndexOf(prefix);
                 if (offset < 0)
                     break;
                 var start = next + offset;
-                next = start + Prefix.Length;
+                next = start + prefix.Length;
                 if (next >= bytes.Length || bytes[next] != (byte)'{')
                     continue;
                 if (candidates.Count == MaxCandidates)
@@ -214,17 +242,22 @@ internal static class TypedWireSnapshotCommand
                 var address = checked(segment.StartAddress + (ulong)start);
                 var end = FindJsonEnd(bytes, next);
                 if (end is null || end.Value - next > MaxJsonBytes ||
-                    end.Value + Suffix.Length > bytes.Length ||
-                    !bytes.Slice(end.Value, Math.Min(Suffix.Length, bytes.Length - end.Value)).SequenceEqual(Suffix))
+                    end.Value + suffix.Length > bytes.Length ||
+                    !bytes.Slice(end.Value, Math.Min(suffix.Length, bytes.Length - end.Value)).SequenceEqual(suffix))
                 {
                     candidates.Add(new(address, "incomplete", "terminator-or-coverage-missing", null, null));
                     continue;
                 }
 
-                var total = end.Value + Suffix.Length - start;
+                var total = end.Value + suffix.Length - start;
                 var raw = bytes.Slice(start, total).ToArray();
+                if (sessionId is not null && total > 8192)
+                {
+                    candidates.Add(new(address, "malformed-complete", "wire-frame-too-large", null, null));
+                    continue;
+                }
                 var sha = Convert.ToHexString(SHA256.HashData(raw));
-                var result = Parse(raw.AsSpan(Prefix.Length, end.Value - next));
+                var result = sessionId is null ? Parse(raw.AsSpan(prefix.Length, end.Value - next)) : ParseReference(raw.AsSpan(prefix.Length, end.Value - next), sessionId);
                 candidates.Add(result.Value is null
                     ? new(address, "malformed-complete", result.Error, sha, null)
                     : new(address, "valid", null, sha, result.Value));
@@ -289,12 +322,85 @@ internal static class TypedWireSnapshotCommand
                 return (null, "player-contract-or-xyz-invalid");
             if (!ValidEntity(root.GetProperty("target"), requirePlayer: false, out _, out _))
                 return (null, "target-contract-invalid");
-            return (new(sequence, frameTime, playerId!, xyz[0], xyz[1], xyz[2]), null);
+            return (new(sequence, frameTime, playerId!, xyz[0], xyz[1], xyz[2], Fields: player.GetProperty("fields").Clone()), null);
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or DecoderFallbackException or KeyNotFoundException or OverflowException)
         {
             return (null, "json-or-contract-invalid");
         }
+    }
+
+    private static (Wire? Value, string? Error) ParseReference(ReadOnlySpan<byte> json, string sessionId)
+    {
+        try
+        {
+            foreach (var value in json)
+                if (value > 127) return (null, "wire-not-ascii");
+            using var doc = JsonDocument.Parse(json.ToArray(), new JsonDocumentOptions { MaxDepth = 8 });
+            var root = doc.RootElement;
+            if (ContainsDuplicate(root)) return (null, "json-duplicate-key");
+            if (!HasKeys(root, ["schemaVersion", "addon", "addonVersion", "source", "sessionId", "sequence", "epoch", "clock", "player", "fields"]) ||
+                !root.GetProperty("schemaVersion").TryGetInt32(out var schema) || schema != 1 ||
+                !Exact(root, "addon", "RiftReader2") || !Exact(root, "addonVersion", "0.2.0") ||
+                !Exact(root, "source", "rift-api") || !Exact(root, "sessionId", sessionId) ||
+                !PositiveCounter(root.GetProperty("sequence"), out var sequence) ||
+                !PositiveCounter(root.GetProperty("epoch"), out var epoch))
+                return (null, "reference-contract-or-session-invalid");
+            var clock = root.GetProperty("clock");
+            var player = root.GetProperty("player");
+            if (!ReferenceField(clock, "number") || !ReferenceField(player, "string"))
+                return (null, "reference-clock-or-player-invalid");
+            var clockOk = Exact(clock, "status", "ok");
+            var playerOk = Exact(player, "status", "ok");
+            if (clockOk && clock.GetProperty("value").GetDouble() < 0 ||
+                playerOk && player.GetProperty("value").GetString()!.Length == 0 ||
+                !clockOk && !Exact(player, "status", "unavailable"))
+                return (null, "reference-clock-or-player-invalid");
+            var fields = root.GetProperty("fields");
+            if (!HasKeys(fields, FieldKinds.Keys)) return (null, "reference-fields-invalid");
+            foreach (var (name, kind) in FieldKinds)
+            {
+                var field = fields.GetProperty(name);
+                if (!ReferenceField(field, kind) ||
+                    ((!clockOk || !playerOk) && !Exact(field, "status", "unavailable")))
+                    return (null, "reference-fields-invalid");
+            }
+            if (!clockOk || !playerOk || new[] { "coordX", "coordY", "coordZ" }.Any(name => !Exact(fields.GetProperty(name), "status", "ok")))
+                return (null, "reference-source-or-xyz-unavailable");
+            return (new(sequence, clock.GetProperty("value").GetDouble(), player.GetProperty("value").GetString()!,
+                fields.GetProperty("coordX").GetProperty("value").GetDouble(),
+                fields.GetProperty("coordY").GetProperty("value").GetDouble(),
+                fields.GetProperty("coordZ").GetProperty("value").GetDouble(),
+                "RiftReader2", "RR2R1", sessionId, epoch, fields.Clone()), null);
+        }
+        catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidOperationException or KeyNotFoundException or OverflowException)
+        {
+            return (null, "json-or-reference-contract-invalid");
+        }
+    }
+
+    private static bool PositiveCounter(JsonElement item, out long value)
+    {
+        value = 0;
+        return item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out value) && value is > 0 and <= 9007199254740991;
+    }
+
+    private static bool ReferenceField(JsonElement field, string kind)
+    {
+        if (field.ValueKind != JsonValueKind.Object || !field.TryGetProperty("status", out var status) || status.ValueKind != JsonValueKind.String)
+            return false;
+        var state = status.GetString();
+        if (state is not ("ok" or "unavailable" or "invalid") || !HasKeys(field, state == "ok" ? ["status", "value"] : ["status"]))
+            return false;
+        if (state != "ok") return true;
+        var value = field.GetProperty("value");
+        return kind switch
+        {
+            "number" => FiniteNumber(value, out _),
+            "boolean" => value.ValueKind is JsonValueKind.True or JsonValueKind.False,
+            "string" => value.ValueKind == JsonValueKind.String && value.GetString()!.Length <= 128 && value.GetString()!.All(c => c is >= ' ' and <= '~'),
+            _ => false
+        };
     }
 
     private static bool ValidEntity(JsonElement entity, bool requirePlayer, out string? unitId, out double[] xyz)
@@ -392,7 +498,9 @@ internal static class TypedWireSnapshotCommand
         return false;
     }
 
-    private sealed record Wire(long Sequence, double FrameTime, string PlayerUnitId, double X, double Y, double Z);
+    private sealed record Wire(long Sequence, double FrameTime, string PlayerUnitId, double X, double Y, double Z,
+        string Addon = "RiftReaderApiProbe", string Protocol = "RRAPIVAL2", string? SessionId = null,
+        long? Epoch = null, JsonElement? Fields = null);
     private sealed record Candidate(ulong Address, string Kind, string? Reason, string? WireSha256, Wire? Wire);
     private sealed record ScanResult(IReadOnlyList<Candidate> Candidates, bool LimitExceeded);
 }

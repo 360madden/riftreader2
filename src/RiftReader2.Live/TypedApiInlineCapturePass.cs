@@ -37,7 +37,8 @@ public static class TypedApiInlineCapturePass
         Func<ulong, int, NativeReadResult> neighborhoodRead,
         Func<bool> timeBudgetExceeded,
         Func<string>? utcNow = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string marker = TypedApiPrefixMatcher.MarkerText)
     {
         ArgumentNullException.ThrowIfNull(neighborhoodRead);
         ArgumentNullException.ThrowIfNull(timeBudgetExceeded);
@@ -51,10 +52,10 @@ public static class TypedApiInlineCapturePass
             scanRead, timeBudgetExceeded, cancellationToken,
             onMatch: address =>
             {
-                var marker = $"0x{address:X}";
+                var markerAddress = $"0x{address:X}";
                 if (copied >= maxCopiedCandidates)
                 {
-                    candidates.Add(new(marker, "copy-budget-exceeded",
+                    candidates.Add(new(markerAddress, "copy-budget-exceeded",
                         "The declared maximum number of candidate neighborhood copies was reached.", null));
                     return;
                 }
@@ -63,22 +64,22 @@ public static class TypedApiInlineCapturePass
                 try
                 {
                     probe = TypedApiImmediateNeighborhood.Capture(
-                        address, neighborhoodRead, timeBudgetExceeded, utcNow, cancellationToken);
+                        address, neighborhoodRead, timeBudgetExceeded, utcNow, cancellationToken, marker);
                 }
                 catch (ArgumentOutOfRangeException)
                 {
                     // An address at the user-range edge cannot fit the fixed
                     // before/after window. Retain an explicit declined result.
-                    candidates.Add(new(marker, "window-out-of-range",
+                    candidates.Add(new(markerAddress, "window-out-of-range",
                         "The marker is too near a user address boundary for this window.", null));
                     return;
                 }
 
                 if (probe.Chunks.Count > 0)
                     copied++;
-                candidates.Add(new(marker, probe.Status, probe.Reason,
+                candidates.Add(new(markerAddress, probe.Status, probe.Reason,
                     probe.Chunks.Count == 0 ? null : probe));
-            });
+            }, marker: marker);
 
         return new(scout, maxCopiedCandidates, copied, candidates);
     }

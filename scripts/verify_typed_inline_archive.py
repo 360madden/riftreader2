@@ -207,7 +207,8 @@ def _check_run(files: dict[str, bytes], name: str, pid: int, ticks: int,
 
 
 def verify_archive(archive: Path, archive_sha: str, *, pid: int, ticks: int,
-                   game_sha: str, bundle_sha: str, min_separation_seconds: float = 1.0
+                   game_sha: str, bundle_sha: str, min_separation_seconds: float = 1.0,
+                   marker: str | None = None
                    ) -> tuple[dict[str, bytes], dict]:
     """Check all bounded archive members before returning any publishable bytes."""
     if (not archive.is_file() or archive.is_symlink()
@@ -280,6 +281,16 @@ def verify_archive(archive: Path, archive_sha: str, *, pid: int, ticks: int,
         "typedFrameQualified": False,
         "nativeXyzQualified": False,
     }
+    if marker is not None:
+        if marker not in ("RR2R1|", "RRAPIVAL2|"):
+            raise ArchiveError("unsupported expected marker")
+        for name in ("run-01", "run-02"):
+            index = _json(files[name + "/index.json"], name)
+            request = _json(files[name + "/input.request.json"], name)
+            if (request.get("marker", "RRAPIVAL2|") != marker
+                    or index.get("request", {}).get("marker", "RRAPIVAL2|") != marker
+                    or (marker == "RR2R1|" and index.get("marker") != marker)):
+                raise ArchiveError("capture request or scout marker mismatch")
     return files, receipt
 
 
@@ -349,6 +360,7 @@ def _transfer_proof(archive: Path, archive_sha: str, archive_bytes: int, *,
 def verify_and_publish(archive: Path, archive_sha: str, output: Path, *,
                        pid: int, ticks: int, game_sha: str, bundle_sha: str,
                        min_separation_seconds: float = 1.0,
+                       marker: str | None = None,
                        claim_path: Path | None = None,
                        upload_path: Path | None = None,
                        expected_guest: str = "192.168.56.128") -> dict:
@@ -357,7 +369,7 @@ def verify_and_publish(archive: Path, archive_sha: str, output: Path, *,
         raise ArchiveError("output must be absent and parent directory must already exist")
     files, receipt = verify_archive(
         archive, archive_sha, pid=pid, ticks=ticks, game_sha=game_sha,
-        bundle_sha=bundle_sha, min_separation_seconds=min_separation_seconds)
+        bundle_sha=bundle_sha, min_separation_seconds=min_separation_seconds, marker=marker)
     transfer = _transfer_proof(
         archive, receipt["archiveSha256"], receipt["archiveBytes"],
         claim_path=claim_path, upload_path=upload_path,
@@ -394,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--process-start-ticks", required=True, type=int)
     parser.add_argument("--game-sha256", required=True)
     parser.add_argument("--bundle-sha256", required=True)
+    parser.add_argument("--marker", choices=("RR2R1|", "RRAPIVAL2|"))
     parser.add_argument("--claim-receipt", type=Path)
     parser.add_argument("--upload-receipt", type=Path)
     args = parser.parse_args(argv)
@@ -402,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
             args.archive, args.expected_sha256, args.output,
             pid=args.process_id, ticks=args.process_start_ticks,
             game_sha=args.game_sha256, bundle_sha=args.bundle_sha256,
-            claim_path=args.claim_receipt, upload_path=args.upload_receipt)
+            claim_path=args.claim_receipt, upload_path=args.upload_receipt, marker=args.marker)
     except (ArchiveError, BadZipFile, OSError) as exc:
         print(json.dumps({"state": "blocked", "reason": str(exc)}), file=sys.stderr)
         return 2

@@ -1,4 +1,4 @@
-"""One read-only HP/Energy candidate capture using an explicitly SHA-pinned published reader.
+"""One read-only HP/Mana/Energy candidate capture using an explicitly SHA-pinned reader.
 
 No publishing, game input, addon dependency or semantic qualification. LabCodex's
 session checks the VM-specific cached credential source before each guest logon.
@@ -83,7 +83,9 @@ def validate_report(report: dict, *, pid: int, ticks: int) -> dict:
     require_finite(report)
     if (not isinstance(report, dict) or type(report.get("schemaVersion")) is not int
             or report.get("schemaVersion") != 1
-            or report.get("contractVersion") != "native-current-vitals-candidate-sample/1"
+            or report.get("contractVersion") not in (
+                "native-current-vitals-candidate-sample/1",
+                "native-current-vitals-candidate-sample/2")
             or report.get("status") != "complete" or report.get("sourceBuildSha256") != GAME_SHA
             or report.get("qualification") != QUALIFICATION
             or report.get("source") != "native-process-memory"):
@@ -105,8 +107,10 @@ def validate_report(report: dict, *, pid: int, ticks: int) -> dict:
             raise ValueError("invalid-clock")
     except (KeyError, AttributeError, TypeError, ValueError) as exc:
         raise ValueError("native-vitals-acquisition-time-invalid") from exc
+    contract = report["contractVersion"]
     values = {}
-    for name in ("health", "energy"):
+    names = ("health", "energy") if contract.endswith("/1") else ("health", "mana", "energy")
+    for name in names:
         field = row.get(name)
         if not isinstance(field, dict):
             raise ValueError("native-vitals-field-missing")
@@ -122,7 +126,29 @@ def validate_report(report: dict, *, pid: int, ticks: int) -> dict:
         else:
             raise ValueError("native-vitals-field-status-invalid")
         values[name] = field
-    return {"unitKey": row["unitKey"], "health": values["health"], "energy": values["energy"],
+    if contract.endswith("/2"):
+        mana_calculated = values["mana"]["status"] == "calculated-candidate"
+        energy_calculated = values["energy"]["status"] == "calculated-candidate"
+        if mana_calculated and energy_calculated:
+            raise ValueError("native-vitals-resource-kind-conflict")
+        if (mana_calculated and
+                values["mana"]["inputs"].get("verifiedTypeCode") != "0x072A"):
+            raise ValueError("native-vitals-mana-type-evidence-invalid")
+        if (energy_calculated and
+                values["energy"]["inputs"].get("verifiedTypeCode") != "0x072B"):
+            raise ValueError("native-vitals-energy-type-evidence-invalid")
+        if mana_calculated and values["energy"].get("unavailableReason") != "not-energy-kind-four":
+            raise ValueError("native-vitals-mana-energy-exclusion-invalid")
+        if energy_calculated and values["mana"].get("unavailableReason") != "not-mana-kind-three":
+            raise ValueError("native-vitals-energy-mana-exclusion-invalid")
+    if "mana" not in values:
+        # Contract v1 predates the distinct Mana field. Preserve replay
+        # compatibility without implying that the old report observed Mana.
+        values["mana"] = {"status": "unavailable",
+                          "unavailableReason": "legacy-contract-v1-without-mana",
+                          "current": None, "maximum": None, "inputs": None}
+    return {"unitKey": row["unitKey"], "health": values["health"], "mana": values["mana"],
+            "energy": values["energy"], "contractVersion": contract,
             "readMilliseconds": (end - start).total_seconds() * 1000,
             "qualification": QUALIFICATION}
 
@@ -227,7 +253,7 @@ def run(lab: str, reader: Path, reader_sha256: str) -> dict:
         "sourceReportSha256": hashlib.sha256(raw).hexdigest().upper(),
         "sourceReport": str(output / "samples.json"),
         "metrics": metrics,
-        "limitation": "Current-process HP/Energy candidates only; independent changed-state, passive freshness and restart proof pending."
+        "limitation": "Current-process HP/Mana/Energy candidates only; independent changed-state, passive freshness and restart proof pending."
     }
     with (output / "summary.json").open("x", encoding="utf-8") as stream:
         json.dump(summary, stream, indent=2)

@@ -88,7 +88,7 @@ def _hex(value: int) -> str:
     return f"0x{value:X}"
 
 
-def build_plan(report_bytes: bytes, expected_sha256: str) -> tuple[dict, dict, bytes]:
+def build_plan(report_bytes: bytes, expected_sha256: str, marker: str = "RR2R1|") -> tuple[dict, dict, bytes]:
     """Verify a pinned original scout and construct manifest, request, request bytes."""
     _sha(expected_sha256, "expected SHA-256")
     if not 0 < len(report_bytes) <= MAX_SCOUT_REPORT_BYTES:
@@ -104,7 +104,7 @@ def build_plan(report_bytes: bytes, expected_sha256: str) -> tuple[dict, dict, b
         raise PlanError(f"Invalid scout JSON: {error}") from error
     if report.get("schemaVersion") != 1 or report.get("evidenceKind") != "native-typed-prefix-scout/1":
         raise PlanError("Not a native-typed-prefix-scout/1 version 1 report")
-    if report.get("marker") != "RRAPIVAL2|":
+    if marker not in ("RR2R1|", "RRAPIVAL2|") or report.get("marker") != marker:
         raise PlanError("Not the exact typed marker")
     if report.get("scope") != "committed-readable-nonguard-MEM_PRIVATE-at-or-after-startAddress":
         raise PlanError("Scout scope is not the expected readable private memory")
@@ -187,6 +187,7 @@ def build_plan(report_bytes: bytes, expected_sha256: str) -> tuple[dict, dict, b
         "evidenceKind": "typed-scout-snapshot-followup-plan/1",
         "sourceScout": {
             "originalReportSha256": actual,
+            "marker": marker,
             "requestSha256": report["requestSha256"],
             "coverageContentSha256": report["coverageContentSha256"],
             "scannerBundleSha256": implementation["bundleSha256"],
@@ -238,11 +239,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-directory", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true",
                         help="Validate and print the plan without writing any files")
+    parser.add_argument("--marker", choices=("RR2R1|", "RRAPIVAL2|"), default="RR2R1|")
     args = parser.parse_args(argv)
     try:
         with args.scout_report.open("rb") as stream:
             original = stream.read(MAX_SCOUT_REPORT_BYTES + 1)
-        plan, _, request_bytes = build_plan(original, args.expected_scout_sha256)
+        plan, _, request_bytes = build_plan(original, args.expected_scout_sha256, args.marker)
         if not args.dry_run:
             publish_plan(args.output_directory, plan, request_bytes)
         print(json.dumps(plan, indent=2))

@@ -11,12 +11,14 @@ internal sealed record CurrentBuildVitalsObservation(NativeProcessIdentity Ident
     DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, ulong UnitKey,
     CurrentBuildVitalCandidate Health, CurrentBuildVitalCandidate Energy)
 {
+    public CurrentBuildVitalCandidate Mana { get; init; } =
+        new("unavailable", "not-mana-kind-three");
     public string Source => "native-process-memory";
     public string Qualification => "candidate-only; semantics/passive-freshness/restart-unverified";
 }
 
 /// <summary>
-/// Exact-build passive HP/Energy candidate acquisition. The caller supplies the shared
+/// Exact-build passive HP/Mana/Energy candidate acquisition. The caller supplies the shared
 /// current-player/dynamic-health-component snapshot; its required verification closure
 /// must retain and compare the original lookup-path anchors across this capture.
 /// No native getter is called and no revision, clock or reference count is written.
@@ -71,11 +73,17 @@ internal static class CurrentBuildVitalsCandidateReader
         var health = CalculateHealth(healthRaw, hpCache, clock);
         var kindOwner = Ptr(checked(component + 0x40));
         var kind = I32(Take(checked(kindOwner + 0x168), 4));
+        CurrentBuildVitalCandidate mana;
         CurrentBuildVitalCandidate energy;
-        if (kind != 4)
-            energy = new("unavailable", kind == 3 ? "mana-kind-three-type-unresolved" : "not-energy-kind-four");
-        else
+        if (kind == 3)
         {
+            mana = CurrentBuildManaCandidateField.Read(
+                session, identity, component, healthRecord, owner.VerifyUnchanged);
+            energy = new("unavailable", "not-energy-kind-four");
+        }
+        else if (kind == 4)
+        {
+            mana = new("unavailable", "not-mana-kind-three");
             var wrapper = Ptr(checked(component + 0x38));
             var reference = Ptr(checked(wrapper + 0x10));
             var record = Ptr(reference);
@@ -85,13 +93,21 @@ internal static class CurrentBuildVitalsCandidateReader
             CheckType(raw, 0x2D19498, 0x231BEB0, 0x35AEB80, 0x2D1D420, 0x233E9B0);
             energy = CalculateEnergy(raw, cache, clock);
         }
+        else
+        {
+            mana = new("unavailable", "not-mana-kind-three");
+            energy = new("unavailable", "not-energy-kind-four");
+        }
         foreach (var anchor in anchors)
             if (!Take(anchor.Address, anchor.Bytes.Length, false).AsSpan().SequenceEqual(anchor.Bytes))
                 throw new InvalidDataException("Vitals ownership, type or mutable inputs changed during capture.");
         owner.VerifyUnchanged();
         if (session.Identity != identity)
             throw new InvalidDataException("Vitals player owner or process epoch changed during capture.");
-        return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health, energy);
+        return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health, energy)
+        {
+            Mana = mana
+        };
 
         void CheckType(byte[] raw, ulong vtable, ulong getter, ulong descriptor,
             ulong descriptorVtable, ulong typeGetter)
@@ -167,7 +183,8 @@ internal static class CurrentBuildVitalsCandidateReader
             recordRevision = revision,
             wrapperRevision = cachedRevision,
             wrapperClock = FiniteOrNull(cachedClock),
-            gameClock = FiniteOrNull(clock)
+            gameClock = FiniteOrNull(clock),
+            verifiedTypeCode = "0x072B"
         };
         if (revision != cachedRevision) return Missing("revision-mismatch-needs-native-cache-write", inputs);
         if (baseline < 0 || maximum <= 0) return Missing("outside-normal-integer-domain", inputs);

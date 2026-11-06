@@ -11,19 +11,26 @@ public sealed class TypedApiPrefixMatcher
     public const string MarkerText = "RRAPIVAL2|";
     public const int MaxSupportedMatches = 128;
 
-    private static readonly byte[] MarkerBytes = Encoding.ASCII.GetBytes(MarkerText);
-    private static readonly int[] FailureTable = BuildFailureTable();
+    public const string ReferenceMarkerText = "RR2R1|";
+
+    public static string ValidateMarker(string marker) => marker is MarkerText or ReferenceMarkerText
+        ? marker : throw new ArgumentException("Unsupported typed API marker.", nameof(marker));
+
+    private readonly byte[] MarkerBytes;
+    private readonly int[] FailureTable;
 
     private readonly List<ulong> _addresses = [];
     private readonly int _maxMatches;
     private ulong? _nextExpectedAddress;
     private int _matchedLength;
 
-    public TypedApiPrefixMatcher(int maxMatches = MaxSupportedMatches)
+    public TypedApiPrefixMatcher(int maxMatches = MaxSupportedMatches, string marker = MarkerText)
     {
         if (maxMatches is < 1 or > MaxSupportedMatches)
             throw new ArgumentOutOfRangeException(nameof(maxMatches));
         _maxMatches = maxMatches;
+        MarkerBytes = Encoding.ASCII.GetBytes(ValidateMarker(marker));
+        FailureTable = BuildFailureTable();
     }
 
     public IReadOnlyList<ulong> Addresses => _addresses;
@@ -76,7 +83,7 @@ public sealed class TypedApiPrefixMatcher
         }
     }
 
-    private static int[] BuildFailureTable()
+    private int[] BuildFailureTable()
     {
         var table = new int[MarkerBytes.Length];
         for (var i = 1; i < MarkerBytes.Length; i++)

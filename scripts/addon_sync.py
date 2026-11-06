@@ -19,7 +19,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "addon" / "RiftReader2"
 GUEST_SCRIPT = ROOT / "scripts" / "addon_sync_guest.ps1"
-FILES = ("RiftAddon.toc", "wire.lua", "producer.lua", "live.lua", "guidance.lua", "main.lua")
+FILES = ("RiftAddon.toc", "wire.lua", "producer.lua", "reference.lua", "live.lua", "guidance.lua", "main.lua")
 GUEST_ADDON = r"C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2"
 GUEST_LOCAL = r"C:\Users\mrkoo\AppData\Local\RiftReader2\addon-sync"
 HOST_PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"

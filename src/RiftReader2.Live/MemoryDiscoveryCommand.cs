@@ -73,6 +73,7 @@ internal static class MemoryDiscoveryCommand
     {
         var paths = RequirePaths(options);
         var loaded = await LoadAsync<TypedPrefixScoutRequest>(paths.Request, cancellationToken);
+        TypedApiPrefixMatcher.ValidateMarker(loaded.Value.Marker);
         var request = loaded.Value;
         if (request.SchemaVersion != 1 ||
             request.EvidenceKind != "native-typed-prefix-scout-request/1")
@@ -98,7 +99,7 @@ internal static class MemoryDiscoveryCommand
         var scan = TypedApiPrefixScout.Scan(
             regions, startAddress, request.MaxScanBytes, request.MaxMatchCount,
             session.ReadScanChunk, () => timer.ElapsedMilliseconds >= request.MaxDurationMilliseconds,
-            cancellationToken);
+            cancellationToken, marker: request.Marker);
 
         var identityFailure = await session.RevalidateAsync(cancellationToken);
         var completedAtUtc = UtcNow();
@@ -141,7 +142,7 @@ internal static class MemoryDiscoveryCommand
             status,
             reason,
             "committed-readable-nonguard-MEM_PRIVATE-at-or-after-startAddress",
-            TypedApiPrefixMatcher.MarkerText,
+            request.Marker,
             request.StartAddress,
             nextAddress,
             scan.EligiblePrivateBytes,
@@ -186,6 +187,7 @@ internal static class MemoryDiscoveryCommand
     {
         var paths = RequirePaths(options);
         var loaded = await LoadAsync<TypedInlineCaptureRequest>(paths.Request, cancellationToken);
+        TypedApiPrefixMatcher.ValidateMarker(loaded.Value.Marker);
         var request = loaded.Value;
         if (request.SchemaVersion != 1 ||
             request.EvidenceKind != "native-typed-inline-capture-request/1")
@@ -215,7 +217,7 @@ internal static class MemoryDiscoveryCommand
             regions, startAddress, request.MaxScanBytes, request.MaxMatchCount,
             request.MaxCopiedCandidates, session.ReadScanChunk, session.Read,
             () => timer.ElapsedMilliseconds >= request.MaxDurationMilliseconds,
-            UtcNow, cancellationToken);
+            UtcNow, cancellationToken, request.Marker);
         var identityFailure = await session.RevalidateAsync(cancellationToken);
         var completedAtUtc = UtcNow();
         var status = identityFailure is not null ? "identity-invalidated" :
@@ -301,7 +303,7 @@ internal static class MemoryDiscoveryCommand
             pass.CopyLimited, scope, fileEntries,
             [
                 "Only exact-process, committed readable private memory was scanned; the covered scope is explicit and never a whole-process absence claim.",
-                "The 11-byte RRAPIVAL2|{ gate is not a parsed Lua frame; inspect copied candidate JSON with the existing strict offline inspector.",
+                $"The {request.Marker}{{ gate is not a parsed Lua frame; inspect copied candidate JSON with the strict offline inspector.",
                 "Native read-only 4 KiB chunks are copied inside each prefix match callback, never after an old absolute address is reused.",
                 "The copy cap is eight candidates; declined or missing chunks are never replaced with zeros.",
                 "The complete output directory is published through one no-overwrite final rename after all individual hashes are verified.",
@@ -658,7 +660,8 @@ internal sealed record TypedPrefixScoutRequest(
     long MaxScanBytes,
     int MaxDurationMilliseconds,
     int MaxRegionCount,
-    int MaxMatchCount);
+    int MaxMatchCount,
+    string Marker = TypedApiPrefixMatcher.MarkerText);
 
 internal sealed record TypedPrefixScoutSpanReport(string BaseAddress, long ByteLength);
 
@@ -701,7 +704,8 @@ internal sealed record TypedInlineCaptureRequest(
     int MaxDurationMilliseconds,
     int MaxRegionCount,
     int MaxMatchCount,
-    int MaxCopiedCandidates);
+    int MaxCopiedCandidates,
+    string Marker = TypedApiPrefixMatcher.MarkerText);
 
 internal sealed record TypedInlineCaptureScope(
     string Status,
@@ -743,7 +747,10 @@ internal sealed record TypedInlineCaptureManifest(
     bool CopyLimited,
     TypedInlineCaptureScope Scan,
     IReadOnlyList<TypedInlineCaptureFileEntry> Candidates,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations)
+{
+    public string Marker => Request.Marker;
+}
 
 internal sealed record MemorySnapshotRequest(
     int SchemaVersion,

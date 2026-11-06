@@ -62,7 +62,7 @@ LABS = {
     },
 }
 VMRUN = Path(r"C:\Program Files\VMware\VMware Workstation\vmrun.exe")
-DEFAULT_RECEIVER = Path(os.environ.get("LOCALAPPDATA", "")) / "RiftReader" / "guest-bridge" / "host.json"
+DEFAULT_RECEIVERS = {lab: ROOT / ".local" / "two-lab-movement" / (lab + "-receiver.json") for lab in LABS}
 
 
 def fail(reason: str) -> None:
@@ -376,7 +376,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--reader", type=Path, required=True,
                         help="host path to the published RiftReader2.Live.exe")
     result.add_argument("--reader-sha256", type=str.upper, required=True)
-    result.add_argument("--receiver-config", type=Path, default=DEFAULT_RECEIVER,
+    result.add_argument("--receiver-config", type=Path, default=None,
                         help="private host receiver JSON; its token is never emitted")
     result.add_argument("--duration-seconds", type=int, default=900)
     result.add_argument("--poll-interval-milliseconds", type=int, default=500)
@@ -390,6 +390,8 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = parser().parse_args()
+    if args.receiver_config is None:
+        args.receiver_config = DEFAULT_RECEIVERS[args.lab]
     if args.expected_game_pid <= 0 or args.expected_game_start_ticks <= 0:
         fail("invalid-game-identity")
     if SHA256.fullmatch(args.expected_game_sha256) is None or SHA256.fullmatch(args.reader_sha256) is None:

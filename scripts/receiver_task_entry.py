@@ -1,6 +1,6 @@
 """TaskScheduler-owned host-only receiver for one lab, with source/identity receipts.
 
-Uses the already validated read-only V1 receiver unchanged; the manager owns this
+Uses the RR2-owned read-only receiver; the manager owns this
 process directly, with no boot/logon trigger, detached child or gameplay input.
 """
 from __future__ import annotations

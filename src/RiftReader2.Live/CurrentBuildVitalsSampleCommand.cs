@@ -42,7 +42,7 @@ internal static class CurrentBuildVitalsSampleCommand
         var report = new
         {
             schemaVersion = 1,
-            contractVersion = "native-current-vitals-candidate-sample/1",
+            contractVersion = "native-current-vitals-candidate-sample/2",
             status = "complete",
             sourceBuildSha256 = CurrentBuildPositionSampleCommand.GameSha256,
             observation.Source,
@@ -51,9 +51,9 @@ internal static class CurrentBuildVitalsSampleCommand
             limitations = new[]
             {
                 "The executable and process epoch are pinned; loaded module bytes are not independently hashed.",
-                "Player/component ownership, type fingerprints and mutable inputs are bracketed; reads are sequential, not atomic, and ABA cannot be excluded.",
-                "Health and Energy calculations are candidates; inspect each field status and unavailableReason before using its values.",
-                "Mana kind-three remains unresolved; Energy is not a generic power or mana value.",
+                "Player/component ownership, type fingerprints and stable record inputs are bracketed; the process-sourced game clock may advance, reads are sequential, and ABA cannot be excluded.",
+                "Health, Mana and Energy calculations are candidates; inspect each field status and unavailableReason before using its values.",
+                "Mana is emitted only for type-fingerprinted kind three; Energy is emitted only for type-fingerprinted kind four.",
                 "Independent same-player changed-state correspondence, passive freshness, continuity and full-game restart qualification remain unverified.",
                 "No native game getter is invoked; no memory, revision, refcount or game state is written."
             }
@@ -61,10 +61,11 @@ internal static class CurrentBuildVitalsSampleCommand
         await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
-            recordType = "native-current-vitals-candidate-summary/1",
+            recordType = "native-current-vitals-candidate-summary/2",
             report.status,
             report.Qualification,
             healthStatus = observation.Health.Status,
+            manaStatus = observation.Mana.Status,
             energyStatus = observation.Energy.Status,
             output = Path.GetFullPath(path)
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));

@@ -53,16 +53,16 @@ public static class TypedApiImmediateNeighborhood
 
     private const ulong MinUserAddress = 0x10000;
     private const ulong MaxUserEnd = 0x00007FFF_FFFF_FFFF;
-    private static readonly byte[] PlausibleStart =
-        Encoding.ASCII.GetBytes(TypedApiPrefixMatcher.MarkerText + "{");
 
     public static TypedApiImmediateNeighborhoodResult Capture(
         ulong prefixAddress,
         Func<ulong, int, NativeReadResult> read,
         Func<bool> timeBudgetExceeded,
         Func<string>? utcNow = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string marker = TypedApiPrefixMatcher.MarkerText)
     {
+        var plausibleStart = Encoding.ASCII.GetBytes(TypedApiPrefixMatcher.ValidateMarker(marker) + "{");
         ArgumentNullException.ThrowIfNull(read);
         ArgumentNullException.ThrowIfNull(timeBudgetExceeded);
         utcNow ??= () => DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
@@ -89,10 +89,10 @@ public static class TypedApiImmediateNeighborhood
 
         // A stale, static or binary-laden marker is not worth an expensive
         // 28 KiB copy. Reject it without claiming anything about other heaps.
-        var header = read(prefixAddress, PlausibleStart.Length);
-        if (header.Status != "success" || header.Bytes.Length != PlausibleStart.Length)
+        var header = read(prefixAddress, plausibleStart.Length);
+        if (header.Status != "success" || header.Bytes.Length != plausibleStart.Length)
             return Finish("header-unavailable", "The marker plus JSON opening brace could not be re-read completely.", []);
-        if (!PlausibleStart.AsSpan().SequenceEqual(header.Bytes))
+        if (!plausibleStart.AsSpan().SequenceEqual(header.Bytes))
             return Finish("prefix-not-plausible", "The observed marker is not immediately followed by '{' at recheck.", []);
 
         var chunks = new List<NativeMemorySnapshotChunk>(PagesBefore + 1 + PagesAfter);

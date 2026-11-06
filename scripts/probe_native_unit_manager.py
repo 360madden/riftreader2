@@ -347,6 +347,60 @@ def resource_record_fields(kind: int, record: bytes, wrapper: bytes) -> dict:
     return fields
 
 
+def coherent_mana_resource_transition(before_record: bytes, before_wrapper: bytes,
+                                      after_record: bytes, after_wrapper: bytes) -> dict:
+    """Validate one kind-3 cache epoch transition without relaxing owner identity.
+
+    Mana's whole wrapper and record contain clocks/revisions that can advance
+    during a bounded read. Immutable bytes and two paired revision counters stay
+    strict; both clock fields must remain finite and nondecreasing.
+    """
+    if any(len(value) != expected for value, expected in (
+            (before_record, 64), (after_record, 64),
+            (before_wrapper, 48), (after_wrapper, 48))):
+        raise ValueError("mana-transition-read-hole")
+    if (before_wrapper[:0x18] != after_wrapper[:0x18]
+            or before_wrapper[0x28:] != after_wrapper[0x28:]
+            or before_record[:0x18] != after_record[:0x18]
+            or before_record[0x38:] != after_record[0x38:]):
+        raise ValueError("mana-immutable-owner-or-record-changed")
+    before_fields = resource_record_fields(3, before_record, before_wrapper)
+    after_fields = resource_record_fields(3, after_record, after_wrapper)
+    before_secondary = (struct.unpack_from("<i", before_wrapper, 0x18)[0],
+                        struct.unpack_from("<i", before_record, 0x28)[0])
+    after_secondary = (struct.unpack_from("<i", after_wrapper, 0x18)[0],
+                       struct.unpack_from("<i", after_record, 0x28)[0])
+    if (not before_fields["revisionConsistent"] or not after_fields["revisionConsistent"]
+            or before_secondary[0] != before_secondary[1]
+            or after_secondary[0] != after_secondary[1]):
+        raise ValueError("mana-transition-mixed-revisions")
+    before_clocks = tuple(struct.unpack_from("<f", before_wrapper, offset)[0]
+                          for offset in (0x20, 0x24))
+    after_clocks = tuple(struct.unpack_from("<f", after_wrapper, offset)[0]
+                         for offset in (0x20, 0x24))
+    if (not all(math.isfinite(value) for value in (*before_clocks, *after_clocks))
+            or any(after < before for before, after in zip(before_clocks, after_clocks))):
+        raise ValueError("mana-transition-clock-invalid-or-backward")
+    return {
+        "status": "unchanged" if (before_record == after_record and
+                                     before_wrapper == after_wrapper) else "coherent-cache-transition",
+        "beforeFields": before_fields,
+        "afterFields": after_fields,
+        "beforeSecondaryRevision": before_secondary[0],
+        "afterSecondaryRevision": after_secondary[0],
+        "beforeClocks": list(before_clocks),
+        "afterClocks": list(after_clocks),
+    }
+
+
+def require_resource_owner_anchors(expected: dict[int, bytes], actual: dict[int, bytes],
+                                   reason: str = "resource-ownership-anchor-changed") -> None:
+    """Require an exact, complete reread of every resource owner/type anchor."""
+    if set(actual) != set(expected) or any(actual[address] != raw
+                                           for address, raw in expected.items()):
+        raise ValueError(reason)
+
+
 def calculate_health(fields: dict, clock: float) -> dict:
     """Current-build arithmetic for finite ordinary inputs, never a cache write."""
     unavailable = lambda reason: {"status": "unavailable", "reason": reason}
@@ -429,6 +483,8 @@ def calculate_energy(fields: dict, clock: float) -> dict:
 def run(lab: str, *, health_record: bool = False, resource_record: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
+    probe_path = Path(__file__)
+    probe_sha = sha(probe_path.read_bytes())
     sys.path.insert(0, str(ROOT))
     from scripts.lab_codex import LabCodex
     from scripts.inventory_passive_rift_sources import ps_literal
@@ -451,10 +507,14 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
     prefix = settings["guestRoot"] + "\\unit-manager-" + token
     evidence = {}
     observation_times = {}
+    observation_intervals = {}
     deadline = time.monotonic() + 240
     review = {"schemaVersion": 1, "lab": lab, "output": str(folder),
+              "vmIdentity": vm_identity,
               "readerExe": reader, "readerSha256": reader_sha,
-              "workflowSha256": sha(workflow_raw), "probeSha256": sha(Path(__file__).read_bytes()),
+              "workflowSha256": sha(workflow_raw), "probeSha256": probe_sha,
+              "operationInitiationDeadlineSeconds": 240,
+              "deadlineSemantics": "checked-before-each-operation; admitted operations use separate bounded timeouts",
               "status": "incomplete",
               "qualification": "candidate-only; no passive-freshness or restart qualification"}
     try:
@@ -498,6 +558,10 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                 evidence[output.name] = sha(raw)
                 parsed = json.loads(raw.decode("utf-8-sig"))
                 observation_times[name] = parsed.get("completedAtUtc", parsed.get("capturedAtUtc"))
+                observation_intervals[name] = {
+                    "startedAtUtc": parsed.get("startedAtUtc", parsed.get("capturedAtUtc")),
+                    "completedAtUtc": parsed.get("completedAtUtc", parsed.get("capturedAtUtc")),
+                }
                 return parsed
 
             before = native("inspect-native", "inspect-before")
@@ -604,6 +668,10 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
             resource_anchors = {}
             resource_record_address = None
             resource_record_raw = None
+            resource_wrapper = None
+            resource_wrapper_raw = None
+            resource_clock_address = None
+            resource_game_clock_raw = None
             if resource_record:
                 component = values[components["health"]]
                 kind_owner = pointer(struct.unpack_from("<Q", component, 0x40)[0])
@@ -627,7 +695,9 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                         "resource-record", [(resource_record_address, 64),
                                             (clock_owner + 0x18, 4)])
                     resource_record_raw = resource_capture[resource_record_address]
-                    game_clock = struct.unpack("<f", resource_capture[clock_owner + 0x18])[0]
+                    resource_clock_address = clock_owner + 0x18
+                    resource_game_clock_raw = resource_capture[resource_clock_address]
+                    game_clock = struct.unpack("<f", resource_game_clock_raw)[0]
                     vtable = pointer(struct.unpack_from("<Q", resource_record_raw)[0], 72)
                     if not base <= vtable < base + identity["moduleSize"] - 0x48:
                         raise ValueError("resource-vtable-outside-exact-module")
@@ -669,7 +739,14 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                                            if energy_type_code is not None else
                                            "NOT PERFORMED; vtable/descriptor/type fingerprints pending"),
                     })
-                    resource_anchors[resource_wrapper] = resource_wrapper_raw
+                    if kind == 3:
+                        # Kind-3 Mana cache revisions/clocks at +0x18..+0x27 may
+                        # advance coherently. Its full wrapper is reread below;
+                        # immutable bytes and the mutable state are validated as
+                        # one transition rather than stored as a whole anchor.
+                        pass
+                    else:
+                        resource_anchors[resource_wrapper] = resource_wrapper_raw
                     resource_anchors[ref_slot] = ref_raw
                     resource_anchors[getter_slot] = getter_raw
 
@@ -689,8 +766,32 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
             if health is not None:
                 checks[record_address] = 128
             if resource_record_raw is not None:
-                checks[resource_record_address] = 64
+                if resource["kind"] != 3:
+                    checks[resource_record_address] = 64
+                    checks[resource_clock_address] = 4
             final = take("anchors-after", sorted(checks.items()))
+            resource_final = (take("resource-final", [
+                (resource_wrapper, 48), (resource_record_address, 64),
+                (resource_clock_address, 4)])
+                if resource_record_raw is not None and resource["kind"] == 3 else None)
+            resource_post_anchors = None
+            if resource_final is not None:
+                resource_post_anchors = dict(roots)
+                resource_post_anchors.update(owner)
+                resource_post_anchors[table] = header
+                resource_post_anchors.update({step["address"]: bytes.fromhex(step["bytes"])
+                                              for step in found["path"]})
+                resource_post_anchors[entity + 0x78] = entity_bytes[0x78:0x80]
+                resource_post_anchors[entity + 0x18 + position_index] = bytes([
+                    entity_bytes[0x18 + position_index]])
+                resource_post_anchors[entity + 0x18 + health_index] = bytes([
+                    entity_bytes[0x18 + health_index]])
+                resource_post_anchors.update(component_raw)
+                resource_post_anchors.update(resource_anchors)
+            resource_owner_final = (take(
+                "resource-owner-final",
+                sorted((address, len(raw)) for address, raw in resource_post_anchors.items()))
+                if resource_final is not None else None)
             if any(final[address] != raw for address, raw in roots.items()):
                 raise ValueError("module-root-changed")
             if (final[manager + 0x50] != owner[manager + 0x50] or
@@ -717,15 +818,42 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
                     if health["inputsStable"] else {"status": "unavailable", "reason": "inputs-changed"})
                 review["healthRecordCandidate"] = health
             if resource is not None:
-                if any(final[address] != raw for address, raw in resource_anchors.items()):
-                    raise ValueError("resource-ownership-anchor-changed")
+                require_resource_owner_anchors(
+                    resource_anchors, {address: final[address] for address in resource_anchors})
+                if resource_owner_final is not None:
+                    require_resource_owner_anchors(
+                        resource_post_anchors, resource_owner_final,
+                        "resource-owner-detached-after-final")
                 if resource_record_raw is not None:
-                    if final[resource_record_address][:8] != resource_record_raw[:8]:
+                    final_resource = resource_final or final
+                    if final_resource[resource_record_address][:8] != resource_record_raw[:8]:
                         raise ValueError("resource-record-vtable-changed")
-                    resource["inputsStable"] = (final[resource_record_address][0x18:0x38]
-                                                 == resource_record_raw[0x18:0x38])
-                    if not resource["inputsStable"]:
-                        resource["status"] = "changed-input-record-candidate"
+                    if resource["kind"] == 3:
+                        transition = coherent_mana_resource_transition(
+                            resource_record_raw, resource_wrapper_raw,
+                            final_resource[resource_record_address], final_resource[resource_wrapper])
+                        final_game_clock = struct.unpack("<f", final_resource[resource_clock_address])[0]
+                        if (not math.isfinite(final_game_clock) or final_game_clock < resource["gameClock"]):
+                            raise ValueError("mana-transition-game-clock-invalid-or-backward")
+                        resource.update({
+                            "initialObservedAtUtc": resource["observedAtUtc"],
+                            "observedAtUtc": observation_times["resource-final"],
+                            "observationIntervalUtc": observation_intervals["resource-final"],
+                            "fields": transition["afterFields"],
+                            "gameClock": final_game_clock,
+                            "inputsStable": True,
+                            "mutableInputsChanged": transition["status"] != "unchanged",
+                            "mutableTransition": transition,
+                            "mutableTransitionLimitations": [
+                                "The three final ranges are sequential ReadProcessMemory results, not an atomic snapshot.",
+                                "Matching paired revisions and nondecreasing clocks do not exclude an ABA transition between reads.",
+                            ],
+                        })
+                    else:
+                        resource["inputsStable"] = (final[resource_record_address][0x18:0x38]
+                                                     == resource_record_raw[0x18:0x38])
+                        if not resource["inputsStable"]:
+                            resource["status"] = "changed-input-record-candidate"
                 if resource["kind"] == 4:
                     resource["calculatedEnergy"] = (
                         calculate_energy(resource["fields"], resource["gameClock"])
@@ -736,6 +864,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
             after_identity, after_target = inspection_identity(after)
             if after_identity != identity or after_target != target:
                 raise ValueError("process-epoch-changed")
+            if sha(probe_path.read_bytes()) != probe_sha:
+                raise ValueError("probe-source-changed-during-run")
             review.update({"status": "complete", "nativePlayerUnitId": f"u{key:016X}",
                            "manager": f"0x{manager:X}", "playerSystem": f"0x{player_system:X}",
                            "table": f"0x{table:X}", "lookup": found,
@@ -759,9 +889,17 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
             review["error"] = str(error)[:200]
         raise
     finally:
+        source_stable = sha(probe_path.read_bytes()) == probe_sha
+        review["sourceStableAtPublish"] = source_stable
+        if not source_stable:
+            review["status"] = "failed"
+            review["errorType"] = "ValueError"
+            review["error"] = "probe-source-changed-during-run"
         review["evidence"] = evidence
         with (folder / "review.json").open("xb") as stream:
             stream.write(json.dumps(review, indent=2).encode("utf-8"))
+        if not source_stable and sys.exc_info()[0] is None:
+            raise ValueError("probe-source-changed-during-run")
     return review
 
 
