@@ -1,8 +1,10 @@
 # Self-contained API reference migration
 
 RiftReader2 now owns the offline implementation of the player API reference
-previously obtained from RiftReaderApiProbe. **Installed-addon and live
-acceptance remain pending.** This implements Joey's November 6 decision that
+previously obtained from RiftReaderApiProbe. **Lab 1 installed-addon and live
+RR2R1 acceptance passed on November 6; Lab 2 and physical RIFT loaded-addon
+acceptance remain pending.** See the [Lab 1 evidence and limits](../validation/self-contained-lab1-live-acceptance-2026-11-06.md).
+This implements Joey's November 6 decision that
 current tools and applications use RiftReader2 rather than the older checkout.
 Native telemetry remains the intended primary source when qualified; API
 observations are independently labeled validation references or fallbacks.

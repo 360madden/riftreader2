@@ -2,6 +2,19 @@
 
 Updated: 2026-11-06 (discovery roadmap; runtime checkpoints retain their own dates).
 
+**2026-11-06 23:55 UTC — LAB 1 SELF-CONTAINED RR2R1 ACCEPTANCE PASS:** The
+RR2-owned 0.2.0 addon was verified on disk with `RiftReaderApiProbe` disabled;
+one reviewed `/reloadui` visibly loaded the UI and a fresh `/rr2guide bind`
+was acknowledged in chat. Its reviewed RR2 reader returned two verified runs
+(8+8 snapshots), and strict .NET comparison reported **64/64 advancing RR2R1
+pairings** in the 15-second window (sequence 413→431, same player/nonce/epoch).
+Python independently inspected Mana 3980/3980 and Power explicitly unavailable.
+The Lab 1 controller was restored healthy, disarmed and foreground; no game/VM
+restart. This is live API-reference/source acceptance, not native field,
+changed-state, 480-second or full-restart qualification. Lab 2 and physical
+RIFT live acceptance remain pending. The old XYZ live route now requires RR2R1
+under commit `f034fc4` (30/30 tests). See [exact evidence and limits](validation/self-contained-lab1-live-acceptance-2026-11-06.md).
+
 **2026-11-06 — LIVE ACCEPTANCE STOPPED FOR HANDOFF:** Joey authorized Lab 1 addon sync, old-probe disable, one reload, binding and acceptance; later requested handoff and stop. Lab 1 backups were hash-verified, the seven RR2 addon files synced and verified, and the old probe manifest was renamed to a verified disabled copy. **No reload, bind, or live acceptance has occurred.** Joey wants propagation to Lab 2 for comparable installations; same-account OneDrive propagation is delayed/unverified. See [live acceptance handoff](handoff-2026-11-06-self-contained-live-acceptance.md) for exact receipts, existing authority and resumption boundaries. Do not resume until requested.
 
 **2026-11-06 — SELF-CONTAINED API REFERENCE:** Implemented additive nonce-bound RR2R1 in RiftReader2 package 0.2.0; RR2A1/RR2L1 remain unchanged. Current capture, strict .NET/Python inspection and Mana comparison select RR2-owned frames, with historical probe replay retained. Replaced the old-checkout receiver source with an independently implemented RR2 sink and retired the V1 experiment adapter. Release .NET 670 passed; complete Python 1,586 run/two skipped; real Lua 5.1/C#/Python contract and published own-process marker-capture checks passed. Full gate stopped on preexisting whitespace in unchanged historical controller incident note, not a full PASS. Separate review found no blocker. **NO INSTALLED ADDON OR LIVE RECEIVER CHANGE; DISABLED-PROBE LIVE ACCEPTANCE PENDING.** See [checks/evidence](validation/self-contained-api-reference-2026-11-06.md) and [consumer audit/removal boundary](reference/self-contained-api-reference.md). Next requires the concrete Lab-1-only addon sync/old-probe disable/reload authorization described there; preserve existing Mana/casting work and index.
