@@ -1,130 +1,259 @@
-# RiftReader2
+<div align="center">
 
-Modular RIFT research tools focused on reliable information, durable evidence,
-restart/update recovery, and less repetitive AI work. V1 supplies reference
-evidence and lessons; V2 is independently developed around these goals.
+<img src="docs/assets/rr2-hero.svg" alt="RiftReader2 — evidence-first RIFT telemetry, native discovery, and reproducible research" width="100%" />
 
-The product architecture is **hybrid: an in-game Lua addon plus an external .NET
-application**. The addon and C# decoder share executable contracts. A minimal
-Windows reader now acquires nonce-bound live observations with freshness and
-reload checks, validated through an ordinary RIFT restart and graceful RIFT-Lab
-VM restart with manual relaunch and rebinding. See
-[the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
+<br />
 
-The current foundation validates saved captures and computes **derived** motion
-with explicit gaps and provenance. The included replay data is synthetic.
-Live observations come from the addon API; native game fields and restart-stable
-offsets remain unqualified. See the [restart validation record](docs/validation/restart-recovery-2026-10-18.md).
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)](global.json)
+[![C Sharp](https://img.shields.io/badge/C%23-Application-6939c6?style=for-the-badge&logo=sharp&logoColor=white)](src/)
+[![Lua 5.1](https://img.shields.io/badge/Lua-5.1-2C2D72?style=for-the-badge&logo=lua&logoColor=white)](addon/)
+[![Python](https://img.shields.io/badge/Python-Tooling-3776AB?style=for-the-badge&logo=python&logoColor=white)](scripts/)
+[![Windows](https://img.shields.io/badge/Windows-Live_Reader-0078D4?style=for-the-badge&logo=windows11&logoColor=white)](src/RiftReader2.Live/)
 
-The [memory discovery tools](docs/reference/memory-discovery.md) add read-only
-memory maps/snapshots, typed and pattern searches, comparisons, and RVA-rooted
-pointer-chain discovery and resolution. [Supervised experiments](docs/reference/guarded-experiments.md)
-provide one reviewed movement/turning pulse with stop and release evidence.
-No new services or frameworks are required.
+![Stage](https://img.shields.io/badge/STAGE-Research_Preview-8e6be8?style=flat-square)
+![Native](https://img.shields.io/badge/NATIVE-Read--Only-21a88a?style=flat-square)
+![Evidence](https://img.shields.io/badge/EVIDENCE-SHA--256_Pinned-1689bc?style=flat-square)
+![Scope](https://img.shields.io/badge/SCOPE-Independent_RIFT_Tooling-f29c46?style=flat-square)
 
-## Run
+**A modular toolkit for observing, validating, and understanding the RIFT game client.**
 
-Requires the .NET SDK pinned in `global.json` (10.0.302) and PowerShell 7.
-The full gate also requires the pinned Lua 5.1 test runtime; follow the
-[one-time setup](docs/workflows/development.md).
+*In-game Lua references. Native Windows observations. Independent verification. Durable research.*
+
+[🚀 Quick Start](#-quick-start) · [🧠 Architecture](#-architecture-at-a-glance) · [📊 Capability Map](#-capability-map) · [🧪 Research Tools](#-explore-the-toolkit) · [📚 Documentation](#-documentation-hub)
+
+</div>
+
+---
+
+## ✨ What is RiftReader2?
+
+**RiftReader2 (RR2)** is an independently developed, hybrid telemetry and reverse-engineering research toolkit for the **RIFT MMORPG**. It brings together a versioned **in-game Lua addon**, a modular **.NET 10** codebase, read-only native observation tools, and reproducible evidence workflows.
+
+Its central question is simple:
+
+> **What did we actually observe, how fresh is it, and how confidently can we identify it?**
+
+Instead of treating a matching number in memory as proof, RR2 records *where a value came from*, the *exact game build and session*, the *timing of acquisition*, and which *meaning or restart claims remain unverified*.
+
+<table>
+<tr>
+<td width="33%" align="center"><strong>🔍 DISCOVER</strong><br /><sub>Inspect API observations, read-only memory candidates, pointer paths, and patterns.</sub></td>
+<td width="33%" align="center"><strong>🧬 VERIFY</strong><br /><sub>Compare sources, preserve identity, and distinguish evidence from interpretation.</sub></td>
+<td width="33%" align="center"><strong>📈 UNDERSTAND</strong><br /><sub>Analyze captures, explore results, and build durable game knowledge.</sub></td>
+</tr>
+</table>
+
+## 🧠 Architecture at a glance
+
+<img src="docs/assets/rr2-pipeline.svg" width="100%" alt="Three evidence streams — Lua API references, read-only native reader candidates, and saved hashed evidence — feed the .NET core and reporting pipeline" />
+
+**Three deliberately separate evidence paths:**
+
+- 🩵 **Lua API reference** — the in-game addon samples supported RIFT APIs and publishes bounded, versioned frames. Nonce binding supports a live observation lifecycle.
+- 💜 **Native discovery** — a Windows-only reader investigates game-process data, with read-only acquisition and explicit executable/process identity.
+- 🧡 **Saved evidence** — hashed capture manifests, offline replay, assessments, and reproducible comparison artifacts remain useful without a running game.
+
+They feed the **Domain → Application → Infrastructure** core, composed by either **CLI** or the isolated **Live** executable. See the [architecture guide](docs/architecture.md) and [hybrid design decision](docs/decisions/0002-hybrid-addon-and-reader.md).
+
+## 📊 Capability map
+
+<sub>Legend: 🟢 implemented/verified within the linked scope · 🔵 available in controlled workflows · 🟡 active research or further acceptance needed · ⚪ deferred/not part of current scope</sub>
+
+| Capability | State | What you can expect |
+|:--|:--:|:--|
+| 📦 Versioned capture validation and offline analysis | 🟢 | Verified inputs, derived movement metrics, gap detection, and reproducible reports |
+| 🧩 Lua addon encoding and .NET contract decoding | 🟢 | Shared fixtures, strict framing, and typed API-reference structures |
+| 🔗 Nonce-bound live addon acquisition | 🔵 | Demonstrated in identified RIFT-Lab sessions; the newer self-contained RR2R1 installed-addon acceptance is still pending |
+| 🛰️ Current-build native XYZ acquisition | 🔵 | Build-pinned candidate sampling was exercised in both VMware labs; fresh movement/semantic qualification is separate |
+| 🧮 Memory discovery and field catalog | 🟢 | Read-only snapshots, value/pattern/pointer searches, content-pinned review and status reporting |
+| 🔋 Player health, Mana/Power, casts, cooldowns | 🟡 | Native/API candidate correlation and baseline research; individual fields require changed-state and ownership evidence |
+| 🖥️ Lab controller and addon-sync workflow | 🔵 | On-demand host/guest prerequisites and compare/sync/verify tools; operational readiness is checked per run |
+| 🎮 Supervised movement/turning experiments | 🔵 | Bounded research actions with explicit control/stop checks; **not** an autonomous player |
+| 🔄 Arbitrary game-patch survival | ⚪ | Not claimed; changed executable builds require new evidence |
+
+> [!IMPORTANT]
+> **This is a research preview, not a turnkey bot or a promise of live, qualified telemetry on every RIFT build.** A candidate value, valid saved wire frame, working reader, and independently confirmed live game field are **different states**. For the latest exact results and blockers, use [Current Status](docs/status.md).
+
+## 🚀 Quick start
+
+### 1. Prerequisites
+
+| Tool | Version / purpose |
+|:--|:--|
+| 🪟 **Windows** | Required for native process reading and VMware-lab integrations |
+| 🟣 **.NET SDK** | Exactly **10.0.302**, pinned with roll-forward disabled in [`global.json`](global.json) |
+| 🔵 **PowerShell** | PowerShell **7** (`pwsh`) for the repository validation workflow |
+| 🟨 **Python** | Tooling and optional lab scripts; Lua tests use `lupa==2.8` with a Lua 5.1 module |
+
+See the [complete development setup](docs/workflows/development.md). The core offline libraries are modular; live integration is Windows-specific.
+
+### 2. Clone and inspect
+
+Open **PowerShell 7**:
 
 ```powershell
-pwsh -NoProfile -File scripts/validate.ps1
-dotnet run --project src/RiftReader2.Cli -- analyze --manifest samples/demo/capture.json --config config/default.json
+git clone https://github.com/360madden/RiftReader2.git
+Set-Location .\RiftReader2
+dotnet --version
+```
+
+Expected SDK: `10.0.302`. If another SDK appears, install the pinned SDK before building.
+
+### 3. Run a zero-game-required demo
+
+```powershell
+# Inspect available commands.
+dotnet run --project src/RiftReader2.Cli -- --help
+
+# Validate the included synthetic capture.
 dotnet run --project src/RiftReader2.Cli -- validate-capture --manifest samples/demo/capture.json
+
+# Produce deterministic, derived-motion analysis.
+dotnet run --project src/RiftReader2.Cli -- analyze --manifest samples/demo/capture.json --config config/default.json
+```
+
+**No RIFT game session or VMware machine is required** for these commands. The included demo is **synthetic**, so it demonstrates the pipeline rather than a real player's live telemetry.
+
+### 4. Validate the repository
+
+The full gate requires the Lua/Python test runtime described in the setup guide:
+
+```powershell
+python -m venv artifacts/tools/lua-python
+.\artifacts\tools\lua-python\Scripts\python.exe -m pip install -r requirements-lua-tests.txt
+pwsh -NoProfile -File .\scripts\validate.ps1
+```
+
+The validation script includes C# checks, Lua contract coverage, architecture and documentation checks, and CLI smoke tests. **Do not infer a green current run from this README**; see actual results in [status](docs/status.md) and [validation records](docs/README.md).
+
+## 🧪 Explore the toolkit
+
+<details open>
+<summary><strong>🟦 Offline analysis, discovery, and evidence inspection</strong></summary>
+
+The CLI can validate captures, calculate derived motion, decode strict addon frames, search saved memory, compare snapshots, evaluate recorded field assessments, and export discovery catalogs.
+
+```powershell
+# Saved frame decoding (requires an exact existing wire-frame file).
 dotnet run --project src/RiftReader2.Cli -- decode-addon --frame artifacts/example.wire
-```
 
-Add `--output artifacts/my-analysis.json` to save a new report. Existing files
-are preserved. Capture/configuration schemas are versioned; invalid identities,
-unsupported schemas, malformed rows, and ambiguous configuration fail explicitly.
-The addon command requires an exact saved frame (no trailing newline); it reports
-the frame hash with source binding and freshness explicitly unverified. See
-[the addon guide](addon/README.md) and [wire contract](contracts/addon/README.md).
-
-The Lua addon installed in RIFT is separate from the Git checkout. Compare,
-synchronize, and independently verify the main PC and both VM installations:
-
-```powershell
-C:\Python314\python.exe scripts\addon_sync.py check --target all
-C:\Python314\python.exe scripts\addon_sync.py sync --target all
-C:\Python314\python.exe scripts\addon_sync.py verify --target all
-```
-
-See the [addon-sync workflow](docs/workflows/addon-sync.md). File consistency
-does not replace an in-game addon reload and functional check.
-
-## On-demand controller prerequisite
-
-The standard `scripts/control_client.py` commands now check the matching
-Lab-1/Lab-2 main-PC controller and recover it on demand when the authenticated
-local endpoint is absent. They use the pre-existing Workbridge managed-helper
-lifecycle to register and start one **Limited, interactive, persistent** Windows
-Task Scheduler task per lab. The task has **no boot/logon trigger**; an operation
-starts it only when necessary, and a healthy instance is reused. The task itself
-runs the controller with fresh VM identity, source/config evidence, a preserved
-SQLite coordination queue, console ownership, and disarmed defaults. No VM/game
-startup or gameplay input is sent. This works even when the requesting Workbridge
-job is bounded because the controller runs directly as the managed task, rather
-than as a detached child of the job. An authenticated guest-agent connection and
-independently fresh telemetry are **separate** prerequisites for live player data
-or movement. For an inert diagnostic, pass `--no-auto-start` before the command.
-See the [operational dependencies guide](docs/workflows/operation-dependencies.md).
-
-For full authenticated controller **and guest-agent** readiness on the two labs:
-
-```powershell
-C:\Python314\python.exe scripts\ensure_guest_agent.py --lab all
-```
-
-This reuses connected, idle agents and recovers missing ones through each guest's
-current cached VMware login and a separate on-demand, triggerless task. The
-standard `control_client.py` live `capture`, reviewed `arm`, and `action` commands
-also check this prerequisite; inert `status` and cleanup commands do not start
-an absent guest agent. No game input is part of dependency startup.
-
-## Fast known-build native XYZ sampling
-
-The Windows Live executable can repeatedly read the previously discovered,
-build-pinned native XYZ **candidate** without scanning for Lua frames or heap values:
-
-```powershell
-RiftReader2.Live.exe sample-position --profile position-candidate-profile.json --samples 3 --interval-ms 500 --output position-samples-new.json
-```
-
-Run on the same Windows machine as RIFT using the profile in
-`config/position-candidate-profile.json`. Reacquisition is per current PID/module
-and each read is identity-checked; another game build is rejected. Full semantics,
-motion, and update survival remain separate [validation tasks](docs/reference/known-position-sampling.md).
-
-## Offline discovery explorer
-
-The [discovery compiler](docs/reference/discovery-compilation.md) combines
-explicit, SHA-pinned field catalogs, Lua/native review reports and recorded
-research into a queryable view without accessing RIFT or VMware. Export
-JSON, CSV or JSON Lines; existing files are never replaced.
-
-```powershell
+# Offline discovery export (synthetic example identity).
 dotnet run --project src/RiftReader2.Cli -- export-discoveries --manifest samples/discovery-sources.json --build-sha256 ('A' * 64) --session-id synthetic-session-a --as-of 2026-10-21T00:00:00Z --format json --output artifacts/discoveries-example.json
 ```
 
-Open `scripts/discovery_explorer.html` in a browser and select the output JSON
-to filter, sort, inspect and download records locally. The sample is synthetic;
-compiling a discovery does not qualify native game memory semantics.
+The frame example assumes you already have `artifacts/example.wire`; it is **not** included as a live data source. Exact frame bytes are required, without a trailing newline. Reports keep the source-binding and freshness limitations explicit.
 
-## Modules
+Open [`scripts/discovery_explorer.html`](scripts/discovery_explorer.html) locally, then select an exported discovery JSON file to **filter, sort, inspect, and download** records without contacting the game.
 
-| Project | Responsibility |
-|---|---|
-| Lua addon | Separate encoding, bounded API sampling, reader binding, and RIFT event modules. |
-| Domain | Samples, typed addon observations, analysis options, and result semantics. |
-| Application | Streaming numerical analysis and monotonic freshness rules independent of files and UI. |
-| Infrastructure | Verified captures, strict addon decoding/configuration, atomic result publication. |
-| Cli | Commands, explicit composition, output, and cancellation. |
-| Live | Isolated Windows read-only acquisition, process identity, bounded delivery, and latest snapshot. |
-| Tests | C# behavior checks, Lua lifecycle checks, and shared cross-language fixtures. |
+📖 [Memory discovery](docs/reference/memory-discovery.md) · [Discovery compilation](docs/reference/discovery-compilation.md) · [Field catalog](docs/reference/field-catalog.md)
 
-Start with [status](docs/status.md), [architecture](docs/architecture.md), and
-[development](docs/workflows/development.md). The [roadmap](docs/planning/implementation-roadmap.md)
-defines small next increments; the [documentation index](docs/README.md) links
-goals, research evidence, decisions, and historical setup records.
+</details>
+
+<details>
+<summary><strong>🟪 Native position research (identified RIFT builds only)</strong></summary>
+
+On a Windows machine with a matching RIFT executable, the Live reader supports build-bound native position-candidate sampling. For the current-build two-lab workflow, see the [native sampling guide](docs/reference/current-native-position-sampling.md).
+
+```powershell
+# Example: use the existing host/lab wrapper in a configured RR2 lab.
+python scripts/sample_current_native_xyz.py --lab lab1 --samples 3 --interval-ms 400
+```
+
+This is **not** a universal coordinate offset, gameplay movement command, or proof of player-position semantics on an updated game client. The reader checks process/build identity and publishes *candidate* observations.
+
+📖 [Current-build validation](docs/validation/native-current-sampler-2026-11-05.md) · [Historical known-build sampler](docs/reference/known-position-sampling.md)
+
+</details>
+
+<details>
+<summary><strong>🟩 Addon synchronization and live-session binding</strong></summary>
+
+The source addon is distinct from the package installed in RIFT. RR2 contains tools for comparing, synchronizing, and verifying addon installations on the host and configured labs.
+
+```powershell
+# Run from the repository root with the configured environment.
+python scripts/addon_sync.py check --target all
+python scripts/addon_sync.py sync --target all
+python scripts/addon_sync.py verify --target all
+```
+
+The `sync` command **changes installed addon files**. Use it only after reviewing the target-specific workflow. File hashes matching on disk do **not** establish that the game has reloaded the addon or that fresh live telemetry is available.
+
+A live addon load can be bound using `/rr2bind <nonce>` (with a reader-generated 32-character hexadecimal nonce). An addon UI reload clears that binding and requires a fresh one.
+
+📖 [Addon package](addon/README.md) · [Sync workflow](docs/workflows/addon-sync.md) · [RR2R1 reference contract](contracts/addon/reference-v1.md) · [Live transport](contracts/addon/live-transport-v1.md)
+
+</details>
+
+<details>
+<summary><strong>🟧 Lab operations and guarded experiments</strong></summary>
+
+Development workflows can use **RIFT-Lab-1**, **RIFT-Lab-2**, and a physical Windows client, with separate identities and run receipts. On-demand controllers and guest agents recover eligible prerequisites while keeping actual game-input authority separate.
+
+The bounded experiment layer supports explicitly supervised movement/turning validation. It does **not** provide general-purpose navigation or autonomous combat.
+
+📖 [Operational dependencies](docs/workflows/operation-dependencies.md) · [Supervised experiments](docs/reference/guarded-experiments.md) · [Three-target development workflow](docs/workflows/development.md)
+
+</details>
+
+## 🗂️ Project map
+
+| Area | Responsibility |
+|:--|:--|
+| [`addon/`](addon/) | RIFT Lua producers, API references, versioned frames, and operator-delivered guidance |
+| [`src/RiftReader2.Domain/`](src/RiftReader2.Domain/) | Typed observations, units, identities, and result semantics |
+| [`src/RiftReader2.Application/`](src/RiftReader2.Application/) | Analysis and evidence-aware application behavior |
+| [`src/RiftReader2.Infrastructure/`](src/RiftReader2.Infrastructure/) | Strict parsing, capture verification, config, and persisted reports |
+| [`src/RiftReader2.Cli/`](src/RiftReader2.Cli/) | Offline command-line entry point |
+| [`src/RiftReader2.Live/`](src/RiftReader2.Live/) | Isolated Windows process observation and live-reader composition |
+| [`contracts/`](contracts/) | Explicitly versioned addon and transport schemas |
+| [`scripts/`](scripts/) | Repeatable research, synchronization, lab orchestration, and local explorer |
+| [`tests/`](tests/) | C#, Python, Lua, and cross-language validation |
+| [`docs/`](docs/) | Architecture, evidence, decisions, validations, guides, and handoffs |
+
+## 🧭 Where the research is going
+
+```text
+FOUNDATION       ██████████  Versioned offline analysis and strict contracts
+LIVE REFERENCE   ███████░░░  Identified-session transport; RR2R1 acceptance pending
+NATIVE RESEARCH  ██████░░░░  Candidate sampling; per-field qualification ongoing
+AUTOMATION       ███░░░░░░░  Supervised experiments only; player bot out of scope
+```
+
+*These bars are an **illustrative stage map**, not measured completion percentages.*
+
+Current priorities emphasize **reproducible current-build field discovery**, **changed-state evidence**, **session/restart identity**, and **self-contained RR2-owned telemetry**. Older RiftReader and probe work can inform research but are **not runtime requirements**.
+
+📍 [Current discovery roadmap](docs/planning/discovery-roadmap-2026-11-06.md) · [Implementation roadmap](docs/planning/implementation-roadmap.md) · [Current status and validation notes](docs/status.md)
+
+## 📚 Documentation hub
+
+| Start here | You'll find |
+|:--|:--|
+| 📌 **[Current status](docs/status.md)** | Most recent verified results, handoffs, and known blockers |
+| 🧠 **[Architecture](docs/architecture.md)** | Hybrid design, responsibilities, and data boundaries |
+| 🛠️ **[Development guide](docs/workflows/development.md)** | SDK, dependencies, tests, and safe iteration |
+| 📡 **[Addon guide](addon/README.md)** | Package, binding, typed reference and live framing |
+| 📐 **[Contracts](contracts/addon/README.md)** | Wire formats, decoders, and cross-language fixture expectations |
+| 🔬 **[Native capture](docs/reference/native-capture.md)** | Read-only acquisition and exact process/build evidence |
+| 🧾 **[Documentation index](docs/README.md)** | Research references, validation records, decisions, and experiments |
+
+## 💡 Design principles
+
+**Evidence over inference** · **Exact build identity** · **Freshness over plausible numbers** · **Read-only native acquisition** · **Clear separation of API/native/derived data** · **Reproducible experiments** · **Small useful increments**
+
+---
+
+<div align="center">
+
+**Built for curious RIFT developers, toolmakers, and reverse-engineering researchers.**
+
+<sub>Independent community research project. Not affiliated with, endorsed by, or operated by the RIFT game's publisher.</sub>
+
+<br /><br />
+
+[![Explore the code](https://img.shields.io/badge/EXPLORE-THE_CODE-805AD5?style=for-the-badge&logo=github&logoColor=white)](src/)
+[![Read the docs](https://img.shields.io/badge/READ-THE_DOCS-1689c2?style=for-the-badge&logo=readthedocs&logoColor=white)](docs/README.md)
+[![See the status](https://img.shields.io/badge/VIEW-CURRENT_STATUS-1ca78e?style=for-the-badge)](docs/status.md)
+
+</div>

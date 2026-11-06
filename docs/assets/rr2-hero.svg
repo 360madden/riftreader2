@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 500" role="img" aria-labelledby="title desc">
+<title id="title">RiftReader2 — Evidence-first telemetry for RIFT</title><desc id="desc">Dark navy and violet developer banner with colorful telemetry signals and a technical grid.</desc>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#080e23"/><stop offset=".52" stop-color="#141b3e"/><stop offset="1" stop-color="#091832"/></linearGradient>
+<linearGradient id="brand" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#75e5ff"/><stop offset=".5" stop-color="#b8a0ff"/><stop offset="1" stop-color="#fa9ed1"/></linearGradient>
+<linearGradient id="card" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#27375c" stop-opacity=".95"/><stop offset="1" stop-color="#131e3a" stop-opacity=".45"/></linearGradient>
+<pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#8090c2" stroke-opacity=".11" stroke-width="1"/></pattern>
+<filter id="glow"><feGaussianBlur stdDeviation="36"/></filter>
+</defs>
+<rect width="1600" height="500" rx="28" fill="url(#bg)"/>
+<ellipse cx="1280" cy="90" rx="320" ry="190" fill="#6749e6" opacity=".19" filter="url(#glow)"/>
+<ellipse cx="400" cy="490" rx="400" ry="120" fill="#16a6c8" opacity=".16" filter="url(#glow)"/>
+<rect width="1600" height="500" rx="28" fill="url(#grid)"/>
+<path d="M0 446C180 391 275 483 443 425S754 391 970 451 1400 393 1600 422" fill="none" stroke="#70daf8" stroke-width="2" opacity=".23"/>
+<rect x="72" y="60" width="196" height="36" rx="18" fill="#203551" stroke="#4bb6df" stroke-opacity=".5"/>
+<circle cx="95" cy="78" r="5" fill="#50e5ca"/><text x="111" y="84" fill="#b7eaf6" font-size="16" font-family="Segoe UI,Arial,sans-serif" font-weight="700" letter-spacing="2">RIFT / RESEARCH</text>
+<text x="70" y="215" font-size="110" font-family="Segoe UI,Arial,sans-serif" letter-spacing="-6" font-weight="800" fill="url(#brand)">RIFTREADER<tspan font-weight="900" fill="#f1f7ff">2</tspan></text>
+<rect x="72" y="242" width="80" height="5" rx="3" fill="#5edcf3"/><rect x="163" y="242" width="44" height="5" rx="3" fill="#9876fa"/><rect x="218" y="242" width="28" height="5" rx="3" fill="#ed81bd"/>
+<text x="73" y="305" font-size="34" font-family="Segoe UI,Arial,sans-serif" font-weight="650" fill="#f5f7ff">Evidence first. Freshness by design.</text>
+<text x="74" y="351" font-size="24" font-family="Segoe UI,Arial,sans-serif" fill="#b7c8e7">Hybrid game telemetry · Native discovery · Reproducible research</text>
+<g font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700">
+<rect x="74" y="391" rx="13" width="126" height="42" fill="#143b54" stroke="#39c5ee" stroke-opacity=".5"/><text x="96" y="419" fill="#8ce5ff">.NET 10</text>
+<rect x="213" y="391" rx="13" width="128" height="42" fill="#32265b" stroke="#a48bff" stroke-opacity=".5"/><text x="236" y="419" fill="#d7c4ff">LUA 5.1</text>
+<rect x="354" y="391" rx="13" width="172" height="42" fill="#254c49" stroke="#62dac3" stroke-opacity=".5"/><text x="376" y="419" fill="#a2f3df">WINDOWS</text>
+</g>
+<g transform="translate(1076 75)" font-family="Segoe UI,Arial,sans-serif">
+<rect width="452" height="346" rx="26" fill="url(#card)" stroke="#869bd9" stroke-opacity=".32"/>
+<text x="32" y="44" fill="#a9c1e8" font-size="17" font-weight="700" letter-spacing="2">SIGNAL INTELLIGENCE</text>
+<circle cx="406" cy="37" r="6" fill="#4be4bd"/><circle cx="426" cy="37" r="6" fill="#6d83bf"/>
+<line x1="32" y1="65" x2="418" y2="65" stroke="#647ca6" stroke-opacity=".35"/>
+<text x="32" y="106" fill="#e3eafb" font-size="19">SOURCE INTEGRITY</text><text x="416" y="106" fill="#7cf2d5" text-anchor="end" font-size="18" font-weight="700">SHA-256</text>
+<rect x="32" y="119" width="385" height="5" rx="2.5" fill="#344566"/><rect x="32" y="119" width="326" height="5" rx="2.5" fill="#62d9cb"/>
+<text x="32" y="163" fill="#e3eafb" font-size="19">SESSION FRESHNESS</text><text x="416" y="163" fill="#93ccff" text-anchor="end" font-size="18" font-weight="700">EPOCH-AWARE</text>
+<rect x="32" y="176" width="385" height="5" rx="2.5" fill="#344566"/><rect x="32" y="176" width="294" height="5" rx="2.5" fill="#62bfff"/>
+<text x="32" y="220" fill="#e3eafb" font-size="19">NATIVE FIELD STATUS</text><text x="416" y="220" fill="#ffd18c" text-anchor="end" font-size="18" font-weight="700">CANDIDATE</text>
+<rect x="32" y="233" width="385" height="5" rx="2.5" fill="#344566"/><rect x="32" y="233" width="210" height="5" rx="2.5" fill="#e7ad73"/>
+<path d="M32 302L66 299 95 314 126 267 153 292 182 287 213 251 244 279 275 266 306 280 338 247 369 258 416 244" fill="none" stroke="#81e6f6" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M32 320L63 305 93 312 124 308 154 322 185 315 216 310 246 318 277 299 308 308 338 302 370 312 416 300" fill="none" stroke="#bd9dff" stroke-width="2" opacity=".8"/>
+</g>
+<text x="1510" y="473" font-size="14" font-family="Segoe UI,Arial,sans-serif" text-anchor="end" fill="#7c92b9">INDEPENDENT RIFT RESEARCH TOOLKIT</text>
+</svg>
