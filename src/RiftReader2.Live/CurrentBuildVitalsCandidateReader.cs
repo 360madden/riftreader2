@@ -193,7 +193,3 @@ internal static class CurrentBuildVitalsCandidateReader
     private static int I32(ReadOnlySpan<byte> bytes) => BinaryPrimitives.ReadInt32LittleEndian(bytes);
     private static float F32(ReadOnlySpan<byte> bytes) => BitConverter.Int32BitsToSingle(I32(bytes));
 }
-
-
-
-
