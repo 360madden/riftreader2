@@ -227,7 +227,8 @@ def summarize(reports: list[tuple[str, dict]], *, maximum_run_gap_seconds: float
         "advances": selected.get("advances") if selected else None,
         "limitations": [
             "The pairing window is a caller-declared comparison bound, not measured clock synchronization.",
-            "Advancing RRAPIVAL2 frames are independent Lua/API source evidence, not native field semantics.",
+            "Advancing " + ("RR2R1" if session_id is not None else "RRAPIVAL2")
+            + " frames are independent Lua/API source evidence, not native field semantics.",
             "The underlying scans remain bounded; absent frames apply only to their covered bytes.",
             "A stable player ID is not proof that a separately acquired native sample belongs to that player.",
         ],

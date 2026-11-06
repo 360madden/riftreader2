@@ -158,6 +158,8 @@ class ReferenceBindingAssessmentTests(unittest.TestCase):
                        source="rift-api", sessionId=nonce, epoch=1)
         result = summarize([("rr2", legacy)], maximum_run_gap_seconds=15, session_id=nonce)
         self.assertEqual(result["status"], "advancing-reference-in-pairing-window")
+        self.assertTrue(any("RR2R1 frames" in line for line in result["limitations"]))
+        self.assertFalse(any("RRAPIVAL2 frames" in line for line in result["limitations"]))
         for changes in ({"sessionId": "b" * 32}, {"epoch": 2}):
             value = json.loads(json.dumps(legacy))
             value["selected"]["after"].update(changes)

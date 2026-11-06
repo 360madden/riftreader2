@@ -108,7 +108,8 @@ class WorkflowTests(unittest.TestCase):
     def test_phase_uses_dynamic_epoch_and_inert_encoded_paths(self):
         cfg={'guestDirectory':r"C:\Lab\O'Brien",'readerSha256':'A'*64}
         target=dict(processId=333,processStartUtcTicks=444,executableSha256='B'*64)
-        script=workflow.phase_script(cfg,'C'*64,target,r'C:\RIFT_TRANSFER\XYZ\test','baseline')
+        nonce='a'*32
+        script=workflow.phase_script(cfg,'C'*64,target,r'C:\RIFT_TRANSFER\XYZ\test','baseline',nonce)
         encoded=script.split("FromBase64String('",1)[1].split("'",1)[0]
         settings=json.loads(base64.b64decode(encoded))
         self.assertEqual(target,settings['target'])
@@ -116,9 +117,77 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("O'Brien",script)
         self.assertNotIn('639285359295548343',script)
         self.assertEqual(target,json.loads(settings['pointerRequest'])['target'])
-        other=workflow.phase_script(cfg,'C'*64,target,r'C:\RIFT_TRANSFER\XYZ\test','after')
+        self.assertEqual('RR2R1|',json.loads(settings['typedRequest'])['marker'])
+        other=workflow.phase_script(cfg,'C'*64,target,r'C:\RIFT_TRANSFER\XYZ\test','after',nonce)
         encoded=other.split("FromBase64String('",1)[1].split("'",1)[0]
         self.assertEqual(settings['pointerRequest'],json.loads(base64.b64decode(encoded))['pointerRequest'])
+        self.assertEqual(settings['typedRequest'],json.loads(base64.b64decode(encoded))['typedRequest'])
+
+    def test_live_missing_or_invalid_rr2_nonce_fails_before_any_artifact_or_input(self):
+        cfg={'guestDirectory':r'C:\Lab','readerSha256':'A'*64}
+        target=dict(processId=333,processStartUtcTicks=444,executableSha256='B'*64)
+        for invalid in (None,'A'*32,'a'*31,'g'*32):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError,'session-id-invalid'):
+                    workflow.phase_script(cfg,'C'*64,target,r'C:\RIFT_TRANSFER\XYZ\test','baseline',invalid)
+                output=self.root/'never-created'
+                with patch.object(workflow,'HostGuard',side_effect=AssertionError('must not open controller')):
+                    with self.assertRaisesRegex(ValueError,'session-id-invalid'):
+                        workflow.run(cfg,{},'C'*64,output,invalid)
+                self.assertFalse(output.exists())
+
+    def test_cli_run_without_nonce_fails_closed_while_preview_remains_inert(self):
+        cfg={k:str(self.root/k) for k in ('hostPlan','hostProcess','vmrun','profile')}
+        for key in ('hostPlan','hostProcess','vmrun'): Path(cfg[key]).write_text('{}')
+        Path(cfg['profile']).write_bytes((workflow.ROOT/'config/position-candidate-profile.json').read_bytes())
+        cfg.update(schemaVersion=1,guestDirectory=r'C:\RIFT_TRANSFER\reader',readerSha256='A'*64)
+        path=self.root/'config.json';path.write_text(json.dumps(cfg))
+        output=self.root/'never-created'
+        with patch.object(workflow,'HostGuard',side_effect=AssertionError('must not open controller')), contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(2,workflow.main(['--config',str(path),'--run','--output',str(output)]))
+        self.assertIn('session-id-invalid',stderr.getvalue())
+        self.assertFalse(output.exists())
+
+    def test_compare_forwards_nonce_and_refuses_legacy_selected_frames(self):
+        nonce='a'*32
+        selected={stage:dict(protocol='RR2R1',addon='RiftReader2',source='rift-api',
+                             addonVersion='0.2.0',sessionId=nonce,epoch=1,
+                             frameTime=1.0 if stage=='before' else 2.0,sequence=1 if stage=='before' else 2)
+                  for stage in ('before','after')}
+        review=dict(status='candidate-motion-consistent',qualification='candidate-only',
+                    nativeDisplacement={axis:1 for axis in ('x','y','z')},
+                    typedDisplacement={axis:1 for axis in ('x','y','z')},
+                    nativeMinusTypedDisplacement={axis:0 for axis in ('x','y','z')},
+                    endpointAgreement={},nativeMinusTypedSampleTimeSeconds={})
+        cli=self.root/'src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll'
+        cli.parent.mkdir(parents=True)
+        cli.write_bytes(b'dummy')
+        for legacy in (False,True):
+            with self.subTest(legacy=legacy):
+                output=self.root/('legacy' if legacy else 'rr2')
+                for phase in ('baseline','after'):
+                    folder=output/(phase+'-originals/lua')
+                    folder.mkdir(parents=True)
+                    (folder/'capture-01.snapshot.json').write_text('{}')
+                calls=[]
+                def fake_cli(command, **_):
+                    calls.append(command)
+                    self.assertEqual(nonce,command[command.index('--session-id')+1])
+                    value={'status':'advanced-in-covered-scope','selected':json.loads(json.dumps(selected))}
+                    if legacy:
+                        value['selected']['before']['protocol']='RRAPIVAL2'
+                    Path(command[command.index('--output')+1]).write_text(json.dumps(value))
+                    return SimpleNamespace(returncode=0)
+                with patch.object(workflow,'ROOT',self.root),patch.object(workflow.subprocess,'run',side_effect=fake_cli), \
+                     patch.object(workflow,'review',return_value=review) as review_fn:
+                    if legacy:
+                        with self.assertRaisesRegex(ValueError,'reference-binding-invalid'):
+                            workflow.compare(output,nonce)
+                        review_fn.assert_not_called()
+                    else:
+                        self.assertEqual('candidate-motion-consistent',workflow.compare(output,nonce)['status'])
+                        review_fn.assert_called_once()
+                self.assertEqual(1,len(calls))
 
     def test_staged_phase_invokes_hash_check_and_short_file_command(self):
         script = self.root / 'baseline.ps1'

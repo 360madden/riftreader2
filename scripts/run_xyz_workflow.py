@@ -29,6 +29,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.control_client import ControlClient, _capture, _arm, _action
 from scripts.control_host import HostConfig
+from scripts.inspect_typed_resource import require_reference_binding, require_session_id
 from scripts.nav_access_queue import AccessQueue
 from scripts.nav_control_watchdog import bind_identity, resource_epoch
 from scripts.prepare_xyz_deployment import validate_profile
@@ -175,13 +176,15 @@ class HostGuard:
         return value
 
 
-def phase_script(cfg, profile_sha, target, guest_output, phase):
+def phase_script(cfg, profile_sha, target, guest_output, phase, session_id):
     require(phase in ('baseline', 'after'), 'Unsupported phase')
+    require_session_id(session_id)
     pointer = dict(schemaVersion=1, evidenceKind='native-pointer-follow-request/1', target=target,
                    rootRva='0x32E0200', offsets=['0x0'], terminalByteLength=816, maxDurationMilliseconds=5000)
     typed = dict(schemaVersion=1, evidenceKind='native-typed-inline-capture-request/1', target=target,
                  startAddress='0x10000', maxScanBytes=536870912, maxDurationMilliseconds=30000,
-                 maxRegionCount=32768, maxMatchCount=128, maxCopiedCandidates=8)
+                 maxRegionCount=32768, maxMatchCount=128, maxCopiedCandidates=8,
+                 marker='RR2R1|')
     settings = dict(phase=phase, guestDirectory=cfg['guestDirectory'], guestOutput=windows_path(guest_output),
                     readerSha256=cfg['readerSha256'], profileSha256=profile_sha, target=target,
                     pointerRequest=json.dumps(pointer, sort_keys=True, separators=(',', ':')),
@@ -248,9 +251,9 @@ def launch_phase_script(session, script_path, guest_output, phase, *, timeout=15
     return guest_script
 
 
-def collect_phase(session, guard, cfg, profile_sha, output, guest_output, phase):
+def collect_phase(session, guard, cfg, profile_sha, output, guest_output, phase, session_id):
     guard.status()
-    script = phase_script(cfg, profile_sha, guard.target, guest_output, phase)
+    script = phase_script(cfg, profile_sha, guard.target, guest_output, phase, session_id)
     script_path = output / (phase + '.ps1')
     with script_path.open('x', encoding='utf-8-sig') as f:
         f.write(script)
@@ -275,6 +278,8 @@ def collect_phase(session, guard, cfg, profile_sha, output, guest_output, phase)
             and samples['motion']['maxExcursionFromFirstGameUnits'] == 0, 'Endpoint moved during sampling')
     lua = load(dest / 'lua/index.json')
     require(lua['publishedSnapshots'] > 0 and lua['status'] in ('complete', 'partial'), 'No usable Lua snapshots')
+    require(lua.get('request', {}).get('marker') == 'RR2R1|',
+            'Phase scanner marker is not RR2R1')
     guard.status()
     print(json.dumps({'phase': phase, 'verifiedFiles': count, 'xyz': {
         k: samples['observations'][-1][k] for k in ('x','y','z')}}), flush=True)
@@ -333,7 +338,8 @@ def pulse(guard, output, run_id, reviewer=read_review):
     guard.status()
 
 
-def compare(output):
+def compare(output, session_id):
+    require_session_id(session_id)
     cli = ROOT / 'src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll'
     require(cli.is_file(), 'Build the existing offline CLI before this workflow')
     directory = output / 'comparisons'
@@ -343,10 +349,15 @@ def compare(output):
         for b in sorted((output/'after-originals/lua').glob('*.snapshot.json')):
             dest = directory / (a.name.split('.')[0] + '-' + b.name.split('.')[0] + '.json')
             result = subprocess.run(['dotnet', str(cli), 'inspect-typed-wire', '--before', str(a),
-                                     '--after', str(b), '--output', str(dest)], capture_output=True, timeout=30)
+                                     '--after', str(b), '--session-id', session_id,
+                                     '--output', str(dest)], capture_output=True, timeout=30)
             require(result.returncode == 0, 'Offline Lua inspection failed')
             value = load(dest)
             if value['status'] == 'advanced-in-covered-scope':
+                selected = value.get('selected')
+                require(isinstance(selected, dict), 'RR2R1 comparison lacks selected frames')
+                for stage in ('before', 'after'):
+                    require_reference_binding(selected.get(stage), session_id)
                 candidates.append((value['selected']['after']['frameTime'], value['selected']['before']['frameTime'], dest))
     require(candidates, 'No advancing Lua pair; retained diagnostics explain why')
     selected = max(candidates)[2]
@@ -388,7 +399,8 @@ def export(output):
                                          sha256=digest(path.read_bytes()),verified=True))
 
 
-def run(cfg, profile, profile_sha, output, *, cache_login=False):
+def run(cfg, profile, profile_sha, output, session_id, *, cache_login=False):
+    require_session_id(session_id)
     output.mkdir(parents=False, exist_ok=False)
     save(output/'run.json',dict(startedAtUtc=stamp(),phase='started',cacheLoginRequested=cache_login,
                                credentialsWrittenToProject=False,patchRecovery='deferred'))
@@ -401,10 +413,10 @@ def run(cfg, profile, profile_sha, output, *, cache_login=False):
                           cache_guest_credentials=cache_login) as guest:
             save(output/'authentication.json',dict(atUtc=stamp(),credentialSource=guest.credential_source,
                                                    cacheWritten=guest.cache_written,credentialsWrittenToProject=False))
-            collect_phase(guest,guard,cfg,profile_sha,output,guest_output,'baseline')
+            collect_phase(guest,guard,cfg,profile_sha,output,guest_output,'baseline',session_id)
             pulse(guard,output,run_id)
-            collect_phase(guest,guard,cfg,profile_sha,output,guest_output,'after')
-        summary = compare(output)
+            collect_phase(guest,guard,cfg,profile_sha,output,guest_output,'after',session_id)
+        summary = compare(output,session_id)
         save(output/'final-status.json',sanitize(guard.status()))
         save(output/'complete.json',dict(completedAtUtc=stamp(),status=summary['status'],credentialSessionClosed=True))
         export(output)
@@ -421,6 +433,7 @@ def main(argv=None):
     parser.add_argument('--config',type=Path,required=True)
     parser.add_argument('--output',type=Path)
     parser.add_argument('--run',action='store_true')
+    parser.add_argument('--session-id',help='Required for live use: fresh, already bound RR2R1 nonce (32 lowercase hex)')
     parser.add_argument('--cache-login',action='store_true',help='Save a verified guest login in Windows Credential Manager; requires --run')
     args = parser.parse_args(argv)
     try:
@@ -431,11 +444,12 @@ def main(argv=None):
                               'gameSha256':profile['executableSha256'],'profileSha256':profile_sha}))
             return 0
         require(args.output is not None,'--run requires a new --output directory')
+        require_session_id(args.session_id)
         output = args.output.absolute()
         require(output.parent.is_dir() and not output.exists() and output.resolve().is_relative_to(ROOT/'artifacts'),
                 'Output must be a new directory under repository artifacts')
         require((ROOT/'src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll').is_file(),'Build offline CLI first')
-        return run(cfg,profile,profile_sha,output,cache_login=args.cache_login)
+        return run(cfg,profile,profile_sha,output,args.session_id,cache_login=args.cache_login)
     except (Exception,KeyboardInterrupt) as error:
         print(json.dumps({'status':'blocked','errorType':type(error).__name__,
                           'reason':str(error) if isinstance(error,(ValueError,SessionError)) else 'Operation failed; retained evidence was not overwritten'}),file=sys.stderr)
