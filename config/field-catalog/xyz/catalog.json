@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-catalog/1",
+  "fields": [
+    {
+      "fieldId": "player.position.xyz",
+      "meaning": "Current player avatar world-position vector observed as native float32 X, Y, and Z coordinates and compared with the RIFT Lua player-coordinate source.",
+      "units": "RIFT world coordinate units",
+      "sourceKind": "native",
+      "locator": {
+        "kind": "module-relative-rva",
+        "method": "For executable SHA 7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD, read the x64 pointer at main-module RVA 0x32E0200, then read float32 X/Y/Z from the resolved owner at offsets 0x320/0x324/0x328. Re-resolve for every sample; never reuse the absolute owner address."
+      },
+      "applicability": [
+        {
+          "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+          "sessionId": "rift-11712-639285339497136209"
+        },
+        {
+          "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+          "sessionId": "rift-1224-639285359295548343"
+        }
+      ],
+      "invalidationConditions": [
+        "A different RIFT executable SHA requires a new locator assessment; patch survival is not established.",
+        "A missing process, stale process start identity, failed pointer read, nonfinite value, or subnormal startup value makes the observation unavailable rather than zero or cached.",
+        "An absolute owner address is session state and must be freshly resolved from the module-relative root.",
+        "A disagreement with an independently advancing Lua player-coordinate source requires a new contrary assessment."
+      ],
+      "requiredClaims": [
+        "meaning",
+        "locator",
+        "restart-survival"
+      ]
+    }
+  ],
+  "assessments": [
+    {
+      "path": "assessment-before-restart.json",
+      "byteLength": 2993,
+      "sha256": "29193B0B7FE959C5C29FFC3448705DC29862940F012A681DE4A7B6B050F20C13"
+    },
+    {
+      "path": "assessment-after-restart.json",
+      "byteLength": 3826,
+      "sha256": "955A300A9A7F56817F78439897EE3420600E5C7B71D6BCE906B2F3AAD38CF48F"
+    }
+  ]
+}

@@ -1,0 +1,197 @@
+# LLM-coordinated RIFT addon synchronization
+
+Decision: Joey, 2026-11-05. The active LLM is the coordinator during a requested
+work session. No new background synchronization service, scheduler, always-on
+coordinator or unreviewed three-way mirroring.
+
+## Operator intent and safety
+
+- Three active research producers: physical PC, RIFT-Lab-1 and RIFT-Lab-2.
+- Preserve machine-specific SavedVariables, telemetry, logs, screenshots,
+  experimental addon edits and test evidence. Collect under origin-labelled
+  folders rather than overwriting any other machine's live profile.
+- Addon code deployment is a separate, reviewed operation. Compare source
+  hashes, differences and machine identity before replacing files.
+- **Ask Joey and wait for his answer before any RIFT /reloadui, client/game
+  restart, Windows session reboot, VMware guest reboot, or helper recovery
+  that would restart a client.** File transfers alone do not reload Lua.
+- Do not change Windows SMB/firewall/network profiles, VMware HGFS settings
+  or the running Workbridge service incidentally. No OneDrive-backed
+  synchronization is assumed reliable.
+
+## Immediately working: RiftReader2 package
+
+From `C:\work\riftreader2`, use the installed `C:\Python314\python.exe`:
+
+```powershell
+C:\Python314\python.exe scripts\addon_sync.py check --target all
+# Only if differences are reviewed and deployment is wanted:
+C:\Python314\python.exe scripts\addon_sync.py sync --target pc
+C:\Python314\python.exe scripts\addon_sync.py sync --target lab1
+C:\Python314\python.exe scripts\addon_sync.py sync --target lab2
+C:\Python314\python.exe scripts\addon_sync.py verify --target all
+```
+
+The existing tool uses verified VMware Guest Operations through LabCodex,
+fresh VM-specific cached credential checks, SHA-256 comparison, staged file
+backup and OneDrive file-pinning checks. It sends no game input and never
+restarts a guest or reloads RIFT. See `docs/workflows/addon-sync.md`.
+
+**Scope:** This tool manages the six-file `RiftReader2` Lua package only.
+It is not yet a generic sync command for RRECollector or the other AddOns
+folders. Do not represent a full-machine sync as completed. Before expanding,
+inventory package files on all three machines and select the proper source,
+destination and per-addon installation contract. For RRECollector, its TOC
+must be copied last and its independent package/hash gates must pass.
+
+## Fresh host/guest verification
+
+- Date: 2026-11-05; Workbridge version 0.16.4-dev.
+- `check --target all`: exit 0; PC, Lab-1, Lab-2 each passed with no issues
+  or updated files. Evidence:
+  `artifacts/addon-sync/20261105T170435Z-101fc25c/`.
+- `verify --target all`: exit 0; same three targets passed. Evidence:
+  `artifacts/addon-sync/20261105T170636Z-95af9d27/`.
+- No game, Windows, VM or Workbridge restart/reload.
+- File parity is verified; running Lua functionality was not tested.
+- VMware HGFS was found disabled in both VM configurations; existing direct
+  LabCodex Guest Operations are currently sufficient for this package.
+- The physical AddOns folder has 48 entries including disabled folders and
+  archives. Do not blindly mirror that full tree.
+
+## Passive three-machine AddOns inventory
+
+Run on demand from `C:\work\riftreader2`:
+
+```powershell
+C:\Python314\python.exe scripts\rift_addon_inventory.py --target all
+# Optional: immediate per-file attribute preflight for one selected addon.
+C:\Python314\python.exe scripts\rift_addon_inventory.py --target all --detail-addon RiftReader2
+```
+
+This is a metadata-only, one-level inspection, not a sync command. It reads
+addon folder names and immediate TOC names, lengths, modification times and
+Offline/reparse flags; it never opens Lua/TOC contents, copies addon code,
+modifies SavedVariables, reloads a game or restarts a client. Guest reports
+are copied from separate guest-local folders using existing LabCodex sessions.
+`--detail-addon NAME` inspects only that package's immediate children, up to 200
+entries, and records file names, bytes, modified UTC and Windows Offline,
+Pinned, Unpinned, Reparse, RecallOnOpen and RecallOnDataAccess flags. Unknown
+nested subdirectories are not descended into. Classification
+`cloud-reparse-ambiguous` explicitly **does not** establish that reading
+contents would avoid OneDrive hydration. The command never hashes a file.
+Cloud-backed reparse directories are inspected only if Windows' built-in
+`fsutil reparsepoint query` confirms a Microsoft Cloud Files tag and the
+folder is pinned and not Offline. Unknown junctions/mountpoints are skipped;
+unknown reparse roots fail closed. A cloud tag alone does not prove a file is
+locally hydrated. No administrative elevation, network/share reconfiguration,
+or OneDrive sync trigger is attempted.
+
+Exit codes: `0` = every target inventoried completely; `3` = tools ran but
+at least one target is incomplete (inspect warnings); `2` = one or more
+failed targets. A successful inventory proves metadata coverage only.
+The report includes machine identity, original root, UTC time, reparse flags,
+per-target warnings, and separate raw report paths.
+
+**2026-11-05 live result:** PC, Lab-1 and Lab-2 each returned 48 top-level
+entries, `success=true`, `complete=true`, no Offline TOCs, and no differences
+in directory/file names or TOC name/length metadata. Eight addons had TOC
+timestamp differences: AnotherClock, ApiAtlas, ApiAtlasConsumer, luapad,
+RiftApiCollector, RiftReader2, RiftReader2Casting and RRECollector.
+Latest three-machine tag-guarded check: exit `0`, all three complete,
+48/48/48 entries, no name differences or warnings. Evidence:
+`artifacts/addon-inventory/20261105T174204Z-b127ec41/`.
+Earlier metadata and timing comparison:
+`artifacts/addon-inventory/20261105T172552Z-00c81069/`.
+Offline inventory unit tests: **20/20 passed** on 2026-11-05; the existing
+addon sync tests separately passed **8/8** (28/28 total).
+
+Selected-addon live preflight on 2026-11-05: PC, Lab 1 and Lab 2 all returned
+`complete=true` for `RiftReader2`, with six expected files and seven older
+backup/alternate files each. All 13 entries on each machine were pinned,
+not Offline, but cloud-reparse ambiguous; matching lengths alone does not prove
+identical contents. Evidence:
+`artifacts/addon-inventory/20261105T175919Z-ad4b9d4d/`.
+Preserve the extra backup/alternate files pending separate review.
+
+`ApiAtlas` selected-addon metadata pilot on 2026-11-05: each machine had nine
+immediate files and one `fonts` subdirectory (not traversed). The three
+snapshots agreed on file names and byte lengths; all files were cloud-reparse
+ambiguous, and no contents were hashed. The candidate development source is
+`C:\work\API Atlas\addon\ApiAtlas`; no source was selected for deployment.
+Evidence: `artifacts/addon-inventory/20261105T180356Z-3aee577c/`.
+The `API Atlas` addon source is unchanged within Git; last source-path commit:
+`ee612b114a3b8a7cc21856f73b3bcc78a319193f` (2026-10-30). **Source/install
+byte-length gaps on all three machines** (source vs installed):
+`Collector.lua` 16963/15338, `Public.lua` 2742/2225,
+`RiftAddon.toc` 728/722, `UI.lua` 28877/27841,
+`Version.lua` 99/93. Remaining immediate files have matching lengths,
+not necessarily matching bytes. Local source SHA-256 was collected separately;
+installed contents were not read. Investigate source precedence and preserve
+three-machine evidence before any deployment.
+
+The command also emits a `tocComparison` with machine coverage and
+case-insensitive per-addon TOC drift, distinguishing missing TOCs, bytes,
+modified UTC time, Offline and reparse flags. Partially inspected/failed
+targets are explicitly excluded; `conclusive=false` means fewer than two
+complete inventories were available. Analysis of the saved three-machine
+reports identified **seven subsecond-only timestamp differences**
+(`modifiedUtcSubsecond`, low significance) and **one whole-second/date
+TOC timestamp difference** (`modifiedUtc`: RRECollector, physical PC
+versus both VMware labs). There was no TOC filename or byte-size drift.
+These signals do not establish which Lua files differ; neither timestamp
+class determines which machine is authoritative. RRECollector deployment is
+being handled separately. No deployment is implied.
+Matching metadata is **not** proof of identical Lua files or loaded behavior.
+
+## Selected ApiAtlas code-hash comparison (read-only)
+
+From `C:\work\riftreader2`: `C:\Python314\python.exe scripts\rift_addon_hash.py --target all`.
+Only nine explicitly listed ApiAtlas Lua/TOC files are hashed against
+`C:\work\API Atlas\addon\ApiAtlas`; the `fonts` subtree is excluded.
+The helper checks size (128 KiB/file, 256 KiB total), file-recall attributes,
+supported pinned Cloud Files reparse tags, pre/post file metadata and the
+identity and cached credentials for each VM. Reports remain in local AppData
+and repo `artifacts/`, never installed AddOns or SavedVariables.
+**Reading pinned OneDrive files may hydrate their contents.**
+
+**2026-11-05 at 13:44 EST:** exit `0` in 25.8 seconds, 27/27 hashes collected.
+Physical `AMD-DESKTOP`, `RIFT-LAB-1` and `RIFT-LAB-2` have **identical SHA-256**
+for all nine files. Compared to the candidate development source, four match
+(`Bootstrap.lua`, `Theme.lua`, `Navigation.lua`, `Presentation.lua`) and five differ
+(`RiftAddon.toc`, `Version.lua`, `Collector.lua`, `UI.lua`, `Public.lua`).
+Evidence: `artifacts/addon-hash/20261105T184359Z-39fee431/` with separate
+`pc.json`, `lab1.json`, `lab2.json` and aggregate `summary.json`.
+Four focused offline hash tests passed. No code deployed, no game reload/restart,
+and no Windows/VM reboot. Matching installed code does not establish the current
+loaded Lua version; three-way agreement does not by itself choose source precedence.
+
+**2026-11-05 at 13:50 EST, follow-up read-only semantic diff:**
+Workbridge job `apia-semantic-diff-20261105-1` exited `0`. The five PC
+installed files and development source were reread under 128 KiB/file with
+SHA-256 matched to the above report; no labs were reread because their
+installed hashes were already identical. `RiftAddon.toc` and `Version.lua`
+change only the version `0.3.0` -> `0.4.0-dev.3`. `Collector.lua` adds
+attempted/target/limited counters, guarded elapsed timing and protection
+against callbacks from replaced captures. `UI.lua` adds a two-line collection
+footer and status-aware button availability; `Public.lua` enriches `/atlas status`.
+API Atlas `README.md`, `docs/roadmap.md` and `docs/validation.md` explicitly
+identify **installed 0.3.0** as the live-checked release and **0.4.0-dev.3**
+as an undeployed development increment awaiting live collection-feedback
+acceptance. This is intentional release separation, not failed PC/VM sync.
+Do not promote the development files merely because their hashes differ.
+No AddOns content was modified and no RIFT reload/restart was performed.
+
+## Future LLM run sequence
+
+1. Read this playbook, the relevant addon source repository's instructions,
+   current target inventory, status, and prior receipts.
+2. Inspect every machine's matching addon code and evidence **read-only**.
+   Keep each machine's findings and conflicting edits independent.
+3. If a supported package has drift, review differences, preserve backups,
+   deploy selected files only, then independently verify source hashes.
+4. Stop before any required client/VM/game/UI restart and request Joey's
+   explicit approval. Record unverified runtime load status until tested.
+5. Report per-machine status and exact command receipts; commit only scoped
+   source/documentation milestones without touching unrelated work.
+

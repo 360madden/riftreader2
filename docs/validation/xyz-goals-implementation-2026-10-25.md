@@ -1,0 +1,184 @@
+# XYZ workflow, real catalog and numeric scout checkpoint
+
+User-authorized scope: roadmap goals 1–4, including repeatable XYZ collection,
+real XYZ qualification, health discovery and resource/power discovery with
+changed-state and full-game restart evidence. Goals 1–2 are now demonstrated;
+the health and resource/power goals remain open.
+
+## Implemented
+
+- `scripts/run_xyz_workflow.py` uses a local no-password configuration, current
+  controller/VM/game identities, one in-memory guest login session, the installed
+  reader, bounded before/after captures, fresh screenshot review and one guarded
+  100 ms pulse. It verifies returned archives, runs the existing Lua/native
+  reviewers, exports evidence and excludes private arm tokens. It has no imports
+  from dated trial scripts. Configuration preview is offline.
+- `scripts/vmware_guest_session.py` reuses the saved VM encryption credential
+  and a guest login stored in Windows Credential Manager. Run 02 verified the
+  prompted login and stored it; run 04 reused that cache without a prompt.
+  Identity is checked before/after every operation, command failures do not
+  expose secret argv, and file retrieval publishes without overwriting another
+  writer's destination.
+- `config/field-catalog/xyz/` retains seven byte-identical original evidence
+  copies as `.json.raw`, plus normal editable catalog/assessment JSON. The
+  evaluator reports supported meaning/locator/observed same-build restart for
+  the recorded post-relaunch session; update survival stays unqualified. Earlier
+  startup failures remain preserved. The `.raw` suffix keeps exact original
+  bytes, including absent final newlines, distinct from editable source files.
+- `scout-values-native` provides the missing bounded numeric scan using the
+  existing read-only memory session. Exact request bytes, candidate contexts,
+  partial reads, coverage, holes and forward resume cursors are retained. Private
+  region filtering precedes the region cap; request bytes cannot change between
+  hashing and retention; a permanent read hole cannot trap the resume cursor.
+
+## Live acceptance
+
+Reusable run 04 at `artifacts/validation/xyz-repeatable-20261025-04/` completed
+`candidate-motion-consistent`. One guarded 100 ms W pulse produced **0.665936
+native / 0.673551 Lua units** of displacement, maximum per-axis displacement
+residual **0.0078125**, and **6/6** advancing cross-phase comparisons. The
+baseline and after transfers verified **19 + 17 original files**. Final status
+was foreground, disarmed, idle and no inputs held; the credential session closed.
+The verified 63-file export is 1,712,950 bytes, SHA-256
+`7C68EDED513C16981F49D54B0C6813F1AEE939CF5D35EBED778247AEC5F85FB6`.
+
+Run 02 recorded `credentialSource: prompt`, `cacheWritten: true`, and recovered
+19 already captured originals during packaging without resampling or movement.
+Run 04 recorded `credentialSource: cache` and no project credential writes.
+Run 03 retained its failed review: noninteractive execution supplied no review
+input after stdin closed. The live review step therefore requires an interactive
+terminal; agent execution must use `tty: true`.
+
+The PowerShell 5 packaging fix explicitly sums hashtable file sizes. Archive
+verification accepts normalized Windows separators while retaining traversal,
+absolute-path and NUL guards. The 32 focused workflow/session tests passed. The
+full repository gate including these fixes passed at
+`artifacts/validation/20261025T185220Z-1da1dd52/`: 477 .NET tests, 811 Python
+cases (809 passed, two skipped), 108 Lua checks and 22 shared Lua/C# cases,
+native publish smoke and 595 relative links; zero build warnings or errors.
+
+## Catalog and remaining work
+
+The real catalog was rebuilt at
+`artifacts/validation/xyz-field-catalog-20261025-02/`; post-relaunch support and
+the earlier session's limited qualification were both inspected. The evaluator
+labels semantic evidence `recorded-assertions-only` and identity `declared-only`;
+retained-byte verification is not independent live attestation.
+
+Goals 1–2 are demonstrated by the live reusable run and the mechanically rebuilt
+catalog. Goals 3–4 remain open as described below.
+
+## Health seed and small reread — candidates only
+
+The numeric reader was deployed separately to
+`C:\RIFT_TRANSFER\RR2-ValueScout-oct25-01\RiftReader2.Live.exe`; guest SHA-256
+`5134A45352ABF3CC65F1116C623C14D650FD92FBA34609A3CC2B03A961199293`
+matched the published bundle. The existing XYZ reader was retained. Fresh
+advancing Lua evidence showed health/healthMax 18208 and raw power 100.
+
+`artifacts/validation/health-scout-20261025-02/` retains the bounded live scan:
+1,073,741,824 bytes examined, no read holes, 41 candidates (34 int32 and seven
+float64), approximately 16.10 seconds from acquisition start through
+revalidation. It correctly reports partial coverage, `byte-budget-exceeded`;
+the forward resume address is `0x202F5BD4479`. This is not whole-process coverage.
+All 86 returned scout files verified. The first request in `health-scout-20261025-01`
+was rejected before scanning because its hexadecimal address used lowercase;
+that failure and diagnostic remain retained.
+
+Three contexts contained the repeated health/current-max-shaped layout plus
+two 100-valued integers: `0x202AF8DE5F8`, `0x202AF8DEBE8`, and `0x202F5581158`.
+These are session addresses for PID 1224/start 639285359295548343, not durable
+locators. `targeted-health-request.json` and `targeted_read.py` reuse three
+84-byte windows. The first targeted baseline completed all **252 bytes** and
+was exported separately. No broad rescan is needed for the next value change.
+
+The seed export is 246,948 bytes, SHA-256
+`07DBC56B0F89963F30A3FAA59402B91BDEF302C115C1612F6B855C253C639262`.
+No new game input or restart was performed during health collection. Final
+controller state remained disarmed/idle with no held inputs. The timed-out
+diagnostic helpers were subsequently confirmed absent; no process was stopped.
+
+Next: coordinate a low-risk health change with the user and reread these windows
+alongside fresh Lua; identify the character's resource type and a familiar
+resource-consuming ability. Then derive the locators and validate them through
+a normal full-game exit/relaunch. Unchanged health and power=100 do not establish
+native meanings. Goals 3–4 remain open; patch recovery remains deferred.
+
+## Paired capture readiness and one rejected candidate
+
+`health-scout-20261025-02/paired-readiness-02/` subsequently verified three
+native-before/Lua/native-after rounds, with Lua sequences **31989, 31994, 31998**.
+The native reads bracketed Lua acquisition by approximately 2.227, 1.161 and
+1.156 seconds; this is endpoint evidence, not continuous observation. All 43
+returned original files verified. The smaller Lua search uses 16 MiB beginning
+at the retained source region `0x52A70000`, with a five-second scan budget.
+The earlier readiness trial began too late in that region, found no Lua prefixes,
+and remains explicitly failed rather than being reused as reference evidence.
+
+The first health-shaped block, candidate `0x202AF8DE5F8` (context starts
+`0x202AF8DE5E8`), **stopped matching** even though all three independent Lua
+frames still showed health/max 18208 and power 100. Its native health slots were
+0, 0 and -1750345984. It is rejected as a continuing fixed-address candidate;
+this observation does not identify the underlying allocation's meaning.
+The other two blocks matched in both native reads of all three rounds, but
+remain unqualified until actual health/resource changes are observed.
+
+`candidate-invalidation.json` preserves that negative evidence.
+`targeted-health-request-v2.json` and the updated `paired_capture.py` now select
+only the remaining **two 84-byte windows (168 bytes per native read)**. Prior
+requests and original captures are preserved. The readiness export is 249,079
+bytes with SHA-256
+`CA77B65AA2F76BE2521622F5E7DA168CD8353120C482FEDB6CE714924E7BA29D`.
+No input was issued; final state was disarmed/idle with no held inputs. Further
+qualification requires changed-state evidence. The subsequent user direction
+and current resource result follow below.
+
+## Lua class/resource identification and deferred health test
+
+Joey deferred the health-change test and requested class/resource identification
+from Lua plus use of the existing guarded helpers for the resource test. Health
+meaning, locator and restart qualification remain unfinished; do not provoke
+health loss. Patch recovery and direct ChatGPT Computer Use remain deferred.
+
+`artifacts/validation/resource-lua-20261025-01/` retains two independent 8 MiB
+captures beginning at `0x52A70000` and the exact deployed API-probe source.
+Source SHA-256 `1E1FDF14FD81F33AA465874AEEEE32BCD8A5EC92AA5DFDAEA46126AE4DCE5BCA`
+matches the reference addon. `Inspect.Unit.Detail` output advanced from sequence
+178201 / sampledAt 19310.219 to 178215 / 19311.742. Both report **Atank, level 45,
+calling `warrior`, role `tank`, Power 100, health/max 18208**. Mana fields are
+empty, not zero. Player identity is `u035400012FA2D207`.
+
+The game remained PID 1224/start ticks 639285359295548343, exact executable SHA
+`7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD`.
+V21 remained the sole controller of the unchanged VM epoch. No addon deployment,
+reload, new game restart or credential prompt was needed.
+
+Guarded pointer hovers confirmed **Face Slam: 10 Power**, **Light's Decree:
+20 Power**, and **Pacifying Strike: 20 Power**. These target/control or damage
+abilities were not activated. A helm icon was the Ashen Budgie mount. The Lua
+ability list includes Light's Balm and defensive abilities, but its string
+formatter omits the cost fields already collected in the internal Lua table;
+it does not supply verified hotbar placement. Action bars 2–6 were empty;
+bar 1 was restored and verified visually. Six menu clicks succeeded and released.
+Wheel adjustments netted zero notches. No ability was activated and no health
+loss was induced. This is preparation, **not a Power-change test**.
+
+The existing helper accepts movement keys and bounded relative mouse input.
+Its cursor edge guard makes the bottom ability-book menu unreliable at this
+window size. Do not weaken the guard or keep guessing clicks. Requested minimal
+setup: put Light's Balm in empty slot 7 on bar 1 without casting it; then inspect
+the tooltip and record a single guarded self-use with before/decrease/recovery
+Lua and the retained 168-byte native request. No candidate is promoted yet.
+
+Cached guest credentials continued to work for read-only background commands.
+A separate interactive VMware launch was rejected because the cached account
+does not match the logged-in desktop user. This is not a lost cache; do not
+repeat login dialogs or attempt desktop impersonation as a workaround.
+
+The selected evidence export at `resource-lua-20261025-01/export/evidence.zip`
+contains **84 files**, 13,224,060 bytes, verified SHA-256
+`826E17D2902B87C7B8A700BAE0F0B5084E53616D2B940B71CC750A00D0CEAD44`.
+It includes both original captures, source/transfer hashes, parsed Lua evidence,
+selected tooltip screenshots, action/release receipts and final state. Other
+intermediate captures remain in the original directory. Private arm tokens are
+excluded. Final state was disarmed/idle/no held inputs, with a clear queue.

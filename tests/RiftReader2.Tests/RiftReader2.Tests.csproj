@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" PrivateAssets="all" />
+    <PackageReference Include="xunit" PrivateAssets="all" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <ProjectReference Include="../../src/RiftReader2.Application/RiftReader2.Application.csproj" />
+    <ProjectReference Include="../../src/RiftReader2.Infrastructure/RiftReader2.Infrastructure.csproj" />
+    <ProjectReference Include="../../src/RiftReader2.Cli/RiftReader2.Cli.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="../../config/field-catalog/power/*" Link="Fixtures/power/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../samples/demo/*.json*" Link="Fixtures/demo/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../samples/catalog/*.json" Link="Fixtures/catalog/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../samples/discovery-*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../samples/discoveries-*.json" Link="Fixtures/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../scripts/discovery_explorer.html" Link="Fixtures/discovery_explorer.html" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../../contracts/addon/fixtures/*.json" Link="Fixtures/addon/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

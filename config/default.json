@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "analysis": {
+    "maxGapSeconds": 0.25,
+    "maxSamples": 1000000
+  },
+  "maxCaptureBytes": 268435456
+}

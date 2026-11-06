@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RiftReader2.Application/RiftReader2.Application.csproj" />
+    <Project Path="src/RiftReader2.Cli/RiftReader2.Cli.csproj" />
+    <Project Path="src/RiftReader2.Domain/RiftReader2.Domain.csproj" />
+    <Project Path="src/RiftReader2.Infrastructure/RiftReader2.Infrastructure.csproj" />
+    <Project Path="src/RiftReader2.Live/RiftReader2.Live.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RiftReader2.Live.Tests/RiftReader2.Live.Tests.csproj" />
+    <Project Path="tests/RiftReader2.Tests/RiftReader2.Tests.csproj" />
+  </Folder>
+</Solution>

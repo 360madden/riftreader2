@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-catalog/1",
+  "fields": [
+    {
+      "fieldId": "player.resource.power",
+      "meaning": "Current Warrior Power resource, reconstructed from the native player resource record and regeneration clock, independently compared with advancing Lua Power during Light's Balm consumption and recovery.",
+      "units": "Power points",
+      "sourceKind": "native",
+      "locator": {
+        "kind": "module-relative-rva",
+        "method": "Exact build only: u64(module+0x32E0200)->owner; u64(owner+0x400)->component; u64(component+0x38)->wrapper; u64(wrapper+0x10)->handle; u64(handle)->record. Validate component/wrapper/record vtables and Warrior type. Match record+0x1C and wrapper+0x18 sequences. Compute clamp(int32(record+0x18)-truncate(float32(int32(record+0x2C))*float32(module+0x2649B94)*(float32([module+0x335A0E0]+0x18)-float32(wrapper+0x1C))),0,int32(record+0x20)), with float32 rounding. Re-resolve and double-read inputs; recipe player-power-7C356C9D-v1."
+      },
+      "applicability": [
+        {
+          "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+          "sessionId": "rift-1224-639285359295548343"
+        },
+        {
+          "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+          "sessionId": "rift-12076-639285736860316715"
+        }
+      ],
+      "invalidationConditions": [
+        "A different executable SHA is unsupported; patch recovery is deferred.",
+        "An absent or stale process, failed/partial read, invalid pointer/type, mismatched sequence or changing inputs yields unavailable, never cached Power.",
+        "A different class/resource type is unsupported. Observed evidence covers Atank Warrior in two same-build game sessions only.",
+        "Separate sampling times must be considered when comparing native Power against Lua; unresolved disagreement requires review.",
+        "Native values expire after the configured live freshness timeout and clear on reader termination; saved reports are historical evidence."
+      ],
+      "requiredClaims": [
+        "meaning",
+        "locator",
+        "restart-survival"
+      ]
+    }
+  ],
+  "assessments": [
+    {
+      "path": "assessment-before.json",
+      "byteLength": 5240,
+      "sha256": "F37CD8166DB927875E2BA3BF4153B1C5D87500A7D526D35918203AEA6E7E80BA"
+    },
+    {
+      "path": "assessment-after.json",
+      "byteLength": 5242,
+      "sha256": "E819CEDF7E98BA8913AFEE6DD61A752C1AAB26D035D29701728B5BB2D4045981"
+    }
+  ]
+}

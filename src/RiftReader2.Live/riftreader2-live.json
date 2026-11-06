@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "processName": "rift_x64",
+  "durationSeconds": 300,
+  "pollIntervalMilliseconds": 500,
+  "maxScanBytes": 4294967296,
+  "maxScanSeconds": 10,
+  "outputPath": null,
+  "freshnessTimeoutSeconds": 5,
+  "delivery": null
+}

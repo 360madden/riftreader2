@@ -1,0 +1,113 @@
+{
+  "method": "Offline calculation at Lua frame time only when surrounding native input records and pointer chains match; this is derived corroboration, not simultaneous reads.",
+  "pairs": [
+    {
+      "luaSequence": 73552,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37407.375,
+      "bracketEnd": 37407.375,
+      "nativeSequence": 91
+    },
+    {
+      "luaSequence": 73553,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37407.668,
+      "bracketEnd": 37407.906,
+      "nativeSequence": 91
+    },
+    {
+      "luaSequence": 73554,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37408.18,
+      "bracketEnd": 37408.4,
+      "nativeSequence": 91
+    },
+    {
+      "luaSequence": 73555,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37408.87,
+      "bracketEnd": 37409.133,
+      "nativeSequence": 91
+    },
+    {
+      "luaSequence": 73556,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37409.133,
+      "bracketEnd": 37409.465,
+      "nativeSequence": 91
+    },
+    {
+      "luaSequence": 73557,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37409.9,
+      "bracketEnd": 37410.14,
+      "nativeSequence": 91
+    },
+    {
+      "luaSequence": 73559,
+      "lua": 88,
+      "reconstructedAtLuaFrameTime": 88,
+      "residual": 0,
+      "bracketStart": 37410.816,
+      "bracketEnd": 37411.043,
+      "nativeSequence": 92
+    },
+    {
+      "luaSequence": 73560,
+      "lua": 94,
+      "reconstructedAtLuaFrameTime": 94,
+      "residual": 0,
+      "bracketStart": 37411.266,
+      "bracketEnd": 37411.492,
+      "nativeSequence": 92
+    },
+    {
+      "luaSequence": 73561,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37411.746,
+      "bracketEnd": 37412.2,
+      "nativeSequence": 92
+    },
+    {
+      "luaSequence": 73562,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37412.418,
+      "bracketEnd": 37412.676,
+      "nativeSequence": 92
+    },
+    {
+      "luaSequence": 73563,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37412.906,
+      "bracketEnd": 37413.137,
+      "nativeSequence": 92
+    },
+    {
+      "luaSequence": 73564,
+      "lua": 100,
+      "reconstructedAtLuaFrameTime": 100,
+      "residual": 0,
+      "bracketStart": 37413.367,
+      "bracketEnd": 37413.63,
+      "nativeSequence": 92
+    }
+  ]
+}

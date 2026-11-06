@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1350 470" role="img" aria-labelledby="title desc">
+<title id="title">RiftReader2's three evidence sources converge in an analysis and reporting engine</title><desc id="desc">In-game Lua reference, read-only native reader, and saved hashed evidence feed an independent .NET processing and reporting pipeline.</desc>
+<defs><linearGradient id="pbg" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#0c1630"/><stop offset="1" stop-color="#141d38"/></linearGradient><linearGradient id="card1" x1="0" x2="1"><stop stop-color="#22375d"/><stop offset="1" stop-color="#1c2948"/></linearGradient><marker id="arr" markerWidth="8" markerHeight="8" refX="5" refY="3" orient="auto"><path d="M0 0L6 3L0 6Z" fill="#9aadd6"/></marker></defs>
+<rect x="1" y="1" width="1348" height="468" rx="25" fill="url(#pbg)" stroke="#34476d"/>
+<text x="40" y="47" font-size="22" fill="#eaf2ff" font-family="Segoe UI,Arial,sans-serif" font-weight="750">HOW THE PIECES CONNECT</text>
+<text x="40" y="77" font-size="15" fill="#9eb3d7" font-family="Segoe UI,Arial,sans-serif">Distinct inputs • one evidence-aware pipeline • no silent source promotion</text>
+<g font-family="Segoe UI,Arial,sans-serif">
+<rect x="40" y="111" width="365" height="91" rx="16" fill="url(#card1)" stroke="#55d7f5"/><rect x="40" y="111" width="7" height="91" rx="3" fill="#55d7f5"/>
+<text x="65" y="145" fill="#76e5fc" font-size="22" font-weight="750">01  LUA REFERENCE</text><text x="65" y="172" fill="#d3dff2" font-size="16">RIFT addon API + versioned wire</text>
+<rect x="40" y="219" width="365" height="91" rx="16" fill="url(#card1)" stroke="#b499f4"/><rect x="40" y="219" width="7" height="91" rx="3" fill="#b499f4"/>
+<text x="65" y="253" fill="#c8b1ff" font-size="22" font-weight="750">02  NATIVE READER</text><text x="65" y="280" fill="#d3dff2" font-size="16">Build-pinned, read-only candidates</text>
+<rect x="40" y="327" width="365" height="91" rx="16" fill="url(#card1)" stroke="#f5bd74"/><rect x="40" y="327" width="7" height="91" rx="3" fill="#f5bd74"/>
+<text x="65" y="361" fill="#ffd397" font-size="22" font-weight="750">03  SAVED EVIDENCE</text><text x="65" y="388" fill="#d3dff2" font-size="16">Hash-pinned captures and replay</text>
+<path d="M405 158H472M405 265H472M405 373H472M472 158V373M472 265H524" fill="none" stroke="#9aadd6" stroke-width="3" marker-end="url(#arr)" />
+<rect x="527" y="183" width="334" height="169" rx="22" fill="#1c3556" stroke="#5bd7c2" stroke-width="2"/>
+<text x="555" y="230" fill="#8df1dc" font-size="27" font-weight="750">CORE ENGINE</text>
+<text x="555" y="265" fill="#e6eeff" font-size="18">.NET Domain + Application</text><text x="555" y="295" fill="#bdcee6" font-size="17">Identity • freshness • analysis</text><text x="555" y="324" fill="#bdcee6" font-size="17">Provenance • field qualification</text>
+<path d="M862 265H923" fill="none" stroke="#9aadd6" stroke-width="3" marker-end="url(#arr)"/>
+<rect x="930" y="184" width="375" height="169" rx="22" fill="#252f58" stroke="#a49cf9" stroke-width="2"/>
+<text x="958" y="230" fill="#d1c9ff" font-size="26" font-weight="750">RESEARCH OUTPUT</text>
+<text x="958" y="266" fill="#e6eeff" font-size="18">CLI + JSON / CSV / JSONL</text><text x="958" y="296" fill="#bdcee6" font-size="17">Evidence and confidence states</text><text x="958" y="324" fill="#bdcee6" font-size="17">Offline explorer and diagnostics</text>
+<text x="670" y="437" fill="#9eb4d7" font-size="16" text-anchor="middle">A candidate is not a verified game field • a saved frame is not live freshness</text>
+</g></svg>

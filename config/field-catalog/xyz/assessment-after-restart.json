@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-assessment/1",
+  "assessmentId": "xyz-after-restart-and-motion-20261025",
+  "fieldId": "player.position.xyz",
+  "fieldDefinitionSha256": "0F5FAA3661BBA09845D252B6226C465BBA584F18FBBCDC00C1119101803DD4D8",
+  "reviewer": "RiftReader2 October 25 evidence review",
+  "method": "Review exact-build native pointer resolution and the independent advancing Lua player source before and after one recorded guarded movement pulse, then combine that semantic comparison with the corrected full-game restart manifest and corrected panel audit.",
+  "evidenceOrigin": "rift-recording",
+  "assessedAtUtc": "2026-10-25T17:45:00Z",
+  "expiresAtUtc": null,
+  "applicability": {
+    "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+    "sessionId": "rift-1224-639285359295548343"
+  },
+  "declarations": [
+    {
+      "claim": "meaning",
+      "outcome": "supports",
+      "rationale": "At both endpoints the native float32 vector agreed with the independently advancing same-player Lua coordinates within 0.02 units per axis; native and Lua displacement also agreed within 0.04 units per axis after the bounded pulse."
+    },
+    {
+      "claim": "locator",
+      "outcome": "supports",
+      "rationale": "The exact-build module-relative RVA 0x32E0200 resolved one owner, whose +0x320/+0x324/+0x328 float32 values supplied both native endpoints. Absolute owner addresses remain session-only."
+    },
+    {
+      "claim": "restart-survival",
+      "outcome": "supports",
+      "rationale": "The corrected interface trial resolved a fresh owner and presented finite coordinates in this post-relaunch process without changing the exact-build recipe; absence and old-epoch requests failed closed. This is one observed full-game restart."
+    }
+  ],
+  "artifacts": [
+    {
+      "evidenceRole": "observation",
+      "path": "motion-review.json.raw",
+      "byteLength": 3904,
+      "sha256": "A6DC160DC969956AB114DD0A11E37717EA1F5FA127584C631987948A6136768E",
+      "evidenceKind": "native-motion-pair-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-1224-639285359295548343"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "motion-action.json.raw",
+      "byteLength": 1300,
+      "sha256": "8640E99A5E95082CFFBFE650D60EC8676A9A8ABDBF8B7FD273CFA49D70E91E7E",
+      "evidenceKind": "guarded-native-input-action/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-1224-639285359295548343"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "after-pointer.json.raw",
+      "byteLength": 3122,
+      "sha256": "88E11782D56C5B8D29FDA70DEAE57D4CAA598E5E7CCA419E9AF70C03E7E9D707",
+      "evidenceKind": "native-pointer-follow/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-1224-639285359295548343"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "restart-package.json.raw",
+      "byteLength": 47225,
+      "sha256": "63B4B1C40C980CB001C72650B4B615EAC600000D23393826A5B03E062E38556A",
+      "evidenceKind": "xyz-interface-full-game-restart-gui-evidence",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-1224-639285359295548343"
+    },
+    {
+      "evidenceRole": "observation",
+      "path": "panel-corrected-review.json.raw",
+      "byteLength": 30904,
+      "sha256": "99B96ED8EB8703BADE3E0F9E3A675CF668936178EBF5DAC9ED3D5175C1F80951",
+      "evidenceKind": "native-position-panel-review/1",
+      "buildSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+      "sessionId": "rift-1224-639285359295548343"
+    }
+  ]
+}

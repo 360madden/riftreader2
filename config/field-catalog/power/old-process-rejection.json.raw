@@ -1,0 +1,28 @@
+{
+    "staleSamplerExit":  2,
+    "originalAbsenceFiles":  [
+                                 {
+                                     "lastWriteUtc":  "2026-10-26T01:07:33.6470669Z",
+                                     "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+                                     "name":  "absent.stderr"
+                                 },
+                                 {
+                                     "lastWriteUtc":  "2026-10-26T01:07:33.6448225Z",
+                                     "sha256":  "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855",
+                                     "name":  "absent.stdout"
+                                 }
+                             ],
+    "oldTarget":  {
+                      "startTicks":  639285359295548343,
+                      "pid":  1224
+                  },
+    "staleReportExists":  false,
+    "currentProcesses":  [
+                             {
+                                 "startTicks":  639285736860316715,
+                                 "pid":  12076
+                             }
+                         ],
+    "originalAbsentReportExists":  false,
+    "retrievedAt":  "2026-10-26T01:12:35.4731866Z"
+}

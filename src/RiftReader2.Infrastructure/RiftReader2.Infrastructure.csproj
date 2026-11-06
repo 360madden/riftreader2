@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../RiftReader2.Domain/RiftReader2.Domain.csproj" />
+  </ItemGroup>
+</Project>

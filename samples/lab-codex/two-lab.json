@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "jobs": [
+    {
+      "lab": "lab1",
+      "task": "samples/lab-codex/review-guidance.md",
+      "inputs": ["addon/RiftReader2/RiftAddon.toc", "addon/RiftReader2/guidance.lua", "addon/RiftReader2/main.lua"],
+      "timeoutSeconds": 300
+    },
+    {
+      "lab": "lab2",
+      "task": "samples/lab-codex/check-installed-guidance.md",
+      "inputs": ["addon/RiftReader2/RiftAddon.toc", "addon/RiftReader2/guidance.lua", "addon/RiftReader2/main.lua"],
+      "timeoutSeconds": 300
+    }
+  ]
+}

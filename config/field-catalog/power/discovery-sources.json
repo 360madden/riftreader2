@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "discovery-sources/1",
+  "sources": [
+    {
+      "sourceId": "warrior-power",
+      "kind": "field-catalog",
+      "path": "catalog.json",
+      "byteLength": 2558,
+      "sha256": "BBFFED1C1885DD3296DCDE96FE8B3554E4FBC95CC52B0942F39AB198A8A87C9B"
+    }
+  ]
+}

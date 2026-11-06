@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "defaultMaxScanBytes": 4294967296,
+  "labs": {
+    "lab1": 6442450944
+  }
+}

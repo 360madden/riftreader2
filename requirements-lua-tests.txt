@@ -1,0 +1,2 @@
+# Development only; the shipped addon has no Python dependency.
+lupa==2.8

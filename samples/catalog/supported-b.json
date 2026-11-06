@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "field-assessment/1",
+  "assessmentId": "supported-b",
+  "fieldId": "demo.supported",
+  "fieldDefinitionSha256": "F7B3C9665DBEAFF097AAB067FBDF3121812419F866920DFA014B1A359D220CA3",
+  "reviewer": "synthetic-fixture-author",
+  "method": "Synthetic workflow assertion only; compare the fabricated fixture counter. No game measurement.",
+  "evidenceOrigin": "synthetic",
+  "assessedAtUtc": "2026-10-18T00:00:00Z",
+  "expiresAtUtc": null,
+  "applicability": {
+    "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "sessionId": "synthetic-session-b"
+  },
+  "declarations": [
+    {
+      "claim": "restart-survival",
+      "outcome": "supports",
+      "rationale": "Declared synthetic support exercises the named claim only."
+    }
+  ],
+  "artifacts": [
+    {
+      "evidenceRole": "observation",
+      "path": "observation-2.json",
+      "byteLength": 240,
+      "sha256": "7F9AEB09767E2B33F456359806C76E141D12579FF6D0076196519CF0E5E8578C",
+      "evidenceKind": "synthetic-field-observation/1",
+      "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "sessionId": "synthetic-session-b"
+    }
+  ]
+}

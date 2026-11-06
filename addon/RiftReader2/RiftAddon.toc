@@ -1,0 +1,8 @@
+Identifier = "RiftReader2"
+Name = "RiftReader2"
+Description = "Bounded API observations and explicit live reader binding"
+Author = "360madden"
+Email = "360madden@gmail.com"
+Version = "0.1.0"
+Environment = "4.4"
+RunOnStartup = { "wire.lua", "producer.lua", "live.lua", "guidance.lua", "main.lua" }

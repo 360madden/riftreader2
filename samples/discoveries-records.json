@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "discovery-record-set/1",
+  "records": [
+    {
+      "recordId": "synthetic.heading",
+      "fieldId": "player.heading.candidate",
+      "category": "movement",
+      "sourceKind": "native",
+      "status": "hypothesis",
+      "meaning": "Synthetic angular turning calibration, not a confirmed native field.",
+      "units": "degrees/second",
+      "locatorKind": "absolute-session-address",
+      "locator": "Synthetic 0xDEADBEEF, no durable locator",
+      "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "sessionId": "synthetic-session-a",
+      "observedAtUtc": "2026-10-19T12:00:00Z",
+      "value": {
+        "kind": "number",
+        "text": "172",
+        "components": {
+          "degreesPerSecond": 172
+        }
+      },
+      "limitations": [
+        "Synthetic calibration example only.",
+        "A session address has not survived a restart."
+      ]
+    },
+    {
+      "recordId": "synthetic.spell",
+      "fieldId": "ability.name.example",
+      "category": "combat",
+      "sourceKind": "addon",
+      "status": "observed",
+      "meaning": "Synthetic API string test with spreadsheet formula-like text.",
+      "units": "text",
+      "locatorKind": "addon-api",
+      "locator": "Mock Inspect.Ability.Detail",
+      "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "sessionId": "synthetic-session-a",
+      "observedAtUtc": "2026-10-20T01:00:00Z",
+      "value": {
+        "kind": "text",
+        "text": "=1+1",
+        "components": null
+      },
+      "limitations": [
+        "Synthetic API result; no actual RIFT ability qualified."
+      ]
+    },
+    {
+      "recordId": "synthetic.target",
+      "fieldId": "target.position.unknown",
+      "category": "world",
+      "sourceKind": "derived",
+      "status": "unqualified",
+      "meaning": "Unknown target location; no coordinates inferred.",
+      "units": "game-units",
+      "locatorKind": "derivation",
+      "locator": "Unresolved target projection",
+      "buildSha256": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "sessionId": "synthetic-session-a",
+      "observedAtUtc": null,
+      "value": null,
+      "limitations": [
+        "Synthetic example; unknown coordinates remain absent."
+      ]
+    }
+  ]
+}

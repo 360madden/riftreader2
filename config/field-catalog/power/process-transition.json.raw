@@ -1,0 +1,185 @@
+{
+  "source": "C:\\work\\riftreader2\\artifacts\\native-usability-20261020\\host-evidence\\control-host.jsonl",
+  "sourcePrefixBytes": 14346533,
+  "sourcePrefixSha256": "0F9730F1A5271E6303EFDB627EAAADA7D259FE6D0AE545D7B48DBC15B853D755",
+  "records": [
+    {
+      "sourceLine": 26060,
+      "lineSha256": "11EC2B4435780366884FF0461C57EAC6C3F0397E271C1E19B2DC8CD0B815B46A",
+      "record": {
+        "evidenceKind": "control-command-response/1",
+        "recordedAtUtc": "2026-10-26T01:07:34.599446Z",
+        "schemaVersion": 1,
+        "value": {
+          "id": "53a70039972849a982ef8b87d2d2d1c5",
+          "operation": "status",
+          "payload": {
+            "error": "Expected exactly one 'rift_x64' process, but found 0.",
+            "errorType": "InvalidOperationException"
+          },
+          "sequence": 6
+        }
+      }
+    },
+    {
+      "sourceLine": 26062,
+      "lineSha256": "6E6AD3F52DBF403E64A1DB7D0FE4F0DD4E7A8AB1EDA827BC1C7FC4F6B3638C00",
+      "record": {
+        "evidenceKind": "control-command-response/1",
+        "recordedAtUtc": "2026-10-26T01:09:13.842022Z",
+        "schemaVersion": 1,
+        "value": {
+          "id": "3c9af5c5b5f345bf9eaca36040db9086",
+          "operation": "status",
+          "payload": {
+            "armed": false,
+            "busy": false,
+            "desktopInputEvidence": "Sampled Windows key/button state, not RIFT consumption or ownership.",
+            "desktopInputsDown": [],
+            "expiresInSeconds": 0,
+            "gracefulShutdownVersion": 1,
+            "instanceId": "acf21500d6084658a0fce8438bd42cb5",
+            "nativeTextEntryState": "unknown",
+            "recoveryRequired": false,
+            "responseVerified": false,
+            "target": {
+              "clientHeight": 686,
+              "clientWidth": 1211,
+              "clientX": 0,
+              "clientY": 23,
+              "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+              "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+              "isForeground": true,
+              "machineName": "DESKTOP-8632QPL",
+              "processId": 12076,
+              "processStartUtcTicks": 639285736860316715,
+              "windowHandle": "0x100388"
+            },
+            "targetedClickVersion": 1
+          },
+          "sequence": 7
+        }
+      }
+    },
+    {
+      "sourceLine": 26064,
+      "lineSha256": "B08537F818A30C061CDBF1C4AA3F8A7AE80605F5C02E74800C316AD788A7DD1A",
+      "record": {
+        "evidenceKind": "control-command-response/1",
+        "recordedAtUtc": "2026-10-26T01:09:35.420652Z",
+        "schemaVersion": 1,
+        "value": {
+          "id": "48f986b8523442e2a3b92a0b17bf491f",
+          "operation": "status",
+          "payload": {
+            "armed": false,
+            "busy": false,
+            "desktopInputEvidence": "Sampled Windows key/button state, not RIFT consumption or ownership.",
+            "desktopInputsDown": [],
+            "expiresInSeconds": 0,
+            "gracefulShutdownVersion": 1,
+            "instanceId": "acf21500d6084658a0fce8438bd42cb5",
+            "nativeTextEntryState": "unknown",
+            "recoveryRequired": false,
+            "responseVerified": false,
+            "target": {
+              "clientHeight": 686,
+              "clientWidth": 1211,
+              "clientX": 0,
+              "clientY": 23,
+              "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+              "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+              "isForeground": true,
+              "machineName": "DESKTOP-8632QPL",
+              "processId": 12076,
+              "processStartUtcTicks": 639285736860316715,
+              "windowHandle": "0x100388"
+            },
+            "targetedClickVersion": 1
+          },
+          "sequence": 8
+        }
+      }
+    },
+    {
+      "sourceLine": 26066,
+      "lineSha256": "882C236FA57F0D9AB1001EAB0ED67E85CB4444004F78DBFFDD1C9514C856BA84",
+      "record": {
+        "evidenceKind": "control-command-response/1",
+        "recordedAtUtc": "2026-10-26T01:09:38.511472Z",
+        "schemaVersion": 1,
+        "value": {
+          "id": "f5557f6a1013450190bbc9f06c11616b",
+          "operation": "status",
+          "payload": {
+            "armed": false,
+            "busy": false,
+            "desktopInputEvidence": "Sampled Windows key/button state, not RIFT consumption or ownership.",
+            "desktopInputsDown": [],
+            "expiresInSeconds": 0,
+            "gracefulShutdownVersion": 1,
+            "instanceId": "acf21500d6084658a0fce8438bd42cb5",
+            "nativeTextEntryState": "unknown",
+            "recoveryRequired": false,
+            "responseVerified": false,
+            "target": {
+              "clientHeight": 686,
+              "clientWidth": 1211,
+              "clientX": 0,
+              "clientY": 23,
+              "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+              "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+              "isForeground": true,
+              "machineName": "DESKTOP-8632QPL",
+              "processId": 12076,
+              "processStartUtcTicks": 639285736860316715,
+              "windowHandle": "0x100388"
+            },
+            "targetedClickVersion": 1
+          },
+          "sequence": 9
+        }
+      }
+    },
+    {
+      "sourceLine": 26068,
+      "lineSha256": "7FB62DC6CB834F21EC4F0099DACCB2D24930284E33300D80FB0EAAA6BF3B8E08",
+      "record": {
+        "evidenceKind": "control-command-response/1",
+        "recordedAtUtc": "2026-10-26T01:09:58.380494Z",
+        "schemaVersion": 1,
+        "value": {
+          "id": "7bed095bcf1c425c82d29556f7997c4e",
+          "operation": "status",
+          "payload": {
+            "armed": false,
+            "busy": false,
+            "desktopInputEvidence": "Sampled Windows key/button state, not RIFT consumption or ownership.",
+            "desktopInputsDown": [],
+            "expiresInSeconds": 0,
+            "gracefulShutdownVersion": 1,
+            "instanceId": "acf21500d6084658a0fce8438bd42cb5",
+            "nativeTextEntryState": "unknown",
+            "recoveryRequired": false,
+            "responseVerified": false,
+            "target": {
+              "clientHeight": 686,
+              "clientWidth": 1211,
+              "clientX": 0,
+              "clientY": 23,
+              "executablePath": "C:\\RIFT_TRANSFER\\RIFT\\rift_x64.exe",
+              "executableSha256": "7C356C9DDE9E12FCBFF3C08D953B0630B48B1510A0FFB36E4EC164606E7B17BD",
+              "isForeground": true,
+              "machineName": "DESKTOP-8632QPL",
+              "processId": 12076,
+              "processStartUtcTicks": 639285736860316715,
+              "windowHandle": "0x100388"
+            },
+            "targetedClickVersion": 1
+          },
+          "sequence": 10
+        }
+      }
+    }
+  ]
+}
