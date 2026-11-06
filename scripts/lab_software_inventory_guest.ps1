@@ -19,7 +19,9 @@ function Get-VersionProbe {
     if ($null -eq $entry) { return @{ present = $false } }
     $path = [string]$entry.Source
     try {
-        $lines = @(& $path @Arguments 2>&1 | Select-Object -First 8)
+        # Drain native output completely before truncating text. Early pipeline closure can
+        # make a chatty CLI (e.g. WinApp) report a false nonzero exit code.
+        $lines = @(& $path @Arguments 2>&1)
         $result = (($lines | ForEach-Object { [string]$_ }) -join ' ').Trim()
         if ($result.Length -gt 600) { $result = $result.Substring(0, 600) }
         $code = $LASTEXITCODE

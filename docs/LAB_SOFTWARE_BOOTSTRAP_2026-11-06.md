@@ -13,7 +13,7 @@ Both independent Windows 11 x64 guests should have:
 - Current Node.js Active LTS with npm for support tooling.
 - WinGet for repeatable developer-tool installation.
 
-Optional, defer until a demonstrated use: WinApp CLI, OpenSSH Server, full Visual Studio or native C++ toolchains, complete Workbridge-MCP source tree.
+Optional, defer until a demonstrated use: OpenSSH Server, full Visual Studio or native C++ toolchains, complete Workbridge-MCP source tree. WinApp CLI is now installed on both guests.
 
 ## Installation and verification
 
@@ -25,12 +25,12 @@ C:\Python314\python.exe scripts\lab_software_inventory.py --lab all
 # One package, one guest at a time; use only when absent:
 C:\Python314\python.exe scripts\lab_software_install.py --lab lab1 --package Git.Git
 C:\Python314\python.exe scripts\lab_software_install.py --lab lab2 --package Git.Git
-# Allowed alternatives: Python.Python.3.14, Microsoft.DotNet.SDK.10, OpenJS.NodeJS.LTS.
+# Allowed alternatives: Python.Python.3.14, Microsoft.DotNet.SDK.10, OpenJS.NodeJS.LTS, Microsoft.WinAppCli.
 
 C:\Python314\python.exe -m unittest discover -s tests -p test_lab_software_setup.py -v
 ```
 
-These scripts use the existing VM-specific cached-credential checks and exact VM identity verification in `lab_codex.py` and `vmware_guest_session.py`. Installation is limited to four allowlisted WinGet package IDs. WinGet is invoked silently without the `--allow-reboot` flag. Each guest writes a JSON result, copied back to `artifacts/lab-software-install` and provenance checked. Inventory artifacts are in `artifacts/lab-software-inventory`.
+These scripts use the existing VM-specific cached-credential checks and exact VM identity verification in `lab_codex.py` and `vmware_guest_session.py`. Installation is limited to five allowlisted WinGet package IDs. WinGet is invoked silently without the `--allow-reboot` flag. Each guest writes a JSON result, copied back to `artifacts/lab-software-install` and provenance checked. Inventory artifacts are in `artifacts/lab-software-inventory`.
 
 ## Boundaries
 
@@ -69,7 +69,8 @@ These scripts use the existing VM-specific cached-credential checks and exact VM
 | PowerShell | 7.6.9 | 7.6.9 |
 | WinGet | 1.29.380 | 1.29.380 |
 | VMware Tools | Running | Running |
+| WinApp CLI | 0.7.1 | 0.7.1 |
 
 All eight WinGet installation reports returned exit code 0, and a separate post-install inventory verified the live executables. The explicit Python interpreter path is under the guest user's local Programs folder. No VM or RIFT game reboot/restart was executed. Node.js 26 is the Active LTS series as of November 2026; Node 24 is now Maintenance LTS.
 
-The OpenSSH *client* binary is present but its `-V` probe did not return a clean result in this scripted PowerShell environment; remote SSH capability is **not** marked verified. Windows App Development CLI (`winapp`) was not installed because it is optional for current RIFT work.
+The OpenSSH *client* binary is present but its `-V` probe did not return a clean result in this scripted PowerShell environment; remote SSH capability is **not** marked verified. Windows App Development CLI (`winapp`) was installed on both guests after Joey authorized the optional component. Both guest-side `winapp --version` probes returned exit code 0; WinGet installer reports also returned exit code 0. The inventory probe now drains all native output before truncating recorded text, avoiding false nonzero exits for verbose applications. The WinApp installation required no VM or game restart.

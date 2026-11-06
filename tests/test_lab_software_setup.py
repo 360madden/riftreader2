@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from lab_software_inventory import TOOLS, validate_report as validate_inventory
-from lab_software_install import validate_report as validate_install
+from lab_software_install import PACKAGES as INSTALL_PACKAGES, validate_report as validate_install
 
 
 class InventoryReportTests(unittest.TestCase):
@@ -60,6 +60,9 @@ class InstallerReportTests(unittest.TestCase):
 
     def test_accepts_valid_install(self):
         self.assertIs(validate_install(self.report, "lab2", "Git.Git"), self.report)
+
+    def test_winappcli_allowlisted(self):
+        self.assertIn("Microsoft.WinAppCli", INSTALL_PACKAGES)
 
     def test_rejects_wrong_package(self):
         with self.assertRaises(ValueError):
