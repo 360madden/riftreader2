@@ -19,6 +19,8 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, result.Health.Maximum);
         Assert.Equal(100, result.Energy.Current);
         Assert.Equal(100, result.Energy.Maximum);
+        Assert.Contains("0x072B", System.Text.Json.JsonSerializer.Serialize(result.Energy.Inputs));
+        Assert.Equal("not-mana-kind-three", result.Mana.UnavailableReason);
         Assert.Equal("native-process-memory", result.Source);
         Assert.Equal(123UL, result.UnitKey);
     }
@@ -96,13 +98,15 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
     }
 
     [Fact]
-    public void ManaNeverUsesEnergyLayout()
+    public void TypeCheckedManaUsesOnlyKindThreeLayout()
     {
         var s = Fixture();
-        s.Put(KindOwner + 0x168, D(3));
+        ConfigureMana(s);
         var result = Read(s);
-        Assert.Equal("mana-kind-three-type-unresolved", result.Energy.UnavailableReason);
-        Assert.Null(result.Energy.Current);
+        Assert.Equal("calculated-candidate", result.Mana.Status);
+        Assert.Equal(3980, result.Mana.Current);
+        Assert.Equal(3980, result.Mana.Maximum);
+        Assert.Equal("not-energy-kind-four", result.Energy.UnavailableReason);
     }
 
     [Fact]
@@ -199,6 +203,20 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         var b = new byte[64]; Q(Module + 0x2D19498).CopyTo(b, 0);
         D(100).CopyTo(b, 0x20); D(100).CopyTo(b, 0x24); D(2000).CopyTo(b, 0x28); D(59).CopyTo(b, 0x34);
         return b;
+    }
+    private static void ConfigureMana(FakeSession s)
+    {
+        s.Put(KindOwner + 0x168, D(3));
+        var wrapper = new byte[48]; Q(Reference).CopyTo(wrapper, 0x10);
+        D(8).CopyTo(wrapper, 0x1C); D(BitConverter.SingleToInt32Bits(61827.53515625f)).CopyTo(wrapper, 0x24);
+        s.Put(Wrapper, wrapper);
+        var record = new byte[64]; Q(Module + 0x2A6ACD8).CopyTo(record, 0);
+        D(9807).CopyTo(record, 0x18); D(3980).CopyTo(record, 0x1C);
+        D(8).CopyTo(record, 0x20); D(3980).CopyTo(record, 0x24);
+        s.Put(Energy, record);
+        s.Put(Module + 0x2A6AD18, Q(Module + 0x1CCB460));
+        s.Put(Module + 0x34D8990, Q(Module + 0x2A7C418));
+        s.Put(Module + 0x2A7C420, Q(Module + 0x1CF9F10));
     }
     private static byte[] Q(ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); return b; }
     private static byte[] D(int v) { var b = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(b, v); return b; }

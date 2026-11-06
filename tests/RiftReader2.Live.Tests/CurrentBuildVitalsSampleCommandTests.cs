@@ -26,8 +26,12 @@ public sealed class CurrentBuildVitalsSampleCommandTests
             Assert.Equal("native-process-memory", report.RootElement.GetProperty("source").GetString());
             var energy = report.RootElement.GetProperty("observation").GetProperty("energy");
             Assert.Equal("unavailable", energy.GetProperty("status").GetString());
-            Assert.Equal("mana-kind-three-type-unresolved", energy.GetProperty("unavailableReason").GetString());
-            Assert.Contains("native-current-vitals-candidate-summary/1", output.ToString());
+            Assert.Equal("not-energy-kind-four", energy.GetProperty("unavailableReason").GetString());
+            var mana = report.RootElement.GetProperty("observation").GetProperty("mana");
+            Assert.Equal("calculated-candidate", mana.GetProperty("status").GetString());
+            Assert.Equal("native-current-vitals-candidate-sample/2",
+                report.RootElement.GetProperty("contractVersion").GetString());
+            Assert.Contains("native-current-vitals-candidate-summary/2", output.ToString());
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
@@ -88,7 +92,10 @@ public sealed class CurrentBuildVitalsSampleCommandTests
     private static CurrentBuildVitalsObservation Observation(IReadOnlyNativeMemorySession session) =>
         new(session.Identity, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 123,
             new("calculated-candidate", null, 700, 1000),
-            new("unavailable", "mana-kind-three-type-unresolved"));
+            new("unavailable", "not-energy-kind-four"))
+        {
+            Mana = new("calculated-candidate", null, 3980, 3980)
+        };
 
     private sealed class FakeSession : IReadOnlyNativeMemorySession
     {

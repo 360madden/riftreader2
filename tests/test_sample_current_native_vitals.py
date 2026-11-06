@@ -20,13 +20,17 @@ PID, TICKS = 11572, 639293038821710082
 def report():
     field = {"status": "calculated-candidate", "unavailableReason": None,
              "current": 100, "maximum": 100, "inputs": {"baseRaw": 100}}
-    return {"schemaVersion": 1, "contractVersion": "native-current-vitals-candidate-sample/1",
+    mana = copy.deepcopy(field)
+    mana["inputs"]["verifiedTypeCode"] = "0x072A"
+    energy = {"status": "unavailable", "unavailableReason": "not-energy-kind-four",
+              "current": None, "maximum": None, "inputs": None}
+    return {"schemaVersion": 1, "contractVersion": "native-current-vitals-candidate-sample/2",
             "status": "complete", "sourceBuildSha256": module.GAME_SHA,
             "source": "native-process-memory", "qualification": module.QUALIFICATION,
             "observation": {"source": "native-process-memory", "qualification": module.QUALIFICATION,
                 "identity": {"processId": PID, "processStartUtcTicks": TICKS, "executableSha256": module.GAME_SHA},
                 "unitKey": 123, "startedAtUtc": "2026-11-06T12:00:00Z", "completedAtUtc": "2026-11-06T12:00:00.050Z",
-                "health": copy.deepcopy(field), "energy": copy.deepcopy(field)}}
+                "health": copy.deepcopy(field), "mana": mana, "energy": energy}}
 
 
 class FakeGuest:
@@ -68,9 +72,68 @@ class VitalsHostTests(unittest.TestCase):
     def test_valid_candidate_and_unavailable_energy(self):
         self.assertEqual(50, self.validate(report())["readMilliseconds"])
         value = report()
-        value["observation"]["energy"] = {"status": "unavailable", "unavailableReason": "mana-kind-three-type-unresolved",
-            "current": None, "maximum": None, "inputs": None}
         self.assertEqual("unavailable", self.validate(value)["energy"]["status"])
+
+    def test_accepts_legacy_v1_without_promoting_missing_mana(self):
+        value = report()
+        value["contractVersion"] = "native-current-vitals-candidate-sample/1"
+        del value["observation"]["mana"]
+        validated = self.validate(value)
+        self.assertEqual("native-current-vitals-candidate-sample/1", validated["contractVersion"])
+        self.assertEqual("unavailable", validated["mana"]["status"])
+        self.assertEqual("legacy-contract-v1-without-mana", validated["mana"]["unavailableReason"])
+
+    def test_v2_requires_explicit_mana_field(self):
+        value = report()
+        del value["observation"]["mana"]
+        with self.assertRaisesRegex(ValueError, "field-missing"):
+            self.validate(value)
+
+    def test_v2_rejects_simultaneously_calculated_mana_and_energy(self):
+        value = report()
+        value["observation"]["energy"] = copy.deepcopy(value["observation"]["health"])
+        with self.assertRaisesRegex(ValueError, "resource-kind-conflict"):
+            self.validate(value)
+
+    def test_v2_requires_exact_mana_type_evidence(self):
+        for type_code in (None, "0x072B", 0x072A, True):
+            value = report()
+            inputs = value["observation"]["mana"]["inputs"]
+            if type_code is None:
+                del inputs["verifiedTypeCode"]
+            else:
+                inputs["verifiedTypeCode"] = type_code
+            with self.subTest(type_code=type_code), self.assertRaisesRegex(ValueError, "mana-type-evidence"):
+                self.validate(value)
+
+    def test_v2_requires_exact_energy_type_evidence(self):
+        for type_code in (None, "0x072A", 0x072B, True):
+            value = report()
+            value["observation"]["mana"] = {"status": "unavailable",
+                "unavailableReason": "not-mana-kind-three", "current": None,
+                "maximum": None, "inputs": None}
+            value["observation"]["energy"] = copy.deepcopy(value["observation"]["health"])
+            inputs = value["observation"]["energy"]["inputs"]
+            if type_code is None:
+                inputs.pop("verifiedTypeCode", None)
+            else:
+                inputs["verifiedTypeCode"] = type_code
+            with self.subTest(type_code=type_code), self.assertRaisesRegex(ValueError, "energy-type-evidence"):
+                self.validate(value)
+
+    def test_v2_requires_opposite_resource_to_be_explicitly_inapplicable(self):
+        value = report()
+        value["observation"]["energy"]["unavailableReason"] = "missing"
+        with self.assertRaisesRegex(ValueError, "mana-energy-exclusion"):
+            self.validate(value)
+
+        value = report()
+        value["observation"]["mana"] = {"status": "unavailable",
+            "unavailableReason": "not-mana-kind-three", "current": None,
+            "maximum": None, "inputs": None}
+        value["observation"]["energy"] = copy.deepcopy(value["observation"]["health"])
+        value["observation"]["energy"]["inputs"]["verifiedTypeCode"] = "0x072B"
+        self.assertEqual("calculated-candidate", self.validate(value)["energy"]["status"])
 
     def test_rejects_promoted_status_or_qualification(self):
         for key, value in [("status", "qualified"), ("qualification", "fresh"), ("source", "addon"), ("schemaVersion", True)]:

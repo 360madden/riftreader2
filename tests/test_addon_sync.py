@@ -88,7 +88,7 @@ class InstalledCopyTests(unittest.TestCase):
         self.assertEqual({e["reason"] for e in before["after"]}, {"missing"})
         done = self.run_script("sync")
         self.assertTrue(done["success"], done)
-        self.assertEqual(len(done["updated"]), 6)
+        self.assertEqual(len(done["updated"]), len(sync.FILES))
         self.assertTrue(self.run_script("verify")["success"])
 
     def test_mismatch_backup_and_repair(self):

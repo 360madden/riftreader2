@@ -32,7 +32,7 @@ def example() -> dict:
         },
         "identity": {**target, "moduleBaseAddress": 140698495614976},
         "status": "partial", "reason": "byte-budget-exceeded",
-        "marker": "RRAPIVAL2|",
+        "marker": "RR2R1|",
         "scope": "committed-readable-nonguard-MEM_PRIVATE-at-or-after-startAddress",
         "startedAtUtc": "2026-10-24T16:42:13.4536214Z",
         "completedAtUtc": "2026-10-24T16:42:14.2549234Z",
@@ -184,7 +184,7 @@ class ScoutSnapshotPlanTests(unittest.TestCase):
     def test_actual_host_report_exact_sha_and_three_windows(self):
         source = (Path(__file__).resolve().parents[1] / "artifacts" /
                   "update-recovery-20261023-01" / "rr2-scout-oct24-01-host.json")
-        plan, request, _ = build_plan(source.read_bytes(), ACTUAL_SHA)
+        plan, request, _ = build_plan(source.read_bytes(), ACTUAL_SHA, "RRAPIVAL2|")
         self.assertEqual(plan["sourceScout"]["originalReportSha256"], ACTUAL_SHA)
         self.assertEqual(plan["snapshot"]["rangeCount"], 3)
         self.assertEqual(request["target"]["executableSha256"], TARGET_SHA)

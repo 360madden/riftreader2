@@ -371,5 +371,40 @@ class TypedInlineArchiveTests(unittest.TestCase):
                                    pid=PID, ticks=TICKS, game_sha=GAME, bundle_sha=BUNDLE,
                                    claim_path=fake)
 
+class CurrentMarkerArchiveTests(unittest.TestCase):
+    def test_current_capture_rejects_historical_marker_even_with_valid_hashes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive, sha = archive_file(Path(folder), members())
+            with self.assertRaisesRegex(ArchiveError, "marker mismatch"):
+                verify_archive(archive, sha, pid=PID, ticks=TICKS, game_sha=GAME,
+                               bundle_sha=BUNDLE, marker="RR2R1|")
+
+    def test_current_request_and_embedded_manifest_marker_close(self):
+        payload = members()
+        for name in ("run-01", "run-02"):
+            request_path, index_path = name + "/input.request.json", name + "/index.json"
+            req = json.loads(payload[request_path])
+            req["marker"] = "RR2R1|"
+            payload[request_path] = encode(req)
+            index = json.loads(payload[index_path])
+            index["marker"] = "RR2R1|"
+            index["request"] = req
+            index["requestSha256"] = digest(payload[request_path])
+            payload[index_path] = encode(index)
+        with tempfile.TemporaryDirectory() as folder:
+            archive, sha = archive_file(Path(folder), payload)
+            _, receipt = verify_archive(archive, sha, pid=PID, ticks=TICKS, game_sha=GAME,
+                                        bundle_sha=BUNDLE, marker="RR2R1|")
+        self.assertEqual(len(receipt["runs"]), 2)
+        index = json.loads(payload["run-02/index.json"])
+        index["marker"] = "RRAPIVAL2|"
+        payload["run-02/index.json"] = encode(index)
+        with tempfile.TemporaryDirectory() as folder:
+            archive, sha = archive_file(Path(folder), payload)
+            with self.assertRaisesRegex(ArchiveError, "marker mismatch"):
+                verify_archive(archive, sha, pid=PID, ticks=TICKS, game_sha=GAME,
+                               bundle_sha=BUNDLE, marker="RR2R1|")
+
+
 if __name__ == "__main__":
     unittest.main()

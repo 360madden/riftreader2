@@ -261,13 +261,131 @@ public sealed class TypedWireSnapshotCommandTests
         Assert.Contains("chronological", error);
     }
 
+    [Fact]
+    public async Task SharedLuaReferenceFixtureDecodesEveryFieldIncludingZeroAndFalse()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "contracts", "addon", "fixtures", "reference-v1.json")))
+            directory = directory.Parent;
+        Assert.NotNull(directory);
+        using var shared = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(directory.FullName, "contracts", "addon", "fixtures", "reference-v1.json")));
+        using var fixture = new Fixture();
+        var before = await fixture.WriteAsync(Chunks(0x10000, Encoding.ASCII.GetBytes(shared.RootElement.GetProperty("beforeFrame").GetString()!)));
+        var after = await fixture.WriteAsync(Chunks(0x20000, Encoding.ASCII.GetBytes(shared.RootElement.GetProperty("afterFrame").GetString()!)), later: true);
+        var (code, json, error) = await RunAsync(before, after, sessionId: shared.RootElement.GetProperty("nonce").GetString());
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var report = JsonDocument.Parse(json);
+        Assert.Equal("advanced-in-covered-scope", report.RootElement.GetProperty("status").GetString());
+        foreach (var side in new[] { "before", "after" })
+        {
+            var selected = report.RootElement.GetProperty("selected").GetProperty(side);
+            var expected = shared.RootElement.GetProperty(side).GetProperty("fields");
+            foreach (var field in expected.EnumerateObject())
+                Assert.True(JsonElement.DeepEquals(field.Value, selected.GetProperty("fields").GetProperty(field.Name)), field.Name);
+        }
+    }
+
+    private const string ReferenceSession = "0123456789abcdef0123456789abcdef";
+
+    private static byte[] ReferenceWire(long sequence, double clock, long epoch = 1, string? nonce = null,
+        string player = "player-1", string? fieldUnavailable = null, bool clockFailed = false)
+    {
+        using var legacy = JsonDocument.Parse(Wire(sequence, clock, player).AsMemory(10, Wire(sequence, clock, player).Length - 22));
+        var fields = legacy.RootElement.GetProperty("player").GetProperty("fields").EnumerateObject()
+            .ToDictionary(p => p.Name, p => (object)p.Value.Clone());
+        if (fieldUnavailable is not null) fields[fieldUnavailable] = new { status = "unavailable" };
+        if (clockFailed)
+            foreach (var key in fields.Keys.ToArray()) fields[key] = new { status = "unavailable" };
+        var payload = new
+        {
+            schemaVersion = 1,
+            addon = "RiftReader2",
+            addonVersion = "0.2.0",
+            source = "rift-api",
+            sessionId = nonce ?? ReferenceSession,
+            sequence,
+            epoch,
+            clock = clockFailed ? (object)new { status = "unavailable" } : new { status = "ok", value = clock },
+            player = clockFailed ? (object)new { status = "unavailable" } : new { status = "ok", value = player },
+            fields
+        };
+        return Encoding.ASCII.GetBytes("RR2R1|" + JsonSerializer.Serialize(payload) + "|ENDRR2R1");
+    }
+
+    [Fact]
+    public async Task ReferenceFramesPublishOwnedIdentityAndUnavailableResourceStatus()
+    {
+        using var fixture = new Fixture();
+        var before = await fixture.WriteAsync(Chunks(0x10000, ReferenceWire(100, 10)));
+        var after = await fixture.WriteAsync(Chunks(0x20000, ReferenceWire(102, 12, fieldUnavailable: "mana")), later: true);
+        var (code, json, error) = await RunAsync(before, after, sessionId: ReferenceSession);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("advanced-in-covered-scope", doc.RootElement.GetProperty("status").GetString());
+        var selected = doc.RootElement.GetProperty("selected").GetProperty("after");
+        Assert.Equal("RR2R1", selected.GetProperty("protocol").GetString());
+        Assert.Equal("RiftReader2", selected.GetProperty("addon").GetString());
+        Assert.Equal(ReferenceSession, selected.GetProperty("sessionId").GetString());
+        Assert.Equal(1, selected.GetProperty("epoch").GetInt64());
+        Assert.Equal("unavailable", selected.GetProperty("fields").GetProperty("mana").GetProperty("status").GetString());
+    }
+
+    [Theory]
+    [InlineData("foreign")]
+    [InlineData("epoch")]
+    [InlineData("mixed-epoch")]
+    [InlineData("mixed-player")]
+    [InlineData("clock-failed")]
+    [InlineData("conflict")]
+    [InlineData("sequence-clock-conflict")]
+    public async Task ReferenceIdentityAndClearingFailuresBlock(string scenario)
+    {
+        using var fixture = new Fixture();
+        var second = scenario switch
+        {
+            "foreign" => ReferenceWire(102, 12, nonce: new string('a', 32)),
+            "epoch" => ReferenceWire(102, 12, epoch: 2),
+            "mixed-epoch" => ReferenceWire(101, 11, epoch: 2).Concat(ReferenceWire(102, 12)).ToArray(),
+            "mixed-player" => ReferenceWire(101, 11, player: "other").Concat(ReferenceWire(102, 12)).ToArray(),
+            "clock-failed" => ReferenceWire(102, 12, clockFailed: true).Concat(ReferenceWire(101, 11)).ToArray(),
+            "sequence-clock-conflict" => ReferenceWire(102, 12).Concat(ReferenceWire(102, 13)).ToArray(),
+            _ => ReferenceWire(102, 12).Concat(ReferenceWire(102, 12, fieldUnavailable: "mana")).ToArray()
+        };
+        var before = await fixture.WriteAsync(Chunks(0x10000, ReferenceWire(100, 10)));
+        var after = await fixture.WriteAsync(Chunks(0x20000, second), later: true);
+        var (code, json, error) = await RunAsync(before, after, sessionId: ReferenceSession);
+        Assert.Equal(0, code);
+        Assert.Empty(error);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal("blocked", doc.RootElement.GetProperty("status").GetString());
+    }
+
+    [Theory]
+    [InlineData(8192, "advanced-in-covered-scope")]
+    [InlineData(8193, "blocked")]
+    public async Task ReferenceFrameLimitIncludesBothMarkers(int frameBytes, string expected)
+    {
+        using var fixture = new Fixture();
+        var wire = ReferenceWire(102, 12);
+        var text = Encoding.ASCII.GetString(wire);
+        var padded = Encoding.ASCII.GetBytes(text.Insert(7, new string(' ', frameBytes - wire.Length)));
+        var before = await fixture.WriteAsync(Chunks(0x10000, ReferenceWire(100, 10)));
+        var after = await fixture.WriteAsync(Chunks(0x20000, padded), later: true);
+        var (_, json, _) = await RunAsync(before, after, sessionId: ReferenceSession);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(expected, doc.RootElement.GetProperty("status").GetString());
+    }
+
     private static async Task<(int Code, string Output, string Error)> RunAsync(
-        string before, string after, string? outputFile = null)
+        string before, string after, string? outputFile = null, string? sessionId = null)
     {
         using var output = new StringWriter();
         using var error = new StringWriter();
         var args = new List<string> { "inspect-typed-wire", "--before", before, "--after", after };
         if (outputFile is not null) args.AddRange(["--output", outputFile]);
+        if (sessionId is not null) args.AddRange(["--session-id", sessionId]);
         var code = await CliRunner.RunAsync([.. args], output, error);
         return (code, output.ToString(), error.ToString());
     }

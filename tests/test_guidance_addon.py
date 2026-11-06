@@ -426,7 +426,7 @@ class GuidanceAddonTests(unittest.TestCase):
     def load_main(self):
         lua = LuaRuntime(unpack_returned_tuples=True)
         private = lua.table()
-        for name in ("wire.lua", "producer.lua", "live.lua", "guidance.lua"):
+        for name in ("wire.lua", "producer.lua", "reference.lua", "live.lua", "guidance.lua"):
             lua.execute((PACKAGE / name).read_text(encoding="utf-8"),
                         lua.table(identifier="RiftReader2"), private)
         lua.execute(MAIN_STUB)

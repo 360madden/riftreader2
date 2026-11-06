@@ -9,7 +9,8 @@ import unittest
 from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_energy, calculate_health, checked_energy_type, checked_health_type, encoded, entity_hash, find_entity,
     actor_render_pose_candidates, health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
-    RESOURCE_LAYOUTS, require_disjoint_records,
+    RESOURCE_LAYOUTS, coherent_mana_resource_transition, require_disjoint_records,
+    require_resource_owner_anchors,
     sha, snapshot_bytes,
 )
 
@@ -467,6 +468,95 @@ class NativeUnitManagerTests(unittest.TestCase):
             result = resource_record_fields(kind, record, wrapper)
             self.assertFalse(result["revisionConsistent"])
             self.assertNotIn("current", result)
+
+    def test_mana_coherent_cache_transition_is_retained(self):
+        before_record, before_wrapper = self.resource_pair(3)
+        after_record, after_wrapper = bytearray(before_record), bytearray(before_wrapper)
+        struct.pack_into("<i", before_wrapper, 0x18, 9)
+        struct.pack_into("<i", before_record, 0x28, 9)
+        struct.pack_into("<f", before_wrapper, 0x20, 24.0)
+        struct.pack_into("<i", after_wrapper, 0x18, 10)
+        struct.pack_into("<i", after_record, 0x28, 10)
+        struct.pack_into("<i", after_record, 0x20, 8)
+        struct.pack_into("<i", after_wrapper, 0x1C, 8)
+        struct.pack_into("<f", after_wrapper, 0x20, 25.0)
+        struct.pack_into("<f", after_wrapper, 0x24, 25.5)
+        result = coherent_mana_resource_transition(
+            bytes(before_record), bytes(before_wrapper), bytes(after_record), bytes(after_wrapper))
+        self.assertEqual("coherent-cache-transition", result["status"])
+        self.assertEqual((7, 8), (result["beforeFields"]["recordRevision"],
+                                  result["afterFields"]["recordRevision"]))
+        self.assertEqual([24.0, 24.5], result["beforeClocks"])
+        self.assertEqual([25.0, 25.5], result["afterClocks"])
+
+    def test_mana_failed_baseline_artifact_replays_as_coherent_transition(self):
+        # Exact resource bytes retained in ad2e2c438b9341d7a3f0457686db28b5.
+        before_record = bytes.fromhex(
+            "d8ac31f2f77f00000200000000000000fb000000000000004f2600008c0f0000"
+            "120000008c0f000014000000640000000cfeffff64000000f0554df2f77f0000")
+        after_record = bytearray(before_record)
+        after_record[0x20:0x24] = (19).to_bytes(4, "little", signed=True)
+        after_record[0x28:0x2C] = (21).to_bytes(4, "little", signed=True)
+        before_wrapper = bytes.fromhex(
+            "48f502f2f77f0000208cf31ab8020000308cf31ab80200001400000012000000"
+            "9c3595479c3595475300000000000000")
+        after_wrapper = bytes.fromhex(
+            "48f502f2f77f0000208cf31ab8020000308cf31ab80200001500000013000000"
+            "6bab95476bab95475300000000000000")
+        result = coherent_mana_resource_transition(
+            before_record, before_wrapper, bytes(after_record), after_wrapper)
+        self.assertEqual("coherent-cache-transition", result["status"])
+        self.assertEqual((18, 19), (result["beforeFields"]["recordRevision"],
+                                   result["afterFields"]["recordRevision"]))
+        self.assertEqual([76395.21875, 76395.21875], result["beforeClocks"])
+        self.assertEqual([76630.8359375, 76630.8359375], result["afterClocks"])
+
+    def test_mana_transition_rejects_immutable_or_mixed_revision_change(self):
+        record, wrapper = self.resource_pair(3)
+        immutable = bytearray(record)
+        immutable[8] ^= 1
+        with self.assertRaisesRegex(ValueError, "immutable-owner-or-record"):
+            coherent_mana_resource_transition(bytes(record), bytes(wrapper),
+                                               bytes(immutable), bytes(wrapper))
+        mixed = bytearray(record)
+        struct.pack_into("<i", mixed, 0x20, 8)
+        with self.assertRaisesRegex(ValueError, "mixed-revisions"):
+            coherent_mana_resource_transition(bytes(record), bytes(wrapper),
+                                               bytes(mixed), bytes(wrapper))
+
+    def test_mana_transition_rejects_backward_or_nonfinite_clock(self):
+        record, wrapper = self.resource_pair(3)
+        backward = bytearray(wrapper)
+        struct.pack_into("<f", backward, 0x24, 23.0)
+        with self.assertRaisesRegex(ValueError, "clock-invalid-or-backward"):
+            coherent_mana_resource_transition(bytes(record), bytes(wrapper),
+                                               bytes(record), bytes(backward))
+        invalid = bytearray(wrapper)
+        struct.pack_into("<f", invalid, 0x20, float("nan"))
+        with self.assertRaisesRegex(ValueError, "clock-invalid-or-backward"):
+            coherent_mana_resource_transition(bytes(record), bytes(wrapper),
+                                               bytes(record), bytes(invalid))
+
+    def test_resource_owner_post_final_recheck_rejects_detach_or_missing_anchor(self):
+        expected = {0x1000: b"owner", 0x2000: b"type"}
+        self.assertIsNone(require_resource_owner_anchors(expected, dict(expected)))
+        with self.assertRaisesRegex(ValueError, "detached-after-final"):
+            require_resource_owner_anchors(
+                expected, {0x1000: b"other", 0x2000: b"type"},
+                "resource-owner-detached-after-final")
+        with self.assertRaisesRegex(ValueError, "detached-after-final"):
+            require_resource_owner_anchors(
+                expected, {0x1000: b"owner"},
+                "resource-owner-detached-after-final")
+
+    def test_resource_owner_post_final_recheck_rejects_clock_root_mutation(self):
+        # Represents the module clock-root RVA included with manager/player roots.
+        expected = {0x140000000 + 0x33DC2B0: b"clockptr", 0x2000: b"player"}
+        actual = dict(expected)
+        actual[0x140000000 + 0x33DC2B0] = b"changed!"
+        with self.assertRaisesRegex(ValueError, "detached-after-final"):
+            require_resource_owner_anchors(
+                expected, actual, "resource-owner-detached-after-final")
 
     def test_resource_short_or_nonfinite_record_is_rejected(self):
         for kind in (3, 4):
