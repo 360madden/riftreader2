@@ -1,4 +1,6 @@
 """Offline tests of RR2 observation delivery and replay protection."""
+import ast
+import hashlib
 import http.client
 from http.server import HTTPServer
 import ipaddress
@@ -12,6 +14,19 @@ from scripts import observation_receiver as receiver
 
 
 class ReceiverTests(unittest.TestCase):
+    def test_managed_receiver_source_pin_matches_shipped_source(self):
+        """Catch stale pins on every platform, including without Windows msvcrt."""
+        root = Path(__file__).resolve().parents[1]
+        manager = ast.parse((root / 'scripts' / 'ensure_receiver.py').read_text(encoding='utf-8'))
+        assignments = [node.value for node in manager.body
+                       if isinstance(node, ast.Assign)
+                       and any(isinstance(target, ast.Name) and target.id == 'SOURCE_SHA256'
+                               for target in node.targets)]
+        self.assertEqual(len(assignments), 1)
+        pinned = ast.literal_eval(assignments[0])
+        actual = hashlib.sha256((root / 'scripts' / 'observation_receiver.py').read_bytes()).hexdigest().upper()
+        self.assertEqual(pinned, actual, 'review receiver changes and update its source pin')
+
     def test_valid_delivery_and_replay(self):
         config = {'bindAddress': '192.168.56.1', 'guestSubnet': '192.168.56.0/24', 'port': 49813, 'token': 'x' * 32}
         with tempfile.TemporaryDirectory() as folder:
