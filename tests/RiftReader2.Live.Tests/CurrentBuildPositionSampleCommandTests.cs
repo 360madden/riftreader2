@@ -70,6 +70,53 @@ public sealed class CurrentBuildPositionSampleCommandTests
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.Read(session));
     }
 
+    [Theory]
+    [InlineData("system")]
+    [InlineData("player-key")]
+    [InlineData("table-header")]
+    [InlineData("bucket-link")]
+    [InlineData("entity-slot")]
+    [InlineData("selector")]
+    [InlineData("component-slot")]
+    public void SharedLookupRetainsEveryOwnershipAnchor(string anchor)
+    {
+        var session = Fixture();
+        var bucket = Buckets + CurrentBuildPlayerLookup.BucketIndex(Key, BucketCount) * 24;
+        var (address, length) = anchor switch
+        {
+            "system" => (ModuleBase + 0x33623E0, 8),
+            "player-key" => (PlayerSystem + 0x360, 8),
+            "table-header" => (Table, 24),
+            "bucket-link" => (bucket, 24),
+            "entity-slot" => (Entity, 128),
+            "selector" => (ModuleBase + 0x2F588A0, 4),
+            "component-slot" => (Components + 16, 8),
+            _ => throw new ArgumentException(nameof(anchor))
+        };
+        var changed = session.Get(address, length);
+        changed[anchor == "entity-slot" ? 0x18 + 34 : 0] ^= 1;
+        session.ReplaceAfterFirstRead(address, length, changed);
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.Read(session));
+    }
+
+    [Fact]
+    public void SharedLookupResolvesOtherSelectorAndRetainsOriginalEpoch()
+    {
+        var session = Fixture();
+        var bytes = session.Get(Entity, 128);
+        bytes[0x18 + 6] = 3;
+        session.Set(Entity, bytes);
+        session.Set(ModuleBase + 0x2F57850, Bytes32(6));
+        session.Set(Components + 24, Bytes64(Position + 0x1000));
+        var owner = CurrentBuildPlayerLookup.Resolve(session);
+        Assert.Equal(Key, owner.PlayerKey);
+        Assert.Equal(Entity, owner.EntityAddress);
+        Assert.Equal(Position + 0x1000, owner.ResolveComponent(0x2F57850));
+        owner.VerifyUnchanged();
+        session.Identity = session.Identity with { ProcessStartUtcTicks = 999 };
+        Assert.Throws<InvalidDataException>(owner.VerifyUnchanged);
+    }
+
     [Fact]
     public void RejectsChangedPositionBetweenReads()
     {

@@ -104,7 +104,7 @@ work share host resources and are scheduled one at a time, not all research work
 
 ### P4 — Cooldown ownership and timer reconstruction
 
-- **Own/start:** separate cooldown findings/module; conditional lookup `0x129045C`,
+- **Own/start:** separate cooldown findings/module; conditional lookup `0x1290458`,
   upstream collection/ID mapping and `0x5A7450` table `+0x240/+0x248/+0x250`.
 - **Deliver:** bounded ownership recipe and offline timer reconstruction, then a
   candidate reader only when the owner/type route supports passive access.

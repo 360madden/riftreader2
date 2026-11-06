@@ -20,6 +20,10 @@ topic below instead of loading every document for each task.
 | Live XYZ workflow | [Repeatable CLI capture and guarded movement](reference/xyz-live-workflow.md) | One configured run, fresh screenshot review, comparison and evidence export. |
 | Guest operations | [Managed agent launcher](reference/guest-agent-launcher.md) | Hash-checked graceful updates and measured VMware file transfers; NAT unchanged. |
 | Real field catalog | [XYZ field knowledge](reference/xyz-field-catalog.md) | Exact-build meaning, locator and observed restart assessments; patch survival unqualified. |
+| Research | [Ability ownership findings](reference/native-ability-ownership-findings-2026-11-06.md) | Exact-build static ability context and vector evidence; live ownership unverified. |
+| Research | [Cooldown static follow-up](reference/native-cooldown-static-followup-2026-11-06.md) | Corrected timer baseline and lookup paths; live meaning unverified. |
+| Research | [Cast topology candidate](reference/native-current-cast-candidate.md) | Offline bounded topology helper; no casting semantics or live identity qualification. |
+| Native vitals | [Current-build HP/Energy candidates](reference/current-native-vitals.md) | Read-only candidate reader, host wrapper, and two-lab live evidence; semantic qualification pending. |
 | Power discovery | [Native Warrior Power locator](reference/native-power-locator.md) | Player resource chain and API calculation; changed-state Lua agreement across one full game restart. |
 | Power data | [Live interface and field catalog](reference/power-data-interface.md) | Fresh native Power in normal JSON output, retained catalog assessments, standard JSON/CSV discovery exports. |
 | Numeric discovery | [Bounded value scout](reference/native-value-scout.md) | Seed health/resource candidates once, then use small changed-state captures. |

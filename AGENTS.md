@@ -77,8 +77,9 @@ Ship useful candidate output with honest labels, refine after actual use; live
 qualification is required for live capability claims, not as a prerequisite to
 implementing raw candidate output. Keep concise evidence notes for meaningful
 results and material limitations, not per-edit reports or new manifests. Give
-frequent concise progress updates with America/New_York timestamps and color
-status markers; use tables/charts when useful. Reuse existing tools; add no scheduler or process framework. Preserve module boundaries,
+frequent visually clear progress updates with America/New_York timestamps, color
+status markers and emojis; use tables or charts when useful and CAPITALS for
+important emphasis. Make progress and blockers easy to scan without filler. Reuse existing tools; add no scheduler or process framework. Preserve module boundaries,
 versioned contracts and all authority, exact-identity, freshness and control
 protections. The root retains sole live-input ownership per lab and coordinates
 shared-host heavy work; workers gain no independent game-input authority.

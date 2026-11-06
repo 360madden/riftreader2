@@ -24,7 +24,7 @@ public static class NativeCommandRunner
                 throw new NotSupportedException("Native commands require 64-bit Windows.");
             if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             {
-                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nscout-values-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nsample-position --profile PATH --output PATH [--samples N] [--interval-ms N]\nsample-current-position --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N] (exact build only)\nsample-power --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N]\nExisting outputs are never replaced.");
+                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nscout-values-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nsample-position --profile PATH --output PATH [--samples N] [--interval-ms N]\nsample-current-position --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N] (exact build only)\nsample-current-vitals --pid N --start-ticks N --output PATH (candidate only)\nsample-power --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N]\nExisting outputs are never replaced.");
                 await output.WriteLineAsync("position-panel [--profile PATH] [--output-directory NEW_DIRECTORY]\nStart / Read / Stop window; defaults to the profile beside this executable and a new local evidence session.");
                 return 0;
             }
@@ -55,6 +55,8 @@ public static class NativeCommandRunner
                 return await PositionSampleCommand.RunAsync(ParseOptions(args[1..], "--profile", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-position")
                 return await CurrentBuildPositionSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
+            if (args[0] == "sample-current-vitals")
+                return await CurrentBuildVitalsSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output"), output, cancellationToken);
             if (args[0] == "sample-power")
                 return await PowerSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             throw new ArgumentException($"Unknown command '{args[0]}'.");

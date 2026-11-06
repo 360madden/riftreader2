@@ -310,7 +310,7 @@ A subsequent exact-SHA extraction and independent x64 disassembly of the **actua
 |---|---|---|
 | `0x1353620` | Looks up a reference and tests the first child of an object `+0x5F0` vector against expected type **`0x078A`** | This is a cooldown-eligibility/type test, not proof of a live cooldown-record type |
 | `0x5A6F20` | Resolves another ability-related object and reads a `+0x5F0` reference path; sets flags and manages references | Upstream player/ability key and element ownership remain unverified |
-| `0x5A9440` | Decoded secondary float producer: resolves state, loops its +0x4B8/+0x4C0 ID vector, selects max result of keyed timer lookups `0x5A7450`; optional duration uses conditional branches | Live ability context and resolver-owned state pointer still unverified; details below |
+| `0x5A9440` | Decoded secondary float producer: resolves state, loops its +0x4B8/+0x4C0 ID vector, compares keyed timer lookups `0x5A7450` against a possible context +0x1C0 starting entry; optional duration uses conditional branches | Live ability context and resolver-owned state pointer still unverified; details below |
 | `0x5526F0` | Reuses unit lookup `0x6A0040`, dynamic health selector **`module+0x2F57850`**, component table `entity+0x78` and further accessor `0x5ECCA0` | Shared selector does **not** mean an HP pointer is a cooldown pointer |
 
 #### Additional cooldown timer-table decoding — 2026-11-01 read-only follow-up
@@ -323,7 +323,9 @@ specialist inspected bounded raw instruction slices without invoking RIFT.
 - RVA 0x5A9440 accepts an ability context (RCX), 32-bit ID (EDX), and
   optional duration output (R8). The resolved state object's [0x4B8,0x4C0)
   span holds a four-byte-stride ID vector. Each ID is passed to 0x5A7450,
-  and 0x5A9440 returns the **maximum float32 timer value** across IDs.
+  and 0x5A9440 compares these values with a possible context +0x1C0 entry
+  used to initialize the result. The earlier max-across-IDs-only description
+  was incomplete; see the [November 6 follow-up](native-cooldown-static-followup-2026-11-06.md).
 - RVA 0x5A7450 does a keyed lookup using the original context's +0x240
   table root, +0x248 stride, +0x250 count/capacity, compares entry +0x08
   to ID, and reads the matched float32 value at entry +0x10; no match
@@ -337,14 +339,14 @@ specialist inspected bounded raw instruction slices without invoking RIFT.
 - Module-rooted context discovery proceeds through 0x4A4250 reading
   [module+0x33624C8], and 0x1274AD8 reading [module+0x3372C18]
   with a 16-bit selector at context +0x40. The lookup 0x129043C /
-  0x129045C tests mode owner+0x274 and conditionally selects a
+  0x1290458 tests mode owner+0x274 and conditionally selects a
   collection, with owner+0x200 as one fallback. **The conditional
   collection/ability-key mapping and returned object type are still
   unresolved**; a fixed pointer chain is unsafe. Lazy singleton
   initialization and refcount-changing native functions must not be
   invoked by an external reader.
 
-The next shortest static task is finishing conditional lookup 0x129045C
+The next shortest static task is finishing conditional lookup 0x1290458
 and caller's numeric ability ID provenance; dynamic qualification then
 requires independently changed cooldown values, native-before/after
 with an approved controlled ability action, and a fresh exact-process pin.

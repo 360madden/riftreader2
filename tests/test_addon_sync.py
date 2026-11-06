@@ -74,7 +74,7 @@ class InstalledCopyTests(unittest.TestCase):
 
     def run_script(self, mode):
         output = self.root / (mode + "-" + str(len(list(self.root.glob("*.json")))) + ".json")
-        args = [sync.HOST_PS, "-NoProfile", "-NonInteractive", "-File", str(sync.GUEST_SCRIPT),
+        args = [sync.HOST_PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(sync.GUEST_SCRIPT),
                 "-Mode", mode, "-SourceDirectory", str(self.source), "-Destination", str(self.dest),
                 "-ManifestPath", str(self.manifest_path), "-ReportPath", str(output),
                 "-BackupDirectory", str(self.root / "backups"), "-NoPin"]
