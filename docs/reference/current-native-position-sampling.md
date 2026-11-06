@@ -55,8 +55,11 @@ owner links again, and revalidates process identity. It does not read/write game
 controls, attach a debugger, invoke Lua, or copy an old absolute pointer.
 
 The report's `continuousCadenceUnder4Point5s` compares measured native sample
-starts and read durations only. Even when true it **does not** establish current
-player position semantics, no-input provenance, movement responsiveness,
+starts and read durations only, requires at least two samples, and rejects
+overlapping monotonic read intervals. `acquisitionSpanMilliseconds` measures
+first-read start through final-read completion; it does not imply a 480-second
+observation. These metrics describe acquisition only. A true cadence flag
+**does not** establish current player position semantics, no-input provenance, movement responsiveness,
 uninterrupted 480-second Lua freshness, or restored autonomous waypoint control.
 
 Known validations:

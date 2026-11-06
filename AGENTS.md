@@ -68,6 +68,35 @@ results and keeps work moving through non-blocking stalls. Respect
 tool approval, source-mutation and safety boundaries; worker count never
 overrides one-input-owner, exclusive queue or freshness safeguards.
 
+**Plan and communicate before execution — Joey's decision, 2026-11-06:**
+Before each work batch, state the intended outcome, concrete steps, worker
+assignments and relevant verification. Update the plan when findings change
+the next action; planning does not imply an extra approval gate. Provide frequent
+concise progress updates with America/New_York timestamps, clear breakdowns
+and color status markers. Use tables or charts when they improve clarity;
+distinguish completed results, active work and unresolved limitations.
+
+**Task-specific worker strategy — Joey's decision, 2026-11-06:** Optimize
+for the best accepted, verified final product balanced against elapsed development
+time, including review, correction and rework. Customize each bounded worker's
+model and reasoning effort; do not make every worker inherit the coordinator's
+settings. Prefer `gpt-6.1-sol` or `gpt-6.1-terra` at low/medium reasoning for
+routine implementation, followed promptly by focused verification and correction.
+Use `gpt-6-luna` for mechanical, tightly specified tasks with clear checks.
+Bring in `gpt-6-astra` at high reasoning early for difficult or consequential
+architecture and code-review decisions; require elevated review of substantive
+code in small batches before dependent work accumulates. Keep independent work
+moving while decisions or reviews are pending. Scale review to risk;
+trivial documentation does not require an expensive reviewer. Escalate model/effort
+or narrow the task when repeated failures or unresolved ambiguity make the fast route slower.
+Terra is a preferred candidate for suitable coding and authorized computer-use/UI
+work based on Joey's reported guidance, not a verified comparative benchmark.
+This preference does not resume the deferred direct ChatGPT Computer Use path
+inside VMware or expand any lab authorization. For model/effort overrides, use
+`fork_turns: "none"` and supply explicit task context, file ownership, constraints
+and acceptance checks. The root integrates results and retains sole live-input
+ownership per lab; workers never acquire independent live-input authority.
+
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow

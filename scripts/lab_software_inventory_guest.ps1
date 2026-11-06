@@ -60,6 +60,55 @@ $tools = [ordered]@{
     winapp = Get-VersionProbe 'winapp.exe' @('--version')
     winget = Get-VersionProbe 'winget.exe' @('--version')
 }
+# Metadata only: never invoke discovery/debugging executables or query Win32_Product.
+$portableRoots = @('C:\Tools\Sysinternals')
+$portableNames = @('procmon', 'procexp', 'procdump', 'handle', 'listdlls',
+    'vmmap', 'rammap', 'sigcheck', 'tcpview', 'autoruns')
+$portableFiles = @()
+foreach ($root in $portableRoots) {
+    foreach ($name in $portableNames) {
+        foreach ($suffix in @('.exe', '64.exe', '64a.exe')) {
+            $candidate = Join-Path $root ($name + $suffix)
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                try {
+                    $file = Get-Item -LiteralPath $candidate -ErrorAction Stop
+                    $portableFiles += @{ path = $candidate; name = $file.Name;
+                        version = [string]$file.VersionInfo.FileVersion;
+                        sha256 = (Get-FileHash -LiteralPath $candidate -Algorithm SHA256 -ErrorAction Stop).Hash }
+                } catch {
+                    $portableFiles += @{ path = $candidate; name = ($name + $suffix); error = 'metadata-read-failed' }
+                }
+            }
+        }
+    }
+}
+$uninstallRoots = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+    'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall',
+    'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall')
+$applications = @()
+$registryScopes = @()
+foreach ($root in $uninstallRoots) {
+    $keys = @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue | Select-Object -First 1025)
+    $registryScopes += @{ path = $root; examined = [math]::Min($keys.Count, 1024); truncated = ($keys.Count -gt 1024) }
+    foreach ($key in ($keys | Select-Object -First 1024)) {
+        $item = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+        if ($null -eq $item) { continue }
+        $displayName = $item.PSObject.Properties['DisplayName']
+        if ($null -eq $displayName) { continue }
+        $name = [string]$displayName.Value
+        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        if ($applications.Count -ge 128) { continue }
+        $version = $item.PSObject.Properties['DisplayVersion']
+        $publisher = $item.PSObject.Properties['Publisher']
+        $applications += @{ name = $name.Substring(0, [math]::Min(200, $name.Length));
+            version = $(if ($version) { ([string]$version.Value).Substring(0, [math]::Min(100, ([string]$version.Value).Length)) } else { '' });
+            publisher = $(if ($publisher) { ([string]$publisher.Value).Substring(0, [math]::Min(100, ([string]$publisher.Value).Length)) } else { '' });
+            registryRoot = $root }
+    }
+}
+$discovery = @{ method = 'file-and-uninstall-metadata-only'; portableRoots = $portableRoots;
+    sysinternalsFiles = $portableFiles; uninstallScopes = $registryScopes;
+    applications = $applications; applicationLimitReached = ($applications.Count -ge 128) }
 $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
 $computer = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
 $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'" -ErrorAction Stop
@@ -81,6 +130,7 @@ $report = [ordered]@{
     vmwareTools = @{ present = ($null -ne $vmtools); status = $(if ($vmtools) { [string]$vmtools.Status } else { 'absent' }); version = $vmtoolsVersion }
     elevatedToken = [bool]$admin
     tools = $tools
+    discovery = $discovery
 }
 $directory = [IO.Path]::GetDirectoryName($ReportPath)
 [void][IO.Directory]::CreateDirectory($directory)

@@ -243,16 +243,36 @@ criteria, and the exact validation command. Point it to
 [the architecture](../architecture.md), current status, and one relevant topic;
 avoid loading the entire repository history.
 
-Routine documentation edits, sample/config value changes within an unchanged
-schema, formatting fixes, and narrow tests for already specified behavior are
-usually suitable for a cheaper model with the validation script required.
+Apply Joey's 2026-11-06 worker strategy to minimize elapsed time to an accepted,
+verified result while preserving final product quality, including the cost of
+review, correction and rework:
 
-Use stronger reasoning and review for changes involving build or session
-identity, evidence meaning, schemas and compatibility, hashes or atomic I/O,
-streaming and concurrency, native process access, unsafe code, experiment
-controls, or module boundaries. These areas can silently invalidate evidence
-even when code compiles. This guidance does not require changing model settings
-mid-task; it identifies work that should receive capable review.
+1. Choose the model and effort for each bounded task. Start routine implementation
+   with `gpt-6.1-sol` or `gpt-6.1-terra` at low/medium reasoning. Use `gpt-6-luna`
+   for mechanical work with unambiguous acceptance checks. With explicit
+   model/effort overrides, spawn using `fork_turns: "none"` and provide the task,
+   relevant source context, owned files, constraints and validation commands.
+2. Engage `gpt-6-astra` at high reasoning early for difficult architecture or
+   consequential review: build/session identity, evidence meaning, compatibility,
+   hashes/atomic I/O, concurrency, native access, unsafe code, experiment controls
+   and module boundaries. Resolve consequential design questions before dependent
+   implementation; require elevated review of substantive code in small batches
+   as they become ready. Keep independent work moving while those decisions or
+   reviews are pending. Keep review proportional; trivial docs do not require
+   an expensive review worker.
+3. Verify each implementation promptly with the relevant focused checks and
+   correct failures before building on it. Escalate effort/model or reduce scope
+   after repeated failure or unresolved ambiguity. Judge the route by time to
+   accepted, verified output, not initial generation speed alone. Documentation
+   changes need scoped content/link checks; use the full gate when applicable.
+4. Have the root reconcile findings and integrate changes. Keep file ownership
+   explicit, serialize shared-host heavy work, and retain the root as sole
+   live-input owner per lab under all existing identity and input guards.
+
+Terra is a preferred candidate for suitable coding and authorized computer-use/UI
+tasks based on Joey's reported guidance, not a measured model benchmark. The
+direct ChatGPT Computer Use restriction inside VMware remains in force; model
+selection grants no new live-input or lab authorization.
 
 Record what changed, what was actually verified, limitations, and the next
 authorized task in `docs/status.md`. Commit only coherent explicit files with

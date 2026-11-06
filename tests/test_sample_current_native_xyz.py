@@ -118,12 +118,27 @@ class CurrentNativeSampleHostTests(unittest.TestCase):
         self.assertEqual(3, result["sampleCount"])
         self.assertAlmostEqual(90, result["maxReadMilliseconds"])
         self.assertEqual(500, result["maxStartGapMilliseconds"])
+        self.assertEqual(1090, result["acquisitionSpanMilliseconds"])
         self.assertFalse(result["positionChanged"])
         self.assertTrue(result["continuousCadenceUnder4Point5s"])
         self.assertEqual(
             "candidate-only-not-passive-fresh-or-player-semantic-qualified",
             result["qualification"]
         )
+
+    def test_single_sample_does_not_establish_cadence(self):
+        result = module.validate_report(
+            report(samples=1), pid=11572, ticks=639293038821710082, samples=1)
+        self.assertIsNone(result["maxStartGapMilliseconds"])
+        self.assertEqual(90, result["acquisitionSpanMilliseconds"])
+        self.assertFalse(result["continuousCadenceUnder4Point5s"])
+
+    def test_rejects_overlapping_monotonic_intervals(self):
+        source = report()
+        source["observations"][1]["monotonicStartMilliseconds"] = 80.0
+        with self.assertRaisesRegex(ValueError, "sample-timing-invalid"):
+            module.validate_report(
+                source, pid=11572, ticks=639293038821710082, samples=3)
 
     def test_rejects_stale_pid_epoch_build_or_promoted_qualification(self):
         cases = [

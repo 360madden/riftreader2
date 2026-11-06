@@ -60,6 +60,8 @@ def validate_report(report: dict, *, pid: int, ticks: int,
     if not isinstance(rows, list) or len(rows) != samples:
         raise ValueError("native-candidate-sample-count-mismatch")
     prev_start = None
+    prev_end = None
+    first_start = None
     previous_utc = None
     timings = []
     intervals = []
@@ -73,7 +75,8 @@ def validate_report(report: dict, *, pid: int, ticks: int,
         end = row.get("monotonicEndMilliseconds")
         if (type(start) not in (int, float) or type(end) not in (int, float)
                 or not math.isfinite(start) or not math.isfinite(end)
-                or start < 0 or end <= start or (prev_start is not None and start <= prev_start)):
+                or start < 0 or end <= start or (prev_start is not None and start <= prev_start)
+                or (prev_end is not None and start < prev_end)):
             raise ValueError("native-candidate-sample-timing-invalid")
         try:
             begun = datetime.fromisoformat(row["startedAtUtc"].replace("Z", "+00:00"))
@@ -86,14 +89,17 @@ def validate_report(report: dict, *, pid: int, ticks: int,
         timings.append(end - start)
         if prev_start is not None:
             intervals.append(start - prev_start)
-        prev_start, previous_utc = start, begun
+        if first_start is None:
+            first_start = start
+        prev_start, prev_end, previous_utc = start, end, begun
     return {
         "sampleCount": samples,
         "firstXyz": {axis: rows[0][axis.lower()] for axis in ("X", "Y", "Z")},
         "lastXyz": {axis: rows[-1][axis.lower()] for axis in ("X", "Y", "Z")},
         "maxReadMilliseconds": max(timings),
         "maxStartGapMilliseconds": max(intervals, default=None),
-        "continuousCadenceUnder4Point5s": max(timings + intervals) < 4500,
+        "acquisitionSpanMilliseconds": prev_end - first_start,
+        "continuousCadenceUnder4Point5s": samples >= 2 and max(timings + intervals) < 4500,
         "positionChanged": any(
             any(row[axis] != rows[0][axis] for axis in ("x", "y", "z"))
             for row in rows[1:]),
