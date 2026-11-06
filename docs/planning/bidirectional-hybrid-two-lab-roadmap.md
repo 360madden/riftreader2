@@ -9,6 +9,13 @@ targets, not claims of implementation or blanket authorization for game input.
 Read [repository instructions](../../AGENTS.md), [current status](../status.md),
 and the [Casting handoff](../workflows/casting-handoff-2026-10-28.md) on resumption.
 
+**November 6 scheduling update:** Both labs remain the preferred controlled live-test
+targets; the physical RIFT installation is also available for complementary
+discovery. Use the current [three-target workflow](../workflows/development.md#three-target-discovery-scheduling)
+for target selection, bounded failover, separate evidence and user-interference
+handling. The historical two-lab plan below does not require waiting on one
+unavailable lab.
+
 ## Implementation prompt
 
 Develop RiftReader2 into a practical, bidirectional hybrid system in which the

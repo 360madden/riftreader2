@@ -28,6 +28,42 @@ Preserve unrelated changes. Generated analysis belongs under `artifacts/`.
 Use live RIFT or V1 lab tooling only for an explicitly authorized, bounded gate;
 record that evidence separately from offline repository validation.
 
+## Three-target discovery scheduling
+
+Joey's 2026-11-06 decision makes both labs and physical-PC RIFT available for
+authorized discovery. Prefer isolated labs to reduce inadvertent human input;
+these are starting roles, not fixed assignments or evidence of readiness.
+
+| Target | Starting role | Conditions |
+| --- | --- | --- |
+| RIFT-Lab-1 | Discovery | Fresh target preflight; swap with Lab-2 when useful. |
+| RIFT-Lab-2 | Independent validation | Reproduce with its own identity and evidence; swap with Lab-1 when useful. |
+| Physical-PC RIFT | Supplemental read-only/reference | Default while Joey uses the PC; controlled input requires existing target-specific authority and exclusive foreground/controller ownership. |
+
+1. State the bounded evidence goal, target assignments, verification and retry
+   limit. Independently check each selected target's process/start/build and the
+   player, source freshness, tool and controller prerequisites applicable to the
+   chosen operation. Unresolved player semantics remain candidate evidence; they
+   need not block an otherwise authorized raw discovery read. Keep artifacts
+   separate by target and epoch; resolve addresses afresh rather than copying
+   session addresses between targets.
+2. Run eligible complementary work, serializing heavy scans on the shared host.
+   Reuse existing tools and brief coordination notes; this policy does not call
+   for a persistent scheduler or framework.
+3. After bounded retry, record the blocker and classify it as target-specific
+   or shared. Switch to another eligible target for a target-specific blocker;
+   use safe independent/offline work when a shared prerequisite blocks the goal.
+   Never use a switch to bypass a denied action or shared gate.
+4. Before leaving active input, obtain clean STOP/key release and independently
+   verified controller cleanup. If cleanup is unknown, quarantine that target:
+   issue no further experimental input or start a competing controller; preserve
+   safe STOP/release and authorized recovery. Continue nonconflicting independent
+   work. Recheck authority and readiness on the replacement target before use.
+5. Record which target produced each result, what was actually verified and what
+   remains blocked. Availability does not grant blanket input, addon reload,
+   game/VM restart or patch-recovery authority; existing target-specific guards
+   and the direct ChatGPT Computer Use deferral remain in force.
+
 ## Restore, build, and test
 
 The Lua suite is mandatory. A repository-local environment keeps its dependency

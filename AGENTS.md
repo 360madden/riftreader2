@@ -170,6 +170,30 @@ Other input restrictions, patch-recovery deferral, V1 reference-only status and
 limits on dedicated gameplay automation remain in force. Roadmap targets are
 not implementation evidence or blanket action authorization.
 
+**Three-target scheduling — Joey's decision, 2026-11-06:** Use both labs and
+the physical-PC RIFT instance to accelerate authorized discovery; prefer the labs
+because they reduce exposure to inadvertent human input; still verify exclusive
+control for input experiments. Start with Lab-1
+discovery and Lab-2 independent validation, swapping roles as readiness warrants.
+Use physical RIFT as a supplemental read-only/reference target by default while
+Joey uses the PC. Controlled input requires existing target-specific authority
+and exclusive foreground/controller ownership; target availability grants no new
+input, reload, restart or patch-recovery authority.
+
+After bounded retry, classify a blocker as target-specific or shared and switch
+to an eligible target or independent offline work instead of stalling. A switch
+cannot bypass a denied action or shared prerequisite. Before abandoning active
+input, obtain clean STOP/key release and verified controller cleanup. If cleanup
+is unknown, quarantine that target: issue no further experimental input or start
+a competing controller, while preserving safe STOP/release and authorized recovery.
+Continue nonconflicting independent work. Reacquire each target's process/start/build
+and the player, source freshness, tool and controller prerequisites applicable
+to the chosen operation; unresolved player semantics remain candidate evidence;
+isolate artifacts and never reuse session addresses across targets. Serialize
+shared-host heavy scans. Coordinate this with the existing tools and concise
+notes, not a persistent scheduler or new framework. See the
+[practical scheduling workflow](docs/workflows/development.md#three-target-discovery-scheduling).
+
 **Autonomous information-channel trial — user grant, October 28:** After reserving
 idle Lab-2 and manually loading the guidance addon, Joey explicitly authorized
 the agent to attempt the command-entry work itself, use or design helper apps,
