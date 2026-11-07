@@ -92,6 +92,12 @@ versioned contracts and all authority, exact-identity, freshness and control
 protections. The root retains sole live-input ownership per lab and coordinates
 shared-host heavy work; workers gain no independent game-input authority.
 
+For Lab 2 read-only native/UI diagnostics, prefer the bounded
+`scripts/inspect_lab2_workflow.py run --native-vitals` entry point documented in
+[the measured latency workflow](docs/validation/lab2-end-to-end-latency-2026-11-06.md).
+It preserves fresh VM/game/agent admission, candidate labels, queue-owned capture
+and verified cleanup. Review the retained image after the lease is released.
+
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
 configuration, offline evidence workflows, and developer foundations. Follow

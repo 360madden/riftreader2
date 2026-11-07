@@ -174,6 +174,30 @@ contracts, deterministic replay and 1,029 relative links. Evidence:
 process plans; historical source hashes were distinguished from activated source.
 The consolidated comparison is `final-performance-summary.json`.
 
+Ten additional light joined checks at one-minute intervals all passed. The first
+dispatch through final return spanned 03:07:30.303541–03:16:34.700587 UTC
+(9 minutes 4.397 seconds). Child median was 4.2219 s, range 4.0368–4.5090 s;
+local subprocess dispatch median was 4.4464 s, range 4.2653–4.7412 s. Native-to-
+screenshot median was 0.569634 s, range 0.495324–0.609471 s. The independent
+`stability-audit.json` verifies every report/image hash, original VM/game identity,
+retained controller/source/config proof, unique named lease and attested cleanup.
+Between-check gaps of approximately 55 seconds were unobserved; this is sampled
+stability, not continuous freshness or general reliability qualification.
+
+Across those ten checks the largest stage medians were managed-plan admission
+1.7764 s, native-candidate stage including surrounding validation 0.5388 s,
+final inventory/managed proofs 0.3718 s, watchdog cleanup 0.3399 s, and screenshot
+0.1879 s. The native-stage scope differs from the standalone query and raw read.
+These identify the remaining measured cost without attributing it to model time.
+
+A final controller-only graceful reconnect was proven against the current source
+commit. The previous admission plan was refused in 0.0152 s; a newly admitted
+joined workflow then passed in 4.0796 s. VM/game epochs and the deployed guest
+agent remained unchanged. Root reviewed the final interval and post-reconnect
+images: matching static HP/resource values and a normally rendered scene.
+Receipts are under `reconnect/` and `joined-after-reconnect-01/`. All sampled final
+states were disarmed, idle, without sampled held inputs, with released leases.
+
 ## Reuse the workflow
 
 Choose a new output directory for every attempt; failed attempts remain available
@@ -187,6 +211,20 @@ python scripts/inspect_lab2_workflow.py run `
 For the fast joined diagnostic, add `--native-vitals` to that command. It requires
 the current persistent native capability and refuses an unsupported/replaced
 agent. It is mutually exclusive with the explicit-reader options below.
+
+Copyable PowerShell invocation from any working directory:
+
+```powershell
+Set-Location -LiteralPath 'C:\work\riftreader2'
+$lab2RunRoot = Join-Path 'C:\work\riftreader2\artifacts\e2e-latency-20261106' ([guid]::NewGuid().ToString('N'))
+& 'C:\Python314\python.exe' scripts\inspect_lab2_workflow.py run --native-vitals --output $lab2RunRoot
+```
+
+RIFT must already be running in Lab 2, foreground and disarmed. The workflow
+refuses changed target identity/geometry or a busy/recovering controller. Inspect
+the returned `report.json` and `capture/image.bmp`; image review is a separate
+step after release. On refusal, inspect stderr and the retained `run-failure.json`
+and stage timings when available. Use a new result directory for the next attempt.
 
 The explicit-reader alternative adds all three options together:
 
@@ -202,3 +240,17 @@ Success requires the expected terminal state, original epoch, cleanup generation
 increment and nonempty cleanup receipt. Artifact verification rejects target,
 geometry, UTC-window, BMP length/dimensions/hash or native report/identity drift.
 Images are reviewed after the lease is released.
+
+Optional rollback of the guest agent through the same guarded launcher:
+
+```powershell
+Set-Location -LiteralPath 'C:\work\riftreader2'
+$lab2RollbackRoot = Join-Path 'C:\work\riftreader2\artifacts\e2e-latency-20261106' ('rollback-' + [guid]::NewGuid().ToString('N'))
+& 'C:\Python314\python.exe' scripts\guest_agent_launcher.py update --managed-lab lab2 `
+  --release artifacts\e2e-latency-20261106\activation\rollback-release.json --output $lab2RollbackRoot
+```
+
+The retained descriptor selects the prior `agent-379637a8d2c0-zip` release. That
+version lacks persistent native vitals: use screenshot-only or the explicit-reader
+alternative after rollback. This command is documented for recovery; the measured
+new release remains active.
