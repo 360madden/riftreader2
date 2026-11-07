@@ -69,8 +69,25 @@ class ManagedReceiverTests(unittest.TestCase):
             with mock.patch.object(receiver, "TASKS", base), \
                  mock.patch.object(receiver, "sha", return_value="hash"):
                 self.assertTrue(receiver._matching_receipt("lab1", expected, config_path))
+                malformed_dir = base / "lab1" / "malformed"
+                malformed_dir.mkdir()
+                malformed_path = malformed_dir / "process.json"
+                for malformed in (None, [], 1, "receipt", {"processIdentity": None},
+                                  {"processIdentity": []},
+                                  {"processIdentity": {"image": []}}):
+                    with self.subTest(malformed=malformed):
+                        malformed_path.write_text(json.dumps(malformed))
+                        self.assertTrue(receiver._matching_receipt("lab1", expected, config_path))
                 expected["processStartUtcTicks"] += 1
                 self.assertFalse(receiver._matching_receipt("lab1", expected, config_path))
+
+    def test_task_status_rejects_non_object_json(self):
+        for value in (None, [], 1, "Running"):
+            with self.subTest(value=value), \
+                 mock.patch.object(receiver.subprocess, "run", return_value=mock.Mock(
+                     returncode=0, stdout=json.dumps(value).encode("utf-8"))):
+                with self.assertRaisesRegex(DependencyUnavailable, "managed-helper-status-invalid"):
+                    receiver._task_status("lab1")
 
     def test_ensure_reuses_without_starting_duplicate(self):
         candidate = {"pid": 123}

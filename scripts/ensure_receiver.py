@@ -112,6 +112,8 @@ def _task_status(lab):
         status = json.loads(result.stdout.decode("utf-8-sig"))
     except (UnicodeError, ValueError):
         _blocked("managed-helper-status-invalid")
+    if not isinstance(status, dict):
+        _blocked("managed-helper-status-invalid")
     if (status.get("state") != "Running"
             or status.get("atLogon") is not False
             or status.get("runLevel") != "Limited"):
@@ -130,7 +132,12 @@ def _matching_receipt(lab, receiver, config_path):
             if file.stat().st_size > 65_536:
                 continue
             value = json.loads(file.read_text(encoding="utf-8"))
+            if not isinstance(value, dict):
+                continue
             identity = value["processIdentity"]
+            if (not isinstance(identity, dict)
+                    or not isinstance(identity.get("image"), str)):
+                continue
             if (value.get("lab") == lab
                     and value.get("pid") == receiver["pid"]
                     and value.get("configSha256") == sha(config_path)
