@@ -9,6 +9,7 @@ fresh, exact review receipt and revalidates both VM and game epochs.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager, nullcontext
 import ctypes
 from ctypes import wintypes
 import importlib.util
@@ -147,6 +148,27 @@ def legacy_guest_target_for_vmx(vmx: Path) -> str | None:
 
 def query_game_identity(config: Config, expected_vm: dict) -> dict:
     """Read the exact native process StartTime ticks and executable hash in guest."""
+    with game_identity_session(config, expected_vm) as session:
+        return query_game_identity_in_session(config, session)
+
+
+@contextmanager
+def game_identity_session(config: Config, expected_vm: dict):
+    """Yield one VM-identity-pinned authenticated guest session."""
+    try:
+        with GuestSession(
+            config.vmrun,
+            config.vmx,
+            lambda: verify_identity(config, expected_vm),
+            legacy_guest_credential_target=legacy_guest_target_for_vmx(config.vmx),
+        ) as session:
+            yield session
+    except (SessionError, OSError):
+        _fail("game-identity-unavailable")
+
+
+def query_game_identity_in_session(config: Config, session: GuestSession) -> dict:
+    """Read exact game identity through an already authenticated guest session."""
     token = uuid.uuid4().hex
     guest_path = rf"C:\Users\Public\Documents\rr2-game-{token}.json"
     host_path = config.output / f".game-{token}.json"
@@ -163,12 +185,9 @@ def query_game_identity(config: Config, expected_vm: dict) -> dict:
     )
     cleanup = f"Remove-Item -LiteralPath '{quoted}' -Force -ErrorAction SilentlyContinue"
     try:
-        with GuestSession(config.vmrun, config.vmx,
-                          lambda: verify_identity(config, expected_vm),
-                          legacy_guest_credential_target=legacy_guest_target_for_vmx(config.vmx)) as session:
-            session.powershell(script)
-            session.copy_from_guest(guest_path, host_path)
-            session.powershell(cleanup)
+        session.powershell(script)
+        session.copy_from_guest(guest_path, host_path)
+        session.powershell(cleanup)
         payload = json.loads(host_path.read_text(encoding="ascii"))
         if set(payload) != {"processId", "processStartUtcTicks", "executableSha256"}:
             _fail("invalid-game-identity")
@@ -937,102 +956,105 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
             vm = collect_identity(config)
             if vm != plan["vmIdentity"]:
                 _fail("target-drift")
-            if fast_mode:
-                source = plan["fastResultSource"]
-                if not isinstance(source, dict) or not isinstance(source.get("sourcePin"), dict):
-                    _fail("invalid-fast-result-source")
-                pin = source["sourcePin"]
-                frozen_data = _read_regular(config.output / "source-receipt.json",
-                                            _live_gate.MAX_RECEIPT_BYTES, "frozen-receipt-unavailable")
-                frozen_snapshot = _read_regular(config.output / "source-snapshot.json",
-                                                _live_gate.MAX_RECEIPT_BYTES, "frozen-snapshot-unavailable")
-                if (hashlib.sha256(frozen_data).hexdigest() != source.get("receiptSha256")
-                        or hashlib.sha256(frozen_snapshot).hexdigest() != source.get("snapshotSha256")):
-                    _fail("frozen-source-changed")
-                frozen_receipt = _strict_json_bytes(frozen_data, "invalid-frozen-receipt")
-                if json.loads(frozen_snapshot) != frozen_receipt["observation"]:
-                    _fail("frozen-source-changed")
-                if operation["type"] == "deferred-result":
-                    intent = operation["intent"]
-                    _require_seed(intent, pin, frozen_receipt, exact_origin=True)
-                    current_receipt, current_bytes, _ = _fast_receipt(pin, initial=False)
-                    _require_seed(intent, pin, current_receipt)
-                    (config.output / "deferred-source-receipt.json").write_bytes(current_bytes)
-                    command, calculation_evidence = _calculate_deferred(
-                        intent, pin, current_receipt, config.output,
-                        Path(operation["frozenCalculatorDirectory"]))
-                    calculation_receipt = current_receipt
-                    report["calculationEvidence"] = calculation_evidence
-                else:
-                    _require_result_matches(command, pin, frozen_receipt)
-                    _fast_age(frozen_receipt)
-                    current_receipt, _, _ = _fast_receipt(pin, initial=False)
-                    _require_continuity(frozen_receipt, current_receipt)
-                game = {key: pin["gameIdentity"][key] for key in
-                        ("processId", "processStartUtcTicks", "executableSha256")}
-            else:
-                game = query_game_identity(config, vm)
-                _require_game(game, plan["gameIdentity"])
-            report["before"] = {"vm": vm, "game": game}
-            client = None
-            try:
-                client = connect(config)
-                # The guest identity/hash query can be slow.  Recheck freshness
-                # at the last possible point before the first key event.
-                validate_review(plan, review)
+            identity_session_context = (nullcontext(None) if fast_mode
+                                        else game_identity_session(config, vm))
+            with identity_session_context as identity_session:
                 if fast_mode:
+                    source = plan["fastResultSource"]
+                    if not isinstance(source, dict) or not isinstance(source.get("sourcePin"), dict):
+                        _fail("invalid-fast-result-source")
+                    pin = source["sourcePin"]
+                    frozen_data = _read_regular(config.output / "source-receipt.json",
+                                                _live_gate.MAX_RECEIPT_BYTES, "frozen-receipt-unavailable")
+                    frozen_snapshot = _read_regular(config.output / "source-snapshot.json",
+                                                    _live_gate.MAX_RECEIPT_BYTES, "frozen-snapshot-unavailable")
+                    if (hashlib.sha256(frozen_data).hexdigest() != source.get("receiptSha256")
+                            or hashlib.sha256(frozen_snapshot).hexdigest() != source.get("snapshotSha256")):
+                        _fail("frozen-source-changed")
+                    frozen_receipt = _strict_json_bytes(frozen_data, "invalid-frozen-receipt")
+                    if json.loads(frozen_snapshot) != frozen_receipt["observation"]:
+                        _fail("frozen-source-changed")
                     if operation["type"] == "deferred-result":
-                        _fast_age(calculation_receipt)
-                        current_receipt, _, _ = _fast_receipt(pin, initial=False)
-                        _require_continuity(calculation_receipt, current_receipt)
+                        intent = operation["intent"]
+                        _require_seed(intent, pin, frozen_receipt, exact_origin=True)
+                        current_receipt, current_bytes, _ = _fast_receipt(pin, initial=False)
                         _require_seed(intent, pin, current_receipt)
-                        _require_origin_near(calculation_receipt, current_receipt)
+                        (config.output / "deferred-source-receipt.json").write_bytes(current_bytes)
+                        command, calculation_evidence = _calculate_deferred(
+                            intent, pin, current_receipt, config.output,
+                            Path(operation["frozenCalculatorDirectory"]))
+                        calculation_receipt = current_receipt
+                        report["calculationEvidence"] = calculation_evidence
                     else:
+                        _require_result_matches(command, pin, frozen_receipt)
                         _fast_age(frozen_receipt)
                         current_receipt, _, _ = _fast_receipt(pin, initial=False)
                         _require_continuity(frozen_receipt, current_receipt)
-                report["inputMayHaveBeenSent"] = True
-                # Commands reach only a reviewed open, focused, empty chat
-                # entry. UI steps are exactly one reviewed key attempt.
-                _send_operation(client, operation, command)
-                report["inputSent"] = True
-                input_sent_at = datetime.now(timezone.utc)
-                report["inputSentAtUtc"] = input_sent_at.isoformat().replace("+00:00", "Z")
-                time.sleep(0.5)
-                _capture(client, config.output / "after-screen.png")
-            finally:
-                if client is not None:
-                    report["releaseSucceeded"] = _release_operation(client, command, operation)
-                    try:
-                        client.disconnect()
-                    except BaseException:
-                        pass
-            if not report["releaseSucceeded"]:
-                _fail("input-release-uncertain")
-            if fast_mode:
-                post_receipt, post_bytes, _ = _post_input_receipt(
-                    pin, current_receipt, input_sent_at)
-                post_path = config.output / "post-input-source-receipt.json"
-                with post_path.open("xb") as stream:
-                    stream.write(post_bytes)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                report["postInputReceipt"] = {
-                    "path": str(post_path.resolve()),
-                    "sha256": hashlib.sha256(post_bytes).hexdigest(),
-                    "receivedAtUtc": post_receipt["receivedAtUtc"],
-                    "capturedAtUtc": post_receipt["observation"]["capturedAtUtc"],
-                    "outerSequence": post_receipt["observation"]["sequence"],
-                }
-                verify_identity(config, vm)
-                game_after = {key: pin["gameIdentity"][key] for key in
-                              ("processId", "processStartUtcTicks", "executableSha256")}
-            else:
-                verify_identity(config, vm)
-                game_after = query_game_identity(config, vm)
-                _require_game(game_after, plan["gameIdentity"])
-            report["after"] = {"vm": vm, "game": game_after}
-            report["status"] = "completed"
+                    game = {key: pin["gameIdentity"][key] for key in
+                            ("processId", "processStartUtcTicks", "executableSha256")}
+                else:
+                    game = query_game_identity_in_session(config, identity_session)
+                    _require_game(game, plan["gameIdentity"])
+                report["before"] = {"vm": vm, "game": game}
+                client = None
+                try:
+                    client = connect(config)
+                    # The guest identity/hash query can be slow.  Recheck freshness
+                    # at the last possible point before the first key event.
+                    validate_review(plan, review)
+                    if fast_mode:
+                        if operation["type"] == "deferred-result":
+                            _fast_age(calculation_receipt)
+                            current_receipt, _, _ = _fast_receipt(pin, initial=False)
+                            _require_continuity(calculation_receipt, current_receipt)
+                            _require_seed(intent, pin, current_receipt)
+                            _require_origin_near(calculation_receipt, current_receipt)
+                        else:
+                            _fast_age(frozen_receipt)
+                            current_receipt, _, _ = _fast_receipt(pin, initial=False)
+                            _require_continuity(frozen_receipt, current_receipt)
+                    report["inputMayHaveBeenSent"] = True
+                    # Commands reach only a reviewed open, focused, empty chat
+                    # entry. UI steps are exactly one reviewed key attempt.
+                    _send_operation(client, operation, command)
+                    report["inputSent"] = True
+                    input_sent_at = datetime.now(timezone.utc)
+                    report["inputSentAtUtc"] = input_sent_at.isoformat().replace("+00:00", "Z")
+                    time.sleep(0.5)
+                    _capture(client, config.output / "after-screen.png")
+                finally:
+                    if client is not None:
+                        report["releaseSucceeded"] = _release_operation(client, command, operation)
+                        try:
+                            client.disconnect()
+                        except BaseException:
+                            pass
+                if not report["releaseSucceeded"]:
+                    _fail("input-release-uncertain")
+                if fast_mode:
+                    post_receipt, post_bytes, _ = _post_input_receipt(
+                        pin, current_receipt, input_sent_at)
+                    post_path = config.output / "post-input-source-receipt.json"
+                    with post_path.open("xb") as stream:
+                        stream.write(post_bytes)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    report["postInputReceipt"] = {
+                        "path": str(post_path.resolve()),
+                        "sha256": hashlib.sha256(post_bytes).hexdigest(),
+                        "receivedAtUtc": post_receipt["receivedAtUtc"],
+                        "capturedAtUtc": post_receipt["observation"]["capturedAtUtc"],
+                        "outerSequence": post_receipt["observation"]["sequence"],
+                    }
+                    verify_identity(config, vm)
+                    game_after = {key: pin["gameIdentity"][key] for key in
+                                  ("processId", "processStartUtcTicks", "executableSha256")}
+                else:
+                    verify_identity(config, vm)
+                    game_after = query_game_identity_in_session(config, identity_session)
+                    _require_game(game_after, plan["gameIdentity"])
+                report["after"] = {"vm": vm, "game": game_after}
+                report["status"] = "completed"
     except Blocked as exc:
         operation_error = exc
         report["status"] = "blocked"

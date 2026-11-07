@@ -244,6 +244,28 @@ class IdentityValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(module.Blocked, "game-identity-drift"):
             module._require_game(actual, expected)
 
+    def test_identity_session_closes_and_sanitizes_guest_failure(self):
+        events = []
+
+        class FailedSession:
+            def __enter__(self):
+                events.append("enter")
+                return self
+
+            def __exit__(self, *_args):
+                events.append("exit")
+
+            def powershell(self, _script):
+                raise module.SessionError("sensitive fixture detail")
+
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(module, "GuestSession", return_value=FailedSession()), \
+                self.assertRaisesRegex(module.Blocked, "^game-identity-unavailable$"):
+            config = module.Config(Path("lab.vmx"), 5905, Path("vmrun.exe"), Path(folder))
+            module.query_game_identity(config, {"vmwarePid": 99})
+
+        self.assertEqual(["enter", "exit"], events)
+
 
 class ExecuteTests(unittest.TestCase):
     class Client:
@@ -272,6 +294,38 @@ class ExecuteTests(unittest.TestCase):
             self.events.append(("mouseUp", button))
             if self.fail_release:
                 raise RuntimeError("mouse release failure")
+
+    def normal_execution_fixture(self, output, client=None):
+        now = datetime.now(timezone.utc)
+        game = module.validate_expected_game("lab2", 55, 639288075394270241, "d" * 64)
+        vm = {"vmwarePid": 99, "vmwareStartUtc": "epoch"}
+        command = "/rr2guide bind lab2 " + "a" * 32
+        screen = output / "review-screen.png"
+        screen.write_bytes(b"reviewed screen")
+        plan = {
+            "schemaVersion": 1, "captureId": "e" * 32,
+            "capturedAtUtc": (now - timedelta(seconds=2)).isoformat(),
+            "screen": str(screen), "screenSha256": module._sha(screen),
+            "operation": {"type": "command", "command": command},
+            "vmIdentity": vm, "gameIdentity": game,
+        }
+        plan["planSha256"] = module._plan_sha(plan)
+        plan_path = output / "plan.json"
+        plan_path.write_text(json.dumps(plan), encoding="utf-8")
+        review = {
+            "schemaVersion": 1, "captureId": plan["captureId"],
+            "screenSha256": plan["screenSha256"], "reviewedAtUtc": now.isoformat(),
+            "planSha256": plan["planSha256"],
+            "decision": "approved", "gameForeground": True,
+            "textEntryClosed": False, "chatEntryOpen": True,
+            "chatEntryEmpty": True, "chatEntryFocused": True, "panelOpen": False,
+            "soleControllerIdle": True, "knownControllerIdle": True, "queueIdle": True,
+            "reviewer": "root-agent", "note": "RIFT foreground reviewed",
+        }
+        review_path = output / "review.json"
+        review_path.write_text(json.dumps(review), encoding="utf-8")
+        config = module.Config(Path("lab.vmx"), 5905, Path("vmrun.exe"), output)
+        return config, plan_path, review_path, game, vm, command, client or self.Client()
 
     def test_execute_revalidates_and_types_one_exact_command(self):
         now = datetime.now(timezone.utc)
@@ -312,10 +366,15 @@ class ExecuteTests(unittest.TestCase):
                 destination.write_bytes(b"after")
                 return 800, 600
 
+            identity_session = object()
+
             with mock.patch.object(module, "ControlMutex", return_value=__import__("contextlib").nullcontext()), \
                     mock.patch.object(module, "collect_identity", return_value=vm), \
                     mock.patch.object(module, "verify_identity", return_value=vm), \
-                    mock.patch.object(module, "query_game_identity", return_value={k: game[k] for k in game if k != "lab"}) as query, \
+                    mock.patch.object(module, "game_identity_session",
+                                      return_value=__import__("contextlib").nullcontext(identity_session)) as session_factory, \
+                    mock.patch.object(module, "query_game_identity_in_session",
+                                      return_value={k: game[k] for k in game if k != "lab"}) as query, \
                     mock.patch.object(module, "connect", return_value=client), \
                     mock.patch.object(module, "_capture", side_effect=fake_capture), \
                     mock.patch.object(module, "_type_text", side_effect=lambda _client, value: client.events.append(("text", value))), \
@@ -326,6 +385,9 @@ class ExecuteTests(unittest.TestCase):
         self.assertEqual("completed", report["status"])
         self.assertTrue(report["inputSent"])
         self.assertEqual(2, query.call_count)
+        session_factory.assert_called_once_with(config, vm)
+        self.assertEqual([identity_session, identity_session],
+                         [call.args[1] for call in query.call_args_list])
         pressed = [item[1] for item in client.events if item[0] == "press"]
         self.assertEqual(["enter"], pressed)
         self.assertEqual([("text", command)], [item for item in client.events if item[0] == "text"])
@@ -333,6 +395,87 @@ class ExecuteTests(unittest.TestCase):
         self.assertTrue({"enter", "esc", "shift", "ctrl", "alt", "super", "a"}.issubset(released))
         self.assertTrue(report["releaseSucceeded"])
         self.assertEqual(2, review_check.call_count)
+
+    def test_execute_failure_releases_client_before_identity_session_closes(self):
+        for failure in ("send", "capture"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                timeline = []
+
+                class TrackedClient(self.Client):
+                    def disconnect(inner_self):
+                        timeline.append("client-disconnect")
+                        super().disconnect()
+
+                class TrackedSession:
+                    def __enter__(inner_self):
+                        timeline.append("session-enter")
+                        return inner_self
+
+                    def __exit__(inner_self, *_args):
+                        timeline.append("session-exit")
+
+                output = Path(folder)
+                config, plan_path, review_path, game, vm, _, client = \
+                    self.normal_execution_fixture(output, TrackedClient())
+
+                def fake_capture(_client, destination):
+                    if failure == "capture" and destination.name == "after-screen.png":
+                        raise RuntimeError("fixture capture failure")
+                    destination.write_bytes(b"after")
+                    return 800, 600
+
+                send = (mock.Mock(side_effect=RuntimeError("fixture send failure"))
+                        if failure == "send" else mock.Mock())
+                actual_game = {key: game[key] for key in game if key != "lab"}
+                with mock.patch.object(module, "ControlMutex", return_value=__import__("contextlib").nullcontext()), \
+                        mock.patch.object(module, "collect_identity", return_value=vm), \
+                        mock.patch.object(module, "game_identity_session", return_value=TrackedSession()), \
+                        mock.patch.object(module, "query_game_identity_in_session", return_value=actual_game), \
+                        mock.patch.object(module, "connect", return_value=client), \
+                        mock.patch.object(module, "_capture", side_effect=fake_capture), \
+                        mock.patch.object(module, "_send_operation", send), \
+                        mock.patch.object(module.time, "sleep"), \
+                        self.assertRaisesRegex(module.Blocked, "console-operation-failed"):
+                    module.execute(config, plan_path, review_path)
+
+                self.assertLess(timeline.index("client-disconnect"), timeline.index("session-exit"))
+                self.assertTrue(any(event[0] == "up" for event in client.events))
+
+    def test_execute_preinput_rejection_closes_session_without_sending_input(self):
+        for rejection in ("stale-review", "game-drift"):
+            with self.subTest(rejection=rejection), tempfile.TemporaryDirectory() as folder:
+                timeline = []
+
+                class TrackedSession:
+                    def __enter__(inner_self):
+                        timeline.append("session-enter")
+                        return inner_self
+
+                    def __exit__(inner_self, *_args):
+                        timeline.append("session-exit")
+
+                output = Path(folder)
+                config, plan_path, review_path, game, vm, _, client = \
+                    self.normal_execution_fixture(output)
+                actual_game = {key: game[key] for key in game if key != "lab"}
+                if rejection == "game-drift":
+                    actual_game = dict(actual_game)
+                    actual_game["processStartUtcTicks"] -= 1
+                review_effect = ([None, module.Blocked("stale-review-capture")]
+                                 if rejection == "stale-review" else None)
+                with mock.patch.object(module, "ControlMutex", return_value=__import__("contextlib").nullcontext()), \
+                        mock.patch.object(module, "collect_identity", return_value=vm), \
+                        mock.patch.object(module, "game_identity_session", return_value=TrackedSession()), \
+                        mock.patch.object(module, "query_game_identity_in_session", return_value=actual_game), \
+                        mock.patch.object(module, "connect", return_value=client) as connect_client, \
+                        mock.patch.object(module, "validate_review", side_effect=review_effect) if review_effect else __import__("contextlib").nullcontext(), \
+                        self.assertRaises(module.Blocked):
+                    module.execute(config, plan_path, review_path)
+
+                self.assertEqual(["session-enter", "session-exit"], timeline)
+                self.assertFalse(any(event[0] in ("press", "mousePress") for event in client.events))
+                if rejection == "game-drift":
+                    connect_client.assert_not_called()
 
     def test_normal_prepare_queries_game_once_before_capture(self):
         game = module.validate_expected_game("lab2", 55, 639288075394270241, "d" * 64)
