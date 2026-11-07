@@ -96,6 +96,62 @@ class LiveReaderConfigTests(unittest.TestCase):
             finally:
                 launch_live_reader.clean_private(staging)
 
+    def test_cleanup_accepts_virtualized_equivalent_parent(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            "os.environ", {"LOCALAPPDATA": directory}
+        ):
+            base = Path(directory) / "RiftReader2" / "HybridStaging"
+            staging = base / "run"
+            staging.mkdir(parents=True)
+            virtual = Path(directory) / "virtualized" / "run"
+            original_samefile = launch_live_reader.os.path.samefile
+            def samefile(left, right):
+                if Path(left) == virtual.parent and Path(right) == base:
+                    return True
+                return original_samefile(left, right)
+            with mock.patch.object(Path, "resolve", return_value=virtual), \
+                 mock.patch.object(launch_live_reader.os.path, "samefile", side_effect=samefile), \
+                 mock.patch.object(launch_live_reader.shutil, "rmtree") as remove:
+                launch_live_reader.clean_private(staging)
+            remove.assert_called_once_with(virtual)
+
+    def test_cleanup_rejects_other_directory_and_unverifiable_identity(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            "os.environ", {"LOCALAPPDATA": directory}
+        ):
+            base = Path(directory) / "RiftReader2" / "HybridStaging"
+            base.mkdir(parents=True)
+            outside = Path(directory) / "outside"
+            outside.mkdir()
+            with mock.patch.object(launch_live_reader.shutil, "rmtree") as remove:
+                with self.assertRaisesRegex(RuntimeError, "private-staging-cleanup-scope"):
+                    launch_live_reader.clean_private(outside)
+                with mock.patch.object(launch_live_reader.os.path, "samefile", side_effect=OSError("denied")):
+                    with self.assertRaisesRegex(RuntimeError, "private-staging-cleanup-scope"):
+                        launch_live_reader.clean_private(outside)
+                remove.assert_not_called()
+
+    def test_cleanup_rejects_symlink_and_reparse_point(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
+            "os.environ", {"LOCALAPPDATA": directory}
+        ):
+            base = Path(directory) / "RiftReader2" / "HybridStaging"
+            staging = base / "run"
+            staging.mkdir(parents=True)
+            with mock.patch.object(Path, "lstat") as info, \
+                 mock.patch.object(launch_live_reader.shutil, "rmtree") as remove:
+                info.return_value.st_file_attributes = 0x400
+                with self.assertRaisesRegex(RuntimeError, "private-staging-cleanup-scope"):
+                    launch_live_reader.clean_private(staging)
+                remove.assert_not_called()
+            link = base / "link"
+            try:
+                link.symlink_to(staging, target_is_directory=True)
+            except OSError:
+                return  # Windows developer-mode privileges may be unavailable.
+            with self.assertRaisesRegex(RuntimeError, "private-staging-cleanup-scope"):
+                launch_live_reader.clean_private(link)
+            self.assertTrue(staging.is_dir())
 
 if __name__ == "__main__":
     unittest.main()

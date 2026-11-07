@@ -229,9 +229,20 @@ def private_config(run_id: str, endpoint: str, token: str, guest_output: str,
 
 
 def clean_private(staging: Path) -> None:
-    base = (Path(os.environ["LOCALAPPDATA"]) / "RiftReader2" / "HybridStaging").resolve()
-    target = staging.resolve()
-    if target.parent != base or not target.name:
+    base = Path(os.environ["LOCALAPPDATA"]) / "RiftReader2" / "HybridStaging"
+    try:
+        # Refuse directory symlinks and Windows junctions, even when they point
+        # at another child of the permitted base. Compare filesystem identities:
+        # Windows app virtualization can give the same parent two resolved names.
+        info = staging.lstat()
+        if (staging.is_symlink() or getattr(info, "st_file_attributes", 0) & 0x400
+                or not staging.is_dir()):
+            fail("private-staging-cleanup-scope")
+        target = staging.resolve(strict=True)
+        if (not target.name or not os.path.samefile(staging.parent, base)
+                or not os.path.samefile(target.parent, base)):
+            fail("private-staging-cleanup-scope")
+    except OSError:
         fail("private-staging-cleanup-scope")
     shutil.rmtree(target)
 
