@@ -36,6 +36,15 @@ Reader117503840 bytes, SHA256
 `B56216935082462AF9B381EC37C84D83E74B35FBE97BAD515ADCB63DA8C39D62`,
 at`artifacts/native-ability-variants-20261107/publish/`.
 
+Independent Lab2 repository run completed13:28 Eastern: all eight expected
+parents each had TWO typed0061 keys (sixteen references). Parents: Call:
+Razorbeast, Empowered Shot, On the Double, Divert Rage, Cadence, Ace Shot,
+Splinter Shot, Deadeye Shot. Catalog134 rows/121 names/all54 filter rows named,
+zero decoder failures,23.247498s span. Receipt
+`artifacts/native-ability-catalog-20261107/runs/lab2/c89e9f59c2fc4e88a14eea18bf4e34ff/catalog-summary.json`,
+SHA256`ED675A6C9A74A83302FFAE46722ECF399431FC6C1185B6B7B0FDB4FA3D3D9841`.
+Different VM/game epochs were independently checked; no addresses were copied.
+
 Next useful observation resolves those possible keys to resident0051 definitions,
 names and raw timing, with fresh epoch and ordered parent-vector rechecks. Cache
 misses are not absence, raw filter is not learned membership, and referenced

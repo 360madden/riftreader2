@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **13:27 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **13:29 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -46,7 +46,7 @@ is current authority. Keep source files frozen while a source-pinned run exists.
 | Selected target |HP candidate1224100/1224100; XYZ7428.7246/863.526/2950.8438|Honest target-unavailable/null result|
 | Target name |Mode1/formattingFlag0 selects base-name candidate Normal Practice Dummy|Not captured|
 | Target level/combat |Typed raw level0/combat0; actual numeric getter alternate-secondary returns50|Not captured|
-| Ordered variants |6 parents,2 typed0061 keys each;16.22s catalog span|Current capture pending|
+| Ordered variants |6 parents,2 typed0061 keys each;16.22s catalog span|8 parents,2 typed0061 keys each;23.25s span|
 
 Name's locale1 dictionary key1290053851 missed; selected fallback text is a
 SEPARATE branch-backed candidate. Public name/level, API/UI agreement, changed
@@ -64,19 +64,24 @@ observed on generic Use, not the common spell route. Context overrides remain.
 
 ## Current active work — resume here
 
-**Lab2 variant-aware catalog ACTIVE: exec session81575.** Command is the second
-working command above. Do not edit catalog/helper sources while it runs. Poll,
-inspect actual summary/ordered variants, then update the milestone. Lab1 result:
+Lab2 variant-aware catalog completed successfully. Receipt
+`artifacts/native-ability-catalog-20261107/runs/lab2/c89e9f59c2fc4e88a14eea18bf4e34ff/catalog-summary.json`,
+SHA256ED675A6C9A74A83302FFAE46722ECF399431FC6C1185B6B7B0FDB4FA3D3D9841.
+Lab1 result:
 `artifacts/native-ability-catalog-20261107/runs/lab1/b4975f0021344082b8802e174cae155c/catalog-summary.json`,
 SHA2560155EDCFBA158A09F22D69EC04E0844A7FE1856095EB012119AAFBA4D4B3B643.
 Native raw-variant slice passed9 focused cases; root reviewed boundaries and used it.
 
-Worker tls_metadata owns NEW `scripts/sample_current_native_variant_definitions.py`
-(being prepared). It will resolve referenced keys with the SAME reader, fresh
-source epoch and ordered parent-vector rechecks, preserve cache misses, and decode
-names/raw timing. Lookup deduplication must not discard relationship order or
-holes. No selected-winner/learned claim. Root performs its first live run only
-when ready. Existing native workers are idle; assign new meaningful work when
+**Lab1 definition lookup ACTIVE: exec session15970.** NEW uncommitted launcher
+`scripts/sample_current_native_variant_definitions.py --lab lab1 --catalog`
+followed by the absolute Lab1 catalog path above. Root reviewed it; it resolves
+referenced keys with the SAME reader, fresh source epoch and ordered parent-vector
+rechecks before/after, preserving cache misses and decoding names/raw timing.
+Source files remain PINNED while this operation runs; do not edit launcher/catalog
+or decoder helpers. Lookup deduplication does not discard relationship order or
+holes. No selected-winner/learned claim. Root owns this first live run.
+Static workers investigate0743 shortcut owner and variant fallback edge cases.
+Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
 
 Current catalog reader:117503840 bytes, SHA256
@@ -102,7 +107,7 @@ Never overwrite an earlier publication or active workflow bundle.
 Recent local commits:015f784 target position;6359c38 user-requested checkpoint
 then immediate resume;71ff9a3 template-name inputs;b04edf8 mode-selected name and
 four-hour extension;073a38d target raw context;5ec07e4 target numeric level;
-3943cfc factory/cooldown-gate findings. Raw-variant milestone is next. No push.
+3943cfc factory/cooldown-gate findings;f2b5f24 raw ordered variants. No push.
 
 Optional Lab2 UI comparison is CLOSED after dependency-admission SessionError;
 no image/API/UI agreement was accepted. Later status was connected/disarmed-idle,
