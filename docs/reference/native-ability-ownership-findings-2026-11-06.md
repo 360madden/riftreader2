@@ -130,6 +130,31 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Adjusted-cost boundary — November7, 11:22 Eastern
+
+Lab1's passive Charge-list discriminator completed with fresh independent map
+ownership, matching producer cached-context/entity, two equal sentinel reads,
+final producer anchors and final process inspection. The pointer at component
++310 did NOT equal component+310. Receipt:
+`artifacts/native-ability-costs-20261107/lab1/b519419d204d4aaf8bd6d8195b9ffecb/summary.json`.
+The empty-list bypass is unavailable in this observation. A nonempty list does
+not prove that a modifier applies to a requested key; no final Charge amount
+is accepted from the raw base delta. Do not invent a persistent modifier tree.
+
+Retained static tracing also identifies the Mana-side scaling basis as level-table
+base Mana points, with same-level Wisdom/Intelligence contributions on one
+branch; mentoring uses a different branch. This is not established as the live
+Unit.Detail.manaMax value. Per-ability modifiers and populated context/stat/table
+ownership still need resolution before publishing a current adjusted amount.
+The detailed exact-RVA trace is in `artifacts/discovery-20261107-cast/cost-next-step.md`.
+These branches are recorded for continuation, not prerequisites to using raw
+inputs or the already working name/ID candidates.
+
+Next practical idle inputs: verified0051 record signed DWORD+94 feeds base
+cooldown milliseconds; cast-reference spans at+5F0/+5F8 and+8E8/+8F0 can hold
+a single0650 or0678 child with signed DWORD+20. API selection/fallback and
+player modifiers remain separate. See `artifacts/discovery-20261107-cast/ability-timing-next-step.md`.
+
 ### Bulk native names and raw costs — November7, 11:14 Eastern
 
 Lab1's one-process dictionary reader captured114/114 requested nonzero name keys

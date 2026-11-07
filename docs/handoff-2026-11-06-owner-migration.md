@@ -4,7 +4,7 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 11:14 Eastern
+### Checkpoint — 2026-11-07 11:22 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
@@ -12,6 +12,8 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 | Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
 | Localization | 🟢 Bulk native capture verified |114/114 name keys captured25.493ms and decoded;119/122 rows named, all43 nonzero-filter rows named. |
 | Raw ability costs | 🟢 Typed raw payloads captured |122 records37.899ms;55 empty,62 type1E2B Mana/Charge raw inputs,5 typed-unhandled1E2D. No adjusted amounts. |
+| Adjusted costs | 🟡 Shortcut blocked | Lab1 Charge list is nonempty; cannot bypass per-key modifiers. Raw results remain useful; no final amount claim. |
+| Idle ability timing | ▶ Next discovery | Implement opt-in base cooldown+94 and typed single-child cast inputs; keep API selection/modifiers separate. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -74,6 +76,15 @@ branches from retained evidence and a bounded passive discriminant. Do not label
 raw floats as Mana points or raw signed fields as final Charge changes.
 Duration still lacks a live matching object; repeated idle samples are not the
 next default task. Keep the five-hour goal active until13:26 Eastern.
+
+**11:22 Eastern — passive discriminator blocker:**
+`artifacts/native-ability-costs-20261107/lab1/b519419d204d4aaf8bd6d8195b9ffecb/summary.json`
+passed cached producer-context/entity, independent player-component, repeated
+sentinel and final root/process checks. `rawSentinelPointsToSelf=false`; the
+empty-list Charge shortcut is unavailable. Do not equate a nonempty list with
+an active modifier for any particular key. Record the blocker and continue idle
+base-timing inputs instead of making full adjusted-cost reconstruction a gate.
+Latest committed bulk milestone: `c7a39ed`; raw/decoder milestone `fd120e5`.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

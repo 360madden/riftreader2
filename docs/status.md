@@ -1,5 +1,12 @@
 # Current status
 
+**2026-11-07 11:22 Eastern — ADJUSTED-COST BOUNDARY:** Lab1's Charge modifier
+list pointer was stably non-self under fresh player/producer-context and process
+checks. The empty-list bypass is unavailable; no final Charge amount is accepted.
+Continue useful idle base cooldown/cast-time inputs while retaining the working
+names/IDs/raw costs. This does not change owner or input authority. See the
+[checkpoint](handoff-2026-11-06-owner-migration.md).
+
 **2026-11-07 11:14 Eastern — BULK NAMES / RAW COSTS:** Lab1 native dictionary
 capture returned114/114 keys in25.493ms; all decoded under the strict shape.
 Joined122 rows have119 candidate names and43/43 named nonzero-filter rows.
