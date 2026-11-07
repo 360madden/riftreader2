@@ -1,5 +1,6 @@
 """Offline fail-closed checks for one managed movement controller generation."""
 from pathlib import Path
+from contextlib import contextmanager
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, patch
@@ -222,6 +223,41 @@ class ManagedCliTests(unittest.TestCase):
         self.assertIsNone(parsed.managed_lab)
 
 
+class PreparedTaskVerifierScopeTests(unittest.TestCase):
+    def test_inspection_second_proof_keeps_full_resolver_and_exact_receipt_comparison(self):
+        import tempfile
+        from scripts import managed_controller_receipt as managed
+        with tempfile.TemporaryDirectory() as temporary:
+            receipt_path = Path(temporary) / "process.json"
+            receipt_path.write_text("{}", encoding="utf-8")
+            receipt = {"pid": 123}
+            verifier = MagicMock()
+            with patch.object(managed, "resolve_current_managed_controller",
+                              return_value=(receipt_path, receipt, {})) as resolver:
+                runner._require_exact_managed_task(
+                    "lab2", receipt_path, receipt, inspect_lab2=True,
+                    _inspection_task_verifier=verifier)
+                resolver.assert_called_once_with(
+                    "lab2", expected_receipt_path=receipt_path,
+                    verify_owner=verifier, allow_legacy=False)
+                resolver.return_value = (receipt_path, {"pid": 124}, {})
+                with self.assertRaisesRegex(runner.MovementSessionError, "receipt was altered"):
+                    runner._require_exact_managed_task(
+                        "lab2", receipt_path, receipt, inspect_lab2=True,
+                        _inspection_task_verifier=verifier)
+
+    def test_prepared_verifier_cannot_enter_ordinary_or_lab1_proof(self):
+        from scripts import managed_controller_receipt as managed
+        with patch.object(managed, "resolve_current_managed_controller") as resolver:
+            for lab, inspection in (("lab1", False), ("lab2", False), ("lab1", True)):
+                with self.subTest(lab=lab, inspection=inspection):
+                    with self.assertRaises(runner.MovementSessionError):
+                        runner._require_exact_managed_task(
+                            lab, Path("unused"), {}, inspect_lab2=inspection,
+                            _inspection_task_verifier=MagicMock())
+            resolver.assert_not_called()
+
+
 class ManagedPlanDiscoveryTests(unittest.TestCase):
     def setUp(self):
         import tempfile
@@ -279,6 +315,8 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.inspection_task_checks = []
         self.inventory = MagicMock(return_value=self.vm)
         self.direct_identity = MagicMock(return_value=self.vm)
+        self.proof_events = []
+        self.prepared_verifier = MagicMock()
 
     def create_receipt(self, name):
         import json
@@ -288,16 +326,27 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
 
     def generate(self, *, reject_strict=False, require_foreground=True, return_host=False,
                  inspection=False):
+        from scripts import managed_controller_receipt as managed
         fake_guard = SimpleNamespace(
             enabled=True, config="native-config",
             module=SimpleNamespace(collect_identity=self.inventory, verify_identity=native.verify_identity),
         )
         fake_client = SimpleNamespace(request=lambda path, method: self.status_value)
-        def admission(*args, inspect_lab2=False):
+        def admission(*args, inspect_lab2=False, _inspection_task_verifier=None):
             self.admission_calls.append(args)
             self.inspection_task_checks.append(inspect_lab2)
+            self.proof_events.append("second-proof" if _inspection_task_verifier else "first-proof")
             if reject_strict:
                 raise runner.MovementSessionError("managed task ownership refused")
+            if _inspection_task_verifier is not None:
+                _inspection_task_verifier(args[0], args[2]["pid"])
+        @contextmanager
+        def prepared():
+            self.proof_events.append("prepare")
+            try:
+                yield self.prepared_verifier
+            finally:
+                self.proof_events.append("close")
         with patch.object(runner, "ROOT", self.root), \
              patch.dict(self.dependency.CONFIGS, {"lab2": self.config_path}, clear=True), \
              patch.object(self.dependency, "QUEUE", self.queue_path), \
@@ -307,6 +356,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
              patch.object(runner, "listener_owner", return_value=123), \
              patch.object(runner, "process_identity", return_value=self.identity), \
              patch.object(runner, "VmEpochGuard", return_value=fake_guard), \
+             patch.object(managed, "prepared_lab2_inspection_task", side_effect=prepared), \
              patch.object(native, "_direct_identity", self.direct_identity), \
              patch.object(runner.PinnedHost, "status", autospec=True,
                           side_effect=runner.PinnedHost.status) as status, \
@@ -334,6 +384,8 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.assertEqual(self.inspection_task_checks, [False, False])
         self.assertEqual(self.inventory.call_count, 3)
         self.direct_identity.assert_not_called()
+        self.prepared_verifier.assert_not_called()
+        self.assertEqual(self.proof_events, ["first-proof", "first-proof"])
 
     def test_inspection_checks_inventory_at_both_boundaries_and_epoch_around_status(self):
         host = self.generate(inspection=True)
@@ -342,6 +394,29 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.assertEqual(self.inspection_task_checks, [True, True])
         self.assertEqual(self.inventory.call_count, 2)
         self.assertEqual(self.direct_identity.call_count, 2)
+        self.assertEqual(self.proof_events, ["prepare", "first-proof", "second-proof", "close"])
+        self.prepared_verifier.assert_called_once_with("lab2", 123)
+
+    def test_inspection_second_task_instance_failure_denies_admission(self):
+        self.prepared_verifier.side_effect = runner.MovementSessionError("task instance changed")
+        with self.assertRaisesRegex(runner.MovementSessionError, "task instance changed"):
+            self.generate(inspection=True)
+        self.assertEqual(self.proof_events, ["prepare", "first-proof", "second-proof", "close"])
+        self.inventory.assert_not_called()
+        self.direct_identity.assert_not_called()
+
+    def test_inspection_first_proof_failure_closes_unused_preparation(self):
+        with self.assertRaisesRegex(runner.MovementSessionError, "ownership refused"):
+            self.generate(inspection=True, reject_strict=True)
+        self.assertEqual(self.proof_events, ["prepare", "first-proof", "close"])
+        self.prepared_verifier.assert_not_called()
+        self.assertFalse((self.output / "managed-host-plan.json").exists())
+
+    def test_ordinary_constructor_refuses_prepared_inspection_verifier_before_io(self):
+        with self.assertRaisesRegex(runner.MovementSessionError, "requires Lab 2 inspection"):
+            runner.ManagedPinnedHost(self.output / "absent.json",
+                                     _inspection_task_verifier=self.prepared_verifier)
+        self.prepared_verifier.assert_not_called()
 
     def test_inspection_requires_running_vm_at_admission(self):
         self.inventory.side_effect = native.Blocked("target-vm-not-running")

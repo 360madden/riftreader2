@@ -162,16 +162,20 @@ class PinnedHost:
 
 
 
-def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict, *, inspect_lab2=False) -> None:
+def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict, *, inspect_lab2=False,
+                                _inspection_task_verifier=None) -> None:
     """Verify task registration and the sole live generation at admission time."""
     from scripts.managed_controller_receipt import (
         ManagedReceiptError, resolve_current_managed_controller, verify_lab2_inspection_task,
     )
     require(not inspect_lab2 or lab == "lab2", "Lab 2 inspection task required")
+    require(_inspection_task_verifier is None or inspect_lab2,
+            "prepared task verifier requires Lab 2 inspection")
     try:
         actual_path, actual_receipt, _ = resolve_current_managed_controller(
             lab, expected_receipt_path=receipt_path,
-            verify_owner=verify_lab2_inspection_task if inspect_lab2 else None,
+            verify_owner=(_inspection_task_verifier if _inspection_task_verifier is not None
+                          else verify_lab2_inspection_task) if inspect_lab2 else None,
             allow_legacy=not inspect_lab2)
     except (ManagedReceiptError, OSError, RuntimeError) as error:
         raise MovementSessionError("managed task ownership or generation refused") from error
@@ -185,7 +189,9 @@ class ManagedPinnedHost(PinnedHost):
     _allowed_labs = ("lab1", "lab2")
     _inspect_lab2_task = False
 
-    def __init__(self, plan_path: Path):
+    def __init__(self, plan_path: Path, *, _inspection_task_verifier=None):
+        require(_inspection_task_verifier is None or self._inspect_lab2_task,
+                "prepared task verifier requires Lab 2 inspection")
         self.plan_path = Path(plan_path).resolve(strict=True)
         self.plan = load(self.plan_path)
         plan = self.plan
@@ -206,7 +212,10 @@ class ManagedPinnedHost(PinnedHost):
                 and plan["resource"] == "vm:rift-lab-" + lab[-1],
                 "managed host plan paths or resource mismatch")
         self.receipt = load(self.receipt_path)
-        _require_exact_managed_task(lab, self.receipt_path, self.receipt, inspect_lab2=self._inspect_lab2_task)
+        task_options = {"inspect_lab2": self._inspect_lab2_task}
+        if _inspection_task_verifier is not None:
+            task_options["_inspection_task_verifier"] = _inspection_task_verifier
+        _require_exact_managed_task(lab, self.receipt_path, self.receipt, **task_options)
         self.config = HostConfig.load(config_path)
         self.client = ControlClient(self.config)
         self.target = plan.get("target")
@@ -374,8 +383,14 @@ def admit_managed_host(lab: str, output: Path, *, require_foreground=True) -> Ma
 
 
 def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
-    admitted = Lab2InspectionHost(_discover_managed_host_plan("lab2", output, inspect_lab2=True))
-    admitted.status(require_armed=False, require_foreground=True)
+    from scripts.managed_controller_receipt import prepared_lab2_inspection_task
+    # Overlap only module startup. The second live task query remains at the
+    # constructor's exact ownership-proof boundary, after fresh receipt resolution.
+    with prepared_lab2_inspection_task() as verify_second:
+        admitted = Lab2InspectionHost(
+            _discover_managed_host_plan("lab2", output, inspect_lab2=True),
+            _inspection_task_verifier=verify_second)
+        admitted.status(require_armed=False, require_foreground=True)
     return admitted
 
 

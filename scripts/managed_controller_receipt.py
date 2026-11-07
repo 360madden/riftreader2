@@ -1,10 +1,11 @@
 """Find and validate one *already-running* on-demand managed controller generation.
 
 Pure filesystem/process inspection plus the existing task-ownership status check.
-Never calls ensure(), launches a process, controls the VM, or sends game input.
+Never starts a controller, controls the VM, or sends game input.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime
 import hashlib
 import json
@@ -12,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import time
 
 
 SHA = re.compile(r"[0-9a-fA-F]{64}")
@@ -104,8 +106,12 @@ def verify_lab2_inspection_task(lab: str, expected_pid: int) -> None:
          "-File", str(MANAGER), "-Action", "Status", "-HelperId", "rr2-controller-lab2",
          "-InspectLab2Controller"], cwd=str(root), stdin=subprocess.DEVNULL,
         capture_output=True, timeout=20, check=False)
-    require(result.returncode == 0, "inspection-task-ownership-refused")
-    status = json.loads(result.stdout.decode("utf-8-sig"))
+    _require_lab2_inspection_result(result.returncode, result.stdout, expected_pid)
+
+
+def _require_lab2_inspection_result(returncode, stdout, expected_pid):
+    require(returncode == 0, "inspection-task-ownership-refused")
+    status = json.loads(stdout.decode("utf-8-sig"))
     from scripts.ensure_receiver import _valid_instance_guid
     require(isinstance(status, dict) and type(status.get("enginePid")) is int
             and status["enginePid"] == expected_pid and _valid_instance_guid(status.get("instanceGuid"))
@@ -113,6 +119,59 @@ def verify_lab2_inspection_task(lab: str, expected_pid: int) -> None:
             and status.get("taskName") == "RiftReader2 Helper rr2-controller-lab2"
             and status.get("state") == "Running" and status.get("runLevel") == "Limited"
             and status.get("atLogon") is False, "inspection-task-ownership-refused")
+
+
+_INSPECTION_SIGNAL = "inspect-lab2-controller"
+_INSPECTION_TIMEOUT = 20
+
+
+@contextmanager
+def prepared_lab2_inspection_task():
+    """Warm one interpreter during discovery. Only the constructor signals a fresh proof."""
+    from scripts.controller_task_entry import POWERSHELL
+    from scripts.ensure_controller import MANAGER
+    manager = str(MANAGER).replace("'", "''")
+    command = f"""
+$ErrorActionPreference = 'Stop'
+foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')) {{
+    Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', $module, ($module + '.psd1'))) -ErrorAction Stop
+}}
+$reader = [IO.StreamReader]::new([Console]::OpenStandardInput())
+$signal = $reader.ReadLineAsync()
+if (!$signal.Wait({_INSPECTION_TIMEOUT * 1000}) -or $signal.Result -cne '{_INSPECTION_SIGNAL}') {{ exit 1 }}
+& '{manager}' -Action Status -HelperId rr2-controller-lab2 -InspectLab2Controller
+"""
+    deadline = time.monotonic() + _INSPECTION_TIMEOUT
+    with subprocess.Popen(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
+         "-Command", command], cwd=str(MANAGER.parent.parent), stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    ) as child:
+        available = True
+
+        def verify(lab, expected_pid):
+            nonlocal available
+            require(available, "inspection-task-already-consumed")
+            available = False
+            require(lab == "lab2" and type(expected_pid) is int and expected_pid > 0,
+                    "inspection-task-target-invalid")
+            remaining = deadline - time.monotonic()
+            require(remaining > 0, "inspection-task-expired")
+            try:
+                stdout, _ = child.communicate((_INSPECTION_SIGNAL + "\n").encode("ascii"),
+                                              timeout=remaining)
+            except subprocess.TimeoutExpired as error:
+                raise ManagedReceiptError("inspection-task-expired") from error
+            _require_lab2_inspection_result(child.returncode, stdout, expected_pid)
+
+        try:
+            yield verify
+        finally:
+            available = False
+            if child.poll() is None:
+                child.kill()
+                child.wait(timeout=5)
 
 
 def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
