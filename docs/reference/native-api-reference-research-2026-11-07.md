@@ -81,3 +81,17 @@ adjustment, selected variants, or freshness across the different captures.
 Full source hashes, all matches and limitations are in
 `artifacts/rre-peer-reference-20261107/official-souls-comparison.json` and
 `artifacts/rre-peer-reference-20261107/official-souls-comparison.md`.
+
+## Historical vendor item Range examples
+
+The vendor's [2018-10-16 Discoveries archive](https://webcdn.triongames.com/addons/assets/Rift_Discoveries_2018-10-16.zip)
+contains `Items.xml`. A bounded HTTP range and in-memory deflate of its initial
+prefix observed Dread Axe of Dancing Blades (`2h_axe`) with `Range` `3.000000`.
+A separate bounded prefix observed Thunderous Blunderbuss of Accursed Dreamers
+(`2h_ranged_gun`) with `Range` `30.000000`. The archive was 157,876,206 bytes;
+these were partial reads, not full-archive or member checksum verification.
+Details, byte ranges, ETag and item identifiers are retained in
+`artifacts/sammie315-coordination-20261107/discoveries-item-schema.md` and
+`artifacts/sammie315-coordination-20261107/discoveries-ranged-item-sample.md`.
+These historical raw fields establish no units, current equipped-item value,
+runtime identifier mapping, or ability-range formula.

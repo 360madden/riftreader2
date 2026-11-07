@@ -120,3 +120,52 @@ path rather than the ordinary mode-0 adjustment path. Receipt:
 (SHA256 `0DA2C0FB2CEE9938008B990A3E0CE2F39EB0A007FB0CDD7AC2C480221127A7B6`).
 These are cross-phase candidate observations, with variant selection and final
 range still unqualified.
+
+A later Lab 2 factor capture observed a typed role-factor candidate of 5. With
+the corrected mode-0 predicate and float32 source operation order, 13 parent
+range inputs produce +5 candidates. The parent-only historical comparison has
+15 matching values and five differences. A separate capture of both typed
+children for each of those five variant parents found base maximum 30 and
+qualifying tags for all ten; each child conditionally yields 35 and agrees with
+its parent's historical API maximum. See
+`artifacts/discovery-20261107-cast/range-reconciliation.json` and its offline
+reproducer. The factor receipt is
+`artifacts/native-cooldown-modifiers-20261107/runs/lab2/d647472e249f4ed186c7dc055657c00c/samples.json`
+(SHA256 `B4A99716DEDC53F56FCA35CD75FBD338D7F4807A081B657E47281D6DE79FC722`);
+the ten-child receipt is
+`artifacts/native-range-inputs-20261107/runs/lab2/f7a73668146d4eb9a051faabf6fead63/samples.json`
+(SHA256 `EEF4697145E745E0E431A67C72B72547A3BCBAE9161C22A72CE092E4EA6A6E5F`).
+The factor, parent and child observations are cross-phase; they do not establish
+the selected variant or an atomic parent-child edge, current API parity,
+changed-state freshness, or restart qualification.
+
+A closer sequence 9 reference, snapshot 21:58:34 UTC, was compared separately
+against the same parent/child candidates: 15 parent values match, five differ,
+and both conditional children match for each of those five. The remaining rows
+have omitted API values or an unresolved special path. Its normalized reference
+`artifacts/rre-peer-reference-seq9-20261107/abilities.json` has SHA256
+`AE32500583E503916D9F8C181CBA19187BFBEC8294F51F6A91B6354D65D0AE9A`;
+the updated range-reconciliation artifact preserves both reference comparisons.
+The original live CLI attempt exited 2; sequence 9 was processed by an offline
+replay. The retained snapshot and supplied identity do not establish producer
+authenticity, API freshness, atomicity, or restart qualification.
+
+The separate energy reconciliation covers all 16 captured variant children.
+Both candidates match the sequence 9 value for Empowered Shot, On the Double,
+Divert Rage, Ace Shot, and Splinter Shot. Call: Razorbeast has candidates
+15/100 versus API 100, and Cadence has 15/40 versus API 40; each matches only
+one candidate, which does not establish the selected winner. Both Deadeye Shot
+children remain unavailable because their flag20 special multiplier is
+unresolved. Ten ordinary parent candidates also match. Inputs, IDs, source hashes,
+and calculations are retained in
+`artifacts/discovery-20261107-cast/energy-reconciliation.json` and its offline
+reproducer. These are cross-phase comparisons, not selected-variant proof,
+current API parity, passive freshness, or restart qualification.
+
+Sequence10 came from the later successful uninterrupted0.2.3 CLI (exit0), snapshot
+22:16:04.9393644-22:16:05.0512972UTC. All54 exact IDs and the presence/values of
+rangeMax, costEnergy, cooldown and castingTime are unchanged from sequence9,
+so those numerical comparisons carry unchanged. Verification and raw-source
+hashes are in artifacts/rre-peer-reference-seq10-20261107/comparison-seq9.json.
+Live acquisition/cleanup/decoding success does not promote the false source
+freshness, authenticity, atomicity or restart qualification flags.

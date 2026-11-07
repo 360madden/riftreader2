@@ -1,102 +1,122 @@
 # Native discovery continuation - November 7, 2026
 
-Checkpoint17:05 Eastern. Work in C:/work/riftreader2, branch codex/modular-foundation,
-PowerShell login:false. Read AGENTS.md and this note; older detailed receipts are
-in handoff-2026-11-07-native-discovery.md. The CURRENT extended goal remains ACTIVE
-until17:26:48 Eastern /22:26:48UTC. Practical discovery NOW, refinement later/never.
-Use relevant checks, meaningful parallel workers, milestone commits and frequent
-visual sitreps with freshly read Eastern times. Root alone owns live operations.
+Checkpoint17:23 Eastern. Authoritative C:/work/riftreader2, branch
+codex/modular-foundation, PowerShell login:false. Read AGENTS.md and this note;
+older detailed receipts remain in handoff-2026-11-07-native-discovery.md.
+The scheduled extended work window ends17:26:48 Eastern /22:26:48UTC (nine hours).
+Practical discovery NOW; refinement later or never. Root alone owns live actions.
+Use meaningful parallel workers, proportional checks, commits and timestamped
+visual updates. Do not invent tasks or add a framework/full test campaign.
 
-## Current ownership boundary - CLEAN RETURN VERIFIED17:06:12 Eastern
+## Ownership and clean close
 
-Root verified RRE trial2 explicit return, exact UUID recovery inventory SHA,
-controller ABSENT, queue BLOCKED1/no holder and matching VM. Passive RR2 reads
-resumed; no reset/start. Receipt artifacts/lab2-rre-sc625-trial2-handoff-20261107/after.json.
-RRE is OFFLINE until another explicit grant. The original0.2.2 CLI failed in C#
-postvalidation; successful acquisition/cleanup and offline decoding are separate
-stages. RRE confirmed177-byte PowerShell process journals have UTF8 BOM and is
-fixing ONLY the owned-journal parser while keeping raw hashes/global parser strict.
-No live retry is planned for that retained-data diagnosis. Both native exits and
-independent scope inventory were clear; unrelated fleet-agent PID3252 untouched.
+ALL root lab jobs are terminal. RRE trial3 explicit clean return independently
+verified17:18:38 Eastern: controller ABSENT, queue BLOCKED1/no holder, matching
+VM, zero exact-scope residual files/processes, no unreadable native command lines.
+Unrelated managed fleet-agent PID3252 untouched. No controller restart/reset,
+forced owner release, pending input or pending guest/host job. RRE is OFFLINE;
+no current window is granted. Passive reads are eligible, not required now.
 
-Root now runs one Lab2 modifier capture with the6F66 reader below; no worker owns
-live operations. Lab1 fresh mode2 capture is terminal. All other old window/hold
-notices in the detailed historical handoff are superseded by this verified return.
+RRE reader0.2.3 ONE uninterrupted CLI exited0 and published acquired-cleaned-decoded
+acceptance plus54 records/seq10. All runtime producer/authenticity/freshness/build,
+atomicity/restart qualification flags remain false. First two failed trials are
+preserved: filename collision, then owned PowerShell journal BOM parse. Fixes and
+exact retained-data replay preceded the third real trial; no automatic retries.
+Return/acceptance/source checks: artifacts/lab2-rre-sc625-trial3-handoff-20261107/after.json.
+Observation SHA7575C604C3689ADA4DD0D7B96067CDCA4BA6100FD2516136AE156E20BEAE3DEC.
+RRE owns its source/commits; no RR2 runtime dependency on RRE was introduced.
 
-## Current useful observations
+## Current results
 
-The accepted reader is artifacts/native-range-energy-role-factor-20261107/publish/RiftReader2.Live.exe,
-117741920bytes, SHA2566F662E78BBE5A360914FA38F2B26EAB4B3C9004EA4B4B641E15D7FBBB9A2CDF6.
-Nineteen focused modifier checks passed. It reads the direct selected-role factor
-for mode0 AND mode2 flag33; fallback lookup remains unavailable. Special role span
-is selected BEFORE the ordinary index when its flag/span qualifies. Typed owner
-at Q(X+48) is02AE;213E is the separate Q(owner+DD0) tree, not that owner.
+- Native stats:20 mapped selectors,40 ordinary/Unbuffed raw values captured on
+  BOTH labs. All40 Lab2 values match historical SC628 API including zero; no
+  changed-state/freshness/restart qualification. Native receipts and comparison
+  in native-player-context-candidates.md and rre-peer-reference-sc628-20261107/.
+- Soul Recall: base3600000ms, observed direct factor2 and coefficient-300000ms
+  reproduce3000.000244140625seconds, compatible with historical API. Cross-phase.
+- Range: observed role factor5 for typed073C key36/slot1, coefficient1/op0.
+  Correct ANY+1E0, ALL+2B0, DISJOINT+248 predicate admits13 parent candidates.
+  Thirteen adjusted parents plus two unchanged parents agree with API; both
+  captured children of five variant parents each conditionally yield35 and
+  agree. Thus20/21 positive values have compatible observed inputs; Toggle
+  Auto Attack remains on the distinct equipment path. No selected winner claim.
+- Energy: observed mode2 role factor2 for key35/slot21, coefficient-5/op0 gives
+  additive-10. Ten ordinary candidates match. All16 children of eight parents
+  captured: five pairs both agree; Call: Razorbeast15/100 vsAPI100 and Cadence
+  15/40 vsAPI40 discriminate possible branches; Deadeye Shot's flag20 multiplier
+  remains unavailable. No variant selection or final universal cost claim.
+- Lab1 independently yielded mode2 key41/slot20 factor2, coefficient-0.165/op2.
+  Raw observation only, not adjusted Mana/ability-cost proof. Corrected Lab1
+  zone candidate z487C9102D2EA79BE; Lab2 z0000000CB7B53FD7 matches retained API.
+- Primary live cast0650 duration decoder implemented;16 focused cases passed,
+  no positive live cast observed. Idle catalog inputs never fill live state.
+- Buffs: all28 Lab1 raw caster keys self; all28 stack getter outputs sentinel
+  AB9AACF9, no numeric stack. Sammie proved2F62CA8 composite tree is API-built
+  scratch, reset/rebuilt on Buff.Detail and possibly stale on early failure.
+  DO NOT make it an independent runtime source or treat null as stack0.
 
-1. After explicit clean return, execute python -B scripts/sample_current_native_cooldown_modifiers.py --lab lab2.
-   Root already accepted/froze the strict host helper and exact cache pin. This
-   deploys the6F66 reader once and measures actual range/energy factors. Do not
-   assume factor5 or interpret raw entry count5 as a multiplier.
-2. Reuse its cache for the prepared ten-child observation:
-   python -B scripts/sample_current_native_range_inputs.py --lab lab2 --variant-source
-   C:/work/riftreader2/artifacts/native-range-inputs-20261107/runs/lab2/a740d2e7fa7249c7bc7382228509f8fd/samples.json
-   The optional mode retains ordered parent/child/source hashes; no selected
-   variant winner is claimed. Five positive-range parents have ten typed children.
-3. Reconcile only actual captured fields against historical API with float32 source
-   order, explicit presence and cross-phase limits. Commit useful verified findings.
+The corrected range argument mapping supersedes an invalid0/24 offline result;
+original output remains explicitly marked superseded. No new live observation
+was implied by reprocessing. The alternate owner is type02AE;213E is its separate
+DD0 tree. Both corrections are in source notes; no guessed fingerprints shipped.
 
-## Verified milestones and crucial corrections
+## Most useful receipts and commands
 
-- 5b37474: fresh Soul Recall base3600000ms, direct scale factor2 and coefficient
-  -300000ms reproduce3000.000244140625seconds, matching historical API. Different
-  capture times, not freshness, atomicity, changed-state or restart qualification.
-- b1d62eb:20stat selectors, all40 ordinary/Unbuffed raw values captured on Lab1.
-  Lab2 full40 captured later and ALL40 match retained SC628 API (~64minutes older),
-  including zero. Comparison artifacts/rre-peer-reference-sc628-20261107/native-stats-all40-comparison.json.
-- 7c6eb6d: primary live cast wrapper0650 decoder,16 focused cases passed. No
-  positive live cast observed; idle definition duration never substitutes for it.
-- e668004: Lab1 all28 raw caster keys self, all28 stack getter results sentinel
-  AB9AACF9, no numeric stack claim; official2018 Souls XML retained/hashed, exact
-  full IDs match23/134 native and9/54 API rows, historical reference only.
-- cab81c1: typed range config min5/max105/specialKey1871006214 (Toggle Auto Attack),
- 24selected typed definitions with real tags+588 and Energy child+20 byte.
-- 90e6d89: actual flag33 discriminator source equality and typed073C key36/slot1.
-  Receipt artifacts/native-cooldown-modifiers-20261107/runs/lab2/624ef149433344b2b7ce6494c4a46b17/samples.json
-  SHA857774AEEE48FD1A9C2005CA30DBE8C5753DEC461145E19CB5DA45AD0DCBEAC2.
+Accepted reader artifacts/native-range-energy-role-factor-20261107/publish/RiftReader2.Live.exe:
+117741920bytes, SHA6F662E78BBE5A360914FA38F2B26EAB4B3C9004EA4B4B641E15D7FBBB9A2CDF6.
+Nineteen focused modifier checks passed; no full suite claim. Shared immutable
+cache is current-zone-id-6F662E78BBE5A360. Existing helpers retain exact PID/start,
+game SHA, source pins, typed ownership, before/after anchors and unavailable values.
 
-Correct range predicate: ANY=P+1E0, ALL=P+2B0, DISJOINT=P+248. Earlier source
-report reversed last two; initial0/24 offline result is explicitly superseded.
-Replaying SAME captures correctly yields13/24 raw parent passes plus one separate
-special key. Coefficient and variant winner remain unresolved. Exact script and
-receipts: artifacts/discovery-20261107-cast/range-applicability-comparison.py/.json.
+Lab2 actual range/energy factors:
+artifacts/native-cooldown-modifiers-20261107/runs/lab2/d647472e249f4ed186c7dc055657c00c/samples.json
+SHA B4A99716DEDC53F56FCA35CD75FBD338D7F4807A081B657E47281D6DE79FC722.
+All16 candidate children:
+artifacts/native-range-inputs-20261107/runs/lab2/a81f6795c8fc43ae806095bd50aa1de7/samples.json
+SHA97C772073F29D4AE515F0E410616C9733E477EE572780B9F62E89E3F3B5D3C68.
+Lab1 factor:
+artifacts/native-cooldown-modifiers-20261107/runs/lab1/62648a2213104fc696bf0ab15fc5eb5e/samples.json
+SHA39634FD406E6C80BBD42145E16D0DE72A0384E79746B09267DD8A61373091FF1.
 
-Lab1 corrected zone capture at21:59:13Z:
-artifacts/native-zone-seed-20261107/runs/lab1/5dcb40ae42e0473e9209f8c6d8edea9f/samples.json,
-SHAC7857E939B382FE12EC3B40EC90F9FB214681CE48E457056E6C558459E68F5FB,
-candidate z487C9102D2EA79BE; no Lab1 API/name/freshness/restart proof. Provider
-RVA336EBF8 is corrected; old337EBF8 NULL receipts do not prove provider absence.
+Offline reproductions/artifacts/discovery-20261107-cast/:
+range-reconciliation.py/.json; energy-reconciliation.py/.json;
+soul-recall-reconciliation.py/.json. These are exact-observation candidates,
+not general modifier or variant engines. Raw sources and clocks are retained.
 
-Lab1 fresh mode2 payload:
-artifacts/native-cooldown-modifiers-20261107/runs/lab1/f502d131261a46d187aceec576307641/samples.json,
-SHA51C096E34D1277E5F666C0AC0FCA3CCF3AC8A23CFC4885628FB585E3A7463B63,
-float24=-0.165/op2/flag33=1/disjoint tag9, no mode4. That older3474 reader did not
-capture mode2 seed/factor; null was uncaptured, NOT zero. New6F66 includes it.
-Physical PC preflight16:59 found no rift_x64 process; no capture attempted.
+Closer seq9 API snapshot21:58:34Z was decoded after original CLI failure by exact
+offline replay. Successful seq10 snapshot22:16:04.939-22:16:05.051Z has ALL54 same
+IDs and identical rangeMax/costEnergy/cooldown/castingTime presence+values.
+Existing numeric comparisons carry unchanged, still cross-phase. Normalized
+references: artifacts/rre-peer-reference-seq9-20261107/abilities.json and
+artifacts/rre-peer-reference-seq10-20261107/{abilities,comparison-seq9}.json.
 
-## Parallel coordination and remaining leads
+## Continuation priorities and coordination
 
-Sammie315 ChatGPT chat6aef8868-2abc-83ea-90ed-b0cae9c065a2 received/acknowledged
-multiple six-specialist queues and supplied integrated results. Latest queue
-continues buff aggregate lifetime, final0280 equipment profile, role source and
-bounded official item/consumer research. Its own folder:
-artifacts/sammie315-coordination-20261107/. Check actual status before claiming
-workers busy. Root has explicitly asked whether buff aggregate tree is stable
-independent game state or Lua callback scratch; no reader implemented for it.
-026E is a mapping key, NOT final reflected equipment type; final expected0280.
-XP needed==-1 callback returns one EMPTY table, all3 fields omitted, not zero;
-cap and lookup failure both can produce sentinel. No capped live case observed.
+1. Resolve the equipment mapped key/provider selector and complete runtime0280
+   object fingerprint before any passive equipped-range projection.026E is a
+   mapping key, not runtime type. Late Sammie static arithmetic distinguishes
+   original descriptor34A58A0/29D0910 as0280 from adjacent29D1990 as037D;
+   do not combine the incompatible chains or call a cold resolver.
+2. Use actual differing variant candidates (15/100 and15/40) as next small
+   discriminators; do not reconstruct a whole eligibility engine by default.
+3. Resolve flag20 special multiplier only if needed for a useful observation;
+   already-known072B/0742 profiles and owner chain are in energy-cost-next-step.md.
+4. Buff grouping can be derived from native admitted rows only after raw keys,
+   admission and count source are proved; reading API scratch is not independent.
+   Current sentinel data alone cannot manufacture stack counts.
 
-Existing root workers use Terra/Sol medium for routine work and Astra high for
-native ownership traces. Use followup_task to start a completed worker; sending a
-message alone does NOT wake it. Keep disjoint file ownership and serialize shared
-publishes. No worker has VM/input authority. Preserve other writers and index.
-No push. No broad test campaign or new scheduler/framework.
+Sammie315 chat6aef8868-2abc-83ea-90ed-b0cae9c065a2 has received and acknowledged
+multiple six-specialist queues; integrated stat/role/source findings are actual
+results. Latest final queue requested concise outputs or blockers by17:24 and
+no long jobs afterward. Check actual active/completed status before claiming busy.
+Its artifacts/sammie315-coordination-20261107/ contains exact source receipts.
+RRE Codex chat01a1b613-07a4-76e3-a4e1-e11f70a0b567, host local, owns its repo and
+is writing offline final results after clean return. No more live scope granted.
+
+Root worker names remain ability_seed_impl, cooldown_discovery,
+native_dictionary_capture, native_map_command, tls_metadata, tls_read_review.
+Use followup_task to START a completed worker; send_message alone does not wake
+it. Terra/Sol medium for routine work, Astra high for difficult native ownership.
+Keep disjoint file ownership; serialize publishes; no worker VM/input authority.
+No physical rift_x64 process existed at16:59, so no physical capture attempted.
+Preserve owners, exact identity/build, freshness, STOP/release; no push.

@@ -9,6 +9,17 @@ guest cache. Native command: `sample-current-player-context --pid N
 --start-ticks N --output PATH`. No getter, initialization, refcount update,
 game input or action-preflight integration is performed.
 
+## Lab1 raw mode-2 factor candidate — 18:11 Eastern
+
+A fresh self-bound modifier census observed a typed mode-2 row with `flag33` set,
+`float24` -0.165 and operation 2. Its typed `073c` direct branch had key 41,
+slot 20 and matching self source; the typed role-factor path yielded raw
+multiplier 2. Receipt:
+`artifacts/native-cooldown-modifiers-20261107/runs/lab1/62648a2213104fc696bf0ab15fc5eb5e/samples.json`,
+SHA256 `39634FD406E6C80BBD42145E16D0DE72A0384E79746B09267DD8A61373091FF1`.
+This is a later, corrected branch observation, distinct from an earlier null-seed
+report; it does not establish role or talent semantics, modifier applicability,
+adjusted ability cost or Mana, API correspondence, freshness, or restart behavior.
 ## Lab1 corrected zone candidate — 17:59 Eastern
 
 A fresh Lab1 capture using corrected provider RVA `0x336EBF8` observed raw zone

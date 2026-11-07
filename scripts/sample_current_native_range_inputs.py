@@ -19,7 +19,8 @@ READER_SHA='6F662E78BBE5A360914FA38F2B26EAB4B3C9004EA4B4B641E15D7FBBB9A2CDF6'
 READER=ROOT/'artifacts/native-range-energy-role-factor-20261107/publish/RiftReader2.Live.exe'
 SOURCE=ROOT/'artifacts/rre-peer-reference-20261107/cost-range-comparison.json'
 
-def run(lab, variant_source=None):
+def run(lab, variant_source=None, all_selected_variants=False):
+    if all_selected_variants and variant_source is None: raise ValueError('all-selected-variants-requires-source')
     if lab not in ('lab1','lab2'): raise ValueError('invalid-lab')
     if READER.is_symlink() or not READER.is_file() or READER.stat().st_size!=117741920 or digest(READER)!=READER_SHA: raise ValueError('reader-mismatch')
     sources=[Path(__file__),ROOT/'scripts/sample_current_native_ability_catalog.py',ROOT/'scripts/sample_current_native_ability_records.py']
@@ -47,7 +48,7 @@ def run(lab, variant_source=None):
         positive={x['key'] for x in selected if 'historical-positive-range-max' in x['reasons']}
         relationships=[]; keys=[]
         for row in source_rows:
-            if row['key'] not in positive or row['rawVariants']['status']!='raw-candidates': continue
+            if (not all_selected_variants and row['key'] not in positive) or row['rawVariants']['status']!='raw-candidates': continue
             entries=row['rawVariants']['entries']
             if any(entry['status']!='type-0061-raw-candidate' for entry in entries): raise ValueError('untyped-variant-child')
             relationships.append({'parentKey':row['key'],'entries':entries})
@@ -63,7 +64,7 @@ def run(lab, variant_source=None):
     folder=settings['guestRoot']+r'\current-zone-id-'+READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe';report=folder+r'\range-'+token+'.json';probe=folder+r'\identity-'+token+'.json';guest_key=folder+r'\key-'+token+'.txt'
     provenance={'sourcePath':str(SOURCE),'sourceSha256':source_sha,'selection':selected}
-    if variant_source is not None: provenance.update(variantSourcePath=str(variant_source),variantSourceSha256=variant_sha,parentReferences=relationships)
+    if variant_source is not None: provenance.update(variantSourcePath=str(variant_source),variantSourceSha256=variant_sha,allSelectedVariants=all_selected_variants,parentReferences=relationships)
     with (output/'provenance.json').open('x',encoding='utf-8') as f:json.dump(provenance,f,indent=2)
     key_bytes=','.join(str(key) for key in keys).encode('ascii');key_sha=hashlib.sha256(key_bytes).hexdigest().upper();key_file=output/'key.txt'
     with key_file.open('xb') as f:f.write(key_bytes)
@@ -104,5 +105,5 @@ def run(lab, variant_source=None):
     return summary
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--lab',required=True,choices=('lab1','lab2'));p.add_argument('--variant-source',type=Path);a=p.parse_args()
-    print(json.dumps(run(a.lab,a.variant_source)),flush=True)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--lab',required=True,choices=('lab1','lab2'));p.add_argument('--variant-source',type=Path);p.add_argument('--all-selected-variants',action='store_true');a=p.parse_args()
+    print(json.dumps(run(a.lab,a.variant_source,a.all_selected_variants)),flush=True)
