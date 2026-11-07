@@ -2,7 +2,33 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
-## Current resume point — Lab 1 cleanup and freshness passed
+## Current resume point — Lab 1 sustained480 passed
+
+[Strict sustained validation](validation/lab1-sustained480-2026-11-06.md) passed
+481.134 seconds with 515 samples; independent replay verified all raw/ledger
+hashes, exact identities, advancement, expiry, maximum arrival gap3.058s,
+capture gap2.983s and planar drift0.0. The unchanged first attempt failed after
+85s with an unavailable receipt; observer-only bounded polling/counting was
+implemented and tested in `1802c4b`. Passing run had zero unavailable polls.
+The original failed artifact was retained. All acceptance gates remain strict.
+
+Current recorded reader PID6464/nonce622041afc6a14371aa45ec5efcc57c8c expires
+November6 9:43:08 PM Eastern. Never reuse its pin or cached packets after expiry.
+Controller restored as PID68160/generation`eac96b09093643e09cbb4795e1ac9c2a`,
+ready/disarmed/idle, initial cleanup verified, queue generation5212 unheld/free.
+This is sustained observer-side receiver evidence, not restart, native-field,
+movement or Lab2 qualification. No reload/movement/cast/Lab2 input occurred.
+
+Full gate passed: 380 portable +317 Live .NET, 1,668 Python (2 skipped), Lua,
+native smoke, ownership, format and1,022 links; evidence
+`artifacts/validation/20261107T023836Z-51b6dc01`. Guest startup race fix
+`54d5e95` also has26 focused passing tests. User's five-hour meaningful-work
+goal remains active. Next standalone ownership-instance hardening is isolated
+in `C:\work\riftreader2\.worktrees\helper-instance-binding`, branch
+`codex/helper-instance-binding`; it is not integrated or deployed. Preserve
+other sessions' edits and all current owners. No new gameplay authority follows.
+
+## Prior resume point — short-window cleanup and freshness passed
 
 See [the live validation](validation/lab1-receiver-freshness-2026-11-06.md). The
 fixed-file cleanup passed execution review and deleted the physical guest file;
@@ -43,10 +69,11 @@ User authorized a fresh **Lab 1-only** reviewed reader bind/rebind solely to ver
 
 User did not authorize Lab 2 game input. The prior Lab 1 successful bind and reload must not be replayed. A fresh reader nonce would require a separately reviewed `rebind` only if the existing addon state supports it; never guess or blindly try both bind and rebind. Preserve controller STOP/release, exclusive console ownership, queue, exact identity, screenshot freshness and restore checks. RR2R1 typed-reference evidence is distinct from receiver-feed freshness.
 
-**Copy-ready resume:** In `C:\work\riftreader2`, read `AGENTS.md`,
-`docs/status.md`, this handoff and the linked Lab1 validation. Inspect Git and
-current owner/process identities. Lab1 short-window receiver freshness passed;
-preserve its bounded-run limits and do not replay the rebind. Continue standalone
-RR2 work or separately scoped longer/restart acceptance. Lab2 has no game-input
-authorization from this task. Preserve the controllers, queue and STOP/release
-gates; never report expired reader packets as live.
+**Copy-ready resume:** Read `AGENTS.md`, `docs/status.md`, this handoff and the
+strict sustained validation. Reacquire current identities; reader6464 expires
+at9:43:08 PM Eastern and its recorded PASS belongs only to that epoch. Continue
+the active five-hour standalone development work with the isolated helper
+instance-binding slice, focused tests and strong ownership review. Preserve
+current controllers and receipts; no source-pin relaxation, re-arm, movement,
+reload, restart or Lab2 game input is implied. Integrate only reviewed scoped
+changes and use verified per-owner handoffs for any runtime rollout.
