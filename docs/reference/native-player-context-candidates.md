@@ -150,6 +150,22 @@ Reader117491552 bytes, SHA256
 Four focused native cases passed; host validation and retained-receipt decode
 checks passed. A cache miss never establishes name absence. No getters/input.
 
+## Name branch selected —13:11 Eastern
+
+Follow-up captured/rechecked localization manager DWORD+4==1 and global DWORD
+module+3373784==0. Static7DD960 selects the nonempty typed fallback in mode1;
+7D1A80 bypasses its later string formatting when that flag is zero. Thus
+**Normal Practice Dummy** is now a selected base-name candidate, independent of
+the resident dictionary miss. No native methods were invoked. API/UI agreement,
+changed-state, passive freshness and restart are still unverified.
+
+Receipt`artifacts/native-target-template-name-20261107/runs/lab1/ef16c6ed167d4b6bbbe8655d84c42b56/samples.json`,
+SHA256`934E6EB33CAA2EE1F6EE12B93D2774444933E1C6AE14D47A91A5D6D31CA64F94`,
+capture36.257ms. Reader117496160 bytes, SHA256
+`4B481314B7E72B83CB8F5163D895818236E1C1B4E48FEFD2C6C56B66BCB1BB0F`,
+at`artifacts/native-target-template-name-mode-20261107/publish/`. Five focused
+native checks passed, including changed formatting-flag rejection.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its

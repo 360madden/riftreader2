@@ -11,8 +11,8 @@ from scripts.sample_current_native_ability_catalog import validate_dictionary
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '2390DB519546D4884E14D7B00DD78257740104808792E15B8C58F1E57F9806FD'
-READER = ROOT / 'artifacts/native-target-template-name-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '4B481314B7E72B83CB8F5163D895818236E1C1B4E48FEFD2C6C56B66BCB1BB0F'
+READER = ROOT / 'artifacts/native-target-template-name-mode-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-target-template-name-20261107/runs'
 
 QUALIFICATION='cache-only raw candidate; name publication, freshness and restart unverified'
@@ -29,6 +29,7 @@ def validate_report(report, *, pid, ticks):
     except (KeyError,TypeError,AttributeError,ValueError): invalid()
     if start.utcoffset() is None or end.utcoffset() is None or start.utcoffset().total_seconds()!=0 or end.utcoffset().total_seconds()!=0 or end<start: invalid()
     if not integer(o.get('selfKey'),1,2**64-1) or not integer(o.get('targetKey'),1,2**64-1) or not integer(o.get('targetEntity'),0x10000,0x7fffffffffff) or not integer(o.get('templateKey'),1,2**32-1) or not integer(o.get('selector'),0,65535) or not integer(o.get('tlsIndex'),0,1087) or not integer(o.get('collection'),0x10000,0x7fffffffffff): invalid()
+    if not integer(o.get('localizationMode'),-(2**31),2**31-1) or not integer(o.get('formattingFlag'),0,2**32-1): invalid()
     status=o.get('status'); record=o.get('recordAddress'); key=o.get('localizationKey'); fallback=o.get('fallbackText'); dictionary=o.get('dictionary')
     if status in ('cache-miss','null-holder','null-record'):
         if any(v is not None for v in (record,key,fallback,dictionary)): invalid()
@@ -41,6 +42,9 @@ def validate_report(report, *, pid, ticks):
 
 def candidate_name(o, *, pid, ticks):
     result={'baseNameLocale1Candidate':None,'nameQualification':'base name/locale1 candidate; API decoration/language unverified','nameUnavailableReason':o['status'],'rawFallbackNameCandidate':o.get('fallbackText') if o['status']=='raw-candidate' and o.get('fallbackText') else None,'rawFallbackNameQualification':'raw typed fallback text candidate; active manager selection and API decoration unverified'}
+    result.update(localizationMode=o['localizationMode'],formattingFlag=o['formattingFlag'],selectedBaseNameCandidate=None,selectedBaseNameQualification='mode-selected base name candidate; API equivalence and decoration unverified')
+    if o['status']=='raw-candidate' and o['localizationMode']==1 and o['fallbackText']:
+        result['selectedBaseNameCandidate']=o['fallbackText']
     if o['status']!='raw-candidate' or not o['localizationKey']: return result
     try:
         d=o['dictionary']; key=o['localizationKey']
@@ -58,11 +62,11 @@ def candidate_name(o, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117491552 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117496160 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-target-template-name-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-target-template-name-mode-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"

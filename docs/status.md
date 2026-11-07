@@ -1,9 +1,15 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:08 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:11 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
+Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**13:11 Eastern — MODE-SELECTED TARGET NAME:** Fresh mode1/formattingFlag0 anchors
+support **Normal Practice Dummy** as the selected base-name candidate, with the
+traced post-copy formatting bypassed. Capture36.257ms. Independent UI/API,
+freshness and restart remain unverified. [Receipt](reference/native-player-context-candidates.md).
 
 **13:07 Eastern — TARGET RAW FALLBACK NAME CAPTURED:** The guarded template cache
 read returned **Normal Practice Dummy**, with typed record/name references and

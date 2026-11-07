@@ -1,14 +1,16 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint13:08 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint13:11 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
 
 ## Current objective and policy
 
-The five-hour goal started08:26:48 Eastern and ends13:26:48 Eastern. It is still
-ACTIVE. Do not complete it early. Continue useful discovery; refinement can be
+The goal started08:26:48 Eastern with an initial five-hour window. Joey extended
+the CURRENT goal by another FOUR HOURS at13:11 Eastern: the new end is
+**17:26:48 Eastern on November7,2026** (22:26:48 UTC), nine hours total. It is
+still ACTIVE. Do not complete it at the former13:26:48 deadline. Continue useful discovery; refinement can be
 later or never. No broad validation campaign, framework or review loop is a
 default follow-up. Run only checks relevant to a concrete change/failure and
 use the result. This policy is durable in AGENTS/development workflow.
@@ -129,7 +131,22 @@ It preserves fresh gated full64 target, provider selector, all-thread TLS
 unanimity/epoch, composite cache and type0274/name1E17 anchors. Cache misses are
 unavailable, never proof of absence. Root reviewed boundaries; four focused
 native cases and host synthetic/compile checks passed. Useful live result is
-verified; static follow-up is narrowing the active localization-mode branch.
+verified. Follow-up capture completed13:11 Eastern: localizationMode1 and
+formattingFlag0, both anchored in the same read. The traced native path selects
+the nonempty fallback and bypasses post-copy formatting. Selected base-name
+candidate is **Normal Practice Dummy**; independent API/UI agreement, freshness
+and restart remain unverified. Locale1 dictionary result remains unavailable.
+Receipt`artifacts/native-target-template-name-20261107/runs/lab1/ef16c6ed167d4b6bbbe8655d84c42b56/samples.json`,
+SHA256`934E6EB33CAA2EE1F6EE12B93D2774444933E1C6AE14D47A91A5D6D31CA64F94`,
+capture36.257ms. New reader117496160 bytes, SHA256
+`4B481314B7E72B83CB8F5163D895818236E1C1B4E48FEFD2C6C56B66BCB1BB0F`,
+under`artifacts/native-target-template-name-mode-20261107/publish/`. Five focused
+native tests passed; host mode1/mode2 derivation checks passed. No active capture.
+
+Next working slice: optional raw selected-target level/combat, only after fresh
+target health-owner type0294 fingerprint; never transfer self-only system guards.
+Workers native_map_command and tls_metadata own native/host slices respectively.
+Root alone performs live reads; no new input authority from the time extension.
 
 Parallel workers are now complete; root retains sole live ownership. Do not
 invent follow-up work to fill slots. Two additional static leads are retained:
