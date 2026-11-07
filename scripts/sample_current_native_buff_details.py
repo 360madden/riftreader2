@@ -8,8 +8,8 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '5F15F017DB369EB64FC7EA97D0A1D08909D9E71D31DEDA69D10E8F452ED4C1B3'
-READER = ROOT / 'artifacts/native-buff-details-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = 'C3DD11B5B7AA94BCE1D5C64F78ED41FB3FC38C0E3FB8E45856D732189DF2ACBD'
+READER = ROOT / 'artifacts/native-current-stats-20-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-buff-details-20261107/runs'
 
 QUALIFICATION='raw caster and stack getter candidates; visibility, grouping, API correspondence, freshness and restart unverified'
@@ -52,11 +52,11 @@ def validate_report(report, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117704544 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117725024 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-buff-details-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-zone-id-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"

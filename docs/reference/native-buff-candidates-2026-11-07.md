@@ -166,3 +166,9 @@ accepts the verified EAE timing source and reuses that exact reader for seed,
 record and dictionary commands; the374/F86 route remains available. Only timing
 outputs are excluded from raw-list equality; object/owner/definition anchors stay
 exact. No controller restart, queue reset, game input or API/freshness claim.
+
+## Raw caster and stack seed — Lab 1, 2026-11-07
+
+The first read-only `sample-current-buff-details` capture completed at **21:37:24 UTC** for PID `11672`, start ticks `639296016581575957`, executable SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`. The receipt is `artifacts/native-buff-details-20261107/runs/lab1/05ca154aa51e4007a25a6f66a301b3c1/samples.json`, SHA-256 `B7EBDECBDC81F9375DD0E66BD19B09E0CB9D8033C368FECEECF5DA8B3DAD2285`. It used the existing C3DD reader cache.
+
+All **28 raw list rows** had a nonzero raw caster key equal to the independently bound self unit key, with formatted candidate `u035400012FA2D678`; no caster was null or zero. All **28 stack paths reported `sentinel`**, with raw getter bits **`0xAB9AACF9`**, state DWORD `1`, and no numeric timer/stack value. The sentinel is an input-path observation, **not an API stack count or proof of API stack omission**. This raw list is not the API-visible or grouped buff list; caster ownership, stack presentation, API correspondence, changed-state freshness and restart behavior remain unqualified. Sequential captures cannot exclude ABA.

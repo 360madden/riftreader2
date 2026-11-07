@@ -64,3 +64,20 @@ does not promise a shared instant across separate reads; matching anchors cannot
 exclude ABA or threads that existed only between thread snapshots.
 
 **Player stats consumer.** The original Gadgets [stat text bar](https://github.com/Lifeismystery/gadgets/blob/2775cf74c07b10860f6b869d5e1f9502ab76cc60/wtStatTextBar.lua#L483-L504), same 2018 commit, calls `Inspect.Stat()` and individual stat names, then subscribes to `Event.Stat`. Its [update code](https://github.com/Lifeismystery/gadgets/blob/2775cf74c07b10860f6b869d5e1f9502ab76cc60/wtStatTextBar.lua#L602-L623) mistakenly assigns `resistLife` to the displayed fire resistance; this is a concrete reminder that addon presentation is not a ground truth. The historical [API reproduction](https://github-wiki-see.page/m/chrisbecke/Igor/wiki/RIFT-API-Documents) describes `Inspect.Stat` as player stats, including separately named unbuffed values; it does not qualify a native offset or atomicity. Preserve the exact requested stat and independently compare changed state.
+
+## Historical official Souls archive comparison
+
+The [vendor Souls archive](https://webcdn.triongames.com/addons/assets/Rift_souls_EN_2018_10_12.zip)
+was retained at `artifacts/rre-peer-reference-20261107/Rift_souls_EN_2018_10_12.zip`:
+419,274 bytes, SHA-256 `C680A6C5E8171E31DC0D918C94D0C141F71FF23B1D6C00E9287BA1890C3688EF`.
+Exact full IDs match 23 of 134 Lab 2 native catalog rows and 9 of 54
+separately captured API rows. Three compatible examples are Concussive Blast
+(XML cooldown `10.000000`, energy `11`; native base `10000` ms, raw energy
+`11`; API cooldown `10`, energy `11`), Repelling Shot (`20.000000`/`10`,
+`20000` ms/`10`, `20`/`10`), and Piercing Shot (`10.000000`/`24`,
+`10000` ms/`24`, `10`/`24`). The 2018 XML cooldown strings have no explicit
+unit attribute; these numerical comparisons do not establish current units,
+adjustment, selected variants, or freshness across the different captures.
+Full source hashes, all matches and limitations are in
+`artifacts/rre-peer-reference-20261107/official-souls-comparison.json` and
+`artifacts/rre-peer-reference-20261107/official-souls-comparison.md`.

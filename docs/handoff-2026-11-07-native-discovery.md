@@ -1,3 +1,13 @@
+**SC625 FAILED TRIAL / LAB2 QUARANTINE - 16:37 Eastern.** Reader invocation
+21:34:41-21:35:17Z exited2 (SessionError); guest cleanup reports missing snapshot
+process journal/unverified residual. RRE reports identity/output filename collision
+before native launch as likely cause. This is not a successful adapter acceptance.
+ALL RR2 Lab2 operations remain HELD. RRE may perform only scoped exact-UUID
+process/file recovery for f7dacbf40f9d4a6597edad723f5da20b and STOP/release cleanup;
+no experimental retry, Capture or reload. Require raw recovery and explicit clean
+return, independently verified before resuming. Failure receipts:
+`C:/work/rre/artifacts/sc625-live-adapter-20261107-1627/acquisition/`.
+
 **LAB2 HOLD16:32-16:47 Eastern: RRE SC625 exclusive window.** No RR2 Lab2
 operations until explicit verified clean return; see Lab2 ownership handoff.
 Root verified controller absent/queue BLOCKED/no holder at16:31:58.
@@ -119,6 +129,30 @@ SC625 window remains16:32-16:47 Eastern: ALL RR2 Lab2 operations HELD until
 explicit verified clean return. Reader amendment0.2.1 DLL9847CF4093049F7313DF6B0AB9C052C37E8EA149C3DC467721F3E46129268D54
 was reviewed (strict acquisition interval containment) and all12 source/all5
 release hashes verified. Helper unchanged; no new API calls/deployment scope.
+
+## 16:40 checkpoint - buff seed and official archive
+
+Lab1 first buff-detail capture reused the C3DD reader cache and passed. Receipt
+`artifacts/native-buff-details-20261107/runs/lab1/05ca154aa51e4007a25a6f66a301b3c1/samples.json`
+SHA256 B7EBDECBDC81F9375DD0E66BD19B09E0CB9D8033C368FECEECF5DA8B3DAD2285.
+All28 raw caster keys matched bound self; all28 stack paths returned sentinel
+AB9AACF9, not a numeric stack. No API-visible grouping, stack count/omission,
+changed-state or restart claim follows. Helper uses exact C3DD immutable binary.
+
+Sammie315's official2018 Souls archive lead is now retained/hash-verified and
+compared:23/134 native full IDs and9/54 API IDs match. Concussive Blast10s/11energy,
+Repelling Shot20/10 and Piercing Shot10/24 are compatible raw examples, with XML
+unit/adjustment/current-build limits. See native-api-reference-research note and
+`artifacts/rre-peer-reference-20261107/official-souls-comparison.json/.md`.
+Sammie's next six complementary lanes were sent16:38 Eastern; verify actual
+worker status before claiming they remain busy. Root queues retain disjoint owners.
+
+Mode0 payload extension is source-verified (nine focused tests), immutable reader
+E631EBEE96BA33FF5303074CA38352FE21319731DA2073DD1538CDAA4820AE9F,
+117725024bytes. Helper is frozen/strict; first Lab2 capture is WAITING for explicit
+RRE clean return. No mode0 live result yet. Next cheap discriminator after payload
+is typed0E29 config clamps+64/+7C and special ability key+88; see
+`artifacts/discovery-20261107-cast/range-adjustment-next-step.md`.
 
 ## Working repository commands
 

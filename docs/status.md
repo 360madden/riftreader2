@@ -1,5 +1,15 @@
 # Current status
 
+**SC625 FAILED TRIAL / LAB2 QUARANTINE - 16:37 Eastern.** Reader invocation
+21:34:41-21:35:17Z exited2 (SessionError); guest cleanup reports missing snapshot
+process journal/unverified residual. RRE reports identity/output filename collision
+before native launch as likely cause. This is not a successful adapter acceptance.
+ALL RR2 Lab2 operations remain HELD. RRE may perform only scoped exact-UUID
+process/file recovery for f7dacbf40f9d4a6597edad723f5da20b and STOP/release cleanup;
+no experimental retry, Capture or reload. Require raw recovery and explicit clean
+return, independently verified before resuming. Failure receipts:
+`C:/work/rre/artifacts/sc625-live-adapter-20261107-1627/acquisition/`.
+
 **16:34 Eastern - SOUL RECALL CANDIDATE RECONCILED:** Fresh native base3600000ms
 and typed modifier factor2/coefficient-300000ms reproduce3000.000244140625seconds,
 equal to the historical API value. Separate capture times; no changed-state,
