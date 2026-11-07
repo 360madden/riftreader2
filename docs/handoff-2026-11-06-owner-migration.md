@@ -2,6 +2,26 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Current resume point — Lab 1 cleanup and freshness passed
+
+See [the live validation](validation/lab1-receiver-freshness-2026-11-06.md). The
+fixed-file cleanup passed execution review and deleted the physical guest file;
+a second fresh GuestSession confirmed absence and no reader. The earlier user
+and Tools checks reflected different views; stale receipts and a simple PS
+version difference were ruled out, while the exact Windows mechanism remains
+unproven. This supersedes the cleanup blocker described chronologically below.
+
+A fresh bounded reader and exactly one screenshot-reviewed Lab 1 rebind produced
+12 strict advancing regular-feed samples over 8.934671 seconds (outer236→247,
+addon13664→13682, same player/epoch). The managed controller was safely released
+before input and restored afterward as PID64320, generation
+`d3f5021244604dba97e0214310e5ab16`, ready/disarmed/idle with initial cleanup and
+current source pins verified. Queue generation5210 was free/unheld. No reload,
+movement, casting or Lab2 input occurred. Reader PID7108 expires at November6
+8:49:59 PM Eastern; its future cached packets are not fresh evidence. Do not
+reuse its nonce. Short-window feed acceptance does not establish sustained480,
+restart or native-field qualification. Lab2 freshness is still unverified.
+
 ## Completed live owner transitions
 
 - Both legacy receiver instances were individually pinned by process receipt and Scheduler COM GUID/EnginePID, stopped, checked exited/port-vacant, and replaced by RR2-managed receiver tasks. Independent postflight task/receipt checks passed: Lab 1 PID 5840/start `639296090706474389`; Lab 2 PID 4856/start `639296091161417286`. Legacy XML, registration and receipt backups are under `artifacts/receiver-migrations/lab1-76b0741c7ce14d7c8ebd573bd60adc42` and `lab2-a2804964338741578e60d4d704568bb5`. No feed packets appeared in either new output directory at the check; **advancing freshness is not established**. Migration helper commit `44df5e6`.
@@ -17,10 +37,16 @@ The user reported manually deleting the staged configuration. A subsequent ident
 
 A later identity-pinned guest check again reported `configExists: true`, `otherReaderCount: 0`, machine `RIFT-LAB-1` (evidence `artifacts/receiver-migrations/lab1-cleanup-verification-3/inspect.json`), despite the user reporting deletion and guest PowerShell reporting `False`. Earlier guest metadata recorded the exact file as 411 bytes, without reading its contents. The discrepancy remains unresolved. User requested automation without further questions, but the prior automatic execution-policy rejection still applies to guest cleanup; do not bypass it. No bind or input was sent. Other sessions have concurrent uncommitted work; preserve it.
 
-## Outstanding Lab 1 freshness and cleanup
+## Historical cleanup blocker — resolved above
 
 User authorized a fresh **Lab 1-only** reviewed reader bind/rebind solely to verify advancing receiver feed; no UI reload and no Lab 2 game input. Reader launch `artifacts/receiver-migrations/lab1-freshness-reader-20261106` failed `private-staging-cleanup-scope` before its launch step. Host private staging file was removed after same-directory-identity verification. Windows virtualization made the original resolved-path check disagree; commit `24e01a0` fixes it with filesystem identity checks, rejects reparse/symlink targets and has focused tests. No reader-ready receipt and no new bind/input were produced. The guest staging configuration at `C:\Users\mrkoo\AppData\Local\RiftReader2\Hybrid\lab1-fed73039b1614151bc92bda5b8501641\riftreader2-live.json` may contain the private receiver token and may remain on Lab 1; do not print its contents. An attempted exact guest cleanup plus no-reader verification was **rejected by automatic execution policy before running**; reason was not specified. Do not bypass that rejection. Resolve the cleanup through an allowed route/user action, verify absence and no unexpected reader, then retry with fresh identity, nonce and screenshot-reviewed controls. No feed freshness claim until strict fresh same-player/epoch receiver samples actually advance.
 
 User did not authorize Lab 2 game input. The prior Lab 1 successful bind and reload must not be replayed. A fresh reader nonce would require a separately reviewed `rebind` only if the existing addon state supports it; never guess or blindly try both bind and rebind. Preserve controller STOP/release, exclusive console ownership, queue, exact identity, screenshot freshness and restore checks. RR2R1 typed-reference evidence is distinct from receiver-feed freshness.
 
-**Copy-ready resume:** In `C:\work\riftreader2`, inspect current Git status and read this handoff. First resolve the rejected exact guest staging cleanup through an allowed route; confirm no unexpected reader and no staged config. Recheck current Lab 1 controller and receiver identities. Under the user's Lab 1-only bind grant, use a fresh bounded reader and separately reviewed console operations to verify advancing feed, restoring controller ownership afterward. Do not send Lab 2 game input. Preserve all four current owners and do not reuse old session identities.
+**Copy-ready resume:** In `C:\work\riftreader2`, read `AGENTS.md`,
+`docs/status.md`, this handoff and the linked Lab1 validation. Inspect Git and
+current owner/process identities. Lab1 short-window receiver freshness passed;
+preserve its bounded-run limits and do not replay the rebind. Continue standalone
+RR2 work or separately scoped longer/restart acceptance. Lab2 has no game-input
+authorization from this task. Preserve the controllers, queue and STOP/release
+gates; never report expired reader packets as live.
