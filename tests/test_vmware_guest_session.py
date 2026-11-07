@@ -166,7 +166,7 @@ class GuestSessionTests(unittest.TestCase):
         writes = []
         def runner(argv, **_kwargs):
             calls.append(list(argv))
-            return subprocess.CompletedProcess(argv, 0, "processes", "")
+            return subprocess.CompletedProcess(argv, 0, "The file exists.\n", "")
         guest = self.make(runner, cache=True, writer=lambda *args: writes.append(args))
         with guest:
             self.assertEqual(len(writes), 1)
@@ -174,7 +174,7 @@ class GuestSessionTests(unittest.TestCase):
             self.assertTrue(guest.cache_written)
         self.assertIsNone(guest.credential_source)
         self.assertFalse(guest.cache_written)
-        self.assertEqual(calls[0][9], "listProcessesInGuest")
+        self.assertEqual(calls[0][9:], ["fileExistsInGuest", str(guest.vmx), session.POWERSHELL])
         self.assertEqual(writes[0][1:], ("guest", "guest-secret"))
         self.assertTrue(writes[0][0].startswith("RiftReader2 Guest Windows: "))
 
@@ -206,7 +206,7 @@ class GuestSessionTests(unittest.TestCase):
         prompted = []
         writes = []
         guest = self.make(
-            lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 0, "processes", ""),
+            lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 0, "The file exists.\n", ""),
             cached=(cached_user, cached_password), cache=False,
             writer=lambda *args: writes.append(args),
             guest_prompt=lambda: prompted.append(True) or prompt(),
@@ -219,6 +219,74 @@ class GuestSessionTests(unittest.TestCase):
         self.assertEqual(writes, [])
         self.assertEqual(cached_user.value, "")
         self.assertEqual(cached_password.value, "")
+
+    def test_each_login_rereads_vm_specific_credential_and_revalidates_fixed_file(self):
+        reads = []
+        calls = []
+        def reader(target):
+            reads.append(target)
+            return prompt("guest", "secret-" + str(len(reads)))
+        def runner(argv, **_kwargs):
+            calls.append(list(argv))
+            return subprocess.CompletedProcess(argv, 0, "The file exists.\r\n", "")
+        guest = session.GuestSession(
+            Path("vmrun.exe"), Path("C:/VMs/RIFT-Lab.vmx"), lambda: "same-vm",
+            _credential_reader=lambda _target: "vm-secret",
+            _guest_credential_reader=reader,
+            _guest_prompt=lambda: self.fail("must not prompt"), _runner=runner,
+        )
+        for _ in range(2):
+            with guest:
+                pass
+        self.assertEqual(reads, [guest.guest_credential_target] * 2)
+        self.assertEqual([call[8] for call in calls], ["secret-1", "secret-2"])
+        self.assertEqual([call[9:] for call in calls],
+                         [["fileExistsInGuest", str(guest.vmx), session.POWERSHELL]] * 2)
+
+    def test_cached_login_validation_checks_identity_before_and_after_probe(self):
+        for identities, expected_calls in [
+            (["epoch-a", "epoch-b"], 0),
+            (["epoch-a", "epoch-a", "epoch-a", "epoch-b"], 1),
+        ]:
+            with self.subTest(identities=identities):
+                calls = []
+                def runner(argv, **_kwargs):
+                    calls.append(list(argv))
+                    return subprocess.CompletedProcess(argv, 0, "The file exists.", "")
+                guest = self.make(runner, cached=prompt(), identities=identities,
+                                  guest_prompt=lambda: self.fail("must not prompt"))
+                with self.assertRaisesRegex(session.SessionError, "vm-identity-changed"):
+                    guest.__enter__()
+                self.assertEqual(len(calls), expected_calls)
+                self.assertIsNone(guest._password)
+
+    def test_cached_validation_tools_failure_does_not_prompt_or_save(self):
+        guest = self.make(
+            lambda argv, **_kwargs: subprocess.CompletedProcess(
+                argv, 1, "", "VMware Tools are not running: secret"),
+            cached=prompt(), cache=True,
+            writer=lambda *_args: self.fail("must not save"),
+            guest_prompt=lambda: self.fail("must not prompt"),
+        )
+        with self.assertRaisesRegex(session.SessionError,
+                                    "cached-guest-credential-validation-failed:exit=1:category=guest-tools-unavailable"):
+            guest.__enter__()
+        self.assertIsNone(guest._password)
+
+    def test_missing_or_ambiguous_probe_receipt_fails_closed_for_cache_and_prompt_save(self):
+        for output in ("The file does not exist.", "", "false", "The file exists.\nextra"):
+            for cached in (True, False):
+                with self.subTest(output=output, cached=cached):
+                    guest = self.make(
+                        lambda argv, **_kwargs: subprocess.CompletedProcess(argv, 0, output, ""),
+                        cached=prompt() if cached else None, cache=True,
+                        writer=lambda *_args: self.fail("must not save"),
+                        guest_prompt=(lambda: self.fail("must not prompt")) if cached else prompt,
+                    )
+                    with self.assertRaisesRegex(session.SessionError,
+                                                "credential-validation-failed:category=validation-file-unverified"):
+                        guest.__enter__()
+                    self.assertIsNone(guest._password)
 
     def test_stale_cached_login_fails_without_prompt_or_overwrite(self):
         cached = prompt("old-user", "old-password")
@@ -304,7 +372,7 @@ class GuestSessionTests(unittest.TestCase):
             _credential_reader=lambda target: "vm-secret",
             _guest_credential_reader=reader,
             _guest_prompt=lambda: self.fail("must not prompt"),
-            _runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "ok", ""),
+            _runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "The file exists.\n", ""),
         )
         with guest:
             self.assertEqual(guest.credential_source, "cache")
@@ -320,7 +388,7 @@ class GuestSessionTests(unittest.TestCase):
             _credential_reader=lambda target: "vm-secret",
             _guest_credential_reader=lambda target: observed.append(target) or prompt(),
             _guest_prompt=lambda: self.fail("must not prompt"),
-            _runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "ok", ""),
+            _runner=lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "The file exists.\n", ""),
         )
         with guest:
             self.assertEqual(guest.credential_source, "cache")

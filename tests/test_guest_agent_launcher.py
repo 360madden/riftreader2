@@ -102,9 +102,9 @@ class GuestAgentLauncherTests(unittest.TestCase):
                   patch.object(launcher.uuid, 'uuid4',
                                return_value=SimpleNamespace(hex='d' * 32))):
                 session.return_value.__enter__.return_value = guest
-                result = launcher.run(
-                    'unused-config', output,
-                    r'C:\RIFT_TRANSFER\RiftReader2Control\managed', 'restart')
+                result = launcher.run('unused-config', output, None, 'restart')
+            self.assertEqual(guest.run.call_args.args[-1],
+                             r'C:\RIFT_TRANSFER\RiftReader2Control\managed\request-' + 'd' * 32 + '.tmp')
             self.assertFalse(result['success'])
             self.assertEqual('failed', queue.finish.call_args.args[2])
             self.assertEqual('failed', json.loads(
@@ -173,8 +173,9 @@ class GuestAgentLauncherTests(unittest.TestCase):
             def submit(*args, **kwargs):
                 self.assertTrue(held['value'])
 
-            def dispatch():
+            def dispatch(*, request_id):
                 self.assertTrue(held['value'])
+                self.assertEqual(request_id, 'agent-maintenance-' + 'g' * 12)
                 return {'request_id': 'agent-maintenance-' + 'g' * 12,
                         'token': 'mock-token'}
 
@@ -188,6 +189,140 @@ class GuestAgentLauncherTests(unittest.TestCase):
                     self.assertFalse(held['value'])
             self.assertFalse(held['value'])
             self.assertEqual('succeeded', queue.finish.call_args.args[2])
+
+    def test_managed_guard_uses_strict_plan_and_no_legacy_configuration(self):
+        host = MagicMock()
+        host.plan = {'lab': 'lab2', 'resource': 'vm:rift-lab-2', 'vmIdentity': {'pid': 2}}
+        host.config = SimpleNamespace(expected_machine_name='RIFT-LAB-2',
+                                      vmx=Path('lab2.vmx'), vmrun=Path('vmrun.exe'), vnc_port=5962)
+        with (patch.object(launcher, 'write_managed_host_plan', return_value=Path('plan.json')) as writer,
+              patch.object(launcher, 'ManagedPinnedHost', return_value=host) as pinned,
+              patch.object(launcher.w, 'validate_config'),
+              patch.object(launcher.w, 'read_config') as legacy):
+            guard = launcher.ManagedMaintenanceGuard('lab2', Path('output'))
+            self.assertEqual(guard.check(), {'pid': 2})
+            guard.status()
+        writer.assert_called_once_with('lab2', Path('output'), require_foreground=False)
+        pinned.assert_called_once_with(Path('plan.json'))
+        host.check.assert_called_once_with()
+        host.status.assert_called_once_with(require_armed=False, require_foreground=False)
+        legacy.assert_not_called()
+
+    def test_managed_guard_refuses_wrong_lab_or_proof_failures(self):
+        for reason in ('managed-runtime-changed', 'managed-process-identity-uncertain',
+                       'managed-task-ownership-refused'):
+            with self.subTest(reason=reason), \
+                    patch.object(launcher, 'write_managed_host_plan', side_effect=ValueError(reason)), \
+                    patch.object(launcher.w, 'HostGuard') as legacy:
+                with self.assertRaisesRegex(ValueError, reason):
+                    launcher.ManagedMaintenanceGuard('lab2', Path('output'))
+                legacy.assert_not_called()
+        with patch.object(launcher, 'write_managed_host_plan') as writer:
+            with self.assertRaisesRegex(ValueError, 'Invalid managed lab'):
+                launcher.ManagedMaintenanceGuard('all', Path('output'))
+            writer.assert_not_called()
+        with (patch.object(launcher, 'write_managed_host_plan'),
+              patch.object(launcher, 'ManagedPinnedHost') as pinned):
+            pinned.return_value.plan = {'lab': 'lab1', 'resource': 'vm:rift-lab-1'}
+            with self.assertRaisesRegex(ValueError, 'lab mismatch'):
+                launcher.ManagedMaintenanceGuard('lab2', Path('output'))
+
+    def test_managed_check_propagates_changed_runtime_or_process(self):
+        guard = launcher.ManagedMaintenanceGuard.__new__(launcher.ManagedMaintenanceGuard)
+        guard.host = MagicMock()
+        guard.plan = {'vmIdentity': {'pid': 2}}
+        for reason in ('managed host runtime changed', 'managed host process epoch changed'):
+            guard.host.check.side_effect = RuntimeError(reason)
+            with self.assertRaisesRegex(RuntimeError, reason):
+                guard.check()
+
+    def test_managed_post_restart_requires_new_guest_and_same_host(self):
+        guard = launcher.ManagedMaintenanceGuard.__new__(launcher.ManagedMaintenanceGuard)
+        guard.host = MagicMock()
+        guard.plan = {'hostInstance': 'host-1', 'connection': 1,
+                      'guestInstance': 'guest-1', 'supervisorEpoch': 'old-epoch'}
+        valid = {
+            'host': {'instanceId': 'guest-2', 'consoleReservation': {'closing': False},
+                     'coordination': {'hostInstance': 'host-1', 'connection': 2,
+                                      'shutdownRequested': False, 'errorCode': None,
+                                      'supervisor': {'state': 'running', 'threadAlive': True,
+                                                     'initialCleanupVerified': True,
+                                                     'terminationPending': False, 'errorCode': None,
+                                                     'epoch': 'new-epoch'}}},
+            'guest': {'instanceId': 'guest-2'},
+        }
+        with patch.object(launcher.PinnedHost, 'status', return_value=valid) as status:
+            self.assertEqual(valid, guard.status_after_restart())
+            status.assert_called_once_with(guard.host, require_armed=False, require_foreground=False)
+        for field, changed in (('hostInstance', 'other-host'), ('connection', 1),
+                               ('shutdownRequested', True)):
+            value = json.loads(json.dumps(valid))
+            value['host']['coordination'][field] = changed
+            with self.subTest(field=field), patch.object(launcher.PinnedHost, 'status', return_value=value):
+                with self.assertRaisesRegex(ValueError, 'restart or supervisor'):
+                    guard.status_after_restart()
+        for instance in ('guest-1', '', None):
+            value = json.loads(json.dumps(valid))
+            value['guest']['instanceId'] = value['host']['instanceId'] = instance
+            with self.subTest(instance=instance), patch.object(launcher.PinnedHost, 'status', return_value=value):
+                with self.assertRaisesRegex(ValueError, 'restart or supervisor'):
+                    guard.status_after_restart()
+
+    def test_managed_post_restart_preserves_common_exact_target_checks(self):
+        guard = launcher.ManagedMaintenanceGuard.__new__(launcher.ManagedMaintenanceGuard)
+        guard.host = MagicMock()
+        with patch.object(launcher.PinnedHost, 'status', side_effect=RuntimeError('game target changed')):
+            with self.assertRaisesRegex(RuntimeError, 'game target changed'):
+                guard.status_after_restart()
+
+    def test_managed_run_never_loads_legacy_profile_and_checks_restart(self):
+        from scripts.ensure_guest_agent import GUEST_ROOT
+        self.check_managed_update(None, GUEST_ROOT)
+
+    def test_managed_update_uses_explicit_guest_root(self):
+        self.check_managed_update(r'C:\custom\managed', r'C:\custom\managed')
+
+    def check_managed_update(self, guest_root, expected_root):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / 'managed-run'
+            guard = MagicMock()
+            guard.plan = {'database': 'queue.json', 'resource': 'vm:rift-lab-2'}
+            guard.vmrun = Path('vmrun.exe')
+            guard.status.return_value = {'guest': {'gracefulShutdownVersion': 1}}
+            guard.status_after_restart.return_value = {'guest': {'gracefulShutdownVersion': 1}}
+            guard.client.request.return_value = {'status': 'stopped'}
+            queue = MagicMock()
+            queue.status.return_value = {
+                'resources': [{'name': 'vm:rift-lab-2', 'epoch': 'epoch',
+                               'blocked': False, 'holder': None}], 'requests': []}
+            queue.dispatch.return_value = {
+                'request_id': 'agent-maintenance-' + 'a' * 12, 'token': 'mock-token'}
+            guest = MagicMock()
+
+            def copy_result(_, destination):
+                destination.write_text(json.dumps(
+                    {'id': 'a' * 32, 'success': True} if destination.name == 'result.json' else {}))
+
+            guest.copy_from_guest.side_effect = copy_result
+            with (patch.object(launcher, 'ManagedMaintenanceGuard', return_value=guard) as managed,
+                  patch.object(launcher.w, 'read_config') as legacy,
+                  patch.object(launcher.w, 'HostGuard') as legacy_guard,
+                  patch.object(launcher.w, 'AccessQueue', return_value=queue),
+                  patch.object(launcher, 'GuestSession') as session,
+                  patch.object(launcher.uuid, 'uuid4', return_value=SimpleNamespace(hex='a' * 32))):
+                session.return_value.__enter__.return_value = guest
+                result = launcher.run(None, output, guest_root,
+                    'update', {'release': 'agent-test', 'sha256': 'A' * 64}, managed_lab='lab2')
+            self.assertTrue(result['success'])
+            self.assertEqual(guest.run.call_args.args[-1], expected_root + '\\request-' + 'a' * 32 + '.tmp')
+            managed.assert_called_once_with('lab2', output)
+            legacy.assert_not_called()
+            legacy_guard.assert_not_called()
+            self.assertEqual(guard.status.call_count, 2)
+            guard.status_after_restart.assert_called_once_with()
+            queue.dispatch.assert_called_once_with(request_id='agent-maintenance-' + 'a' * 12)
+            self.assertTrue((output / 'stopped.json').is_file())
+            self.assertTrue((output / 'after.json').is_file())
 
     def test_maintenance_thread_start_failure_releases_failed_lease(self):
         with tempfile.TemporaryDirectory() as directory:

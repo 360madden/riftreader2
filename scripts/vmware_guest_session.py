@@ -19,6 +19,7 @@ import uuid
 
 ALLOWED_COMMANDS = frozenset({
     "listProcessesInGuest",
+    "fileExistsInGuest",
     "runProgramInGuest",
     "copyFileFromGuestToHost",
     "copyFileFromHostToGuest",
@@ -200,9 +201,9 @@ def _failure_category(stdout: str, stderr: str) -> str:
     return "command-failed"
 
 
-def _validation_error(prefix: str, error: SessionError) -> SessionError:
+def _validation_error(prefix: str, error: SessionError, command: str) -> SessionError:
     message = str(error)
-    marker = "guest-command-failed:listProcessesInGuest:"
+    marker = f"guest-command-failed:{command}:"
     if not message.startswith(marker):
         return error
     detail = message[len(marker):]
@@ -263,18 +264,18 @@ class GuestSession:
                 self.credential_source = "cache"
                 self._require_identity()
                 try:
-                    self.run("listProcessesInGuest")
+                    self._validate_login()
                 except SessionError as error:
-                    raise _validation_error("cached-guest-credential", error) from None
+                    raise _validation_error("cached-guest-credential", error, "fileExistsInGuest") from None
                 return self
             self._username, self._password = self._guest_prompt()
             self.credential_source = "prompt"
             self._require_identity()
             if self.cache_guest_credentials:
                 try:
-                    self.run("listProcessesInGuest")
+                    self._validate_login()
                 except SessionError as error:
-                    raise _validation_error("guest-credential", error) from None
+                    raise _validation_error("guest-credential", error, "fileExistsInGuest") from None
                 self._guest_credential_writer(
                     self.guest_credential_target,
                     self._username.value,
@@ -285,6 +286,15 @@ class GuestSession:
         except BaseException:
             self.close()
             raise
+
+    def _validate_login(self) -> None:
+        # Authenticated, read-only guest operation; avoid enumerating every process
+        # merely to validate a login. Require positive proof of the fixed file.
+        output = self.run("fileExistsInGuest", POWERSHELL)
+        if output.strip() != "The file exists.":
+            raise SessionError(
+                "guest-command-failed:fileExistsInGuest:category=validation-file-unverified"
+            )
 
     def __exit__(self, *_args):
         self.close()

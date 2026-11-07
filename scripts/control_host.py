@@ -594,6 +594,12 @@ class AgentSession:
 
     @contextmanager
     def _admission(self, operation, access):
+        # Fresh identity reads grant no input authority and need no queue lease.
+        if operation == "identity":
+            if access is not None:
+                raise ControlHostError("identity reads do not accept a control lease")
+            yield None
+            return
         if self.dispatch_policy is None:
             if self.require_supervisor and operation in ("capture", "arm", "action", "recover"):
                 raise ControlHostError("new session requires an owned supervisor")
@@ -691,10 +697,14 @@ class AgentSession:
         if self.closed:
             raise ControlHostError("guest control connection is closed")
         if operation not in (
-                "status", "capture", "arm", "action", "release", "stop", "recover"):
+                "status", "identity", "capture", "arm", "action", "release", "stop", "recover"):
             raise ControlHostError("unsupported guest operation")
         if not isinstance(payload, dict):
             raise ControlHostError("command payload must be an object")
+        if operation == "identity":
+            validate_identity_payload(payload)
+            if payload["machineName"] != self.hello["machineName"]:
+                raise ControlHostError("identity machine does not match authenticated guest")
         if (operation == "action" and payload.get("action", {}).get("clickTarget") is not None
                 and (type(self.hello.get("targetedClickVersion")) is not int
                      or self.hello["targetedClickVersion"] != 1)):
@@ -1065,6 +1075,24 @@ def validate_action_payload(payload: object) -> dict:
     return result
 
 
+def validate_identity_payload(payload):
+    fields = {"machineName", "processId", "processStartUtcTicks", "executableSha256"}
+    if not isinstance(payload, dict) or set(payload) != fields:
+        raise ControlHostError("identity payload fields do not match schema 1")
+    machine = payload["machineName"]
+    if (not isinstance(machine, str) or not 1 <= len(machine) <= 64
+            or re.fullmatch(r"[A-Za-z0-9_.-]+", machine) is None):
+        raise ControlHostError("invalid identity machineName")
+    for field, maximum in (("processId", 2147483647),
+                           ("processStartUtcTicks", 3155378975999999999)):
+        if type(payload[field]) is not int or not 1 <= payload[field] <= maximum:
+            raise ControlHostError("invalid identity " + field)
+    if (not isinstance(payload["executableSha256"], str)
+            or re.fullmatch(r"[0-9a-f]{64}", payload["executableSha256"]) is None):
+        raise ControlHostError("invalid identity executableSha256")
+    return payload
+
+
 class ControlHttpServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -1151,6 +1179,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             "/api/action": "action", "/api/release": "release",
             "/api/stop": "stop",
             "/api/recover": "recover",
+            "/api/identity": "identity",
         }
         operation = routes.get(self.path)
         if operation is None:
@@ -1163,7 +1192,9 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             access_kwargs = {"access": access} if access is not None else {}
             if operation in ("capture", "release", "stop", "recover") and payload != {}:
                 raise ControlHostError(f"{operation} request body must be an empty object")
-            if operation == "capture":
+            if operation == "identity":
+                result = self.server.gateway.command("identity", validate_identity_payload(payload))
+            elif operation == "capture":
                 result = self.server.gateway.capture(**access_kwargs)
             elif operation == "arm":
                 result = self.server.gateway.command("arm", validate_arm_payload(payload), **access_kwargs)

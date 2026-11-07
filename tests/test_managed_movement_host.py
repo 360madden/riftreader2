@@ -2,7 +2,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import scripts.run_movement_session as runner
 
@@ -84,6 +84,51 @@ class ManagedStatusTests(unittest.TestCase):
         state["host"]["coordination"]["supervisor"]["terminationPending"] = True
         with self.assertRaisesRegex(runner.MovementSessionError, "terminating"):
             self.status(state)
+
+
+class ForegroundPolicyTests(unittest.TestCase):
+    def setUp(self):
+        self.host = runner.PinnedHost.__new__(runner.PinnedHost)
+        self.host.plan = {'vmIdentity': {'pid': 21}, 'resource': 'vm:rift-lab-2'}
+        self.host.check = MagicMock()
+        self.host.target = {'processId': 99, 'processStartUtcTicks': 100,
+                            'executableSha256': 'B' * 64, 'windowHandle': '0x10'}
+        self.value = {
+            'host': {'connected': True, 'vmIdentity': {'pid': 21},
+                     'consoleReservation': {'held': True, 'faulted': False},
+                     'coordination': {'state': 'ready', 'resource': 'vm:rift-lab-2',
+                                      'supervisor': {'epoch': 'epoch'}}},
+            'guest': {'target': {**self.host.target, 'isForeground': False},
+                      'recoveryRequired': False, 'desktopInputsDown': [],
+                      'busy': False, 'armed': False},
+        }
+        self.host.client = SimpleNamespace(request=lambda *args, **kwargs: self.value)
+
+    def status(self, **kwargs):
+        with (patch.object(runner, 'bind_identity', return_value={}),
+              patch.object(runner, 'resource_epoch', return_value='epoch')):
+            return self.host.status(require_armed=False, **kwargs)
+
+    def test_default_movement_status_still_requires_foreground(self):
+        with self.assertRaisesRegex(runner.MovementSessionError, 'not foreground'):
+            self.status()
+
+    def test_explicit_maintenance_status_accepts_background_and_rechecks_identity(self):
+        self.assertEqual(self.status(require_foreground=False), self.value)
+        self.assertEqual(self.host.check.call_count, 2)
+
+    def test_background_maintenance_keeps_target_and_idle_guards(self):
+        self.value['guest']['target']['processId'] = 100
+        with self.assertRaisesRegex(runner.MovementSessionError, 'game target changed'):
+            self.status(require_foreground=False)
+        self.value['guest']['target']['processId'] = 99
+        self.value['guest']['desktopInputsDown'] = ['w']
+        with self.assertRaisesRegex(runner.MovementSessionError, 'input down'):
+            self.status(require_foreground=False)
+        self.value['guest']['desktopInputsDown'] = []
+        self.value['guest']['armed'] = True
+        with self.assertRaisesRegex(runner.MovementSessionError, 'arm state'):
+            self.status(require_foreground=False)
 
 
 class ManagedReceiptTests(unittest.TestCase):
@@ -228,7 +273,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         folder.mkdir()
         (folder / "process.json").write_text(json.dumps(self.receipt), encoding="utf-8")
 
-    def generate(self, *, reject_strict=False):
+    def generate(self, *, reject_strict=False, require_foreground=True):
         fake_guard = SimpleNamespace(
             enabled=True, config="native-config",
             module=SimpleNamespace(collect_identity=lambda config: self.vm),
@@ -247,10 +292,19 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
              patch.object(runner, "listener_owner", return_value=123), \
              patch.object(runner, "process_identity", return_value=self.identity), \
              patch.object(runner, "VmEpochGuard", return_value=fake_guard), \
-             patch.object(runner.PinnedHost, "status", return_value=self.status_value), \
+             patch.object(runner.PinnedHost, "status", return_value=self.status_value) as status, \
              patch.object(runner, "_require_exact_managed_task",
                           side_effect=admission):
-            return runner.write_managed_host_plan("lab2", self.output)
+            path = runner.write_managed_host_plan("lab2", self.output,
+                                                  require_foreground=require_foreground)
+            status.assert_called_once_with(require_armed=False,
+                                           require_foreground=require_foreground)
+            return path
+
+    def test_maintenance_plan_explicitly_accepts_background_without_changing_plan_schema(self):
+        self.status_value['guest']['target']['isForeground'] = False
+        saved = self.generate(require_foreground=False)
+        self.assertNotIn('requireForeground', runner.load(saved))
 
     def test_discovers_unique_matching_live_receipt_and_writes_exact_plan(self):
         import json

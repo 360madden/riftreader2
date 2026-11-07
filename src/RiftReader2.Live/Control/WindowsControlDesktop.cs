@@ -97,6 +97,27 @@ public static class WindowsControlDesktop
         string expectedProcessName,
         string expectedExecutablePath,
         string expectedExecutableSha256)
+        => InspectCore(expectedProcessName, expectedExecutablePath, expectedExecutableSha256, null);
+
+    internal static DesktopTarget InspectFreshIdentity(
+        string expectedProcessName,
+        string expectedExecutablePath,
+        string expectedExecutableSha256,
+        ControlIdentityRequest expectedIdentity)
+    {
+        expectedIdentity.Validate();
+        if (!string.Equals(expectedIdentity.MachineName, Environment.MachineName, StringComparison.Ordinal)
+            || !string.Equals(expectedIdentity.ExecutableSha256,
+                expectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Expected identity differs from the configured machine/build.");
+        return InspectCore(expectedProcessName, expectedExecutablePath, expectedExecutableSha256, expectedIdentity);
+    }
+
+    private static DesktopTarget InspectCore(
+        string expectedProcessName,
+        string expectedExecutablePath,
+        string expectedExecutableSha256,
+        ControlIdentityRequest? freshIdentity)
     {
         EnsureWindows();
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedProcessName);
@@ -128,7 +149,16 @@ public static class WindowsControlDesktop
                 throw new InvalidOperationException(
                     $"The executable path does not match the expected target. Expected '{expectedPath}', found '{actualPath}'.");
 
-            var actualHash = GetExecutableSha256(processId, startTicks, actualPath);
+            if (freshIdentity is not null
+                && (freshIdentity.ProcessId != processId || freshIdentity.ProcessStartUtcTicks != startTicks))
+                throw new InvalidOperationException("The process does not match the expected identity.");
+            if (freshIdentity is not null)
+                RevalidateProcess(process, processId, startTicks, actualPath);
+            var actualHash = freshIdentity is null
+                ? GetExecutableSha256(processId, startTicks, actualPath)
+                : GetFreshExecutableSha256(actualPath);
+            if (freshIdentity is not null)
+                RevalidateProcess(process, processId, startTicks, actualPath);
             if (!string.Equals(expectedHash, actualHash, StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     $"The executable SHA-256 does not match the expected target. Expected '{expectedHash}', found '{actualHash}'.");
@@ -434,6 +464,24 @@ public static class WindowsControlDesktop
                 item.Path, FileMode.Open, FileAccess.Read, FileShare.Read, 128 * 1024, FileOptions.SequentialScan);
             return Convert.ToHexString(SHA256.HashData(stream));
         });
+    }
+
+    // Keep the handle open throughout the byte read and stability checks. FileShare.Read
+    // denies concurrent writes and replacement; no metadata-keyed cache is consulted.
+    internal static string GetFreshExecutableSha256(string executablePath)
+    {
+        var before = new FileInfo(executablePath);
+        var length = before.Length;
+        var writeTicks = before.LastWriteTimeUtc.Ticks;
+        var creationTicks = before.CreationTimeUtc.Ticks;
+        using var stream = new FileStream(executablePath, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 128 * 1024, FileOptions.SequentialScan);
+        var hash = Convert.ToHexString(SHA256.HashData(stream));
+        var after = new FileInfo(executablePath);
+        if (stream.Length != length || after.Length != length
+            || after.LastWriteTimeUtc.Ticks != writeTicks || after.CreationTimeUtc.Ticks != creationTicks)
+            throw new InvalidOperationException("Executable file changed during fresh-byte identity inspection.");
+        return hash;
     }
 
     private static IntPtr FindProcessWindow(int processId)

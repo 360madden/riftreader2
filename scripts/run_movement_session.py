@@ -130,7 +130,7 @@ class PinnedHost:
         require(guard.module.collect_identity(guard.config) == plan["vmIdentity"],
                 "VM identity changed")
 
-    def status(self, *, require_idle=True, require_armed=None):
+    def status(self, *, require_idle=True, require_armed=None, require_foreground=True):
         self.check()
         value = self.client.request("/api/status", method="GET")
         host, guest = value.get("host", {}), value.get("guest", {})
@@ -144,7 +144,8 @@ class PinnedHost:
                 "supervisor is bound to another game identity")
         target = {key: guest.get("target", {}).get(key) for key in
                   ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
-        require(guest.get("target", {}).get("isForeground") is True, "RIFT is not foreground")
+        if require_foreground:
+            require(guest.get("target", {}).get("isForeground") is True, "RIFT is not foreground")
         if self.target is None:
             self.target = target
         require(target == self.target, "game target changed")
@@ -271,7 +272,7 @@ class ManagedPinnedHost(PinnedHost):
         return value
 
 
-def write_managed_host_plan(lab: str, output: Path) -> Path:
+def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) -> Path:
     """Pin an already-ready controller. Never start/rebind one implicitly."""
     from scripts.ensure_controller import CONFIGS, QUEUE
     require(lab in CONFIGS, "unknown managed lab")
@@ -336,7 +337,7 @@ def write_managed_host_plan(lab: str, output: Path) -> Path:
     }
     destination = Path(output) / "managed-host-plan.json"
     save(destination, plan)
-    ManagedPinnedHost(destination).status(require_armed=False)
+    ManagedPinnedHost(destination).status(require_armed=False, require_foreground=require_foreground)
     return destination
 
 

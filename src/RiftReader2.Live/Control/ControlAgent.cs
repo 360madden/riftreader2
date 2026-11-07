@@ -37,6 +37,29 @@ public sealed record ControlCommand(string Type, string Id, long Sequence, strin
 public sealed record ControlPending(DesktopTarget Target, ControlAction Action);
 public sealed record ControlArmRequest(string CaptureId, string ReviewNote);
 public sealed record ControlActionRequest(string ArmToken, ControlAction Action);
+public sealed record ControlIdentityRequest(
+    string MachineName, int ProcessId, long ProcessStartUtcTicks, string ExecutableSha256)
+{
+    internal void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(MachineName) || MachineName != MachineName.Trim()
+            || ProcessId <= 0 || ProcessStartUtcTicks <= 0 || ProcessStartUtcTicks > DateTime.MaxValue.Ticks
+            || ExecutableSha256 is null || ExecutableSha256.Length != 64
+            || !ExecutableSha256.All(Uri.IsHexDigit))
+            throw new InvalidDataException("Invalid expected identity; machine, process epoch and SHA-256 are required.");
+    }
+
+    internal void RequireMatch(DesktopTarget target)
+    {
+        Validate();
+        if (MachineName != target.MachineName || ProcessId != target.ProcessId
+            || ProcessStartUtcTicks != target.ProcessStartUtcTicks
+            || !string.Equals(ExecutableSha256, target.ExecutableSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Fresh target does not match the expected identity.");
+    }
+}
+public sealed record ControlIdentityResponse(
+    int IdentityVersion, string HashMode, DateTimeOffset ObservedAtUtc, DesktopTarget Target);
 
 /// <summary>Outbound-only, interactive-session input adapter. No arbitrary command execution.</summary>
 public sealed class ControlAgent
@@ -202,6 +225,7 @@ public sealed class ControlAgent
                     {
                         instanceId,
                         targetedClickVersion = 1,
+                        freshIdentityVersion = 1,
                         gracefulShutdownVersion = 1,
                         target = Inspect(),
                         armed = IsArmed(),
@@ -213,6 +237,14 @@ public sealed class ControlAgent
                         nativeTextEntryState = "unknown",
                         responseVerified = false
                     };
+                    break;
+                case "identity":
+                    RequireIdle();
+                    var identity = command.Payload.Deserialize<ControlIdentityRequest>(JsonFormat.Options)
+                        ?? throw new InvalidDataException("Missing expected identity.");
+                    response = InspectFreshIdentity(identity, () => WindowsControlDesktop.InspectFreshIdentity(
+                        configuration.ProcessName, configuration.ExecutablePath,
+                        configuration.ExecutableSha256, identity));
                     break;
                 case "stop":
                     StopSession();
@@ -283,6 +315,15 @@ public sealed class ControlAgent
             response = new { error = exception.Message, errorType = exception.GetType().Name };
         }
         await ReplyAsync(stream, command, response, token);
+    }
+
+    internal static ControlIdentityResponse InspectFreshIdentity(
+        ControlIdentityRequest expectedIdentity, Func<DesktopTarget> inspectFresh)
+    {
+        expectedIdentity.Validate();
+        var target = inspectFresh();
+        expectedIdentity.RequireMatch(target);
+        return new ControlIdentityResponse(1, "fresh-bytes", DateTimeOffset.UtcNow, target);
     }
 
     private async Task HandleActionAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
