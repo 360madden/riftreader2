@@ -131,7 +131,8 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
               "readerNonce": pin["reader"]["nonce"], "readerPid": pin["reader"]["processId"],
               "gamePid": pin["gameIdentity"]["processId"], "expiresAtUtc": expiry.isoformat(),
               "durationRequiredSeconds": duration_seconds, "expiryMarginSeconds": expiry_margin_seconds,
-              "maxAllowedGapSeconds": max_gap_seconds, "acceptedSamples": 0}
+              "maxAllowedGapSeconds": max_gap_seconds, "acceptedSamples": 0,
+              "transientUnavailableReads": 0}
     ledger_path = output_dir / "samples.jsonl"
     try:
         initial = maker(pin, evidence_dir).wait_initial(timeout_seconds=4.5)
@@ -156,7 +157,10 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
                 try:
                     receipt, raw, _ = read_receipt(pin, initial=False)
                 except console.Blocked as error:
-                    if str(error) != "live-receipt-not-fresh":
+                    reason = str(error)
+                    if reason == "live-receipt-unavailable":
+                        result["transientUnavailableReads"] += 1
+                    elif reason != "live-receipt-not-fresh":
                         raise
                 else:
                     if feedback._validate_next(previous, receipt) == "accept":

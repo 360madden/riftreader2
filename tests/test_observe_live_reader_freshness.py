@@ -108,11 +108,14 @@ class ObserverTests(unittest.TestCase):
                                       duration_seconds=479)
 
     def observe_fake(self, step=4.0, drift=False, frozen=False,
-                     slow_final_seconds=0, capture_skip=False):
+                     slow_final_seconds=0, capture_skip=False, read_errors=()):
         clock = SimulatedClock(step)
         index = [0]
+        errors = list(read_errors)
 
         def read(_pin, *, initial=False):
+            if errors:
+                raise errors.pop(0)
             index[0] += 1
             return {"sequence": index[0]}, b"{}", {}
 
@@ -157,6 +160,44 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(result["ledgerSha256"], hashlib.sha256(ledger).hexdigest())
         self.assertEqual(result["maximumAcceptanceGapSeconds"], 4.0)
         self.assertEqual(result["maximumCaptureGapSeconds"], 4.0)
+        self.assertEqual(result["transientUnavailableReads"], 0)
+
+    def test_transient_unavailable_read_is_counted_but_not_accepted(self):
+        unavailable = observer.console.Blocked("live-receipt-unavailable")
+        result, target = self.observe_fake(step=.2, read_errors=(unavailable,))
+
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["transientUnavailableReads"], 1)
+        rows = (target / "samples.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(rows), result["acceptedSamples"])
+        self.assertEqual(json.loads(rows[1])["sample"]["outerSequence"], 1)
+        summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["transientUnavailableReads"], 1)
+
+    def test_persistent_unavailable_reads_still_fail_on_exact_gap_gate(self):
+        unavailable = observer.console.Blocked("live-receipt-unavailable")
+        result, target = self.observe_fake(
+            step=1.0, read_errors=(unavailable,) * 10)
+
+        self.assertIsNone(result)
+        summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["reason"], "observation-gap-exceeded")
+        self.assertEqual(summary["transientUnavailableReads"], 5)
+        self.assertEqual(summary["acceptedSamples"], 1)
+
+    def test_other_blocked_reason_is_not_tolerated(self):
+        changed = observer.console.Blocked("observation-identity-changed")
+        with self.assertRaisesRegex(observer.console.Blocked,
+                                    "observation-identity-changed"):
+            self.observe_fake(step=.2, read_errors=(changed,))
+
+        target = Path(self.temp.name) / "evidence"
+        summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["reason"], "observation-identity-changed")
+        self.assertEqual(summary["transientUnavailableReads"], 0)
+        self.assertEqual(summary["acceptedSamples"], 1)
 
     def test_five_second_gap_fails_closed(self):
         result, target = self.observe_fake(step=5.0)
