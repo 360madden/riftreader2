@@ -3,7 +3,8 @@
 P5 delivers a small offline-testable passive topology reader in
 `scripts/native_cast_candidate.py`. It accepts an existing identity-pinned memory
 read callback and the entity resolved by the common player-key lookup; it opens
-no process and invokes no game function. It is not wired into a live command.
+no process and invokes no game function. It is now wired into the existing
+player probe through `--cast-record`; both-lab raw capture is recorded below.
 
 ## Ownership and available inputs
 
@@ -24,6 +25,7 @@ resolved entity boundary rather than adding a competing player lookup.
 | Nullable pointer at component `+0x280` | First child; accessor `0x5A75C0` obtains its DWORD `+8` via `0x58B30` |
 | Nullable pointer at component `+0x290` | Second child; accessor `0x5A7570` obtains the same-shaped DWORD |
 | Either child DWORD nonzero | Producer prerequisite, **not** established `isCasting`, ability identity, or cast phase |
+| Component DWORD `+0x2B8` | Copied to producer output `+0x3C`; unknown semantics, read and rechecked as `rawComponentDword2B8` |
 
 `0x5A9940` copies a smart reference from `+0x280/+0x288` and changes a reference
 count. The new code only reads the pointer, never calls this helper or copies its
@@ -44,10 +46,30 @@ hypothesis; unchanged IDs while time passes cannot establish progress; a return
 to zero is only a stop hypothesis. Existing retained native evidence does not
 identify passive timer/flag input offsets, component type/vtable, or distinguish
 channeling, queued abilities, completed casts, interruption and cache retention.
-Downstream functions `0x5A6CB0`, `0x49F960`, `0x49D440`, `0x49DFE0`,
-`0x49D210`, `0x4948E0` remain the targeted static follow-up. Casting addon's
+November7 disassembly narrowed the selected-child floats: producer uses first
+child `+0x30` or fallback child `+0x34` and game-clock float
+`*(module+0x33DC2B0)+0x18` in `duration - (clock - selected_float)`. This is
+a start-time candidate, not a qualified timer field. Duration remains virtual
+through child `+0x20/+0x28`, not a direct passive offset. Fallback selection
+also depends on the `+0x298` control pointer. The retained trace is
+`artifacts/discovery-20261107-cast/static-followup.md`; never call the smart
+reference or virtual helpers. Both castbar marshaller paths map producer
+output `+0x28` to named `begin`, `+0x30` to `duration`, and `+0x2C` to
+`remaining` (clamped at zero, with negative values also feeding `expired`).
+The raw `+0x2B8` DWORD goes to output `+0x3C`, which has no direct read in
+either decoded marshaller; `abilityNew` uses DISTINCT output `+0x40`.
+These static mappings are not live changed-state qualification. Casting addon's
 `Inspect.Unit.Castbar` observation omits `uninterruptible`, so independent flag
 validation needs another reference.
+
+The `abilityNew` input now traces to the selected child's DWORD `+8`, after
+the child-ID gate and a nested-pointer guard: child must be non-null and
+`byte(*(child+0x10)+0xC8)` must be zero. First child wins when present;
+fallback requires the second reference's control pointer. The producer's
+`0x58B30` leaf reads the DWORD, and the marshaller performs another lookup
+(`0x49FA20`) before emitting abilityNew. Existing raw IDs are therefore
+candidate keys only under this selection/guard, not arbitrary qualified ability
+IDs. No reader invokes these functions.
 
 ## Checks and next useful use
 
@@ -80,6 +102,14 @@ null; source stability, process and ownership checks passed. Receipts are in
 `artifacts/native-unit-manager/lab1/3c1fb6acef4f4f6c9aa7098532d49d99/`.
 This checks the raw locating route on a second player/process, without
 establishing cast semantics or full-game restart recovery.
+
+A follow-up Lab2 capture completed at `2026-11-07T13:04:16.0835872Z` in the
+same pinned game epoch: `rawComponentDword2B8=0`, both child pointers null,
+all bracketed anchors and source checks passed. Receipts:
+`artifacts/native-unit-manager/lab2/b2d1ef50f22049c8a94030dd7aa21ecd/`.
+The helper now retains this unknown raw field and clears it if any consumed
+anchor changes. Seven focused helper cases passed, including raw-field mutation
+rejection; no full suite was run for this small discovery slice.
 
 On November 6 the physical installed executable was read-only SHA-256 checked:
 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`, matching

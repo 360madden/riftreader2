@@ -2,7 +2,7 @@
 
 No process opening, game getters, reference-count operations or game input.
 The caller owns current PID/start/SHA checks and player-key -> entity lookup.
-This module exposes raw child IDs only; it cannot establish cast/timer semantics.
+This module exposes raw child IDs and an unknown DWORD; it cannot establish cast/timer semantics.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def read_cast_topology(read: Callable[[int, int], bytes], *, module_base: int,
     """
     result = {"source": "native-memory", "qualification": "static-topology-candidate",
               "buildSha256": build_sha, "status": "unavailable",
-              "reason": None, "children": [], "isCasting": None,
+              "reason": None, "children": [], "rawComponentDword2B8": None, "isCasting": None,
               "begin": None, "duration": None, "remaining": None,
               "uninterruptible": None}
     if build_sha != BUILD_SHA:
@@ -64,8 +64,11 @@ def read_cast_topology(read: Callable[[int, int], bytes], *, module_base: int,
             status = "candidate-component-absent"
         else:
             table = _pointer(struct.unpack("<Q", take(entity + 0x78, 8))[0])
-            component = _pointer(struct.unpack("<Q", take(table + slot * 8, 8))[0], 0x298)
+            component = _pointer(struct.unpack("<Q", take(table + slot * 8, 8))[0], 0x2BC)
             result["component"] = component
+            # Copied by the producer before its child-ID gate; meaning unknown.
+            result["rawComponentDword2B8"] = struct.unpack(
+                "<I", take(component + 0x2B8, 4))[0]
             for offset in (0x280, 0x290):
                 child = struct.unpack("<Q", take(component + offset, 8))[0]
                 child_id = None
@@ -84,6 +87,7 @@ def read_cast_topology(read: Callable[[int, int], bytes], *, module_base: int,
         result["status"] = status
     except (ValueError, OSError) as exc:
         # Discard partial topology; never present a torn record as a candidate.
-        result.update({"status": "unavailable", "reason": str(exc), "children": []})
+        result.update({"status": "unavailable", "reason": str(exc), "children": [],
+                       "rawComponentDword2B8": None})
         result.pop("component", None)
     return result

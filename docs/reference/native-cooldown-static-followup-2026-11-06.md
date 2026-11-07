@@ -34,7 +34,8 @@ only when `COMISS`/`JBE` considers the returned value greater. Therefore,
 for ordinary ordered finite values, the result is the maximum of the optional
 `context+0x1C0` entry's value and the looked-up ID values, with zero as the
 initial fallback. It is **not necessarily solely the maximum over the ID vector**.
-The entry's key and relationship to the ability remain unresolved; the iterator
+The entry's key is traced in the November7 section below; its relationship to
+the ability remains unresolved. The iterator
 comparison and NaN cases must not be simplified into a production reader.
 
 Duration is coupled to branches, not a universal fixed field: the initial duration
@@ -85,11 +86,29 @@ game code, which a reader must never call. Conditional collection traversal
 remains unresolved. Bounded exact-build disassembly and call-site details are
 retained in `artifacts/discovery-20261107-cooldown/key-provenance.md`.
 
+**Live root observation:** `probe_native_unit_manager.py --lab lab2
+--cooldown-roots` completed at `2026-11-07T13:01:40.3337790Z`, exact build above,
+PID9752/start639294897826627677. Both root pointers were non-null and selector
+was **83**. Roots, selector, player anchors, source and process checks passed.
+Receipts: `artifacts/native-unit-manager/lab2/03b0475a18ff461b95184e55b28228d8/`.
+`review.json` SHA256 is
+`EEE38CD490E89FEA145F061306E739DACC1CB1CC38095BD0CA780DABD892C514`.
+This validates the raw root route, not player ownership, ability ID or cooldown.
+
+The indirect collection selector is now identified from the PE import table:
+IAT RVA `0x25EF748` is **KERNEL32!TlsGetValue**. Owner DWORD `+0x274` is the
+TLS index. The calling game thread's non-null TLS value selects collection C;
+otherwise C is owner+0x200. The external reader's own TLS is irrelevant.
+Cache C+0x20 uses a selector-word/ID-DWORD composite key, tagged bucket/chain
+links and node+0x10 -> result-holder+0x18. A cache miss enters a separate
+unreconstructed fallback, so neither a fallback-only scan nor a cache miss
+proves an ID absent. No game TLS function or resolver was invoked.
+
 ## Next discriminating work
 
-Read the two candidate roots and selector in a fresh pinned process, and trace
-the exact input/result types of `0x128FFA4` / `0x128CCB0`; inspect whether both
-collection paths can be passively reconstructed. Then, under the coordinator's normal
+Resolve the relevant game-thread TLS collection passively, or label an
+owner+0x200 snapshot as fallback-only. Reconstruct `0x128CCB0` before treating
+a cache miss as absence. Then, under the coordinator's normal
 fresh identity and controlled-action gates, compare independent ability/API
 observations with bracketed native candidate changes. Full-game restart and
 freshness checks remain necessary before any live telemetry claim. This work

@@ -19,9 +19,24 @@ Cooldown research traced the original map key and two candidate resolver roots;
 see [findings](reference/native-cooldown-static-followup-2026-11-06.md#key-provenance-and-candidate-roots--november-7).
 No game input, bind/reload, restart or owner transition was performed.
 
+Milestone `a7b2671` records both-lab cast capture and the initial cooldown
+key/root trace. A subsequent Lab2 `--cooldown-roots` run completed with both
+roots present, selector83 and stable bracketed anchors. The collection dispatch
+is KERNEL32!TlsGetValue: a game-thread override may supersede owner+0x200,
+and a cache miss cannot establish absence. Static cast tracing maps output
+slots to `begin`, `duration`, and `remaining`; duration still requires a virtual
+path, while component+0x2B8 is an unknown raw DWORD, distinct from abilityNew.
+A follow-up live Lab2 capture read that raw DWORD as0 with stable anchors;
+the guarded selected child's +8 DWORD is the abilityNew-key source, subject
+to the producer's nested-pointer guard and marshaller lookup. The seven focused
+helper checks passed; no full validation campaign was run.
+
 **Resume:** continue native cast/timer and ability/cooldown discovery. Reacquire
-each process epoch; read candidate cooldown roots before attempting collection
-traversal, and use retained exact-build getter disassembly for timer fields.
+each process epoch; resolve the game-thread TLS collection before relying on
+cooldown cache traversal, and use retained exact-build getter disassembly for
+timer fields. For cast duration, a non-null child's +0x20/+0x28 vtable slot+8
+is the next static-analysis seed; never invoke it. Null-child observations
+cannot establish duration or casting/idle semantics.
 Do not restart the full validation gate or maintenance queue merely because
 those items appear chronologically below. Save concise concrete findings and
 commit useful slices; no new framework or validation campaign.

@@ -19,6 +19,7 @@ class CastTopologyTests(unittest.TestCase):
             (self.table + 24, 8): struct.pack("<Q", self.component),
             (self.component + 0x280, 8): struct.pack("<Q", 0x50000),
             (self.component + 0x290, 8): struct.pack("<Q", 0),
+            (self.component + 0x2B8, 4): struct.pack("<I", 42),
             (0x50008, 4): struct.pack("<I", 1234),
         }
 
@@ -30,6 +31,7 @@ class CastTopologyTests(unittest.TestCase):
         result = self.run_read()
         self.assertEqual(result["status"], "candidate-nonzero-child")
         self.assertEqual(result["children"][0]["rawId"], 1234)
+        self.assertEqual(result["rawComponentDword2B8"], 42)
         for field in ("isCasting", "begin", "duration", "remaining", "uninterruptible"):
             self.assertIsNone(result[field])
 
@@ -37,6 +39,7 @@ class CastTopologyTests(unittest.TestCase):
         self.memory[(0x50008, 4)] = bytes(4)
         result = self.run_read()
         self.assertEqual(result["status"], "candidate-no-nonzero-child")
+        self.assertEqual(result["rawComponentDword2B8"], 42)
         self.assertIsNone(result["isCasting"])
 
     def test_missing_slot_does_not_read_component(self):
@@ -59,7 +62,7 @@ class CastTopologyTests(unittest.TestCase):
 
     def test_changed_child_and_owner_fail_and_discard_partial_record(self):
         for changed_key in ((0x50008, 4), (self.entity + 0x78, 8),
-                            (self.component + 0x280, 8)):
+                            (self.component + 0x280, 8), (self.component + 0x2B8, 4)):
             seen = set()
 
             def read(a, n):
@@ -73,6 +76,7 @@ class CastTopologyTests(unittest.TestCase):
             result = self.run_read(read)
             self.assertEqual(result["reason"], "mutable-input-changed")
             self.assertEqual(result["children"], [])
+            self.assertIsNone(result["rawComponentDword2B8"])
 
     def test_partial_read_is_explicit(self):
         self.assertEqual(self.run_read(lambda *_: b"")["reason"], "short-or-invalid-read")

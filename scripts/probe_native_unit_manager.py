@@ -481,7 +481,7 @@ def calculate_energy(fields: dict, clock: float) -> dict:
 
 
 def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
-        cast_record: bool = False) -> dict:
+        cast_record: bool = False, cooldown_roots: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
     probe_path = Path(__file__)
@@ -586,6 +586,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 roots_ranges.append((0x33DC2B0, 8))
             if health_record:
                 roots_ranges += [(0x355F430, 8), (0x2C281B8, 8)]
+            if cooldown_roots:
+                roots_ranges += [(0x33624C8, 8), (0x3372C18, 8)]
             roots = take("roots", roots_ranges, relative=True)
             manager = pointer(struct.unpack("<Q", roots[base + MANAGER_RVA])[0])
             player_system = pointer(struct.unpack("<Q", roots[base + PLAYER_SYSTEM_RVA])[0])
@@ -755,6 +757,27 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             require_disjoint_records(
                 record_address if health is not None else None, resource_record_address)
 
+            cooldown_anchors = {}
+            if cooldown_roots:
+                selector_owner = struct.unpack("<Q", roots[base + 0x33624C8])[0]
+                lookup_owner = struct.unpack("<Q", roots[base + 0x3372C18])[0]
+                cooldown = {"qualification": "static-resolver-root-candidate",
+                            "status": "unavailable", "selectorOwner": selector_owner,
+                            "lookupOwner": lookup_owner, "selector": None,
+                            "playerOwnershipEstablished": False}
+                if selector_owner and lookup_owner:
+                    pointer(selector_owner, 0x42)
+                    pointer(lookup_owner, 0x278)
+                    cooldown_anchors = take("cooldown-selector", [(selector_owner + 0x40, 2)])
+                    cooldown.update({"status": "candidate-roots-present",
+                                     "selector": struct.unpack(
+                                         "<H", cooldown_anchors[selector_owner + 0x40])[0]})
+                else:
+                    cooldown["reason"] = "null-resolver-root-no-game-initialization"
+                cooldown["observedAtUtc"] = observation_times.get(
+                    "cooldown-selector", observation_times["roots"])
+                review["cooldownResolverCandidate"] = cooldown
+
             if cast_record:
                 cast_read_count = 0
 
@@ -776,6 +799,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             checks.update({p: 8 for p in component_addresses})
             checks.update({address: len(raw) for address, raw in health_anchors.items()})
             checks.update({address: len(raw) for address, raw in resource_anchors.items()})
+            checks.update({address: len(raw) for address, raw in cooldown_anchors.items()})
             checks[components["position"] + 0x48] = 0x70
             if health is not None:
                 checks[record_address] = 128
@@ -808,6 +832,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 if resource_final is not None else None)
             if any(final[address] != raw for address, raw in roots.items()):
                 raise ValueError("module-root-changed")
+            if any(final[address] != raw for address, raw in cooldown_anchors.items()):
+                raise ValueError("cooldown-selector-changed")
             if (final[manager + 0x50] != owner[manager + 0x50] or
                     final[player_system + 0x360] != owner[player_system + 0x360] or
                     final[table] != header or
@@ -926,12 +952,15 @@ def main() -> None:
                         help="Capture raw resource records; Energy gets exact-build type/ordinary-value candidates, not production-qualified current.")
     parser.add_argument("--cast-record", action="store_true",
                         help="Capture read-only cast topology candidates; cast semantics remain unqualified.")
+    parser.add_argument("--cooldown-roots", action="store_true",
+                        help="Read candidate cooldown resolver roots and selector, not cooldown values.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
         print(json.dumps(run(lab, health_record=args.health_record,
                              resource_record=args.resource_record,
-                             cast_record=args.cast_record), indent=2), flush=True)
+                             cast_record=args.cast_record,
+                             cooldown_roots=args.cooldown_roots), indent=2), flush=True)
 
 
 if __name__ == "__main__":
