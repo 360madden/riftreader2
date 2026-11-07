@@ -35,19 +35,20 @@ def _save(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
 
-def _idle(status: dict) -> bool:
+def _idle(status: dict, *, allow_armed: bool = False) -> bool:
     host = status.get("host", {})
     guest = status.get("guest", {})
     coordinator = host.get("coordination", {})
     console = host.get("consoleReservation", {})
     return (host.get("connected") is True and coordinator.get("state") == "ready"
             and console.get("held") is True and console.get("faulted") is False
-            and isinstance(guest, dict) and guest.get("armed") is False
+            and isinstance(guest, dict)
+            and (guest.get("armed") is False or allow_armed and guest.get("armed") is True)
             and guest.get("busy") is False and guest.get("recoveryRequired") is False
             and guest.get("desktopInputsDown") == [])
 
 
-def _check_waiting(status: dict) -> bool:
+def _check_waiting(status: dict, *, allow_armed: bool = False) -> bool:
     """Validate a disconnected or safely starting connection; return connected."""
     host = status.get("host") if isinstance(status, dict) else None
     if not isinstance(host, dict):
@@ -69,7 +70,7 @@ def _check_waiting(status: dict) -> bool:
     if "guest" in status and not isinstance(status["guest"], dict):
         raise DependencyUnavailable("guest-agent", "connected-but-not-idle"
                                     if connected is True else "controller-not-waiting-safely")
-    if _idle(status):
+    if _idle(status, allow_armed=allow_armed):
         return True
     if connected is False and coordination.get("state") == "waiting":
         return False
@@ -81,6 +82,13 @@ def _check_waiting(status: dict) -> bool:
         return True
     raise DependencyUnavailable("guest-agent", "connected-but-not-idle"
                                 if connected is True else "controller-not-waiting-safely")
+
+
+def verify_existing_action_status(status: dict) -> None:
+    """Require a ready, idle connection while permitting an existing arm."""
+    _check_waiting(status, allow_armed=True)
+    if not _idle(status, allow_armed=True):
+        raise DependencyUnavailable("guest-agent", "connected-but-not-idle")
 
 
 def _wait_for_idle(client, timeout_seconds, initial=None):

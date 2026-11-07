@@ -2,6 +2,48 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Armed-action preflight P2 fixed — November 7
+
+Default and `--no-auto-start` actions now use `ensure_existing` for a recognized
+managed lab. They never start/recover a controller or guest after arming.
+Missing/refused ownership blocks dispatch. The existing-owner result supplies
+the single authenticated status snapshot for a read-only action readiness check;
+there is no extra status request or mutation of the observed arm state.
+
+Review caught that routing alone would drop the prior default held-input/busy
+gates. The reusable readiness predicate now permits an actual armed boolean while
+retaining ready/connected coordination, a healthy held console, no sampled held
+inputs, no busy action and no recovery requirement. Missing/malformed status
+blocks. Disarmed readiness remains the default for capture/arm recovery.
+
+Lease, arm artifact/token, payload/output admission and host/guest final-send
+checks remain in place, as do direct STOP/release. No fallback, retry, re-arm,
+live input, helper restart or ownership transfer was used. The existing owner
+check binds managed source/config/process/listener evidence; fresh VM identity
+and the action's dispatch/token/target gates remain with their owning host/guest
+checks. Do not describe this sampled preflight as independent live qualification.
+See [action admission](reference/native-vm-controls.md#action-admission-after-arming).
+
+Six new offline regression methods bring the client suite to 30 tests and the
+guest-readiness suite to 13; all 43 pass. Root's broader control, ownership,
+dependency, console and reservation suite passes 218 tests. Independent safety
+review also passed 90 related tests. The separate mocked reproduction retained
+the original `connected-but-not-idle` refusal on baseline `7270b16`, while the
+fix admitted one ready armed action with no recovery and still blocked sampled
+held inputs. Artifacts: `artifacts/armed-action-fix-20261107/`.
+
+Full gate PASS: 719 .NET tests and 1,838 Python tests run (1,836 passed, two
+skipped), locked restore/build/format, native smoke, real Lua/C# contracts,
+ownership mocks, deterministic replay and 1,081 relative links. Evidence:
+`artifacts/validation/20261107T111052Z-99f84920`; full log and four verified source
+hashes are retained in the artifact directory above. This gate covered the
+shared checkout, including concurrent Lab 2 tool-wrapper tests; those files and
+their AGENTS/workflow documentation are preserved outside this fix's commit.
+
+The P1 and two P2 findings are fixed; five P2 findings remain. Next separate
+repair: atomic controller process-receipt publication and malformed historical-
+generation handling, preserving independently verified owner identity.
+
 ## STOP/release optional-output P2 fixed — November 7
 
 `control_client.py` now sends one direct STOP/release POST before any optional
@@ -35,9 +77,8 @@ The separate mocked existing-file reproduction sent zero requests with vulnerabl
 `13276c9` and one with this fix for each of STOP/release, preserving the original
 file. The acknowledged negative cleanup result remained negative in the error.
 
-The P1 and this P2 are fixed; six P2 findings remain outside this change.
-Next separate repair: the default action dependency preflight rejects a correctly
-armed guest. Preserve ownership and final-send safety gates when fixing it.
+At this checkpoint six P2 findings remained. The subsequent armed-action fix is
+recorded above; five remain. Preserve ownership and final-send safety gates.
 
 ## Console replay P1 fixed — November 7
 
@@ -77,7 +118,7 @@ their order. No live input, bind/reload, helper restart or ownership transfer
 was used. Details: [console validation](validation/console-interaction-speed-2026-11-06.md#durable-console-attempt-reservation--november-7).
 
 At this P1 checkpoint seven P2 findings remained. The subsequent STOP/release
-optional-output fix is recorded above; six P2 findings remain.
+optional-output and armed-action fixes are recorded above; five P2 findings remain.
 Any later live console use still needs fresh identities, an independently
 reviewed screenshot and the existing exclusive ownership handoff.
 
@@ -124,14 +165,14 @@ The user requested a review after clearing the timed goal. Independent reviewers
 checked committed runtime `399d463` and retained evidence; later `8ded91e` is
 documentation only. No live input or helper mutation was used in the review.
 The sustained480 and native-v2 results still reconcile. This table records the
-historical review; the P1 and STOP/release output P2 are now fixed above, with
-six other P2 findings remaining open.
+historical review; the P1, STOP/release output and armed-action P2s are now fixed
+above, with five other P2 findings remaining open.
 
 | Priority | Finding | Owning source |
 | --- | --- | --- |
 | P1 FIXED | Failed final report publication or two callers passing the pre-mutex check could dispatch the same reviewed plan twice. Exclusive durable reservation and owner-only report publication now block replay. | `scripts/addon_command_console.py`; November 7 fix above |
 | P2 FIXED | STOP/release now dispatch before optional output work; output errors retain the acknowledged result and cannot suppress delivery. | `scripts/control_client.py`; November 7 fix above |
-| P2 | Default `action` tries disarmed guest recovery and rejects an already armed guest before dispatch. | `scripts/control_client.py:431`, `scripts/ensure_guest_agent.py:72` |
+| P2 FIXED | Both action modes verify an existing owner and its read-only readiness while permitting an existing arm; no guest/controller recovery occurs after arming. | `scripts/control_client.py`, `scripts/ensure_guest_agent.py`; November 7 fix above |
 | P2 | Failed controller receipt collection/serialization leaves empty `process.json`; malformed historical generations poison later admission. | `scripts/controller_task_entry.py:92`, managed receipt generation scan |
 | P2 | Scheduler status prescribes retry on a nonrunning-to-running race, but task entry points check once and exit. Stable-state live starts did not exercise it. | `scripts/Manage-RR2HelperTask.ps1:258`, controller/receiver task entry |
 | P2 | Reader startup can certify a nonempty mismatched snapshot when the matching loop expires; target start ticks are omitted. Later pin/feedback gates remain independent. | `scripts/launch_live_reader.py:347` |

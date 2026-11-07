@@ -460,6 +460,27 @@ sequences. The guest rejects replay, concurrent actions, unexpected response
 artifacts, changed target identity, expired review/arm state, and a pre-existing
 pending journal.
 
+### Action admission after arming
+
+For a recognized managed lab, both default and `--no-auto-start` CLI actions
+verify the existing controller owner without starting or recovering a controller
+or guest. Replacing an owner after arming would invalidate the reviewed session.
+A missing or refused owner blocks the action and requires a separately prepared
+and reviewed session rather than automatic recovery or re-arming.
+
+The action preflight reuses the authenticated status returned by that owner
+check. It permits an armed guest while preserving connected/ready coordination,
+a healthy held console reservation, no sampled held inputs, no active action and
+no recovery requirement. Missing or malformed status fails closed. There is no
+additional status request. Capture and arm retain their disarmed on-demand
+readiness recovery; its disarmed predicate is unchanged by default.
+
+This preflight does not authorize input by itself. Private lease, arm artifact,
+payload and output checks still precede action dispatch. The host and guest keep
+their existing dispatch admission, VM/target identity, token expiry and release
+checks. A refusal does not trigger fallback, retry or re-arm. Read-only status is
+a sampled preflight, not proof that external inputs cannot change afterward.
+
 ### STOP and release receipt failures
 
 The CLI sends `stop` and `release` before accessing their optional `--output`
@@ -481,6 +502,8 @@ is supplied. The reserved descriptor transfers to the
 writer once, avoiding duplicate cleanup of a descriptor or a replacement file.
 Offline verification and the remaining review findings are recorded in the
 [continuation handoff](../handoff-2026-11-06-owner-migration.md#stoprelease-optional-output-p2-fixed--november-7).
+
+### Reviewed action sequence
 
 The normal sequence is:
 

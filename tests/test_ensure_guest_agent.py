@@ -29,6 +29,18 @@ def _status(*, connected=True, armed=False, coordination=None, held=True):
 
 
 class GuestAgentDependencyTests(unittest.TestCase):
+    def test_action_readiness_allows_armed_without_relaxing_recovery(self):
+        for armed in (False, True):
+            with self.subTest(armed=armed):
+                status = _status(armed=armed)
+                agent.verify_existing_action_status(status)
+                self.assertEqual(agent._idle(status), not armed)
+                if armed:
+                    with self.assertRaisesRegex(DependencyUnavailable, "connected-but-not-idle"):
+                        agent._check_waiting(status)
+                else:
+                    self.assertTrue(agent._check_waiting(status))
+
     def test_idle_requires_authenticated_ready_and_disarmed(self):
         self.assertTrue(agent._idle(_status()))
         self.assertFalse(agent._idle(_status(connected=False)))

@@ -1,4 +1,5 @@
 import base64
+from contextlib import contextmanager, ExitStack
 from io import BytesIO
 import hashlib
 import importlib.util
@@ -591,6 +592,143 @@ class CleanupOutputTests(unittest.TestCase):
 
 
 class ManagedAdmissionTests(unittest.TestCase):
+    @contextmanager
+    def action_admission(self, path, opener, *, lab="lab1", refusal=None, admitted=None):
+        from scripts import ensure_controller, ensure_guest_agent
+        from scripts.operation_dependencies import DependencyUnavailable
+        from tests.test_ensure_guest_agent import _status
+        if admitted is None:
+            admitted = {"status": _status(armed=True)}
+        with ExitStack() as stack:
+            stack.enter_context(patch.dict(ensure_controller.CONFIGS, {lab: path}, clear=True))
+            verify = stack.enter_context(patch.object(ensure_controller, "ensure_existing",
+                                                      side_effect=refusal, return_value=admitted))
+            stack.enter_context(patch.object(ensure_controller, "ensure", side_effect=AssertionError("must not recover controller")))
+            stack.enter_context(patch.object(ensure_controller, "_launch", side_effect=AssertionError("must not launch")))
+            stack.enter_context(patch.object(ensure_guest_agent, "ensure", side_effect=DependencyUnavailable(
+                "guest-agent", "connected-but-not-idle")))
+            stack.enter_context(patch.object(client, "_build_opener", return_value=opener))
+            yield verify
+
+    def test_armed_action_uses_existing_owner_and_preserves_private_envelope(self):
+        for lab in ("lab1", "lab2"):
+            for prefix in ([], ["--no-auto-start"]):
+                with self.subTest(lab=lab, prefix=prefix), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    path = write_config(root)
+                    arm = root / "arm.json"
+                    arm.write_text('{"armToken":"private-arm-token"}', encoding="utf-8")
+                    access = {"request_id": "reviewed-action", "token": "a" * 64}
+                    lease = root / "lease.json"
+                    lease.write_text(json.dumps(access), encoding="utf-8")
+                    output = root / "result.json"
+                    response = {"deliverySucceeded": True, "releaseSucceeded": True, "recoveryRequired": False}
+                    opener = FakeOpener(FakeResponse(response))
+                    with self.action_admission(path, opener, lab=lab) as verify:
+                        result = client.run(parse(path, *prefix, "--lease", str(lease), "action",
+                                                  "--arm", str(arm), "--keys", "w,a", "--dx", "10",
+                                                  "--output", str(output)))
+                        verify.assert_called_once_with(lab)
+                    self.assertEqual(result, {"output": str(output.resolve()), "result": response})
+                    self.assertEqual(json.loads(output.read_text()), response)
+                    self.assertEqual(len(opener.calls), 1)
+                    request, _ = opener.calls[0]
+                    self.assertEqual(request.method, "POST")
+                    self.assertTrue(request.full_url.endswith("/api/action"))
+                    self.assertEqual(json.loads(request.data), {"access": access, "payload": {
+                        "armToken": "private-arm-token", "action": {
+                            "keys": ["w", "a"], "holdMilliseconds": 100, "mouseButton": None,
+                            "deltaX": 10, "deltaY": 0, "wheelNotches": 0}}})
+                    self.assertEqual(json.loads(lease.read_text()), access)
+                    self.assertEqual(json.loads(arm.read_text()), {"armToken": "private-arm-token"})
+
+    def test_default_action_owner_refusal_never_posts_or_starts(self):
+        from scripts.operation_dependencies import DependencyUnavailable
+        for reason in ("existing-endpoint-missing", "managed-owner-refused"):
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = write_config(root)
+                opener = FakeOpener()
+                with self.action_admission(path, opener, refusal=DependencyUnavailable("controller", reason)) as verify:
+                    with self.assertRaisesRegex(client.ClientError, reason) as caught:
+                        client.run(parse(path, "action", "--arm", str(root / "arm.json"),
+                                         "--output", str(root / "out.json")))
+                    verify.assert_called_once_with("lab1")
+                self.assertEqual(caught.exception.code, "dependency-unavailable")
+                self.assertEqual(opener.calls, [])
+
+    def test_action_rejects_unsafe_or_missing_admitted_status_without_post(self):
+        from tests.test_ensure_guest_agent import _status
+        cases = [{}, {"status": None}, {"status": []}, {"status": {}},
+                 {"status": _status(connected=False)}, {"status": _status(coordination="starting")}]
+        for key, value in (("desktopInputsDown", ["w"]), ("desktopInputsDown", None),
+                           ("busy", True), ("recoveryRequired", True), ("armed", None)):
+            status = _status(armed=True)
+            status["guest"][key] = value
+            cases.append({"status": status})
+        for prefix in ([], ["--no-auto-start"]):
+            for admitted in cases:
+                with self.subTest(prefix=prefix, admitted=admitted), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    path = write_config(root)
+                    opener = FakeOpener()
+                    with self.action_admission(path, opener, admitted=admitted) as verify:
+                        with self.assertRaises(client.ClientError) as caught:
+                            client.run(parse(path, *prefix, "action", "--arm", str(root / "arm.json"),
+                                             "--output", str(root / "out.json")))
+                        verify.assert_called_once_with("lab1")
+                    self.assertEqual(caught.exception.code, "dependency-unavailable")
+                    self.assertEqual(opener.calls, [])
+
+    def test_default_action_keeps_local_gates_before_post_and_host_refusal_has_no_fallback(self):
+        for gate in ("lease", "arm", "payload", "output", "host"):
+            with self.subTest(gate=gate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                path = write_config(root)
+                arm = root / "arm.json"
+                arm.write_text(json.dumps({"armToken": "" if gate == "arm" else "private-arm-token"}), encoding="utf-8")
+                output = root / "out.json"
+                if gate == "output":
+                    output.write_text("existing receipt", encoding="utf-8")
+                extra = []
+                if gate == "lease":
+                    lease = root / "lease.json"
+                    lease.write_text('{"request_id":"reviewed-action","token":"bad"}', encoding="utf-8")
+                    extra = ["--lease", str(lease)]
+                opener = FakeOpener()
+                if gate == "host":
+                    body = b'{"error":"armed action refused","recoveryRequired":true}'
+                    opener.responses.append(urllib.error.HTTPError(
+                        "http://127.0.0.1:49713/api/action", 409, "Conflict",
+                        {"Content-Length": str(len(body))}, BytesIO(body)))
+                with self.action_admission(path, opener) as verify:
+                    with self.assertRaises(client.ClientError) as caught:
+                        client.run(parse(path, *extra, "action", "--arm", str(arm),
+                                         "--keys", "invalid-key" if gate == "payload" else "w",
+                                         "--output", str(output)))
+                    verify.assert_called_once_with("lab1")
+                self.assertEqual(caught.exception.code, "host-error" if gate == "host" else
+                                 "output-exists" if gate == "output" else "input-error")
+                self.assertEqual(len(opener.calls), 1 if gate == "host" else 0)
+                if gate == "output":
+                    self.assertEqual(output.read_text(), "existing receipt")
+                else:
+                    self.assertFalse(output.exists())
+
+    def test_default_capture_and_arm_keep_guest_recovery(self):
+        from scripts import ensure_controller, ensure_guest_agent
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_config(Path(directory))
+            with patch.dict(ensure_controller.CONFIGS, {"lab1": path}, clear=True), \
+                 patch.object(ensure_controller, "ensure", side_effect=AssertionError("must not launch")), \
+                 patch.object(ensure_controller, "ensure_existing", side_effect=AssertionError("must use guest preflight")), \
+                 patch.object(ensure_guest_agent, "ensure") as guest, \
+                 patch.object(client, "ControlClient"), \
+                 patch.object(client, "_capture", return_value={}), patch.object(client, "_arm", return_value={}):
+                client.run(parse(path, "capture", "--output", "capture"))
+                client.run(parse(path, "arm", "--capture", "capture", "--review-note", "review", "--output", "arm"))
+                self.assertEqual(guest.call_args_list, [unittest.mock.call("lab1"), unittest.mock.call("lab1")])
+
     def test_cleanup_bypasses_checks_and_never_launches(self):
         from unittest.mock import patch
         from scripts import ensure_controller

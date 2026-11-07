@@ -451,11 +451,15 @@ def run(args, *, opener=None) -> dict:
         if target is not None:
             try:
                 no_auto_start = getattr(args, "no_auto_start", False)
-                # The guest dependency also verifies the controller. Avoid a
-                # duplicate ownership sweep on capture and reviewed actions.
-                if no_auto_start:
-                    ensure_existing(target)
-                elif args.command in ("capture", "arm", "action"):
+                # Actions must use the existing owner: recovering a guest or
+                # controller after arming would invalidate the reviewed state.
+                # Guest recovery for capture and arm also verifies the controller.
+                if no_auto_start or args.command == "action":
+                    admitted = ensure_existing(target)
+                    if args.command == "action":
+                        from scripts.ensure_guest_agent import verify_existing_action_status
+                        verify_existing_action_status(admitted.get("status"))
+                elif args.command in ("capture", "arm"):
                     from scripts.ensure_guest_agent import ensure as ensure_guest_agent
                     ensure_guest_agent(target)
                 else:
