@@ -63,20 +63,22 @@ never equate the game frame clock to host UTC.
 
 ## Installed acceptance and removal boundary
 
-No installed addon, service, private configuration, VM or RIFT process was changed
-by this migration. The reviewable addon candidate is exactly seven files under
+**CURRENT RESULT (2026-11-06): Lab 1 installed and live RR2R1 source acceptance passed**, with one reviewed UI reload and nonce bind; no RIFT process or VM restart. Lab 2 and physical installations have matching disk files only, not live loaded-source acceptance. See [the exact validation](../validation/self-contained-lab1-live-acceptance-2026-11-06.md) and [latest restart handoff](../handoff-2026-11-06-standalone-lab1-accepted.md). Both RR2-owned host receiver processes were started/reused after acceptance; their continuous feed freshness is **not verified**. The following paragraph records the original pre-deployment proposal and is **historical**, not a pending instruction for Lab 1.
+
+The original reviewable addon candidate is exactly seven files under
 `addon/RiftReader2`: `RiftAddon.toc`, `wire.lua`, `producer.lua`, `reference.lua`,
 `live.lua`, `guidance.lua`, `main.lua`, with package version 0.2.0.
 
-The next requested authorization is a **Lab-1-only** backup-first synchronization
+The original, now **completed** Lab-1-only authorization was for backup-first synchronization
 of those seven files to `C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2`,
 disabling RiftReaderApiProbe in that lab, and one separately reviewed `/reloadui`.
 Any nonce entry uses a permitted reviewed route; prior rejected input routes
-remain unavailable. This note is a concrete proposal, not authorization to act.
+remain unavailable. This record grants no new input, reload, restart, or target-specific authorization.
 Other addons, especially RRECollector, remain under their owners' control.
 
-After authorization, retain exact installed hashes, prove the old probe is
-disabled, acquire fresh PID/start/build and reader nonce, and demonstrate two
+For subsequent independent Lab-2/physical acceptance, retain exact installed
+hashes, prove the old probe is disabled, acquire fresh PID/start/build and reader
+nonce, and demonstrate two
 chronological same-player RR2R1 acquisitions with advancing sequence/time.
 Run strict inspection and the relevant Mana/Power/native comparisons on those
 RR2-only bytes, with explicit limits. Verify reload clears old binding and
