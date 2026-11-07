@@ -16,6 +16,7 @@ from pathlib import Path
 import runpy
 import subprocess
 import sys
+import tempfile
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,43 @@ def sha(path):
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def _publish_process_receipt(output: Path, receipt: dict):
+    """Publish a complete receipt once, without replacing an existing one."""
+    payload = json.dumps(receipt, indent=2, allow_nan=False).encode("utf-8")
+    if len(payload) > 65_536:
+        raise ValueError("process receipt too large")
+
+    def unique_object(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise ValueError("duplicate process receipt key")
+            value[key] = item
+        return value
+
+    # Check the actual bytes using the resolver's strict object-key policy.
+    if not isinstance(json.loads(payload, object_pairs_hook=unique_object), dict):
+        raise ValueError("invalid process receipt")
+    fd, staging_name = tempfile.mkstemp(prefix=".process-", suffix=".tmp", dir=output)
+    staging = Path(staging_name)
+    try:
+        try:
+            stream = os.fdopen(fd, "wb")
+        except BaseException:
+            os.close(fd)
+            raise
+        with stream:
+            if stream.write(payload) != len(payload):
+                raise OSError("incomplete process receipt write")
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Both names are in the generation directory. Linking fails if the
+        # final name already exists and never exposes a partial receipt.
+        os.link(staging, output / "process.json")
+    finally:
+        staging.unlink(missing_ok=True)
 
 
 def _require_owned_task(lab, expected_pid):
@@ -89,12 +127,12 @@ def start(lab):
             hashes = {name: sha(ROOT / name) for name in RUNTIME_FILES
                       if name != "scripts/controller_host_entry.py"}
             hashes["scripts/controller_task_entry.py"] = sha(Path(__file__))
-            with (output / "process.json").open("x", encoding="utf-8") as receipt:
-                json.dump({"lab": lab, "pid": os.getpid(), "session": _session_id(),
-                           "processIdentity": process_identity(os.getpid()),
-                           "vmIdentity": identity, "configSha256": sha(config_path),
-                           "sourceHashes": hashes, "task": "rr2-controller-" + lab,
-                           "atUtc": now()}, receipt, indent=2)
+            receipt = {"lab": lab, "pid": os.getpid(), "session": _session_id(),
+                       "processIdentity": process_identity(os.getpid()),
+                       "vmIdentity": identity, "configSha256": sha(config_path),
+                       "sourceHashes": hashes, "task": "rr2-controller-" + lab,
+                       "atUtc": now()}
+            _publish_process_receipt(output, receipt)
             stop_file = output / "stop.request"
             source = ROOT / "scripts/control_host.py"
             sys.argv = [str(source), "--config", str(config_path),

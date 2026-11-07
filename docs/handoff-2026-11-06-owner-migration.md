@@ -2,6 +2,56 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Controller receipt P2 fixed — November 7
+
+`controller_task_entry.py` now gathers and serializes all receipt data before
+creating a staging leaf, flushes/fsyncs it and atomically publishes `process.json`
+without replacement. Strict JSON is limited to 65,536 bytes. Only publication
+success permits host execution. Metadata, partial-write, flush/fsync, interruption
+and collision failures leave no malformed final and remove only owned staging.
+
+Historical recovery is narrow: empty, syntax-invalid or incomplete-schema
+receipts require a strict same-canonical-generation `exited.json` plus fresh
+positive PID absence. The Windows checker distinguishes missing PID from access
+denied/other failures; `process-unavailable` text alone is insufficient. A live or
+reused exit PID, contradictory receipt identity, unreadable/reparse path,
+duplicate/nonfinite JSON or unidentified corruption stays blocked. Full-schema
+field violations are also refused. Valid receipts require complete process
+identities; only a valid different start epoch establishes PID reuse.
+
+A failed startup with no final receipt and no exit marker is skipped, because
+it could not have started the host. Missing receipt plus exit evidence blocks.
+Composition tests prove metadata/fsync failure followed by healthy successor
+admission, without deleting history or accepting two owners. Reviewed-generation,
+source/configuration, task PID/GUID and existing listener/dispatch gates remain.
+See [receipt behavior](reference/native-vm-controls.md#controller-receipts-and-historical-generations).
+
+Independent review passed 59 tests (15 publication and 44 resolver); root's
+broader controller/movement/dependency/client/guest suite passed 222 tests.
+Native absence smoke used only this test's short-lived local child: an exited
+process object still held by the test was conservatively not absent, then PID
+absence was confirmed after releasing that handle. Artifacts:
+`artifacts/controller-receipt-fix-20261107/`.
+
+Full gate PASS: 719 .NET tests and 1,874 Python tests run (1,872 passed, two
+skipped), locked restore/build/format, native smoke, real Lua/C# contracts,
+ownership mocks, deterministic replay and 1,096 relative links. Evidence:
+`artifacts/validation/20261107T120145Z-b08bb659`; full log, before/after
+reproduction and four verified source hashes are retained in the artifact
+directory above. The gate covered the shared checkout, including concurrent
+Lab 2 tool-wrapper changes; those changes are excluded from this fix's commit.
+
+**Rollout remains separate:** this edit changes the task-entry source hash pinned
+by existing owner receipts. No lab/helper query, restart, retirement, ownership
+transfer, queue reset or input was used. Do not bypass `managed-runtime-changed`
+or treat this offline fix as activation. Existing owners and direct STOP/release
+remain preserved; reacquire identities and use the reviewed per-owner migration
+before admitting a new-source owner. Unidentified legacy corruption still needs
+independent investigation, not automatic deletion.
+
+Four P2 findings remain. Next separate repair: the bounded Scheduler startup
+status transition that instructs retry while task entry points currently exit.
+
 ## Armed-action preflight P2 fixed — November 7
 
 Default and `--no-auto-start` actions now use `ensure_existing` for a recognized
@@ -40,9 +90,8 @@ hashes are retained in the artifact directory above. This gate covered the
 shared checkout, including concurrent Lab 2 tool-wrapper tests; those files and
 their AGENTS/workflow documentation are preserved outside this fix's commit.
 
-The P1 and two P2 findings are fixed; five P2 findings remain. Next separate
-repair: atomic controller process-receipt publication and malformed historical-
-generation handling, preserving independently verified owner identity.
+At this checkpoint five P2 findings remained; the subsequent receipt fix is
+recorded above, leaving four. Preserve independently verified owner identity.
 
 ## STOP/release optional-output P2 fixed — November 7
 
@@ -78,7 +127,7 @@ The separate mocked existing-file reproduction sent zero requests with vulnerabl
 file. The acknowledged negative cleanup result remained negative in the error.
 
 At this checkpoint six P2 findings remained. The subsequent armed-action fix is
-recorded above; five remain. Preserve ownership and final-send safety gates.
+recorded above; four remain after the receipt fix. Preserve ownership and final-send safety gates.
 
 ## Console replay P1 fixed — November 7
 
@@ -118,7 +167,7 @@ their order. No live input, bind/reload, helper restart or ownership transfer
 was used. Details: [console validation](validation/console-interaction-speed-2026-11-06.md#durable-console-attempt-reservation--november-7).
 
 At this P1 checkpoint seven P2 findings remained. The subsequent STOP/release
-optional-output and armed-action fixes are recorded above; five P2 findings remain.
+optional-output, armed-action and receipt fixes are recorded above; four P2 findings remain.
 Any later live console use still needs fresh identities, an independently
 reviewed screenshot and the existing exclusive ownership handoff.
 
@@ -165,15 +214,15 @@ The user requested a review after clearing the timed goal. Independent reviewers
 checked committed runtime `399d463` and retained evidence; later `8ded91e` is
 documentation only. No live input or helper mutation was used in the review.
 The sustained480 and native-v2 results still reconcile. This table records the
-historical review; the P1, STOP/release output and armed-action P2s are now fixed
-above, with five other P2 findings remaining open.
+historical review; the P1 and three P2s are now fixed above, with four other P2
+findings remaining open.
 
 | Priority | Finding | Owning source |
 | --- | --- | --- |
 | P1 FIXED | Failed final report publication or two callers passing the pre-mutex check could dispatch the same reviewed plan twice. Exclusive durable reservation and owner-only report publication now block replay. | `scripts/addon_command_console.py`; November 7 fix above |
 | P2 FIXED | STOP/release now dispatch before optional output work; output errors retain the acknowledged result and cannot suppress delivery. | `scripts/control_client.py`; November 7 fix above |
 | P2 FIXED | Both action modes verify an existing owner and its read-only readiness while permitting an existing arm; no guest/controller recovery occurs after arming. | `scripts/control_client.py`, `scripts/ensure_guest_agent.py`; November 7 fix above |
-| P2 | Failed controller receipt collection/serialization leaves empty `process.json`; malformed historical generations poison later admission. | `scripts/controller_task_entry.py:92`, managed receipt generation scan |
+| P2 FIXED | Atomic no-overwrite receipt publication prevents incomplete final files; malformed history is skipped only with strict exit evidence and positive process absence. Unidentified history stays blocked. | `scripts/controller_task_entry.py`, `scripts/managed_controller_receipt.py`; November 7 fix above |
 | P2 | Scheduler status prescribes retry on a nonrunning-to-running race, but task entry points check once and exit. Stable-state live starts did not exercise it. | `scripts/Manage-RR2HelperTask.ps1:258`, controller/receiver task entry |
 | P2 | Reader startup can certify a nonempty mismatched snapshot when the matching loop expires; target start ticks are omitted. Later pin/feedback gates remain independent. | `scripts/launch_live_reader.py:347` |
 | P2 | Host staging ownership is lost if config hashing fails before return; guest cancellation skips Exception-only in-session cleanup. | `scripts/launch_live_reader.py:238,363` |

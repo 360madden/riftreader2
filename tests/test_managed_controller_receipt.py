@@ -58,11 +58,21 @@ class ManagedReceiptTests(unittest.TestCase):
         return path
 
     def resolve(self, **kwargs):
+        kwargs.setdefault("absence_checker", lambda pid: pid not in self.live)
         return managed.resolve_current_managed_controller(
             "lab2", root=self.root, configs={"lab2": self.config},
             queue_path=self.queue, runtime_files=self.sources,
             identity_reader=self.identity_reader, verify_owner=self.verify_owner,
             **kwargs)
+
+    def history(self, content=b"", *, marker=True, pid=123):
+        path = self.create_receipt("b" * 32, pid=pid)
+        path.write_bytes(content)
+        if marker:
+            (path.parent / "exited.json").write_text(json.dumps({
+                "lab": "lab2", "pid": pid, "atUtc": "2020-01-01T00:00:00Z"}),
+                encoding="utf-8")
+        return path
 
     def identity_reader(self, pid):
         if pid not in self.live:
@@ -197,6 +207,223 @@ class ManagedReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(managed.ManagedReceiptError,
                                     "managed-live-generation-not-unique"):
             self.resolve()
+
+    def test_dead_malformed_history_with_strict_exit_preserves_live_successor(self):
+        for content in (b"", b"{", b"not json", b"[]", b'"old"',
+                        b'{"lab":"lab2","pid":123}',
+                        b'{"processIdentity":{"pid":123}}'):
+            with self.subTest(content=content):
+                self.history(content)
+                absent = Mock(side_effect=lambda pid: pid not in self.live)
+                self.assertEqual(self.resolve(absence_checker=absent)[0], self.original)
+                absent.assert_called_once_with(123)
+
+    def test_malformed_history_requires_positive_absence_not_identity_error_text(self):
+        self.history(b"{")
+        for proof in (False, None, 1, "absent"):
+            with self.subTest(proof=proof), self.assertRaises(managed.ManagedReceiptError):
+                self.resolve(absence_checker=lambda _pid: proof)
+        for message in ("access-denied", "process-unavailable", "timeout"):
+            with self.subTest(message=message), self.assertRaises(managed.ManagedReceiptError):
+                self.resolve(absence_checker=Mock(side_effect=RuntimeError(message)))
+        self.live[123] = dict(self.identity, pid=123)
+        with self.assertRaises(managed.ManagedReceiptError):
+            self.resolve()
+        self.live[123] = dict(self.identity, pid=123, startTicks=999)
+        with self.assertRaises(managed.ManagedReceiptError):
+            self.resolve()
+
+    def test_history_without_exit_or_with_only_failure_age_or_name_blocks(self):
+        path = self.history(b"{", marker=False)
+        for marker in (None, "failure.json", "stop.request", "history.json"):
+            with self.subTest(marker=marker):
+                if marker:
+                    (path.parent / marker).write_text('{}', encoding="utf-8")
+                with self.assertRaises(managed.ManagedReceiptError):
+                    self.resolve()
+        path.unlink()
+        # A missing process receipt cannot identify the historical generation.
+        (path.parent / "exited.json").write_text(json.dumps({
+            "lab": "lab2", "atUtc": "2020-01-01T00:00:00Z"}), encoding="utf-8")
+        with self.assertRaises(managed.ManagedReceiptError):
+            self.resolve()
+
+    def test_invalid_exit_markers_cannot_excuse_malformed_history(self):
+        path = self.history(b"{")
+        valid = {"lab": "lab2", "pid": 123, "atUtc": "2020-01-01T00:00:00Z"}
+        invalid = [b"", b"{", b"[]", b"{}",
+                   b'{"lab":"lab2","pid":123,"pid":123,"atUtc":"2020-01-01T00:00:00Z"}',
+                   b'{"lab":"lab2","pid":NaN,"atUtc":"2020-01-01T00:00:00Z"}']
+        invalid.extend(json.dumps(dict(valid, **change)).encode() for change in (
+            {"lab": "lab1"}, {"pid": True}, {"pid": 0}, {"pid": -1},
+            {"pid": 2**32}, {"pid": "123"}, {"atUtc": "yesterday"},
+            {"atUtc": "2020-01-01T00:00:00"},
+            {"atUtc": "2020-01-01T00:00:00+01:00"}, {"extra": True}))
+        for content in invalid:
+            with self.subTest(content=content):
+                (path.parent / "exited.json").write_bytes(content)
+                with self.assertRaises(managed.ManagedReceiptError):
+                    self.resolve()
+
+    def test_parseable_history_conflicts_cannot_be_excused_by_exit(self):
+        for partial in ({"pid": 124}, {"lab": "lab1"}, {"task": "rr2-controller-lab1"},
+                        {"processIdentity": {"pid": 124}}, {"pid": True}):
+            with self.subTest(partial=partial):
+                self.history(json.dumps(partial).encode())
+                with self.assertRaises(managed.ManagedReceiptError):
+                    self.resolve()
+
+    def test_duplicate_keys_and_nonfinite_history_fail_closed_even_with_exit(self):
+        for content in (b'{"pid":123,"pid":124}', b'{"pid":123,"x":NaN}',
+                        b'{"x":Infinity}', b'{"x":-Infinity}'):
+            with self.subTest(content=content):
+                self.history(content)
+                with self.assertRaises(managed.ManagedReceiptError):
+                    self.resolve()
+
+    def test_historical_receipt_review_pin_cannot_retarget_successor(self):
+        old = self.history(b"{")
+        with self.assertRaisesRegex(managed.ManagedReceiptError,
+                                    "managed-reviewed-generation-changed"):
+            self.resolve(expected_receipt_path=old)
+
+    def test_actual_startup_metadata_failure_does_not_poison_healthy_successor(self):
+        from scripts import controller_task_entry as entry
+        failed = self.receipts / ("0" * 32)
+        with patch.object(entry, "ROOT", self.root), \
+             patch.object(entry, "CONFIGS", {"lab2": self.config}), \
+             patch.object(entry, "uuid4", return_value=Mock(hex=failed.name)), \
+             patch.object(entry, "_require_owned_task") as startup_owner, \
+             patch.object(entry.HostConfig, "load", side_effect=RuntimeError("metadata failed")), \
+             patch.object(entry.runpy, "run_path") as host:
+            with self.assertRaisesRegex(RuntimeError, "metadata failed"):
+                entry.start("lab2")
+        startup_owner.assert_called_once_with("lab2", os.getpid())
+        host.assert_not_called()
+        self.assertTrue((failed / "failure.json").is_file())
+        self.assertFalse((failed / "process.json").exists())
+        self.assertFalse((failed / "exited.json").exists())
+        self.assertEqual(self.resolve()[0], self.original)
+        self.assertEqual(self.verified, ["lab2"])
+
+    def test_unpublished_staging_or_failed_sync_does_not_poison_successor(self):
+        from scripts import controller_task_entry as entry
+        failed = self.receipts / ("0" * 32)
+        failed.mkdir()
+        value = json.loads(self.original.read_bytes())
+        with patch.object(entry.os, "fsync", side_effect=OSError("sync failed")):
+            with self.assertRaisesRegex(OSError, "sync failed"):
+                entry._publish_process_receipt(failed, value)
+        self.assertFalse((failed / "process.json").exists())
+        self.assertEqual(list(failed.glob(".process-*.tmp")), [])
+        self.assertEqual(self.resolve()[0], self.original)
+        # A killed publisher may leave its private staging file, but never ran
+        # the controller because the final publication did not happen.
+        (failed / ".process-interrupted.tmp").write_bytes(b"{")
+        (self.receipts / "auxiliary-not-a-generation").mkdir()
+        self.assertEqual(self.resolve()[0], self.original)
+        self.assertEqual(self.verified, ["lab2", "lab2"])
+
+    def test_receipt_io_precondition_error_cannot_use_history_fallback(self):
+        path = self.history(b"{")
+        original_read = managed._read
+        def read(item, *args, **kwargs):
+            if item == path:
+                raise managed.ManagedReceiptError("managed-receipt-unavailable")
+            return original_read(item, *args, **kwargs)
+        with patch.object(managed, "_read", side_effect=read), \
+             patch.object(managed, "_history_exited") as fallback:
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-receipt-unavailable"):
+                self.resolve()
+        fallback.assert_not_called()
+
+    def test_valid_dead_receipt_also_requires_positive_absence(self):
+        self.create_receipt("b" * 32, pid=123)
+        self.assertEqual(self.resolve()[0], self.original)
+        for checker in (lambda _: False, Mock(side_effect=RuntimeError("access-denied"))):
+            with self.subTest(checker=checker), self.assertRaises(managed.ManagedReceiptError):
+                self.resolve(absence_checker=checker)
+
+    def test_incomplete_or_invalid_process_identity_cannot_be_silently_skipped(self):
+        invalid = ({"pid": 123}, {"pid": 123, "image": "", "startTicks": 555},
+                   {"pid": 123, "image": self.identity["image"], "startTicks": True},
+                   {"pid": 123, "image": self.identity["image"], "startTicks": 0})
+        for identity in invalid:
+            with self.subTest(identity=identity):
+                self.create_receipt("b" * 32, pid=123, overrides={"processIdentity": identity})
+                with self.assertRaises(managed.ManagedReceiptError):
+                    self.resolve()
+
+    def test_identity_image_mismatch_with_same_start_is_uncertain_not_reuse(self):
+        self.live[321] = dict(self.identity, image="C:/Other/pythonw.exe")
+        with self.assertRaises(managed.ManagedReceiptError):
+            self.resolve()
+
+    def test_history_process_and_exit_files_must_be_regular_bounded_and_readable(self):
+        path = self.history(b"{")
+        marker = path.parent / "exited.json"
+        original_open = Path.open
+        original_stat = Path.stat
+        for target in (path, marker):
+            with self.subTest(target=target, kind="symlink"):
+                with patch.object(Path, "is_symlink", autospec=True,
+                                  side_effect=lambda item: item == target):
+                    with self.assertRaises(managed.ManagedReceiptError):
+                        self.resolve()
+            with self.subTest(target=target, kind="reparse"):
+                def stat(item, *args, **kwargs):
+                    result = original_stat(item, *args, **kwargs)
+                    if item == target:
+                        result = Mock(wraps=result)
+                        result.st_file_attributes = 0x400
+                        result.st_size = original_stat(item).st_size
+                        result.st_mode = original_stat(item).st_mode
+                    return result
+                with patch.object(Path, "stat", autospec=True, side_effect=stat):
+                    with self.assertRaises(managed.ManagedReceiptError):
+                        self.resolve()
+            with self.subTest(target=target, kind="open-denied"):
+                def open_file(item, *args, **kwargs):
+                    if item == target:
+                        raise PermissionError("fixture denied")
+                    return original_open(item, *args, **kwargs)
+                with patch.object(Path, "open", autospec=True, side_effect=open_file):
+                    with self.assertRaises(managed.ManagedReceiptError):
+                        self.resolve()
+            saved = target.read_bytes()
+            target.write_bytes(b"x" * 65537)
+            with self.subTest(target=target, kind="oversize"), self.assertRaises(managed.ManagedReceiptError):
+                self.resolve()
+            target.unlink()
+            target.mkdir()
+            with self.subTest(target=target, kind="directory"), self.assertRaises(managed.ManagedReceiptError):
+                self.resolve()
+            target.rmdir()
+            target.write_bytes(saved)
+
+    @unittest.skipUnless(os.name == "nt", "Windows process API required")
+    def test_native_absence_requires_error_87_and_valid_dword_pid(self):
+        import ctypes
+        api = Mock()
+        api.OpenProcess.return_value = None
+        with patch.object(ctypes, "WinDLL", return_value=api), \
+             patch.object(ctypes, "get_last_error", return_value=87) as error:
+            self.assertTrue(managed._process_absent(123))
+            api.OpenProcess.assert_called_once_with(0x1000, False, 123)
+            api.CloseHandle.assert_not_called()
+            api.OpenProcess.reset_mock()
+            for pid in (True, False, 0, -1, 2**32, "123", None):
+                with self.subTest(pid=pid):
+                    self.assertFalse(managed._process_absent(pid))
+            api.OpenProcess.assert_not_called()
+            for code in (0, 5, 6, 299):
+                error.return_value = code
+                with self.subTest(code=code):
+                    self.assertFalse(managed._process_absent(123))
+            api.OpenProcess.return_value = 987
+            error.return_value = 87
+            self.assertFalse(managed._process_absent(123))
+            api.CloseHandle.assert_called_once_with(987)
 
     def test_uncertain_process_inspection_fails_closed(self):
         def bad_identity(_pid):

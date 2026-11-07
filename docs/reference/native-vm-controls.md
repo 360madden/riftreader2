@@ -460,6 +460,36 @@ sequences. The guest rejects replay, concurrent actions, unexpected response
 artifacts, changed target identity, expired review/arm state, and a pre-existing
 pending journal.
 
+### Controller receipts and historical generations
+
+Controller startup collects and serializes the complete process receipt before
+publishing `process.json`. It writes a private same-directory staging file,
+flushes and fsyncs it, then publishes atomically without replacing an existing
+receipt. Only successful publication permits the control host to run. Failed
+collection or publication leaves no empty final receipt and removes only its
+own staging file. Published JSON is strict and bounded to 65,536 bytes.
+
+A generation with neither a published receipt nor an exit marker can be skipped:
+its host never passed publication. An exit marker without its receipt remains a
+blocker. Empty, syntax-invalid or incomplete-schema historical receipts can be
+skipped only with a strict same-generation exit record and a fresh positive
+process-absence check. Access denial, other query failures, an occupied/reused
+exit PID, contradictory identities, unreadable/reparse paths and unidentified
+corruption remain blockers. Age and failure markers do not establish death.
+Exit records use the existing producer-owned local-artifact trust model.
+
+Windows absence proof requires a valid nonzero DWORD PID and the explicit
+missing-process error, not the generic `process-unavailable` diagnostic. Complete
+process identities are required before accepting a changed start time as PID
+reuse; a same-epoch image mismatch is uncertain. Existing unique-owner,
+configuration/source, reviewed-generation and task/listener gates remain.
+
+Changing the controller entry source changes its runtime pin. Offline tests do
+not deploy the change or requalify a running owner. Preserve existing owners and
+STOP/release; use a separately verified per-owner rollout before live admission
+with new source. Unknown corrupt history must not be deleted or bypassed merely
+to make admission succeed. See the [receipt-fix handoff](../handoff-2026-11-06-owner-migration.md#controller-receipt-p2-fixed--november-7).
+
 ### Action admission after arming
 
 For a recognized managed lab, both default and `--no-auto-start` CLI actions

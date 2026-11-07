@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import stat
 import subprocess
 import time
 
@@ -38,11 +39,11 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
-def _read(path):
+def _read(path, data=None):
     path = Path(path)
-    require(path.is_file() and not path.is_symlink()
-            and 0 < path.stat().st_size <= 65536, "managed-receipt-unavailable")
-    data = path.read_bytes()
+    require(path.is_file() and _nonreparse(path)
+            and path.stat().st_size <= 65536, "managed-receipt-unavailable")
+    data = path.read_bytes() if data is None else data
     require(len(data) <= 65536, "managed-receipt-too-large")
     try:
         def unique(pairs):
@@ -69,6 +70,92 @@ def _valid_time(text):
     except ValueError:
         return False
     return value.tzinfo is not None
+
+
+
+def _nonreparse(path):
+    stat = path.stat(follow_symlinks=False)
+    return not path.is_symlink() and not (getattr(stat, "st_file_attributes", 0) & 0x400)
+
+
+def _process_absent(pid):
+    """Prove absence; access denied and every other error remain uncertain."""
+    if os.name != "nt" or type(pid) is not int or not 0 < pid <= 0xffffffff:
+        return False
+    import ctypes
+    from ctypes import wintypes
+    api = ctypes.WinDLL("kernel32", use_last_error=True)
+    api.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    api.OpenProcess.restype = wintypes.HANDLE
+    api.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = api.OpenProcess(0x1000, False, pid)
+    if handle:
+        api.CloseHandle(handle)
+        return False
+    return ctypes.get_last_error() == 87
+
+
+def _absent(checker, pid):
+    try:
+        return checker(pid) is True
+    except Exception:
+        return False
+
+
+def _history_exited(generation, lab, raw, absence_checker):
+    """Accept only this generation's producer exit and a fresh absence proof."""
+    try:
+        marker = generation / "exited.json"
+        if not marker.is_file() or not _nonreparse(marker) or not 0 < marker.stat().st_size <= 65536:
+            return False
+        def unique(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate-key")
+                result[key] = value
+            return result
+        with marker.open("rb") as stream:
+            data = stream.read(65537)
+        if not 0 < len(data) <= 65536:
+            return False
+        exit_record = json.loads(data.decode("utf-8-sig"), object_pairs_hook=unique,
+                                 parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite")))
+        if not isinstance(exit_record, dict) or set(exit_record) != {"lab", "pid", "atUtc"}:
+            return False
+        pid = exit_record["pid"]
+        stamp = exit_record["atUtc"]
+        if (exit_record["lab"] != lab or type(pid) is not int or not 0 < pid <= 0xffffffff
+                or not _valid_time(stamp) or datetime.fromisoformat(stamp.replace("Z", "+00:00")).utcoffset().total_seconds() != 0):
+            return False
+        try:
+            prior = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique,
+                               parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite")))
+        except UnicodeError:
+            prior = None
+        except ValueError as error:
+            if str(error) in ("duplicate-key", "nonfinite"):
+                return False
+            prior = None
+        if isinstance(prior, dict):
+            if (("lab" in prior and prior["lab"] != lab)
+                    or ("task" in prior and prior["task"] != "rr2-controller-" + lab)
+                    or ("pid" in prior and (type(prior["pid"]) is not int or prior["pid"] != pid))
+                    or (isinstance(prior.get("processIdentity"), dict)
+                        and "pid" in prior["processIdentity"]
+                        and (type(prior["processIdentity"]["pid"]) is not int
+                             or prior["processIdentity"]["pid"] != pid))):
+                return False
+        return _absent(absence_checker, pid)
+    except (OSError, ValueError, TypeError, OverflowError):
+        return False
+
+
+def _valid_identity(identity, pid):
+    return (isinstance(identity, dict) and set(identity) == {"pid", "image", "startTicks"}
+            and type(identity["pid"]) is int and identity["pid"] == pid
+            and isinstance(identity["image"], str) and bool(identity["image"])
+            and type(identity["startTicks"]) is int and identity["startTicks"] > 0)
 
 
 def _verify_legacy_owner(lab, image, root, expected_pid):
@@ -265,7 +352,8 @@ def prepared_lab2_inspection_task():
 def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
                                        queue_path=None, runtime_files=None,
                                        identity_reader=None, verify_owner=None, verify_legacy=None,
-                                       expected_receipt_path=None, allow_legacy=True):
+                                       expected_receipt_path=None, allow_legacy=True,
+                                       absence_checker=None):
     """Return (exact process receipt path, validated receipt, synthetic host plan).
 
     Explicit injection arguments exist for offline tests. Production callers
@@ -283,6 +371,8 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
     if identity_reader is None:
         from scripts.vm_console_native import process_identity
         identity_reader = process_identity
+    if absence_checker is None:
+        absence_checker = _process_absent
     if verify_owner is None:
         from scripts.controller_task_entry import _require_owned_task
         verify_owner = _require_owned_task
@@ -298,28 +388,53 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
             and "scripts/controller_task_entry.py" in sources,
             "managed-runtime-file-list-invalid")
     location = root / "artifacts" / "controller-tasks" / lab
-    require(location.is_dir() and not location.is_symlink(),
+    require(location.is_dir() and _nonreparse(location),
             "managed-generation-directory-unavailable")
     generations = list(location.iterdir())
     require(len(generations) <= 4096, "managed-generation-inventory-too-large")
     live = []
     for generation in sorted(generations):
-        require(not generation.is_symlink(), "managed-generation-symlink")
+        require(_nonreparse(generation), "managed-generation-symlink")
         if not generation.is_dir():
             continue
         receipt_path = generation / "process.json"
-        if not receipt_path.exists():
-            continue
+        # A task that never published cannot have started its control host.
+        try:
+            receipt_stat = receipt_path.lstat()
+        except FileNotFoundError:
+            try:
+                (generation / "exited.json").lstat()
+            except FileNotFoundError:
+                continue
+            except OSError as error:
+                raise ManagedReceiptError("managed-receipt-unavailable") from error
+            raise ManagedReceiptError("managed-receipt-unavailable")
+        except OSError as error:
+            raise ManagedReceiptError("managed-receipt-unavailable") from error
         require(GENERATION.fullmatch(generation.name) is not None,
                 "managed-generation-name-invalid")
-        receipt = _read(receipt_path)
+        require(stat.S_ISREG(receipt_stat.st_mode) and _nonreparse(receipt_path),
+                "managed-receipt-unavailable")
+        require(receipt_stat.st_size <= 65536, "managed-receipt-too-large")
+        try:
+            with receipt_path.open("rb") as stream:
+                raw = stream.read(65537)
+        except OSError as error:
+            raise ManagedReceiptError("managed-receipt-unavailable") from error
+        require(len(raw) <= 65536, "managed-receipt-too-large")
+        try:
+            receipt = _read(receipt_path, raw)
+        except ManagedReceiptError as error:
+            if (str(error) in ("managed-receipt-malformed", "managed-receipt-schema-invalid")
+                    and _history_exited(generation, lab, raw, absence_checker)):
+                continue
+            raise
         require(receipt["lab"] == lab and receipt["task"] == "rr2-controller-" + lab,
                 "managed-receipt-lab-or-task-mismatch")
         pid, session = receipt["pid"], receipt["session"]
-        require(type(pid) is int and pid > 0 and type(session) is int and session > 0,
+        require(type(pid) is int and 0 < pid <= 0xffffffff and type(session) is int and session > 0,
                 "managed-receipt-pid-or-session-invalid")
-        require(isinstance(receipt["processIdentity"], dict)
-                and receipt["processIdentity"].get("pid") == pid
+        require(_valid_identity(receipt["processIdentity"], pid)
                 and isinstance(receipt["vmIdentity"], dict)
                 and isinstance(receipt["sourceHashes"], dict)
                 and SHA.fullmatch(str(receipt["configSha256"])) is not None
@@ -327,11 +442,14 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
         try:
             actual = identity_reader(pid)
         except Exception as error:
-            if str(error) == "process-unavailable":
+            if str(error) == "process-unavailable" and _absent(absence_checker, pid):
                 continue
             raise ManagedReceiptError("managed-process-identity-uncertain") from error
+        require(_valid_identity(actual, pid), "managed-process-identity-uncertain")
         if actual != receipt["processIdentity"]:
-            continue  # Stale receipt or PID reused; never promote the old owner.
+            require(actual["startTicks"] != receipt["processIdentity"]["startTicks"],
+                    "managed-process-identity-uncertain")
+            continue  # A different process epoch proves PID reuse.
         require(not (generation / "exited.json").exists()
                 and not (generation / "failure.json").exists()
                 and not (generation / "stop.request").exists(),
