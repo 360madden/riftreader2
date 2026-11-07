@@ -4,13 +4,14 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 10:26 Eastern
+### Checkpoint — 2026-11-07 10:50 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
 | Native maps | 🟢 Verified | Lab1 122/0 entries in10.013ms; Lab2 134/0 in17.146ms; raw parity with Python |
 | Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
-| Localization | 🟡 Discovery | Manager exists but provider root3373768 is null. Strict route unavailable. Explore existing key-matched dictionaries separately; selector84 is NOT proven. |
+| Localization | 🟡 Discovery | Default route unavailable; manager+98 has a heap provider override. Capture its actual vtable/method and follow the override cache. Selector84 is NOT proven. |
+| Passive world casts | ▶ Ready for bounded sampling | Separate sampler published; seven focused checks passed; no live acceptance yet. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
 
@@ -21,6 +22,18 @@ own per-SHA guest cache. [Typed ID and bulk receipts](reference/native-ability-o
 The122-key launch-size blocker is fixed and live retry passed. Keep sitreps
 timestamped in Eastern with compact visual indicators; refresh this checkpoint
 on useful milestones or blockers rather than creating reporting machinery.
+
+**10:50 Eastern — Python discovery milestone:** 82 focused checks passed
+(30 helper checks and52 probe checks) for targeted/wildcard cache lookup, typed
+record/full-ID seeds, player maps and explicit dictionary inspection. Accepted
+typed-ID/map receipts remain linked above. Localization is NOT accepted:
+`artifacts/native-unit-manager/lab2/714ab962c2e4487c85fe79f8d481ab6f/review.json`
+completed at10:37 Eastern but reports `unavailable provider override`. Manager
+was `0x1B0212EA0D0`, mode1/locale1; its +98 object was `0x1B0212E6B20`,
+while the lazy provider global was null. These addresses are historical seeds.
+Static follow-up found an explicit heap wrapper constructor/vtable26C1EA8,
+slot0 method7D3230 and inner-object keyed cache at+28. Verify those against
+the actual object before using that route; never initialize or call providers.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

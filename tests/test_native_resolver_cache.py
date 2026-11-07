@@ -1,5 +1,5 @@
 import unittest
-from scripts.native_resolver_cache import read_resolver_cache, SnapshotPageReader
+from scripts.native_resolver_cache import read_resolver_cache, SnapshotPageReader, lookup_resolver_cache
 import struct
 
 C, B = 0x10000, 0x20000
@@ -149,3 +149,47 @@ class ResolverCacheTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             reader("resolver_verify", [(0x40000, 8)])
 
+
+    def test_target_head_collision_and_miss(self):
+        memory, read = fixture([node(0x30000, 83, 2)])
+        memory[0x30000] = node(0, 83, 3, 0x40000)
+        memory[0x40018] = struct.pack('<Q', 0)
+        result = lookup_resolver_cache(read, collection=C, selector=83, keys=[2, 3, 4], key_hash=lambda x: x)
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual([row['key'] for row in result['entries']], [2, 3])
+        self.assertEqual(result['missingKeys'], [4])
+        self.assertFalse(result['fallback_resolved'])
+
+    def test_target_tagged_head_and_wrong_selector(self):
+        memory, read = fixture([node(0x30001, 83, 2)])
+        memory[0x30000] = node(0, 84, 2)
+        result = lookup_resolver_cache(read, collection=C, selector=83, keys=[2], key_hash=lambda x: x)
+        self.assertEqual(result['status'], 'complete')
+        self.assertEqual(result['missingKeys'], [2])
+
+    def test_target_changed_node_discards_results(self):
+        _, read = fixture([node(0, 83, 2)])
+        def torn(name, ranges):
+            values = read(name, ranges)
+            if name == 'resolver_verify' and B in values:
+                values[B] = node(0, 83, 3)
+            return values
+        result = lookup_resolver_cache(torn, collection=C, selector=83, keys=[2], key_hash=lambda x: x)
+        self.assertEqual(result['reason'], 'changed_during_walk')
+        self.assertEqual(result['entries'], [])
+
+    def test_wildcard_returns_same_key_across_selectors_and_checks_stability(self):
+        memory, read = fixture([node(0x30000, 83, 7)])
+        memory[0x30000] = node(0, 84, 7)
+        args = dict(collection=C, keys=[7], key_hash=lambda x: x)
+        result = lookup_resolver_cache(read, selector=None, **args)
+        self.assertEqual([e['selector'] for e in result['entries']], [83, 84])
+        self.assertEqual(result['scope'], 'requested-keys-any-selector')
+        exact = lookup_resolver_cache(read, selector=83, **args)
+        self.assertEqual([e['selector'] for e in exact['entries']], [83])
+        def torn(name, ranges):
+            values = read(name, ranges)
+            if name == 'resolver_verify' and 0x30000 in values:
+                values[0x30000] = node(0, 85, 7)
+            return values
+        self.assertEqual(lookup_resolver_cache(torn, selector=None, **args)['reason'], 'changed_during_walk')

@@ -482,9 +482,18 @@ def calculate_energy(fields: dict, clock: float) -> dict:
 
 def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
         cast_record: bool = False, cooldown_roots: bool = False,
-        cooldown_collections: bool = False, cooldown_cache: bool = False) -> dict:
+        cooldown_collections: bool = False, cooldown_cache: bool = False,
+        ability_seeds: bool = False, ability_keys: tuple[int, ...] = (),
+        player_ability_maps: bool = False, ability_localization: bool = False,
+        ability_dictionary: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
+    if (len(ability_keys) > 8 or len(set(ability_keys)) != len(ability_keys) or
+            any(type(key) is not int or not 0 <= key <= 0xFFFFFFFF for key in ability_keys)):
+        raise ValueError("invalid-ability-key-selection")
+    ability_localization = ability_localization or ability_dictionary
+    ability_seeds = ability_seeds or bool(ability_keys) or ability_localization
+    cooldown_cache = cooldown_cache or ability_seeds
     cooldown_collections = cooldown_collections or cooldown_cache
     cooldown_roots = cooldown_roots or cooldown_collections
     probe_path = Path(__file__)
@@ -522,10 +531,21 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
               "deadlineSemantics": "checked-before-each-operation; admitted operations use separate bounded timeouts",
               "status": "incomplete",
               "qualification": "candidate-only; no passive-freshness or restart qualification"}
-    helper_sources = ({ROOT / "scripts" / name: sha((ROOT / "scripts" / name).read_bytes())
-                       for name in (("native_thread_metadata.py", "native_tls_collections.py") +
-                                    (("native_resolver_cache.py",) if cooldown_cache else ())) }
-                      if cooldown_collections else {})
+    helper_names = []
+    if cooldown_collections:
+        helper_names += ["native_thread_metadata.py", "native_tls_collections.py"]
+    if cooldown_cache or player_ability_maps:
+        helper_names.append("native_resolver_cache.py")
+    if ability_seeds:
+        helper_names.append("native_ability_record_seed.py")
+    if ability_localization:
+        helper_names.append("native_localization_seed.py")
+    if player_ability_maps:
+        helper_names.append("native_player_ability_maps.py")
+    if cast_record:
+        helper_names.append("native_cast_candidate.py")
+    helper_sources = {ROOT / "scripts" / name: sha((ROOT / "scripts" / name).read_bytes())
+                      for name in dict.fromkeys(helper_names)}
     if helper_sources:
         review["helperSourceSha256"] = {path.name: value for path, value in helper_sources.items()}
     try:
@@ -628,7 +648,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
 
             roots_ranges = [(MANAGER_RVA, 8), (PLAYER_SYSTEM_RVA, 8),
                             (POSITION_INDEX_RVA, 4), (HEALTH_INDEX_RVA, 4)]
-            if health_record or resource_record:
+            if health_record or resource_record or player_ability_maps:
                 roots_ranges.append((0x33DC2B0, 8))
             if health_record:
                 roots_ranges += [(0x355F430, 8), (0x2C281B8, 8)]
@@ -636,6 +656,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 roots_ranges += [(0x33624C8, 8), (0x3372C18, 8)]
             if cooldown_cache:
                 roots_ranges.append((0x33DC1B8, 8))
+            if player_ability_maps:
+                roots_ranges.append((0x2F57260, 4))
             roots = take("roots", roots_ranges, relative=True)
             manager = pointer(struct.unpack("<Q", roots[base + MANAGER_RVA])[0])
             player_system = pointer(struct.unpack("<Q", roots[base + PLAYER_SYSTEM_RVA])[0])
@@ -643,7 +665,10 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             health_index = struct.unpack("<i", roots[base + HEALTH_INDEX_RVA])[0]
             if not all(0 <= value < 0x60 for value in (position_index, health_index)):
                 raise ValueError("component-index-outside-selector-area")
-            owner = take("owner", [(manager + 0x50, 8), (player_system + 0x360, 8)])
+            owner_ranges = [(manager + 0x50, 8), (player_system + 0x360, 8)]
+            if player_ability_maps:
+                owner_ranges.append((player_system + 0x3F8, 8))
+            owner = take("owner", owner_ranges)
             table = pointer(struct.unpack("<Q", owner[manager + 0x50])[0], 24)
             key = struct.unpack("<Q", owner[player_system + 0x360])[0]
             header = take("table", [(table, 24)])[table]
@@ -913,7 +938,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                         else:
                             cooldown["cacheHeadersOmitted"] = "collection-count-exceeds-32"
                         if cooldown_cache and len(collections) == 1:
-                            from scripts.native_resolver_cache import SnapshotPageReader, read_resolver_cache
+                            from scripts.native_resolver_cache import (
+                                SnapshotPageReader, lookup_resolver_cache, read_resolver_cache)
                             cache_read_count = 0
 
                             def read_cache(name, ranges):
@@ -922,12 +948,93 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                                 return take(f"{name}-{cache_read_count}", ranges)
 
                             page_reader = SnapshotPageReader(read_cache)
-                            cooldown["cacheInventory"] = read_resolver_cache(
-                                page_reader, collection=collections[0],
-                                selector=cooldown["selector"], max_chain_nodes=2048)
+                            cooldown["cacheInventory"] = (
+                                lookup_resolver_cache(
+                                    page_reader, collection=collections[0], selector=cooldown["selector"],
+                                    keys=ability_keys, key_hash=entity_hash)
+                                if ability_keys else read_resolver_cache(
+                                    page_reader, collection=collections[0],
+                                    selector=cooldown["selector"], max_chain_nodes=2048))
                             cooldown["cacheInventory"]["snapshotReadCalls"] = page_reader.read_calls
                             cooldown["cacheInventory"]["snapshotPages"] = len(page_reader.pages)
                             cooldown["cacheInventory"]["collectionAddress"] = collections[0]
+                            if ability_seeds and cooldown["cacheInventory"]["status"] == "complete":
+                                from scripts.native_ability_record_seed import read_ability_record_seeds
+                                entries = cooldown["cacheInventory"]["entries"]
+                                seed_entries = ([entry for key in ability_keys for entry in entries
+                                                 if entry["key"] == key] if ability_keys else
+                                                sorted(entries, key=lambda entry: entry["key"]))
+                                seed_reader = SnapshotPageReader(read_cache)
+                                seed_rows = read_ability_record_seeds(
+                                    seed_reader, entries=seed_entries, module_base=base,
+                                    module_size=identity["moduleSize"],
+                                    build_sha=identity["executableSha256"], key_hash=entity_hash)
+                                cooldown["abilityRecordSeeds"] = {
+                                    "qualification": "raw-record-and-fallback-text-candidates",
+                                    "requestedKeys": list(ability_keys),
+                                    "missingFromThisCache": [key for key in ability_keys
+                                                             if not any(entry["key"] == key for entry in entries)],
+                                    "records": seed_rows, "snapshotReadCalls": seed_reader.read_calls,
+                                    "snapshotPages": len(seed_reader.pages)}
+                                if ability_localization:
+                                    from scripts.native_localization_seed import (
+                                        read_localization_context, read_localization_seeds)
+                                    try:
+                                        localized_rows = [row for row in seed_rows
+                                                          if row.get("child_type_verified") and
+                                                          row.get("localization_key_candidate")]
+                                        localization_keys = list(dict.fromkeys(
+                                            row["localization_key_candidate"] for row in localized_rows))
+                                        if not localization_keys:
+                                            raise ValueError("no-typed-nonzero-localization-keys")
+                                        context_reader = SnapshotPageReader(read_cache)
+                                        localization_context = read_localization_context(
+                                            context_reader, module_base=base, module_size=identity["moduleSize"],
+                                            dictionary_mode=ability_dictionary)
+                                        localization_lookup_reader = SnapshotPageReader(read_cache)
+                                        localization_lookup = lookup_resolver_cache(
+                                            localization_lookup_reader, collection=collections[0],
+                                            selector=localization_context["selector"], keys=localization_keys,
+                                            key_hash=entity_hash)
+                                        if localization_lookup["status"] != "complete":
+                                            raise ValueError("localization-cache-lookup-incomplete")
+                                        text_reader = SnapshotPageReader(read_cache)
+                                        localization = read_localization_seeds(
+                                            text_reader, module_base=base, module_size=identity["moduleSize"],
+                                            entries=[entry for entry in localization_lookup["entries"]
+                                                     if entry.get("result_pointer")],
+                                            dictionary_mode=ability_dictionary)
+                                        if (localization.get("status") == "complete" and
+                                                localization.get("context") != localization_context):
+                                            raise ValueError("localization-context-changed")
+                                        # Bind the later translation back to the original
+                                        # typed record/name child, without reusing cached bytes.
+                                        bindings = {}
+                                        keyed_entries = {entry["key"]: entry for entry in seed_entries}
+                                        for row in localized_rows:
+                                            entry = keyed_entries[row["key"]]
+                                            bindings[entry["node_address"] + 8] = (
+                                                bytes.fromhex(entry["raw_key"]) +
+                                                struct.pack("<Q", entry["holder_address"]))
+                                            bindings[row["result_slot_address"]] = struct.pack("<Q", row["record_address"])
+                                            bindings[row["record_address"] + 0x8E0] = struct.pack("<Q", row["child_address"])
+                                            bindings[row["child_address"] + 0x18] = struct.pack("<I", row["localization_key_candidate"])
+                                        binding_reader = SnapshotPageReader(read_cache)
+                                        current_bindings = binding_reader("localization-source-binding", [
+                                            (address, len(raw)) for address, raw in bindings.items()])
+                                        if any(current_bindings[address] != raw for address, raw in bindings.items()):
+                                            raise ValueError("ability-localization-binding-changed")
+                                        localization.update({
+                                            "qualification": ("dictionary-only-text-candidates-types-unverified" if ability_dictionary
+                                                              else "raw-localized-text-candidates-types-unverified"),
+                                            "missingFromThisCache": localization_lookup.get("missingKeys", []),
+                                            "abilityLocalizationKeys": {f"0x{row['key']:08X}": row["localization_key_candidate"]
+                                                                        for row in localized_rows},
+                                            "sourceBindingRechecked": True})
+                                        cooldown["abilityLocalizationSeeds"] = localization
+                                    except ValueError as error:
+                                        cooldown["abilityLocalizationSeeds"] = {
+                                            "status": "unavailable", "reason": str(error)[:160], "records": []}
                             post_walk_metadata = thread_metadata("threads-post-walk")
                             if same_threads(post_walk_metadata):
                                 tls_items = list(tls_observed.items())
@@ -949,7 +1056,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                         after_metadata = thread_metadata("threads-after")
                     cooldown["threadCoverageAfter"] = after_metadata["enumerated"]
                     selection_verified = selected["status"] == "candidate" and same_threads(after_metadata)
-                    if not selection_verified:
+                    if not same_threads(after_metadata):
                         cooldown["collections"] = {"status": "unavailable",
                                                    "reason": "thread-coverage-or-epoch-changed", "threads": []}
                         if "cacheInventory" in cooldown:
@@ -962,6 +1069,53 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                         cooldown["cacheInventory"]["threadSelectionVerified"] = selection_verified
                         cooldown["cacheInventory"]["qualification"] = (
                             "thread-selected-cache-candidate" if selection_verified else "collection-only-candidate")
+                        if ("abilityRecordSeeds" in cooldown and
+                                cooldown["cacheInventory"]["status"] != "complete"):
+                            cooldown["abilityRecordSeeds"] = {
+                                "qualification": "unavailable", "reason": "cache-owner-or-selection-unverified",
+                                "records": []}
+                            if "abilityLocalizationSeeds" in cooldown:
+                                cooldown["abilityLocalizationSeeds"] = {
+                                    "status": "unavailable", "reason": "cache-owner-or-selection-unverified", "records": []}
+
+            player_map_anchors = {}
+            if player_ability_maps:
+                from scripts.native_player_ability_maps import read_player_ability_maps
+                from scripts.native_resolver_cache import SnapshotPageReader
+                cached_entity = struct.unpack("<Q", owner[player_system + 0x3F8])[0]
+                player_map_anchors[player_system + 0x3F8] = owner[player_system + 0x3F8]
+                if cached_entity != entity:
+                    review["playerAbilityMapsCandidate"] = {
+                        "status": "unavailable", "reason": "cached-player-entity-differs-from-self-lookup",
+                        "cachedEntity": cached_entity, "maps": []}
+                else:
+                    ability_index = struct.unpack("<i", roots[base + 0x2F57260])[0]
+                    if not 0 <= ability_index < 0x60:
+                        raise ValueError("ability-component-index-outside-selector-area")
+                    ability_slot = entity_bytes[0x18 + ability_index]
+                    player_map_anchors[entity + 0x18 + ability_index] = bytes([ability_slot])
+                    if ability_slot == 0xFF:
+                        review["playerAbilityMapsCandidate"] = {
+                            "status": "unavailable", "reason": "ability-component-absent", "maps": []}
+                    else:
+                        ability_slot_address = component_table + ability_slot * 8
+                        player_map_anchors.update(take("player-ability-context", [(ability_slot_address, 8)]))
+                        context = pointer(struct.unpack("<Q", player_map_anchors[ability_slot_address])[0], 0x260)
+                        map_read_count = 0
+
+                        def read_player_map(name, ranges):
+                            nonlocal map_read_count
+                            map_read_count += 1
+                            return take(f"player-map-{name}-{map_read_count}", ranges)
+
+                        map_reader = SnapshotPageReader(read_player_map)
+                        candidate = read_player_ability_maps(
+                            map_reader, context=context, clock_root_address=base + 0x33DC2B0)
+                        candidate.update({"context": context, "selectorIndex": ability_index,
+                                          "slot": ability_slot, "cachedEntityMatchesSelfLookup": True,
+                                          "snapshotReadCalls": map_reader.read_calls,
+                                          "snapshotPages": len(map_reader.pages)})
+                        review["playerAbilityMapsCandidate"] = candidate
 
             if cast_record:
                 cast_read_count = 0
@@ -985,6 +1139,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             checks.update({address: len(raw) for address, raw in health_anchors.items()})
             checks.update({address: len(raw) for address, raw in resource_anchors.items()})
             checks.update({address: len(raw) for address, raw in cooldown_anchors.items()})
+            checks.update({address: len(raw) for address, raw in player_map_anchors.items()
+                           if not entity <= address < entity + 128})
             checks[components["position"] + 0x48] = 0x70
             if health is not None:
                 checks[record_address] = 128
@@ -1019,6 +1175,10 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 raise ValueError("module-root-changed")
             if any(final[address] != raw for address, raw in cooldown_anchors.items()):
                 raise ValueError("cooldown-selector-changed")
+            if any((final[entity][address - entity:address - entity + len(raw)]
+                    if entity <= address < entity + 128 else final[address]) != raw
+                   for address, raw in player_map_anchors.items()):
+                raise ValueError("player-ability-context-changed")
             if (final[manager + 0x50] != owner[manager + 0x50] or
                     final[player_system + 0x360] != owner[player_system + 0x360] or
                     final[table] != header or
@@ -1144,6 +1304,16 @@ def main() -> None:
                         help="Observe per-thread TLS collection candidates without calling game code.")
     parser.add_argument("--cooldown-cache", action="store_true",
                         help="Inventory one unanimous selected resolver cache and raw dataset-store metadata.")
+    parser.add_argument("--ability-seeds", action="store_true",
+                        help="Capture up to eight raw ability-record/name/type seeds from the verified cache.")
+    parser.add_argument("--ability-key", action="append", type=lambda value: int(value, 0), default=[],
+                        help="Select a raw native key for seed capture (up to eight; implies --ability-seeds).")
+    parser.add_argument("--player-ability-maps", action="store_true",
+                        help="Read raw player-associated ability/cooldown maps and bracketed game clock.")
+    parser.add_argument("--ability-localization", action="store_true",
+                        help="Follow the default-provider localization route for typed ability name keys.")
+    parser.add_argument("--ability-dictionary", action="store_true",
+                        help="Explore cached localization-key matches independently of an uninitialized API provider.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
@@ -1152,7 +1322,12 @@ def main() -> None:
                              cast_record=args.cast_record,
                              cooldown_roots=args.cooldown_roots,
                              cooldown_collections=args.cooldown_collections,
-                             cooldown_cache=args.cooldown_cache), indent=2), flush=True)
+                             cooldown_cache=args.cooldown_cache,
+                             ability_seeds=args.ability_seeds,
+                             ability_keys=tuple(args.ability_key),
+                             player_ability_maps=args.player_ability_maps,
+                             ability_localization=args.ability_localization,
+                             ability_dictionary=args.ability_dictionary), indent=2), flush=True)
 
 
 if __name__ == "__main__":

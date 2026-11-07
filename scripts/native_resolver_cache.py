@@ -238,3 +238,106 @@ def read_resolver_cache(read_ranges, *, collection: int, selector: int,
         result["entries"] = []
     result["bytes_read"] = total
     return result
+
+
+def lookup_resolver_cache(read_ranges, *, collection, selector, keys, key_hash, max_chain_nodes=128):
+    """Inspect only requested cache keys; misses say nothing about fallback lookup."""
+    result = {"status": "partial", "scope": "requested-keys-any-selector" if selector is None else "requested-keys", "reason": None,
+              "entries": [], "missingKeys": [], "fallback_resolved": False,
+              "inventory": {"visited_heads": 0, "visited_chain_nodes": 0}}
+    consumed = {}
+    class Stop(Exception):
+        pass
+    def read(name, ranges, verify=False):
+        try:
+            values = read_ranges(name, ranges)
+            for address, size in ranges:
+                data = values[address]
+                if not isinstance(data, bytes) or len(data) != size:
+                    raise ValueError("short read")
+                if not verify:
+                    if address in consumed and consumed[address] != data:
+                        raise Stop("changed_during_walk")
+                    consumed[address] = data
+            return values
+        except Stop:
+            raise
+        except Exception as exc:
+            raise Stop("read_failed: " + type(exc).__name__) from exc
+    try:
+        if not _pointer(collection) or collection + 0x20 > _MAX_ADDRESS - 31:
+            raise Stop("invalid_collection")
+        if selector is not None and (type(selector) is not int or not 0 <= selector <= 0xffff):
+            raise Stop("invalid_selector")
+        if type(max_chain_nodes) is not int or not 1 <= max_chain_nodes <= 128:
+            raise Stop("invalid_bounds")
+        if not isinstance(keys, (list, tuple)) or not 1 <= len(keys) <= 8 or any(type(k) is not int or not 0 <= k <= 0xffffffff for k in keys) or len(set(keys)) != len(keys):
+            raise Stop("invalid_keys")
+        h = collection + 0x20
+        base, stride, count, entry_count = struct.unpack("<QQQQ", read("resolver_header", [(h, 32)])[h])
+        result["header"] = {"address": h, "bucket_base": base, "stride": stride, "count": count, "entry_count": entry_count}
+        if not 1 <= count <= 4096 or stride != 24 or not _pointer(base) or base + count * stride - 1 > _MAX_ADDRESS:
+            raise Stop("invalid_header")
+        try:
+            heads = {key: base + (key_hash(key_hash(key)) % count) * stride for key in keys}
+        except Exception as exc:
+            raise Stop("hash_failed: " + type(exc).__name__) from exc
+        head_data = read("resolver_heads", [(a, 24) for a in dict.fromkeys(heads.values())])
+        frontier = [(key, address, head_data[address], True, frozenset()) for key, address in heads.items()]
+        found = {key: [] for key in keys}
+        while frontier:
+            pending = []
+            for key, address, data, head, seen in frontier:
+                if address in seen:
+                    raise Stop("chain_cycle")
+                seen = seen | {address}
+                if head:
+                    result["inventory"]["visited_heads"] += 1
+                else:
+                    result["inventory"]["visited_chain_nodes"] += 1
+                link = struct.unpack_from("<Q", data)[0]
+                node_selector = struct.unpack_from("<H", data, 8)[0]
+                if (not head or not link & 1) and (selector is None or node_selector == selector) and struct.unpack_from("<I", data, 12)[0] == key:
+                    holder = struct.unpack_from("<Q", data, 16)[0]
+                    if holder and (not _pointer(holder) or holder + 0x18 > _MAX_ADDRESS - 7):
+                        raise Stop("invalid_holder")
+                    if sum(map(len, found.values())) >= 256:
+                        raise Stop("match_budget")
+                    found[key].append({"node_address": address, "raw_key": data[8:16].hex(), "selector": node_selector, "key": key,
+                                  "holder_address": holder, "result_slot_address": holder + 0x18 if holder else None, "result_pointer": None})
+                    if selector is not None:
+                        continue
+                next_address = link & ~1
+                if next_address:
+                    if not _pointer(next_address) or next_address > _MAX_ADDRESS - 23:
+                        raise Stop("invalid_chain_pointer")
+                    if len(seen) - 1 >= max_chain_nodes:
+                        raise Stop("chain_budget")
+                    pending.append((key, next_address, seen))
+            if pending:
+                values = read("resolver_chain", [(a, 24) for a in dict.fromkeys(a for _, a, _ in pending)])
+                frontier = [(key, a, values[a], False, seen) for key, a, seen in pending]
+            else:
+                frontier = []
+        slots = list(dict.fromkeys(row["result_slot_address"] for rows in found.values() for row in rows if row["result_slot_address"] is not None))
+        if slots:
+            values = read("resolver_holders", [(a, 8) for a in slots])
+            for row in (row for rows in found.values() for row in rows):
+                slot = row["result_slot_address"]
+                if slot is not None:
+                    value = struct.unpack("<Q", values[slot])[0]
+                    if value and not _pointer(value):
+                        raise Stop("invalid_result_pointer")
+                    row["result_pointer"] = value
+        items = list(consumed.items())
+        for start in range(0, len(items), 128):
+            batch = items[start:start + 128]
+            verified = read("resolver_verify", [(a, len(data)) for a, data in batch], verify=True)
+            if any(verified[a] != data for a, data in batch):
+                raise Stop("changed_during_walk")
+        result["entries"] = [row for k in keys for row in found[k]]
+        result["missingKeys"] = [k for k in keys if not found[k]]
+        result["status"] = "complete"
+    except Stop as exc:
+        result["reason"] = str(exc)
+    return result

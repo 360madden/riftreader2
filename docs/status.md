@@ -1,5 +1,14 @@
 # Current status
 
+**2026-11-07 10:50 Eastern — DISCOVERY CHECKPOINT:** Targeted cache lookup,
+typed record/full-ID seeds and raw player-map Python helpers passed82 focused
+checks including probe checks. Prior live candidate receipts are retained.
+Localization dictionary inspection refused a differing runtime provider; static
+follow-up found its explicit heap-provider route, awaiting runtime fingerprints.
+The passive world-cast sampler is separately published, awaiting bounded live
+sampling. No input, owner transition or active-reader replacement. See the
+[timestamped handoff](handoff-2026-11-06-owner-migration.md).
+
 **2026-11-07 10:26 Eastern — native ability-record milestone:** The new on-demand sampler produced8 full IDs onLab2 in28.394ms, exactly matching Python and historical API strings. A bracketed Lab1 run produced122/122 typed records and full IDs in39.111ms; map identity/context/raw values were unchanged before/after.43 records passed the code path's nonzero List filter, without claiming learned membership. Existing owners and published workflow bundles were untouched. See [command and evidence](reference/native-ability-ownership-findings-2026-11-06.md#verified-native-record-sampler--november7-1026-eastern). Localization remains separate: the lazy API provider is uninitialized; no names were invented or initialization invoked.
 
 **Durable discovery policy, November7:** Practical results first; refinement is optional later or never. Skip cleanup/refactoring/generalization, broad validation and repeated review unless needed for the next useful observation or a concrete demonstrated failure. Preserve identity/freshness, ownership and STOP/release gates. This is now explicit in `AGENTS.md` and the [development workflow](workflows/development.md#discovery-priority); it governs continuation ahead of older process-heavy instructions.
