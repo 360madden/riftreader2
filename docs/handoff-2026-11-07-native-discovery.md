@@ -1,6 +1,6 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint13:07 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint13:08 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
@@ -106,24 +106,30 @@ SHA256`E8D240818EE567E68EB131464642D63DCCFD26C1CEEFA75BF389D8461E5721D3`.
 
 ## Resume point — requested checkpoint,13:07 Eastern
 
-Root is continuing, not stopping. Lab1 template-name host operation is ACTIVE:
-exec session54343; command
+Checkpoint committed6359c38; root resumed immediately. Lab1 template-name host
+operation COMPLETED successfully at13:07:15 Eastern; no active process. Command
 `C:\Python314\python.exe -B scripts/sample_current_native_target_template_name.py --lab lab1`.
 Fresh evidence directory
 `artifacts/native-target-template-name-20261107/runs/lab1/9a6ac42b49ad4d519ae7c3cbebda5306/`.
-Identity admission passed; no final sample observed at checkpoint. Poll this
-operation before another Lab1 capture. Do not edit its launcher while it runs.
+Cache hit passed type0274 and nested1E17 checks; selector623/TLS index20,
+template1847420318, localization key1290053851. Captured raw typed fallback
+**Normal Practice Dummy**. Dictionary lookup missed, so locale1/API name remains
+unavailable; active manager selection/decoration is not inferred. Capture span
+34.713ms. Source report SHA256
+`60C2053E175017C83652B7496421D5691BD404B9DA1643EDF80DB27E05AD2A14`.
+The host summary exposes rawFallbackNameCandidate separately. Retained receipt
+replay passed without a new capture.
 
-Uncommitted new template-name sampler, command registration, host launcher and
-four focused native tests are ready. Separate published reader:
+New template-name sampler, command registration, host launcher and four focused
+native tests are ready for the verified milestone commit. Separate published reader:
 `artifacts/native-target-template-name-20261107/publish/RiftReader2.Live.exe`,
 117491552 bytes, SHA256
 `2390DB519546D4884E14D7B00DD78257740104808792E15B8C58F1E57F9806FD`.
 It preserves fresh gated full64 target, provider selector, all-thread TLS
 unanimity/epoch, composite cache and type0274/name1E17 anchors. Cache misses are
 unavailable, never proof of absence. Root reviewed boundaries; four focused
-native cases and host synthetic/compile checks passed. Commit the useful result
-after inspecting the live receipt or documenting its concrete blocker.
+native cases and host synthetic/compile checks passed. Useful live result is
+verified; static follow-up is narrowing the active localization-mode branch.
 
 Parallel workers are now complete; root retains sole live ownership. Do not
 invent follow-up work to fill slots. Two additional static leads are retained:

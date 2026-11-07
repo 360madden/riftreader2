@@ -132,6 +132,24 @@ Static trace passes that WORD unchanged to the common composite cache. A hit
 requires type0274, then+A8 type1E17 name reference. No getter was called and no
 name text has been accepted. A cache miss does not imply template absence.
 
+## Template name fallback captured —13:07 Eastern
+
+`python scripts/sample_current_native_target_template_name.py --lab lab1`
+completed a guarded template cache hit in34.713ms. Target key/entity, provider
+selector623, TLS index20/all-thread collection choice, composite node, record
+type0274 and nested name1E17 passed the capture anchors. The typed name has
+localization key1290053851 and raw fallback **Normal Practice Dummy**.
+Resident dictionary lookup for that key missed. Raw fallback is exposed
+separately; no active manager branch, locale1 text or API-decoration agreement
+is inferred. This is useful name input, not a public-name qualification.
+
+Receipt`artifacts/native-target-template-name-20261107/runs/lab1/9a6ac42b49ad4d519ae7c3cbebda5306/samples.json`,
+SHA256`60C2053E175017C83652B7496421D5691BD404B9DA1643EDF80DB27E05AD2A14`.
+Reader117491552 bytes, SHA256
+`2390DB519546D4884E14D7B00DD78257740104808792E15B8C58F1E57F9806FD`.
+Four focused native cases passed; host validation and retained-receipt decode
+checks passed. A cache miss never establishes name absence. No getters/input.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its

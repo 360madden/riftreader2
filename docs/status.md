@@ -1,9 +1,16 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:03 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:08 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
+
+**13:07 Eastern — TARGET RAW FALLBACK NAME CAPTURED:** The guarded template cache
+read returned **Normal Practice Dummy**, with typed record/name references and
+stable target/provider/TLS/cache anchors, in34.713ms. Localization key1290053851
+missed the resident dictionary; raw fallback is separate from active/API name.
+Lab2 selected-target command independently returned honest unavailable/null fields
+for its guarded zero target. [Receipts and limits](reference/native-player-context-candidates.md).
 
 **13:03 Eastern — SELECTED-TARGET XYZ CANDIDATE:** The repository command passed
 with the cached reader: target`u80000002CD0034D1`, XYZ7428.7246/863.526/2950.8438.
