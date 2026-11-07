@@ -97,10 +97,10 @@ internal static class MemoryDiscoveryCommand
         var timer = Stopwatch.StartNew();
         var regions = session.EnumerateReadableRegions(
             request.MaxRegionCount, request.MaxDurationMilliseconds, cancellationToken);
-        var scan = TypedApiPrefixScout.Scan(
+        var scan = TypedApiPrefixScout.Scan(request.Marker,
             regions, startAddress, request.MaxScanBytes, request.MaxMatchCount,
             session.ReadScanChunk, () => timer.ElapsedMilliseconds >= request.MaxDurationMilliseconds,
-            cancellationToken, marker: request.Marker);
+            cancellationToken);
 
         var identityFailure = await session.RevalidateAsync(cancellationToken);
         var completedAtUtc = UtcNow();
@@ -214,11 +214,11 @@ internal static class MemoryDiscoveryCommand
         var timer = Stopwatch.StartNew();
         var regions = session.EnumerateReadableRegions(
             request.MaxRegionCount, request.MaxDurationMilliseconds, cancellationToken);
-        var pass = TypedApiInlineCapturePass.Run(
+        var pass = TypedApiInlineCapturePass.Run(request.Marker,
             regions, startAddress, request.MaxScanBytes, request.MaxMatchCount,
             request.MaxCopiedCandidates, session.ReadScanChunk, session.Read,
             () => timer.ElapsedMilliseconds >= request.MaxDurationMilliseconds,
-            UtcNow, cancellationToken, request.Marker);
+            UtcNow, cancellationToken);
         var identityFailure = await session.RevalidateAsync(cancellationToken);
         var completedAtUtc = UtcNow();
         var status = identityFailure is not null ? "identity-invalidated" :

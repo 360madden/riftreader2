@@ -74,7 +74,7 @@ public sealed class TypedApiPrefixScoutTests
             new WindowsMemoryRegion(Base + 0x10000, (ulong)privateMemory.Length, 4, Private)
         };
         var readCalls = 0;
-        var result = TypedApiPrefixScout.Scan(regions, Base, TypedApiPrefixScout.ChunkBytes, 128,
+        var result = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, regions, Base, TypedApiPrefixScout.ChunkBytes, 128,
             (address, output, count) =>
             {
                 readCalls++;
@@ -96,7 +96,7 @@ public sealed class TypedApiPrefixScoutTests
         var memory = new byte[3 * TypedApiPrefixScout.ChunkBytes];
         Marker.CopyTo(memory.AsSpan(2 * TypedApiPrefixScout.ChunkBytes - 4));
         var regions = Regions(memory);
-        var result = TypedApiPrefixScout.Scan(regions, Base, TypedApiPrefixScout.MaxScanBytes, 128,
+        var result = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, regions, Base, TypedApiPrefixScout.MaxScanBytes, 128,
             (address, output, count) =>
             {
                 var offset = checked((int)(address - Base));
@@ -124,7 +124,7 @@ public sealed class TypedApiPrefixScoutTests
     {
         var memory = new byte[TypedApiPrefixScout.ChunkBytes];
         Marker.CopyTo(memory);
-        var result = TypedApiPrefixScout.Scan(Regions(memory), Base, TypedApiPrefixScout.ChunkBytes, 128,
+        var result = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), Base, TypedApiPrefixScout.ChunkBytes, 128,
             (address, output, count) =>
             {
                 memory.AsSpan(0, 100).CopyTo(output);
@@ -159,7 +159,7 @@ public sealed class TypedApiPrefixScoutTests
     public void Scan_TimeBudgetCanStopBeforeFirstReadWithoutProducingFalseAbsence()
     {
         var memory = new byte[100];
-        var result = TypedApiPrefixScout.Scan(Regions(memory), Base, TypedApiPrefixScout.ChunkBytes, 128,
+        var result = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), Base, TypedApiPrefixScout.ChunkBytes, 128,
             (_, _, _) => throw new InvalidOperationException("read should not occur"), () => true);
 
         Assert.Equal("partial", result.Status);
@@ -196,10 +196,10 @@ public sealed class TypedApiPrefixScoutTests
             new WindowsMemoryRegion(Base, 100, 4, Private),
             new WindowsMemoryRegion(Base + 50, 100, 4, Private)
         };
-        Assert.Throws<InvalidDataException>(() => TypedApiPrefixScout.Scan(
+        Assert.Throws<InvalidDataException>(() => TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText,
             overlapping, Base, TypedApiPrefixScout.ChunkBytes, 128, (_, _, _) => new(true, 100, null),
             () => false));
-        Assert.Throws<InvalidDataException>(() => TypedApiPrefixScout.Scan(
+        Assert.Throws<InvalidDataException>(() => TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText,
             Regions(memory), Base, TypedApiPrefixScout.ChunkBytes, 128,
             (_, _, requested) => new(true, requested + 1, null), () => false));
     }
@@ -211,7 +211,7 @@ public sealed class TypedApiPrefixScoutTests
         Marker.CopyTo(memory.AsSpan(123));
         var notified = false;
         var reads = 0;
-        var result = TypedApiPrefixScout.Scan(Regions(memory), Base,
+        var result = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), Base,
             TypedApiPrefixScout.MaxScanBytes, 128,
             (address, output, count) =>
             {
@@ -243,7 +243,7 @@ public sealed class TypedApiPrefixScoutTests
         Marker.CopyTo(memory.AsSpan(90));
         var nextRead = false;
         var notified = new List<ulong>();
-        var result = TypedApiPrefixScout.Scan(Regions(memory), Base,
+        var result = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), Base,
             TypedApiPrefixScout.MaxScanBytes, 2,
             (address, output, count) =>
             {
@@ -273,7 +273,7 @@ public sealed class TypedApiPrefixScoutTests
         var memory = new byte[2 * TypedApiPrefixScout.ChunkBytes];
         Marker.CopyTo(memory.AsSpan(TypedApiPrefixScout.ChunkBytes - 4));
         var found = new List<ulong>();
-        var success = TypedApiPrefixScout.Scan(Regions(memory), Base,
+        var success = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), Base,
             TypedApiPrefixScout.MaxScanBytes, 128,
             (address, output, count) =>
             {
@@ -284,7 +284,7 @@ public sealed class TypedApiPrefixScoutTests
         Assert.Equal(new[] { Base + TypedApiPrefixScout.ChunkBytes - 4UL }, found);
 
         found.Clear();
-        var withHole = TypedApiPrefixScout.Scan(Regions(memory), Base,
+        var withHole = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), Base,
             TypedApiPrefixScout.MaxScanBytes, 128,
             (address, output, count) =>
             {
@@ -330,7 +330,7 @@ public sealed class TypedApiPrefixScoutTests
         ulong startAddress = Base,
         long maxScanBytes = TypedApiPrefixScout.MaxScanBytes,
         int maxMatches = 128) =>
-        TypedApiPrefixScout.Scan(Regions(memory), startAddress, maxScanBytes, maxMatches,
+        TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, Regions(memory), startAddress, maxScanBytes, maxMatches,
             (address, output, count) =>
             {
                 memory.AsSpan(checked((int)(address - Base)), count).CopyTo(output);

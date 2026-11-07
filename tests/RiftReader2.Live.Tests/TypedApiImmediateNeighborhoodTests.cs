@@ -20,7 +20,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
     {
         var memory = Memory();
         var readCalls = new List<(ulong Address, int Count)>();
-        var result = TypedApiImmediateNeighborhood.Capture(
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText,
             MarkerAddress, Reader(memory, readCalls), () => false,
             utcNow: () => "2026-10-24T18:00:00.0000000Z");
 
@@ -52,7 +52,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
         var memory = Memory();
         memory[(int)(MarkerAddress - Base + (ulong)(PrefixWithObject.Length - 1))] = 0;
         var calls = new List<(ulong, int)>();
-        var result = TypedApiImmediateNeighborhood.Capture(MarkerAddress, Reader(memory, calls), () => false);
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, MarkerAddress, Reader(memory, calls), () => false);
 
         Assert.Equal("prefix-not-plausible", result.Status);
         Assert.Empty(result.Chunks);
@@ -65,7 +65,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
     {
         var memory = Memory();
         memory[(int)(MarkerAddress - Base)] = 0;
-        var result = TypedApiImmediateNeighborhood.Capture(MarkerAddress, Reader(memory), () => false);
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, MarkerAddress, Reader(memory), () => false);
 
         Assert.Equal("prefix-not-plausible", result.Status);
         Assert.Empty(result.Chunks);
@@ -78,7 +78,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
         Array.Clear(memory, (int)(MarkerAddress - Base), PrefixWithObject.Length);
         var crossing = Base + 3 * Page - 8UL;
         PrefixWithObject.CopyTo(memory.AsSpan((int)(crossing - Base)));
-        var result = TypedApiImmediateNeighborhood.Capture(crossing, Reader(memory), () => false);
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, crossing, Reader(memory), () => false);
 
         Assert.Equal("complete", result.Status);
         Assert.Equal(7, result.Chunks.Count);
@@ -95,7 +95,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
                 ? new("unavailable", [], 299, "ReadProcessMemory returned no bytes.")
                 : Reader(memory)(address, count);
 
-        var result = TypedApiImmediateNeighborhood.Capture(MarkerAddress, Read, () => false);
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, MarkerAddress, Read, () => false);
         Assert.Equal("partial", result.Status);
         Assert.Equal(7, result.Chunks.Count);
         var hole = result.Chunks[3];
@@ -112,7 +112,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
     public void Capture_TimeBudgetBeforeHeaderDoesNotReadAnything()
     {
         var calls = 0;
-        var result = TypedApiImmediateNeighborhood.Capture(MarkerAddress,
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, MarkerAddress,
             (_, _) => { calls++; throw new Exception("must not read"); }, () => true);
         Assert.Equal("time-budget-exceeded", result.Status);
         Assert.Empty(result.Chunks);
@@ -130,7 +130,7 @@ public sealed class TypedApiImmediateNeighborhoodTests
             calls++;
             return Reader(memory)(address, count);
         }
-        var result = TypedApiImmediateNeighborhood.Capture(
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText,
             MarkerAddress, Read, () => calls >= 3);
         Assert.Equal("time-budget-exceeded", result.Status);
         Assert.Equal(3, calls); // one header and two pages
@@ -144,9 +144,9 @@ public sealed class TypedApiImmediateNeighborhoodTests
     {
         var read = Reader(Memory());
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            TypedApiImmediateNeighborhood.Capture(0x10000, read, () => false));
+            TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, 0x10000, read, () => false));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            TypedApiImmediateNeighborhood.Capture(TypedApiPrefixScout.MaxUserEnd - 100, read, () => false));
+            TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, TypedApiPrefixScout.MaxUserEnd - 100, read, () => false));
     }
 
     [Fact]
@@ -163,13 +163,13 @@ public sealed class TypedApiImmediateNeighborhoodTests
             return new("success", new byte[requested + 1], null, null);
         }
         Assert.Throws<InvalidDataException>(() =>
-            TypedApiImmediateNeighborhood.Capture(MarkerAddress, Read, () => false));
+            TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, MarkerAddress, Read, () => false));
     }
 
     [Fact]
     public async Task Capture_ValidSnapshotRoundTripsThroughExistingStrictLoader()
     {
-        var result = TypedApiImmediateNeighborhood.Capture(MarkerAddress, Reader(Memory()), () => false,
+        var result = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText, MarkerAddress, Reader(Memory()), () => false,
             utcNow: () => "2026-10-24T18:00:00.0000000Z");
         var snapshot = result.ToSnapshotFile(Source(), Identity());
         var path = Path.Combine(Path.GetTempPath(), $"rr2-inline-typed-{Guid.NewGuid():N}.json");
@@ -213,9 +213,9 @@ public sealed class TypedApiImmediateNeighborhoodTests
             {
                 new WindowsMemoryRegion(baseAddress, (ulong)bytes.Length, 4, 0x20000)
             };
-            var scout = TypedApiPrefixScout.Scan(scopedRegions, baseAddress,
+            var scout = TypedApiPrefixScout.Scan(TypedApiPrefixMatcher.MarkerText, scopedRegions, baseAddress,
                 TypedApiPrefixScout.ChunkBytes, 128, session.ReadScanChunk, () => false,
-                onMatch: address => captured = TypedApiImmediateNeighborhood.Capture(
+                onMatch: address => captured = TypedApiImmediateNeighborhood.Capture(TypedApiPrefixMatcher.MarkerText,
                     address, session.Read, () => false));
 
             Assert.Equal("complete", scout.Status);

@@ -10,7 +10,7 @@ public sealed class TypedApiPrefixMatcherTests
     [Fact]
     public void Feed_FindsMarkerAtExactStartAboveFourGigabytes()
     {
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
         const ulong address = 0x0000_0002_4321_1000;
 
         matcher.Feed(address, Marker);
@@ -24,7 +24,7 @@ public sealed class TypedApiPrefixMatcherTests
     {
         for (var split = 1; split < Marker.Length; split++)
         {
-            var matcher = new TypedApiPrefixMatcher();
+            var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
             matcher.Feed(0x4000, Marker.AsSpan(0, split));
             matcher.Feed(0x4000 + (ulong)split, Marker.AsSpan(split));
 
@@ -38,7 +38,7 @@ public sealed class TypedApiPrefixMatcherTests
         var bytes = new byte[64 * 1024 + 64];
         const int markerStart = 64 * 1024 - 4;
         Marker.CopyTo(bytes.AsSpan(markerStart));
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
 
         matcher.Feed(0x10000, bytes.AsSpan(0, 64 * 1024));
         matcher.Feed(0x20000, bytes.AsSpan(64 * 1024));
@@ -50,7 +50,7 @@ public sealed class TypedApiPrefixMatcherTests
     public void Feed_FindsBackToBackMarkersWithoutClaimingValidFrames()
     {
         var bytes = Encoding.ASCII.GetBytes(TypedApiPrefixMatcher.MarkerText + TypedApiPrefixMatcher.MarkerText + "not-a-frame");
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
 
         matcher.Feed(0x3000, bytes);
 
@@ -62,7 +62,7 @@ public sealed class TypedApiPrefixMatcherTests
     public void Feed_RecoversFromOverlappingPartialPrefix()
     {
         var bytes = Encoding.ASCII.GetBytes("RRA" + TypedApiPrefixMatcher.MarkerText);
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
 
         matcher.Feed(0x3000, bytes);
 
@@ -73,7 +73,7 @@ public sealed class TypedApiPrefixMatcherTests
     public void Feed_DoesNotCountIncompleteOrSimilarMarkers()
     {
         var bytes = Encoding.ASCII.GetBytes("RRAPIVAL1| RRAPIVAL2? RRAPIVAL2");
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
 
         matcher.Feed(0x3000, bytes);
 
@@ -83,7 +83,7 @@ public sealed class TypedApiPrefixMatcherTests
     [Fact]
     public void Feed_CanJoinAdjacentReadableRegions()
     {
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
         matcher.Feed(0x7000, Marker.AsSpan(0, 5));
         matcher.Feed(0x7005, Marker.AsSpan(5));
 
@@ -93,7 +93,7 @@ public sealed class TypedApiPrefixMatcherTests
     [Fact]
     public void Feed_DoesNotJoinNoncontiguousRegionsOrFailedReads()
     {
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
         matcher.Feed(0x7000, Marker.AsSpan(0, 5));
         matcher.Feed(0x7006, Marker.AsSpan(5));
         matcher.Feed(0x8000, Marker.AsSpan(0, 5));
@@ -106,7 +106,7 @@ public sealed class TypedApiPrefixMatcherTests
     [Fact]
     public void Feed_EnforcesExplicitCandidateLimitWithoutSilentTruncation()
     {
-        var matcher = new TypedApiPrefixMatcher(maxMatches: 2);
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText, maxMatches: 2);
         var bytes = Encoding.ASCII.GetBytes(string.Concat(Enumerable.Repeat(TypedApiPrefixMatcher.MarkerText, 4)));
 
         matcher.Feed(0x1000, bytes);
@@ -120,14 +120,14 @@ public sealed class TypedApiPrefixMatcherTests
     [Fact]
     public void Constructor_RejectsMissingOrExcessiveCandidateBudgets()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new TypedApiPrefixMatcher(0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MaxSupportedMatches + 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText, 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText, TypedApiPrefixMatcher.MaxSupportedMatches + 1));
     }
 
     [Fact]
     public void Feed_RejectsAddressOverflowWithoutCorruptingPriorMatches()
     {
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
         matcher.Feed(0x5000, Marker);
 
         Assert.Throws<OverflowException>(() => matcher.Feed(ulong.MaxValue, new byte[] { 42, 43 }));
@@ -138,7 +138,7 @@ public sealed class TypedApiPrefixMatcherTests
     [Fact]
     public void Feed_IgnoresEmptyInputWithoutBreakingContiguity()
     {
-        var matcher = new TypedApiPrefixMatcher();
+        var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
         matcher.Feed(0x1000, Marker.AsSpan(0, 3));
         matcher.Feed(0xDEAD, ReadOnlySpan<byte>.Empty);
         matcher.Feed(0x1003, Marker.AsSpan(3));

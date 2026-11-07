@@ -55,12 +55,12 @@ public static class TypedApiImmediateNeighborhood
     private const ulong MaxUserEnd = 0x00007FFF_FFFF_FFFF;
 
     public static TypedApiImmediateNeighborhoodResult Capture(
+        string marker,
         ulong prefixAddress,
         Func<ulong, int, NativeReadResult> read,
         Func<bool> timeBudgetExceeded,
         Func<string>? utcNow = null,
-        CancellationToken cancellationToken = default,
-        string marker = TypedApiPrefixMatcher.MarkerText)
+        CancellationToken cancellationToken = default)
     {
         var plausibleStart = Encoding.ASCII.GetBytes(TypedApiPrefixMatcher.ValidateMarker(marker) + "{");
         ArgumentNullException.ThrowIfNull(read);

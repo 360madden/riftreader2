@@ -28,6 +28,7 @@ public static class TypedApiInlineCapturePass
     public const int MaxCopies = 8;
 
     public static TypedApiInlineCapturePassResult Run(
+        string marker,
         IReadOnlyList<WindowsMemoryRegion> regions,
         ulong startAddress,
         long maxScanBytes,
@@ -37,8 +38,7 @@ public static class TypedApiInlineCapturePass
         Func<ulong, int, NativeReadResult> neighborhoodRead,
         Func<bool> timeBudgetExceeded,
         Func<string>? utcNow = null,
-        CancellationToken cancellationToken = default,
-        string marker = TypedApiPrefixMatcher.MarkerText)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(neighborhoodRead);
         ArgumentNullException.ThrowIfNull(timeBudgetExceeded);
@@ -47,7 +47,7 @@ public static class TypedApiInlineCapturePass
 
         var candidates = new List<TypedApiInlineCandidate>();
         var copied = 0;
-        var scout = TypedApiPrefixScout.Scan(
+        var scout = TypedApiPrefixScout.Scan(marker,
             regions, startAddress, maxScanBytes, maxMatchCount,
             scanRead, timeBudgetExceeded, cancellationToken,
             onMatch: address =>
@@ -63,8 +63,8 @@ public static class TypedApiInlineCapturePass
                 TypedApiImmediateNeighborhoodResult probe;
                 try
                 {
-                    probe = TypedApiImmediateNeighborhood.Capture(
-                        address, neighborhoodRead, timeBudgetExceeded, utcNow, cancellationToken, marker);
+                    probe = TypedApiImmediateNeighborhood.Capture(marker,
+                        address, neighborhoodRead, timeBudgetExceeded, utcNow, cancellationToken);
                 }
                 catch (ArgumentOutOfRangeException)
                 {
@@ -79,7 +79,7 @@ public static class TypedApiInlineCapturePass
                     copied++;
                 candidates.Add(new(markerAddress, probe.Status, probe.Reason,
                     probe.Chunks.Count == 0 ? null : probe));
-            }, marker: marker);
+            });
 
         return new(scout, maxCopiedCandidates, copied, candidates);
     }

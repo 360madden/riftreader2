@@ -36,6 +36,7 @@ public static class TypedApiPrefixScout
     private const uint MemPrivate = 0x20000;
 
     public static TypedApiScoutResult Scan(
+        string marker,
         IReadOnlyList<WindowsMemoryRegion> regions,
         ulong startAddress,
         long maxScanBytes,
@@ -43,8 +44,7 @@ public static class TypedApiPrefixScout
         Func<ulong, byte[], int, TypedApiScanReadResult> readChunk,
         Func<bool> timeBudgetExceeded,
         CancellationToken cancellationToken = default,
-        Action<ulong>? onMatch = null,
-        string marker = TypedApiPrefixMatcher.MarkerText)
+        Action<ulong>? onMatch = null)
     {
         ArgumentNullException.ThrowIfNull(regions);
         ArgumentNullException.ThrowIfNull(readChunk);
@@ -54,7 +54,7 @@ public static class TypedApiPrefixScout
         if (maxScanBytes is < ChunkBytes or > MaxScanBytes)
             throw new ArgumentOutOfRangeException(nameof(maxScanBytes));
 
-        var matcher = new TypedApiPrefixMatcher(maxMatchCount, marker);
+        var matcher = new TypedApiPrefixMatcher(marker, maxMatchCount);
         var scopes = new List<(ulong Begin, ulong End)>();
         long eligibleBytes = 0;
         ulong lastRegionEnd = 0;

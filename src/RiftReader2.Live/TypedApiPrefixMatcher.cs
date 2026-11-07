@@ -24,7 +24,7 @@ public sealed class TypedApiPrefixMatcher
     private ulong? _nextExpectedAddress;
     private int _matchedLength;
 
-    public TypedApiPrefixMatcher(int maxMatches = MaxSupportedMatches, string marker = MarkerText)
+    public TypedApiPrefixMatcher(string marker, int maxMatches = MaxSupportedMatches)
     {
         if (maxMatches is < 1 or > MaxSupportedMatches)
             throw new ArgumentOutOfRangeException(nameof(maxMatches));

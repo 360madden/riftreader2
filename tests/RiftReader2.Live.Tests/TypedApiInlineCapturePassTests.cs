@@ -18,14 +18,14 @@ public sealed class TypedApiInlineCapturePassTests
         var data = Memory();
         Encoding.ASCII.GetBytes("RR2R1|{").CopyTo(data.AsSpan((int)(FirstMarker - Base)));
         Plausible.CopyTo(data.AsSpan(40_000));
-        var result = TypedApiInlineCapturePass.Run(
+        var result = TypedApiInlineCapturePass.Run("RR2R1|",
             Regions(), Base, ScanBytes, 128, 2,
             (address, buffer, length) =>
             {
                 data.AsSpan((int)(address - Base), length).CopyTo(buffer);
                 return new(true, length, null);
             },
-            (address, length) => Read(data, address, length), () => false, marker: "RR2R1|");
+            (address, length) => Read(data, address, length), () => false);
         Assert.Equal(FirstMarker, Assert.Single(result.Scout.PrefixAddresses));
         Assert.Equal("complete", Assert.Single(result.Candidates).Status);
         Assert.Equal(1, result.CopiedCandidates);
@@ -36,7 +36,7 @@ public sealed class TypedApiInlineCapturePassTests
     [InlineData("RR2A1|")]
     [InlineData("RR2R1")]
     public void MatcherRejectsUnsupportedMarkers(string marker) =>
-        Assert.Throws<ArgumentException>(() => new TypedApiPrefixMatcher(marker: marker));
+        Assert.Throws<ArgumentException>(() => new TypedApiPrefixMatcher(marker));
 
     [Fact]
     public void Run_PlausibleMarkerCopiedInlineWhileBinaryMarkerIsRejected()
@@ -80,7 +80,7 @@ public sealed class TypedApiInlineCapturePassTests
     {
         var data = Memory();
         Plausible.CopyTo(data.AsSpan((int)(FirstMarker - Base)));
-        var result = TypedApiInlineCapturePass.Run(
+        var result = TypedApiInlineCapturePass.Run(TypedApiPrefixMatcher.MarkerText,
             Regions(), Base, ScanBytes, 128, 2,
             (address, buffer, length) =>
             {
@@ -102,7 +102,7 @@ public sealed class TypedApiInlineCapturePassTests
     {
         var data = Memory();
         Plausible.CopyTo(data.AsSpan());
-        var result = TypedApiInlineCapturePass.Run(
+        var result = TypedApiInlineCapturePass.Run(TypedApiPrefixMatcher.MarkerText,
             [new WindowsMemoryRegion(0x10000, (ulong)data.Length, 4, 0x20000)],
             0x10000, ScanBytes, 128, 2,
             (address, buffer, length) =>
@@ -133,7 +133,7 @@ public sealed class TypedApiInlineCapturePassTests
         var data = Memory();
         Plausible.CopyTo(data.AsSpan((int)(FirstMarker - Base)));
         var reads = 0;
-        var result = TypedApiInlineCapturePass.Run(
+        var result = TypedApiInlineCapturePass.Run(TypedApiPrefixMatcher.MarkerText,
             Regions(), Base, ScanBytes, 128, 2,
             (address, buffer, length) =>
             {
@@ -169,7 +169,7 @@ public sealed class TypedApiInlineCapturePassTests
 
     private static TypedApiInlineCapturePassResult Run(
         byte[] memory, int maxCopies, List<int>? readCalls = null) =>
-        TypedApiInlineCapturePass.Run(
+        TypedApiInlineCapturePass.Run(TypedApiPrefixMatcher.MarkerText,
             Regions(), Base, ScanBytes, 128, maxCopies,
             (address, buffer, length) =>
             {
