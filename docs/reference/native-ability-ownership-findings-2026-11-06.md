@@ -130,6 +130,42 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Raw range and conditions — November7, 11:49 Eastern
+
+The repository catalog now includes opt-in raw definition range and condition
+inputs. Lab2's live run captured134 rows/121 names, all54 nonzero-filter rows
+named, zero decoder failures, and25.094272s between first/last observations.
+Receipt: `artifacts/native-ability-catalog-20261107/runs/lab2/af7c85d204dd4aae80a08d46ef9856a1/catalog-summary.json`.
+All134 rows passed range-bit/finite-value/vector/Boolean consistency checks.
+Three raw min/max pairs were3/30; others included0/3,0/5,0/20,0/30,0/35,
+0/25 and0/50. These are definition inputs, not adjusted reach or target readiness.
+
+`sample-current-ability-records ... --include-range true` reads float32 min at
+verified0051 record+B4 and max at+9C, retaining raw bytes and finite nullable
+values. The ordinary producer applies player modifiers; a special key takes an
+equipment-dependent maximum branch. That discriminator is statically located at
+`[module+33E0AB0] -> [+848]` type0E29, DWORD+88, but this reader does not yet
+classify it. Do not substitute a raw maximum for the special branch result.
+The0E29 passive profile is VT2ADB030/getter1DD2CD0, initialized descriptor34FC1D0,
+descriptorVT2AEB9E8/getter1DFCAF0. Trace:
+`artifacts/discovery-20261107-cast/ability-range-next-step.md`.
+
+The same opt-in capture brackets the DWORD condition vector at+740/+748,
+maximum64 entries. The `stealthRequired` producer tests membership of ID1;
+the reader exposes that as a candidate Boolean without claiming usability.
+This Lab2 dataset had no ID1 and eight ID4 entries (including Changing Role
+and Ascended Resurrection variants). ID4's gameplay meaning remains unlabeled;
+there is no live positive stealth-requirement or changed-state qualification.
+Empty and malformed vectors remain distinct; nonfinite range values are null,
+with raw bits retained. Twelve focused cases passed; no broader suite ran.
+
+Current reader117434208 bytes,
+SHA256`983325AE64574310FF86D31A66E515757C7570F39CCBC621659A37B71E666F3A`,
+at`artifacts/native-ability-range-20261107/publish/`. The repository catalog
+command pins it, uses a separate per-SHA guest cache, and requests cost, timing
+and range inputs in the same record chunks. No game input, getter invocation,
+refcount write, controller/receiver transition or active-bundle replacement.
+
 ### Idle timing and two-lab catalogs — November7, 11:36 Eastern
 
 Both labs completed a single authenticated-session catalog capture using the

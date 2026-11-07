@@ -3,6 +3,9 @@ import argparse
 import base64
 import hashlib
 import json
+import math
+import re
+import struct
 from datetime import datetime
 from pathlib import Path
 import ntpath
@@ -20,16 +23,29 @@ from scripts.sample_current_native_ability_records import validate_report as val
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
 
-READER = ROOT / 'artifacts/native-ability-timing-20261107/expanded-publish/RiftReader2.Live.exe'
-READER_SHA = 'BF149A66447ED3F7E3BD099771D5DAD5E80521753E3C6433CD38C598D911F0F3'
+READER = ROOT / 'artifacts/native-ability-range-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '983325AE64574310FF86D31A66E515757C7570F39CCBC621659A37B71E666F3A'
 
 DICTIONARY_QUALIFICATION = 'candidate-only; framing, freshness and restart unverified'
 
 def validate_record_costs_timing(report, *, pid, ticks, keys):
     validate_records(report, pid=pid, ticks=ticks, keys=keys)
     for row in report['observation']['records']:
-        if row['status'] != 'type-verified-candidate': continue
+        if row['status'] != 'type-verified-candidate':
+            if row.get('rawRange') is not None: raise ValueError('unexpected-raw-range')
+            continue
         costs=row.get('rawCosts'); timing=row.get('rawTiming')
+        raw_range=row.get('rawRange')
+        if not isinstance(raw_range,dict) or raw_range.get('qualification') != 'raw definition inputs; adjusted range and usability unverified': raise ValueError('invalid-raw-range')
+        for raw_name,number_name in (('baseMinRawHex','baseMin'),('baseMaxRawHex','baseMax')):
+            text=raw_range.get(raw_name); value=raw_range.get(number_name)
+            if not isinstance(text,str) or re.fullmatch(r'[0-9a-fA-F]{8}',text) is None: raise ValueError('invalid-raw-range-scalar')
+            raw=bytes.fromhex(text); number=struct.unpack('<f',raw)[0]
+            if math.isfinite(number):
+                if type(value) not in (int,float) or not math.isfinite(value) or abs(value)>3.4028234663852886e38 or struct.pack('<f',value)!=raw: raise ValueError('invalid-raw-range-scalar')
+            elif value is not None: raise ValueError('invalid-raw-range-scalar')
+        begin=raw_range.get('conditionsBegin'); end=raw_range.get('conditionsEnd'); conditions=raw_range.get('conditions'); stealth=raw_range.get('stealthRequiredCandidate')
+        if type(begin) is not int or type(end) is not int or not isinstance(conditions,list) or len(conditions)>64 or any(type(v) is not int or not 0<=v<=0xffffffff for v in conditions) or type(stealth) is not bool or stealth != (1 in conditions) or (begin==0)!=(end==0) or end<begin or end-begin != 4*len(conditions) or (begin!=0 and (begin<0x10000 or begin%4 or end>0x7fffffffffff)): raise ValueError('invalid-raw-range-conditions')
         if not isinstance(costs,dict) or costs.get('status') not in ('empty','raw-candidates') or not isinstance(costs.get('children'),list) or len(costs['children'])>64 or ((costs['status']=='empty') != (len(costs['children'])==0)): raise ValueError('invalid-raw-costs')
         for cost in costs['children']:
             if not isinstance(cost,dict) or cost.get('status') not in ('null','unknown-type','unverified-type','power-raw-candidate','mana-raw-candidate','energy-raw-candidate','mana-charge-raw-candidate','typed-unhandled-1e2d'): raise ValueError('invalid-raw-cost-child')
@@ -94,7 +110,7 @@ def build_launch(guest_exe, guest_keys, guest_report, pid, ticks, key_sha, mode)
         "$out=$d+" + ps_literal("\\" + ntpath.basename(guest_report)) + ";"
         "if(Test-Path -LiteralPath $out){throw 'guest-report-exists'};"
         "& $exe " + mode + " --pid " + str(pid) + " --start-ticks " + str(ticks)
-        + (" --keys $keys --include-costs true --include-timing true --output $out | Out-Null;" if mode == "sample-current-ability-records" else " --keys $keys --output $out | Out-Null;")
+        + (" --keys $keys --include-costs true --include-timing true --include-range true --output $out | Out-Null;" if mode == "sample-current-ability-records" else " --keys $keys --output $out | Out-Null;")
         + "if($LASTEXITCODE -ne 0){throw 'native-sampler-failed'};"
         "if(!(Test-Path -LiteralPath $out)){throw 'native-report-missing'};"
         "if((Get-Item -LiteralPath $out).Length -gt 1000000){throw 'native-report-too-large'}"
@@ -105,14 +121,14 @@ def run(lab):
     if lab not in ('lab1', 'lab2'): raise ValueError('invalid-lab')
     sources=[Path(__file__), ROOT/'scripts/sample_current_native_ability_maps.py', ROOT/'scripts/sample_current_native_ability_records.py', ROOT/'scripts/probe_native_unit_manager.py', ROOT/'scripts/native_localization_huffman.py', ROOT/'scripts/native_localization_record.py']
     source_hashes={str(p):sha(p.read_bytes()) for p in sources}
-    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size != 117430624 or sha(READER.read_bytes()) != READER_SHA: raise ValueError('reader-mismatch')
+    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size != 117434208 or sha(READER.read_bytes()) != READER_SHA: raise ValueError('reader-mismatch')
     api = LabCodex()
     _, _, config, settings = api._configuration(lab)
     vm = api.collect_identity(api._native(config, settings, api.run_root / '.doctor'))
     token = uuid.uuid4().hex
     folder = ROOT / 'artifacts/native-ability-catalog-20261107/runs' / lab / token
     folder.mkdir(parents=True, exist_ok=False)
-    cache = settings['guestRoot'] + r'\current-ability-timing-' + READER_SHA[:16]
+    cache = settings['guestRoot'] + r'\current-ability-range-' + READER_SHA[:16]
     reader = cache + r'\RiftReader2.Live.exe'
     prefix = settings['guestRoot'] + r'\catalog-' + token
     evidence = {}
@@ -219,7 +235,7 @@ def run(lab):
                         reason=None if candidate else 'empty_candidate_text'
                     except (ValueError,KeyError,TypeError) as exc:
                         failures+=1; reason='decode_or_parse_failed: '+str(exc)
-            rows.append({'key':key,'fullIdCandidate':ability.get('fullIdCandidate'),'apiListFilterNonzeroRaw':ability.get('apiListFilterNonzeroRaw'),'mapPrimaryRawHex':maprow.get('valueRawHex'),'mapSecondaryRawHex':maprow.get('secondaryRawHex'),'nameKey':name_key,'nameCandidate':candidate,'nameUnavailableReason':reason,'rawCosts':ability.get('rawCosts'),'rawTiming':ability.get('rawTiming'),'recordSource':record_source,'dictionarySource':dict_source})
+            rows.append({'key':key,'fullIdCandidate':ability.get('fullIdCandidate'),'apiListFilterNonzeroRaw':ability.get('apiListFilterNonzeroRaw'),'mapPrimaryRawHex':maprow.get('valueRawHex'),'mapSecondaryRawHex':maprow.get('secondaryRawHex'),'nameKey':name_key,'nameCandidate':candidate,'nameUnavailableReason':reason,'rawCosts':ability.get('rawCosts'),'rawTiming':ability.get('rawTiming'),'rawRange':ability.get('rawRange'),'recordSource':record_source,'dictionarySource':dict_source})
         observations=[first]+[r['observation'] for r in record_reports]+[r['observation'] for r in dictionary_reports]+[last]
         times=[datetime.fromisoformat(o[k].replace('Z','+00:00')) for o in observations for k in ('startedAtUtc','completedAtUtc')]
         joined={'qualification':'candidate-only; separate observations and chunks are not atomic or freshness-qualified','identity':identity,'vmIdentity':vm,'readerSha256':READER_SHA,'guestReaderReused':state=='True','sourceSha256':source_hashes,'evidence':evidence,'summary':{'total':len(rows),'filterNonzero':sum(bool(r['apiListFilterNonzeroRaw']) for r in rows),'names':sum(r['nameCandidate'] is not None for r in rows),'decoderFailures':failures},'records':rows,'observationIntervals':[{'source':name,'startedAtUtc':o['startedAtUtc'],'completedAtUtc':o['completedAtUtc']} for name,o in zip(['maps-before']+[f'records-{i+1}' for i in range(len(record_reports))]+[f'dictionary-{i+1}' for i in range(len(dictionary_reports))]+['maps-after'],observations)],'maximumObservationGapSeconds':(max(times)-min(times)).total_seconds(),'limitations':['Chunks and observations are separate and cannot exclude intervening changes.','No learned-ability, current API name, cost or cooldown semantic claim.']}

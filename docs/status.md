@@ -1,5 +1,12 @@
 # Current status
 
+**2026-11-07 11:49 Eastern — RAW RANGE/CONDITION INPUTS LIVE:** Lab2's repository
+catalog captured134 rows/121 names/all54 nonzero-filter rows named, zero decoder
+failures, span25.09s. New min/max float inputs retain raw bits; bounded condition
+vectors exposed no ID1 and eight unlabeled ID4 entries. Adjusted/equipment range,
+target readiness and positive stealth semantics are not accepted. No input or
+owner change. [Receipts and limitations](reference/native-ability-ownership-findings-2026-11-06.md#raw-range-and-conditions--november7-1149-eastern).
+
 **2026-11-07 — STANDALONE RUNTIME AUDIT (DOCUMENTATION-ONLY):**
 [Handoff and bounded source audit](handoff-2026-11-07-standalone-runtime-audit.md).
 RR2 owns the current reference/reader/receiver implementations; Lab 1 passed

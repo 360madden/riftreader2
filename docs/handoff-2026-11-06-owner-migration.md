@@ -4,7 +4,7 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 11:40 Eastern
+### Checkpoint — 2026-11-07 11:49 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
@@ -15,6 +15,7 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 | Adjusted costs | 🟡 Shortcut blocked | Lab1 Charge list is nonempty; cannot bypass per-key modifiers. Raw results remain useful; no final amount claim. |
 | Idle ability timing | 🟢 Captured on both labs | Lab1 21 primary650/3 secondary678; Lab2 23/4. Raw cooldown+94/gate+88 retained; unsupported primary types stay unknown. |
 | Catalog delivery | 🟢 Repository command used | `scripts/sample_current_native_ability_catalog.py --lab lab1|lab2`; live Lab1 span15.36s; no artifact-code imports. |
+| Raw range/conditions | 🟢 Lab2 live capture |134 rows;3 raw min/max pairs3/30. No condition1;8 condition4 entries, unlabeled. Adjusted/special-equipment range remains separate. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -110,6 +111,17 @@ It uses repository helpers only; ignored artifact launcher code is not a runtime
 prerequisite. The pinned reader artifact remains intentionally SHA-specific.
 Use the same command with`--lab lab2` for a new independently acquired epoch;
 do not reuse addresses or inferred ownership from these receipts.
+
+**11:49 Eastern — range/condition milestone:** The repository command with
+reader SHA983325AE... captured Lab2's134 rows/121 names/all54 filter rows
+named, zero decoder failures, span25.094272s. New raw min/max fields and bounded
+condition vectors passed all acquisition and host consistency checks. [Receipt,
+source offsets and limits](reference/native-ability-ownership-findings-2026-11-06.md#raw-range-and-conditions--november7-1149-eastern).
+No live positive stealth requirement was observed; do not invent an ID4 label.
+The special range key has a static seed but remains unclassified by the reader.
+An unrelated documentation-only runtime audit commit1056ff4 was preserved.
+Keep its runtime-acceptance scope separate from these native discovery receipts.
+Five-hour goal remains active through13:26 Eastern; refinement is optional.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.
