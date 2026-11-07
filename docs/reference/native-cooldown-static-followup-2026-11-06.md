@@ -224,3 +224,39 @@ observations with bracketed native candidate changes. Full-game restart and
 freshness checks remain necessary before any live telemetry claim. The original
 November6 static pass performed no live operation; the November7 captures above
 read process memory without game input or owner transitions.
+
+## One-process player-map sampler — November7
+
+The actual player-associated producer context is selected from the self entity
+using module selector0x2F57260, not the global definition registry. The cached
+entity at `[module+0x33623E0]+0x3F8` must match the independently resolved self
+entity. Context+0x1C0 has40-byte buckets; context+0x240 has24-byte buckets.
+Both headers include entry counts. Raw node keys/floats and an independently
+bracketed, nondecreasing process game clock are exposed as candidates.
+
+The new command reads both maps within one read-only native process:
+
+```powershell
+python scripts/sample_current_native_ability_maps.py --lab lab1
+python scripts/sample_current_native_ability_maps.py --lab lab2
+```
+
+It reuses a SHA-checked per-build guest copy and fresh process/VM identity,
+without replacing active reader/controller bundles. Contract:
+`native-current-ability-maps-candidate-sample/1`. The new experimental reader
+SHA256 is `BF3EFA6508E4AFDE2C0201BF7B193EE5AE7955E5BE6C5A386B9B625BD33979C7`.
+
+| Live run | First/second map entries | Native acquisition |
+| --- | --- | --- |
+| Lab1 `artifacts/native-map-command-20261107/runs/lab1/b298d5bce2d545c2a4a4fbbfa016f68a/` |122/0|10.013ms|
+| Lab2 `artifacts/native-map-command-20261107/runs/lab2/3d71f71a0f2a4f9f8eecf5f1a2af248c/` |134/0|17.146ms|
+
+Both matched the earlier Python captures' context address, keys and primary/
+secondary raw float bytes exactly within each process epoch. These durations
+are native acquisition windows, not complete VM/tool latency. Raw reports:
+Lab1 SHA `227356C0E470311ABB6AFAC11887B29D553CF067533923D53CD1B94D4C74BE2A`;
+Lab2 SHA `30E97EA76EBE9B26FA000B5B98FE5FD7004EEE5AACDC74C1882BC22CF3AB2C27`.
+Nine focused .NET reader tests and four host validator tests passed. This does
+not qualify the raw key sets as learned abilities or the floats as API cooldowns;
+the List path additionally resolves typed definitions and filters record+0xC9.
+No game input, helper-owner transition, reload or restart was performed.

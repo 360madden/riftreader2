@@ -4,6 +4,13 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
+**Latest fast path:** use `python scripts/sample_current_native_ability_maps.py
+--lab lab1|lab2` for raw map observations. The separately staged reader SHA
+BF3EFA6508E4AFDE2C0201BF7B193EE5AE7955E5BE6C5A386B9B625BD33979C7 captured
+122/0 and134/0 entries in10.013/17.146ms respectively, with exact raw parity
+against Python snapshots. Existing workflow bundles/owners were not replaced.
+[Source receipts](reference/native-cooldown-static-followup-2026-11-06.md#one-process-player-map-sampler--november7).
+
 **Active five-hour goal:** started November7 at08:26 Eastern, target13:26
 Eastern (18:26 UTC). Keep working through useful discovery batches; this
 checkpoint does not complete that time window. Latest accepted Lab2 cache run:
