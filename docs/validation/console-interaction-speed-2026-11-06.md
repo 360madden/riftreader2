@@ -32,8 +32,10 @@ See [short-window](lab1-receiver-freshness-2026-11-06.md) and
 Status on all four running RR2 helpers. Both observations verify the exact
 registration, owner, settings, absent legacy collision and sole matching
 engine PID/instance GUID. Null or ambiguous results fail closed. Known
-nonrunning states retain the previous ScheduledTasks path; observing Running
-during that fallback refuses the result and requires a fresh call. Ordinary
+nonrunning states retain the previous ScheduledTasks path. At this historical
+checkpoint, observing Running during fallback required a fresh external call;
+the [November 7 bounded retry fix](../handoff-2026-11-06-owner-migration.md#scheduler-startup-retry-p2-fixed--november-7)
+now reacquires that full proof internally. Ordinary
 Status retains its unsigned task result and note; explicit Lab2 inspection
 retains its narrower behavior. Register/Start and STOP/release are unchanged.
 

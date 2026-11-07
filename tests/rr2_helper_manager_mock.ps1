@@ -40,6 +40,7 @@ $global:scheduledQueries = 0
 function global:Get-ScheduledTask {
     param($TaskPath, $TaskName, $ErrorAction)
     $global:scheduledQueries++
+    if ($global:scheduledHook) { & $global:scheduledHook }
     if ($global:queryFailure) { throw 'mock query failure' }
     if ($TaskName) { return @($global:mockTasks | Where-Object TaskName -CEQ $TaskName) }
     return $global:mockTasks
@@ -53,6 +54,15 @@ function global:Register-ScheduledTask {
     $global:mockTasks += [pscustomobject]@{TaskName=$TaskName; TaskPath=$TaskPath; Actions=@($Action); Principal=$Principal; Settings=$Settings; Description=$Description; Triggers=@(); State='Ready'}
 }
 function global:Start-ScheduledTask { param($TaskPath,$TaskName) $global:mockStarts++; ($global:mockTasks | Where-Object TaskName -CEQ $TaskName).State = 'Running' }
+function global:Get-Item {
+    param($LiteralPath,[switch]$Force)
+    if ($global:retryReparse -and $global:scheduledQueries -ge 2 -and $LiteralPath -ceq $global:retryReceipt) { return [pscustomobject]@{Attributes=[IO.FileAttributes]::ReparsePoint} }
+    Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath -Force:$Force
+}
+$global:mockMutations=0
+function global:Stop-ScheduledTask { $global:mockMutations++; throw 'Status attempted Stop-ScheduledTask' }
+function global:Unregister-ScheduledTask { $global:mockMutations++; throw 'Status attempted Unregister-ScheduledTask' }
+function global:Set-ScheduledTask { $global:mockMutations++; throw 'Status attempted Set-ScheduledTask' }
 function global:Get-ScheduledTaskInfo { param($TaskPath,$TaskName) [pscustomobject]@{LastTaskResult=0} }
 function Must-Fail([scriptblock]$Block) { try { & $Block | Out-Null } catch { return }; throw ('Expected refusal at ' + (Get-PSCallStack | Select-Object -Skip 1 -First 1).ScriptLineNumber) }
 function Register-Test { & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts 'receiver_task_entry.py'),'--lab','lab1') -WorkingDirectory $root }
@@ -142,11 +152,140 @@ try {
         if ($ready.state -cne 'Ready' -or $global:scheduledQueries -lt 1) { throw 'Ready fallback failed' }
         $global:mockTasks = @(); $global:scheduledQueries = 0
         $absent = & $manager -Action Status -HelperId $id | ConvertFrom-Json
-        if ($absent.state -cne 'NotRegistered' -or $global:scheduledQueries -lt 1) { throw 'Absent fallback failed' }
+        if ($absent.state -cne 'NotRegistered' -or $global:scheduledQueries -lt 1 -or $null -ne $absent.enginePid -or $null -ne $absent.instanceGuid -or $null -ne $absent.runLevel -or $null -ne $absent.lastTaskResult -or !$absent.note) { throw 'Absent fallback failed' }
         $registeredOther.State = 'Running'; $global:mockTasks = @($registeredOther); $global:scheduledQueries = 0
         $running = & $manager -Action Status -HelperId $id | ConvertFrom-Json
         if ($running.enginePid -ne 123 -or !$running.instanceGuid -or $global:scheduledQueries -ne 0) { throw 'Running COM path failed' }
     }
+    # Script the actual manager across a late ScheduledTasks Running transition.
+    # Every exact COM read creates a fresh task/definition; counters forbid cached
+    # proofs and retries of ownership errors. No real scheduler module is loaded.
+    $savedScheduler = $global:mockScheduler
+    $id = 'rr2-receiver-lab1'; $task.State = 'Running'; $global:mockTasks = @($task)
+    $global:retryTask = $task
+    $global:retryInstance = $global:mockInstances[0]
+    $global:retryScheduler = [pscustomobject]@{Folder=[pscustomobject]@{}}
+    $global:retryScheduler | Add-Member ScriptMethod Connect {}
+    $global:retryScheduler | Add-Member ScriptMethod GetFolder { param($path) $this.Folder }
+    $global:retryScheduler.Folder | Add-Member ScriptMethod GetTask {
+        param($name)
+        if ($name -ceq ('Workbridge Helper ' + $global:retryTask.TaskName.Substring(19))) {
+            $global:retryLegacyReads++
+            if ($global:retryLegacy -or ($global:retryLateLegacy -and $global:retryLegacyReads -eq 2)) { return [pscustomobject]@{Name=$name} }
+            if ($global:retryLegacyDenied) { throw [UnauthorizedAccessException]::new('denied') }
+            throw [IO.FileNotFoundException]::new('absent')
+        }
+        if ($name -cne $global:retryTask.TaskName) { throw 'foreign task' }
+        $global:retryReads++
+        $fresh = New-InspectionTask $global:retryTask
+        $fresh.State = $global:retryStates[[Math]::Min($global:retryReads-1, $global:retryStates.Count-1)]
+        $global:mockInstances = @($global:retryInstance)
+        if ($global:retryHook) { & $global:retryHook $fresh $global:retryReads }
+        return $fresh
+    }
+    function Reset-RetryMock($states) {
+        $global:retryStates = @($states); $global:retryReads=0; $global:retryLegacyReads=0
+        $global:scheduledQueries=0; $global:retryHook=$null; $global:scheduledHook=$null
+        $global:retryLegacy=$false; $global:retryLegacyDenied=$false; $global:retryLateLegacy=$false; $global:retryReparse=$false
+        $global:mockTasks=@($global:retryTask); $global:retryTask.State='Running'
+        $global:mockInstances=@($global:retryInstance)
+        $global:mockScheduler=$global:retryScheduler
+    }
+    function Assert-RetryCounts($reads,$queries,$legacy) {
+        if ($global:retryReads -ne $reads -or $global:scheduledQueries -ne $queries -or $global:retryLegacyReads -ne $legacy) {
+            throw "Retry proof calls differ: COM=$global:retryReads ScheduledTasks=$global:scheduledQueries legacy=$global:retryLegacyReads; expected $reads/$queries/$legacy"
+        }
+    }
+    $startsBeforeRetry=$global:mockStarts; $registrationsBeforeRetry=$global:mockRegistrations
+    Reset-RetryMock @(3,4,4)
+    $late = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+    if ($late.state -cne 'Running' -or $late.enginePid -ne 123 -or $late.instanceGuid -cne $global:retryInstance.InstanceGuid -or !$late.note) { throw 'Late Running identity proof missing.' }
+    Assert-RetryCounts 3 2 2
+    Reset-RetryMock @(3,3,4,4)
+    $late = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+    if ($late.enginePid -ne 123 -or $late.instanceGuid -cne $global:retryInstance.InstanceGuid) { throw 'Third-attempt proof missing.' }
+    Assert-RetryCounts 4 4 2
+    Reset-RetryMock @(3,3,3)
+    Must-Fail { & $manager -Action Status -HelperId $id }
+    Assert-RetryCounts 3 6 0
+    # Every retry still demands a complete two-read proof; errors never consume
+    # another attempt. A second-read state change cannot be promoted to Running.
+    Reset-RetryMock @(3,4,3)
+    Must-Fail { & $manager -Action Status -HelperId $id }
+    Assert-RetryCounts 3 2 2
+    foreach ($changed in @([pscustomobject]@{EnginePID=124; InstanceGuid=$global:retryInstance.InstanceGuid},
+                            [pscustomobject]@{EnginePID=123; InstanceGuid='1a048a33-b778-4f2f-9a90-e139cd4ce100'})) {
+        Reset-RetryMock @(3,4,4)
+        $global:retryChanged=$changed
+        $global:retryHook={ param($fresh,$read) if ($read -eq 3) { $global:mockInstances=@($global:retryChanged) } }
+        Must-Fail { & $manager -Action Status -HelperId $id }
+        Assert-RetryCounts 3 2 2
+    }
+    foreach ($damage in @(
+        { param($fresh,$read) if ($read -eq 2) { $fresh.Definition.Actions.First.Arguments='wrong' } },
+        { param($fresh,$read) if ($read -eq 2) { $global:mockInstances=@($global:retryInstance,$global:retryInstance) } },
+        { param($fresh,$read) if ($read -eq 2) { $global:mockInstances=@([pscustomobject]@{EnginePID=0; InstanceGuid='invalid'}) } },
+        { param($fresh,$read) if ($read -eq 2) { $fresh.Definition.Triggers=$null } }
+    )) {
+        Reset-RetryMock @(3,4,4); $global:retryHook=$damage
+        Must-Fail { & $manager -Action Status -HelperId $id }
+        Assert-RetryCounts 2 2 1
+    }
+    foreach ($legacyDenied in @($false,$true)) {
+        Reset-RetryMock @(3,4,4)
+        $global:retryLegacy=!$legacyDenied; $global:retryLegacyDenied=$legacyDenied
+        Must-Fail { & $manager -Action Status -HelperId $id }
+        Assert-RetryCounts 2 2 1
+    }
+    # Initial denied/malformed reads are hard failures, without fallback/retry.
+    foreach ($damage in @(
+        { param($fresh,$read) throw [UnauthorizedAccessException]::new('denied') },
+        { param($fresh,$read) $fresh.State=0 }
+    )) {
+        Reset-RetryMock @(3); $global:retryHook=$damage
+        Must-Fail { & $manager -Action Status -HelperId $id }
+        Assert-RetryCounts 1 0 0
+    }
+    # Once Running was observed through ScheduledTasks, a later Ready/missing
+    # fallback must refuse admission instead of silently downgrading the result.
+    foreach ($missing in @($false,$true)) {
+        Reset-RetryMock @(3,3)
+        $global:retryMissing=$missing
+        $global:retryHook={ param($fresh,$read) if ($read -eq 2) {
+            if ($global:retryMissing) { $global:mockTasks=@() } else { $global:retryTask.State='Ready' }
+        } }
+        Must-Fail { & $manager -Action Status -HelperId $id }
+        Assert-RetryCounts 2 4 0
+    }
+    # Re-reading COM alone is insufficient: the registration receipt must also
+    # be read afresh before retry, even if the cached task still matches it.
+    Reset-RetryMock @(3,4,4)
+    $retryReceipt = Join-Path $root ('.local/rr2-helpers/' + $id + '/registration.json')
+    $savedReceipt = [IO.File]::ReadAllText($retryReceipt)
+    $global:retryReceipt=$retryReceipt
+    $global:scheduledHook={ if ($global:scheduledQueries -eq 2) { [IO.File]::WriteAllText($global:retryReceipt, '{}') } }
+    try {
+        Must-Fail { & $manager -Action Status -HelperId $id }
+        Assert-RetryCounts 1 2 0
+    } finally { [IO.File]::WriteAllText($retryReceipt,$savedReceipt) }
+    Reset-RetryMock @(3,4,4); $global:retryReparse=$true
+    Must-Fail { & $manager -Action Status -HelperId $id }
+    Assert-RetryCounts 1 2 0
+    Reset-RetryMock @(3,4,4); $global:retryLateLegacy=$true
+    Must-Fail { & $manager -Action Status -HelperId $id }
+    Assert-RetryCounts 2 2 2
+    # Initial COM absence is not the eligible non-running-to-running race.
+    Reset-RetryMock @(3)
+    $global:retryHook={ param($fresh,$read) throw [IO.FileNotFoundException]::new('absent') }
+    Must-Fail { & $manager -Action Status -HelperId $id }
+    Assert-RetryCounts 1 2 0
+    Reset-RetryMock @(3); $global:retryTask.State='Ready'
+    $ready = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+    if ($ready.state -cne 'Ready' -or $null -ne $ready.enginePid -or $null -ne $ready.instanceGuid -or $ready.runLevel -cne 'Limited' -or !$ready.note) { throw 'Ordinary Ready contract changed.' }
+    Assert-RetryCounts 1 2 0
+    if ($global:mockStarts -ne $startsBeforeRetry -or $global:mockRegistrations -ne $registrationsBeforeRetry -or $global:mockMutations -ne 0) { throw 'Status mutated scheduler ownership.' }
+    $global:mockScheduler=$savedScheduler; $global:mockInstances=@($global:retryInstance)
+    $task.State='Running'
     $id = 'rr2-receiver-lab1'; $global:mockTasks = @($task)
     $receipt = Join-Path $root ('.local/rr2-helpers/' + $id + '/registration.json')
     $data = Get-Content $receipt -Raw | ConvertFrom-Json

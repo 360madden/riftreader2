@@ -167,5 +167,46 @@ class ManagedReceiverTests(unittest.TestCase):
             launch.assert_not_called()
 
 
+class ReceiverTaskOwnershipQueryTests(unittest.TestCase):
+    STATUS = {"state": "Running", "atLogon": False, "runLevel": "Limited",
+              "enginePid": 123, "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
+
+    def query(self, payload, returncode=0):
+        with mock.patch.object(receiver.subprocess, "run", return_value=mock.Mock(
+                returncode=returncode, stdout=payload)) as run:
+            try:
+                return receiver._task_status("lab2", 123)
+            finally:
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0][-4:],
+                                 ["-Action", "Status", "-HelperId", "rr2-receiver-lab2"])
+                self.assertEqual(run.call_args.kwargs["timeout"], 20)
+                self.assertEqual(run.call_args.kwargs["stdin"], receiver.subprocess.DEVNULL)
+                self.assertTrue(run.call_args.kwargs["capture_output"])
+                self.assertFalse(run.call_args.kwargs["check"])
+
+    def test_verified_status_requires_one_read_only_manager_call(self):
+        self.assertEqual(self.query(json.dumps(self.STATUS).encode("utf-8")), self.STATUS)
+
+    def test_identity_and_registration_mismatches_fail_without_python_retry(self):
+        for field, value in (("state", "Ready"), ("atLogon", True), ("atLogon", 0),
+                             ("runLevel", "Highest"), ("enginePid", 124),
+                             ("enginePid", "123"), ("enginePid", True),
+                             ("instanceGuid", "bad"),
+                             ("instanceGuid", "00000000-0000-0000-0000-000000000000")):
+            with self.subTest(field=field, value=value), self.assertRaisesRegex(
+                    DependencyUnavailable, "managed-helper-not-running-or-not-on-demand"):
+                self.query(json.dumps(dict(self.STATUS, **{field: value})).encode("utf-8"))
+
+    def test_malformed_or_failed_manager_response_is_fatal_without_retry(self):
+        for payload, returncode, reason in ((b"{", 0, "status-invalid"),
+                                            (b"[]", 0, "status-invalid"),
+                                            (b"\xff", 0, "status-invalid"),
+                                            (json.dumps(self.STATUS).encode(), 1, "ownership-refused")):
+            with self.subTest(payload=payload, returncode=returncode), self.assertRaisesRegex(
+                    DependencyUnavailable, "managed-helper-" + reason):
+                self.query(payload, returncode)
+
+
 if __name__ == "__main__":
     unittest.main()

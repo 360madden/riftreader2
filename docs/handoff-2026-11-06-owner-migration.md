@@ -2,6 +2,48 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Scheduler startup retry P2 fixed — November 7
+
+The helper manager now handles its own known COM-nonrunning to ScheduledTasks-
+Running race, with three total Status attempts and no added sleep. Each attempt
+reopens the non-reparse registration receipt, checks its digest and reacquires
+the full task/legacy/registration contract. After the transition the receipt
+digest stays pinned. Success still requires two fresh running-instance
+observations with matching PID/GUID; each Python entrypoint separately checks
+the returned engine PID against its own process.
+
+Wrong or changing instances, legacy conflicts, task mismatch, malformed state
+and access failures remain immediate refusals. Initial absence becoming Running
+is not retried. Losing Running after the transition or exhausting attempts
+refuses admission. No task registration/start/stop was added to Status. Stable
+ordinary states, Register/Start and strict Lab 2 inspection retain their prior
+contracts. Both Python callers still make one Status subprocess call with their
+existing 20-second timeout; this bounds blocked COM, while the loop bounds count.
+
+The isolated Windows PowerShell manager mock passed transition, exhaustion,
+fresh-proof, changed-registration/instance, no-downgrade and no-mutation cases.
+Six committed Python consumer regressions verify the single call/timeout and
+strict PID/GUID/schema refusal. Root's broader ownership, controller, receiver,
+movement, dependency and control suite passed 241 tests. Independent ownership
+review passed. Artifacts: `artifacts/scheduler-retry-fix-20261107/`.
+See [status behavior](reference/native-vm-controls.md#scheduler-startup-status-transition).
+
+Full gate PASS: 719 .NET tests and 1,880 Python tests run (1,878 passed, two
+skipped), locked restore/build/format, native smoke, real Lua/C# contracts,
+ownership mocks, deterministic replay and 1,115 relative links. Evidence:
+`artifacts/validation/20261107T121429Z-b2b3490f`; logs and four verified source
+hashes are in the artifact directory above. Running the new transition mock
+against baseline `7ceabd2` reproduces the old explicit retry refusal; the same
+scenario passes with fresh proof on the fixed manager. Both runs use only
+in-memory Scheduler mocks.
+
+No live helper/VM query, task mutation, input, owner transfer or restart was
+performed. This manager-only source change adds no controller/receiver runtime
+pin change; the separate task-entry rollout requirement from the prior receipt
+fix remains in force. Offline mocks do not establish live cold-start acceptance.
+Three P2 findings remain; reader startup's positive identity/readiness match is
+the next separate repair.
+
 ## Controller receipt P2 fixed — November 7
 
 `controller_task_entry.py` now gathers and serializes all receipt data before
@@ -49,8 +91,8 @@ remain preserved; reacquire identities and use the reviewed per-owner migration
 before admitting a new-source owner. Unidentified legacy corruption still needs
 independent investigation, not automatic deletion.
 
-Four P2 findings remain. Next separate repair: the bounded Scheduler startup
-status transition that instructs retry while task entry points currently exit.
+At this checkpoint four P2 findings remained; the subsequent Scheduler retry
+fix is recorded above, leaving three.
 
 ## Armed-action preflight P2 fixed — November 7
 
@@ -91,7 +133,7 @@ shared checkout, including concurrent Lab 2 tool-wrapper tests; those files and
 their AGENTS/workflow documentation are preserved outside this fix's commit.
 
 At this checkpoint five P2 findings remained; the subsequent receipt fix is
-recorded above, leaving four. Preserve independently verified owner identity.
+recorded above; three remain after the Scheduler fix. Preserve independently verified owner identity.
 
 ## STOP/release optional-output P2 fixed — November 7
 
@@ -127,7 +169,7 @@ The separate mocked existing-file reproduction sent zero requests with vulnerabl
 file. The acknowledged negative cleanup result remained negative in the error.
 
 At this checkpoint six P2 findings remained. The subsequent armed-action fix is
-recorded above; four remain after the receipt fix. Preserve ownership and final-send safety gates.
+recorded above; three remain after the receipt/Scheduler fixes. Preserve ownership and final-send safety gates.
 
 ## Console replay P1 fixed — November 7
 
@@ -167,7 +209,7 @@ their order. No live input, bind/reload, helper restart or ownership transfer
 was used. Details: [console validation](validation/console-interaction-speed-2026-11-06.md#durable-console-attempt-reservation--november-7).
 
 At this P1 checkpoint seven P2 findings remained. The subsequent STOP/release
-optional-output, armed-action and receipt fixes are recorded above; four P2 findings remain.
+optional-output, armed-action, receipt and Scheduler fixes are recorded above; three P2 findings remain.
 Any later live console use still needs fresh identities, an independently
 reviewed screenshot and the existing exclusive ownership handoff.
 
@@ -214,7 +256,7 @@ The user requested a review after clearing the timed goal. Independent reviewers
 checked committed runtime `399d463` and retained evidence; later `8ded91e` is
 documentation only. No live input or helper mutation was used in the review.
 The sustained480 and native-v2 results still reconcile. This table records the
-historical review; the P1 and three P2s are now fixed above, with four other P2
+historical review; the P1 and four P2s are now fixed above, with three other P2
 findings remaining open.
 
 | Priority | Finding | Owning source |
@@ -223,7 +265,7 @@ findings remaining open.
 | P2 FIXED | STOP/release now dispatch before optional output work; output errors retain the acknowledged result and cannot suppress delivery. | `scripts/control_client.py`; November 7 fix above |
 | P2 FIXED | Both action modes verify an existing owner and its read-only readiness while permitting an existing arm; no guest/controller recovery occurs after arming. | `scripts/control_client.py`, `scripts/ensure_guest_agent.py`; November 7 fix above |
 | P2 FIXED | Atomic no-overwrite receipt publication prevents incomplete final files; malformed history is skipped only with strict exit evidence and positive process absence. Unidentified history stays blocked. | `scripts/controller_task_entry.py`, `scripts/managed_controller_receipt.py`; November 7 fix above |
-| P2 | Scheduler status prescribes retry on a nonrunning-to-running race, but task entry points check once and exit. Stable-state live starts did not exercise it. | `scripts/Manage-RR2HelperTask.ps1:258`, controller/receiver task entry |
+| P2 FIXED | Manager retries only the known nonrunning-to-running Status race, with three fresh attempts, pinned registration and unchanged caller PID/GUID/timeout checks. No task mutation. | `scripts/Manage-RR2HelperTask.ps1`; November 7 fix above |
 | P2 | Reader startup can certify a nonempty mismatched snapshot when the matching loop expires; target start ticks are omitted. Later pin/feedback gates remain independent. | `scripts/launch_live_reader.py:347` |
 | P2 | Host staging ownership is lost if config hashing fails before return; guest cancellation skips Exception-only in-session cleanup. | `scripts/launch_live_reader.py:238,363` |
 | P2 | Windows deny-delete reads can block atomic publication after sequence history advances, losing the publication and rejecting its same-sequence retry. | `scripts/addon_command_console.py:248`, `scripts/observation_receiver.py:70` |

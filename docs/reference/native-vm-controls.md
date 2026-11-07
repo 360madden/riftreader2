@@ -460,6 +460,27 @@ sequences. The guest rejects replay, concurrent actions, unexpected response
 artifacts, changed target identity, expired review/arm state, and a pre-existing
 pending journal.
 
+### Scheduler startup status transition
+
+Ordinary helper `Status` handles the specific race where its initial COM query
+sees a known nonrunning state and the later validated ScheduledTasks query sees
+Running. It retries internally, with at most three total attempts and no added
+sleep. Every attempt reopens and validates the non-reparse registration receipt;
+after the transition its digest must remain unchanged. Running success still
+requires two fresh complete ownership observations with one matching PID/GUID.
+
+Ownership, instance, legacy-conflict, access and malformed-state errors are not
+retried. Initial absence followed by Running is refused. After a transition,
+returning Ready/missing is refused rather than allowing replacement. The strict
+Lab 2 inspection path and ordinary stable Running/Ready/missing behavior retain
+their previous contracts. Status never registers, starts or stops a task.
+
+Controller and receiver admission still make one Status subprocess call with
+their existing 20-second timeout and independently require their own PID plus
+the valid instance result. Three attempts bound the retry count; the subprocess
+timeout remains the bound on a blocked COM call. No fresh startup or live
+acceptance is established by offline mocks. See the [retry handoff](../handoff-2026-11-06-owner-migration.md#scheduler-startup-retry-p2-fixed--november-7).
+
 ### Controller receipts and historical generations
 
 Controller startup collects and serializes the complete process receipt before

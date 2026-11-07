@@ -35,7 +35,6 @@ function Write-Registration([string]$Path, $Value) {
 }
 $repo = Split-Path -Parent $PSScriptRoot
 $state = Assert-LocalPath (Join-Path $repo ('.local/rr2-helpers/' + $HelperId))
-$configPath = Assert-LocalPath (Join-Path $state 'registration.json')
 $taskName = 'RiftReader2 Helper ' + $HelperId
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
@@ -118,6 +117,10 @@ function Assert-OwnedHelperTask($Task, $Config) {
     }
 }
 
+$transitionDescription = $null
+for ($attempt = 1; $attempt -le 3; $attempt++) {
+$retryEligible = $false
+$configPath = Assert-LocalPath (Join-Path $state 'registration.json')
 $config = if (Test-Path -LiteralPath $configPath) {
     if ((Get-Item -LiteralPath $configPath).Length -gt 65536) { throw 'Invalid registration receipt size.' }
     Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -142,6 +145,9 @@ function Assert-HelperContract($Exe, $ArgsLine, $Directory) {
         (Assert-LocalPath $Exe) -ine $Exe -or (Assert-LocalPath $Directory) -ine (Assert-LocalPath $repo) -or
         $ArgsLine -cne $expectedArguments) { throw 'HELPER_CONTRACT: executable, arguments or working directory differ.' }
 }
+if ($transitionDescription -and (!$config -or $config.description -cne $transitionDescription)) {
+    throw 'TASK_OWNERSHIP: registration changed during status retry.'
+}
 if ($config) { Assert-HelperContract $config.executable $config.arguments $config.workingDirectory }
 if ($InspectLab2Controller -or ($Action -eq 'Status' -and $config)) {
     if (!$config) { throw 'Unknown helper registration.' }
@@ -159,6 +165,7 @@ if ($InspectLab2Controller -or ($Action -eq 'Status' -and $config)) {
     if (!$absent -and $null -eq $current) { throw 'TASK_OWNERSHIP: task query returned no object.' }
     $initialState = if ($current) { $current.State } else { $null }
     if (!$absent -and ($null -eq $initialState -or $initialState -notin @(1,2,3,4)) -and !$InspectLab2Controller) { throw 'TASK_OWNERSHIP: unrecognized task state.' }
+    $retryEligible = !$InspectLab2Controller -and !$absent -and $initialState -in @(1,2,3)
     if ($InspectLab2Controller -or (!$absent -and $initialState -eq 4)) {
     # Refresh both names twice; only ERROR_FILE_NOT_FOUND proves legacy absence.
     $priorInstance = $null
@@ -255,7 +262,14 @@ if ($matches.Count -gt 1) { throw 'TASK_COLLISION: duplicate task names.' }
 $task = if ($matches.Count) { $matches[0] } else { $null }
 if ($task) { Assert-OwnedHelperTask $task $config }
 # A task becoming Running after the initial COM probe needs a fresh two-read proof.
-if ($Action -eq 'Status' -and $task -and $task.State -eq 'Running') { throw 'TASK_INSTANCE: state changed during status; retry.' }
+if ($Action -eq 'Status' -and $task -and $task.State -eq 'Running') {
+    if ($retryEligible) {
+        $transitionDescription = $config.description
+        continue
+    }
+    throw 'TASK_INSTANCE: task appeared after absence during status.'
+}
+if ($transitionDescription) { throw 'TASK_INSTANCE: running state lost during status retry.' }
 $instance = $null
 $info = if ($task) { Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName } else { $null }
 [ordered]@{
@@ -266,3 +280,7 @@ $info = if ($task) { Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName } e
     enginePid=$(if ($instance) { $instance.enginePid } else { $null }); instanceGuid=$(if ($instance) { $instance.instanceGuid } else { $null })
     note='Task state is not application health. Inspect the helper heartbeat/output; no elevation is granted.'
 } | ConvertTo-Json
+
+return
+}
+throw 'TASK_INSTANCE: state changed during status; retry limit exceeded.'
