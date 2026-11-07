@@ -1,6 +1,6 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint13:03 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint13:07 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
@@ -68,7 +68,8 @@ the next default step. No changed-state/API/freshness/restart claim follows.
 - Both self-context receipts and conditional guards: [player context](reference/native-player-context-candidates.md).
 - Detailed prior chronology/ownership: [owner handoff](handoff-2026-11-06-owner-migration.md).
 - Latest verified code commits:9e1f956 (catalog/timing),60acdfb (range/conditions),
-  b875cb9 (guarded self context). Earlier decoder/native milestones are in the
+  b875cb9 (guarded self context),99d8772 (target vitals),25de12d (name seeds),
+  015f784 (live-verified target position). Earlier decoder/native milestones are in the
   owner handoff. Commits are local; no push.
 
 ## Current work and blockers
@@ -95,7 +96,41 @@ Position core/caller passed18 core and8 target-focused cases and the repository
 command completed13:03:12 Eastern with cached reader: XYZ7428.7246/863.526/2950.8438.
 Receiptartifacts/native-selected-target-20261107/runs/lab1/c993ae87a90142e58134894ed8959750/samples.json,
 SHA25612639A21472437F19326062994EBA4001A672090D59DA336CC82287123B58189.
-Candidate only; no freshness/restart/action readiness. No active diagnostic process.
+Candidate only; no freshness/restart/action readiness.
+
+Lab2 repository selected-target command also passed at13:06:38 Eastern: guarded
+zero target produced explicit unavailable with null target position/name, rather
+than substituting self values. Receipt
+`artifacts/native-selected-target-20261107/runs/lab2/b28d0964730a408db1cfae1e33ae59b8/samples.json`,
+SHA256`E8D240818EE567E68EB131464642D63DCCFD26C1CEEFA75BF389D8461E5721D3`.
+
+## Resume point — requested checkpoint,13:07 Eastern
+
+Root is continuing, not stopping. Lab1 template-name host operation is ACTIVE:
+exec session54343; command
+`C:\Python314\python.exe -B scripts/sample_current_native_target_template_name.py --lab lab1`.
+Fresh evidence directory
+`artifacts/native-target-template-name-20261107/runs/lab1/9a6ac42b49ad4d519ae7c3cbebda5306/`.
+Identity admission passed; no final sample observed at checkpoint. Poll this
+operation before another Lab1 capture. Do not edit its launcher while it runs.
+
+Uncommitted new template-name sampler, command registration, host launcher and
+four focused native tests are ready. Separate published reader:
+`artifacts/native-target-template-name-20261107/publish/RiftReader2.Live.exe`,
+117491552 bytes, SHA256
+`2390DB519546D4884E14D7B00DD78257740104808792E15B8C58F1E57F9806FD`.
+It preserves fresh gated full64 target, provider selector, all-thread TLS
+unanimity/epoch, composite cache and type0274/name1E17 anchors. Cache misses are
+unavailable, never proof of absence. Root reviewed boundaries; four focused
+native cases and host synthetic/compile checks passed. Commit the useful result
+after inspecting the live receipt or documenting its concrete blocker.
+
+Parallel workers are now complete; root retains sole live ownership. Do not
+invent follow-up work to fill slots. Two additional static leads are retained:
+`artifacts/discovery-20261107-cast/zero-key-name-next-step.md` (missing3/13 names
+cannot be recovered from receipts lacking fallback text; all filter0), and
+`artifacts/discovery-20261107-cast/cost-1e2d-next-step.md` (typed context tree
+source narrowed, result semantics unresolved). No new input authority.
 
 Optional Lab2 UI corroboration was CLOSED after dependency-admission SessionError;
 no image was accepted. Later status was connected/disarmed-idle with supervisor
