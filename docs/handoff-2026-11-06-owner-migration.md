@@ -4,6 +4,21 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Current resume point — sustained480 and helper ownership accepted
 
+**Latest, 10:54 PM Eastern:** [current-owner sustained480](validation/lab1-current-owner-sustained480-2026-11-06.md)
+passed511 samples over480.653s, gaps2.449/2.352s, drift0 and zero unavailable
+reads. Independent full/fast production-gate replay and20 sampled helper checks
+over578s passed. Lab1 controller is now PID15636/generation
+`fcd8e722d34d4758b82f7171ddd2bae0`, receiver63376, queue5216; Lab2 remains
+controller24412/receiver65764/queue2334. Both ready/disarmed/idle/free at final
+postflight. Reader PID12424/nonce`f335b16b33324c33950af2df29b840bc` expired
+after10:57:53 PM Eastern; fresh guest checks verified no readers, deletion of
+only its private staging leaf and independent absence. The stale snapshot was
+refused with exit2, `not-fresh`, `gameReady:false`. Reacquire identities and
+never reuse its cached feed. Evidence:`lab1-newowner-expiry-cleanup` under the
+receiver-migrations artifact root.
+No further input is needed for this completed interval. The older checkpoints
+below remain historical, including the pre-console controller PID61336.
+
 [Strict sustained validation](validation/lab1-sustained480-2026-11-06.md) passed
 481.134 seconds with 515 samples; independent replay verified all raw/ledger
 hashes, exact identities, advancement, expiry, maximum arrival gap3.058s,
@@ -80,10 +95,16 @@ completed before open;89 console/feedback tests passed. This is for the trusted
 atomic publisher, not never-follow confinement or every same-metadata in-place
 rewrite. Existing freshness, identity, expiry and STOP/release gates are unchanged.
 
-Next authorized batch: a fresh bounded Lab1 reader and reviewed new-nonce bind,
-then strict480 against the current receiver. Root retains all live input. Use
-fresh screenshots/identities, verified controller handoff and restoration;
-no Lab2 input, reload or restart. Never reuse the old reader nonce.
+That fresh-reader/bind/strict480 batch is now complete as recorded above. Root
+retains all live-input ownership. The next isolated optimization candidate is
+`C:\work\riftreader2\.worktrees\helper-status-com`: reuse the existing double-
+observed COM status route for all four running helpers while preserving the
+nonrunning behavior and every ownership gate. A three-sample read-only baseline
+measured normal Lab2 Status1.986s mean versus existing inspection0.662s, same
+PID/GUID. Candidate source review is still pending; it is not integrated.
+The bounded current-runtime dependency scan found no confirmed remaining active
+default dependency on Workbridge, the original reader or its probe in
+scripts/src/addon/config; explicit historical replay/legacy inspection remain.
 
 The [launch-failure cleanup follow-up](validation/lab1-receiver-freshness-2026-11-06.md#launch-failure-cleanup-follow-up-1013-pm-eastern)
 passed 19 focused tests and a nonsecret Lab1 deletion/fresh-session absence
