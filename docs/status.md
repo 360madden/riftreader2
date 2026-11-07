@@ -6,6 +6,12 @@ working commands, verified results, accepted selected-target capture and remaini
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
 
+**13:20 Eastern — CAST FACTORY/COOLDOWN GATE DISCOVERIES:** Existing0650 definition
+milliseconds feed a real primary-duration getter; the tick-snapshot0653 branch
+belongs to the observed generic Use definition. [Factory findings](reference/native-cast-duration-factories-2026-11-07.md).
+The cooldown Detail gate omits current fields when timerT is zero; baseline
+zero values do not mean API remaining0. [Gate findings](reference/native-cooldown-static-followup-2026-11-06.md).
+
 **13:18 Eastern — TARGET NUMERIC LEVEL50:** Fresh getter route chose the
 alternate-secondary value50, superseding raw owner0. HP/XYZ/rawcombat preserved;
 public/displayed level remains unverified. Eight focused cases passed.

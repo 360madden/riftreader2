@@ -1,5 +1,33 @@
 # Cooldown static follow-up — 2026-11-06
 
+## Public field gate clarified — November7,13:20 Eastern
+
+Detail's5AFEE0 gate first calls5A5E40(context,key,null). For ordinary finite
+values it succeeds only when returned timerT is nonzero AND greater than game
+clockC. WhenT==0, Detail SKIPS all currentCooldown fields; it does not publish
+remaining0. Both retained raw-map baselines have only primary+0.0/secondary-1.0
+and empty second maps. They show no active cooldown, not an accepted API result.
+
+After a successful gate, a second producer call returnsT and durationD. Finite
+nonpaused field construction uses float32 begin=T-D, remaining=max(T-C,0), and
+expired=-remainingRaw only when T-C<0. Begin>1e30 instead emits paused=true and
+skips the other setters. Secondary-1 is a sentinel that SKIPS duration replacement,
+not a duration. Equality in second-map competition does not replace duration.
+The two producer calls can race; no snapshot atomicity is inferred.
+
+Validated public full IDs initially supply their high DWORD as key. A first
+primary input of type078A can select a different variant/key before the gate;
+empty vector or VERIFIED non078A primary leaves the original key. Unknown type
+is not a false078A check. Existing typed0648/0650 primaries cover106 Lab1 and
+116 Lab2 rows, without proving all other Detail eligibility branches.
+
+One sufficient49FAB0 eligibility branch checks definition DWORD vector+588/+590
+against six initialized global DWORDs3362430/38/40/48/50/58. Match returns true;
+nonmatch can enter a player-context branch, so it is not false. Those vector and
+initialization inputs were not captured; no per-record eligibility is claimed.
+No getters were called. Detailed exact-build trace and retained baseline receipts:
+`artifacts/discovery-20261107-cooldown/cooldown-public-value-next-step.md`.
+
 Status: **exact-build instruction evidence, not a live cooldown locator**. This
 independent follow-up corrects two incomplete descriptions in
 [native-current-client-code-map.md](native-current-client-code-map.md). It does
