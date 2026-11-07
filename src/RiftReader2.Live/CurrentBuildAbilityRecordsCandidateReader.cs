@@ -13,7 +13,9 @@ internal sealed record RawAbilityRangeInputs(string BaseMinRawHex, float? BaseMi
 {
     public string Qualification => "raw definition inputs; adjusted range and usability unverified";
 }
-internal sealed record AbilityRecordCandidate(uint Key, string Status, ulong? RecordAddress = null, byte? ApiListFilterNonzeroRaw = null, AbilityRecordChild? Child = null, AbilityRecordChild? SecondaryChild = null, string? FullIdCandidate = null, RawCostVector? RawCosts = null, RawAbilityTiming? RawTiming = null, RawAbilityRangeInputs? RawRange = null);
+internal sealed record RawVariantChild(string Status, ulong Address, ulong? Vtable = null, ulong? GetterRva = null, uint? Key = null);
+internal sealed record RawAbilityVariants(string Status, ulong? SourceAddress = null, IReadOnlyList<RawVariantChild>? Entries = null);
+internal sealed record AbilityRecordCandidate(uint Key, string Status, ulong? RecordAddress = null, byte? ApiListFilterNonzeroRaw = null, AbilityRecordChild? Child = null, AbilityRecordChild? SecondaryChild = null, string? FullIdCandidate = null, RawCostVector? RawCosts = null, RawAbilityTiming? RawTiming = null, RawAbilityRangeInputs? RawRange = null, RawAbilityVariants? RawVariants = null);
 internal sealed record CurrentBuildAbilityRecordsObservation(NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, ushort Selector, uint TlsIndex, ulong Collection, IReadOnlyList<AbilityRecordCandidate> Records)
 {
     public string Qualification => "candidate-only; membership, freshness and restart unverified";
@@ -21,12 +23,12 @@ internal sealed record CurrentBuildAbilityRecordsObservation(NativeProcessIdenti
 }
 internal static class CurrentBuildAbilityRecordsCandidateReader
 {
-    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, bool includeRawCosts = false, bool includeRawTiming = false, bool includeRawRange = false) =>
-        Read(session, keys, () => WindowsThreadTlsSnapshot.Capture(session.Identity.ProcessId), includeRawCosts, includeRawTiming, includeRawRange);
-    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, Func<IReadOnlyList<NativeThreadEpoch>> threads, bool includeRawCosts = false, bool includeRawTiming = false, bool includeRawRange = false)
+    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, bool includeRawCosts = false, bool includeRawTiming = false, bool includeRawRange = false, bool includeRawVariants = false) =>
+        Read(session, keys, () => WindowsThreadTlsSnapshot.Capture(session.Identity.ProcessId), includeRawCosts, includeRawTiming, includeRawRange, includeRawVariants);
+    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, Func<IReadOnlyList<NativeThreadEpoch>> threads, bool includeRawCosts = false, bool includeRawTiming = false, bool includeRawRange = false, bool includeRawVariants = false)
     {
         var started = DateTimeOffset.UtcNow; var id = session.Identity;
-        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < (includeRawCosts ? 0x35A8338UL : includeRawTiming ? 0x34E28B8UL : 0x344A6B8UL) ||
+        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < (includeRawCosts ? 0x35A8338UL : includeRawVariants ? 0x359F398UL : includeRawTiming ? 0x34E28B8UL : 0x344A6B8UL) ||
             !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase) ||
             keys.Count is < 1 or > 128 || keys.Distinct().Count() != keys.Count)
             throw new InvalidDataException("Invalid build, process identity or keys.");
@@ -137,6 +139,30 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
             for (var address = begin; address < end; address += 4) values.Add(BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(address, 4)));
             return new(Convert.ToHexString(minRaw).ToLowerInvariant(), float.IsFinite(min) ? min : null, Convert.ToHexString(maxRaw).ToLowerInvariant(), float.IsFinite(max) ? max : null, begin, end, values, values.Contains(1U));
         }
+        RawAbilityVariants Variants(ulong record)
+        {
+            var h=ReadBytes(record+0x5F0,16);var begin=U64(h);var end=U64(h.AsSpan(8));
+            if(begin==0&&end==0)return new("primary-empty");
+            if(begin==0||end<begin||(end-begin)%8!=0||(end-begin)/8>64)throw new InvalidDataException("Invalid primary vector.");
+            Ptr(begin,end==begin?8:checked((int)(end-begin)));
+            if(end==begin)return new("primary-empty");
+            var source=Q(begin);if(source==0)return new("primary-null");Ptr(source,0x28);
+            if(!Fingerprint(source,0x283E6C0,0x17BD530,0x342C310,0x2845BD0,0x17DBA60))return new("primary-unverified-type",source);
+            var vh=ReadBytes(source+0x18,16);var vb=U64(vh);var ve=U64(vh.AsSpan(8));
+            if(vb==0&&ve==0)return new("empty",source,[]);
+            if(vb==0||ve<vb||(ve-vb)%8!=0||(ve-vb)/8>64)throw new InvalidDataException("Invalid variant vector.");
+            Ptr(vb,ve==vb?8:checked((int)(ve-vb)));
+            var entries=new List<RawVariantChild>();
+            for(var slot=vb;slot<ve;slot+=8)
+            {
+                var child=Q(slot);if(child==0){entries.Add(new("null",0));continue;}Ptr(child,0x1C);var vt=Q(child);ulong? getter=null;
+                if(vt>=id.ModuleBaseAddress&&vt<=id.ModuleBaseAddress+id.ModuleSize-0x48){var target=Q(vt+0x40);if(target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize)getter=target-id.ModuleBaseAddress;}
+                if(vt!=id.ModuleBaseAddress+0x2CDE8F0){entries.Add(new("unknown-type",child,vt,getter));continue;}
+                if(!Fingerprint(child,0x2CDE8F0,0x229B4B0,0x359F390,0x2CE8820,0x22C1850)){entries.Add(new("unverified-type",child,vt,getter));continue;}
+                entries.Add(new("type-0061-raw-candidate",child,vt,getter,BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(child+0x18,4))));
+            }
+            return new(entries.Count==0?"empty":"raw-candidates",source,entries);
+        }
         var rows = new List<AbilityRecordCandidate>();
         foreach (var key in keys)
         {
@@ -157,7 +183,7 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
             if (!Fingerprint(record, 0x28A08C0, 0x1899BF0, 0x344A6B0, 0x28A9C38, 0x18C06C0)) { rows.Add(new(key, "unverified-type", record)); continue; }
             var flag = ReadBytes(record + 0xC9, 1)[0]; var child = Child(Q(record + 0x8E0)); var second = Child(Q(record + 0x958));
             string? full = child.LocalizationKey.HasValue && second.LocalizationKey.HasValue ? $"A{(((ulong)key << 32) | unchecked((uint)(Hash(child.LocalizationKey.Value) + Hash(second.LocalizationKey.Value)))):X16}" : null;
-            rows.Add(new(key, "type-verified-candidate", record, flag, child, second, full, includeRawCosts ? Costs(record) : null, includeRawTiming ? Timing(record) : null, includeRawRange ? Range(record) : null));
+            rows.Add(new(key, "type-verified-candidate", record, flag, child, second, full, includeRawCosts ? Costs(record) : null, includeRawTiming ? Timing(record) : null, includeRawRange ? Range(record) : null, includeRawVariants ? Variants(record) : null));
         }
         foreach (var anchor in anchors) CurrentBuildPlayerLookup.RequireSame(ReadBytes(anchor.Key.Item1, anchor.Key.Item2, false), anchor.Value);
         var after = threads();

@@ -22,9 +22,10 @@ internal static class CurrentBuildAbilityRecordsSampleCommand
         var includeCosts = options.TryGetValue("--include-costs", out var include) ? include == "true" ? true : throw new ArgumentException("--include-costs must be true.") : false;
         var includeTiming = options.TryGetValue("--include-timing", out var timing) ? timing == "true" ? true : throw new ArgumentException("--include-timing must be true.") : false;
         var includeRange = options.TryGetValue("--include-range", out var range) ? range == "true" ? true : throw new ArgumentException("--include-range must be true.") : false;
+        var includeVariants = options.TryGetValue("--include-variants", out var variants) ? variants == "true" ? true : throw new ArgumentException("--include-variants must be true.") : false;
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
         await using var session = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested(); var observation = CurrentBuildAbilityRecordsCandidateReader.Read(session, keys, includeCosts, includeTiming, includeRange);
+        cancellationToken.ThrowIfCancellationRequested(); var observation = CurrentBuildAbilityRecordsCandidateReader.Read(session, keys, includeCosts, includeTiming, includeRange, includeVariants);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested(); var report = new CurrentBuildAbilityRecordsReport(observation);
         await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);

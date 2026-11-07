@@ -1,195 +1,110 @@
-# Native discovery continuation — November7, 2026
+# Native discovery continuation — November 7, 2026
 
-Checkpoint13:19 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
-`codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
+Checkpoint **13:27 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
-documentation-only commit1056ff4 from the parallel runtime audit was retained.
+the separate documentation-only runtime-audit commit1056ff4 was retained.
 
-## Current objective and policy
+## Current goal and practical policy
 
-The goal started08:26:48 Eastern with an initial five-hour window. Joey extended
-the CURRENT goal by another FOUR HOURS at13:11 Eastern: the new end is
-**17:26:48 Eastern on November7,2026** (22:26:48 UTC), nine hours total. It is
-still ACTIVE. Do not complete it at the former13:26:48 deadline. Continue useful discovery; refinement can be
-later or never. No broad validation campaign, framework or review loop is a
-default follow-up. Run only checks relevant to a concrete change/failure and
-use the result. This policy is durable in AGENTS/development workflow.
+Started08:26:48 Eastern with a five-hour window. Joey extended the CURRENT goal
+by FOUR HOURS at13:11: new end **17:26:48 Eastern today /22:26:48 UTC** (nine
+hours total). The goal remains ACTIVE; do not stop at the former13:26 deadline.
+Discovery results NOW; refinement later or never. No default cleanup, broad test
+campaign, framework, review loop or invented work to fill slots. Use meaningful
+parallel workers, proportional checks, milestone/blocker commits, and frequent
+visual sitreps with fresh America/New_York timestamps.
 
-Root owns all live operations. Workers do static/source work only. Preserve
-existing owners, exact VM/PID/start/build, freshness and STOP/release gates.
-No game input, reload/rebind/restart, getter invocation, debugger/injection,
-memory/refcount writes or active-reader replacement occurred in this discovery.
-New casting/combat/target-selection input is not implied by the discovery goal.
+Root owns live operations. Workers only static/source work. Preserve existing
+owners, exact VM/PID/start/build, freshness and STOP/release gates. This discovery
+has used no game input, target selection, reload/rebind/restart, getter/native
+constructor, debugger/injection, memory/refcount writes or active-reader takeover.
+New casting/combat/input authority is not implied by the time extension.
 
-## Working commands
+## Working repository commands
 
 ```powershell
 C:\Python314\python.exe -B scripts/sample_current_native_ability_catalog.py --lab lab1
 C:\Python314\python.exe -B scripts/sample_current_native_ability_catalog.py --lab lab2
 C:\Python314\python.exe -B scripts/sample_current_native_player_context.py --lab lab1
 C:\Python314\python.exe -B scripts/sample_current_native_selected_target.py --lab lab1
+C:\Python314\python.exe -B scripts/sample_current_native_target_template_name.py --lab lab1
 ```
 
-Commands reacquire identities and use RR2-owned code/per-SHA guest caches.
-The catalog imports repository helpers only. Each record/dictionary request
-retains its128-key limit; larger sets are separate provenance-bearing chunks.
-Pinned local reader binaries are required; never overwrite an earlier publish.
-Game SHA is1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8.
+They reacquire VM/game identities and use SHA-bound isolated guest caches.
+Game SHA1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8.
+Key sets over128 use separate provenance-bearing chunks. No captured address
+is current authority. Keep source files frozen while a source-pinned run exists.
 
-## Verified useful results
+## Useful verified results
 
 | Track | Lab1 | Lab2 |
 | --- | --- | --- |
-| Ability catalog |122 rows,119 name candidates,43/43 filter rows named|134 rows,121 names,54/54 filter rows named|
-| Catalog interval |15.36s repository run|25.09s range-enabled run|
-| Decoder/parser failures |0|0|
-| Raw costs |62 typed Mana/Charge inputs,5 typed-unhandled1E2D,55 empty vectors|64 typed Energy inputs,11 typed-unhandled1E2D|
-| Raw cast inputs |21 primary0650,3 secondary0678|23 primary0650,4 secondary0678|
-| Self context |level41,combat byte0,target`u80000002CD0034D1`|level43,combat byte0,guarded zero target|
+| Catalog |122 rows,119 name candidates,43/43 filter rows named|134 rows,121 names,54/54 filter rows named|
+| Decoder failures |0|0|
+| Self context |level41,raw combat0,targetu80000002CD0034D1|level43,raw combat0,guarded zero target|
+| Selected target |HP candidate1224100/1224100; XYZ7428.7246/863.526/2950.8438|Honest target-unavailable/null result|
+| Target name |Mode1/formattingFlag0 selects base-name candidate Normal Practice Dummy|Not captured|
+| Target level/combat |Typed raw level0/combat0; actual numeric getter alternate-secondary returns50|Not captured|
+| Ordered variants |6 parents,2 typed0061 keys each;16.22s catalog span|Current capture pending|
 
-Sixty shared full-ID candidates agreed on compared name/timing/cost/filter
-fields. Missing names have typed child key0, not decoder errors; fallback names
-are not ruled out. Names come from the resident dictionary's strict locale1
-record shape; three first seeds also matched the typed hot-cache text/locale.
+Name's locale1 dictionary key1290053851 missed; selected fallback text is a
+SEPARATE branch-backed candidate. Public name/level, API/UI agreement, changed
+state, passive freshness and full-game restart remain unverified. No candidates
+are consumed by action preflight. Sixty shared full ability IDs agreed on compared
+catalog inputs. Missing3/13 names have key0 and uncaptured fallback, not decoder
+failure. Raw filterC9 is not learned membership.
 
-Cooldown+94 and cast vectors+5F0/+8E8 are BASE inputs, not adjusted API values
-or active cast progress. Unsupported primary cast types stay unknown. Raw range
-min/max+B4/+9C has equipment/player exceptions. Condition1 membership drives
-stealthRequired candidate; no positive was seen. Lab2 had eight raw condition4
-entries. Effective condition4 rejects combat, but context can replace the vector.
+Raw cooldown+94, cast vectors+5F0/+8E8, costs, ranges and condition vectors are
+base/context inputs. Adjusted Mana/Charge and equipment range remain unresolved.
+The cooldown Detail gate OMITS current fields for timerT0; do not publish API
+remaining0 from the idle baseline. Common0650 primary-duration getter uses the
+captured signed child+20 milliseconds directly; the tick-snapshot0653 route is
+observed on generic Use, not the common spell route. Context overrides remain.
 
-Lab1 Charge modifier list was nonempty, so the empty-list shortcut cannot yield
-final Charge amounts. Mana uses level-based Mana plus branch-dependent Wisdom/
-Intelligence terms and modifiers; do not substitute displayed manaMax. Active
-duration remains without a matching live object. Repeated idle samples are not
-the next default step. No changed-state/API/freshness/restart claim follows.
+## Current active work — resume here
 
-## Receipts and commits
+**Lab2 variant-aware catalog ACTIVE: exec session81575.** Command is the second
+working command above. Do not edit catalog/helper sources while it runs. Poll,
+inspect actual summary/ordered variants, then update the milestone. Lab1 result:
+`artifacts/native-ability-catalog-20261107/runs/lab1/b4975f0021344082b8802e174cae155c/catalog-summary.json`,
+SHA2560155EDCFBA158A09F22D69EC04E0844A7FE1856095EB012119AAFBA4D4B3B643.
+Native raw-variant slice passed9 focused cases; root reviewed boundaries and used it.
 
-- Catalog/reference/profile details: [ability findings](reference/native-ability-ownership-findings-2026-11-06.md).
-- Both self-context receipts and conditional guards: [player context](reference/native-player-context-candidates.md).
-- Detailed prior chronology/ownership: [owner handoff](handoff-2026-11-06-owner-migration.md).
-- Latest verified code commits:9e1f956 (catalog/timing),60acdfb (range/conditions),
-  b875cb9 (guarded self context),99d8772 (target vitals),25de12d (name seeds),
-  015f784 (live-verified target position). Earlier decoder/native milestones are in the
-  owner handoff. Commits are local; no push.
+Worker tls_metadata owns NEW `scripts/sample_current_native_variant_definitions.py`
+(being prepared). It will resolve referenced keys with the SAME reader, fresh
+source epoch and ordered parent-vector rechecks, preserve cache misses, and decode
+names/raw timing. Lookup deduplication must not discard relationship order or
+holes. No selected-winner/learned claim. Root performs its first live run only
+when ready. Existing native workers are idle; assign new meaningful work when
+an observed result supplies a useful next step, not another generic review.
 
-## Current work and blockers
+Current catalog reader:117503840 bytes, SHA256
+B56216935082462AF9B381EC37C84D83E74B35FBE97BAD515ADCB63DA8C39D62,
+`artifacts/native-ability-variants-20261107/publish/`.
+Selected-target reader:117499744 bytes, SHA256
+6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970,
+`artifacts/native-target-level-20261107/publish/`.
+Name-mode reader:117496160 bytes, SHA256
+4B481314B7E72B83CB8F5163D895818236E1C1B4E48FEFD2C6C56B66BCB1BB0F,
+`artifacts/native-target-template-name-mode-20261107/publish/`.
+Never overwrite an earlier publication or active workflow bundle.
 
-Selected-target vitals passed on Lab1 using the EXISTING injected vitals reader
-and a bounded exact-full64 target-unit lookup: target`u80000002CD0034D1`, health
-candidate1224100/1224100,13.2605ms. The repository command also passed with the
-cached reader. [Both receipts and limits](reference/native-player-context-candidates.md).
-No selection/input; Mana/Energy unavailable by kind. Reader
-E6CD3F1D0F9DD6A0072D7E3D2942C07171EB5A4B85B0025AA6FA96FF690F84BC,
-117462880 bytes, under`artifacts/native-selected-target-20261107/publish/`.
-Name-enabled follow-up preserved health but found an empty ALTERNATE string,
-not a primary-direct name or selected localization key. No name accepted.
-Method-address diagnostic passed: entity VT26AE5F0/slot18 method59E940, loaded
-bytes match retained PE. No method invocation. Its virtual path checks entity
-+1D0 type1E17 ref first, otherwise+1B8 template key via dynamic provider33E3A98
-and type0274 result+ A8 name ref. Do not guess which route applies.
-Completed route/position diagnostic retained stable target/entity/provider anchors:
-entity+1D0 null, template key1847420318 at+1B8, provider WORD selector623.
-Receipt directoryartifacts/native-selected-target-name-20261107/lab1/ddf9cd65a5a84b4289aae0cd782fddb8/.
-Static trace confirms selector passes unchanged; type0274+A8 type1E17 cache-only
-resolution is being implemented in a separate command. Cache miss is not absence.
-Position core/caller passed18 core and8 target-focused cases and the repository
-command completed13:03:12 Eastern with cached reader: XYZ7428.7246/863.526/2950.8438.
-Receiptartifacts/native-selected-target-20261107/runs/lab1/c993ae87a90142e58134894ed8959750/samples.json,
-SHA25612639A21472437F19326062994EBA4001A672090D59DA336CC82287123B58189.
-Candidate only; no freshness/restart/action readiness.
+## Durable findings, receipts and milestones
 
-Lab2 repository selected-target command also passed at13:06:38 Eastern: guarded
-zero target produced explicit unavailable with null target position/name, rather
-than substituting self values. Receipt
-`artifacts/native-selected-target-20261107/runs/lab2/b28d0964730a408db1cfae1e33ae59b8/samples.json`,
-SHA256`E8D240818EE567E68EB131464642D63DCCFD26C1CEEFA75BF389D8461E5721D3`.
+- [Target/self/HP/XYZ/name/level receipts and limits](reference/native-player-context-candidates.md).
+- [Catalog, cost, raw timing/range/condition findings](reference/native-ability-ownership-findings-2026-11-06.md).
+- [Ordered variant references](reference/native-ability-variants-2026-11-07.md).
+- [Primary cast-duration factories](reference/native-cast-duration-factories-2026-11-07.md).
+- [Cooldown TLS/cache/gate and public-value findings](reference/native-cooldown-static-followup-2026-11-06.md).
+- [Earlier owner/receiver chronology](handoff-2026-11-06-owner-migration.md).
 
-## Resume point — requested checkpoint,13:07 Eastern
+Recent local commits:015f784 target position;6359c38 user-requested checkpoint
+then immediate resume;71ff9a3 template-name inputs;b04edf8 mode-selected name and
+four-hour extension;073a38d target raw context;5ec07e4 target numeric level;
+3943cfc factory/cooldown-gate findings. Raw-variant milestone is next. No push.
 
-Checkpoint committed6359c38; root resumed immediately. Lab1 template-name host
-operation COMPLETED successfully at13:07:15 Eastern; no active process. Command
-`C:\Python314\python.exe -B scripts/sample_current_native_target_template_name.py --lab lab1`.
-Fresh evidence directory
-`artifacts/native-target-template-name-20261107/runs/lab1/9a6ac42b49ad4d519ae7c3cbebda5306/`.
-Cache hit passed type0274 and nested1E17 checks; selector623/TLS index20,
-template1847420318, localization key1290053851. Captured raw typed fallback
-**Normal Practice Dummy**. Dictionary lookup missed, so locale1/API name remains
-unavailable; active manager selection/decoration is not inferred. Capture span
-34.713ms. Source report SHA256
-`60C2053E175017C83652B7496421D5691BD404B9DA1643EDF80DB27E05AD2A14`.
-The host summary exposes rawFallbackNameCandidate separately. Retained receipt
-replay passed without a new capture.
-
-New template-name sampler, command registration, host launcher and four focused
-native tests were committed71ff9a3. Separate published reader:
-`artifacts/native-target-template-name-20261107/publish/RiftReader2.Live.exe`,
-117491552 bytes, SHA256
-`2390DB519546D4884E14D7B00DD78257740104808792E15B8C58F1E57F9806FD`.
-It preserves fresh gated full64 target, provider selector, all-thread TLS
-unanimity/epoch, composite cache and type0274/name1E17 anchors. Cache misses are
-unavailable, never proof of absence. Root reviewed boundaries; four focused
-native cases and host synthetic/compile checks passed. Useful live result is
-verified. Follow-up capture completed13:11 Eastern: localizationMode1 and
-formattingFlag0, both anchored in the same read. The traced native path selects
-the nonempty fallback and bypasses post-copy formatting. Selected base-name
-candidate is **Normal Practice Dummy**; independent API/UI agreement, freshness
-and restart remain unverified. Locale1 dictionary result remains unavailable.
-Receipt`artifacts/native-target-template-name-20261107/runs/lab1/ef16c6ed167d4b6bbbe8655d84c42b56/samples.json`,
-SHA256`934E6EB33CAA2EE1F6EE12B93D2774444933E1C6AE14D47A91A5D6D31CA64F94`,
-capture36.257ms. New reader117496160 bytes, SHA256
-`4B481314B7E72B83CB8F5163D895818236E1C1B4E48FEFD2C6C56B66BCB1BB0F`,
-under`artifacts/native-target-template-name-mode-20261107/publish/`. Five focused
-native tests passed; host mode1/mode2 derivation checks passed. No active capture.
-
-Mode result committedb04edf8, along with the four-hour goal extension.
-Raw target context slice passed live13:13:31 Eastern: same target health-owner
-type0294 verified, rawLevel0/rawCombat0, HP/XYZ retained. Public level remains
-unresolved because generic getter has an alternate component; no self-system
-presentation guard was transferred. Six focused native cases and host branch
-checks passed. Receipt
-`artifacts/native-selected-target-20261107/runs/lab1/56d78bd7aa174f48b7048931ef962071/samples.json`,
-SHA256`93E3F4260B084ADE7DD883A60B44B50FE8EB029E34515814B1F6ACBFF99346BC`.
-Reader117495648 bytes, SHA256
-`5843EF6E58EA0E43CB3C08732934561476D3E726FF367E3C2DAC9B6BF19CD803`,
-at`artifacts/native-target-context-20261107/publish/`. Host launcher pins it.
-No active live process. Root alone performs live reads; no new input authority
-from the time extension. Parallel static work: cooldown public value bridge,
-passive cast-duration discriminator, target alternate level branch. Next useful
-implementation depends on those concrete findings, not idle repetition/refinement.
-
-Raw context milestone committed073a38d. Follow-up target numeric getter read
-completed13:18:39 Eastern: **alternate-secondary numericLevelCandidate50**,
-rawownerlevel0/combat0. HP/XYZ retained. Target public presentation unverified.
-Receipt`artifacts/native-selected-target-20261107/runs/lab1/6ad64e06cec24fbfa2e06122d2127728/samples.json`,
-SHA256`E2864EF9D935DDA3EE266B886DC31CF6EA51457039E6F68C1A6C21BB12DEEC8B`.
-Reader117499744 bytes, SHA256
-`6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970`,
-at`artifacts/native-target-level-20261107/publish/`. Eight focused tests passed.
-Host pins it; no active capture. Useful static findings pending durable summary:
-cooldown gate omits current fields for zero timer (not remaining0); exact0650
-factory uses existing child+20 milliseconds; observed unknown2D26430 is0653
-tick-snapshot input, a different factory. Artifact notes retain exact branches.
-
-Parallel workers are now complete; root retains sole live ownership. Do not
-invent follow-up work to fill slots. Two additional static leads are retained:
-`artifacts/discovery-20261107-cast/zero-key-name-next-step.md` (missing3/13 names
-cannot be recovered from receipts lacking fallback text; all filter0), and
-`artifacts/discovery-20261107-cast/cost-1e2d-next-step.md` (typed context tree
-source narrowed, result semantics unresolved). No new input authority.
-
-Optional Lab2 UI corroboration was CLOSED after dependency-admission SessionError;
-no image was accepted. Later status was connected/disarmed-idle with supervisor
-initial cleanup verified and an existing console reservation held, not cleared.
-Do not turn UI repair into a discovery prerequisite or keep retrying it.
-
-Next useful static lead: entity-name branch order in
-`artifacts/discovery-20261107-cast/unit-name-next-step.md`. It may use direct
-UTF16, a type1E17 localization key, or an unresolved entity virtual method;
-do not guess from the GUID prefix. Root can reuse resident dictionary decoding
-only after the branch/key/owner is freshly bound. No raw unit name is accepted yet.
-Name-capable reader SHA783573AA... is under
-`artifacts/native-selected-target-name-20261107/publish/`. The repository launcher
-now pins position-capable reader1960292C... under
-`artifacts/native-target-position-20261107/publish/` (live repository use passed).
+Optional Lab2 UI comparison is CLOSED after dependency-admission SessionError;
+no image/API/UI agreement was accepted. Later status was connected/disarmed-idle,
+supervisor initial cleanup verified, existing console reservation held and NOT
+cleared. Do not turn UI repair into a discovery prerequisite or retry loop.

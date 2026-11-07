@@ -1,10 +1,16 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:19 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:27 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**13:26 Eastern — ORDERED ABILITY VARIANTS LIVE:** Lab1 captured six type078A
+parent abilities, each with two typed0061 variant keys. Catalog122/119 names,
+all43 filter rows named, zero decoder failures,16.22s span. No chosen-variant
+claim. Lab2 capture running; next lookup resolves possible variant definitions.
+[Receipt and limits](reference/native-ability-variants-2026-11-07.md).
 
 **13:20 Eastern — CAST FACTORY/COOLDOWN GATE DISCOVERIES:** Existing0650 definition
 milliseconds feed a real primary-duration getter; the tick-snapshot0653 branch
