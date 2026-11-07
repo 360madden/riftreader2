@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 from contextlib import redirect_stdout, redirect_stderr
+from datetime import datetime, timedelta
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -88,21 +90,97 @@ def delivery(root, console):
             "nativeVitals": native}
 
 
+def confirmation_evidence(root):
+    """Rebind the independently verified artifacts used to compare two runs."""
+    root = flow.output_root(root)
+    flow.assert_owned(root)
+    def read(name):
+        return json.loads(safe_bytes(root / name, 1024 * 1024).decode("utf-8-sig"))
+    state, report, receipt = read("state.json"), read("report.json"), read("capture-receipt.json")
+    plan_bytes = safe_bytes(root / "managed-host-plan.json", 1024 * 1024)
+    if hashlib.sha256(plan_bytes).hexdigest().upper() != state.get("planSha256"):
+        raise ValueError("managed plan binding mismatch")
+    plan = json.loads(plan_bytes.decode("utf-8-sig"))
+    native_bytes = safe_bytes(root / "native-vitals-receipt.json", 1024 * 1024)
+    if hashlib.sha256(native_bytes).hexdigest().upper() != read("native-vitals-receipt.sha256.json").get("sha256"):
+        raise ValueError("native receipt binding mismatch")
+    native = json.loads(native_bytes.decode("utf-8-sig"))
+    def timestamp(value):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.utcoffset() != timedelta(0):
+            raise ValueError("non-UTC observation timestamp")
+        return parsed
+    before, after = timestamp(native["beforeUtc"]), timestamp(native["afterUtc"])
+    metrics, completed = flow.validate_native(native["summary"], state, before, after)
+    if (metrics != report["nativeVitals"]["metrics"]
+            or completed != timestamp(report["nativeVitals"]["completedAtUtc"])
+            or native["summary"]["sourceReportSha256"] != report["nativeVitals"]["sourceReportSha256"]):
+        raise ValueError("native report binding mismatch")
+    source = Path(native["summary"]["sourceReport"])
+    source_bytes = safe_bytes(source, flow.vitals.REPORT_MAX_BYTES)
+    if hashlib.sha256(source_bytes).hexdigest().upper() != native["summary"]["sourceReportSha256"]:
+        raise ValueError("native source changed")
+    sample = json.loads(source_bytes.decode("utf-8-sig"))
+    started = timestamp(sample["observation"]["startedAtUtc"])
+    captured = timestamp(report["capturedAtUtc"])
+    if (not receipt.get("requestId") or not report.get("captureId")
+            or started > completed or completed > captured):
+        raise ValueError("observation identity or chronology invalid")
+    return {"plan": plan, "target": state["target"], "vm": state["vmIdentity"],
+            "epoch": state["epoch"], "captureId": report["captureId"],
+            "requestId": receipt["requestId"], "source": str(source),
+            "started": started, "completed": completed, "captured": captured}
+
+
+def confirm(first, second, initial=None):
+    a, b = confirmation_evidence(first), confirmation_evidence(second)
+    if initial is not None and a != initial:
+        raise ValueError("first observation changed during confirmation")
+    if any(a[key] != b[key] for key in ("plan", "target", "vm", "epoch")):
+        raise ValueError("confirmation identity pins changed")
+    if any(a[key] == b[key] for key in ("captureId", "requestId", "source")):
+        raise ValueError("confirmation observation identity reused")
+    if not (a["started"] <= a["completed"] <= a["captured"] < b["started"]
+            <= b["completed"] <= b["captured"]):
+        raise ValueError("confirmation observation timestamps did not advance")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--confirm-output", type=Path)
     args = parser.parse_args(argv)
-    stdout, stderr = io.StringIO(), io.StringIO()
+    current = args.output
     try:
-        with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = flow.main(["run", "--native-vitals", "--output", str(args.output)])
-        if code != 0:
-            raise ValueError("guarded workflow failed")
-        result = delivery(args.output, json.loads(stdout.getvalue()))
+        if args.confirm_output is not None:
+            first, second = flow.output_root(args.output), flow.output_root(args.confirm_output)
+            if (first == second or os.path.lexists(args.output)
+                    or os.path.lexists(args.confirm_output)):
+                raise ValueError("confirmation requires two distinct fresh output roots")
+        def run(root):
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with redirect_stdout(stdout), redirect_stderr(stderr):
+                code = flow.main(["run", "--native-vitals", "--output", str(root)])
+            if code != 0:
+                raise ValueError("guarded workflow failed")
+            console = json.loads(stdout.getvalue())
+            return delivery(root, console), console
+        result, first_console = run(args.output)
+        if args.confirm_output is not None:
+            initial = confirmation_evidence(args.output)
+            current = args.confirm_output
+            other, second_console = run(args.confirm_output)
+            if (delivery(args.output, first_console) != result
+                    or delivery(args.confirm_output, second_console) != other):
+                raise ValueError("observation delivery changed during confirmation")
+            confirm(args.output, args.confirm_output, initial)
+            result = {"status": "confirmed-awaiting-visual-review", "confirmation": "passed",
+                      "observations": [result, other]}
+            flow.publish(second / "confirmation.json", result)
         print(json.dumps(result, allow_nan=False))
         return 0
     except Exception as exc:
-        print(json.dumps({"status": "blocked", "reason": str(exc), "output": str(args.output)}), file=sys.stderr)
+        print(json.dumps({"status": "blocked", "reason": str(exc), "output": str(current)}), file=sys.stderr)
         return 2
 
 

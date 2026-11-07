@@ -103,6 +103,10 @@ The underlying `inspect_lab2_workflow.py run --native-vitals` retains fresh
 VM/game/agent admission, candidate labels, queue-owned capture and verified
 cleanup. Review the returned pixels after release; image delivery is not visual
 approval. Failures must not display an earlier run's image or silently retry.
+For an explicitly requested read-only confirmation, add `--confirm-output
+<second fresh absolute directory>` and return both verified images in the same
+call. Each observation keeps its own complete admission and cleanup. Use separate
+calls when the next action depends on interpreting the first image.
 
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,
