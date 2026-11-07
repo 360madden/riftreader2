@@ -287,6 +287,11 @@ or game input in this static trace.
 
 ### Shared native player health-owner fields — 2026-11-01 static follow-up
 
+**November7 live continuation:** [Typed self-context candidates](native-player-context-candidates.md)
+now capture guarded target keys, numeric level and combat on both labs. The level
+alternate selector is2F58270, distinct from the2F582E0 target gate; preserve the
+explicit conditional paths rather than treating these as unconditional offsets.
+
 The exact-build player health component resolves one owner pointer,
 `owner = QWORD(healthComponent+0x40)`, for three independently decoded
 getters:

@@ -4,7 +4,7 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 11:49 Eastern
+### Checkpoint — 2026-11-07 12:14 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
@@ -16,6 +16,7 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 | Idle ability timing | 🟢 Captured on both labs | Lab1 21 primary650/3 secondary678; Lab2 23/4. Raw cooldown+94/gate+88 retained; unsupported primary types stay unknown. |
 | Catalog delivery | 🟢 Repository command used | `scripts/sample_current_native_ability_catalog.py --lab lab1|lab2`; live Lab1 span15.36s; no artifact-code imports. |
 | Raw range/conditions | 🟢 Lab2 live capture |134 rows;3 raw min/max pairs3/30. No condition1;8 condition4 entries, unlabeled. Adjusted/special-equipment range remains separate. |
+| Self target/level/combat | 🟢 Both labs captured | Lab1 level41/targetu80000002CD0034D1; Lab2 level43/zero target; both combat byte0. Gated candidates only. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -122,6 +123,19 @@ The special range key has a static seed but remains unclassified by the reader.
 An unrelated documentation-only runtime audit commit1056ff4 was preserved.
 Keep its runtime-acceptance scope separate from these native discovery receipts.
 Five-hour goal remains active through13:26 Eastern; refinement is optional.
+
+**12:14 Eastern — native self-context milestone:**
+`python scripts/sample_current_native_player_context.py --lab lab1|lab2` now
+provides independently gated level, target and combat candidates. Lab1 passed
+9.375ms andLab2 10.957ms; no target was selected/changed by the agent.
+[Exact receipts, guards and limitations](reference/native-player-context-candidates.md).
+The optional Lab2 screenshot stopped at dependency admission; no image/UI
+agreement was accepted. Later status was connected/disarmed-idle with an
+existing console reservation; it was preserved. Do NOT restart UI/maintenance
+work as a default completion gate. Definition condition4 now has a supported
+conditional combat-rejection meaning, subject to effective-vector replacement.
+Next useful static lead is the separate unit-name component route; no raw name
+has yet been captured. Continue practical read-only discovery through13:26.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

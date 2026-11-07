@@ -1,5 +1,12 @@
 # Current status
 
+**2026-11-07 12:14 Eastern — SELF TARGET/LEVEL/COMBAT CANDIDATES:** The repository
+sampler returned Lab1 level41/target`u80000002CD0034D1` in9.375ms andLab2
+level43/zero target in10.957ms; both raw combat bytes0. Owner fingerprints,
+branch guards, lookup and process checks passed. No target/input change or
+Action-preflight integration. Optional screenshot corroboration was blocked
+at dependency admission; no UI agreement is claimed. [Receipts and limits](reference/native-player-context-candidates.md).
+
 **2026-11-07 11:49 Eastern — RAW RANGE/CONDITION INPUTS LIVE:** Lab2's repository
 catalog captured134 rows/121 names/all54 nonzero-filter rows named, zero decoder
 failures, span25.09s. New min/max float inputs retain raw bits; bounded condition
