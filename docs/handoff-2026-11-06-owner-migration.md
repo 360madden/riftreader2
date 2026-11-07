@@ -2,6 +2,38 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Review checkpoint — November 7
+
+The user requested a review after clearing the timed goal. Independent reviewers
+checked committed runtime `399d463` and retained evidence; later `8ded91e` is
+documentation only. No live input or helper mutation was used in the review.
+The sustained480 and native-v2 results still reconcile. These functional findings
+remain open; fix the P1 before further reviewed console input.
+
+| Priority | Finding | Owning source |
+| --- | --- | --- |
+| P1 | Failed final report publication or two callers passing the pre-mutex check can dispatch the same reviewed plan twice. Reserve a durable exclusive attempt under the mutex before possible input. | `scripts/addon_command_console.py:1053,1179` |
+| P2 | `stop`/`release --output` can refuse delivery when output reservation fails. Direct cleanup without optional output is unaffected. | `scripts/control_client.py:356` |
+| P2 | Default `action` tries disarmed guest recovery and rejects an already armed guest before dispatch. | `scripts/control_client.py:431`, `scripts/ensure_guest_agent.py:72` |
+| P2 | Failed controller receipt collection/serialization leaves empty `process.json`; malformed historical generations poison later admission. | `scripts/controller_task_entry.py:92`, managed receipt generation scan |
+| P2 | Scheduler status prescribes retry on a nonrunning-to-running race, but task entry points check once and exit. Stable-state live starts did not exercise it. | `scripts/Manage-RR2HelperTask.ps1:258`, controller/receiver task entry |
+| P2 | Reader startup can certify a nonempty mismatched snapshot when the matching loop expires; target start ticks are omitted. Later pin/feedback gates remain independent. | `scripts/launch_live_reader.py:347` |
+| P2 | Host staging ownership is lost if config hashing fails before return; guest cancellation skips Exception-only in-session cleanup. | `scripts/launch_live_reader.py:238,363` |
+| P2 | Windows deny-delete reads can block atomic publication after sequence history advances, losing the publication and rejecting its same-sequence retry. | `scripts/addon_command_console.py:248`, `scripts/observation_receiver.py:70` |
+
+Most defects predate this session. Cancellation cleanup and the extended reader
+handle window involve new changes; the Scheduler retry gap involves the new
+status path. Reproductions used mocked input and synthetic local files/status.
+The earlier blanket claim that a reviewed plan cannot send twice was too broad:
+cancellation with a saved report is covered, failed publication/concurrent calls
+are not. No runtime source was changed during this review.
+
+Documentation corrections repaired mixed UTF-8/Windows-1252 bytes in status.md,
+narrowed the final retained-status claim and marked checkpoint values historical.
+All262 tracked Markdown files passed strict UTF-8 decoding after repair.
+Unrelated in-progress managed receipt/movement admission edits and tests were
+preserved and excluded from this review's committed-runtime conclusion.
+
 ## Current resume point — sustained480 and helper ownership accepted
 
 **Latest, 10:54 PM Eastern:** [current-owner sustained480](validation/lab1-current-owner-sustained480-2026-11-06.md)
@@ -9,7 +41,7 @@ passed511 samples over480.653s, gaps2.449/2.352s, drift0 and zero unavailable
 reads. Independent full/fast production-gate replay and20 sampled helper checks
 over578s passed. Lab1 controller is now PID15636/generation
 `fcd8e722d34d4758b82f7171ddd2bae0`, receiver63376, queue5216; Lab2 remains
-controller24412/receiver65764/queue2334. Both ready/disarmed/idle/free at final
+controller24412/receiver65764/queue2334 at that checkpoint. Both ready/disarmed/idle/free at final
 postflight. Reader PID12424/nonce`f335b16b33324c33950af2df29b840bc` expired
 after10:57:53 PM Eastern; fresh guest checks verified no readers, deletion of
 only its private staging leaf and independent absence. The stale snapshot was
@@ -36,8 +68,8 @@ movement or Lab2 qualification. No reload/movement/cast/Lab2 input occurred.
 The sustained-run gate passed: 380 portable +317 Live .NET, 1,668 Python (2 skipped), Lua,
 native smoke, ownership, format and1,022 links; evidence
 `artifacts/validation/20261107T023836Z-51b6dc01`. Guest startup race fix
-`54d5e95` also has26 focused passing tests. User's five-hour meaningful-work
-goal remains active; preserve other sessions' changes and current owners.
+`54d5e95` also has26 focused passing tests. The later timed goal was cleared by the user; preserve other sessions' changes
+and current owners.
 
 ### Instance-bound owners accepted, 10:30 PM Eastern
 
@@ -134,42 +166,45 @@ release and lacks hash/dimensions/actual capture-time proof. Reuse would still
 need fresh VM/game admission and a separate new review; first measure the
 existing phases rather than claiming the whole prepare duration can be saved.
 
-### Next standalone slice — native-vitals admission and replay
+### Native-vitals admission and replay integrated
 
-The bounded source audit found three reproduced validator gaps. Two isolated
-workers are implementing them; no native operation, helper update, input or
-restart has been performed for this slice:
+`287a5b6`, `a310534` and `399d463` integrate the reviewed helper/workflow fixes.
+Persistent preflight checks exact integer1 versions for fresh identity and native
+vitals, with fixed safe refusal reasons. Persistent replay requires v2 plus a
+validated response timestamp; explicit-reader v1 replay remains. Shared
+`validate_response_time` enforces ordered UTC host brackets and exact100ns guest
+sample/response order with the unchanged host±5s tolerance. Focused combined
+checks passed90 tests; independent review passed. Full gate passed716 .NET,
+1767 Python tests (2 skips), native/Lua/ownership/format and1016 links:
+`artifacts/validation/20261107T044324Z-a98e4144`.
 
-- `.worktrees/native-response-order`, branch`codex/native-response-order`, owns
-  `scripts/fresh_native_vitals.py` and its test. Add shared
-  `validate_response_time(report, observed_at_utc, before, after)`, preserving
-  UTC/host±5s bounds while requiring guest sample completion no later than its
-  response timestamp. A response two seconds before completion previously passed.
-  Use fixed refusal`native-vitals-response-before-sample`.
-- `.worktrees/native-workflow-admission`, branch`codex/native-workflow-admission`,
-  owns `scripts/inspect_lab2_workflow.py` and its test. Check exact integer1
-  capability versions for both fresh identity and native vitals during requested
-  persistent preflight; retain per-operation checks and expose only fixed safe
-  refusal reasons. Persistent replay must require reportv2 and a validated
-  `observedAtUtc`, using the shared timestamp helper. Keep explicit-reader v1
-  historical replay. A retained v1 report with no envelope timestamp previously
-  passed a synthetic persistent wrapper.
+The [bounded read-only Lab2 live validation](validation/lab2-end-to-end-latency-2026-11-06.md#native-admission-and-replay-follow-up)
+completed in4.978s, with screenshot lease, verified STOP/release and image review.
+Health10635/10635 and resource100/100 numerically matched native candidates;
+Mana was unavailable. Fields remain candidate-only. No helper/agent/VM/game
+restart or gameplay input occurred. Independent artifact review passed; stored
+released queue generation2336 is directly evidenced, grant2335 is inferred from
+the enforced cleanup invariant. At the final recorded checkpoint
+(2026-11-07T04:52:10.647668Z), the saved postflight retained four PIDs,
+authenticated status, VM identities, queues5216/2336 free/unheld and
+ready/disarmed/idle state. It is historical status evidence and does not retain
+all source/config/Scheduler/listener proofs independently. Evidence:
+`artifacts/receiver-migrations/session-final-postflight-20261106.json`, SHA256
+`B97EEF634EA8441F9EEB50B30D3C68D4D62AA425A06D9E2F961865F3C4337014`.
 
-The response helper is committed as`77e0159` plus`12318fd` (exact100ns guest
-timestamps and ordered UTC host brackets), with14 focused tests and independent
-review passed. Workflow`49c0170` has88 focused tests and review passed against
-the first helper; its public import consumes the stricter follow-up. Both start
-from`84fe0fb`. Integrate helper, follow-up, then workflow; run the combined
-focused suite before the full gate. No full gate or live acceptance has run for
-the new slice. Lab1's recorded idle agent advertised neither native-vitals nor fresh-
-identity version, while Lab2 advertised both as1; do not infer unsupported handler
-details or update the agent from this observation. The current persistent native
-workflow is explicitly Lab2-only. Reuse its exact identity, passive read and
-subsequent screenshot lease/STOP/release guards; do not promote candidate field
-semantics or restart qualification.
+Lab1's recorded agent advertised neither native-vitals nor fresh-identity version;
+Lab2 advertised both as1. Do not infer undocumented handlers or update a healthy
+agent from that observation. The persistent workflow remains explicitly Lab2-only.
+The [native reference](reference/current-native-vitals.md) now accurately describes
+v2 Mana/Energy per-field status and the existing direct host/guest reader route.
+Physical-host metadata found no running `rift_x64.exe`; no physical game memory
+was read and no physical acceptance is claimed.
 
-The five-hour goal remains active (started about9:22 PM Eastern; target about
-2:22 AM November7), and is not marked complete at this checkpoint.
+**The user cleared the timed goal.** There is no active five-hour goal and no
+experiment remains running. Finish this documentation checkpoint; further work
+resumes only under a new instruction. Preserve current owners. Do not rerun the
+one-shot migration scripts or replay old reload/bind operations. Reacquire fresh
+identity, capabilities, expiry and STOP/release evidence for any future operation.
 
 The bounded current-runtime dependency scan found no confirmed remaining active
 default dependency on Workbridge, the original reader or its probe in

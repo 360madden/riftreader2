@@ -253,4 +253,41 @@ $lab2RollbackRoot = Join-Path 'C:\work\riftreader2\artifacts\e2e-latency-2026110
 The retained descriptor selects the prior `agent-379637a8d2c0-zip` release. That
 version lacks persistent native vitals: use screenshot-only or the explicit-reader
 alternative after rollback. This command is documented for recovery; the measured
-new release remains active.
+new release remained active at the final recorded checkpoint. Reacquire its
+identity and capabilities before another operation.
+
+## Native admission and replay follow-up
+
+Commits `287a5b6`, `a310534` and `399d463` check requested persistent native
+capabilities during joined preflight, require v2 plus its envelope timestamp
+for persistent replay, and enforce ordered UTC host brackets and exact 100 ns
+guest sample/response chronology. The existing five-second host/guest tolerance
+and explicit-reader v1 historical replay remain. The combined focused suite
+passed 90 tests; targeted control review passed.
+
+One bounded read-only `run --native-vitals` completed in 4.978142 seconds under
+`artifacts/e2e-latency-20261106/native-admission-live-validation`. It verified
+the unchanged Lab2 game/agent/VM identity, candidate report v2, screenshot lease,
+STOP and cleanup before visual review. The captured-and-released receipt records
+released queue generation 2336. No helper, agent, VM or game restart and no
+gameplay input occurred. The preserved controller remained connected, ready,
+disarmed/idle with no sampled held inputs and its console reservation retained.
+
+The image shows Bolinao AFK, health 10635/10635 and resource bar 100/100, matching
+the native candidate numbers. Mana is unavailable (`not-mana-kind-three`). This
+single unchanged-state numeric match does not qualify semantics, passive
+freshness, changed-state behavior or restart recovery. The native report's
+`candidate-only` qualification remains authoritative.
+
+Independent saved-file validation checked state/plan/controller/source/receipt
+hashes, v2 timing at exact tick precision, capture metadata and image, visual
+review binding and cleanup. Review SHA256:
+`9137C77B7C417A5398DE0018D17C731E1275F000EAB5E98CD232C068F6490FC4`.
+The review labels grant generation 2335 as inferred from the source-enforced
+cleanup increment; the retained release explicitly records 2336. It does not
+authenticate saved artifacts or establish present state.
+
+The full local gate passed 716 .NET and 1767 Python tests (2 skips), native/Lua/
+ownership/format and 1016 links. Evidence:
+`artifacts/validation/20261107T044324Z-a98e4144`; log
+`artifacts/validation/native-vitals-admission-20261106.log`.
