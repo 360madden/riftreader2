@@ -4,8 +4,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 
-from scripts.inspect_typed_resource import ResourceInspectionError, inspect
+from scripts.inspect_typed_resource import ResourceInspectionError, inspect, main
 
 
 FIELDS = {
@@ -50,6 +52,26 @@ def snapshot(path: Path, payload: bytes, *, corrupt=False):
 
 
 class TypedResourceInspectionTests(unittest.TestCase):
+    def test_cli_requires_explicit_current_or_historical_source(self):
+        stderr = StringIO()
+        with redirect_stderr(stderr), self.assertRaises(SystemExit) as raised:
+            main(["--snapshot", "missing.json", "--resource", "mana"])
+        self.assertEqual(2, raised.exception.code)
+        self.assertIn("one of the arguments --session-id --historical-rrapival2 is required",
+                      stderr.getvalue())
+
+    def test_cli_allows_explicit_historical_replay(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "snapshot.json"
+            snapshot(path, wire())
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                result = main(["--snapshot", str(path), "--resource", "mana",
+                               "--historical-rrapival2"])
+        self.assertEqual(0, result)
+        report = json.loads(stdout.getvalue())
+        self.assertEqual(3980, report["selected"]["current"]["value"])
+
     def test_extracts_mana_and_maximum(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "snapshot.json"
@@ -103,6 +125,17 @@ class RR2ReferenceTests(unittest.TestCase):
             path = Path(folder) / "snapshot.json"
             snapshot(path, payload)
             return inspect(path, "mana", self.nonce)
+
+    def test_cli_current_path_requires_and_accepts_exact_session_id(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "snapshot.json"
+            snapshot(path, self.fixture["beforeFrame"].encode("ascii"))
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                result = main(["--snapshot", str(path), "--resource", "mana",
+                               "--session-id", self.nonce])
+        self.assertEqual(0, result)
+        self.assertEqual("RR2R1", json.loads(stdout.getvalue())["selected"]["protocol"])
 
     def test_shared_fixture_rr2_only_and_zero_false(self):
         result = self.inspect_root(payload=self.fixture["beforeFrame"].encode("ascii"))

@@ -1,9 +1,10 @@
-"""Extract one player resource from a retained RRAPIVAL2 memory snapshot.
+"""Extract one player resource from a retained typed API memory snapshot.
 
 This is an offline evidence helper. It verifies every successful native-memory
-chunk hash, joins only contiguous chunks, validates the exact RRAPIVAL2 v2
-shape used by the current probe, and selects the newest complete frame. It does
-not read a process or turn the API value into native-field qualification.
+chunk hash, joins only contiguous chunks, and selects the newest complete frame.
+Current RR2R1 use requires the exact reader session ID. Historical RRAPIVAL2
+replay requires an explicit CLI switch; it is never selected by omission. This
+tool does not read a process or turn the API value into native-field qualification.
 """
 from __future__ import annotations
 
@@ -321,7 +322,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--snapshot", required=True, type=Path)
     parser.add_argument("--resource", choices=sorted(RESOURCE_FIELDS), required=True)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--session-id")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--session-id",
+        help="exact RR2R1 reader-session nonce (current runtime path)",
+    )
+    source.add_argument(
+        "--historical-rrapival2",
+        action="store_true",
+        help="explicitly replay retained legacy RiftReaderApiProbe evidence",
+    )
     args = parser.parse_args(argv)
     try:
         result = inspect(args.snapshot, args.resource, args.session_id)
