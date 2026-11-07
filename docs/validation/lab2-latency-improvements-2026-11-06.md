@@ -5,6 +5,10 @@ authenticated controller connection. Cached guest logins use a fixed authenticat
 file-existence probe instead of enumerating every guest process. Both changes were
 measured live against the unchanged Lab 2 VM and game epoch.
 
+The [end-to-end follow-up](lab2-end-to-end-latency-2026-11-06.md) measures the
+remaining tool-dispatch gaps and implements a bounded, joined native/UI diagnostic
+using those faster identity paths.
+
 ## Observed before and after
 
 | Operation | Before median | After median | Samples |

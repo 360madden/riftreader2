@@ -4,9 +4,13 @@ param(
     [Parameter(Mandatory)][ValidateSet('rr2-receiver-lab1','rr2-receiver-lab2','rr2-controller-lab1','rr2-controller-lab2')][string]$HelperId,
     [string]$Executable,
     [string[]]$Argument = @(),
-    [string]$WorkingDirectory
+    [string]$WorkingDirectory,
+    [switch]$InspectLab2Controller
 )
 $ErrorActionPreference = 'Stop'
+if ($InspectLab2Controller -and ($Action -cne 'Status' -or $HelperId -cne 'rr2-controller-lab2')) {
+    throw 'Lab 2 inspection requires exact controller Status.'
+}
 function Assert-LocalPath([string]$Path) {
     if (![IO.Path]::IsPathRooted($Path)) { throw 'An absolute path is required.' }
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -25,7 +29,6 @@ function Write-Registration([string]$Path, $Value) {
         else { [IO.File]::Move($temporary, $Path) }
     } finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force } }
 }
-Import-Module (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/Modules/ScheduledTasks') -ErrorAction Stop
 $repo = Split-Path -Parent $PSScriptRoot
 $state = Assert-LocalPath (Join-Path $repo ('.local/rr2-helpers/' + $HelperId))
 $configPath = Assert-LocalPath (Join-Path $state 'registration.json')
@@ -123,6 +126,43 @@ function Assert-HelperContract($Exe, $ArgsLine, $Directory) {
         $ArgsLine -cne $expectedArguments) { throw 'HELPER_CONTRACT: executable, arguments or working directory differ.' }
 }
 if ($config) { Assert-HelperContract $config.executable $config.arguments $config.workingDirectory }
+if ($InspectLab2Controller) {
+    if (!$config) { throw 'Unknown helper registration.' }
+    $scheduler = New-Object -ComObject Schedule.Service
+    $scheduler.Connect()
+    $folder = $scheduler.GetFolder('\')
+    # Refresh both names twice, as in ordinary Status. Only ERROR_FILE_NOT_FOUND
+    # proves absence of the competing legacy registration.
+    foreach ($observation in 1..2) {
+        try {
+            $null = $folder.GetTask('Workbridge Helper ' + $HelperId)
+            throw 'LEGACY_OWNER: competing or ambiguous legacy registration.'
+        }
+        catch {
+            $cause = $_.Exception.GetBaseException()
+            if ($cause.HResult -ne -2147024894) { throw }
+        }
+        $current = $folder.GetTask($taskName)
+        if ($current.Path -cne ('\' + $taskName) -or $current.Name -cne $taskName -or $current.State -ne 4) {
+            throw 'TASK_OWNERSHIP: exact root task must be running.'
+        }
+        $definition = $current.Definition
+        if ($definition.Actions.Count -ne 1 -or $definition.Actions.Item(1).Type -ne 0 -or
+            $definition.Triggers.Count -ne 0) { throw 'TASK_OWNERSHIP: expected one Exec action and no triggers.' }
+        $execAction = $definition.Actions.Item(1)
+        # Adapt ITaskDefinition to the same assertions used by ScheduledTasks.
+        $task = [pscustomobject]@{
+            TaskPath='\'; TaskName=$current.Name; Description=$definition.RegistrationInfo.Description
+            Actions=@([pscustomobject]@{Execute=$execAction.Path; Arguments=$execAction.Arguments; WorkingDirectory=$execAction.WorkingDirectory})
+            Principal=$definition.Principal; Triggers=@(); Settings=$definition.Settings
+        }
+        Assert-OwnedHelperTask $task $config
+    }
+    [ordered]@{helperId=$HelperId; taskName=$taskName; state='Running'; runLevel='Limited';
+        atLogon=$config.atLogon; lastTaskResult=$current.LastTaskResult; registration=$configPath} | ConvertTo-Json
+    return
+}
+Import-Module (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/Modules/ScheduledTasks') -ErrorAction Stop
 $tasks = @(Get-ScheduledTask -TaskPath '\' -ErrorAction Stop)
 $matches = @($tasks | Where-Object { $_.TaskName -ieq $taskName })
 if ($matches.Count -gt 1) { throw 'TASK_COLLISION: duplicate task names.' }

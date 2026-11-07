@@ -132,6 +132,13 @@ class ManagedReceiptTests(unittest.TestCase):
             with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-task-ownership-refused"):
                 self.resolve(verify_legacy=Mock(side_effect=RuntimeError("ambiguous")))
 
+    def test_inspection_owner_refusal_never_queries_legacy_registration(self):
+        legacy = Mock()
+        with patch.object(self, "verify_owner", side_effect=RuntimeError("inspection-denied")):
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-task-ownership-refused"):
+                self.resolve(allow_legacy=False, verify_legacy=legacy)
+        legacy.assert_not_called()
+
     def test_legacy_inspector_requires_strict_status_and_image(self):
         inspector = self.root / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
         inspector.write_text("offline mock")

@@ -162,14 +162,17 @@ class PinnedHost:
 
 
 
-def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict) -> None:
+def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict, *, inspect_lab2=False) -> None:
     """Verify task registration and the sole live generation at admission time."""
     from scripts.managed_controller_receipt import (
-        ManagedReceiptError, resolve_current_managed_controller,
+        ManagedReceiptError, resolve_current_managed_controller, verify_lab2_inspection_task,
     )
+    require(not inspect_lab2 or lab == "lab2", "Lab 2 inspection task required")
     try:
         actual_path, actual_receipt, _ = resolve_current_managed_controller(
-            lab, expected_receipt_path=receipt_path)
+            lab, expected_receipt_path=receipt_path,
+            verify_owner=verify_lab2_inspection_task if inspect_lab2 else None,
+            allow_legacy=not inspect_lab2)
     except (ManagedReceiptError, OSError, RuntimeError) as error:
         raise MovementSessionError("managed task ownership or generation refused") from error
     require(actual_path == Path(receipt_path).resolve(strict=True)
@@ -179,12 +182,15 @@ def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict) -> 
 class ManagedPinnedHost(PinnedHost):
     """A reviewed movement host bound to one exact managed task generation."""
 
+    _allowed_labs = ("lab1", "lab2")
+    _inspect_lab2_task = False
+
     def __init__(self, plan_path: Path):
         self.plan_path = Path(plan_path).resolve(strict=True)
         self.plan = load(self.plan_path)
         plan = self.plan
         require(plan.get("kind") == "managed-controller/1"
-                and plan.get("lab") in ("lab1", "lab2"),
+                and plan.get("lab") in self._allowed_labs,
                 "managed host plan is invalid")
         from scripts.ensure_controller import CONFIGS, QUEUE
         lab = plan["lab"]
@@ -200,16 +206,17 @@ class ManagedPinnedHost(PinnedHost):
                 and plan["resource"] == "vm:rift-lab-" + lab[-1],
                 "managed host plan paths or resource mismatch")
         self.receipt = load(self.receipt_path)
-        _require_exact_managed_task(lab, self.receipt_path, self.receipt)
+        _require_exact_managed_task(lab, self.receipt_path, self.receipt, inspect_lab2=self._inspect_lab2_task)
         self.config = HostConfig.load(config_path)
         self.client = ControlClient(self.config)
         self.target = plan.get("target")
         require(isinstance(self.target, dict) and set(self.target) ==
                 {"processId", "processStartUtcTicks", "executableSha256", "windowHandle"},
                 "managed host target pin invalid")
-        self.check()
+        # Even a read-only inspection must establish unique inventory membership on admission.
+        ManagedPinnedHost.check(self)
 
-    def check(self):
+    def _check_managed_owner(self):
         plan, receipt = self.plan, self.receipt
         require(sha(self.receipt_path) == plan.get("receiptSha256"),
                 "managed host task receipt changed")
@@ -243,9 +250,12 @@ class ManagedPinnedHost(PinnedHost):
                 "managed host process epoch changed")
         require(listener_owner(self.config.ui_port) == receipt["pid"],
                 "managed host operator listener owner changed")
+
+    def check(self):
+        self._check_managed_owner()
         guard = VmEpochGuard(self.config)
         require(guard.enabled and guard.module.collect_identity(guard.config)
-                == plan["vmIdentity"], "managed host VM epoch changed")
+                == self.plan["vmIdentity"], "managed host VM epoch changed")
 
     def status(self, **kwargs):
         value = super().status(**kwargs)
@@ -272,8 +282,24 @@ class ManagedPinnedHost(PinnedHost):
         return value
 
 
-def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) -> Path:
-    """Pin an already-ready controller. Never start/rebind one implicitly."""
+class Lab2InspectionHost(ManagedPinnedHost):
+    """Recheck the admitted VM epoch between full inventory checks in one read-only run."""
+
+    _allowed_labs = ("lab2",)
+    _inspect_lab2_task = True
+
+    def check(self):
+        self._check_managed_owner()
+        guard = VmEpochGuard(self.config)
+        expected = self.plan["vmIdentity"]
+        require(guard.enabled and guard.module.verify_identity(guard.config, expected) == expected,
+                "managed host VM epoch changed")
+
+    def final_inventory_check(self):
+        super().check()
+
+
+def _discover_managed_host_plan(lab: str, output: Path, *, inspect_lab2=False) -> Path:
     from scripts.ensure_controller import CONFIGS, QUEUE
     require(lab in CONFIGS, "unknown managed lab")
     config_path = CONFIGS[lab].resolve(strict=True)
@@ -317,7 +343,7 @@ def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) 
             matches.append((receipt_path, receipt))
     require(len(matches) == 1, "managed controller task receipt missing or ambiguous")
     receipt_path, receipt = matches[0]
-    _require_exact_managed_task(lab, receipt_path, receipt)
+    _require_exact_managed_task(lab, receipt_path, receipt, inspect_lab2=inspect_lab2)
     target = guest.get("target", {})
     target_pin = {key: target.get(key) for key in
                   ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
@@ -337,8 +363,24 @@ def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) 
     }
     destination = Path(output) / "managed-host-plan.json"
     save(destination, plan)
-    ManagedPinnedHost(destination).status(require_armed=False, require_foreground=require_foreground)
     return destination
+
+
+def admit_managed_host(lab: str, output: Path, *, require_foreground=True) -> ManagedPinnedHost:
+    """Write the plan and return the already-ready controller validated against it."""
+    admitted = ManagedPinnedHost(_discover_managed_host_plan(lab, output))
+    admitted.status(require_armed=False, require_foreground=require_foreground)
+    return admitted
+
+
+def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
+    admitted = Lab2InspectionHost(_discover_managed_host_plan("lab2", output, inspect_lab2=True))
+    admitted.status(require_armed=False, require_foreground=True)
+    return admitted
+
+
+def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) -> Path:
+    return admit_managed_host(lab, output, require_foreground=require_foreground).plan_path
 
 
 def open_host(plan_path: Path) -> PinnedHost:

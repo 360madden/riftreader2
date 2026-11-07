@@ -6,6 +6,19 @@ never calls a native getter. Results are candidate-only; independent same-player
 changed-state meaning, passive freshness and restart recovery remain unqualified.
 Kind-3 Mana is explicitly unavailable; Energy is not a generic resource reader.
 
+On the activated Lab 2 controller, use the joined persistent diagnostic to avoid
+guest process launch and executable/report transfers:
+
+```powershell
+python scripts/inspect_lab2_workflow.py run --native-vitals --output C:\work\riftreader2\artifacts\e2e-latency-20261106\<new-run>
+```
+
+It performs fresh expected VM/game/build/agent checks, acquires the same bounded
+candidate report through the authenticated channel, captures the matching game
+window under its own lease and verifies cleanup. See
+[end-to-end measurements and limits](../validation/lab2-end-to-end-latency-2026-11-06.md).
+This route was activated and tested on Lab 2 only.
+
 Use an explicitly hash-pinned published reader from the host:
 
 ```powershell

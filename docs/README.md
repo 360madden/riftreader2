@@ -24,6 +24,7 @@ topic below instead of loading every document for each task.
 | Research | [Cooldown static follow-up](reference/native-cooldown-static-followup-2026-11-06.md) | Corrected timer baseline and lookup paths; live meaning unverified. |
 | Research | [Cast topology candidate](reference/native-current-cast-candidate.md) | Offline bounded topology helper; no casting semantics or live identity qualification. |
 | Native vitals | [Current-build HP/Energy candidates](reference/current-native-vitals.md) | Read-only candidate reader, host wrapper, and two-lab live evidence; semantic qualification pending. |
+| Diagnostic performance | [Lab 2 end-to-end latency](validation/lab2-end-to-end-latency-2026-11-06.md) | Measured orchestration gaps, scoped ownership checks, native-reader reuse and joined UI evidence. |
 | Power discovery | [Native Warrior Power locator](reference/native-power-locator.md) | Player resource chain and API calculation; changed-state Lua agreement across one full game restart. |
 | Power data | [Live interface and field catalog](reference/power-data-interface.md) | Fresh native Power in normal JSON output, retained catalog assessments, standard JSON/CSV discovery exports. |
 | Numeric discovery | [Bounded value scout](reference/native-value-scout.md) | Seed health/resource candidates once, then use small changed-state captures. |

@@ -8,6 +8,7 @@ $manager = Join-Path $scripts 'Manage-RR2HelperTask.ps1'
 # operations below are in-memory functions and cannot mutate Windows tasks.
 $source = Get-Content -LiteralPath $manager -Raw
 $source = $source -replace '(?m)^Import-Module .*ScheduledTasks.*\r?\n', ''
+$source = $source.Replace('New-Object -ComObject Schedule.Service', '$global:mockScheduler')
 [IO.File]::WriteAllText($manager, $source)
 $id = 'rr2-receiver-lab1'
 $global:mockTasks = @()
@@ -32,6 +33,16 @@ function global:Start-ScheduledTask { param($TaskPath,$TaskName) $global:mockSta
 function global:Get-ScheduledTaskInfo { param($TaskPath,$TaskName) [pscustomobject]@{LastTaskResult=0} }
 function Must-Fail([scriptblock]$Block) { try { & $Block | Out-Null } catch { return }; throw 'Expected refusal' }
 function Register-Test { & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts 'receiver_task_entry.py'),'--lab','lab1') -WorkingDirectory $root }
+function New-InspectionTask($registration) {
+    $actions = [pscustomobject]@{Count=1; First=[pscustomobject]@{Type=0; Path=$registration.Actions[0].Execute;
+        Arguments=$registration.Actions[0].Arguments; WorkingDirectory=$registration.Actions[0].WorkingDirectory}}
+    $actions | Add-Member ScriptMethod Item { param($index) if ($index -ne 1) { throw 'invalid action index' }; $this.First }
+    $definition = [pscustomobject]@{Actions=$actions; Principal=$registration.Principal.PSObject.Copy();
+        Triggers=[pscustomobject]@{Count=0}; Settings=$registration.Settings.PSObject.Copy();
+        RegistrationInfo=[pscustomobject]@{Description=$registration.Description}}
+    return [pscustomobject]@{Path=('\' + $registration.TaskName); Name=$registration.TaskName;
+        State=4; Definition=$definition; LastTaskResult=0}
+}
 try {
     [IO.File]::WriteAllText((Join-Path $root 'pythonw.exe'), '')
     Must-Fail { & $manager -Action Status -HelperId 'other' }
@@ -80,6 +91,58 @@ try {
     $data.arguments = 'forged'
     $data | ConvertTo-Json | Set-Content $receipt
     Must-Fail { & $manager -Action Status -HelperId $id }
+    $id = 'rr2-controller-lab2'
+    $global:mockTasks = @()
+    & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts 'controller_task_entry.py'),'--lab','lab2') -WorkingDirectory $root | Out-Null
+    $registered = $global:mockTasks[0]
+    $global:mockLegacy = $false
+    $global:mockDenied = $false
+    $global:mockReads = 0
+    $global:changeOnSecondRead = $false
+    $global:mockScheduler = [pscustomobject]@{Folder=[pscustomobject]@{}}
+    $global:mockScheduler | Add-Member ScriptMethod Connect {}
+    $global:mockScheduler | Add-Member ScriptMethod GetFolder { param($path) if ($path -cne '\') { throw 'foreign folder' }; $this.Folder }
+    $global:mockScheduler.Folder | Add-Member ScriptMethod GetTask {
+        param($name)
+        if ($name -ceq 'Workbridge Helper rr2-controller-lab2') {
+            if ($global:mockDenied) { throw [UnauthorizedAccessException]::new('denied') }
+            if ($global:mockLegacy) { return [pscustomobject]@{Name=$name} }
+            throw [IO.FileNotFoundException]::new('absent')
+        }
+        if ($name -cne 'RiftReader2 Helper rr2-controller-lab2') { throw 'foreign task' }
+        $global:mockReads++
+        if ($global:changeOnSecondRead -and $global:mockReads -eq 2) { $global:inspectionTask.State = 3 }
+        return $global:inspectionTask
+    }
+    $inspect = { & $manager -Action Status -HelperId $id -InspectLab2Controller }
+    $global:inspectionTask = New-InspectionTask $registered
+    $proof = & $inspect | ConvertFrom-Json
+    if ($proof.state -cne 'Running' -or $global:mockReads -ne 2) { throw 'Two fresh task proofs required.' }
+    foreach ($alter in @(
+        {$t.Path='\other\task'}, {$t.Name='wrong'}, {$t.State=3}, {$d.RegistrationInfo.Description='wrong'},
+        {$d.Actions.Count=2}, {$d.Actions.First.Type=5}, {$d.Actions.First.Path='foreign.exe'},
+        {$d.Actions.First.Arguments='wrong'}, {$d.Actions.First.WorkingDirectory='wrong'},
+        {$d.Principal.UserId='S-1-5-18'}, {$d.Principal.RunLevel=1}, {$d.Principal.LogonType=0},
+        {$d.Triggers.Count=1}, {$d.Settings.ExecutionTimeLimit='PT1M'}, {$d.Settings.MultipleInstances=0},
+        {$d.Settings.Enabled=$false}, {$d.Settings.DisallowStartIfOnBatteries=$true},
+        {$d.Settings.StopIfGoingOnBatteries=$true}, {$d.Settings.RestartCount=1}
+    )) {
+        $global:inspectionTask = New-InspectionTask $registered
+        $t=$global:inspectionTask; $d=$t.Definition
+        & $alter
+        Must-Fail $inspect
+    }
+    $global:inspectionTask = New-InspectionTask $registered
+    $global:mockReads = 0; $global:changeOnSecondRead = $true
+    Must-Fail $inspect
+    $global:changeOnSecondRead = $false
+    $global:inspectionTask = New-InspectionTask $registered
+    $global:mockLegacy = $true; Must-Fail $inspect; $global:mockLegacy = $false
+    $global:mockDenied = $true; Must-Fail $inspect; $global:mockDenied = $false
+    Must-Fail { & $manager -Action Start -HelperId $id -InspectLab2Controller }
+    Must-Fail { & $manager -Action Register -HelperId $id -InspectLab2Controller }
+    Must-Fail { & $manager -Action Status -HelperId 'rr2-controller-lab1' -InspectLab2Controller }
+    Must-Fail { & $manager -Action Status -HelperId 'rr2-receiver-lab2' -InspectLab2Controller }
     'RR2 helper manager mocked tests passed.'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force

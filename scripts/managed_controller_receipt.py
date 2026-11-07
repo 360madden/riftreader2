@@ -90,10 +90,29 @@ def _verify_legacy_owner(lab, image, root):
             and status.get("runLevel") == "Limited", "managed-legacy-ownership-refused")
 
 
+def verify_lab2_inspection_task(lab: str) -> None:
+    """Query fresh Task Scheduler registration and state for the read-only Lab 2 inspection."""
+    require(lab == "lab2", "inspection-task-lab-invalid")
+    from scripts.controller_task_entry import POWERSHELL
+    from scripts.ensure_controller import MANAGER
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
+         "-File", str(MANAGER), "-Action", "Status", "-HelperId", "rr2-controller-lab2",
+         "-InspectLab2Controller"], cwd=str(root), stdin=subprocess.DEVNULL,
+        capture_output=True, timeout=20, check=False)
+    require(result.returncode == 0, "inspection-task-ownership-refused")
+    status = json.loads(result.stdout.decode("utf-8-sig"))
+    require(isinstance(status, dict) and status.get("helperId") == "rr2-controller-lab2"
+            and status.get("taskName") == "RiftReader2 Helper rr2-controller-lab2"
+            and status.get("state") == "Running" and status.get("runLevel") == "Limited"
+            and status.get("atLogon") is False, "inspection-task-ownership-refused")
+
+
 def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
                                        queue_path=None, runtime_files=None,
                                        identity_reader=None, verify_owner=None, verify_legacy=None,
-                                       expected_receipt_path=None):
+                                       expected_receipt_path=None, allow_legacy=True):
     """Return (exact process receipt path, validated receipt, synthetic host plan).
 
     Explicit injection arguments exist for offline tests. Production callers
@@ -187,7 +206,9 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
         require(_sha(root / source) == expected.upper(), "managed-runtime-changed")
     try:
         verify_owner(lab)
-    except Exception:
+    except Exception as error:
+        if not allow_legacy:
+            raise ManagedReceiptError("managed-task-ownership-refused") from error
         try:
             verify_legacy(lab, receipt["processIdentity"].get("image"), root)
         except Exception as error:

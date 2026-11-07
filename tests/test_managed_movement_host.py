@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 import scripts.run_movement_session as runner
+from scripts import vm_console_native as native
 
 
 def ready_status():
@@ -242,17 +243,26 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.config_path.write_text("{}", encoding="utf-8")
         self.queue_path = self.root / "queue.sqlite3"
         self.queue_path.write_bytes(b"fixture")
-        self.vm = {"pid": 21, "startTicks": 42}
+        self.vm = {"pid": 21, "listenerPid": 21, "startTicks": 42, "port": 5962,
+                   "image": "vmware-vmx.exe", "vmx": "lab2.vmx", "logEpoch": "boot-1"}
         self.identity = {"pid": 123, "creationTime": 100}
         self.status_value = ready_status()
-        self.status_value["host"].update({"connected": True, "vmIdentity": self.vm})
+        self.status_value["host"].update({"connected": True, "machineName": "RIFT-LAB-2",
+                                          "vmIdentity": self.vm})
+        self.status_value["host"]["consoleReservation"].update({"held": True, "faulted": False})
         self.status_value["host"]["coordination"].update({
             "resource": "vm:rift-lab-2", "state": "ready",
         })
+        self.status_value["guest"].update({"recoveryRequired": False, "desktopInputsDown": [],
+                                           "busy": False, "armed": False})
         self.status_value["guest"]["target"] = {
             "processId": 99, "processStartUtcTicks": 100,
             "executableSha256": "B" * 64, "windowHandle": "0x10",
+            "machineName": "RIFT-LAB-2", "executablePath": "rift.exe", "isForeground": True,
+            "clientWidth": 800, "clientHeight": 600, "clientX": 0, "clientY": 0,
         }
+        identity = runner.bind_identity(self.status_value["host"], self.status_value["guest"])
+        self.status_value["host"]["coordination"]["supervisor"]["epoch"] = runner.resource_epoch(identity)
         self.task_dir = self.root / "artifacts/controller-tasks/lab2"
         self.task_dir.mkdir(parents=True)
         self.receipt = {
@@ -266,6 +276,9 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.output.mkdir()
         self.dependency = dependency
         self.admission_calls = []
+        self.inspection_task_checks = []
+        self.inventory = MagicMock(return_value=self.vm)
+        self.direct_identity = MagicMock(return_value=self.vm)
 
     def create_receipt(self, name):
         import json
@@ -273,14 +286,16 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         folder.mkdir()
         (folder / "process.json").write_text(json.dumps(self.receipt), encoding="utf-8")
 
-    def generate(self, *, reject_strict=False, require_foreground=True):
+    def generate(self, *, reject_strict=False, require_foreground=True, return_host=False,
+                 inspection=False):
         fake_guard = SimpleNamespace(
             enabled=True, config="native-config",
-            module=SimpleNamespace(collect_identity=lambda config: self.vm),
+            module=SimpleNamespace(collect_identity=self.inventory, verify_identity=native.verify_identity),
         )
         fake_client = SimpleNamespace(request=lambda path, method: self.status_value)
-        def admission(*args):
+        def admission(*args, inspect_lab2=False):
             self.admission_calls.append(args)
+            self.inspection_task_checks.append(inspect_lab2)
             if reject_strict:
                 raise runner.MovementSessionError("managed task ownership refused")
         with patch.object(runner, "ROOT", self.root), \
@@ -292,14 +307,73 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
              patch.object(runner, "listener_owner", return_value=123), \
              patch.object(runner, "process_identity", return_value=self.identity), \
              patch.object(runner, "VmEpochGuard", return_value=fake_guard), \
-             patch.object(runner.PinnedHost, "status", return_value=self.status_value) as status, \
+             patch.object(native, "_direct_identity", self.direct_identity), \
+             patch.object(runner.PinnedHost, "status", autospec=True,
+                          side_effect=runner.PinnedHost.status) as status, \
              patch.object(runner, "_require_exact_managed_task",
                           side_effect=admission):
-            path = runner.write_managed_host_plan("lab2", self.output,
-                                                  require_foreground=require_foreground)
-            status.assert_called_once_with(require_armed=False,
-                                           require_foreground=require_foreground)
-            return path
+            if inspection:
+                result = runner.admit_lab2_inspection_host(self.output)
+                result.final_inventory_check()
+            else:
+                factory = runner.admit_managed_host if return_host else runner.write_managed_host_plan
+                result = factory("lab2", self.output, require_foreground=require_foreground)
+            status.assert_called_once()
+            self.assertEqual(status.call_args.kwargs,
+                             {"require_armed": False, "require_foreground": require_foreground})
+            if return_host or inspection:
+                self.assertIs(result, status.call_args.args[0])
+            return result
+
+    def test_factory_returns_validated_host_with_both_ownership_proofs(self):
+        host = self.generate(return_host=True)
+        self.assertIsInstance(host, runner.ManagedPinnedHost)
+        self.assertEqual(host.plan_path, self.output / "managed-host-plan.json")
+        self.assertEqual(host.plan, runner.load(host.plan_path))
+        self.assertEqual([call[0] for call in self.admission_calls], ["lab2", "lab2"])
+        self.assertEqual(self.inspection_task_checks, [False, False])
+        self.assertEqual(self.inventory.call_count, 3)
+        self.direct_identity.assert_not_called()
+
+    def test_inspection_checks_inventory_at_both_boundaries_and_epoch_around_status(self):
+        host = self.generate(inspection=True)
+        self.assertIsInstance(host, runner.Lab2InspectionHost)
+        self.assertEqual(len(self.admission_calls), 2)
+        self.assertEqual(self.inspection_task_checks, [True, True])
+        self.assertEqual(self.inventory.call_count, 2)
+        self.assertEqual(self.direct_identity.call_count, 2)
+
+    def test_inspection_requires_running_vm_at_admission(self):
+        self.inventory.side_effect = native.Blocked("target-vm-not-running")
+        with self.assertRaisesRegex(native.Blocked, "target-vm-not-running"):
+            self.generate(inspection=True)
+        self.direct_identity.assert_not_called()
+
+    def test_inspection_refuses_ambiguous_final_membership(self):
+        self.inventory.side_effect = [self.vm, native.Blocked("target-vm-shared-log-ambiguous")]
+        with self.assertRaisesRegex(native.Blocked, "target-vm-shared-log-ambiguous"):
+            self.generate(inspection=True)
+        self.assertEqual(self.direct_identity.call_count, 2)
+
+    def test_inspection_direct_checks_reject_changed_pid_start_listener_or_log(self):
+        for key, other in (("pid", 22), ("startTicks", 43), ("listenerPid", 22), ("logEpoch", "boot-2")):
+            with self.subTest(key=key):
+                self.output = self.root / key
+                self.output.mkdir()
+                self.direct_identity.return_value = {**self.vm, key: other}
+                with self.assertRaisesRegex(native.Blocked, "target-drift"):
+                    self.generate(inspection=True)
+
+    def test_inspection_refuses_lab1_before_resolving_any_dependencies(self):
+        plan_path = self.output / 'plan.json'
+        runner.save(plan_path, {"kind": "managed-controller/1", "lab": "lab1"})
+        with self.assertRaisesRegex(runner.MovementSessionError, "managed host plan is invalid"):
+            runner.Lab2InspectionHost(plan_path)
+
+    def test_factory_refuses_nonforeground_game_by_default(self):
+        self.status_value["guest"]["target"]["isForeground"] = False
+        with self.assertRaisesRegex(runner.MovementSessionError, "not foreground"):
+            self.generate(return_host=True)
 
     def test_maintenance_plan_explicitly_accepts_background_without_changing_plan_schema(self):
         self.status_value['guest']['target']['isForeground'] = False
