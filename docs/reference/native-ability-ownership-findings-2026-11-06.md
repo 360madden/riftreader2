@@ -130,6 +130,46 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Actual localization provider — November7, 10:50 Eastern
+
+The default-provider refusal was correct but did not describe the active route.
+Lab2's fresh bracketed pointer capture verified wrapper vtable RVA`0x26C1EA8`
+and first method`0x7D3230`, matching the explicit heap-provider constructor.
+Receipt: `artifacts/discovery-20261107-cast/lab2/654cf6947b9e4dca9f1d25f75ecc325c/summary.json`.
+PID9752/start639294897826627677, exact SHA1935A05C...; repeated chain, vtable
+and method bytes matched, with final identity inspection. No provider was called.
+
+This provider reads inner=`[wrapper+8]`, map header at inner+28. Lookup uses
+ONE native key-hash round, DWORD node+8, holder=`[node+10]`, result=`[holder+18]`.
+This is distinct from the selector/composite-key dataset cache. Its bounded
+hot-cache misses cannot establish missing translations; backing lookup remains
+unresolved. The lazy default-provider global being null does not invalidate
+this separately observed override. Selector84 was never established.
+
+Passive exact-build result type1E1B profile: object vtable295DC10,
+slot+40 getter1A4FAF0; initialized descriptor3484000, vtable2963030,
+slot+8 getter1A779E0, low1685CA XOR9BD1=1E1B. Text type1E1D:
+object vtable2804120/getter173C790; initialized descriptor3420930,
+vtable2820340/getter177CE30, low1680A8 XOR9EB5=1E1D. All numbers are
+module RVAs except type arithmetic. Require initialized descriptors and stable
+ownership before interpreting locale-tree or text bytes. Current-language names
+remain pending a successful fresh typed capture.
+
+The first keyed override-cache attempt (`lab2/cef05ca73abd48dcb0ef10e85596b0fd/`
+under the same artifact root) retained a PARTIAL result, no names, after eight
+guest snapshot calls. Offline replay verified real changes at both requested
+24-byte hash heads and four chain nodes between initial and final reads, rather
+than a read-size bookkeeping mismatch. This establishes acquisition changes,
+not their cause. A one-process native reader is the next route; preserve the
+anchor checks rather than accepting mixed cache generations.
+
+The Lab1 current122-record receipt has14 exact full-ID correlations to the55
+historical named API rows; all14 are within the43 nonzero+0xC9-filter records.
+There are zero high-word-only matches. Source hashes and all rows are retained
+in `artifacts/native-ability-records-20261107/lab1-historical-correlation.json`.
+The historical build differs, so these do not establish current names or learned
+membership.
+
 ### November7 continuation
 
 The shared registry selection and a complete raw cache inventory are now

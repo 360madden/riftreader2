@@ -1,6 +1,15 @@
 # Current status
 
-**2026-11-07 10:50 Eastern — DISCOVERY CHECKPOINT:** Targeted cache lookup,
+**2026-11-07 10:54 Eastern — DISCOVERY CHECKPOINT:** Actual heap localization
+provider fingerprint verified live. The later multi-request cache capture was
+withheld after real head/chain changes; no names accepted. A single-process
+capture and resident-dictionary byte capture are the next useful experiments.
+Lab1 prefix and Lab2 rotating world samples each returned30 observations with
+no interesting cast rows and no unavailable units. No duration qualification.
+Existing owners and input gates remain intact. See the
+[timestamped handoff](handoff-2026-11-06-owner-migration.md).
+
+**2026-11-07 10:47 Eastern — DISCOVERY CHECKPOINT:** Targeted cache lookup,
 typed record/full-ID seeds and raw player-map Python helpers passed82 focused
 checks including probe checks. Prior live candidate receipts are retained.
 Localization dictionary inspection refused a differing runtime provider; static
