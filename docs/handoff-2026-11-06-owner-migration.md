@@ -31,8 +31,10 @@ are not. No runtime source was changed during this review.
 Documentation corrections repaired mixed UTF-8/Windows-1252 bytes in status.md,
 narrowed the final retained-status claim and marked checkpoint values historical.
 All262 tracked Markdown files passed strict UTF-8 decoding after repair.
-Unrelated in-progress managed receipt/movement admission edits and tests were
-preserved and excluded from this review's committed-runtime conclusion.
+Concurrent managed receipt/movement admission work was preserved; it became
+commit `926309a` during the review and is excluded from the fixed `399d463`
+runtime review and its earlier full-gate conclusion. No current-state claim
+should be inferred from this historical checkpoint.
 
 ## Current resume point — sustained480 and helper ownership accepted
 
