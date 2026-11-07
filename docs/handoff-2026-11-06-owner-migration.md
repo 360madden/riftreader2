@@ -2,6 +2,43 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## STOP/release optional-output P2 fixed — November 7
+
+`control_client.py` now sends one direct STOP/release POST before any optional
+output path work. An existing receipt, inaccessible parent, path error or storage
+failure cannot suppress cleanup. Acknowledged requests whose receipt fails still
+exit nonzero with the output error code plus `error.details.operation`,
+`requestCompleted: true` and the host's exact `result`. This separates storage
+failure from the returned cleanup outcome; it does not certify successful release.
+Transport/host errors remain unchanged, without output access or automatic retry.
+
+No controller startup, ownership inspection, lease read/acquisition or recovery
+was added to these direct cleanup routes. Recover/arm/action retain output
+reservation before their protected request. Descriptor ownership transfers once
+to the writer; failed writes do not trigger a second caller close/unlink that
+could affect a replacement file. Console errors redact tokens and Authorization.
+See [client behavior](reference/native-vm-controls.md#stop-and-release-receipt-failures).
+
+Twelve new offline regression tests bring the client suite to 25 passing tests.
+They cover both cleanup operations, storage/path failures, original error
+propagation, negative cleanup results, CLI redaction, output preservation and
+descriptor lifetime. No live request, input, helper restart, owner transfer or
+queue/STOP/release gate change was used. Independent safety review passed.
+
+The combined client/host/dependency/console/reservation suite passes 171 tests.
+The full gate passed 719 .NET tests and 1,815 Python tests run (1,813 passed,
+two skipped), locked restore/build/format, native smoke, real Lua/C# contracts,
+helper ownership mocks, deterministic replay and 1,070 relative links.
+Evidence: `artifacts/validation/20261107T100621Z-3f208918`; source hashes, logs
+and reproduction are under `artifacts/cleanup-output-fix-20261107/`.
+The separate mocked existing-file reproduction sent zero requests with vulnerable
+`13276c9` and one with this fix for each of STOP/release, preserving the original
+file. The acknowledged negative cleanup result remained negative in the error.
+
+The P1 and this P2 are fixed; six P2 findings remain outside this change.
+Next separate repair: the default action dependency preflight rejects a correctly
+armed guest. Preserve ownership and final-send safety gates when fixing it.
+
 ## Console replay P1 fixed — November 7
 
 The reviewed console now creates an exclusive `execution-attempt.json` under
@@ -39,8 +76,8 @@ identity, source/review freshness and key/mouse release/disconnect gates retain
 their order. No live input, bind/reload, helper restart or ownership transfer
 was used. Details: [console validation](validation/console-interaction-speed-2026-11-06.md#durable-console-attempt-reservation--november-7).
 
-The P1 is resolved in source; seven P2 review findings remain outside this fix.
-Continue with a separate focused repair of STOP/release optional-output handling.
+At this P1 checkpoint seven P2 findings remained. The subsequent STOP/release
+optional-output fix is recorded above; six P2 findings remain.
 Any later live console use still needs fresh identities, an independently
 reviewed screenshot and the existing exclusive ownership handoff.
 
@@ -87,12 +124,13 @@ The user requested a review after clearing the timed goal. Independent reviewers
 checked committed runtime `399d463` and retained evidence; later `8ded91e` is
 documentation only. No live input or helper mutation was used in the review.
 The sustained480 and native-v2 results still reconcile. This table records the
-historical review; the P1 is now fixed above and the seven P2 findings remain open.
+historical review; the P1 and STOP/release output P2 are now fixed above, with
+six other P2 findings remaining open.
 
 | Priority | Finding | Owning source |
 | --- | --- | --- |
 | P1 FIXED | Failed final report publication or two callers passing the pre-mutex check could dispatch the same reviewed plan twice. Exclusive durable reservation and owner-only report publication now block replay. | `scripts/addon_command_console.py`; November 7 fix above |
-| P2 | `stop`/`release --output` can refuse delivery when output reservation fails. Direct cleanup without optional output is unaffected. | `scripts/control_client.py:356` |
+| P2 FIXED | STOP/release now dispatch before optional output work; output errors retain the acknowledged result and cannot suppress delivery. | `scripts/control_client.py`; November 7 fix above |
 | P2 | Default `action` tries disarmed guest recovery and rejects an already armed guest before dispatch. | `scripts/control_client.py:431`, `scripts/ensure_guest_agent.py:72` |
 | P2 | Failed controller receipt collection/serialization leaves empty `process.json`; malformed historical generations poison later admission. | `scripts/controller_task_entry.py:92`, managed receipt generation scan |
 | P2 | Scheduler status prescribes retry on a nonrunning-to-running race, but task entry points check once and exit. Stable-state live starts did not exercise it. | `scripts/Manage-RR2HelperTask.ps1:258`, controller/receiver task entry |

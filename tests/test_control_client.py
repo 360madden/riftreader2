@@ -3,11 +3,13 @@ from io import BytesIO
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
 import unittest
 import urllib.error
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "control_client.py"
@@ -222,6 +224,370 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(sent["action"]["deltaX"], 10)
 
 
+
+
+class CleanupOutputTests(unittest.TestCase):
+    def assert_cleanup_request(self, opener, operation):
+        self.assertEqual(len(opener.calls), 1)
+        request, _ = opener.calls[0]
+        self.assertEqual(request.full_url, f"http://127.0.0.1:49713/api/{operation}")
+        self.assertEqual(request.method, "POST")
+        self.assertEqual(json.loads(request.data), {})
+        self.assertEqual(request.get_header("Authorization"), "Bearer operator-token-012345")
+        self.assertEqual(request.get_header("Origin"), "http://127.0.0.1:49713")
+
+    def assert_completed_error(self, error, operation, response, code):
+        self.assertEqual(error.code, code)
+        self.assertEqual(error.details, {
+            "operation": operation, "requestCompleted": True, "result": response,
+        })
+
+    def test_existing_output_does_not_prevent_cleanup_or_overwrite(self):
+        for operation in ("stop", "release"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config = write_config(root)
+                output = root / "result.json"
+                output.write_bytes(b"existing receipt")
+                response = {"released": True}
+                opener = FakeOpener(FakeResponse(response))
+                with self.assertRaises(client.ClientError) as caught:
+                    client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                self.assert_cleanup_request(opener, operation)
+                self.assert_completed_error(caught.exception, operation, response, "output-exists")
+                self.assertEqual(output.read_bytes(), b"existing receipt")
+
+    def test_cleanup_precedes_parent_and_reservation_failures(self):
+        for operation in ("stop", "release"):
+            for failure in ("missing-parent", "unwritable-parent", "reservation"):
+                with self.subTest(operation=operation, failure=failure), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = write_config(root)
+                    output = root / "missing" / "nested" / "result.json" if failure == "missing-parent" else root / "result.json"
+                    response = {"released": True}
+                    opener = FakeOpener(FakeResponse(response))
+                    events = []
+                    original_reserve = client._reserve_output
+
+                    def reserve(path, **kwargs):
+                        self.assert_cleanup_request(opener, operation)
+                        events.append("reserve")
+                        return original_reserve(path, **kwargs)
+
+                    def denied(*args, **kwargs):
+                        self.assert_cleanup_request(opener, operation)
+                        events.append(failure)
+                        raise PermissionError("injected reservation failure")
+
+                    target = "mkdir" if failure == "unwritable-parent" else "open"
+                    with patch.object(client, "_reserve_output", side_effect=reserve):
+                        if failure == "missing-parent":
+                            with self.assertRaises(client.ClientError) as caught:
+                                client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                        else:
+                            owner = Path if target == "mkdir" else client.os
+                            with patch.object(owner, target, side_effect=denied):
+                                with self.assertRaises(client.ClientError) as caught:
+                                    client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                    self.assertEqual(events[0], "reserve")
+                    self.assert_completed_error(caught.exception, operation, response, "output-error")
+                    self.assertFalse(output.exists())
+
+    def test_post_request_write_flush_fsync_and_fdopen_failures_clean_owned_output(self):
+        for operation in ("stop", "release"):
+            for failure in ("write", "flush", "fsync", "fdopen"):
+                with self.subTest(operation=operation, failure=failure), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = write_config(root)
+                    output = root / "result.json"
+                    response = {"released": True}
+                    opener = FakeOpener(FakeResponse(response))
+                    original_fdopen = client.os.fdopen
+                    descriptors = []
+                    events = []
+
+                    class FailingStream:
+                        def __init__(self, stream):
+                            self.stream = stream
+
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *args):
+                            self.stream.close()
+
+                        def write(self, data):
+                            events.append("write")
+                            if failure == "write":
+                                self.stream.write(data[:1])
+                                raise OSError("injected write failure")
+                            return self.stream.write(data)
+
+                        def flush(self):
+                            events.append("flush")
+                            if failure == "flush":
+                                raise OSError("injected flush failure")
+                            return self.stream.flush()
+
+                        def fileno(self):
+                            return self.stream.fileno()
+
+                    def fdopen(descriptor, *args, **kwargs):
+                        self.assert_cleanup_request(opener, operation)
+                        descriptors.append(descriptor)
+                        events.append("fdopen")
+                        if failure == "fdopen":
+                            raise OSError("injected fdopen failure")
+                        return FailingStream(original_fdopen(descriptor, *args, **kwargs))
+
+                    def fsync(descriptor):
+                        events.append("fsync")
+                        if failure == "fsync":
+                            raise OSError("injected fsync failure")
+
+                    with patch.object(client.os, "fdopen", side_effect=fdopen), \
+                         patch.object(client.os, "fsync", side_effect=fsync):
+                        with self.assertRaises(client.ClientError) as caught:
+                            client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                    self.assert_completed_error(caught.exception, operation, response, "output-error")
+                    self.assertEqual(events, ["fdopen", "write", "flush", "fsync"][:("fdopen", "write", "flush", "fsync").index(failure) + 1])
+                    self.assertFalse(output.exists())
+                    self.assertEqual(len(descriptors), 1)
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptors[0])
+
+    def test_output_resolution_failure_is_reported_after_cleanup(self):
+        for operation in ("stop", "release"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config = write_config(root)
+                output = root / "result.json"
+                response = {"released": True}
+                opener = FakeOpener(FakeResponse(response))
+                original_resolve = Path.resolve
+
+                def cannot_resolve(path, *args, **kwargs):
+                    if path != output:
+                        return original_resolve(path, *args, **kwargs)
+                    self.assert_cleanup_request(opener, operation)
+                    raise OSError("injected resolution failure")
+
+                with patch.object(Path, "resolve", cannot_resolve), \
+                     patch.object(client, "_reserve_output", side_effect=AssertionError("must not reserve")):
+                    with self.assertRaises(client.ClientError) as caught:
+                        client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                self.assert_completed_error(caught.exception, operation, response, "output-error")
+                self.assertFalse(output.exists())
+
+    def test_write_failure_has_one_cleanup_owner_and_preserves_replacement(self):
+        for operation in ("stop", "release", "recover", "arm", "action"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config = write_config(root)
+                output = root / "result.json"
+                capture = root / "capture.json"
+                capture.write_text('{"captureId":"reviewed-capture"}', encoding="utf-8")
+                arm = root / "arm.json"
+                arm.write_text('{"armToken":"private-arm-token"}', encoding="utf-8")
+                response = {"released": True, "armToken": "new-arm-token", "expiresInSeconds": 15}
+                opener = FakeOpener(FakeResponse(response))
+                original_unlink = Path.unlink
+                unlinked = []
+
+                def unlink_then_replace(path, *args, **kwargs):
+                    result = original_unlink(path, *args, **kwargs)
+                    if path == output:
+                        unlinked.append(path)
+                        path.write_bytes(b"replacement owned by another caller")
+                    return result
+
+                arguments = [operation, "--output", str(output)]
+                if operation == "arm":
+                    arguments.extend(["--capture", str(capture), "--review-note", "reviewed"])
+                elif operation == "action":
+                    arguments.extend(["--arm", str(arm), "--keys", "w"])
+                with patch.object(client.os, "fsync", side_effect=OSError("injected fsync failure")), \
+                     patch.object(Path, "unlink", unlink_then_replace), \
+                     patch.object(client.os, "close", wraps=client.os.close) as close:
+                    with self.assertRaises(client.ClientError) as caught:
+                        client.run(parse(config, *arguments), opener=opener)
+                self.assertEqual(caught.exception.code, "output-error")
+                self.assertEqual(len(opener.calls), 1)
+                self.assertEqual(unlinked, [output])
+                close.assert_called_once()
+                self.assertEqual(output.read_bytes(), b"replacement owned by another caller")
+
+    def test_descriptor_close_failure_reports_ack_and_preserves_primary_failure(self):
+        for operation in ("stop", "release"):
+            for primary in (None, OSError("primary write failure"), KeyboardInterrupt("primary cancellation")):
+                with self.subTest(operation=operation, primary=type(primary).__name__), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = write_config(root)
+                    output = root / "result.json"
+                    response = {"released": True}
+                    opener = FakeOpener(FakeResponse(response))
+                    original_close = client.os.close
+                    descriptors = []
+
+                    def close_then_fail(descriptor):
+                        descriptors.append(descriptor)
+                        original_close(descriptor)
+                        raise OSError("secondary close failure")
+
+                    with patch.object(client.os, "close", side_effect=close_then_fail), \
+                         patch.object(client.os, "fsync", side_effect=primary):
+                        if isinstance(primary, KeyboardInterrupt):
+                            with self.assertRaises(KeyboardInterrupt) as caught:
+                                client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                            self.assertIs(caught.exception, primary)
+                        else:
+                            with self.assertRaises(client.ClientError) as caught:
+                                client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                            self.assert_completed_error(caught.exception, operation, response, "output-error")
+                            self.assertIn("primary write failure" if primary else "secondary close failure", str(caught.exception))
+                    self.assert_cleanup_request(opener, operation)
+                    self.assertEqual(len(descriptors), 1)
+                    with self.assertRaises(OSError):
+                        os.fstat(descriptors[0])
+                    self.assertFalse(output.exists())
+
+    def test_success_schemas_and_request_before_any_output_work(self):
+        for operation in ("stop", "release"):
+            for save in (False, True):
+                with self.subTest(operation=operation, save=save), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = write_config(root)
+                    output = root / "new-parent" / "result.json"
+                    response = {"released": True}
+                    opener = FakeOpener(FakeResponse(response))
+                    original_reserve = client._reserve_output
+
+                    def reserve(path, **kwargs):
+                        self.assert_cleanup_request(opener, operation)
+                        self.assertFalse(path.parent.exists())
+                        return original_reserve(path, **kwargs)
+
+                    with patch.object(client, "_reserve_output", side_effect=reserve) as reservation:
+                        args = ("--output", str(output)) if save else ()
+                        result = client.run(parse(config, operation, *args), opener=opener)
+                    expected = {"operation": operation, "result": response}
+                    if save:
+                        expected["output"] = str(output.resolve())
+                        self.assertEqual(json.loads(output.read_text()), response)
+                        reservation.assert_called_once()
+                    else:
+                        reservation.assert_not_called()
+                    self.assertEqual(result, expected)
+                    self.assert_cleanup_request(opener, operation)
+
+    def test_transport_and_host_errors_leave_output_untouched(self):
+        for operation in ("stop", "release"):
+            for kind in ("transport", "host"):
+                for existing in (False, True):
+                    with self.subTest(operation=operation, kind=kind, existing=existing), tempfile.TemporaryDirectory() as directory:
+                        root = Path(directory)
+                        config = write_config(root)
+                        output = root / "result.json" if existing else root / "absent" / "result.json"
+                        if existing:
+                            output.write_bytes(b"existing receipt")
+                        details = {"error": "host refused cleanup"}
+                        body = json.dumps(details).encode()
+                        error = urllib.error.URLError("offline") if kind == "transport" else urllib.error.HTTPError(
+                            "http://127.0.0.1:49713/api/stop", 409, "Conflict",
+                            {"Content-Length": str(len(body))}, BytesIO(body))
+                        opener = FakeOpener(error)
+                        with patch.object(client, "_reserve_output", side_effect=AssertionError("must not reserve")):
+                            with self.assertRaises(client.ClientError) as caught:
+                                client.run(parse(config, operation, "--output", str(output)), opener=opener)
+                        self.assert_cleanup_request(opener, operation)
+                        self.assertEqual(caught.exception.code, "transport-error" if kind == "transport" else "host-error")
+                        self.assertEqual(caught.exception.details, None if kind == "transport" else details)
+                        if existing:
+                            self.assertEqual(output.read_bytes(), b"existing receipt")
+                        else:
+                            self.assertFalse(output.parent.exists())
+
+    def test_cli_receipt_error_reports_completed_result_with_redacted_tokens(self):
+        for operation in ("stop", "release"):
+            with self.subTest(operation=operation), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                config = write_config(root)
+                output = root / "result.json"
+                output.write_bytes(b"existing receipt")
+                response = {"released": False, "recoveryRequired": True,
+                            "nested": [{"armToken": "private-result-token",
+                                                           "Authorization": "private-result-bearer"}]}
+                opener = FakeOpener(FakeResponse(response))
+                stdout = type("Console", (), {"buffer": BytesIO()})()
+                stderr = type("Console", (), {"buffer": BytesIO()})()
+                with patch.object(client.sys, "stdout", stdout), patch.object(client.sys, "stderr", stderr):
+                    status = client.main(["--config", str(config), operation, "--output", str(output)], opener=opener)
+                self.assertEqual(status, 1)
+                self.assertEqual(stdout.buffer.getvalue(), b"")
+                failure = json.loads(stderr.buffer.getvalue())
+                self.assertFalse(failure["ok"])
+                self.assertEqual(failure["error"]["code"], "output-exists")
+                self.assertEqual(failure["error"]["details"], {
+                    "operation": operation, "requestCompleted": True,
+                    "result": {"released": False, "recoveryRequired": True,
+                               "nested": [{"armToken": "[redacted]",
+                                                               "Authorization": "[redacted]"}]},
+                })
+                self.assertNotIn(b"private-result-token", stderr.buffer.getvalue())
+                self.assertNotIn(b"private-result-bearer", stderr.buffer.getvalue())
+                self.assert_cleanup_request(opener, operation)
+
+    def test_recover_keeps_reservation_before_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = write_config(root)
+            output = root / "existing.json"
+            output.write_bytes(b"existing receipt")
+            opener = FakeOpener(FakeResponse({"recovered": True}))
+            with self.assertRaises(client.ClientError) as caught:
+                client.run(parse(config, "recover", "--output", str(output)), opener=opener)
+            self.assertEqual(caught.exception.code, "output-exists")
+            self.assertIsNone(caught.exception.details)
+            self.assertEqual(opener.calls, [])
+            self.assertEqual(output.read_bytes(), b"existing receipt")
+
+    def test_arm_keeps_reservation_before_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = write_config(root)
+            capture = root / "capture.json"
+            capture.write_text('{"captureId":"reviewed-capture"}', encoding="utf-8")
+            output = root / "existing.json"
+            output.write_bytes(b"existing receipt")
+            opener = FakeOpener(FakeResponse({"armToken": "unused"}))
+            with self.assertRaises(client.ClientError) as caught:
+                client.run(parse(config, "arm", "--capture", str(capture), "--review-note", "reviewed",
+                                 "--output", str(output)), opener=opener)
+            self.assertEqual(caught.exception.code, "output-exists")
+            self.assertEqual(opener.calls, [])
+            self.assertEqual(output.read_bytes(), b"existing receipt")
+
+    def test_managed_cleanup_bypasses_admission_and_lease_with_failing_receipt(self):
+        from scripts import ensure_controller
+        for operation in ("stop", "release"):
+            for prefix in ([], ["--no-auto-start"]):
+                with self.subTest(operation=operation, prefix=prefix), tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    config = write_config(root)
+                    output = root / "existing.json"
+                    output.write_bytes(b"existing receipt")
+                    response = {"released": True}
+                    opener = FakeOpener(FakeResponse(response))
+                    with patch.dict(ensure_controller.CONFIGS, {"lab1": config}, clear=True), \
+                         patch.object(ensure_controller, "ensure", side_effect=AssertionError("must not launch")), \
+                         patch.object(ensure_controller, "ensure_existing", side_effect=AssertionError("must not inspect")), \
+                         patch.object(client, "_read_private_lease", side_effect=AssertionError("must not read lease")), \
+                         patch.object(client, "_build_opener", return_value=opener):
+                        with self.assertRaises(client.ClientError) as caught:
+                            client.run(parse(config, *prefix, "--lease", str(root / "absent-lease"),
+                                             operation, "--output", str(output)))
+                    self.assert_cleanup_request(opener, operation)
+                    self.assert_completed_error(caught.exception, operation, response, "output-exists")
 
 
 class ManagedAdmissionTests(unittest.TestCase):

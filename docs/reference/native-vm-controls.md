@@ -460,6 +460,28 @@ sequences. The guest rejects replay, concurrent actions, unexpected response
 artifacts, changed target identity, expired review/arm state, and a pre-existing
 pending journal.
 
+### STOP and release receipt failures
+
+The CLI sends `stop` and `release` before accessing their optional `--output`
+path. An existing destination, inaccessible parent, invalid path or receipt-write
+failure cannot prevent the cleanup request. The request is sent once, without
+automatic retry, recovery, owner startup or lease acquisition.
+
+If the host response arrives but the receipt cannot be saved, the CLI exits
+nonzero with its output error code and includes `operation`,
+`requestCompleted: true` and the returned host `result` in `error.details`.
+Console output redacts nested token and Authorization fields. This flag means
+the request completed; check `result` for the actual cleanup outcome. It does
+not assert that release succeeded. A transport or host error remains its original
+error and leaves the optional output untouched. Successful and no-output result
+schemas are unchanged, and existing receipt files are never overwritten.
+
+Recover, arm and action retain reservation-before-request when an output path
+is supplied. The reserved descriptor transfers to the
+writer once, avoiding duplicate cleanup of a descriptor or a replacement file.
+Offline verification and the remaining review findings are recorded in the
+[continuation handoff](../handoff-2026-11-06-owner-migration.md#stoprelease-optional-output-p2-fixed--november-7).
+
 The normal sequence is:
 
 1. Confirm the expected VM and authenticated guest connection.

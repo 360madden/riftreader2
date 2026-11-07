@@ -169,10 +169,19 @@ def _reserve_output(path: Path, *, private: bool = False):
 
 def _write_reserved_json(path: Path, descriptor: int, value: object, *, private: bool = False):
     try:
-        with os.fdopen(descriptor, "wb") as stream:
-            stream.write(_json_bytes(value))
-            stream.flush()
-            os.fsync(stream.fileno())
+        try:
+            with os.fdopen(descriptor, "wb", closefd=False) as stream:
+                stream.write(_json_bytes(value))
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+            raise
+        else:
+            os.close(descriptor)
         if private:
             os.chmod(path, 0o600)
     except OSError as error:
@@ -197,7 +206,7 @@ def _write_new_json(path: Path, value: object, *, private: bool = False):
 def _redact_for_console(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: "[redacted]" if "token" in key.casefold()
+            key: "[redacted]" if "token" in key.casefold() or key.casefold() == "authorization"
             else _redact_for_console(item)
             for key, item in value.items()
         }
@@ -294,7 +303,6 @@ def _arm(client: ControlClient, capture_path: Path, review_note: str, output: Pa
             "expiresInSeconds": 15,
             "savedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
-        _write_reserved_json(output, descriptor, artifact, private=True)
     except BaseException:
         try:
             os.close(descriptor)
@@ -305,6 +313,7 @@ def _arm(client: ControlClient, capture_path: Path, review_note: str, output: Pa
         except OSError:
             pass
         raise
+    _write_reserved_json(output, descriptor, artifact, private=True)
     return {
         "armed": True, "expiresInSeconds": 15,
         "output": str(Path(output).resolve()), "armToken": "[redacted]",
@@ -339,7 +348,6 @@ def _action(client: ControlClient, args) -> dict:
     output, descriptor = _reserve_output(Path(args.output))
     try:
         response = client.request("/api/action", method="POST", payload=payload)
-        _write_reserved_json(output, descriptor, response)
     except BaseException:
         try:
             os.close(descriptor)
@@ -350,15 +358,33 @@ def _action(client: ControlClient, args) -> dict:
         except OSError:
             pass
         raise
+    _write_reserved_json(output, descriptor, response)
     return {"output": str(output.resolve()), "result": response}
 
 
 def _simple(client: ControlClient, operation: str, output: Path | None) -> dict:
+    # Cleanup requests must reach the host even if their optional receipt cannot
+    # be created. Other operations retain their reserve-before-request behavior.
+    cleanup = operation in ("stop", "release")
+    if cleanup:
+        response = client.request(f"/api/{operation}", method="POST", payload={})
+        if output is None:
+            return {"operation": operation, "result": response}
+        try:
+            output = Path(output)
+            resolved_output = str(output.resolve())
+            output, descriptor = _reserve_output(output)
+            _write_reserved_json(output, descriptor, response)
+        except (OSError, ValueError, RuntimeError) as error:
+            if not isinstance(error, ClientError):
+                error = ClientError("output-error", f"cannot create output: {error}")
+            error.details = {"operation": operation, "requestCompleted": True, "result": response}
+            raise error
+        return {"operation": operation, "output": resolved_output, "result": response}
     if output is not None:
         output, descriptor = _reserve_output(Path(output))
         try:
             response = client.request(f"/api/{operation}", method="POST", payload={})
-            _write_reserved_json(output, descriptor, response)
         except BaseException:
             try:
                 os.close(descriptor)
@@ -369,6 +395,7 @@ def _simple(client: ControlClient, operation: str, output: Path | None) -> dict:
             except OSError:
                 pass
             raise
+        _write_reserved_json(output, descriptor, response)
         return {"operation": operation, "output": str(output.resolve()), "result": response}
     response = client.request(f"/api/{operation}", method="POST", payload={})
     return {"operation": operation, "result": response}
