@@ -1,4 +1,12 @@
 $ErrorActionPreference = 'Stop'
+$originalModulePath = $env:PSModulePath
+$env:PSModulePath = 'C:\rr2-test-invalid-module-path'
+$originalAutoload = $PSModuleAutoloadingPreference
+$PSModuleAutoloadingPreference = 'None'
+foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')) {
+    Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', $module, ($module + '.psd1'))) -ErrorAction Stop
+}
+try {
 $root = Join-Path ([IO.Path]::GetTempPath()) ('rr2-helper-test-' + [guid]::NewGuid().ToString('N'))
 $scripts = Join-Path $root 'scripts'
 New-Item -ItemType Directory -Path $scripts -Force | Out-Null
@@ -183,4 +191,9 @@ try {
     'RR2 helper manager mocked tests passed.'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force
+}
+
+} finally {
+    $env:PSModulePath = $originalModulePath
+    $PSModuleAutoloadingPreference = $originalAutoload
 }

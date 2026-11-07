@@ -8,6 +8,10 @@ param(
     [switch]$InspectLab2Controller
 )
 $ErrorActionPreference = 'Stop'
+# Import this Windows PowerShell interpreter's inbox modules by absolute path.
+foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')) {
+    Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', $module, ($module + '.psd1'))) -ErrorAction Stop
+}
 if ($InspectLab2Controller -and ($Action -cne 'Status' -or $HelperId -cne 'rr2-controller-lab2')) {
     throw 'Lab 2 inspection requires exact controller Status.'
 }

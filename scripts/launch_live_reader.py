@@ -125,6 +125,15 @@ def receiver_listener_owner(host: str, port: int) -> int:
     return owners[0]
 
 
+# Inherited PSModulePath can point at another PowerShell version. Use the
+# interpreter's own inbox modules before the host-side process query.
+HOST_POWERSHELL_IMPORTS = (
+    "$ErrorActionPreference='Stop';"
+    "foreach($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')){"
+    "Import-Module ([IO.Path]::Combine($PSHOME,'Modules',$module,($module+'.psd1'))) -ErrorAction Stop};"
+)
+
+
 def receiver_preflight(path: Path) -> tuple[dict, str, str]:
     raw = path.read_bytes()
     if len(raw) > 65_536:
@@ -144,7 +153,7 @@ def receiver_preflight(path: Path) -> tuple[dict, str, str]:
     endpoint = f"http://{address}:{port}/observation"
     owner_before = receiver_listener_owner(address, port)
     command = (
-        f"$p=Get-CimInstance Win32_Process -Filter 'ProcessId={owner_before}';"
+        HOST_POWERSHELL_IMPORTS + f"$p=Get-CimInstance Win32_Process -Filter 'ProcessId={owner_before}';"
         "if($null -eq $p){throw 'receiver-process-missing'};"
         "[pscustomobject]@{pid=[int]$p.ProcessId;commandLooksLikeReceiver=[bool]($p.CommandLine -match '(?i)receiver')}|"
         "ConvertTo-Json -Compress"

@@ -1,5 +1,13 @@
 # Offline tests: extract function definitions; no entry point or Scheduler calls execute.
 $ErrorActionPreference = 'Stop'
+$originalModulePath = $env:PSModulePath
+$env:PSModulePath = 'C:\rr2-test-invalid-module-path'
+$originalAutoload = $PSModuleAutoloadingPreference
+$PSModuleAutoloadingPreference = 'None'
+foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')) {
+    Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', $module, ($module + '.psd1'))) -ErrorAction Stop
+}
+try {
 $path = Join-Path $PSScriptRoot '../scripts/Verify-RR2LegacyHelperTask.ps1'
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
@@ -139,3 +147,8 @@ try {
     if ($fixture -and [IO.Path]::GetFullPath($fixture).StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), [StringComparison]::OrdinalIgnoreCase)) { Remove-Item -LiteralPath $fixture -Recurse -Force }
 }
 'Legacy full-entrypoint mocks PASS'
+
+} finally {
+    $env:PSModulePath = $originalModulePath
+    $PSModuleAutoloadingPreference = $originalAutoload
+}

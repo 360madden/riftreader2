@@ -6,6 +6,10 @@ param(
 )
 # Compatibility inspection only: never invokes Workbridge code or changes a task.
 $ErrorActionPreference = 'Stop'
+# Import this Windows PowerShell interpreter's inbox modules by absolute path.
+foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')) {
+    Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', $module, ($module + '.psd1'))) -ErrorAction Stop
+}
 function Get-RunningTaskInstance([string]$Name) {
     $service = New-Object -ComObject 'Schedule.Service'
     $service.Connect()
