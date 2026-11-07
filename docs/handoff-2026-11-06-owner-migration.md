@@ -4,16 +4,17 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 11:22 Eastern
+### Checkpoint — 2026-11-07 11:40 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
 | Native maps | 🟢 Verified | Lab1 122/0 entries in10.013ms; Lab2 134/0 in17.146ms; raw parity with Python |
 | Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
-| Localization | 🟢 Bulk native capture verified |114/114 name keys captured25.493ms and decoded;119/122 rows named, all43 nonzero-filter rows named. |
+| Localization | 🟢 Both catalogs verified | Lab1 119/122 named,43/43 filter; Lab2 121/134 named,54/54 filter. Zero decoder failures; zero-key children remain unnamed. |
 | Raw ability costs | 🟢 Typed raw payloads captured |122 records37.899ms;55 empty,62 type1E2B Mana/Charge raw inputs,5 typed-unhandled1E2D. No adjusted amounts. |
 | Adjusted costs | 🟡 Shortcut blocked | Lab1 Charge list is nonempty; cannot bypass per-key modifiers. Raw results remain useful; no final amount claim. |
-| Idle ability timing | ▶ Next discovery | Implement opt-in base cooldown+94 and typed single-child cast inputs; keep API selection/modifiers separate. |
+| Idle ability timing | 🟢 Captured on both labs | Lab1 21 primary650/3 secondary678; Lab2 23/4. Raw cooldown+94/gate+88 retained; unsupported primary types stay unknown. |
+| Catalog delivery | 🟢 Repository command used | `scripts/sample_current_native_ability_catalog.py --lab lab1|lab2`; live Lab1 span15.36s; no artifact-code imports. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -85,6 +86,30 @@ empty-list Charge shortcut is unavailable. Do not equate a nonempty list with
 an active modifier for any particular key. Record the blocker and continue idle
 base-timing inputs instead of making full adjusted-cost reconstruction a gate.
 Latest committed bulk milestone: `c7a39ed`; raw/decoder milestone `fd120e5`.
+
+**11:36 Eastern — two-lab idle timing milestone:** Both one-session catalogs
+passed exact process/player/component/key-set and per-chunk gates. All43/54
+nonzero-filter rows have name candidates. Lab2 supplied64 live typed Energy
+inputs. Sixty exact shared full IDs have zero compared name/timing/cost/filter
+discrepancies. [Complete receipts, profiles and limits](reference/native-ability-ownership-findings-2026-11-06.md#idle-timing-and-two-lab-catalogs--november7-1136-eastern).
+The active-duration object's source is a distinct static component/tick path,
+not proved to be the same as these idle base cast inputs. No live matching
+active-duration object has been observed. Source bridge retained in
+`artifacts/discovery-20261107-cast/duration-source-bridge.md`.
+The repository catalog command is now live-used; retain static
+range/stealth-input leads in `ability-range-next-step.md` for later useful work.
+Do not turn unknown timing coverage or adjusted-cost reconstruction into a
+completion gate. Goal remains active through13:26 Eastern.
+
+**11:40 Eastern — repository command live PASS:**
+`python scripts/sample_current_native_ability_catalog.py --lab lab1` completed
+122 rows/119 names/all43 nonzero-filter rows named, zero decoder failures,
+span15.362356s. Output:
+`artifacts/native-ability-catalog-20261107/runs/lab1/365bbf7420e24dea8fcd37181d08b7d9/catalog-summary.json`.
+It uses repository helpers only; ignored artifact launcher code is not a runtime
+prerequisite. The pinned reader artifact remains intentionally SHA-specific.
+Use the same command with`--lab lab2` for a new independently acquired epoch;
+do not reuse addresses or inferred ownership from these receipts.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

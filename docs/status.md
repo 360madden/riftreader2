@@ -1,5 +1,21 @@
 # Current status
 
+**2026-11-07 11:40 Eastern — REPOSITORY CATALOG COMMAND LIVE PASS:**
+`python scripts/sample_current_native_ability_catalog.py --lab lab1` completed
+122 rows/119 candidate names, all43 nonzero-filter rows named, zero decoder
+failures and15.36s between first/last observations. It imports repository code
+only and retains SHA, identity, source, chunk, owner and command-size checks.
+Lab2's earlier134-key catalog passed through two bounded chunks. See the
+[current handoff](handoff-2026-11-06-owner-migration.md).
+
+**2026-11-07 11:36 Eastern — BOTH LIVE CANDIDATE CATALOGS:** Single-session
+Lab1 produced122 rows/119 names in a16.0s observation span; Lab2 produced134/121
+in22.3s. All43/54 nonzero-filter rows are named and zero decoder failures occurred.
+Sixty shared full IDs have no compared field discrepancies. New opt-in base
+cooldown/cast inputs are captured on both labs; active cast progress, adjusted
+API values, learned membership, freshness and restart remain separate. Repository
+catalog entry point is being made durable. [Receipts and limits](reference/native-ability-ownership-findings-2026-11-06.md#idle-timing-and-two-lab-catalogs--november7-1136-eastern).
+
 **2026-11-07 11:22 Eastern — ADJUSTED-COST BOUNDARY:** Lab1's Charge modifier
 list pointer was stably non-self under fresh player/producer-context and process
 checks. The empty-list bypass is unavailable; no final Charge amount is accepted.

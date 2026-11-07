@@ -130,6 +130,74 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Idle timing and two-lab catalogs — November7, 11:36 Eastern
+
+Both labs completed a single authenticated-session catalog capture using the
+same per-SHA experimental reader. Map observations bracket the exact player key,
+component and H1 key set; each record/dictionary chunk keeps its own process,
+content, request and source provenance. Requests retain the128-key cap. These
+are separate candidate observations, not atomic or freshness qualification.
+
+| Target | Records | Names | Named nonzero-filter rows | Observation span |
+| --- | ---: | ---: | ---: | ---: |
+| Lab1 |122|119|43/43|16.015548s|
+| Lab2 |134|121|54/54|22.308129s|
+
+Both have zero decoder/parser failures. Lab1's3 andLab2's13 unnamed rows have
+typed name children with key0, not decoder failures; fallback names are not
+excluded. Lab2 adds64 live typed Energy raw inputs and11 typed-unhandled1E2D
+children, while Lab1 has62 Mana/Charge and5 typed-unhandled1E2D. The60 shared
+full-ID candidates have no differences in compared name, base cooldown, timing,
+cost-input or raw filter fields. This bounded cross-lab agreement does not prove
+learned membership or universal definitions; absolute addresses were not compared.
+
+Catalogs:
+`artifacts/native-ability-timing-20261107/lab1/09d5cc0602b64bbeb8c048d3ade7e9db/catalog-summary.json`
+(SHA256`61CE948D23D811EF71612206B0BEC669CF6B061CCB530F0A6FAD2D02EB079427`),
+and`lab2/1f5c5a9eceb34fc89aa472ac9d489304/catalog-summary.json` under the same
+artifact root (SHA256`A1A1E6D01C6E350B1EB69CB4289D31B86F049C6E50A4C14205DA5DD42A43160B`).
+Comparison: `artifacts/native-ability-timing-20261107/cross-lab-catalog-comparison.json`.
+
+Opt-in `sample-current-ability-records ... --include-timing true` retains the
+signed base cooldown input at record+94, raw gate DWORD+88, primary reference
+span+5F0/+5F8 and fallback span+8E8/+8F0. It reports empty/multiple/null/unknown/
+uninitialized states separately. Lab1 had21 typed0650 primary inputs,85 verified
+0648 zero-path markers and16 unknown types; its3 typed0678 secondary inputs
+were6000/4000/4000ms. Lab2 had23 typed0650,93 verified0648 and18 unknown primary
+types, plus4 typed0678 secondary inputs. Unsupported types are not treated as0.
+The separate first Lab1 timing receipt captured122 records in49.310ms at
+`artifacts/native-ability-timing-20261107/expanded-runs/lab1/5ad8432869bb48c5be6eb5c05a4e76d9/samples.json`,
+SHA256`711EDDFF1D37290E32E4BD203913910AC863E9A3B0B8B0E74913FBDDF73E5A51`.
+
+| Type | Object VT / getter | Initialized descriptor / VT / getter | Raw timing path |
+| --- | --- | --- | --- |
+|0650|28940E0 /188FAC0|3448E50 /28A7EF8 /18C0680|signed child+20|
+|0678|2A8C218 /1D0E500|34E28B0 /2A9CD68 /1D44970|signed child+20|
+|0759|2A40918 /1C4C940|34C8FE0 /2A4AF80 /1C83A10|fixed2000ms marker|
+|0648|294B498 /1A3DE20|3485090 /2964410 /1A77380|zero path, may enter fallback|
+
+All profile addresses are exact-build module RVAs. The API producer can apply
+player modifiers before scaling milliseconds to seconds. Fallback gate values
+are2/7/8; primary0759 has a separate fixed path. Raw spans stay separate in the
+reader instead of manufacturing an adjusted API value. Eleven focused timing
+checks passed. Reader117430624 bytes,
+SHA256`BF149A66447ED3F7E3BD099771D5DAD5E80521753E3C6433CD38C598D911F0F3`;
+separate publication at`artifacts/native-ability-timing-20261107/expanded-publish/`.
+No active reader was replaced. Use the repository command
+`python scripts/sample_current_native_ability_catalog.py --lab lab1|lab2`.
+It imports repository helpers only and preserves source hashes, reader/game
+hashes, chunk provenance, fresh identities, map brackets and command-size gates.
+Its first live Lab1 run retained122 rows/119 names/all43 filter rows named,
+zero decoder failures and a15.362356s observation span. Receipt:
+`artifacts/native-ability-catalog-20261107/runs/lab1/365bbf7420e24dea8fcd37181d08b7d9/catalog-summary.json`.
+The artifact launchers remain historical receipts, not code prerequisites.
+
+Static metadata also proves the API-list inclusion byte+C9 is a Boolean,
+field index80 among84 direct fields, with descriptor default1. Both metadata
+text slots are empty; no gameplay name was recovered. Keep the supported
+"nonzero API-list filter" wording, not a learned-membership claim. Trace:
+`artifacts/discovery-20261107-cast/list-filter-metadata.md`.
+
 ### Adjusted-cost boundary — November7, 11:22 Eastern
 
 Lab1's passive Charge-list discriminator completed with fresh independent map

@@ -7,7 +7,9 @@ namespace RiftReader2.Live;
 internal sealed record AbilityRecordChild(string Status, ulong Address, uint? LocalizationKey);
 internal sealed record RawCostChild(string Status, ulong Address, ulong? Vtable = null, ulong? GetterRva = null, string? RawPayloadHex = null, int? Int18 = null, int? Int1C = null, float? Float18 = null, float? Float1C = null, byte? Flag1C = null, int? Int20 = null, float? Float20 = null, int? Int24 = null, byte? Flag28 = null);
 internal sealed record RawCostVector(string Status, ulong Begin, ulong End, IReadOnlyList<RawCostChild> Children);
-internal sealed record AbilityRecordCandidate(uint Key, string Status, ulong? RecordAddress = null, byte? ApiListFilterNonzeroRaw = null, AbilityRecordChild? Child = null, AbilityRecordChild? SecondaryChild = null, string? FullIdCandidate = null, RawCostVector? RawCosts = null);
+internal sealed record RawTimingVector(string Status, ulong Begin, ulong End, ulong Count, ulong? ChildAddress = null, ulong? Vtable = null, ulong? GetterRva = null, int? RawMilliseconds = null);
+internal sealed record RawAbilityTiming(int RawGate88, int BaseCooldownMilliseconds, RawTimingVector Primary, RawTimingVector Secondary);
+internal sealed record AbilityRecordCandidate(uint Key, string Status, ulong? RecordAddress = null, byte? ApiListFilterNonzeroRaw = null, AbilityRecordChild? Child = null, AbilityRecordChild? SecondaryChild = null, string? FullIdCandidate = null, RawCostVector? RawCosts = null, RawAbilityTiming? RawTiming = null);
 internal sealed record CurrentBuildAbilityRecordsObservation(NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, ushort Selector, uint TlsIndex, ulong Collection, IReadOnlyList<AbilityRecordCandidate> Records)
 {
     public string Qualification => "candidate-only; membership, freshness and restart unverified";
@@ -15,12 +17,12 @@ internal sealed record CurrentBuildAbilityRecordsObservation(NativeProcessIdenti
 }
 internal static class CurrentBuildAbilityRecordsCandidateReader
 {
-    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, bool includeRawCosts = false) =>
-        Read(session, keys, () => WindowsThreadTlsSnapshot.Capture(session.Identity.ProcessId), includeRawCosts);
-    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, Func<IReadOnlyList<NativeThreadEpoch>> threads, bool includeRawCosts = false)
+    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, bool includeRawCosts = false, bool includeRawTiming = false) =>
+        Read(session, keys, () => WindowsThreadTlsSnapshot.Capture(session.Identity.ProcessId), includeRawCosts, includeRawTiming);
+    internal static CurrentBuildAbilityRecordsObservation Read(IReadOnlyNativeMemorySession session, IReadOnlyList<uint> keys, Func<IReadOnlyList<NativeThreadEpoch>> threads, bool includeRawCosts = false, bool includeRawTiming = false)
     {
         var started = DateTimeOffset.UtcNow; var id = session.Identity;
-        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < (includeRawCosts ? 0x35A8338UL : 0x344A6B8UL) ||
+        if (id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || id.ModuleSize < (includeRawCosts ? 0x35A8338UL : includeRawTiming ? 0x34E28B8UL : 0x344A6B8UL) ||
             !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase) ||
             keys.Count is < 1 or > 128 || keys.Distinct().Count() != keys.Count)
             throw new InvalidDataException("Invalid build, process identity or keys.");
@@ -99,6 +101,27 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
             }
             return new(children.Count == 0 ? "empty" : "raw-candidates", begin, end, children);
         }
+        RawTimingVector TimingVector(ulong headerAddress)
+        {
+            var raw = ReadBytes(headerAddress, 16); var begin = U64(raw); var end = U64(raw.AsSpan(8));
+            if (begin == 0 && end == 0) return new("empty", 0, 0, 0);
+            if (begin == 0 || end < begin || (end - begin) % 8 != 0 || (end - begin) / 8 > 64) throw new InvalidDataException("Invalid timing vector.");
+            Ptr(begin, end == begin ? 8 : checked((int)(end - begin))); var count = (end - begin) / 8;
+            if (count == 0) return new("empty", begin, end, count);
+            if (count != 1) return new("not-single", begin, end, count);
+            var child = Q(begin); if (child == 0) return new("null-child", begin, end, count, 0);
+            Ptr(child, 0x24); var vt = Q(child); ulong? getter = null;
+            if (vt >= id.ModuleBaseAddress && vt <= id.ModuleBaseAddress + id.ModuleSize - 0x48) { var target = Q(vt + 0x40); if (target >= id.ModuleBaseAddress && target < id.ModuleBaseAddress + id.ModuleSize) getter = target - id.ModuleBaseAddress; }
+            var profile = vt == id.ModuleBaseAddress + 0x28940E0 ? ("type-0650", 0x28940E0UL, 0x188FAC0UL, 0x3448E50UL, 0x28A7EF8UL, 0x18C0680UL) :
+                vt == id.ModuleBaseAddress + 0x2A8C218 ? ("type-0678", 0x2A8C218UL, 0x1D0E500UL, 0x34E28B0UL, 0x2A9CD68UL, 0x1D44970UL) :
+                vt == id.ModuleBaseAddress + 0x2A40918 ? ("typed-0759-fixed-input", 0x2A40918UL, 0x1C4C940UL, 0x34C8FE0UL, 0x2A4AF80UL, 0x1C83A10UL) :
+                vt == id.ModuleBaseAddress + 0x294B498 ? ("typed-0648-zero-path", 0x294B498UL, 0x1A3DE20UL, 0x3485090UL, 0x2964410UL, 0x1A77380UL) : default;
+            if (profile.Item1 is null) return new("unknown-type", begin, end, count, child, vt, getter);
+            if (!Fingerprint(child, profile.Item2, profile.Item3, profile.Item4, profile.Item5, profile.Item6)) return new("unverified-type", begin, end, count, child, vt, getter);
+            if (profile.Item1.StartsWith("typed-", StringComparison.Ordinal)) return new(profile.Item1, begin, end, count, child, vt, getter);
+            return new(profile.Item1 + "-raw-candidate", begin, end, count, child, vt, getter, BinaryPrimitives.ReadInt32LittleEndian(ReadBytes(child + 0x20, 4)));
+        }
+        RawAbilityTiming Timing(ulong record) => new(BinaryPrimitives.ReadInt32LittleEndian(ReadBytes(record + 0x88, 4)), BinaryPrimitives.ReadInt32LittleEndian(ReadBytes(record + 0x94, 4)), TimingVector(record + 0x5F0), TimingVector(record + 0x8E8));
         var rows = new List<AbilityRecordCandidate>();
         foreach (var key in keys)
         {
@@ -119,7 +142,7 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
             if (!Fingerprint(record, 0x28A08C0, 0x1899BF0, 0x344A6B0, 0x28A9C38, 0x18C06C0)) { rows.Add(new(key, "unverified-type", record)); continue; }
             var flag = ReadBytes(record + 0xC9, 1)[0]; var child = Child(Q(record + 0x8E0)); var second = Child(Q(record + 0x958));
             string? full = child.LocalizationKey.HasValue && second.LocalizationKey.HasValue ? $"A{(((ulong)key << 32) | unchecked((uint)(Hash(child.LocalizationKey.Value) + Hash(second.LocalizationKey.Value)))):X16}" : null;
-            rows.Add(new(key, "type-verified-candidate", record, flag, child, second, full, includeRawCosts ? Costs(record) : null));
+            rows.Add(new(key, "type-verified-candidate", record, flag, child, second, full, includeRawCosts ? Costs(record) : null, includeRawTiming ? Timing(record) : null));
         }
         foreach (var anchor in anchors) CurrentBuildPlayerLookup.RequireSame(ReadBytes(anchor.Key.Item1, anchor.Key.Item2, false), anchor.Value);
         var after = threads();
