@@ -1,5 +1,5 @@
 """Capture a guarded selected-target vitals candidate without game input."""
-import argparse, hashlib, json, sys, uuid
+import argparse, base64, hashlib, json, sys, uuid
 from datetime import datetime
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
@@ -7,9 +7,12 @@ sys.path.insert(0, str(ROOT))
 from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
+from scripts.sample_current_native_ability_catalog import validate_dictionary
+from scripts.native_localization_huffman import decode_localization_huffman
+from scripts.native_localization_record import parse_localization_record
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = 'E6CD3F1D0F9DD6A0072D7E3D2942C07171EB5A4B85B0025AA6FA96FF690F84BC'
-READER = ROOT / 'artifacts/native-selected-target-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '783573AAE552AC5E6BC6977929B4BEBE88A70908E9F0F1E663F550808662597B'
+READER = ROOT / 'artifacts/native-selected-target-name-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-selected-target-20261107/runs'
 
 QUALIFICATION='candidate-only; target and vitals semantics, freshness and restart unverified'
@@ -35,6 +38,7 @@ def validate_report(report, *, pid, ticks):
         if before not in ('raw-getter-zero-candidate','override-unavailable','guard-unreadable-or-invalid') or any(x is not None for x in (after,key,unit,entity,vitals)): invalid()
     elif status=='candidate':
         if before!='fallback-key-candidate' or after!='fallback-key-candidate' or not integer(key,1,2**64-1) or unit!=f'u{key:016X}' or not integer(entity,0x10000,0x7fffffffffff) or not isinstance(vitals,dict) or vitals.get('identity')!=identity or type(vitals.get('unitKey')) is not int or vitals['unitKey']!=key: invalid()
+        if not isinstance(o.get('nameSeed'),dict): invalid()
         start,end=interval(vitals)
         if start<outer_start or end>outer_end or vitals.get('qualification')!='candidate-only; semantics/passive-freshness/restart-unverified': invalid()
         for name in ('health','energy','mana'):
@@ -49,13 +53,49 @@ def validate_report(report, *, pid, ticks):
     else: invalid()
     return o
 
+def derive_name(observation, *, pid, ticks):
+    qualifier='base name/locale1 candidate; API decoration/language unverified'
+    result={'baseNameLocale1Candidate':None,'nameQualification':qualifier,'nameUnavailableReason':None}
+    if observation['status'] != 'candidate':
+        result['nameUnavailableReason']='target-unavailable'; return result
+    seed=observation['nameSeed']; status=seed.get('status'); branch=seed.get('branch')
+    allowed={'direct':('raw-candidate','empty'), 'alternate':('raw-candidate','empty-unresolved-fallback'), 'localized':('raw-candidate',), 'entity-virtual':('unresolved',), 'name-read-or-type-failure':('unavailable',)}
+    if branch not in allowed or status not in allowed[branch]:
+        result['nameUnavailableReason']='invalid-name-seed'; return result
+    if branch in ('direct','alternate'):
+        name=seed.get('rawDirect')
+        if status=='raw-candidate' and isinstance(name,str) and name:
+            result['baseNameLocale1Candidate']=name
+        else: result['nameUnavailableReason']='empty-or-invalid-direct-name'
+        return result
+    if branch != 'localized':
+        result['nameUnavailableReason']=status; return result
+    key=seed.get('localizationKey'); dictionary=seed.get('dictionary')
+    if type(key) is not int or not 0<key<=0xffffffff or not isinstance(dictionary,dict):
+        result['nameUnavailableReason']='localization-key-or-dictionary-unavailable'; return result
+    try:
+        if dictionary.get('identity') != observation['identity']: raise ValueError('dictionary-identity-mismatch')
+        wrapper={'schemaVersion':1,'contractVersion':'native-current-localization-dictionary-candidate-sample/1','status':'complete','observation':dictionary}
+        validate_dictionary(wrapper,pid=pid,ticks=ticks,keys=[key])
+        row=dictionary['rows'][0]
+        if row['status']!='raw-candidate': raise ValueError('dictionary-'+row['status'])
+        frequencies=base64.b64decode(dictionary['frequencyBytesBase64'],validate=True)
+        compressed=base64.b64decode(row['compressedBytesBase64'],validate=True)
+        decoded,_=decode_localization_huffman(frequencies,compressed,row['decodedSize'])
+        name=parse_localization_record(decoded)['candidate_text']
+        if not name: raise ValueError('empty-candidate-text')
+        result['baseNameLocale1Candidate']=name
+    except (ValueError,KeyError,TypeError,OverflowError) as exc:
+        result['nameUnavailableReason']='name-decode-unavailable: '+str(exc)[:100]
+    return result
+
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117462880 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117471072 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-selected-target-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-selected-target-name-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"
@@ -72,13 +112,14 @@ def run(lab):
             "$g=Get-Process -Id "+str(pid)+" -ErrorAction Stop;if($g.ProcessName -cne 'rift_x64' -or [long]$g.StartTime.ToUniversalTime().Ticks -ne "+str(ticks)+"){throw 'game-epoch-changed'};"
             "if((Get-FileHash -LiteralPath $g.Path -Algorithm SHA256).Hash -cne "+ps_literal(GAME_SHA)+"){throw 'rift-build-changed'};"
             "$out="+ps_literal(report)+";if(Test-Path -LiteralPath $out){throw 'guest-report-exists'};"
-            "& $exe sample-current-selected-target --pid "+str(pid)+" --start-ticks "+str(ticks)+" --output $out | Out-Null;"
+            "& $exe sample-current-selected-target --pid "+str(pid)+" --start-ticks "+str(ticks)+" --include-name-seed true --output $out | Out-Null;"
             "if($LASTEXITCODE -ne 0){throw 'native-sampler-failed'};if(!(Test-Path -LiteralPath $out)){throw 'native-report-missing'};if((Get-Item -LiteralPath $out).Length -gt 8000000){throw 'native-report-too-large'}")
         guest.powershell(launch,timeout=130);guest.copy_from_guest(report,output/'samples.json',timeout=70)
     raw=(output/'samples.json').read_bytes()
     if len(raw)>8000000: raise ValueError('report too large')
     data=json.loads(raw.decode('utf-8-sig')); observation=validate_report(data,pid=pid,ticks=ticks)
-    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['status'],'qualification':observation['qualification']}
+    name=derive_name(observation,pid=pid,ticks=ticks)
+    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['status'],'qualification':observation['qualification'],**name}
     with (output/'summary.json').open('x',encoding='utf-8') as f: json.dump(summary,f,indent=2)
     return summary
 

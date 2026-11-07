@@ -1,9 +1,15 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 12:30 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 12:46 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
+
+**12:46 Eastern — TARGET NAME BLOCKER RETAINED:** Optional name capture preserved
+target health but found an empty alternate string leading to an unresolved
+virtual fallback. No name candidate accepted. A bounded method-address capture
+is running for static analysis; no invocation or branch bypass. Cached-position
+owner core remains separate until used.
 
 **12:30 Eastern — SELECTED-TARGET VITALS CANDIDATE:** The current guarded Lab1
 target resolved to a native health candidate1224100/1224100 in13.2605ms; exact

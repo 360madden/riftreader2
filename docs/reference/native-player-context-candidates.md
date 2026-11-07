@@ -63,8 +63,6 @@ Reader117450592 bytes, SHA256
 at`artifacts/native-player-context-20261107/publish/`. Existing active readers
 and control ownership were not replaced by this sampler.
 
-## Optional UI comparison stopped
-
 ## Already-selected target vitals —12:30 Eastern
 
 `python scripts/sample_current_native_selected_target.py --lab lab1` now resolves
@@ -93,6 +91,21 @@ at`artifacts/native-selected-target-20261107/publish/`. No action preflight uses
 these candidates. Selected-target names remain a separate uncaptured seed.
 
 ## Optional UI comparison stopped
+
+Name-enabled follow-up at12:46 Eastern: ordered bounded UTF16/localization/virtual
+seeds were added without invoking methods. Eight focused cases passed. Lab1's
+receipt `artifacts/native-selected-target-20261107/runs/lab1/88de2bc970e749c5ad52e4d9d8d54240/samples.json`
+(SHA256`2CEE76E4B0B9A01526AFD674169A1A7774B6CEF0A6729BC1C44CFD4DF50DB3F9`)
+preserved health but returned`branch=alternate`, `status=empty-unresolved-fallback`.
+No name accepted. Capture entity VT+18 for static analysis; do not call it or
+bypass observed branch order. The source primary-direct empty case is different
+and does not fall through to localization. Static trace is in
+`artifacts/discovery-20261107-cast/unit-name-next-step.md`.
+Name-capable reader117471072 bytes, SHA256
+`783573AAE552AC5E6BC6977929B4BEBE88A70908E9F0F1E663F550808662597B`,
+at`artifacts/native-selected-target-name-20261107/publish/`. The repository launcher
+now pins it. Eventual text remains a base/locale1 candidate, with API decoration
+and language unverified.
 
 The first Lab2 screenshot attempt was rejected before admission because its
 output path was outside the helper's canonical directory. The corrected attempt

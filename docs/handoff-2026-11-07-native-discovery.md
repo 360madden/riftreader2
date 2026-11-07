@@ -1,6 +1,6 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint12:30 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint12:46 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
@@ -80,8 +80,14 @@ cached reader. [Both receipts and limits](reference/native-player-context-candid
 No selection/input; Mana/Energy unavailable by kind. Reader
 E6CD3F1D0F9DD6A0072D7E3D2942C07171EB5A4B85B0025AA6FA96FF690F84BC,
 117462880 bytes, under`artifacts/native-selected-target-20261107/publish/`.
-No live tool handles remain at this checkpoint; do not repeat reads as a default
-qualification loop or claim a stable value proves changed-state behavior.
+Name-enabled follow-up preserved health but found an empty ALTERNATE string,
+not a primary-direct name or selected localization key. No name accepted.
+Fresh method-address diagnostic is running in host session45270, log
+`artifacts/native-selected-target-name-20261107/virtual-seed-run.log`.
+It captures/rechecks entity VT+18 and method bytes only, never calls the getter.
+Position owner-injection core is separately uncommitted, with18 focused checks
+passed; caller integration/live use remain pending. Do not commit unused
+refinement or repeat reads as a default qualification loop.
 
 Optional Lab2 UI corroboration was CLOSED after dependency-admission SessionError;
 no image was accepted. Later status was connected/disarmed-idle with supervisor
@@ -93,3 +99,6 @@ Next useful static lead: entity-name branch order in
 UTF16, a type1E17 localization key, or an unresolved entity virtual method;
 do not guess from the GUID prefix. Root can reuse resident dictionary decoding
 only after the branch/key/owner is freshly bound. No raw unit name is accepted yet.
+Name-capable reader SHA783573AA... is under
+`artifacts/native-selected-target-name-20261107/publish/`; repository selected
+target launcher now pins it. Do not edit it while the diagnostic source check runs.

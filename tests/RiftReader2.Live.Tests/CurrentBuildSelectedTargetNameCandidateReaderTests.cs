@@ -1,0 +1,23 @@
+using System.Buffers.Binary;
+using RiftReader2.Application;
+using RiftReader2.Domain;
+namespace RiftReader2.Live.Tests;
+public sealed class CurrentBuildSelectedTargetNameCandidateReaderTests
+{
+ const ulong M=0x140000000,Manager=0x20000000,Table=0x20010000,Bucket=0x20020000,Chain=0x20030000,Entity=0x20040000,Components=0x20050000,Health=0x20060000,Key=0x80000002CD0034D1;
+ [Fact] public void Full64BitKeyUsesTaggedChain(){var s=Fixture();var result=Read(s,()=>Context(s,Key));Assert.Equal(Key,result.TargetKey);Assert.Equal(Entity,result.TargetEntity);Assert.Equal("u80000002CD0034D1",result.TargetUnitId);}
+ [Fact] public void WrongHighBitsDoNotMatch(){var s=Fixture();s.Put(Chain,Node(0x10000002CD0034D1,Entity));Assert.Throws<InvalidDataException>(()=>Read(s,()=>Context(s,Key)));}
+ [Fact] public void NoGatedTargetIsUnavailable(){var s=Fixture();var result=Read(s,()=>Context(s,null));Assert.Equal("unavailable",result.Status);Assert.Null(result.TargetVitals);}
+ [Fact] public void TargetChangeFails(){var s=Fixture();int n=0;Assert.Throws<InvalidDataException>(()=>Read(s,()=>Context(s,++n==1?Key:Key+1)));}
+ [Fact] public void ChangedNodeFails(){var s=Fixture();s.Change(Chain,Node(Key,Entity+8));Assert.Throws<InvalidDataException>(()=>Read(s,()=>Context(s,Key)));}
+ [Fact] public void DirectBranchReadsAndBracketsName(){var s=Fixture();NameFixture(s);var r=ReadName(s);Assert.Equal("direct",r.NameSeed!.Branch);Assert.Equal("Raw Name",r.NameSeed.RawDirect);Assert.Equal(4U,r.NameSeed.RawDecoration);}
+ [Fact] public void NameChangeRejectsWholeObservation(){var s=Fixture();NameFixture(s);s.Change(0x200A0000,System.Text.Encoding.Unicode.GetBytes("Changed!\0"));Assert.Throws<InvalidDataException>(()=>ReadName(s));}
+ [Fact] public void MissingTextIsUnavailableButVitalsRetained(){var s=Fixture();NameFixture(s);s.Put(0x20090000+0xB60,Q(0));var r=ReadName(s);Assert.Equal("unavailable",r.NameSeed!.Status);Assert.NotNull(r.TargetVitals);}
+ static SelectedTargetObservation ReadName(Fake s)=>CurrentBuildSelectedTargetCandidateReader.Read(s,_=>Context(s,Key),(session,owner)=>{owner.VerifyUnchanged();return new(session.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,owner.UnitKey,new("unavailable",null),new("unavailable",null));},true);
+ static void NameFixture(Fake s){const ulong direct=0x20080000,p=0x20090000,text=0x200A0000;s.Put(M+0x2F582E0,BitConverter.GetBytes(1));s.Put(Entity+0x19,[1]);s.Put(Components+8,Q(direct));s.Put(Entity+0x1D0,Q(0));s.Put(direct+0x48,Q(p));s.Put(p+0xB60,Q(text));s.Put(p+0x20C,BitConverter.GetBytes(4U));var raw=new byte[256];System.Text.Encoding.Unicode.GetBytes("Raw Name\0").CopyTo(raw,0);s.Put(text,raw);}
+ static SelectedTargetObservation Read(Fake s,Func<CurrentBuildPlayerContextObservation> ctx)=>CurrentBuildSelectedTargetCandidateReader.Read(s,_=>ctx(),(session,owner)=>{owner.VerifyUnchanged();return new(session.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,owner.UnitKey,new("unavailable",null),new("unavailable",null));});
+ static CurrentBuildPlayerContextObservation Context(Fake s,ulong? key)=>new(s.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,123,Entity,Health,0,Health,key??0,key.HasValue?"fallback-key-candidate":"override-unavailable",key,null,65,"numeric-getter-candidate",0,"raw-byte-candidate",false);
+ static Fake Fixture(){var s=new Fake();s.Put(M+0x33624A8,Q(Manager));s.Put(Manager+0x50,Q(Table));var header=new byte[24];Q(Bucket).CopyTo(header,0);Q(24).CopyTo(header,8);Q(1).CopyTo(header,16);s.Put(Table,header);var head=Node(1,Entity);Q(Chain|1).CopyTo(head,0);s.Put(Bucket,head);s.Put(Chain,Node(Key,Entity));s.Put(M+0x2F57850,BitConverter.GetBytes(0));s.Put(Entity+0x18,[0]);s.Put(Entity+0x78,Q(Components));s.Put(Components,Q(Health));s.Put(Health+0x10,Q(Entity));return s;}
+ static byte[] Node(ulong k,ulong e){var b=new byte[24];Q(k).CopyTo(b,8);Q(e).CopyTo(b,16);return b;}static byte[] Q(ulong v){var b=new byte[8];BinaryPrimitives.WriteUInt64LittleEndian(b,v);return b;}
+ sealed class Fake:IReadOnlyNativeMemorySession {readonly Dictionary<ulong,byte[]> data=[];readonly Dictionary<ulong,byte[]> changed=[];readonly HashSet<ulong> seen=[];public NativeProcessIdentity Identity{get;}=new(123,456,@"C:\RIFT\rift_x64.exe",CurrentBuildPlayerLookup.GameSha256,M,0x4000000);public void Put(ulong a,byte[] b)=>data[a]=b;public void Change(ulong a,byte[] b)=>changed[a]=b;public NativeReadResult Read(ulong a,int n){var b=!seen.Add(a)&&changed.TryGetValue(a,out var c)?c:data.GetValueOrDefault(a);return b is not null&&b.Length>=n?new("success",b[..n],null,null):new("unavailable",[],null,null);}public ValueTask<string?> RevalidateAsync(CancellationToken c)=>ValueTask.FromResult<string?>(null);public ValueTask DisposeAsync()=>ValueTask.CompletedTask;}
+}
