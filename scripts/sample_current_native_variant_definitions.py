@@ -21,7 +21,7 @@ def run(lab,catalog):
     catalog=Path(catalog)
     if not catalog.is_absolute() or not catalog.is_file() or catalog.is_symlink() or catalog.stat().st_size>8000000: raise ValueError('invalid-catalog-path')
     raw=catalog.read_bytes(); catalog_sha=sha(raw); source=json.loads(raw.decode('utf-8-sig'))
-    if source.get('readerSha256') not in (READER_SHA,'B56216935082462AF9B381EC37C84D83E74B35FBE97BAD515ADCB63DA8C39D62') or not isinstance(source.get('identity'),dict) or not isinstance(source.get('vmIdentity'),dict) or not isinstance(source.get('records'),list): raise ValueError('invalid-source-catalog')
+    if source.get('readerSha256') not in (READER_SHA,'B56216935082462AF9B381EC37C84D83E74B35FBE97BAD515ADCB63DA8C39D62','3239D8FE72077051AC19781847D703E702D29CEF29A2001A8CA910A1DD60247E') or not isinstance(source.get('identity'),dict) or not isinstance(source.get('vmIdentity'),dict) or not isinstance(source.get('records'),list): raise ValueError('invalid-source-catalog')
     parents=[]; seen=set(); lookup=[]
     for row in source['records']:
         if not isinstance(row,dict) or type(row.get('key')) is not int or row['key'] in seen: raise ValueError('invalid-parent-keys')
@@ -40,12 +40,12 @@ def run(lab,catalog):
     if len(parents)>512 or len(lookup)>4096: raise ValueError('variant-budget-exceeded')
     sources=[Path(__file__),ROOT/'scripts/sample_current_native_ability_catalog.py',ROOT/'scripts/sample_current_native_ability_records.py',ROOT/'scripts/probe_native_unit_manager.py',ROOT/'scripts/native_localization_huffman.py',ROOT/'scripts/native_localization_record.py']
     pins={str(p):sha(p.read_bytes()) for p in sources}
-    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size!=117520224 or sha(READER.read_bytes())!=READER_SHA: raise ValueError('reader-mismatch')
+    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size!=117537120 or sha(READER.read_bytes())!=READER_SHA: raise ValueError('reader-mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root/'.doctor'))
     if vm!=source['vmIdentity']: raise ValueError('source-vm-identity-changed')
     token=uuid.uuid4().hex; folder=ROOT/'artifacts/native-variant-definitions-20261107/runs'/lab/token;folder.mkdir(parents=True,exist_ok=False)
-    cache=settings['guestRoot']+r'\current-variant-guards-'+READER_SHA[:16]; reader=cache+r'\RiftReader2.Live.exe';prefix=settings['guestRoot']+r'\variant-'+token
+    cache=settings['guestRoot']+r'\current-variant-restrictions-'+READER_SHA[:16]; reader=cache+r'\RiftReader2.Live.exe';prefix=settings['guestRoot']+r'\variant-'+token
     evidence={}
     with api._session(config,settings,vm,folder) as guest:
         guest.powershell("$ErrorActionPreference='Stop';[IO.Directory]::CreateDirectory("+ps_literal(cache)+")|Out-Null;$e="+ps_literal(reader)+";if((Test-Path -LiteralPath $e) -and (Get-FileHash -LiteralPath $e -Algorithm SHA256).Hash -cne "+ps_literal(READER_SHA)+"){throw 'reader-hash-collision'}",timeout=60)

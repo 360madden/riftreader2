@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **13:44 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **13:56 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -89,14 +89,21 @@ exclusion does NOT apply. Do not select the base variant from its name/level.
 Receipts and exact lifetime proof are in the variant reference. No active run.
 High static worker is checking ONE next cheap rejection branch; stop that lead
 if it needs rebuilding the whole eligibility engine. No generic review loop.
-The guard/required-level implementation is ready for its verified milestone.
+Guard/required-level milestone committedfc990bc. The next restriction-array read
+also passed but was EMPTY, closing the5AFF10 shortcut. No selected winner or
+further full-engine work. F86 restriction code/receipt is the next commit.
+New useful track: native Buff seed capture passed28 raw nodes in12.29ms;
+27 descriptorKind1 are excluded by List,1 kind4 is a candidate. Raw timer
+profiles are captured, not yet times. Buff milestone/receipts are being recorded.
+NEW buff definition helper is being prepared by tls_metadata; cooldown_discovery
+traces actual clock methods. Root alone performs live operations; none active.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
 
-Current catalog/variant/guard reader:117520224 bytes, SHA256
-3239D8FE72077051AC19781847D703E702D29CEF29A2001A8CA910A1DD60247E,
-`artifacts/native-variant-guards-20261107/publish/`. Prior B562 publication is
-retained, and explicitly accepted source catalogs are B562 or current3239 only.
+Current catalog/variant/guard reader:117537120 bytes, SHA256
+F86DBB418D19D6B7B0FA3D55F3EE0DC63B156881FFCE5A910EBAADC588763DFC,
+`artifacts/native-variant-key-restrictions-20261107/publish/`. Prior publications
+remain intact; accepted source catalogs explicitly whitelistB562/3239/F86.
 Selected-target reader:117499744 bytes, SHA256
 6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970,
 `artifacts/native-target-level-20261107/publish/`.

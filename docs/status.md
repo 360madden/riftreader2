@@ -1,10 +1,14 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:44 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:56 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**13:52 Eastern — RESTRICTION SHORTCUT CLOSED:** The self-owned restriction array
+was empty, so its nonempty-array rejection cannot select variants. No full-engine
+follow-up; winner remains unknown. Native buff telemetry is the next useful track.
 
 **13:43 Eastern — LIVE COUNTEREXAMPLE CLOSES LEVEL SHORTCUT:** Effective41 and
 typed exception/cache guards captured; all12 referenced definitions instead have

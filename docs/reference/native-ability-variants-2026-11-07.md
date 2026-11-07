@@ -122,6 +122,24 @@ Initialization/lifetime trace:
 Known limitation retained until actually relevant: nonzero state byte with empty
 special span reports role-cache inputs unknown; no silent role bypass is assumed.
 
+## Restriction shortcut also inapplicable —13:52 Eastern
+
+The next bounded helper5AFF10 requires a NONEMPTY DWORD key array reached from
+the same self context2F57260 via`[context+1B0]+3D8/+3E0`, absence of the first
+variant key, and nonzero verified0051 byte+C4. It can then return false/status59,
+which does not score. Fresh self/context ownership and consumed-byte checks
+passed, but the actual array was **EMPTY**. This sufficient rejection does not
+apply. No additional variant read was needed to discover that; no winner is
+claimed and full eligibility-engine reconstruction is not the default follow-up.
+
+Receipt`artifacts/native-variant-guards-20261107/runs/lab1/36323b5f1f1c4988be8452114c6e31b4/samples.json`,
+SHA256`4F4F2D946384B26FE3886809C560C6C8368F28583E5AFB51E5665C8BE89309F9`.
+Reader117537120 bytes, SHA256
+`F86DBB418D19D6B7B0FA3D55F3EE0DC63B156881FFCE5A910EBAADC588763DFC`,
+at`artifacts/native-variant-key-restrictions-20261107/publish/`. Sixteen focused
+checks passed. ByteC4 capture/host validation passed focused offline checks; it
+was not needed for the empty-array live finding and has no accepted live value.
+
 Next useful observation resolves those possible keys to resident0051 definitions,
 names and raw timing, with fresh epoch and ordered parent-vector rechecks. Cache
 misses are not absence, raw filter is not learned membership, and referenced

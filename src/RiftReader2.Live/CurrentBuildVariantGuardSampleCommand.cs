@@ -4,7 +4,7 @@ using System.Text.Json;
 using RiftReader2.Application;
 using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
-internal sealed record VariantGuardObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,string SpecialKeyStatus,uint? SpecialKey,string EffectiveLevelStatus,int? EffectiveLevel,string? LevelBranch,byte? PStatus,ulong? RegularBegin,ulong? RegularEnd,ulong? SpecialBegin,ulong? SpecialEnd,int? SelectionIndex,bool? RoleExceptionBypassed,uint? RawGuard,IReadOnlyList<uint>? RawGuardKeys)
+internal sealed record VariantGuardObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,string SpecialKeyStatus,uint? SpecialKey,string EffectiveLevelStatus,int? EffectiveLevel,string? LevelBranch,byte? PStatus,ulong? RegularBegin,ulong? RegularEnd,ulong? SpecialBegin,ulong? SpecialEnd,int? SelectionIndex,bool? RoleExceptionBypassed,uint? RawGuard,IReadOnlyList<uint>? RawGuardKeys,string RawKeyRestrictionStatus,IReadOnlyList<uint>? RawKeyRestrictionKeys)
 {
  public string Qualification=>"raw candidate inputs; guard initialization and variant winner unverified";
 }
@@ -42,8 +42,20 @@ internal static class CurrentBuildVariantGuardSampleCommand
    }
   }
   catch(InvalidDataException){if(budget>2*1024*1024)throw;effective=null;levelStatus="unavailable";branch="unreadable-or-invalid";role=null;guard=null;keys=null;}
+  string restrictionStatus="unavailable";List<uint>? restrictionKeys=null;
+  try
+  {
+   var system=Ptr(Q(id.ModuleBaseAddress+0x33623E0),0x400);if(Q(system+0x3F8)!=lookup.Entity)throw new InvalidDataException("Cached self entity mismatch.");
+   var selector=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+0x2F57260,4));if(selector is <0 or >=0x60)throw new InvalidDataException("Invalid restriction selector.");
+   var slot=Take(lookup.Entity+0x18+(ulong)selector,1)[0];if(slot==0xFF)throw new InvalidDataException("Restriction component absent.");
+   var table=Ptr(Q(lookup.Entity+0x78));var component=Ptr(Q(checked(table+slot*8UL)),0x1B8);if(Q(component+0x10)!=lookup.Entity)throw new InvalidDataException("Restriction component owner mismatch.");
+   var v=Ptr(Q(component+0x1B0),0x3E8);var span=Take(v+0x3D8,16);var b=U64(span);var e=U64(span.AsSpan(8));
+   if((b==0)!=(e==0)||e<b||(e-b)%4!=0||(e-b)/4>512||(b!=0&&(b<0x10000||b%4!=0||e>0x7FFFFFFFFFFFUL)))throw new InvalidDataException("Invalid restriction span.");
+   restrictionKeys=[];for(var at=b;at<e;at+=4)restrictionKeys.Add(BinaryPrimitives.ReadUInt32LittleEndian(Take(at,4)));restrictionStatus=restrictionKeys.Count==0?"empty":"available";
+  }
+  catch(InvalidDataException){if(budget>2*1024*1024)throw;restrictionStatus="unavailable";restrictionKeys=null;}
   foreach(var a in anchors)CurrentBuildPlayerLookup.RequireSame(Take(a.Key.Item1,a.Key.Item2,false),a.Value);lookup.Verify();var after=context(session);if(after.Identity!=id||after.UnitKey!=self.UnitKey||after.Entity!=self.Entity||after.HealthComponent!=health||after.CachedContext!=health||session.Identity!=id)throw new InvalidDataException("Self epoch changed.");
-  return new(id,start,DateTimeOffset.UtcNow,self.UnitKey,specialStatus,specialKey,levelStatus,effective,branch,pStatus,rb,re,sb,se,index,role,guard,keys);
+  return new(id,start,DateTimeOffset.UtcNow,self.UnitKey,specialStatus,specialKey,levelStatus,effective,branch,pStatus,rb,re,sb,se,index,role,guard,keys,restrictionStatus,restrictionKeys);
  }
  static ulong U64(ReadOnlySpan<byte>b)=>BinaryPrimitives.ReadUInt64LittleEndian(b);
 }

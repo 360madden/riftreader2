@@ -8,8 +8,8 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '3239D8FE72077051AC19781847D703E702D29CEF29A2001A8CA910A1DD60247E'
-READER = ROOT / 'artifacts/native-variant-guards-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = 'F86DBB418D19D6B7B0FA3D55F3EE0DC63B156881FFCE5A910EBAADC588763DFC'
+READER = ROOT / 'artifacts/native-variant-key-restrictions-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-variant-guards-20261107/runs'
 
 QUALIFICATION='raw candidate inputs; guard initialization and variant winner unverified'
@@ -45,16 +45,22 @@ def validate_report(report, *, pid, ticks):
     role=o.get('roleExceptionBypassed'); keys=o.get('rawGuardKeys')
     if role is not None and type(role) is not bool: invalid()
     if keys is not None and (not isinstance(keys,list) or len(keys)>512 or any(not integer(k,0,2**32-1) for k in keys)): invalid()
+    restriction_status=o.get('rawKeyRestrictionStatus'); restriction=o.get('rawKeyRestrictionKeys')
+    if restriction_status=='unavailable':
+        if restriction is not None: invalid()
+    elif restriction_status in ('empty','available'):
+        if not isinstance(restriction,list) or len(restriction)>512 or any(not integer(k,0,2**32-1) for k in restriction) or ((restriction_status=='empty') != (len(restriction)==0)): invalid()
+    else: invalid()
     return o
 
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117520224 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117537120 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-variant-guards-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-variant-restrictions-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"
