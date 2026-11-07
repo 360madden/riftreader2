@@ -49,9 +49,10 @@ channeling, queued abilities, completed casts, interruption and cache retention.
 November7 disassembly narrowed the selected-child floats: producer uses first
 child `+0x30` or fallback child `+0x34` and game-clock float
 `*(module+0x33DC2B0)+0x18` in `duration - (clock - selected_float)`. This is
-a start-time candidate, not a qualified timer field. Duration remains virtual
-through child `+0x20/+0x28`, not a direct passive offset. Fallback selection
-also depends on the `+0x298` control pointer. The retained trace is
+a start-time candidate, not a qualified timer field. Duration uses virtual
+dispatch through child `+0x20/+0x28`; the type-specific passive formula below
+does not apply to every implementation. First-child selection requires its
+`+0x288` control pointer; fallback requires `+0x298`. The retained trace is
 `artifacts/discovery-20261107-cast/static-followup.md`; never call the smart
 reference or virtual helpers. Both castbar marshaller paths map producer
 output `+0x28` to named `begin`, `+0x30` to `duration`, and `+0x2C` to
@@ -64,12 +65,40 @@ validation needs another reference.
 
 The `abilityNew` input now traces to the selected child's DWORD `+8`, after
 the child-ID gate and a nested-pointer guard: child must be non-null and
-`byte(*(child+0x10)+0xC8)` must be zero. First child wins when present;
-fallback requires the second reference's control pointer. The producer's
+`byte(*(child+0x10)+0xC8)` must be zero. First child wins when its object and
+control pointer are present; otherwise fallback requires the second reference's
+object and control pointer. The producer's
 `0x58B30` leaf reads the DWORD, and the marshaller performs another lookup
 (`0x49FA20`) before emitting abilityNew. Existing raw IDs are therefore
 candidate keys only under this selection/guard, not arbitrary qualified ability
 IDs. No reader invokes these functions.
+
+## Type-specific passive duration — November 7
+
+One exact-build virtual implementation is now a direct passive formula:
+
+| Fingerprint | Exact value |
+| --- | --- |
+| Nested duration object's vtable | module RVA `0x26AA0E0` |
+| Vtable slot `+0x08` | module RVA `0x09D680` |
+| Getter bytes | `F3 0F 10 41 18 C3` (`movss xmm0,[rcx+0x18]; ret`) |
+| Passive return equivalent | float32 at duration object `+0x18` |
+
+The root independently checked the retained executable's SHA, raw getter bytes
+and vtable slot. Constructor `0x5355E0` installs this vtable but initially sets
+the float to `-1`; later owner-specific work can adjust it. This class has not
+been observed on either lab's cast path or proven to be that path's registered
+factory. Applying the formula therefore requires an actual matching object.
+The child constructor itself calls a registry-selected indirect factory, so a
+universal duration offset cannot be inferred from it.
+
+`durationCandidate` now captures raw begin/duration only after the producer's
+child-ID, smart-reference and nested-byte guards and both exact fingerprints.
+It requires finite float inputs and retains negative finite raw values rather
+than inventing valid duration semantics. Unknown types leave duration unavailable
+while preserving raw topology; changed consumed bytes invalidate the capture.
+Semantic `begin`/`duration` stay null. Eleven focused helper cases passed.
+Trace: `artifacts/discovery-20261107-cast/duration-followup.md`.
 
 ## Checks and next useful use
 

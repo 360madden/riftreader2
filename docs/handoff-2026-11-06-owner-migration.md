@@ -41,6 +41,13 @@ Do not restart the full validation gate or maintenance queue merely because
 those items appear chronologically below. Save concise concrete findings and
 commit useful slices; no new framework or validation campaign.
 
+**Duration continuation:** The exact nested type vtable RVA0x26AA0E0, slot+8
+target0x09D680 implements float32 object+0x18; root independently checked
+getter bytes `F30F104118C3` and the slot against the retained SHA. The helper
+exposes this as a fingerprint-gated raw durationCandidate, after producer guards,
+with semantic begin/duration still null. Eleven focused cases passed; no live
+matching duration object was observed. See [formula](reference/native-current-cast-candidate.md#type-specific-passive-duration--november-7).
+
 ## Reader startup readiness P2 fixed — November 7
 
 The launcher no longer treats a nonempty last snapshot as readiness after its

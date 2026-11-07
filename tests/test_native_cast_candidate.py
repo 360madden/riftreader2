@@ -18,7 +18,9 @@ class CastTopologyTests(unittest.TestCase):
             (self.entity + 0x78, 8): struct.pack("<Q", self.table),
             (self.table + 24, 8): struct.pack("<Q", self.component),
             (self.component + 0x280, 8): struct.pack("<Q", 0x50000),
+            (self.component + 0x288, 8): struct.pack("<Q", 0),
             (self.component + 0x290, 8): struct.pack("<Q", 0),
+            (self.component + 0x298, 8): struct.pack("<Q", 0),
             (self.component + 0x2B8, 4): struct.pack("<I", 42),
             (0x50008, 4): struct.pack("<I", 1234),
         }
@@ -80,6 +82,52 @@ class CastTopologyTests(unittest.TestCase):
 
     def test_partial_read_is_explicit(self):
         self.assertEqual(self.run_read(lambda *_: b"")["reason"], "short-or-invalid-read")
+
+    def duration_fixture(self):
+        self.memory.update({
+            (self.component + 0x288, 8): struct.pack("<Q", 0x60000),
+            (0x50010, 8): struct.pack("<Q", 0x70000),
+            (0x700C8, 1): b"\0",
+            (0x50020, 8): struct.pack("<Q", 0x80000),
+            (0x80000, 8): struct.pack("<Q", self.base + 0x26AA0E0),
+            (self.base + 0x26AA0E8, 8): struct.pack("<Q", self.base + 0x09D680),
+            (0x50030, 4): struct.pack("<f", 12.5),
+            (0x80018, 4): struct.pack("<f", -1.0),
+        })
+
+    def test_duration_fingerprint_candidate(self):
+        self.duration_fixture()
+        result = self.run_read()
+        self.assertEqual(result["durationCandidate"], {"status": "raw-fingerprint-candidate",
+                         "reason": None, "beginRaw": 12.5, "durationRaw": -1.0})
+        self.assertIsNone(result["duration"])
+
+    def test_unknown_duration_type_preserves_topology(self):
+        self.duration_fixture()
+        self.memory[(0x80000, 8)] = struct.pack("<Q", self.base + 0x1234)
+        result = self.run_read()
+        self.assertEqual(result["durationCandidate"]["reason"], "unsupported-duration-vtable")
+        self.assertEqual(result["children"][0]["rawId"], 1234)
+
+    def test_control_and_guard_required(self):
+        self.assertEqual(self.run_read()["durationCandidate"]["reason"], "no-selected-child")
+        self.duration_fixture()
+        self.memory[(0x700C8, 1)] = b"\x01"
+        self.assertEqual(self.run_read()["durationCandidate"]["reason"], "producer-guard-set")
+
+    def test_changed_duration_discarded(self):
+        self.duration_fixture()
+        seen = set()
+        def read(a, n):
+            key = (a, n)
+            data = self.memory[key]
+            if key == (0x80018, 4) and key in seen:
+                data = bytes(n)
+            seen.add(key)
+            return data
+        result = self.run_read(read)
+        self.assertEqual(result["reason"], "mutable-input-changed")
+        self.assertIsNone(result["durationCandidate"]["durationRaw"])
 
 
 if __name__ == "__main__":
