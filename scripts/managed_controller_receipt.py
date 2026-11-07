@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import subprocess
 import time
 
@@ -121,57 +122,144 @@ def _require_lab2_inspection_result(returncode, stdout, expected_pid):
             and status.get("atLogon") is False, "inspection-task-ownership-refused")
 
 
-_INSPECTION_SIGNAL = "inspect-lab2-controller"
 _INSPECTION_TIMEOUT = 20
 
 
+def _pipe_available(stream):
+    # HANDLE is pointer-sized: ctypes' default int arguments truncate it on x64.
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    peek = ctypes.WinDLL("kernel32", use_last_error=True).PeekNamedPipe
+    peek.argtypes = (wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+                     wintypes.LPDWORD, wintypes.LPDWORD, wintypes.LPDWORD)
+    peek.restype = wintypes.BOOL
+    available = wintypes.DWORD()
+    if not peek(wintypes.HANDLE(msvcrt.get_osfhandle(stream.fileno())), None, 0,
+                None, ctypes.byref(available), None):
+        if ctypes.get_last_error() == 109:  # EOF after all bytes were drained.
+            return 0
+        raise ManagedReceiptError("inspection-task-pipe-closed")
+    return available.value
+
+
+def _inspection_frame(child, deadline):
+    data = bytearray()
+    while True:
+        require(time.monotonic() < deadline, "inspection-task-expired")
+        available = _pipe_available(child.stdout)
+        if available:
+            require(len(data) + available <= 65536, "inspection-task-frame-too-large")
+            chunk = os.read(child.stdout.fileno(), available)
+            require(len(chunk) == available, "inspection-task-partial-frame")
+            data.extend(chunk)
+            if b"\n" in data:
+                frame, trailing = bytes(data).split(b"\n", 1)
+                require(not trailing, "inspection-task-extra-frame")
+                require(time.monotonic() < deadline, "inspection-task-expired")
+                return frame
+        else:
+            if child.poll() is not None:
+                # Exit can race the previous peek: drain a just-written final frame.
+                require(_pipe_available(child.stdout) > 0, "inspection-task-partial-frame")
+                continue
+            time.sleep(min(.01, max(0, deadline - time.monotonic())))
+
+
 @contextmanager
-def prepared_lab2_inspection_task():
-    """Warm one interpreter during discovery. Only the constructor signals a fresh proof."""
+def prepared_lab2_inspection_pair(*, _proof_count=2):
+    """One bounded interpreter; two fresh, separately triggered ownership proofs."""
     from scripts.controller_task_entry import POWERSHELL
     from scripts.ensure_controller import MANAGER
+    require(_proof_count in (1, 2), "inspection-task-proof-count-invalid")
     manager = str(MANAGER).replace("'", "''")
     command = f"""
 $ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management','CimCmdlets')) {{
     Import-Module ([IO.Path]::Combine($PSHOME, 'Modules', $module, ($module + '.psd1'))) -ErrorAction Stop
 }}
 $reader = [IO.StreamReader]::new([Console]::OpenStandardInput())
-$signal = $reader.ReadLineAsync()
-if (!$signal.Wait({_INSPECTION_TIMEOUT * 1000}) -or $signal.Result -cne '{_INSPECTION_SIGNAL}') {{ exit 1 }}
-& '{manager}' -Action Status -HelperId rr2-controller-lab2 -InspectLab2Controller
+foreach ($ordinal in 1..{_proof_count}) {{
+    $signal = $reader.ReadLineAsync()
+    if (!$signal.Wait({_INSPECTION_TIMEOUT * 1000})) {{ exit 1 }}
+    if ($signal.Result -cnotmatch ('^' + $ordinal + ':([0-9a-f]{{32}})$')) {{ exit 1 }}
+    $token = $Matches[1]
+    $raw = @(& '{manager}' -Action Status -HelperId rr2-controller-lab2 -InspectLab2Controller)
+    $status = ($raw -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
+    $frame = [ordered]@{{ordinal=$ordinal; token=$token; status=$status}}
+    [Console]::Out.WriteLine(($frame | ConvertTo-Json -Depth 20 -Compress))
+    [Console]::Out.Flush()
+}}
 """
     deadline = time.monotonic() + _INSPECTION_TIMEOUT
     with subprocess.Popen(
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
          "-Command", command], cwd=str(MANAGER.parent.parent), stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     ) as child:
-        available = True
+        next_ordinal = 1
+        active = True
+        prior_identity = None
 
-        def verify(lab, expected_pid):
-            nonlocal available
-            require(available, "inspection-task-already-consumed")
-            available = False
-            require(lab == "lab2" and type(expected_pid) is int and expected_pid > 0,
-                    "inspection-task-target-invalid")
-            remaining = deadline - time.monotonic()
-            require(remaining > 0, "inspection-task-expired")
-            try:
-                stdout, _ = child.communicate((_INSPECTION_SIGNAL + "\n").encode("ascii"),
-                                              timeout=remaining)
-            except subprocess.TimeoutExpired as error:
-                raise ManagedReceiptError("inspection-task-expired") from error
-            _require_lab2_inspection_result(child.returncode, stdout, expected_pid)
+        def callback(ordinal):
+            def verify(lab, expected_pid):
+                nonlocal next_ordinal, prior_identity, active
+                was_active = active
+                # Any failed attempt consumes the entire admission, including proof two.
+                active = False
+                require(was_active and next_ordinal == ordinal, "inspection-task-already-consumed")
+                require(lab == "lab2" and type(expected_pid) is int and expected_pid > 0,
+                        "inspection-task-target-invalid")
+                require(time.monotonic() < deadline, "inspection-task-expired")
+                token = secrets.token_hex(16)
+                signal = f"{ordinal}:{token}\n".encode("ascii")
+                try:
+                    require(_pipe_available(child.stdout) == 0, "inspection-task-unsolicited-frame")
+                    require(child.stdin.write(signal) == len(signal), "inspection-task-signal-failed")
+                    child.stdin.flush()
+                    frame = json.loads(_inspection_frame(child, deadline).decode("utf-8"))
+                    require(isinstance(frame, dict) and set(frame) == {"ordinal", "token", "status"}
+                            and type(frame["ordinal"]) is int and frame["ordinal"] == ordinal
+                            and frame["token"] == token, "inspection-task-frame-invalid")
+                    status = frame["status"]
+                    _require_lab2_inspection_result(0, json.dumps(status).encode("utf-8"), expected_pid)
+                    identity = (status["enginePid"], status["instanceGuid"])
+                    require(prior_identity is None or identity == prior_identity,
+                            "inspection-task-instance-changed")
+                    if ordinal == _proof_count:
+                        remaining = deadline - time.monotonic()
+                        require(remaining > 0, "inspection-task-expired")
+                        require(child.wait(timeout=remaining) == 0, "inspection-task-ownership-refused")
+                        require(_pipe_available(child.stdout) == 0, "inspection-task-extra-frame")
+                        require(time.monotonic() < deadline, "inspection-task-expired")
+                except subprocess.TimeoutExpired as error:
+                    raise ManagedReceiptError("inspection-task-expired") from error
+                except (OSError, UnicodeError, ValueError) as error:
+                    if isinstance(error, ManagedReceiptError):
+                        raise
+                    raise ManagedReceiptError("inspection-task-frame-invalid") from error
+                require(time.monotonic() < deadline, "inspection-task-expired")
+                prior_identity = identity
+                next_ordinal += 1
+                active = ordinal < _proof_count
+            return verify
 
         try:
-            yield verify
+            yield callback(1), callback(2)
         finally:
-            available = False
+            active = False
             if child.poll() is None:
                 child.kill()
                 child.wait(timeout=5)
+
+
+@contextmanager
+def prepared_lab2_inspection_task():
+    """Prewarm one fresh single-use proof and require successful helper exit."""
+    with prepared_lab2_inspection_pair(_proof_count=1) as (first, _second):
+        yield first
 
 
 def resolve_current_managed_controller(lab: str, *, root=None, configs=None,

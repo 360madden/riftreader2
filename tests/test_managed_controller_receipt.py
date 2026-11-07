@@ -1,4 +1,5 @@
 """Offline, no-game tests for one exact on-demand controller generation receipt."""
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -234,68 +235,157 @@ class PreparedInspectionTaskTests(unittest.TestCase):
               "state": "Running", "runLevel": "Limited", "atLogon": False, "enginePid": 321,
               "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
 
-    def fake_child(self):
+    @contextmanager
+    def fake_helper(self, mutate=lambda value: value):
         child = MagicMock()
         child.__enter__.return_value = child
-        child.returncode = 0
-        child.poll.return_value = 0
-        child.communicate.return_value = (json.dumps(self.status).encode(), b"")
-        return child
-
-    def test_one_signal_one_fresh_result_and_no_saved_callback(self):
-        child = self.fake_child()
-        with patch.object(managed.subprocess, "Popen", return_value=child):
-            with managed.prepared_lab2_inspection_task() as verify:
-                child.communicate.assert_not_called()
-                verify("lab2", 321)
-                with self.assertRaisesRegex(managed.ManagedReceiptError, "already-consumed"):
-                    verify("lab2", 321)
-            with self.assertRaisesRegex(managed.ManagedReceiptError, "already-consumed"):
-                verify("lab2", 321)
-        child.communicate.assert_called_once()
-        self.assertLessEqual(child.communicate.call_args.kwargs["timeout"], 20)
-        child.kill.assert_not_called()
-
-    def test_unused_discovery_failure_kills_and_reaps(self):
-        child = self.fake_child()
         child.poll.return_value = None
-        with patch.object(managed.subprocess, "Popen", return_value=child):
+        child.wait.return_value = 0
+        pending = bytearray()
+        def write(signal):
+            ordinal, token = signal.decode().strip().split(":")
+            value = mutate({"ordinal": int(ordinal), "token": token, "status": dict(self.status)})
+            pending.extend(value if isinstance(value, bytes) else json.dumps(value).encode() + b"\n")
+            return len(signal)
+        def read(_fd, count):
+            value = bytes(pending[:count]); del pending[:count]
+            return value
+        child.stdin.write.side_effect = write
+        with patch.object(managed.subprocess, "Popen", return_value=child), \
+             patch.object(managed, "_pipe_available", side_effect=lambda _: len(pending)), \
+             patch.object(managed.os, "read", side_effect=read):
+            yield child, pending
+
+    def test_two_separate_single_use_signals_and_no_escaped_callbacks(self):
+        with self.fake_helper() as (child, _):
+            with managed.prepared_lab2_inspection_pair() as (first, second):
+                child.stdin.write.assert_not_called()
+                first("lab2", 321)
+                self.assertEqual(child.stdin.write.call_count, 1)
+                second("lab2", 321)
+                self.assertEqual(child.stdin.write.call_count, 2)
+                with self.assertRaises(managed.ManagedReceiptError): first("lab2", 321)
+            for callback in (first, second):
+                with self.assertRaises(managed.ManagedReceiptError): callback("lab2", 321)
+            self.assertNotEqual(*[call.args[0].split(b":")[1] for call in child.stdin.write.call_args_list])
+
+    def test_order_failure_invalidates_both_and_cleanup_kills_reaps(self):
+        with self.fake_helper() as (child, _):
+            with self.assertRaises(managed.ManagedReceiptError):
+                with managed.prepared_lab2_inspection_pair() as (_first, second): second("lab2", 321)
+            child.kill.assert_called_once()
+            child.wait.assert_called_once_with(timeout=5)
+            child.stdin.write.assert_not_called()
+
+    def test_unused_failure_cleanup_and_compatibility_single_proof(self):
+        with self.fake_helper() as (child, _):
             with self.assertRaisesRegex(RuntimeError, "discovery"):
-                with managed.prepared_lab2_inspection_task():
-                    raise RuntimeError("discovery")
-        child.communicate.assert_not_called()
-        child.kill.assert_called_once()
-        child.wait.assert_called_once_with(timeout=5)
+                with managed.prepared_lab2_inspection_pair(): raise RuntimeError("discovery")
+            child.kill.assert_called_once()
+        with self.fake_helper() as (child, _):
+            with managed.prepared_lab2_inspection_task() as verify: verify("lab2", 321)
+            self.assertEqual(child.stdin.write.call_count, 1)
+            child.kill.assert_called_once()
 
-    def test_invalid_target_and_expired_admission_never_signal(self):
-        for lab, pid, elapsed in (("lab1", 321, 1), ("lab2", True, 1), ("lab2", 0, 1),
-                                  ("lab2", 321, 21)):
-            child = self.fake_child()
-            with self.subTest(lab=lab, pid=pid, elapsed=elapsed), \
-                    patch.object(managed.subprocess, "Popen", return_value=child), \
-                    patch.object(managed.time, "monotonic", side_effect=[100, 100 + elapsed]):
+    def test_wrong_token_ordinal_pid_guid_partial_and_extra_frames_fail(self):
+        mutations = [lambda f: dict(f, token="stale"), lambda f: dict(f, ordinal=2),
+                     lambda f: dict(f, status=dict(f["status"], enginePid=322)),
+                     lambda f: dict(f, status=dict(f["status"], instanceGuid="bad")),
+                     lambda f: b"{}\n{}\n", lambda f: b"x" * 65537]
+        for mutate in mutations:
+            with self.subTest(mutate=mutate), self.fake_helper(mutate) as (child, _):
                 with self.assertRaises(managed.ManagedReceiptError):
-                    with managed.prepared_lab2_inspection_task() as verify:
-                        verify(lab, pid)
-                child.communicate.assert_not_called()
+                    with managed.prepared_lab2_inspection_pair() as (first, _second): first("lab2", 321)
+                child.kill.assert_called_once()
+        with self.fake_helper(lambda f: b"partial") as (child, _):
+            child.poll.return_value = 1
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "partial-frame"):
+                with managed.prepared_lab2_inspection_pair() as (first, _second): first("lab2", 321)
 
-    def test_timeout_kills_and_reaps_and_mismatched_pid_is_refused(self):
-        child = self.fake_child()
-        child.communicate.side_effect = managed.subprocess.TimeoutExpired("offline", 1)
-        child.poll.return_value = None
-        with patch.object(managed.subprocess, "Popen", return_value=child):
+    def test_second_proof_cannot_reuse_or_change_instance(self):
+        def change(frame):
+            if frame["ordinal"] == 2:
+                frame["status"]["instanceGuid"] = "4a048a33-b778-4f2f-9a90-e139cd4ce101"
+            return frame
+        with self.fake_helper(change):
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "instance-changed"):
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    first("lab2", 321); second("lab2", 321)
+        with self.fake_helper() as (_child, pending):
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "unsolicited"):
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    first("lab2", 321); pending.extend(b"stale\n"); second("lab2", 321)
+
+    def test_expiry_before_either_signal_and_timeout_kill_reap(self):
+        for boundary in (1, 2):
+            with self.subTest(boundary=boundary), self.fake_helper() as (child, _):
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    if boundary == 2: first("lab2", 321)
+                    with patch.object(managed.time, "monotonic", return_value=float("inf")):
+                        with self.assertRaisesRegex(managed.ManagedReceiptError, "expired"):
+                            (first if boundary == 1 else second)("lab2", 321)
+                self.assertEqual(child.stdin.write.call_count, boundary - 1)
+                child.kill.assert_called_once()
+        with self.fake_helper() as (child, _):
+            with patch.object(managed, "_inspection_frame", side_effect=managed.subprocess.TimeoutExpired("fixture", 1)):
+                with self.assertRaisesRegex(managed.ManagedReceiptError, "expired"):
+                    with managed.prepared_lab2_inspection_pair() as (first, _): first("lab2", 321)
+            child.kill.assert_called_once()
+            child.wait.assert_called_once_with(timeout=5)
+
+    def test_exit_racing_empty_peek_still_drains_final_frame(self):
+        child = MagicMock()
+        child.poll.return_value = 0
+        with patch.object(managed, "_pipe_available", side_effect=[0, 3, 3]), \
+             patch.object(managed.os, "read", return_value=b"{}\n"):
+            self.assertEqual(managed._inspection_frame(child, managed.time.monotonic() + 1), b"{}")
+
+    def test_caught_out_of_order_attempt_invalidates_all_callbacks(self):
+        with self.fake_helper():
+            with managed.prepared_lab2_inspection_pair() as (first, second):
+                for callback in (second, first, second):
+                    with self.assertRaises(managed.ManagedReceiptError): callback("lab2", 321)
+
+    def test_second_wrong_token_and_response_timeouts_fail_closed(self):
+        def stale_second(frame):
+            return dict(frame, token="stale") if frame["ordinal"] == 2 else frame
+        with self.fake_helper(stale_second):
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "frame-invalid"):
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    first("lab2", 321); second("lab2", 321)
+        for boundary in (1, 2):
+            with self.subTest(boundary=boundary), self.fake_helper() as (child, _):
+                with self.assertRaisesRegex(managed.ManagedReceiptError, "expired"):
+                    with managed.prepared_lab2_inspection_pair() as (first, second):
+                        if boundary == 2: first("lab2", 321)
+                        with patch.object(managed, "_inspection_frame", side_effect=
+                                          managed.subprocess.TimeoutExpired("fixture", 1)):
+                            (first if boundary == 1 else second)("lab2", 321)
+                child.kill.assert_called_once()
+                child.wait.assert_called_once_with(timeout=5)
+
+    def test_late_frame_and_invalid_targets_never_admit(self):
+        child = MagicMock()
+        with patch.object(managed.time, "monotonic", side_effect=[0, 2]), \
+             patch.object(managed, "_pipe_available", return_value=3), \
+             patch.object(managed.os, "read", return_value=b"{}\n"):
             with self.assertRaisesRegex(managed.ManagedReceiptError, "expired"):
-                with managed.prepared_lab2_inspection_task() as verify:
-                    verify("lab2", 321)
-        child.kill.assert_called_once()
-        child.wait.assert_called_once_with(timeout=5)
-        with patch.object(managed.subprocess, "Popen", return_value=self.fake_child()):
+                managed._inspection_frame(child, 1)
+        for lab, pid in (("lab1", 321), ("lab2", True), ("lab2", 0)):
+            with self.subTest(lab=lab, pid=pid), self.fake_helper() as (child, _):
+                with self.assertRaisesRegex(managed.ManagedReceiptError, "target-invalid"):
+                    with managed.prepared_lab2_inspection_pair() as (first, _): first(lab, pid)
+                child.stdin.write.assert_not_called()
+
+    def test_second_requires_successful_exit(self):
+        with self.fake_helper() as (child, _):
+            child.wait.side_effect = [1, 0]
             with self.assertRaisesRegex(managed.ManagedReceiptError, "ownership-refused"):
-                with managed.prepared_lab2_inspection_task() as verify:
-                    verify("lab2", 322)
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    first("lab2", 321); second("lab2", 321)
 
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell required")
-    def test_real_interpreter_accepts_only_exact_signal_for_fixture_manager(self):
+    def test_real_interpreter_two_triggers_fresh_fixture_results_and_cleanup(self):
         from scripts import ensure_controller
         with tempfile.TemporaryDirectory() as folder:
             scripts = Path(folder) / "fixture's scripts"
@@ -306,27 +396,20 @@ class PreparedInspectionTaskTests(unittest.TestCase):
                 "param($Action, $HelperId, [switch]$InspectLab2Controller)\n"
                 "if ($Action -cne 'Status' -or $HelperId -cne 'rr2-controller-lab2' "
                 "-or !$InspectLab2Controller) { throw 'unexpected invocation' }\n"
-                "[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'invoked'), 'yes')\n"
+                "[IO.File]::AppendAllText((Join-Path $PSScriptRoot 'invoked'), 'x')\n"
                 f"'{json.dumps(self.status)}'\n", encoding="ascii")
-            children = []
-            popen = managed.subprocess.Popen
-
-            def record(*args, **kwargs):
-                child = popen(*args, **kwargs)
-                children.append(child)
-                return child
-
-            with patch.object(ensure_controller, "MANAGER", manager), \
-                    patch.object(managed.subprocess, "Popen", side_effect=record):
-                for signal in (b"", b"incorrect\n"):
-                    with self.subTest(signal=signal), managed.prepared_lab2_inspection_task():
-                        child = children[-1]
-                        child.communicate(signal, timeout=10)
-                        self.assertNotEqual(child.returncode, 0)
-                        self.assertFalse(invoked.exists())
-                with managed.prepared_lab2_inspection_task() as verify:
-                    verify("lab2", 321)
-                    self.assertTrue(invoked.is_file())
+            with patch.object(ensure_controller, "MANAGER", manager):
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    self.assertFalse(invoked.exists())
+                    first("lab2", 321)
+                    self.assertEqual(invoked.read_text(), "x")
+                    second("lab2", 321)
+                    self.assertEqual(invoked.read_text(), "xx")
+                # A second invocation must read changed fixture output, not cached state.
+                with managed.prepared_lab2_inspection_pair() as (first, second):
+                    first("lab2", 321)
+                    manager.write_text("throw 'fresh failure'", encoding="ascii")
+                    with self.assertRaises(managed.ManagedReceiptError): second("lab2", 321)
 
 
 if __name__ == "__main__":

@@ -317,6 +317,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.direct_identity = MagicMock(return_value=self.vm)
         self.proof_events = []
         self.prepared_verifier = MagicMock()
+        self.prepared_first = MagicMock()
 
     def create_receipt(self, name):
         import json
@@ -335,7 +336,8 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         def admission(*args, inspect_lab2=False, _inspection_task_verifier=None):
             self.admission_calls.append(args)
             self.inspection_task_checks.append(inspect_lab2)
-            self.proof_events.append("second-proof" if _inspection_task_verifier else "first-proof")
+            self.proof_events.append("second-proof" if _inspection_task_verifier is self.prepared_verifier
+                                     else "first-proof")
             if reject_strict:
                 raise runner.MovementSessionError("managed task ownership refused")
             if _inspection_task_verifier is not None:
@@ -344,7 +346,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         def prepared():
             self.proof_events.append("prepare")
             try:
-                yield self.prepared_verifier
+                yield self.prepared_first, self.prepared_verifier
             finally:
                 self.proof_events.append("close")
         with patch.object(runner, "ROOT", self.root), \
@@ -356,7 +358,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
              patch.object(runner, "listener_owner", return_value=123), \
              patch.object(runner, "process_identity", return_value=self.identity), \
              patch.object(runner, "VmEpochGuard", return_value=fake_guard), \
-             patch.object(managed, "prepared_lab2_inspection_task", side_effect=prepared), \
+             patch.object(managed, "prepared_lab2_inspection_pair", side_effect=prepared), \
              patch.object(native, "_direct_identity", self.direct_identity), \
              patch.object(runner.PinnedHost, "status", autospec=True,
                           side_effect=runner.PinnedHost.status) as status, \
@@ -395,6 +397,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.assertEqual(self.inventory.call_count, 2)
         self.assertEqual(self.direct_identity.call_count, 2)
         self.assertEqual(self.proof_events, ["prepare", "first-proof", "second-proof", "close"])
+        self.prepared_first.assert_called_once_with("lab2", 123)
         self.prepared_verifier.assert_called_once_with("lab2", 123)
 
     def test_inspection_second_task_instance_failure_denies_admission(self):

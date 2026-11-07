@@ -308,7 +308,8 @@ class Lab2InspectionHost(ManagedPinnedHost):
         super().check()
 
 
-def _discover_managed_host_plan(lab: str, output: Path, *, inspect_lab2=False) -> Path:
+def _discover_managed_host_plan(lab: str, output: Path, *, inspect_lab2=False,
+                                _inspection_task_verifier=None) -> Path:
     from scripts.ensure_controller import CONFIGS, QUEUE
     require(lab in CONFIGS, "unknown managed lab")
     config_path = CONFIGS[lab].resolve(strict=True)
@@ -352,7 +353,8 @@ def _discover_managed_host_plan(lab: str, output: Path, *, inspect_lab2=False) -
             matches.append((receipt_path, receipt))
     require(len(matches) == 1, "managed controller task receipt missing or ambiguous")
     receipt_path, receipt = matches[0]
-    _require_exact_managed_task(lab, receipt_path, receipt, inspect_lab2=inspect_lab2)
+    _require_exact_managed_task(lab, receipt_path, receipt, inspect_lab2=inspect_lab2,
+                                _inspection_task_verifier=_inspection_task_verifier)
     target = guest.get("target", {})
     target_pin = {key: target.get(key) for key in
                   ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")}
@@ -383,12 +385,13 @@ def admit_managed_host(lab: str, output: Path, *, require_foreground=True) -> Ma
 
 
 def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
-    from scripts.managed_controller_receipt import prepared_lab2_inspection_task
-    # Overlap only module startup. The second live task query remains at the
-    # constructor's exact ownership-proof boundary, after fresh receipt resolution.
-    with prepared_lab2_inspection_task() as verify_second:
+    from scripts.managed_controller_receipt import prepared_lab2_inspection_pair
+    # Both queries remain at their original resolver boundaries. Only the
+    # interpreter is shared; each callback triggers a fresh complete manager proof.
+    with prepared_lab2_inspection_pair() as (verify_first, verify_second):
         admitted = Lab2InspectionHost(
-            _discover_managed_host_plan("lab2", output, inspect_lab2=True),
+            _discover_managed_host_plan("lab2", output, inspect_lab2=True,
+                                        _inspection_task_verifier=verify_first),
             _inspection_task_verifier=verify_second)
         admitted.status(require_armed=False, require_foreground=True)
     return admitted
