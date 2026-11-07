@@ -16,6 +16,11 @@ ordinal assumption by validating/searching the complete loaded field table.
 Lab1 all28 andLab2 all24 buff timing candidates captured, all durations0. No
 active positive timers or API publication claimed. [Receipts](reference/native-buff-candidates-2026-11-07.md).
 
+**14:19 Eastern — SOLE NATIVE BUFF LIST CANDIDATE:** Typed visibility read
+excluded27 hidden-kind rows and passed Rested's ordinary-source candidate ID
+b80000003086737D6. Grouping cannot suppress the sole passing object. This is
+not independent API/UI acceptance. [Receipt](reference/native-buff-candidates-2026-11-07.md).
+
 **14:05 Eastern — FIRST BUFF TIMER INPUTS LIVE:** All28 begins and reference
 profiles captured; six tick durations are0, not active positive timers. The22
 dynamic refs match065A, so the statically resolved float+24 path is the next

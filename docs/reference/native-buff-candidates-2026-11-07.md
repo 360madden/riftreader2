@@ -125,3 +125,26 @@ Reader117565792 bytes, SHA256
 `EAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060`,
 at`artifacts/native-buff-loaded-field-table-20261107/publish/`. All earlier
 publications, failed-case receipts and seed/definition workflows remain intact.
+
+## Native visibility candidate —14:19:54 Eastern
+
+The separate visibility command rechecks identical raw seeds before/after and
+uses the exact0052 descriptor and three shared config fingerprints. Lab1
+returned27 excluded-first-guard rows and ONE predicate-pass candidate:
+`b80000003086737D6`. Its typed0743 name-special key differed from the buff's
+definition key, proving the ordinary name-source branch. The independent
+definition-name observation gives candidate **Rested**, not API/UI agreement.
+
+The native grouping trace keeps the first passing object per composite group
+and then deduplicates QWORD+48 IDs. With only one passing object here, grouping
+cannot suppress this ID. That supports a sole native List ID candidate for this
+snapshot, not a generally qualified API count or freshness claim.
+
+Receipt`artifacts/native-buff-visibility-20261107/runs/lab1/53601925e0414937bc347d9559e1a27f/samples.json`,
+SHA256`CC6ADC63786A4BBBD061C9CEC5642422EE00E3AED8C6D536E36F68F8DD199235`.
+Reader117565280 bytes, SHA256
+`A7C9676FEAE82FC94C7FB7F9C6AC05000C5AB29E69209D8A5D9BE5FCB827B383`,
+at`artifacts/native-buff-visibility-20261107/publish/`. Four focused native cases
+passed; host rejects an ID leaked from an unresolved row. Stateful/nonempty
+qualifier and special-config paths remain unresolved. Static grouping receipt:
+`artifacts/discovery-20261107-buffs/buff-list-grouping.md`.

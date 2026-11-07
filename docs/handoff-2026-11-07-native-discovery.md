@@ -132,6 +132,18 @@ ReaderEAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060,
 117565792 bytes,`artifacts/native-buff-loaded-field-table-20261107/publish/`.
 No active native capture. Python timing helper pins it; seven focused cases pass.
 Reader/property milestone commit is next; preserve failed-case receipts.
+Completedb357f97. Visibility first live read also PASSED:27 excluded,1 pass,
+ordinary-source Rested candidate IDb80000003086737D6. [Receipt](reference/native-buff-candidates-2026-11-07.md).
+No stateful visibility engine or independent API/UI agreement is claimed.
+
+Prepared, NOT live: Buff-definition helper can now accept374 seed orEAE timing
+source, using existing EAE copy for seed/record/dictionary when appropriate.
+Lookup deduplication preserves relationships; timing fields alone are normalized
+out of parent-list equality, all raw ownership/object fields stay exact. Lab2
+source has24 nodes/21 distinct keys. DO NOT RUN until RRE's explicit clean return.
+Native basic-state static leads: typed0294 owner+150 raw zone key is concrete;
+full zID requires its own provider/type0073 proof. dead/mounted native enum
+labels were not bound to player state; do not infer from health or enum constants.
 Medium worker classifies actual buff descriptorVT28DC6A8 for later visibility.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
