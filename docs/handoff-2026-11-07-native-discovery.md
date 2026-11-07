@@ -1,4 +1,11 @@
-# Native discovery continuation — November 7, 2026
+# Native discovery continuation â€” November 7, 2026
+
+**SC628 LAB2 RETURNED CLEANLY; root verified15:46:56 Eastern.** Controller
+absent/queue BLOCKED/no holder, matching VM identity. Passive reads may resume;
+do not auto-start/reset. RRE package/source3304bd1/Collector0.4.13/reader0.1.3
+was hash-verified before the window. Its new API reference reports
+mathosian/Mathosian/zone z0000000CB7B53FD7; compare exact source receipts before
+any agreement claim. The earlier hold ended by explicit verified return.
 
 Checkpoint **15:23 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
@@ -25,6 +32,47 @@ New casting/combat/input authority is not implied by the time extension.
 Root verified RRE return receipt and actual mode: no controller endpoint,
 queue BLOCKED/no holder. No auto-start or queue reset. Earlier loaded addon/nonce
 assumptions are historical after RRE's reload. [Transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
+
+## 16:09 checkpoint - zone, XP, modifiers and stats
+
+SC628 returned cleanly and root verified actual mode at15:46:56 Eastern:
+controller absent, queue BLOCKED/no holder. Goal remains ACTIVE until17:26:48.
+Four Sammie specialists plus a coordinator actually contributed stat selector
+and typed-owner routes. First Lab1 stat capture passed: armor1163, attackpower20,
+spellpower678, attackcrit20, spellcrit235; ordinary/unbuffed pairs equal. Receipt
+`artifacts/native-current-stats-20261107/runs/lab1/2772079b639f4d3fb31e5b7dbfeb4066/samples.json`,
+SHABCC327B9E0691F6C9A878194F5D986377B440763C758F4DE09AD061EE03177FB.
+API availability, units, changed-state freshness and restart remain unverified.
+
+Corrected zone provider RVA336EBF8 replaces erroneous337EBF8; earlier NULL
+observations do not establish provider absence. Twelve focused checks passed.
+Lab2 `artifacts/native-zone-seed-20261107/runs/lab2/ceb09450de10448ab717c22c93062121/samples.json`
+SHA256 `A33DC84C32846EDCA8F31F141B2895AB3460C19ACBFB566EB9AA9D34D36E542D`
+yielded `z0000000CB7B53FD7`, equal to the separately captured SC628 API field.
+The SC628 decoded document SHA256 is `99BEF5BC35CB71A3387C60AC184C15EA87E1547AD3824A0B5774EFCA3AAEA648`;
+its receipt's payload SHA256 `589AC1AFFFE7026AD7055D90211C504DB1C6248AF63DA5B7638B9A50CD73A774`
+is a different object. SC628 request PID/start and game SHA match the zone
+receipt; snapshots were minutes apart. Equality is a baseline comparison, not
+freshness, authenticated producer or restart acceptance.
+
+XP candidate receipts: Lab1 `artifacts/native-experience-values-20261107/runs/lab1/28b6877f96dc412f84dc8b1ba9570950/samples.json`
+SHA256 `7390525FC534CD25638AB0A5ED16434E30A76A360DB389753017F770491C3FBA`,
+144585/245308/rested0, level41; Lab2 `artifacts/native-experience-values-20261107/runs/lab2/755336a34915495eb83f532061d4623d/samples.json`
+SHA256 `D57703A5390FC81EC31D159F26A8658BB51884B8C0ADEFE924002B6E28F5BBA6`,
+53375/289389/rested0, level43. These are candidates, not API, changed-state,
+freshness or restart qualification.
+
+Lab1 cooldown modifier census had four rows and no mode4; receipt
+`artifacts/native-cooldown-modifiers-20261107/runs/lab1/8792341eb9434f8bba897b2645c6ad4f/samples.json`
+SHA256 `03F207BFEF78C8B3FEBD40BD600E4FAA08124AB9383C1A822D66763775C2D03D`.
+Lab2 receipt
+`artifacts/native-cooldown-modifiers-20261107/runs/lab2/373157990b1149c6af2abf78e3563054/samples.json`
+SHA256 `466A9799E61389CA9BC98B8EDCD04B69EF0919B1D9E2735D9F874F3566C44964`
+had modes1,2,4,0. Mode4 carries float24=-300000, operation0, flag36=1 and
+direct key1012591716; entry DWORD+8=83142380 is a Total Recall candidate.
+Missing P+20 and scaling leave applicability unresolved; do not claim a
+600-second adjustment or cause. Host validator contract-string correction was
+replayed offline against independent identity.json, not a new live capture.
 
 ## Working repository commands
 
@@ -68,7 +116,7 @@ remaining0 from the idle baseline. Common0650 primary-duration getter uses the
 captured signed child+20 milliseconds directly; the tick-snapshot0653 route is
 observed on generic Use, not the common spell route. Context overrides remain.
 
-## Current active work — resume here
+## Current active work â€” resume here
 
 Checkpointf6cea6f preserves name/zone;9d6e560 calling;8a7a69b historical API
 comparison/online findings. The current goal remains ACTIVE until17:26:48 Eastern.
@@ -79,11 +127,17 @@ comparison/online findings. The current goal remains ACTIVE until17:26:48 Easter
 - COMPLETE: Lab2 buff definitions:24 raw nodes matched before/after,21 typed
   definition keys,11 name candidates/10 unavailable. All24 kind1 are excluded
   by native List. Helper accepts374/F86 or the existing EAE timing reader.
-- COMPLETE/BLOCKED: both zone captures found NULL PROVIDER337EBF8. Raw keys
-  Lab1=1216123138,Lab2=12; full ID/name unavailable. No repeated same-state
-  attempt, native getter or initializer. Typed0073/hash guards have7 synthetic
-  cases; no live typed hit. ReaderEAE14779A5FDFA1667858083C1AEDB92541CD064D821A964DAC6FFF0705DF807,
-  117581664 bytes,`artifacts/native-zone-id-20261107/publish/`.
+- CORRECTED: earlier zone NULL reads used WRONG providerRVA337EBF8. Four source
+  refs prove336EBF8; actual provider absence was not established. Raw owner keys
+  Lab1=1216123138/Lab2=12 remain supported. Corrected reader passed12 focused
+  cases; Lab2 receipt produced zone ID candidate `z0000000CB7B53FD7`, equal
+  to the retained SC628 API projection at a separate time. ReaderA96508FE963E4DFDE6EABD50889FD0432A72C0309AEC562E35CBF87B584F49D9,
+  117704544 bytes,`artifacts/native-zone-provider-fix-20261107/publish/`.
+  XP-values/cooldown helpers now reuse this exact verified binary and zone guest
+  cache to avoid duplicate transfers. A mistaken contract-string repin caused
+  host rejection; both validators were corrected and the retained cooldown and
+  XP reports passed offline replay against independent identity receipts. No
+  new capture is implied by replay.
 - NEW: calling owner+168 mapping (1warrior/2cleric/3mage/4rogue/7primalist).
   Lab1 raw3/mage and Lab2 raw4/rogue captured.16 focused cases passed.
   Reader1C57C5311062CF6F41E6492AF988BC2378A29E52BC6D84A4FA1E10600BADC654,

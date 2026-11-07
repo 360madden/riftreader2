@@ -28,8 +28,11 @@ SHA1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8.
   semantics, learned ranks or that cached records are public abilities.
 - Of54 matched IDs,13 typed single-entry0650 primary millisecond inputs agree
   numerically with a present castingTime. One such typed input has no API
-  castingTime;40 primary profiles remain unresolved. Two typed0678 secondary
-  inputs also agree. Equal values do not distinguish the actual producer path.
+  castingTime;40 primary profiles remain unresolved in that primary-only
+  classification. Two typed0678 secondary inputs also agree. Four additional
+  variant parents have compatible typed child inputs, so all19 present
+  castingTime values have at least one compatible input across these captures.
+  Equal values do not select a child or establish the actual producer path.
 - Using float32(milliseconds)*float32(0.001),17 present API cooldowns agree with
   native parent base inputs,4 differ,33 API cooldown fields are absent.
   Decimal serialization precision and the comparison method remain explicit;
@@ -42,14 +45,26 @@ SHA1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8.
 | On the Double |40|0|
 | Divert Rage |60.0000038|0|
 
-The last three parent definitions have raw078A variant candidates. **Do not
-publish parent base0 as their API cooldown or select a child from this table.**
+The last three parent definitions have raw078A variant candidates. Their API
+cooldowns versus the ordered child base inputs are Empowered Shot 8 vs 8/8,
+On the Double 40 vs 0/40, and Divert Rage 60.0000038 vs
+60.0000038/60.0000038 seconds, using float32 conversion. These are compatible
+raw inputs, not proof of the selected child or producer. **Do not publish parent
+base0 as their API cooldown or select a child from this table.**
 State changes, context adjustments and variant selection remain possible causes;
 the captures are over an hour apart. Soul Recall also demonstrates a nonzero
 base/output difference. None of the projected54 Details contains currentCooldown
 Begin/Duration/Remaining/Expired/Paused fields; absence is not an observed zero.
 
+The ordered variant receipt
+`artifacts/native-variant-definitions-20261107/runs/lab2/fcb2b493233144cbbcc0d8af3fe87807/summary.json`,
+SHA256 `54C9E1DD88A181435A9476775BC87691B3535E0669482A3515850FE0E1CD3D51`,
+and all10 listed evidence hashes matched. All16 child records matched raw
+receipts; all8 ordered parent vectors matched before/after receipts. Variant
+observations span18:31:07.104..18:31:25.036Z, well before the API capture.
+
 Complete comparison and exact records:
+`artifacts/rre-peer-reference-20261107/variant-comparison.json`;
 `artifacts/rre-peer-reference-20261107/catalog-comparison.json`;
 packet verification:`artifacts/rre-peer-reference-20261107/verification.json`.
 RRE repositories and owners were read-only here. Keep this independent addon

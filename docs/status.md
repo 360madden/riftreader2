@@ -1,5 +1,21 @@
 # Current status
 
+**16:05 Eastern — XP, ZONE AND MODIFIER CHECKPOINT:** Corrected Lab2 zone ID
+matches the retained SC628 projected value; old wrong-address NULL claims are
+withdrawn. XP raw candidates are Lab1 144585/245308/rested0, level41, and
+Lab2 53375/289389/rested0, level43. Lab2 has one raw mode4 cooldown modifier;
+its applicability and result remain unresolved. Six Sammie specialists and
+a coordinator delivered stat selector/owner research; root implemented a stats
+reader. First Lab1 capture subsequently passed: armor1163, attackpower20,
+spellpower678, attackcrit20, spellcrit235; ordinary/unbuffed pairs equal. These
+are raw candidates with no API/units/freshness/restart acceptance.
+[Details](handoff-2026-11-07-native-discovery.md).
+
+**LAB2 RETURNED CLEANLY — 2026-11-07 15:46:56 Eastern:** SC628 API field capture
+completed and root verified return/mode. Passive reads may resume; controller
+remains absent, queue BLOCKED/no holder. RRE awaits any new ownership window.
+[Current ownership note](handoff-2026-11-07-lab2-rre-window.md).
+
 **CURRENT DISCOVERY CONTINUATION — 2026-11-07 15:19 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
@@ -11,9 +27,12 @@ Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
 queue BLOCKED/no holder. Prior addon/nonce assumptions require fresh evidence.
 [Ownership transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
 
-**14:54 Eastern — ZONE PROVIDER ABSENT:** Fresh bounded reads in both labs
-captured raw owner zone keys but found a null resident zone provider. Full zone
-ID/name remain unavailable. No getter/initializer was invoked to force a result.
+**15:53 Eastern — ZONE SOURCE CORRECTED:** Earlier NULL receipts sampled wrong
+RVA337EBF8. Four producer references prove336EBF8, so actual provider absence
+was not established. Corrected reader passed12 focused cases. Lab2 candidate
+`z0000000CB7B53FD7` matches the separately captured SC628 API zone ID; the
+observations are minutes apart, not freshness/restart or producer-auth proof.
+[Receipt and limitations](reference/native-player-context-candidates.md).
 
 **15:00 Eastern — SELF NAME/CALLING CANDIDATES:** Names Trio/Bolinao captured
 independently on Lab1/Lab2; Lab1 raw calling3 maps to mage on this build. Lab2

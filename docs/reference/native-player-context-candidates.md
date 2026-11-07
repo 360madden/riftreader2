@@ -9,6 +9,23 @@ guest cache. Native command: `sample-current-player-context --pid N
 --start-ticks N --output PATH`. No getter, initialization, refcount update,
 game input or action-preflight integration is performed.
 
+## 16:05 checkpoint — corrected zone and independent baseline
+
+Earlier zone NULL reports sampled erroneous provider RVA337EBF8 and do not
+establish actual provider absence. Corrected RVA336EBF8 passed12 focused tests.
+Lab2 `artifacts/native-zone-seed-20261107/runs/lab2/ceb09450de10448ab717c22c93062121/samples.json`
+SHA256 `A33DC84C32846EDCA8F31F141B2895AB3460C19ACBFB566EB9AA9D34D36E542D`
+reports typed0073 candidate and `z0000000CB7B53FD7`. The retained SC628 decoded
+wire document reports the same zone, race `mathosian`, localized raceName
+`Mathosian`, calling `rogue`, name `Bolinao`, and level43. Its request identifies
+PID9752/start639294897826627677 and the same executable SHA; the independent
+native zone sample is later. Decoded document file SHA256 is
+`99BEF5BC35CB71A3387C60AC184C15EA87E1547AD3824A0B5774EFCA3AAEA648`, distinct
+from receipt payload SHA256 `589AC1AFFFE7026AD7055D90211C504DB1C6248AF63DA5B7638B9A50CD73A774`.
+Receipt snapshot/reader/image hashes and request identity were verified. This is
+one historical baseline match, not authenticated producer, passive freshness,
+changed-state or restart qualification.
+
 ## Observed cases
 
 | Target | Numeric level candidate | Raw combat byte | Target-key candidate | Native acquisition |
@@ -212,15 +229,21 @@ PID11672/start639296016581575957; same pinned game SHA as above. Reader
 117589856 bytes,`artifacts/native-player-name-20261107/publish/`.
 
 Zone source is typed0294 owner+150. Lab1 raw key1216123138 and Lab2 raw key12
-were captured with NULL provider337EBF8 on each, so no full zone ID/name is
-available. No initializer/getter was called. The typed0073/hash route has seven
+were captured while reading the WRONG provider RVA337EBF8. On15:53 the exact
+producer's four references proved336EBF8; the earlier NULL results do not
+establish actual provider absence. Raw owner keys remain supported. No
+initializer/getter was called. The typed0073/hash route originally had seven
 focused synthetic cases but no live typed hit. Lab1 receipt
 `artifacts/native-zone-seed-20261107/runs/lab1/52956b1b9c3047008325a19d53ebb876/samples.json`,
 SHA007294609B8EFDF7D82DEA876E89A2A0FFD6DF93498CA014BEAF125309EC2460;
 Lab2`runs/lab2/fc869831d4af40fd9c0d39795874e436/samples.json`,
 SHA142161FA963807DA74EC24FBF7F0F24F18E3D788DD2F7DDBDD6CFB65BFBDE864.
-Do not equate raw keys across worlds, assume API correspondence, or retry an
-unchanged null-provider state. Full-game restart/freshness remain unverified.
+The corrected A96508FE963E4DFDE6EABD50889FD0432A72C0309AEC562E35CBF87B584F49D9
+reader (117704544 bytes, native-zone-provider-fix-20261107/publish) passed12
+focused cases including a wrong-address trap; its first capture succeeded below.
+Do not equate raw keys across worlds or assume API correspondence. Full-game
+restart/freshness remain unverified. Keep wrong-address receipts as superseded
+evidence, not cold-provider findings.
 
 Lab2 independent self-name read also yielded **Bolinao**, direct branch/raw
 decoration1704. Receipt

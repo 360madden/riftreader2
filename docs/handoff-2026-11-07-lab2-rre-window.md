@@ -1,5 +1,29 @@
 # Lab2 RRE window — November7,2026
 
+## SC628 second window —15:36:32..15:51:32 Eastern
+
+**CLEAN RETURN verified15:46:56 Eastern; passive RR2 reads may resume.**
+RRE returned at20:43:52.595787Z; all three click releases/connections, owned
+guest cleanup, no pending jobs and nonabandoned mutex acquire/release verified.
+Root read the exact return receipt and independently found no controller
+endpoint, queue BLOCKED/no holder and matching VM identity. Receipt
+`artifacts/lab2-rre-sc628-handoff-20261107/after.json`.
+RRE remains offline until a new coordinated window. The controller stays stopped;
+no queue reset or automatic restoration. The following records the completed hold.
+
+Root verified
+fresh VM identity, no controller endpoint, queue BLOCKED/no holder and no active
+RR2 Lab2 native jobs at20:36:32Z. Receipt
+`artifacts/lab2-rre-sc628-handoff-20261107/before.json`. No restart/reset/forced
+release. Root verified reviewed RRECollector0.4.13 ZIP and reader0.1.3 hashes.
+RRE commit3304bd1 owns the minimal race/raceName/zone projection, existing
+RRECollector-only sync exception, backup/11-file/parent-chain/TOC-last gates,
+reviewed Reload/Capture/F414/saved copy and cleanup. No new API calls or scope.
+RRE must independently reacquire game/foreground/mutex before its actions and
+provide explicit clean return; end-of-window alone does not resume RR2 reads.
+Lab1/offline/Sammie315 coordination continue. Controller remains stopped and
+queue blocked. The earlier completed window below is historical.
+
 **CLEAN RETURN verified14:51:45 Eastern; passive RR2 reads resumed.**
 RRE's final control-return receipt at19:49:14Z confirms nonabandoned mutex
 acquire/release, no pending live jobs, mouse release/connection close verified,
