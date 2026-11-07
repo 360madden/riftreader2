@@ -120,3 +120,21 @@ it. Terra/Sol medium for routine work, Astra high for difficult native ownership
 Keep disjoint file ownership; serialize publishes; no worker VM/input authority.
 No physical rift_x64 process existed at16:59, so no physical capture attempted.
 Preserve owners, exact identity/build, freshness, STOP/release; no push.
+
+## Final source handoff received17:25 Eastern
+
+Root verified all six final Sammie report files on disk: equipment-0280-type-result,
+equipment-mapped-key-source, buff-grouping-key-inputs, buff-grouping-count-inputs,
+buff-grouping-admission and discoveries-ranged-item-sample (all .md in its folder).
+Encoded type arithmetic distinguishes0280 from adjacent037D. Remaining equipment
+edges are providerVT+8 passive selector,026E mapping/table child, loaded field0
+storage and actual final object binding; no new numeric J/T/L/S was observed.
+Buff builder increments aggregate once per ADMITTED same-key iteration, excludes
+kind1 and requires720630; first matching group supplies representative+48. These
+are future independent derivation inputs, never permission to consume API scratch.
+No new implementation or live acceptance follows from these source findings.
+
+Final range/energy findings committed3aa78e9; role-factor reader milestonef233f16.
+RRE committed bounded live acceptance4983a1d19f78659b29372a66ab98f0c83c1ca807;
+its concise offline handoff checkpoint59a5fbd preserves both failed trials.
+All root live jobs are terminal; no further input/window is requested.
