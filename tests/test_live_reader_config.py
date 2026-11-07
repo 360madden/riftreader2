@@ -183,7 +183,8 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                    "otherReaderCountBefore": 0, "otherReaderCountAfter": 0,
                    "inputSent": False}
         for failure in ("preflight", "reader-copy", "config-copy", "launch", "cleanup-fails",
-                        "host-cleanup-fails", "vm-drift", "post-session", "success"):
+                        "host-cleanup-fails", "vm-drift", "post-session", "receipt-pid",
+                        "receipt-ticks", "receipt-build", "snapshot-mismatch", "success"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
                 root = Path(directory)
                 reader = root / "reader.exe"
@@ -211,6 +212,17 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                 session_type = patch("GuestSession")
                 session = session_type.return_value.__enter__.return_value
                 session.credential_source = "cache"
+                def copy_snapshot(source, target, **kwargs):
+                    value = {"nonce": "a" * 32, "readerStatus": "running", "target": {
+                        "processId": args.expected_game_pid,
+                        "processStartUtcTicks": args.expected_game_start_ticks,
+                        "readerSessionNonce": "a" * 32,
+                        "executableSha256": args.expected_game_sha256},
+                        "delivery": {"enabled": True, "endpoint": "endpoint"}}
+                    if failure == "snapshot-mismatch":
+                        value["target"]["processStartUtcTicks"] += 1
+                    target.write_text(json.dumps(value))
+                session.copy_from_guest.side_effect = copy_snapshot
                 def copy(*args, **kwargs):
                     if failure == "reader-copy" and str(args[1]).endswith("reader.exe"):
                         raise RuntimeError("original-reader-copy")
@@ -226,10 +238,20 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                         if failure == "cleanup-fails":
                             raise RuntimeError("secret-cleanup-error")
                         return receipt
-                    if failure in ("success", "post-session"):
-                        return {"status": "reader-ready", "readerSha256": args.reader_sha256,
+                    if failure in ("success", "post-session", "receipt-pid", "receipt-ticks",
+                                   "receipt-build", "snapshot-mismatch"):
+                        ready = {"status": "reader-ready", "readerSha256": args.reader_sha256,
                                 "nonce": "a" * 32, "readerPid": 5, "readerStartUtcTicks": "6",
-                                "expiresAtUtc": "later"}
+                                "expiresAtUtc": "later", "gamePid": args.expected_game_pid,
+                                "gameStartUtcTicks": str(args.expected_game_start_ticks),
+                                "gameSha256": args.expected_game_sha256}
+                        if failure == "receipt-pid":
+                            ready["gamePid"] += 1
+                        elif failure == "receipt-ticks":
+                            ready["gameStartUtcTicks"] = str(args.expected_game_start_ticks + 1)
+                        elif failure == "receipt-build":
+                            ready["gameSha256"] = "B" * 64
+                        return ready
                     raise RuntimeError("original-launch")
                 run = patch("run_guest_script", side_effect=guest_script)
                 if failure == "host-cleanup-fails":
@@ -240,8 +262,9 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                     self.assertEqual(launch_live_reader.execute(args)["status"],
                                      "reader-running-postflight-verified")
                 else:
-                    with self.assertRaisesRegex(RuntimeError, "original-"):
+                    with self.assertRaisesRegex(RuntimeError, "original-|reader-launch-receipt-mismatch|reader-snapshot-mismatch"):
                         launch_live_reader.execute(args)
+                    self.assertFalse((args.output / "summary.json").exists())
                 labels = [call.args[4] for call in run.call_args_list]
                 if failure in ("preflight", "reader-copy", "success"):
                     self.assertNotIn("cleanup", labels)

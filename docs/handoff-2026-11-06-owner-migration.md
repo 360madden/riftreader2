@@ -2,6 +2,48 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Reader startup readiness P2 fixed — November 7
+
+The launcher no longer treats a nonempty last snapshot as readiness after its
+polling deadline. It requires an explicit positive match on the current complete
+bind instruction's nonce, outer/target-session nonce, exact game PID, lossless
+start ticks and build SHA, plus `readerStatus=running` and enabled delivery to
+the expected endpoint. Every poll clears stale candidates/nonces; terminal,
+malformed or mismatched evidence cannot set success. Acceptance is checked
+before the deadline. Guest strings use ordinal comparison, not PowerShell's
+culture-sensitive equality; integer identity fields reject bool/float coercion.
+
+The guest reacquires the game identity and rechecks reader exit before issuing
+the ready receipt. Host receipt tuple validation and independent validation of
+the copied snapshot precede the success summary. This remains startup identity,
+not addon binding, advancing feed acceptance, passive freshness or restart
+qualification. See [startup versus observer qualification](workflows/live-reader-freshness-observer.md#reader-startup-identity-gate).
+
+Receiver ownership, VM-specific cached login, pre-launch game checks, reader
+overlap exclusion, direct STOP/release and guarded cleanup remain. No reader was
+launched, no VM/game/input/bind/reload or owner change was performed. The two
+separate cleanup/publication P2s remain outside this fix; no automatic kill,
+rebind, retry or cleanup bypass was added.
+
+The actual Windows PowerShell-generated predicate and host cleanup/validation
+suites pass 23 tests; independent review reran all 23. Root's broader reader,
+receiver, receipt, source-pin and freshness suite passes 109 tests. Tests cover
+one-tick drift above 2^53, terminal state, singleton arrays, malformed/typed
+fields, deadline crossing, stale log/candidate clearing and invisible characters
+that PowerShell culture comparisons previously ignored. A before/after run on
+baseline `04350e0` falsely accepted wrong nonce/PID/start/build; the fix refuses
+all four. Artifacts: `artifacts/reader-readiness-fix-20261107/`.
+
+**Practical-results correction:** the user reiterated that practical progress
+comes first. Relevant focused checks and review passed; the unnecessary full
+gate was interrupted at their direction and is not claimed as complete. Do not
+automatically run full repository validation for each narrow fix; follow the
+existing AGENTS.md proportional-check policy and move on once relevant checks pass.
+
+Two P2 findings remain. Next separate repair: host private-staging ownership on
+hash failure and cancellation-safe guest cleanup, preserving no-live-reader and
+identity gates.
+
 ## Scheduler startup retry P2 fixed — November 7
 
 The helper manager now handles its own known COM-nonrunning to ScheduledTasks-
@@ -41,8 +83,8 @@ No live helper/VM query, task mutation, input, owner transfer or restart was
 performed. This manager-only source change adds no controller/receiver runtime
 pin change; the separate task-entry rollout requirement from the prior receipt
 fix remains in force. Offline mocks do not establish live cold-start acceptance.
-Three P2 findings remain; reader startup's positive identity/readiness match is
-the next separate repair.
+At this checkpoint three P2 findings remained; the subsequent reader-readiness
+fix is recorded above, leaving two.
 
 ## Controller receipt P2 fixed — November 7
 
@@ -92,7 +134,7 @@ before admitting a new-source owner. Unidentified legacy corruption still needs
 independent investigation, not automatic deletion.
 
 At this checkpoint four P2 findings remained; the subsequent Scheduler retry
-fix is recorded above, leaving three.
+and reader-readiness fixes are recorded above, leaving two.
 
 ## Armed-action preflight P2 fixed — November 7
 
@@ -133,7 +175,7 @@ shared checkout, including concurrent Lab 2 tool-wrapper tests; those files and
 their AGENTS/workflow documentation are preserved outside this fix's commit.
 
 At this checkpoint five P2 findings remained; the subsequent receipt fix is
-recorded above; three remain after the Scheduler fix. Preserve independently verified owner identity.
+recorded above; two remain after the Scheduler/readiness fixes. Preserve independently verified owner identity.
 
 ## STOP/release optional-output P2 fixed — November 7
 
@@ -169,7 +211,7 @@ The separate mocked existing-file reproduction sent zero requests with vulnerabl
 file. The acknowledged negative cleanup result remained negative in the error.
 
 At this checkpoint six P2 findings remained. The subsequent armed-action fix is
-recorded above; three remain after the receipt/Scheduler fixes. Preserve ownership and final-send safety gates.
+recorded above; two remain after the later fixes. Preserve ownership and final-send safety gates.
 
 ## Console replay P1 fixed — November 7
 
@@ -209,7 +251,7 @@ their order. No live input, bind/reload, helper restart or ownership transfer
 was used. Details: [console validation](validation/console-interaction-speed-2026-11-06.md#durable-console-attempt-reservation--november-7).
 
 At this P1 checkpoint seven P2 findings remained. The subsequent STOP/release
-optional-output, armed-action, receipt and Scheduler fixes are recorded above; three P2 findings remain.
+optional-output, armed-action, receipt, Scheduler and readiness fixes are recorded above; two P2 findings remain.
 Any later live console use still needs fresh identities, an independently
 reviewed screenshot and the existing exclusive ownership handoff.
 
@@ -256,7 +298,7 @@ The user requested a review after clearing the timed goal. Independent reviewers
 checked committed runtime `399d463` and retained evidence; later `8ded91e` is
 documentation only. No live input or helper mutation was used in the review.
 The sustained480 and native-v2 results still reconcile. This table records the
-historical review; the P1 and four P2s are now fixed above, with three other P2
+historical review; the P1 and five P2s are now fixed above, with two other P2
 findings remaining open.
 
 | Priority | Finding | Owning source |
@@ -266,7 +308,7 @@ findings remaining open.
 | P2 FIXED | Both action modes verify an existing owner and its read-only readiness while permitting an existing arm; no guest/controller recovery occurs after arming. | `scripts/control_client.py`, `scripts/ensure_guest_agent.py`; November 7 fix above |
 | P2 FIXED | Atomic no-overwrite receipt publication prevents incomplete final files; malformed history is skipped only with strict exit evidence and positive process absence. Unidentified history stays blocked. | `scripts/controller_task_entry.py`, `scripts/managed_controller_receipt.py`; November 7 fix above |
 | P2 FIXED | Manager retries only the known nonrunning-to-running Status race, with three fresh attempts, pinned registration and unchanged caller PID/GUID/timeout checks. No task mutation. | `scripts/Manage-RR2HelperTask.ps1`; November 7 fix above |
-| P2 | Reader startup can certify a nonempty mismatched snapshot when the matching loop expires; target start ticks are omitted. Later pin/feedback gates remain independent. | `scripts/launch_live_reader.py:347` |
+| P2 FIXED | Reader startup requires an explicit matching nonce/PID/start/build observation before its deadline, running state and delivery binding; host receipt/copied snapshot validation precedes success. | `scripts/launch_live_reader.py`; November 7 fix above |
 | P2 | Host staging ownership is lost if config hashing fails before return; guest cancellation skips Exception-only in-session cleanup. | `scripts/launch_live_reader.py:238,363` |
 | P2 | Windows deny-delete reads can block atomic publication after sequence history advances, losing the publication and rejecting its same-sequence retry. | `scripts/addon_command_console.py:248`, `scripts/observation_receiver.py:70` |
 

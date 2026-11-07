@@ -199,6 +199,62 @@ if($env:COMPUTERNAME -ne {quote(LABS[args.lab]['machine'])}){{throw 'guest-machi
 """
 
 
+def reader_readiness_script(args: argparse.Namespace, endpoint: str, *,
+                            timeout_seconds: int = 90, poll_ms: int = 250) -> str:
+    """Wait for a receipt bound to this reader and the exact game epoch."""
+    return rf"""
+    $deadline=[DateTime]::UtcNow.AddSeconds({timeout_seconds});$nonce=$null;$snapshot=$null
+    $positiveMatch=$false
+    while([DateTime]::UtcNow -lt $deadline -and -not $p.HasExited){{
+        Start-Sleep -Milliseconds {poll_ms}
+        $nonce=$null
+        if(Test-Path -LiteralPath $stdout){{
+            $text=[string](Get-Content -LiteralPath $stdout -Raw)
+            $bindings=[regex]::Matches($text, '(?m)^/rr2bind ([0-9a-f]{{32}})\r?$')
+            if($bindings.Count -gt 0){{$nonce=$bindings[$bindings.Count-1].Groups[1].Value}}
+        }}
+        $snapshot=$null
+        if([DateTime]::UtcNow -ge $deadline){{break}}
+        if($nonce -and (Test-Path -LiteralPath $latest)){{
+            try{{$snapshot=Get-Content -LiteralPath $latest -Raw|ConvertFrom-Json}}catch{{$snapshot=$null}}
+            if($snapshot -and $snapshot -isnot [array] -and
+               $snapshot.target -and $snapshot.target -isnot [array] -and
+               $snapshot.delivery -and $snapshot.delivery -isnot [array] -and
+               $snapshot.readerStatus -is [string] -and [string]::Equals($snapshot.readerStatus, 'running', [StringComparison]::Ordinal) -and
+               $snapshot.nonce -is [string] -and [string]::Equals($snapshot.nonce, $nonce, [StringComparison]::Ordinal) -and
+               $snapshot.target.readerSessionNonce -is [string] -and [string]::Equals($snapshot.target.readerSessionNonce, $nonce, [StringComparison]::Ordinal) -and
+               ($snapshot.target.processId -is [long] -or $snapshot.target.processId -is [int]) -and
+               $snapshot.target.processId -eq {args.expected_game_pid} -and
+               ($snapshot.target.processStartUtcTicks -is [long] -or $snapshot.target.processStartUtcTicks -is [int]) -and
+               [string]::Equals([string]$snapshot.target.processStartUtcTicks, {quote(str(args.expected_game_start_ticks))}, [StringComparison]::Ordinal) -and
+               $snapshot.target.executableSha256 -is [string] -and [string]::Equals($snapshot.target.executableSha256, {quote(args.expected_game_sha256)}, [StringComparison]::Ordinal) -and
+               $snapshot.delivery.enabled -is [bool] -and $snapshot.delivery.enabled -eq $true -and
+               $snapshot.delivery.endpoint -is [string] -and [string]::Equals($snapshot.delivery.endpoint, {quote(endpoint)}, [StringComparison]::Ordinal) -and
+               [DateTime]::UtcNow -lt $deadline){{$positiveMatch=$true;break}}
+        }}
+    }}
+    if($p.HasExited){{throw 'reader-exited-before-ready'}}
+    if(-not $positiveMatch){{throw 'reader-not-ready'}}
+"""
+
+
+def validate_ready_snapshot(snapshot: object, args: argparse.Namespace, endpoint: str, nonce: str) -> None:
+    if not isinstance(snapshot, dict):
+        fail("reader-snapshot-mismatch")
+    target, delivery = snapshot.get("target"), snapshot.get("delivery")
+    if (not isinstance(target, dict) or not isinstance(delivery, dict)
+            or snapshot.get("readerStatus") != "running"
+            or snapshot.get("nonce") != nonce
+            or target.get("readerSessionNonce") != nonce
+            or type(target.get("processId")) is not int
+            or target["processId"] != args.expected_game_pid
+            or type(target.get("processStartUtcTicks")) is not int
+            or target["processStartUtcTicks"] != args.expected_game_start_ticks
+            or target.get("executableSha256") != args.expected_game_sha256
+            or delivery.get("enabled") is not True or delivery.get("endpoint") != endpoint):
+        fail("reader-snapshot-mismatch")
+
+
 def run_guest_script(session: GuestSession, output: Path, body: str, run_id: str, label: str,
                      timeout: int = 180) -> dict:
     host_script = output / f"{label}.ps1"
@@ -329,24 +385,9 @@ $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$
     if((Get-FileHash -LiteralPath $cfg).Hash -ne {quote(config_sha)}){{throw 'guest-config-hash'}}
     $p=Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -WindowStyle Hidden `
         -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
-    $deadline=[DateTime]::UtcNow.AddSeconds(90);$nonce=$null;$snapshot=$null
-    while([DateTime]::UtcNow -lt $deadline -and -not $p.HasExited){{
-        Start-Sleep -Milliseconds 250
-        if(Test-Path -LiteralPath $stdout){{
-            $text=Get-Content -LiteralPath $stdout -Raw
-            if($text -match '/rr2bind ([0-9a-f]{{32}})'){{$nonce=$Matches[1]}}
-        }}
-        if($nonce -and (Test-Path -LiteralPath $latest)){{
-            try{{$snapshot=Get-Content -LiteralPath $latest -Raw|ConvertFrom-Json}}catch{{}}
-            if($snapshot -and $snapshot.nonce -eq $nonce -and $snapshot.target -and
-               $snapshot.target.processId -eq {args.expected_game_pid} -and
-               $snapshot.target.executableSha256 -eq {quote(args.expected_game_sha256)}){{break}}
-        }}
-    }}
-    if($p.HasExited){{throw 'reader-exited-before-ready'}}
-    if(-not $nonce -or -not $snapshot){{throw 'reader-not-ready'}}
-    if(-not $snapshot.delivery.enabled -or $snapshot.delivery.endpoint -ne {quote(endpoint)}){{throw 'delivery-binding-mismatch'}}
-    $p.Refresh();$readerTicks=[string]$p.StartTime.ToUniversalTime().Ticks
+    """ + reader_readiness_script(args, endpoint) + game_guard(args) + rf"""
+    $p.Refresh();if($p.HasExited){{throw 'reader-exited-before-ready'}}
+    $readerTicks=[string]$p.StartTime.ToUniversalTime().Ticks
     $payload=@{{status='reader-ready';readerPid=$p.Id;readerStartUtcTicks=$readerTicks;
      readerSha256=(Get-FileHash -LiteralPath $exe).Hash;nonce=$nonce;
      expiresAtUtc=$p.StartTime.ToUniversalTime().AddSeconds({args.duration_seconds}).ToString('o');
@@ -357,9 +398,16 @@ $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$
     """
                 ready = run_guest_script(session, output, launch, run_id, "launch", timeout=150)
                 if (ready.get("status") != "reader-ready" or ready.get("readerSha256") != args.reader_sha256
-                        or not re.fullmatch(r"[0-9a-f]{32}", str(ready.get("nonce", "")))):
+                        or not isinstance(ready.get("nonce"), str)
+                        or not re.fullmatch(r"[0-9a-f]{32}", ready["nonce"])
+                        or type(ready.get("gamePid")) is not int
+                        or ready["gamePid"] != args.expected_game_pid
+                        or str(ready.get("gameStartUtcTicks")) != str(args.expected_game_start_ticks)
+                        or ready.get("gameSha256") != args.expected_game_sha256):
                     fail("reader-launch-receipt-mismatch")
                 session.copy_from_guest(guest_output, output / "latest.json", timeout=90)
+                validate_ready_snapshot(json.loads((output / "latest.json").read_text(encoding="utf-8-sig")),
+                                        args, endpoint, ready["nonce"])
             except Exception:
                 if config_copy_attempted:
                     cleanup_handled = True

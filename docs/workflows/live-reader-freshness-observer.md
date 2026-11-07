@@ -6,6 +6,27 @@ reader postflight summary and a source pin. It **does not** launch/rebind a
 reader, control the guest/VM, submit a queue request, arm the controller, or
 send input. It cannot prove that other operators sent no input.
 
+## Reader startup identity gate
+
+`launch_live_reader.py` requires a positive startup observation before reporting
+`reader-ready`. The generated guest check must find a running snapshot with the
+current complete bind instruction's nonce, matching outer and target-session
+nonces, exact target PID, lossless process-start ticks and build SHA. Delivery
+must be enabled for the expected endpoint. String comparisons are ordinal and
+integer fields cannot pass through floating-point or boolean coercion.
+
+Every poll clears the prior nonce/candidate. Empty, stale, malformed, terminal
+or mismatched data cannot turn timeout into success; acceptance must occur
+before the deadline. The guest rechecks the game epoch and reader exit state
+before issuing its receipt. The host validates that receipt's game identity
+and the copied snapshot before writing the success summary.
+
+This establishes bounded startup identity only. It does not bind the addon,
+prove advancing receiver delivery or replace the strict observer below. Startup
+does not send input or rebind/reload, and retains VM, receiver ownership,
+no-overlap and staging-cleanup gates. See the
+[readiness fix handoff](../handoff-2026-11-06-owner-migration.md#reader-startup-readiness-p2-fixed--november-7).
+
 ## Before starting
 
 1. Verify the target game, reader, and receiver identities and that the reader
