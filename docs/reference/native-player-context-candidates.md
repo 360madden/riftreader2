@@ -182,6 +182,22 @@ Existing target HP/XYZ capture remained available. Reader117495648 bytes, SHA256
 at`artifacts/native-target-context-20261107/publish/`. No self-owner substitution,
 public combat/level agreement, input, passive freshness or restart claim.
 
+## Target numeric level branch —13:18 Eastern
+
+Fresh target level selector2F58270 resolved a nonnull alternate component.
+Its primary pointer+64 value was-1, selecting secondary pointer+64, which
+returned **50**. This is a numeric-getter candidate; target public presentation
+may still differ. Raw0294 owner level remains0 and combat byte0. The reader
+brackets the selector, entity slot/table, alternate pointers/values and usual
+target identity; unreadable level leaves an explicit unavailable result.
+
+Receipt`artifacts/native-selected-target-20261107/runs/lab1/6ad64e06cec24fbfa2e06122d2127728/samples.json`,
+SHA256`E2864EF9D935DDA3EE266B886DC31CF6EA51457039E6F68C1A6C21BB12DEEC8B`.
+Eight focused cases passed, including alternate primary/secondary and mutation.
+Reader117499744 bytes, SHA256
+`6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970`,
+at`artifacts/native-target-level-20261107/publish/`. No input or getter calls.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its

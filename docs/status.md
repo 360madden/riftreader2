@@ -1,10 +1,15 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:14 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:19 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**13:18 Eastern — TARGET NUMERIC LEVEL50:** Fresh getter route chose the
+alternate-secondary value50, superseding raw owner0. HP/XYZ/rawcombat preserved;
+public/displayed level remains unverified. Eight focused cases passed.
+[Receipt and limits](reference/native-player-context-candidates.md).
 
 **13:13 Eastern — TYPED TARGET RAW CONTEXT:** Target owner0294 passed, raw level0
 and combat byte0 captured with HP/XYZ retained. Raw level is not public/displayed

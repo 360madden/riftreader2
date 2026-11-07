@@ -1,6 +1,6 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint13:14 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint13:19 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
@@ -158,6 +158,19 @@ No active live process. Root alone performs live reads; no new input authority
 from the time extension. Parallel static work: cooldown public value bridge,
 passive cast-duration discriminator, target alternate level branch. Next useful
 implementation depends on those concrete findings, not idle repetition/refinement.
+
+Raw context milestone committed073a38d. Follow-up target numeric getter read
+completed13:18:39 Eastern: **alternate-secondary numericLevelCandidate50**,
+rawownerlevel0/combat0. HP/XYZ retained. Target public presentation unverified.
+Receipt`artifacts/native-selected-target-20261107/runs/lab1/6ad64e06cec24fbfa2e06122d2127728/samples.json`,
+SHA256`E2864EF9D935DDA3EE266B886DC31CF6EA51457039E6F68C1A6C21BB12DEEC8B`.
+Reader117499744 bytes, SHA256
+`6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970`,
+at`artifacts/native-target-level-20261107/publish/`. Eight focused tests passed.
+Host pins it; no active capture. Useful static findings pending durable summary:
+cooldown gate omits current fields for zero timer (not remaining0); exact0650
+factory uses existing child+20 milliseconds; observed unknown2D26430 is0653
+tick-snapshot input, a different factory. Artifact notes retain exact branches.
 
 Parallel workers are now complete; root retains sole live ownership. Do not
 invent follow-up work to fill slots. Two additional static leads are retained:

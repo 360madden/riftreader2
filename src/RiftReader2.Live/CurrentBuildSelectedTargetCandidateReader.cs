@@ -8,7 +8,7 @@ internal sealed record TargetPositionCandidate(string Status, ulong UnitKey, ulo
 {
  public string Qualification => "cached position candidate; freshness and target semantics unverified";
 }
-internal sealed record TargetRawContext(string Status, ulong? Owner = null, int? RawLevel = null, byte? RawCombat = null, bool? CombatCandidate = null)
+internal sealed record TargetRawContext(string Status, ulong? Owner = null, int? RawLevel = null, byte? RawCombat = null, bool? CombatCandidate = null, string? LevelStatus = null, string? LevelBranch = null, int? NumericLevelCandidate = null)
 {
  public string Qualification => "typed owner raw inputs; target level presentation, combat semantics and freshness unverified";
 }
@@ -98,7 +98,26 @@ internal static class CurrentBuildSelectedTargetCandidateReader
     {
      var owner=Ptr(rawOwner,0x19E);
      if(Q(owner)!=id.ModuleBaseAddress+0x2927448||Q(id.ModuleBaseAddress+0x2927488)!=id.ModuleBaseAddress+0x19D21E0||Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60) targetContext=new("unverified-type",owner);
-     else {var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];targetContext=new("raw-typed-candidate",owner,level,combat,combat!=0);}
+     else
+     {
+      var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];
+      string levelStatus="numeric-getter-candidate", levelBranch="owner"; int? numeric=level;
+      try
+      {
+       var index=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+0x2F58270,4));
+       if(index is <0 or >=0x60) throw new InvalidDataException("Invalid target level selector.");
+       var levelSlot=Take(entity+0x18+(ulong)index,1)[0]; var alt=levelSlot==0xFF?0:Q(checked(components+levelSlot*8UL));
+       if(alt!=0)
+       {
+        Ptr(alt,0x38);var first=Ptr(Q(alt+0x28),0x68);var value=BinaryPrimitives.ReadInt32LittleEndian(Take(first+0x64,4));
+        levelBranch="alternate-primary";
+        if(value==-1){var second=Ptr(Q(alt+0x30),0x68);value=BinaryPrimitives.ReadInt32LittleEndian(Take(second+0x64,4));levelBranch="alternate-secondary";}
+        numeric=value;
+       }
+      }
+      catch(InvalidDataException){if(budget>2*1024*1024)throw;levelStatus="unavailable";levelBranch="unreadable-or-invalid";numeric=null;}
+      targetContext=new("raw-typed-candidate",owner,level,combat,combat!=0,levelStatus,levelBranch,numeric);
+     }
     }
    }
    catch(InvalidDataException){if(budget>2*1024*1024)throw;targetContext=new("owner-or-fields-unavailable");}

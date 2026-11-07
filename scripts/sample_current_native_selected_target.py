@@ -11,8 +11,8 @@ from scripts.sample_current_native_ability_catalog import validate_dictionary
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '5843EF6E58EA0E43CB3C08732934561476D3E726FF367E3C2DAC9B6BF19CD803'
-READER = ROOT / 'artifacts/native-target-context-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970'
+READER = ROOT / 'artifacts/native-target-level-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-selected-target-20261107/runs'
 
 QUALIFICATION='candidate-only; target and vitals semantics, freshness and restart unverified'
@@ -44,9 +44,17 @@ def validate_report(report, *, pid, ticks):
         owner=context.get('owner'); level=context.get('rawLevel'); combat=context.get('rawCombat'); combat_bool=context.get('combatCandidate'); ctx_status=context.get('status')
         if ctx_status=='raw-typed-candidate':
             if not integer(owner,0x10000,0x7fffffffffff) or not integer(level,-2**31,2**31-1) or not integer(combat,0,255) or type(combat_bool) is not bool or combat_bool!=(combat!=0): invalid()
+            level_status=context.get('levelStatus'); branch=context.get('levelBranch'); numeric=context.get('numericLevelCandidate')
+            if level_status=='numeric-getter-candidate':
+                if branch not in ('owner','alternate-primary','alternate-secondary') or not integer(numeric,-2**31,2**31-1) or (branch=='owner' and numeric!=level): invalid()
+            elif level_status=='unavailable':
+                if branch!='unreadable-or-invalid' or numeric is not None: invalid()
+            else: invalid()
         elif ctx_status=='unverified-type':
+            if any(context.get(k) is not None for k in ('levelStatus','levelBranch','numericLevelCandidate')): invalid()
             if not integer(owner,0x10000,0x7fffffffffff) or any(x is not None for x in (level,combat,combat_bool)): invalid()
         elif ctx_status in ('owner-unavailable','owner-or-fields-unavailable'):
+            if any(context.get(k) is not None for k in ('levelStatus','levelBranch','numericLevelCandidate')): invalid()
             if any(x is not None for x in (owner,level,combat,combat_bool)): invalid()
         else: invalid()
         position=o.get('targetPosition')
@@ -112,11 +120,11 @@ def derive_name(observation, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117495648 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117499744 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-target-context-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-target-level-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"
