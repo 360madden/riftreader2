@@ -107,6 +107,10 @@ For an explicitly requested read-only confirmation, add `--confirm-output
 <second fresh absolute directory>` and return both verified images in the same
 call. Each observation keeps its own complete admission and cleanup. Use separate
 calls when the next action depends on interpreting the first image.
+For those image-dependent calls, reuse the reviewed helper in
+`scripts/lab2_tool_handoff.js` rather than regenerating the command wrapper.
+Load it once as described in the one-handoff recipe, inspect the overview, then
+choose a focused read-only continuation. Keep the actual visual decision.
 
 **Current phase: modular hybrid foundation, native capture, and field qualification.**
 Joey authorized this phase on 2026-10-18. Implement and verify the architecture,

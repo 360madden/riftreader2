@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -145,13 +146,48 @@ def confirm(first, second, initial=None):
         raise ValueError("confirmation observation timestamps did not advance")
 
 
+def reviewed_delivery(root):
+    root = flow.output_root(root)
+    timing = json.loads(safe_bytes(root / "run-timings.json", 1024 * 1024).decode("utf-8-sig"))
+    console = {"phase": "run", "status": "verified-awaiting-visual-review", "output": str(root),
+               "image": str(root / "capture" / "image.bmp"), "report": str(root / "report.json"),
+               "elapsedSeconds": timing["elapsedSeconds"]}
+    return delivery(root, console)
+
+
+def reviewed_snapshot(root, evidence):
+    names = ("workflow-owner.json", "run-timings.json", "report.json", "capture-receipt.json",
+             "capture/capture.json", "capture/image.bmp", "state.json", "state.sha256.json",
+             "managed-host-plan.json", "native-vitals-receipt.json", "native-vitals-receipt.sha256.json")
+    paths = [Path(root) / name for name in names] + [Path(evidence["source"])]
+    return tuple(hashlib.sha256(safe_bytes(p, 10 * 1024 * 1024)).hexdigest() for p in paths)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--confirm-output", type=Path)
+    parser.add_argument("--reviewed-output", type=Path)
+    parser.add_argument("--reviewed-image-sha256")
+    parser.add_argument("--focus", choices=("health", "energy"))
     args = parser.parse_args(argv)
     current = args.output
     try:
+        reviewed_args = (args.reviewed_output, args.reviewed_image_sha256, args.focus)
+        if any(x is not None for x in reviewed_args) and (any(x is None for x in reviewed_args) or args.confirm_output is not None):
+            raise ValueError("reviewed continuation requires output, SHA and focus without confirmation")
+        reviewed = args.reviewed_output is not None
+        if reviewed:
+            first, second = flow.output_root(args.reviewed_output), flow.output_root(args.output)
+            if first == second or os.path.lexists(args.output):
+                raise ValueError("continuation requires a distinct fresh output root")
+            if not re.fullmatch(r"[0-9A-F]{64}", args.reviewed_image_sha256):
+                raise ValueError("invalid reviewed image SHA")
+            prior = reviewed_delivery(first)
+            if prior["imageSha256"] != args.reviewed_image_sha256:
+                raise ValueError("reviewed image SHA mismatch")
+            initial = confirmation_evidence(first)
+            snapshot = reviewed_snapshot(first, initial)
         if args.confirm_output is not None:
             first, second = flow.output_root(args.output), flow.output_root(args.confirm_output)
             if (first == second or os.path.lexists(args.output)
@@ -166,6 +202,22 @@ def main(argv=None):
             console = json.loads(stdout.getvalue())
             return delivery(root, console), console
         result, first_console = run(args.output)
+        if reviewed:
+            if reviewed_delivery(first) != prior or reviewed_snapshot(first, initial) != snapshot:
+                raise ValueError("reviewed observation changed during continuation")
+            confirm(first, second, initial)
+            if delivery(second, first_console) != result:
+                raise ValueError("continuation delivery changed during confirmation")
+            metric = result["nativeVitals"]["metrics"][args.focus]
+            qualification = result["nativeVitals"]["qualification"]
+            source_sha = result["nativeVitals"]["sourceReportSha256"]
+            result = {key: result[key] for key in ("status", "image", "imageSha256", "report", "workflowSeconds")}
+            result.update(focus=args.focus, selectedMetric=metric, reviewedOutput=str(first),
+                          reviewedImageSha256=args.reviewed_image_sha256, qualification=qualification,
+                          nativeSourceReportSha256=source_sha)
+            flow.publish(second / "review-decision.json", {"lab": "lab2", "focus": args.focus,
+                         "reviewedOutput": str(first), "reviewedImageSha256": args.reviewed_image_sha256,
+                         "output": str(second)})
         if args.confirm_output is not None:
             initial = confirmation_evidence(args.output)
             current = args.confirm_output

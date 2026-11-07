@@ -53,6 +53,9 @@ its original integer representation; other metrics keep their original types.
 
 ## A preauthorized fresh confirmation
 
+For image-dependent work, see the reusable handler below; do not batch a visual
+decision into the confirmation mode.
+
 When the task already calls for a second independent read-only observation, use
 `--confirm-output` to perform exactly two observations in one command. Each runs
 the complete original admission, native acquisition, leased screenshot and
@@ -98,6 +101,50 @@ rebinds both deliveries before publishing `confirmation.json` under the second
 run. If either operation fails, its artifacts remain but no successful pair or
 image list is returned. Neither stable values nor identical pixels are a failure;
 this verifies new observations, not changed-state semantics.
+
+## Image-dependent follow-up with a short call
+
+Load the reviewed local handler once per chat. It performs the same command,
+completion, delivery and image checks as the longer recipe. Pin the reviewed
+file bytes; do not evaluate arbitrary returned JavaScript. For the current
+reviewed handler the SHA-256 is
+`5050368F3F9EFE740F57B5A233514E84882369AA2C9522193E2B4F2D905AB79F`.
+
+```javascript
+const r = await tools.exec_command({
+  cmd: "& 'C:\\Python314\\python.exe' '-E' '-c' 'from pathlib import Path; import hashlib,json,sys; raw=Path(\"scripts/lab2_tool_handoff.js\").read_bytes(); sys.exit(\"Helper hash mismatch\") if hashlib.sha256(raw).hexdigest().upper()!=\"5050368F3F9EFE740F57B5A233514E84882369AA2C9522193E2B4F2D905AB79F\" else print(json.dumps(raw.decode(\"utf-8\")))'",
+  workdir: "C:\\work\\riftreader2", max_output_tokens: 6000
+});
+if (r.exit_code !== 0 || r.session_id !== undefined) throw new Error("Helper load failed");
+store("visualHelper", JSON.parse(r.output));
+```
+
+Request the overview in a separate `functions.exec` call:
+
+```javascript
+await new Function("tools","image","text","store","load",load("visualHelper"))
+  (tools,image,text,store,load)("overview");
+```
+
+Inspect its pixels. Only then choose `"health"` or `"energy"` in another call:
+
+```javascript
+await new Function("tools","image","text","store","load",load("visualHelper"))
+  (tools,image,text,store,load)("energy"); // Replace with the actual visual choice.
+```
+
+The overview withholds native values. The chosen continuation binds the displayed
+image SHA and prior run, executes a new full guarded observation and revalidates
+the prior evidence and current delivery. It returns only the selected candidate
+metric, source hash and qualification, plus the current image. The review reference
+is consumed once; failures do not authorize another continuation. The helper
+retains metadata, not a cached identity or control lease.
+
+This shortens command preparation. It does not remove the visual/model decision
+or guarantee faster model scheduling. In the initial practical test, before
+two-step times were 24.04/22.16/21.68s and after times were 23.71/18.17s: variable,
+insufficient to claim a consistent latency improvement. Retained trials are in
+`artifacts/visual-branch-optimization-20261107/`.
 
 The same pattern can orchestrate Workbridge run/status/output calls when local
 execution is unavailable, but that connector path needs its own timing evidence.

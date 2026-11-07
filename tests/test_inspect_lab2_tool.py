@@ -186,5 +186,56 @@ class ConfirmationTests(unittest.TestCase):
         self.assertEqual(json.loads(out.getvalue())["confirmation"], "passed")
 
 
+class ReviewedContinuationTests(unittest.TestCase):
+    def test_invalid_combinations_do_not_run_workflow(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            with patch.object(tool.flow, "OUTPUT_BASE", base), patch.object(tool.flow, "main") as workflow, redirect_stderr(io.StringIO()):
+                args = ["--output", str(base / "new"), "--reviewed-output", str(base / "old")]
+                self.assertEqual(tool.main(args), 2)
+                self.assertEqual(tool.main(args + ["--reviewed-image-sha256", "A" * 64, "--focus", "health", "--confirm-output", str(base / "other")]), 2)
+                self.assertEqual(tool.main(args + ["--reviewed-image-sha256", "wrong", "--focus", "energy"]), 2)
+                workflow.assert_not_called()
+
+    def test_runs_only_new_observation_and_projects_selected_metric(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            first, second = base / "old", base / "new"
+            prior = {"imageSha256": "A" * 64}
+            current = {"status": "verified-awaiting-visual-review", "image": "current", "imageSha256": "B" * 64,
+                       "report": "report", "workflowSeconds": 1, "nativeVitals": {"metrics": {"health": 9, "energy": 3}, "qualification": "candidate", "sourceReportSha256": "hash"}}
+            def workflow(args):
+                print('{}')
+                return 0
+            out = io.StringIO()
+            with patch.object(tool.flow, "OUTPUT_BASE", base), patch.object(tool.flow, "main", side_effect=workflow) as run, patch.object(tool, "reviewed_delivery", return_value=prior), patch.object(tool, "confirmation_evidence", return_value={"source": "source"}), patch.object(tool, "reviewed_snapshot", return_value=("hash",)), patch.object(tool, "delivery", return_value=current), patch.object(tool, "confirm") as confirm, patch.object(tool.flow, "publish"), redirect_stdout(out):
+                self.assertEqual(tool.main(["--output", str(second), "--reviewed-output", str(first), "--reviewed-image-sha256", "A" * 64, "--focus", "energy"]), 0)
+            run.assert_called_once_with(["run", "--native-vitals", "--output", str(second)])
+            confirm.assert_called_once_with(first, second, {"source": "source"})
+            result = json.loads(out.getvalue())
+            self.assertEqual(result["selectedMetric"], 3)
+            self.assertEqual(result["qualification"], "candidate")
+            self.assertEqual(result["nativeSourceReportSha256"], "hash")
+            self.assertNotIn("nativeVitals", result)
+
+    def test_changed_prior_suppresses_delivery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            out, err = io.StringIO(), io.StringIO()
+            with patch.object(tool.flow, "OUTPUT_BASE", base), patch.object(tool.flow, "main", side_effect=lambda _: print('{}') or 0), patch.object(tool, "reviewed_delivery", return_value={"imageSha256": "A" * 64}), patch.object(tool, "confirmation_evidence", return_value={"source": "source"}), patch.object(tool, "reviewed_snapshot", side_effect=[("before",), ("after",)]), patch.object(tool, "delivery", return_value={}), patch.object(tool.flow, "publish") as publish, redirect_stdout(out), redirect_stderr(err):
+                self.assertEqual(tool.main(["--output", str(base / "new"), "--reviewed-output", str(base / "old"), "--reviewed-image-sha256", "A" * 64, "--focus", "health"]), 2)
+            self.assertEqual(out.getvalue(), "")
+            publish.assert_not_called()
+
+    def test_changed_new_delivery_suppresses_publication(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp).resolve()
+            out, err = io.StringIO(), io.StringIO()
+            with patch.object(tool.flow, "OUTPUT_BASE", base), patch.object(tool.flow, "main", side_effect=lambda _: print('{}') or 0), patch.object(tool, "reviewed_delivery", return_value={"imageSha256": "A" * 64}), patch.object(tool, "confirmation_evidence", return_value={"source": "source"}), patch.object(tool, "reviewed_snapshot", return_value=("same",)), patch.object(tool, "confirm"), patch.object(tool, "delivery", side_effect=[{"image": "first"}, {"image": "changed"}]), patch.object(tool.flow, "publish") as publish, redirect_stdout(out), redirect_stderr(err):
+                self.assertEqual(tool.main(["--output", str(base / "new"), "--reviewed-output", str(base / "old"), "--reviewed-image-sha256", "A" * 64, "--focus", "health"]), 2)
+            self.assertEqual(out.getvalue(), "")
+            publish.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
