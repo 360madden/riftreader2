@@ -84,6 +84,52 @@ through the PE section mapping. Useful bounded slice hashes (end exclusive):
 
 ## Next useful code opportunity
 
+### Verified native record sampler — November7 10:26 Eastern
+
+`sample-current-ability-records` now reconstructs requested cached records in
+one exact-build read-only acquisition. It checks complete thread/TEB/TLS
+coverage, unanimous collection selection, cache key/holder/record bindings,
+initialized type descriptors, both child references and final process identity.
+It invokes no native getter, initializer or refcount operation.
+
+```powershell
+python scripts/sample_current_native_ability_records.py --lab lab2 --key 0x2DE2D844 --key 0x3C5AEC64
+```
+
+The per-SHA experimental reader is117327712 bytes, SHA256
+`F4148B838AF694EF95FD46DE76859CE9DF55194A9FE8BE1DF74FC2F8F0BCE80F`.
+It does not replace existing workflow/owner bundles. Contract:
+`native-current-ability-records-candidate-sample/1`.
+
+The type0x0051 object profile is vtable0x28A08C0/getter0x1899BF0;
+initialized descriptor0x344A6B0 has vtable0x28A9C38/slot+8 target0x18C06C0.
+Type0x1E17 child profile is vtable0x27F24F8/getter0x170C5D0;
+descriptor0x3417970 has vtable0x2802E40/slot+8 target0x17361E0. All are
+module RVAs on the pinned SHA1935A05C... build. Neither lazy path is called.
+Full IDs use the native DWORD as high32 and the low32 sum of the two verified
+child-key hash terms. Null children contribute zero; unreadable or unverified
+children do not get silently converted to zero.
+
+Lab2 `artifacts/native-ability-records-20261107/runs/lab2/ecdc2a67f0ef40cea773301a594e8ee9/`
+captured8 type-verified records in28.394ms. All8 full IDs matched both the
+Python typed capture and the independently retained historical API strings.
+Raw report SHA `0AB0C3C14E7440B8252A7E80425217E6B067BACFAE68C150E1D53342D5C19AEF`.
+
+Lab1 `artifacts/native-ability-records-20261107/runs/lab1/88e3f30410724fdd866f5c72ad658164/`
+captured all122 requested native map keys as typed records/full IDs in39.111ms.
+The player-map samples before and after had identical identity, context, keys
+and primary/secondary raw float bytes.43 records had a nonzero API List filter
+byte; this reconstructs the code path's eligible candidates, not independently
+observed learned membership. Correlation receipt:
+`artifacts/native-ability-records-20261107/lab1-bracketed-73168d2fb24f4a44b0597f5cba1121ba.json`.
+Seven focused .NET tests and five host-validator/launch tests passed. The bulk
+launch uses a SHA-checked numeric data file and shared directory prefix to stay
+within the4096-character guest encoded-command limit, without changing policy.
+
+Cache misses remain cache-only; current-language names, same-build independent
+API List comparison, changed-state/freshness and restart qualification remain
+open. No game input, reload, restart, owner transition or active-bundle change.
+
 ### November7 continuation
 
 The shared registry selection and a complete raw cache inventory are now

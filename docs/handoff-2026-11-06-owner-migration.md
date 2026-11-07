@@ -4,6 +4,24 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
+### Checkpoint — 2026-11-07 10:26 Eastern
+
+| Track | State | Concrete result / next step |
+| --- | --- | --- |
+| Native maps | 🟢 Verified | Lab1 122/0 entries in10.013ms; Lab2 134/0 in17.146ms; raw parity with Python |
+| Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
+| Localization | 🟡 Discovery | Manager exists but provider root3373768 is null. Strict route unavailable. Explore existing key-matched dictionaries separately; selector84 is NOT proven. |
+| Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
+| Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
+
+Use `python scripts/sample_current_native_ability_records.py --lab lab1|lab2
+--key <native DWORD>` for1..128 requested keys. New reader SHA
+F4148B838AF694EF95FD46DE76859CE9DF55194A9FE8BE1DF74FC2F8F0BCE80F has its
+own per-SHA guest cache. [Typed ID and bulk receipts](reference/native-ability-ownership-findings-2026-11-06.md#verified-native-record-sampler--november7-1026-eastern).
+The122-key launch-size blocker is fixed and live retry passed. Keep sitreps
+timestamped in Eastern with compact visual indicators; refresh this checkpoint
+on useful milestones or blockers rather than creating reporting machinery.
+
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.
 Reuse working tools and perform only the focused checks needed for the next
@@ -31,9 +49,9 @@ explicitly unavailable and all final owner/header/process checks retained.
 
 Current cache keys match21 of55 historical named public-ID high words; these
 are cross-build correlation leads, not current object names or spellbook proof.
-Next use `native_ability_record_seed.py` (pending live integration) for bounded
-raw record/name/type seeds, inspect its captured virtual getter RVAs statically,
-and compare Lab1. Static fallback work found compressed SQLite dataset lookup,
+Typed seed integration and full ID reconstruction have now passed; next inspect
+the existing localization dictionary using its real keys, without initializing
+the missing API provider. Static fallback work found compressed SQLite dataset lookup,
 a memory-store copy path and a candidate pager filename chain; don't treat the
 invalid current path-global bytes or adjacent assets strings as filenames.
 
