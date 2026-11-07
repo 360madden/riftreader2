@@ -1,5 +1,5 @@
 """Capture a guarded selected-target vitals candidate without game input."""
-import argparse, base64, hashlib, json, sys, uuid
+import argparse, base64, hashlib, json, math, sys, uuid
 from datetime import datetime
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,8 +11,8 @@ from scripts.sample_current_native_ability_catalog import validate_dictionary
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '783573AAE552AC5E6BC6977929B4BEBE88A70908E9F0F1E663F550808662597B'
-READER = ROOT / 'artifacts/native-selected-target-name-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '1960292C6227F8E14C20050EF73FF67E43003F9336D9F93E76AD1CE2591A0046'
+READER = ROOT / 'artifacts/native-target-position-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-selected-target-20261107/runs'
 
 QUALIFICATION='candidate-only; target and vitals semantics, freshness and restart unverified'
@@ -35,10 +35,21 @@ def validate_report(report, *, pid, ticks):
     status=o.get('status'); before=o.get('beforeGuardStatus'); after=o.get('afterGuardStatus')
     key=o.get('targetKey'); unit=o.get('targetUnitId'); entity=o.get('targetEntity'); vitals=o.get('targetVitals')
     if status=='unavailable':
-        if before not in ('raw-getter-zero-candidate','override-unavailable','guard-unreadable-or-invalid') or any(x is not None for x in (after,key,unit,entity,vitals)): invalid()
+        if before not in ('raw-getter-zero-candidate','override-unavailable','guard-unreadable-or-invalid') or any(x is not None for x in (after,key,unit,entity,vitals,o.get('targetPosition'))): invalid()
     elif status=='candidate':
         if before!='fallback-key-candidate' or after!='fallback-key-candidate' or not integer(key,1,2**64-1) or unit!=f'u{key:016X}' or not integer(entity,0x10000,0x7fffffffffff) or not isinstance(vitals,dict) or vitals.get('identity')!=identity or type(vitals.get('unitKey')) is not int or vitals['unitKey']!=key: invalid()
         if not isinstance(o.get('nameSeed'),dict): invalid()
+        position=o.get('targetPosition')
+        if not isinstance(position,dict) or type(position.get('unitKey')) is not int or position['unitKey']!=key or position.get('qualification')!='cached position candidate; freshness and target semantics unverified': invalid()
+        if position.get('status')=='component-unavailable':
+            if any(position.get(k) is not None for k in ('componentAddress','startedAtUtc','completedAtUtc','position')): invalid()
+        elif position.get('status')=='candidate':
+            if not integer(position.get('componentAddress'),0x10000,0x7fffffffffff): invalid()
+            pstart,pend=interval(position)
+            if pstart<outer_start or pend>outer_end: invalid()
+            xyz=position.get('position')
+            if not isinstance(xyz,dict) or any(type(xyz.get(k)) not in (int,float) or not math.isfinite(xyz[k]) for k in ('x','y','z')): invalid()
+        else: invalid()
         start,end=interval(vitals)
         if start<outer_start or end>outer_end or vitals.get('qualification')!='candidate-only; semantics/passive-freshness/restart-unverified': invalid()
         for name in ('health','energy','mana'):
@@ -91,11 +102,11 @@ def derive_name(observation, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117471072 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117475168 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-selected-target-name-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-target-position-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"
@@ -112,14 +123,14 @@ def run(lab):
             "$g=Get-Process -Id "+str(pid)+" -ErrorAction Stop;if($g.ProcessName -cne 'rift_x64' -or [long]$g.StartTime.ToUniversalTime().Ticks -ne "+str(ticks)+"){throw 'game-epoch-changed'};"
             "if((Get-FileHash -LiteralPath $g.Path -Algorithm SHA256).Hash -cne "+ps_literal(GAME_SHA)+"){throw 'rift-build-changed'};"
             "$out="+ps_literal(report)+";if(Test-Path -LiteralPath $out){throw 'guest-report-exists'};"
-            "& $exe sample-current-selected-target --pid "+str(pid)+" --start-ticks "+str(ticks)+" --include-name-seed true --output $out | Out-Null;"
+            "& $exe sample-current-selected-target --pid "+str(pid)+" --start-ticks "+str(ticks)+" --include-name-seed true --include-position true --output $out | Out-Null;"
             "if($LASTEXITCODE -ne 0){throw 'native-sampler-failed'};if(!(Test-Path -LiteralPath $out)){throw 'native-report-missing'};if((Get-Item -LiteralPath $out).Length -gt 8000000){throw 'native-report-too-large'}")
         guest.powershell(launch,timeout=130);guest.copy_from_guest(report,output/'samples.json',timeout=70)
     raw=(output/'samples.json').read_bytes()
     if len(raw)>8000000: raise ValueError('report too large')
     data=json.loads(raw.decode('utf-8-sig')); observation=validate_report(data,pid=pid,ticks=ticks)
     name=derive_name(observation,pid=pid,ticks=ticks)
-    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['status'],'qualification':observation['qualification'],**name}
+    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['status'],'qualification':observation['qualification'],'targetPosition':observation.get('targetPosition'),**name}
     with (output/'summary.json').open('x',encoding='utf-8') as f: json.dump(summary,f,indent=2)
     return summary
 

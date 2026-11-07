@@ -1,6 +1,6 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint12:46 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint13:03 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
@@ -82,12 +82,20 @@ E6CD3F1D0F9DD6A0072D7E3D2942C07171EB5A4B85B0025AA6FA96FF690F84BC,
 117462880 bytes, under`artifacts/native-selected-target-20261107/publish/`.
 Name-enabled follow-up preserved health but found an empty ALTERNATE string,
 not a primary-direct name or selected localization key. No name accepted.
-Fresh method-address diagnostic is running in host session45270, log
-`artifacts/native-selected-target-name-20261107/virtual-seed-run.log`.
-It captures/rechecks entity VT+18 and method bytes only, never calls the getter.
-Position owner-injection core is separately uncommitted, with18 focused checks
-passed; caller integration/live use remain pending. Do not commit unused
-refinement or repeat reads as a default qualification loop.
+Method-address diagnostic passed: entity VT26AE5F0/slot18 method59E940, loaded
+bytes match retained PE. No method invocation. Its virtual path checks entity
++1D0 type1E17 ref first, otherwise+1B8 template key via dynamic provider33E3A98
+and type0274 result+ A8 name ref. Do not guess which route applies.
+Completed route/position diagnostic retained stable target/entity/provider anchors:
+entity+1D0 null, template key1847420318 at+1B8, provider WORD selector623.
+Receipt directoryartifacts/native-selected-target-name-20261107/lab1/ddf9cd65a5a84b4289aae0cd782fddb8/.
+Static trace confirms selector passes unchanged; type0274+A8 type1E17 cache-only
+resolution is being implemented in a separate command. Cache miss is not absence.
+Position core/caller passed18 core and8 target-focused cases and the repository
+command completed13:03:12 Eastern with cached reader: XYZ7428.7246/863.526/2950.8438.
+Receiptartifacts/native-selected-target-20261107/runs/lab1/c993ae87a90142e58134894ed8959750/samples.json,
+SHA25612639A21472437F19326062994EBA4001A672090D59DA336CC82287123B58189.
+Candidate only; no freshness/restart/action readiness. No active diagnostic process.
 
 Optional Lab2 UI corroboration was CLOSED after dependency-admission SessionError;
 no image was accepted. Later status was connected/disarmed-idle with supervisor
@@ -100,5 +108,6 @@ UTF16, a type1E17 localization key, or an unresolved entity virtual method;
 do not guess from the GUID prefix. Root can reuse resident dictionary decoding
 only after the branch/key/owner is freshly bound. No raw unit name is accepted yet.
 Name-capable reader SHA783573AA... is under
-`artifacts/native-selected-target-name-20261107/publish/`; repository selected
-target launcher now pins it. Do not edit it while the diagnostic source check runs.
+`artifacts/native-selected-target-name-20261107/publish/`. The repository launcher
+now pins position-capable reader1960292C... under
+`artifacts/native-target-position-20261107/publish/` (live repository use passed).

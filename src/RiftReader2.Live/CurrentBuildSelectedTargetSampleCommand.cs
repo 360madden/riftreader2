@@ -23,10 +23,11 @@ internal static class CurrentBuildSelectedTargetSampleCommand
             !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--pid, --start-ticks and --output are required.");
         var includeName = options.TryGetValue("--include-name-seed", out var name) ? name == "true" ? true : throw new ArgumentException("--include-name-seed must be true.") : false;
+        var includePosition = options.TryGetValue("--include-position", out var position) ? position == "true" ? true : throw new ArgumentException("--include-position must be true.") : false;
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
         await using var session = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        var observation = CurrentBuildSelectedTargetCandidateReader.Read(session, includeName);
+        var observation = CurrentBuildSelectedTargetCandidateReader.Read(session, includeName, includePosition);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested();
         var report = new CurrentBuildSelectedTargetReport(observation);

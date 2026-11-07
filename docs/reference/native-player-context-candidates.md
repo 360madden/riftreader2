@@ -90,7 +90,7 @@ report and rejected a nested self-key substituted for the target. Reader
 at`artifacts/native-selected-target-20261107/publish/`. No action preflight uses
 these candidates. Selected-target names remain a separate uncaptured seed.
 
-## Optional UI comparison stopped
+## Target name seeds —12:46 Eastern
 
 Name-enabled follow-up at12:46 Eastern: ordered bounded UTF16/localization/virtual
 seeds were added without invoking methods. Eight focused cases passed. Lab1's
@@ -104,8 +104,35 @@ and does not fall through to localization. Static trace is in
 Name-capable reader117471072 bytes, SHA256
 `783573AAE552AC5E6BC6977929B4BEBE88A70908E9F0F1E663F550808662597B`,
 at`artifacts/native-selected-target-name-20261107/publish/`. The repository launcher
-now pins it. Eventual text remains a base/locale1 candidate, with API decoration
+previously pinned it. Eventual text remains a base/locale1 candidate, with API decoration
 and language unverified.
+
+## Selected-target position —13:03 Eastern
+
+The repository selected-target command now also reuses the position reader with
+an injected exact-target owner. Position selector2F588A0 must resolve on that
+same entity and its component+10 must point back to the entity. Missing position
+is explicit and does not substitute self XYZ. Target/epoch/consumed bytes are
+rechecked. Eighteen position-core and eight target-focused cases passed.
+
+Lab1 returned target`u80000002CD0034D1`, cached XYZ candidate
+`7428.7246,863.526,2950.8438`. Receipt:
+`artifacts/native-selected-target-20261107/runs/lab1/c993ae87a90142e58134894ed8959750/samples.json`,
+SHA256`12639A21472437F19326062994EBA4001A672090D59DA336CC82287123B58189`.
+Position interval18:03:12.4428152Z–18:03:12.4432145Z. Reader SHA256
+`1960292C6227F8E14C20050EF73FF67E43003F9336D9F93E76AD1CE2591A0046`,
+117475168 bytes at`artifacts/native-target-position-20261107/publish/`.
+The launcher pins that reader. Cached XYZ semantics, passive freshness and
+restart remain unverified; no distance/action readiness is inferred.
+
+The completed independent name-route diagnostic retained target/entity/provider
+anchors: entity+1D0 is null, entity+1B8 key1847420318, provider33E3A98 selector623.
+Receipt directory`artifacts/native-selected-target-name-20261107/lab1/ddf9cd65a5a84b4289aae0cd782fddb8/`.
+Static trace passes that WORD unchanged to the common composite cache. A hit
+requires type0274, then+A8 type1E17 name reference. No getter was called and no
+name text has been accepted. A cache miss does not imply template absence.
+
+## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its
 output path was outside the helper's canonical directory. The corrected attempt

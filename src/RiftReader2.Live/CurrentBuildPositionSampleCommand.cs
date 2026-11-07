@@ -119,6 +119,8 @@ internal sealed record CurrentBuildPositionObservation(
 
 internal sealed record CurrentBuildXyz(float X, float Y, float Z);
 
+internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong ComponentAddress, Action VerifyUnchanged);
+
 /// <summary>
 /// Mirrors only the source-verified manager-to-entity-to-position lookup
 /// from scripts/probe_native_unit_manager.py. It does not guess unknown roots.
@@ -127,16 +129,34 @@ internal static class CurrentBuildPositionCandidateReader
 {
     private const ulong PositionIndexRva = 0x2F588A0;
 
-    internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session)
+    internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session) =>
+        Read(session, source =>
+        {
+            var owner = CurrentBuildPlayerLookup.Resolve(source);
+            return new(owner.PlayerKey, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
+        });
+
+    internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner)
     {
-        var owner = CurrentBuildPlayerLookup.Resolve(session);
-        var component = CurrentBuildPlayerLookup.Pointer(owner.ResolveComponent(PositionIndexRva), 0x110);
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(resolveOwner);
+        var identity = session.Identity;
+        if (!string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase)
+            || identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 || identity.ModuleSize < PositionIndexRva + 4)
+            throw new InvalidDataException("Current-build position requires exact build and process epoch.");
+        var owner = resolveOwner(session);
+        ArgumentNullException.ThrowIfNull(owner.VerifyUnchanged);
+        if (owner.UnitKey == 0) throw new InvalidDataException("Missing position owner.");
+        var component = CurrentBuildPlayerLookup.Pointer(owner.ComponentAddress, 0x110);
         var valueRaw = CurrentBuildPlayerLookup.Exact(session, component, 0x110);
         var xyzBytes = valueRaw.AsSpan(0x48, 12).ToArray();
 
         owner.VerifyUnchanged();
+        if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
         CurrentBuildPlayerLookup.RequireSame(
             CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 12), xyzBytes);
+        if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
 
         var x = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(xyzBytes.AsSpan(0, 4)));
         var y = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(xyzBytes.AsSpan(4, 4)));

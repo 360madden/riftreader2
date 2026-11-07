@@ -1,9 +1,16 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 12:46 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:03 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
+
+**13:03 Eastern — SELECTED-TARGET XYZ CANDIDATE:** The repository command passed
+with the cached reader: target`u80000002CD0034D1`, XYZ7428.7246/863.526/2950.8438.
+Exact-target ownership and position bytes were checked; no freshness, restart or
+action qualification. Name-route diagnostic found template key1847420318 and
+dynamic provider selector623; guarded cache-only name resolution is next.
+[Receipt and limits](reference/native-player-context-candidates.md).
 
 **12:46 Eastern — TARGET NAME BLOCKER RETAINED:** Optional name capture preserved
 target health but found an empty alternate string leading to an unresolved
