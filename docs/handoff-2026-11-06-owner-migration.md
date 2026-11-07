@@ -1,5 +1,9 @@
 # Continuation — live helper migration, November 6, 2026
 
+**Latest practical continuation:** [November7 native discovery handoff](handoff-2026-11-07-native-discovery.md)
+contains the short current command/result/blocker summary. Preserve the historical
+ownership gates below; do not restart deferred maintenance from their chronology.
+
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
 ## Discovery priority — November 7

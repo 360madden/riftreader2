@@ -1,5 +1,16 @@
 # Current status
 
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 12:30 Eastern:**
+[Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
+working commands, verified results, accepted selected-target capture and remaining
+time window. Preserve its practical discovery priority and existing owners/gates.
+
+**12:30 Eastern — SELECTED-TARGET VITALS CANDIDATE:** The current guarded Lab1
+target resolved to a native health candidate1224100/1224100 in13.2605ms; exact
+full64 key/lookup/typed health/self-target checks passed. The repository command
+also passed using the cached reader. No target/input change, Mana/Energy values
+or action-preflight integration. [Receipts and limits](reference/native-player-context-candidates.md).
+
 **2026-11-07 12:14 Eastern — SELF TARGET/LEVEL/COMBAT CANDIDATES:** The repository
 sampler returned Lab1 level41/target`u80000002CD0034D1` in9.375ms andLab2
 level43/zero target in10.957ms; both raw combat bytes0. Owner fingerprints,

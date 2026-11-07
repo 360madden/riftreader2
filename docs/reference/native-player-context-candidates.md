@@ -65,6 +65,35 @@ and control ownership were not replaced by this sampler.
 
 ## Optional UI comparison stopped
 
+## Already-selected target vitals —12:30 Eastern
+
+`python scripts/sample_current_native_selected_target.py --lab lab1` now resolves
+the exact guarded target key through the unit-manager hash table and reuses the
+existing vitals reader's caller-supplied ownership callback. The default self
+vitals reader was not changed. Full64 key comparison, tagged chains, target
+health-component back-reference, typed fields and self/target rechecks bind
+the nested values. An unresolved/zero target does not produce target vitals;
+a target change rejects the capture. No target selection or cache writes occur.
+
+The first Lab1 capture returned target`u80000002CD0034D1`, health candidate
+1224100/1224100, in13.2605ms total. Mana/Energy were explicitly unavailable for
+its kind. Receipt:
+`artifacts/native-selected-target-20261107/runs/lab1/d26d36a5496e4c91b58ff0c3b10c351e/samples.json`,
+SHA256`307EDA0EF3086A0EDB21CB2AD15772662F9B481802B92E2B67E89818329B7985`.
+The repository command independently passed using the cached reader:
+`artifacts/native-selected-target-20261107/runs/lab1/860f7c9e8fe546c2b8d0365e7dba4bfc/samples.json`,
+SHA256`9431FF5CA79A2AFC62153C9B4652D04236A1B2CF411207BE4BA2CD07CEFD9A27`.
+Stable values across these reads are not changed-state or passive-freshness proof.
+
+Five focused lookup/gate cases passed. Host validation accepted the retained
+report and rejected a nested self-key substituted for the target. Reader
+117462880 bytes, SHA256
+`E6CD3F1D0F9DD6A0072D7E3D2942C07171EB5A4B85B0025AA6FA96FF690F84BC`,
+at`artifacts/native-selected-target-20261107/publish/`. No action preflight uses
+these candidates. Selected-target names remain a separate uncaptured seed.
+
+## Optional UI comparison stopped
+
 The first Lab2 screenshot attempt was rejected before admission because its
 output path was outside the helper's canonical directory. The corrected attempt
 stopped during dependency admission with SessionError after30.26s, before capture
