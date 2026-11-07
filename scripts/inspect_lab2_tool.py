@@ -1,0 +1,110 @@
+"""Deliver the verified Lab 2 native/UI inspection in one tool handoff."""
+from __future__ import annotations
+
+import argparse
+from contextlib import redirect_stdout, redirect_stderr
+import hashlib
+import io
+import json
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+from scripts import inspect_lab2_workflow as flow
+
+
+def safe_bytes(path, limit):
+    path = Path(path)
+    for part in (path, *path.parents):
+        info = part.lstat()
+        if part.is_symlink() or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise ValueError("reparse artifact ancestry refused")
+    with path.open("rb") as stream:
+        data = stream.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("artifact too large")
+    return data
+
+
+def delivery(root, console):
+    root = flow.output_root(root)
+    safe_bytes(root / "workflow-owner.json", 1024 * 1024)
+    flow.assert_owned(root)
+    if (console.get("phase") != "run" or console.get("status") != "verified-awaiting-visual-review"
+            or Path(console.get("output", "")).resolve() != root):
+        raise ValueError("workflow result mismatch")
+    report_path = root / "report.json"
+    metadata_path = root / "capture" / "capture.json"
+    report_bytes = safe_bytes(report_path, 1024 * 1024)
+    receipt_bytes = safe_bytes(root / "capture-receipt.json", 1024 * 1024)
+    metadata_bytes = safe_bytes(metadata_path, 1024 * 1024)
+    state_bytes = safe_bytes(root / "state.json", 1024 * 1024)
+    state_hash_bytes = safe_bytes(root / "state.sha256.json", 1024 * 1024)
+    report, receipt, metadata, state, state_hash = (
+        json.loads(data.decode("utf-8-sig")) for data in
+        (report_bytes, receipt_bytes, metadata_bytes, state_bytes, state_hash_bytes))
+    if (not isinstance(report.get("epoch"), str) or not report["epoch"]
+            or not isinstance(report.get("captureId"), str) or not report["captureId"]
+            or not isinstance(report.get("capturedAtUtc"), str) or not report["capturedAtUtc"]
+            or not isinstance(report.get("target"), dict) or not report["target"]):
+        raise ValueError("required report binding missing")
+    if (hashlib.sha256(state_bytes).hexdigest().upper() != state_hash.get("sha256")
+            or state.get("epoch") != report.get("epoch") or receipt.get("epoch") != report.get("epoch")
+            or metadata.get("target") != report.get("target") or state.get("target") != report.get("target")
+            or metadata.get("captureId") != report.get("captureId")
+            or metadata.get("capturedAtUtc") != report.get("capturedAtUtc")
+            or hashlib.sha256(metadata_bytes).hexdigest().upper() != receipt.get("metadataSha256")):
+        raise ValueError("artifact binding mismatch")
+    image = root / "capture" / "image.bmp"
+    if (report.get("status") != "verified-awaiting-visual-review" or report.get("lab") != "lab2"
+            or report.get("finalInventory", {}).get("status") != "passed"
+            or Path(report.get("image", "")) != image or Path(console.get("image", "")) != image
+            or Path(console.get("report", "")) != report_path):
+        raise ValueError("report or image path mismatch")
+    cleanup = receipt.get("watchdogCleanup", {})
+    if (receipt.get("status") != "captured-and-released" or cleanup.get("stopVerified") is not True
+            or type(cleanup.get("generation")) is not int or cleanup["generation"] < 1
+            or not isinstance(cleanup.get("receipt"), str) or not cleanup["receipt"]):
+        raise ValueError("capture cleanup proof missing")
+    if not image.is_file() or image.is_symlink() or image.stat().st_size > 10 * 1024 * 1024:
+        raise ValueError("image missing or unsafe")
+    actual = hashlib.sha256(safe_bytes(image, 10 * 1024 * 1024)).hexdigest().upper()
+    if (receipt.get("imageSha256") != actual or metadata.get("savedImage", {}).get("sha256") != actual
+            or metadata.get("artifact", {}).get("sha256") != actual):
+        raise ValueError("image hash mismatch")
+    native = report.get("nativeVitals")
+    if (not isinstance(native, dict) or native.get("mode") != "persistent"
+            or native.get("qualification") != "candidate-only; semantics/passive-freshness/restart-unverified; UI review required"):
+        raise ValueError("native candidate result missing")
+    native = dict(native)
+    metrics = dict(native["metrics"])
+    if type(metrics.get("unitKey")) is int:
+        metrics["unitKey"] = str(metrics["unitKey"])
+    native["metrics"] = metrics
+    return {"status": report["status"], "image": str(image), "imageSha256": actual,
+            "report": str(report_path), "workflowSeconds": console["elapsedSeconds"],
+            "nativeVitals": native}
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", required=True, type=Path)
+    args = parser.parse_args(argv)
+    stdout, stderr = io.StringIO(), io.StringIO()
+    try:
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = flow.main(["run", "--native-vitals", "--output", str(args.output)])
+        if code != 0:
+            raise ValueError("guarded workflow failed")
+        result = delivery(args.output, json.loads(stdout.getvalue()))
+        print(json.dumps(result, allow_nan=False))
+        return 0
+    except Exception as exc:
+        print(json.dumps({"status": "blocked", "reason": str(exc), "output": str(args.output)}), file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
