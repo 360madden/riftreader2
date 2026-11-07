@@ -1,7 +1,9 @@
 # Lab 2 ChatGPT/tool and VMware latency report
 
-**Investigation date:** November 6, 2026, America/New_York; retained end-to-end traces use November 7 UTC.  
-**Scope:** VMware Lab 2, Windows 11, one running RIFT game, and the surrounding ChatGPT/Codex tool workflow.  
+**Investigation date:** November 6, 2026, America/New_York; retained end-to-end traces use November 7 UTC.
+
+**Scope:** VMware Lab 2, Windows 11, one running RIFT game, and the surrounding ChatGPT/Codex tool workflow.
+
 **Evidence basis:** Completed research, approved light live tests, implementation measurements, independent review, and retained acceptance receipts. This report introduces no new live testing.
 
 **November 7 receipt audit:** The headline measurements reproduce from retained traces. See the [independent artifact audit](validation/lab2-latency-report-audit-2026-11-07.md) for exact test counts, visual-review coverage, source boundaries and evidence limitations.

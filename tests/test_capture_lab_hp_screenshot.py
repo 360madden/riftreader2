@@ -223,6 +223,52 @@ class ScreenshotSafetyTests(unittest.TestCase):
             cap.await_release(stuck, "own", "vm:rift-lab-2", self.epoch,
                               wait_seconds=0)
 
+    def test_fast_poll_waits_for_terminal_and_bounds_final_sleep(self):
+        clock = [0.0]
+        sleeps = []
+        class Stuck:
+            calls = 0
+            def status(inner, **_kwargs):
+                inner.calls += 1
+                return dict(resources=[dict(name="vm:rift-lab-2", epoch=self.epoch,
+                                            blocked=0, holder=None, cleanup_receipt="receipt")],
+                            requests=[dict(request_id="own", state="cleanup")], next_sequence=None)
+        def sleep(delay):
+            sleeps.append(delay)
+            clock[0] += delay
+        queue = Stuck()
+        with patch.object(cap.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(cap.time, "sleep", side_effect=sleep):
+            with self.assertRaisesRegex(cap.CaptureBlocked, "release not verified"):
+                cap.await_release(queue, "own", "vm:rift-lab-2", self.epoch,
+                                  wait_seconds=0.06, poll_seconds=0.025)
+        self.assertGreater(queue.calls, 1)
+        self.assertEqual(len(sleeps), 3)
+        self.assertTrue(all(0 < delay <= 0.025 for delay in sleeps))
+        self.assertAlmostEqual(sum(sleeps), 0.06)
+
+    def test_cleanup_poll_interval_is_bounded(self):
+        for interval in (0, -1, 0.251, float("nan"), True):
+            with self.subTest(interval=interval), self.assertRaises(cap.CaptureBlocked):
+                cap.await_release(None, "own", "vm:rift-lab-2", self.epoch,
+                                  poll_seconds=interval)
+
+    def test_fast_poll_returns_only_after_terminal_with_cleanup_receipt(self):
+        class Queue:
+            calls = 0
+            def status(inner, **_kwargs):
+                inner.calls += 1
+                return dict(resources=[dict(name="vm:rift-lab-2", epoch=self.epoch,
+                                            blocked=0, holder=None, cleanup_receipt="proof")],
+                            requests=[dict(request_id="own", state="succeeded" if inner.calls == 3 else "cleanup")],
+                            next_sequence=None)
+        queue = Queue()
+        with patch.object(cap.time, "sleep") as sleep:
+            self.assertEqual(cap.await_release(queue, "own", "vm:rift-lab-2", self.epoch,
+                                               poll_seconds=0.025), "succeeded")
+        self.assertEqual(queue.calls, 3)
+        self.assertEqual(sleep.call_count, 2)
+
     def exercise_capture(self, fail_capture=False, stop_response=None):
         self.capture_attempts += 1
         output = self.root / f"capture-{self.capture_attempts}"

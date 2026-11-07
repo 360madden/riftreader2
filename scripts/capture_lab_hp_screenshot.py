@@ -143,7 +143,10 @@ def idle_queue(queue, resource, epoch):
             return found
 
 
-def await_release(queue, request_id, resource, epoch, *, wait_seconds=CLEANUP_WAIT_SECONDS):
+def await_release(queue, request_id, resource, epoch, *, wait_seconds=CLEANUP_WAIT_SECONDS,
+                  poll_seconds=0.25):
+    require(isinstance(poll_seconds, (int, float)) and not isinstance(poll_seconds, bool)
+            and 0 < poll_seconds <= 0.25, "invalid cleanup poll interval")
     deadline = time.monotonic() + wait_seconds
     last = None
     while time.monotonic() <= deadline:
@@ -164,7 +167,10 @@ def await_release(queue, request_id, resource, epoch, *, wait_seconds=CLEANUP_WA
                 and last["epoch"] == epoch and last["blocked"] == 0
                 and last["holder"] is None and last["cleanup_receipt"]):
             return request["state"]
-        time.sleep(0.25)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        time.sleep(min(poll_seconds, remaining))
     raise CaptureBlocked("watchdog release not verified; resource may remain quarantined")
 
 

@@ -28,6 +28,7 @@ topic below instead of loading every document for each task.
 | Research report | [Lab 2 ChatGPT/tool and VMware latency](lab2-latency-research-report-2026-11-06.md) | Consolidated findings, before/after measurements, preserved protections, limitations and operating instructions. |
 | Report audit | [Lab 2 latency artifact audit](validation/lab2-latency-report-audit-2026-11-07.md) | Independent numerical, cleanup and provenance checks; corrected counts and historical evidence boundaries. |
 | Admission performance | [Lab 2 controller admission optimization](validation/lab2-controller-admission-2026-11-07.md) | Overlapped interpreter startup with both fresh task proofs preserved; paired and joined before/after measurements. |
+| Workflow performance | [Lab 2 native/UI workflow optimization](validation/lab2-full-workflow-optimization-2026-11-07.md) | Five-run before/after result, guarded ready path, faster cleanup observation and capture-journal efficiency. |
 | Power discovery | [Native Warrior Power locator](reference/native-power-locator.md) | Player resource chain and API calculation; changed-state Lua agreement across one full game restart. |
 | Power data | [Live interface and field catalog](reference/power-data-interface.md) | Fresh native Power in normal JSON output, retained catalog assessments, standard JSON/CSV discovery exports. |
 | Numeric discovery | [Bounded value scout](reference/native-value-scout.md) | Seed health/resource candidates once, then use small changed-state captures. |

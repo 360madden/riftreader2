@@ -351,17 +351,9 @@ public sealed class ControlAgent
                     captureId = id;
                     reviewedTarget = target;
                     capturedAt = Stopwatch.GetTimestamp();
-                    response = new
-                    {
-                        captureId,
-                        target,
-                        imageFormat = "bmp",
-                        imageBase64 = Convert.ToBase64String(image),
-                        sha256 = Convert.ToHexString(SHA256.HashData(image)),
-                        capturedAtUtc = DateTimeOffset.UtcNow,
-                        reviewExpiresInSeconds = 45,
-                        captureBackend = "window-client-gdi-unqualified-until-visual-review"
-                    };
+                    response = new ControlCaptureResponse(captureId, target, "bmp",
+                        Convert.ToBase64String(image), Convert.ToHexString(SHA256.HashData(image)),
+                        DateTimeOffset.UtcNow, 45, "window-client-gdi-unqualified-until-visual-review");
                     break;
                 case "arm":
                     RequireIdle();
@@ -612,15 +604,22 @@ public sealed class ControlAgent
     private async Task ReplyAsync(NetworkStream stream, ControlCommand command, object payload, CancellationToken token)
     {
         var response = new { type = "response", id = command.Id, payload };
-        var retained = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(payload, Wire))!;
+        var retained = RetainResponsePayload(payload);
+        await WriteAtomicAsync(Path.Combine(configuration.OutputDirectory, command.Id + ".json"),
+            new { instanceId, command.Id, command.Sequence, command.Operation, response = retained }, CancellationToken.None, false);
+        await SendAsync(stream, response, token);
+    }
+
+    internal static System.Text.Json.Nodes.JsonNode? RetainResponsePayload(object payload)
+    {
+        var metadata = payload is ControlCaptureResponse capture ? capture.RetainedMetadata() : payload;
+        var retained = JsonSerializer.SerializeToNode(metadata, Wire);
         if (retained is System.Text.Json.Nodes.JsonObject fields)
         {
             fields.Remove("armToken");
             fields.Remove("imageBase64");
         }
-        await WriteAtomicAsync(Path.Combine(configuration.OutputDirectory, command.Id + ".json"),
-            new { instanceId, command.Id, command.Sequence, command.Operation, response = retained }, CancellationToken.None, false);
-        await SendAsync(stream, response, token);
+        return retained;
     }
 
     private async Task SendAsync(NetworkStream stream, object value, CancellationToken token)

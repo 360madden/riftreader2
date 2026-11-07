@@ -8,8 +8,88 @@ import struct
 import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 from scripts import inspect_lab2_workflow as flow
+
+
+class DependencyFastPathTests(unittest.TestCase):
+    def config(self, **overrides):
+        values = dict(expected_machine_name="RIFT-LAB-2", vmx=flow.LABS["lab2"]["vmx"],
+                      vnc_port=flow.LABS["lab2"]["port"], ui_port=49921)
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_ready_reuses_and_waiting_recovers(self):
+        host = {"connected": True, "machineName": "RIFT-LAB-2", "coordination": {"state": "ready", "resource": flow.RESOURCE},
+                "consoleReservation": {"held": True, "faulted": False}}
+        guest = {"armed": False, "busy": False, "recoveryRequired": False,
+                 "desktopInputsDown": []}
+        ready = {"host": host, "guest": guest}
+        waiting = {"host": {**host, "connected": False,
+                            "coordination": {"state": "waiting", "resource": flow.RESOURCE}}}
+        starting = {"host": {**host, "coordination": {"state": "starting", "resource": flow.RESOURCE}}, "guest": guest}
+        for status, recover in ((ready, False), (waiting, True), (starting, True), (None, True)):
+            with self.subTest(status=status), patch.object(flow.HostConfig, "load", return_value=self.config()), \
+                 patch.object(flow, "_probe", return_value=status), \
+                 patch.object(flow, "ensure_guest_agent") as ensure:
+                flow.ensure_inspection_dependency()
+                self.assertEqual(ensure.call_count, int(recover))
+
+    def test_unhealthy_or_ambiguous_never_recovers(self):
+        host = {"connected": True, "machineName": "RIFT-LAB-2", "coordination": {"state": "ready", "resource": flow.RESOURCE},
+                "consoleReservation": {"held": True, "faulted": False}}
+        guest = {"armed": False, "busy": False, "recoveryRequired": False,
+                 "desktopInputsDown": []}
+        cases = [{}, {"host": host, "guest": {**guest, "busy": True}},
+                 {"host": {**host, "consoleReservation": {"held": True, "faulted": True}}, "guest": guest},
+                 {"host": {**host, "coordination": {"state": "closing", "resource": flow.RESOURCE}}, "guest": guest},
+                 {"host": {**host, "machineName": "RIFT-LAB-1"}, "guest": guest},
+                 {"host": {**host, "coordination": {"state": "ready", "resource": "vm:rift-lab-1"}}, "guest": guest},
+                 {"host": {**host, "connected": False, "coordination": {"state": "waiting", "resource": flow.RESOURCE}}, "guest": guest}]
+        for status in cases:
+            with self.subTest(status=status), patch.object(flow.HostConfig, "load", return_value=self.config()), \
+                 patch.object(flow, "_probe", return_value=status), \
+                 patch.object(flow, "ensure_guest_agent") as ensure:
+                with self.assertRaises(Exception):
+                    flow.ensure_inspection_dependency()
+                ensure.assert_not_called()
+
+    def test_probe_failure_never_recovers(self):
+        with patch.object(flow.HostConfig, "load", return_value=self.config()), patch.object(flow, "_probe", side_effect=RuntimeError("unhealthy")), \
+             patch.object(flow, "ensure_guest_agent") as ensure:
+            with self.assertRaisesRegex(RuntimeError, "unhealthy"):
+                flow.ensure_inspection_dependency()
+            ensure.assert_not_called()
+
+    def test_wrong_lab_configuration_never_probes_or_recovers(self):
+        for changes in ({"expected_machine_name": "RIFT-LAB-1"},
+                        {"vmx": flow.LABS["lab1"]["vmx"]}, {"vmx": None},
+                        {"vnc_port": flow.LABS["lab1"]["port"]}, {"ui_port": 49920}):
+            with self.subTest(changes=changes), patch.object(flow.HostConfig, "load", return_value=self.config(**changes)), \
+                 patch.object(flow, "_probe") as probe, patch.object(flow, "ensure_guest_agent") as ensure:
+                with self.assertRaises(flow.InspectionBlocked):
+                    flow.ensure_inspection_dependency()
+                probe.assert_not_called()
+                ensure.assert_not_called()
+
+    def test_ready_then_admission_refusal_never_recovers_or_acquires(self):
+        status = {"host": {"connected": True, "machineName": "RIFT-LAB-2",
+                           "coordination": {"state": "ready", "resource": flow.RESOURCE},
+                           "consoleReservation": {"held": True, "faulted": False}},
+                  "guest": {"armed": False, "busy": False, "recoveryRequired": False,
+                            "desktopInputsDown": []}}
+        with tempfile.TemporaryDirectory() as folder, \
+             patch.object(flow.HostConfig, "load", return_value=self.config()), \
+             patch.object(flow, "_probe", return_value=status), \
+             patch.object(flow, "ensure_guest_agent") as ensure, \
+             patch.object(flow, "admit_lab2_inspection_host", side_effect=RuntimeError("admission refused")), \
+             patch.object(flow, "capture_native") as native, patch.object(flow, "AccessQueue") as queue:
+            with self.assertRaisesRegex(RuntimeError, "admission refused"):
+                flow.preflight(Path(folder) / "output", flow.Timings(), _admitted={})
+            ensure.assert_not_called()
+            native.assert_not_called()
+            queue.assert_not_called()
 
 
 class InspectionTests(unittest.TestCase):
@@ -252,6 +332,7 @@ class InspectionTests(unittest.TestCase):
                     flow.publish(host.plan_path, host.plan)
                     return host
                 with ExitStack() as stack:
+                    stack.enter_context(patch.object(flow, "ensure_inspection_dependency"))
                     stack.enter_context(patch.object(flow, "ensure_guest_agent"))
                     admitted_factory = stack.enter_context(patch.object(flow, "admit_lab2_inspection_host", side_effect=factory))
                     standard_factory = stack.enter_context(patch.object(flow, "write_managed_host_plan", side_effect=lambda *args: factory(*args).plan_path))
@@ -285,7 +366,7 @@ class InspectionTests(unittest.TestCase):
                         flow.publish(host.plan_path, host.plan)
                         return host
                     with ExitStack() as stack:
-                        stack.enter_context(patch.object(flow, "ensure_guest_agent"))
+                        stack.enter_context(patch.object(flow, "ensure_inspection_dependency"))
                         stack.enter_context(patch.object(flow, "admit_lab2_inspection_host", side_effect=factory))
                         fresh = stack.enter_context(patch.object(flow, "fresh"))
                         native = stack.enter_context(patch.object(flow, "capture_native"))
@@ -309,7 +390,7 @@ class InspectionTests(unittest.TestCase):
         def factory(*args):
             flow.publish(host.plan_path, host.plan)
             return host
-        with patch.object(flow, "OUTPUT_BASE", self.root), patch.object(flow, "ensure_guest_agent"), \
+        with patch.object(flow, "OUTPUT_BASE", self.root), patch.object(flow, "ensure_inspection_dependency"), \
              patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
              patch.object(flow, "capture_native") as native, patch.object(flow, "AccessQueue") as queue, \
              redirect_stderr(StringIO()) as error:
@@ -328,7 +409,7 @@ class InspectionTests(unittest.TestCase):
         def factory(*args):
             flow.publish(host.plan_path, host.plan)
             return host
-        with patch.object(flow, "ensure_guest_agent"), patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
+        with patch.object(flow, "ensure_inspection_dependency"), patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
              patch.object(flow, "ready_epoch", return_value="epoch"), patch.object(flow, "fresh"), \
              patch.object(flow, "check_status", return_value={"guest": {"freshIdentityVersion": 1, "nativeVitalsVersion": False}}):
             with self.assertRaisesRegex(flow.InspectionBlocked, "native-vitals-unsupported"):
@@ -431,7 +512,7 @@ class InspectionTests(unittest.TestCase):
                 flow.validate_native(summary, state, self.now, self.now)
 
     def test_partial_native_arguments_fail_before_vm(self):
-        with patch.object(flow, "preflight") as preflight, patch.object(flow, "ensure_guest_agent") as guest:
+        with patch.object(flow, "preflight") as preflight, patch.object(flow, "ensure_inspection_dependency") as guest:
             self.assertEqual(flow.main(["run", "--output", str(self.root),
                                        "--native-reader-sha256", "A"*64]), 2)
             preflight.assert_not_called()

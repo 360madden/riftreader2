@@ -22,8 +22,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.control_client import ControlClient, _capture
-from scripts.ensure_controller import CONFIGS, QUEUE
-from scripts.ensure_guest_agent import ensure as ensure_guest_agent
+from scripts.ensure_controller import CONFIGS, QUEUE, _probe
+from scripts.ensure_guest_agent import ensure as ensure_guest_agent, _check_waiting, _idle
 from scripts.fresh_game_identity import query
 from scripts.vm_console_native import Blocked, validate_config
 from scripts.run_movement_session import ManagedPinnedHost, write_managed_host_plan, admit_lab2_inspection_host, load, sanitized
@@ -31,6 +31,7 @@ from scripts.control_host import HostConfig
 from scripts.nav_access_queue import AccessQueue
 from scripts.capture_lab_hp_screenshot import ready_epoch, idle_queue, await_release
 from scripts import sample_current_native_vitals as vitals
+from scripts.launch_live_reader import LABS
 
 RESOURCE = "vm:rift-lab-2"
 OWNER = "lab2-inspection"
@@ -172,11 +173,38 @@ def require_persistent_capabilities(status):
         require(type(value) is int and value == 1, code)
 
 
+def ensure_inspection_dependency():
+    # This observation grants no authority; managed admission still performs
+    # its full independent proofs immediately afterwards.
+    config = HostConfig.load(CONFIGS["lab2"])
+    lab = LABS["lab2"]
+    require(config.expected_machine_name == lab["machine"] and config.vmx is not None
+            and config.vmx.resolve() == lab["vmx"].resolve()
+            and config.vnc_port == lab["port"] and config.ui_port == 49921,
+            "noncanonical Lab 2 controller configuration")
+    status = _probe(config)
+    if status is not None:
+        _check_waiting(status)
+        host = status["host"]
+        require(host["coordination"].get("resource") == RESOURCE,
+                "controller resource differs from Lab 2")
+        if host.get("connected") is True:
+            require(host.get("machineName") == lab["machine"], "controller guest differs from Lab 2")
+        else:
+            require(not status.get("guest"), "disconnected controller has guest state")
+        if _idle(status):
+            return
+    ensure_guest_agent("lab2")
+
+
 def preflight(root, timing, *, _admitted=None, _native=None):
     root.mkdir(parents=True, exist_ok=False)
     publish(root / "workflow-owner.json", {"workflow": "lab2-inspection/1", "output": str(root)})
     with timing.stage("dependency-ensure"):
-        ensure_guest_agent("lab2")
+        if _admitted is None:
+            ensure_guest_agent("lab2")
+        else:
+            ensure_inspection_dependency()
     with timing.stage("managed-plan-admission"):
         if _admitted is None:
             path = write_managed_host_plan("lab2", root)
@@ -395,7 +423,10 @@ def capture(root, timing, *, _admitted=None):
             except BaseException as exc:
                 error = error or exc
                 queue.cancel(request_id, OWNER)
-            terminal = await_release(queue, request_id, RESOURCE, state["epoch"])
+            if _admitted is None:
+                terminal = await_release(queue, request_id, RESOURCE, state["epoch"])
+            else:
+                terminal = await_release(queue, request_id, RESOURCE, state["epoch"], poll_seconds=0.025)
             if finished:
                 require(terminal == ("succeeded" if success else "failed"),
                         "unexpected cleanup terminal outcome")
