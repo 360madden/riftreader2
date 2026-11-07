@@ -4,6 +4,13 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
+**DURABLE USER POLICY:** Practical discovery results first. Refinement may
+happen later, or never; it is not a default task or completion requirement.
+Reuse working tools and perform only the focused checks needed for the next
+result or a demonstrated failure. Preserve existing identity/freshness,
+ownership and STOP/release gates. `AGENTS.md` and the development workflow now
+state this explicitly; do not resume an unsolicited refinement campaign.
+
 **Latest fast path:** use `python scripts/sample_current_native_ability_maps.py
 --lab lab1|lab2` for raw map observations. The separately staged reader SHA
 BF3EFA6508E4AFDE2C0201BF7B193EE5AE7955E5BE6C5A386B9B625BD33979C7 captured

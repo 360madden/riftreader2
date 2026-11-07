@@ -4,6 +4,17 @@ Use this workflow for the RiftReader2 foundation. It is designed to give Joey
 and future coding agents one reproducible path from a clean checkout to a
 reviewable result.
 
+## Discovery priority
+
+Joey's durable November7 correction: **practical discovery results come first;
+refinement can happen later, or never.** Use the shortest reliable route to the
+next useful observation or working capability. Reuse existing tools and move
+to actual use after the relevant focused checks pass. Cleanup, abstractions,
+polish, extra reporting, broad test runs and repeated reviews are not default
+work or completion requirements; do them only for a concrete blocker or failure.
+Preserve exact identity/freshness, ownership and STOP/release gates, and label
+candidate data honestly. A concise evidence note is enough for a useful finding.
+
 ## Prerequisites
 
 - PowerShell 7 (`pwsh`).
@@ -66,7 +77,9 @@ these are starting roles, not fixed assignments or evidence of readiness.
 
 ## Restore, build, and test
 
-The Lua suite is mandatory. A repository-local environment keeps its dependency
+The Lua suite is required for Lua/shared-contract changes and full-repository
+validation claims; it is not a prerequisite for unrelated native discovery.
+A repository-local environment keeps its dependency
 isolated and reproducible:
 
 ```powershell

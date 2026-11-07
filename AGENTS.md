@@ -16,6 +16,15 @@ end in itself. Keep notes concise and checks proportional to the change; a
 documentation-only update does not need the full code-validation suite. Retain
 the essential exact-build, stale-data, restart and single-controller protections.
 
+**Discovery first — Joey's durable correction, 2026-11-07:** Prioritize useful
+discoveries and working results NOW. Refinement is optional: later, or never.
+Do not make cleanup, refactoring, generalization, polish, extra documentation,
+broader testing or another review cycle a default follow-up or completion gate.
+Do that work only when it is needed for the next useful observation/capability
+or fixes a concrete demonstrated failure. Reuse what works, check the relevant
+risk, use it, and move to the next discovery. Keep ownership, exact identity,
+freshness, STOP/release and honest candidate/qualification labels intact.
+
 The product is hybrid: a first-class RIFT Lua addon plus the modular external
 .NET application. Preserve addon API, native memory, and derived evidence as
 distinct sources. See [the hybrid decision](docs/decisions/0002-hybrid-addon-and-reader.md).
@@ -62,8 +71,8 @@ existing input/freshness gates is implied. Prefer useful measurements and
 small reproducible experiments over prolonged planning.
 
 **Practical parallel development — Joey's correction, 2026-11-06:**
-Prioritize speed and useful results; retain good architecture and refine after
-actual use. Before each batch, give a short plan (3–5 bullets is enough): the
+Prioritize speed and useful results; preserve existing module boundaries and
+leave refinement optional, including never. Before each batch, give a short plan (3–5 bullets is enough): the
 outcome, independent goals, file ownership/shared interfaces, and focused checks.
 Decide core ownership and contracts early; polish is optional later. Segment
 independent goals and run useful workers in parallel, keeping independent work
