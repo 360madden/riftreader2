@@ -143,4 +143,4 @@ to simplify and offline-test the existing reviewed RIFT console interaction
 route. No RIFT UI input or reload, and no VM/game restart. Measure actual
 latency and tool calls, preserve controller/freshness/safety gates, commit
 verified scoped milestones and a handoff, then resume standalone RR2
-runtime-dependency elimination." 
+runtime-dependency elimination."

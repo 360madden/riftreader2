@@ -1,10 +1,10 @@
 # RiftReader2 — Lab-1 Controller Recovery Incident Report
 
-**Prepared:** 2026-10-30 (America/New_York)  
-**Repository:** C:\work\riftreader2  
-**Affected machine:** VMware RIFT-Lab-1  
-**Status:** Lab-1 guest restored; main-PC controller NOT recovered  
-**Purpose:** Durable evidence and instructions for the next AI recovery coordinator.  
+**Prepared:** 2026-10-30 (America/New_York)
+**Repository:** C:\work\riftreader2
+**Affected machine:** VMware RIFT-Lab-1
+**Status:** Lab-1 guest restored; main-PC controller NOT recovered
+**Purpose:** Durable evidence and instructions for the next AI recovery coordinator.
 **Evidence class:** Confirmed observations are distinguished below from hypotheses and recommendations.
 
 ## 1. Executive summary

@@ -1,9 +1,9 @@
 # RiftReader2 — Pre-reboot Lab-1 Controller Recovery Handoff
 
-**Prepared:** 2026-10-30 America/New_York  
-**Owner:** Joey / main-PC native Codex recovery coordinator  
-**Scope:** Restart continuity after Joey manually reboots Windows 11 (both VMs will stop).  
-**Full incident report:** [Lab-1 controller recovery incident](../validation/lab1-controller-recovery-incident-2026-10-30.md)  
+**Prepared:** 2026-10-30 America/New_York
+**Owner:** Joey / main-PC native Codex recovery coordinator
+**Scope:** Restart continuity after Joey manually reboots Windows 11 (both VMs will stop).
+**Full incident report:** [Lab-1 controller recovery incident](../validation/lab1-controller-recovery-incident-2026-10-30.md)
 **Authoritative movement status:** [docs/status.md](../status.md)
 
 ## Immediate state / exact disposition
