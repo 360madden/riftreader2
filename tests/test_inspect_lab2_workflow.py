@@ -83,7 +83,7 @@ class DependencyFastPathTests(unittest.TestCase):
              patch.object(flow.HostConfig, "load", return_value=self.config()), \
              patch.object(flow, "_probe", return_value=status), \
              patch.object(flow, "ensure_guest_agent") as ensure, \
-             patch.object(flow, "admit_lab2_inspection_host", side_effect=RuntimeError("admission refused")), \
+             patch.object(flow, "admit_lab2_inspection_host_with_status", side_effect=RuntimeError("admission refused")), \
              patch.object(flow, "capture_native") as native, patch.object(flow, "AccessQueue") as queue:
             with self.assertRaisesRegex(RuntimeError, "admission refused"):
                 flow.preflight(Path(folder) / "output", flow.Timings(), _admitted={})
@@ -147,6 +147,52 @@ class InspectionTests(unittest.TestCase):
         with patch.object(flow, "ready_epoch", return_value="other"):
             with self.assertRaisesRegex(flow.InspectionBlocked, "epoch"):
                 flow.check_status(host, self.state)
+
+    def test_combined_fresh_invokes_live_status_and_checks_full_target(self):
+        host = MagicMock()
+        state = {**self.state, "vmIdentity": {"epoch": 1}}
+        host.status.return_value = {"guest": {"target": self.target}}
+        def identity_query(*args, **kwargs):
+            return kwargs["_status_supplier"](host.config)
+        with patch.object(flow, "validate_config"), patch.object(flow, "query", side_effect=identity_query), \
+                patch.object(flow, "ready_epoch", return_value="epoch"):
+            flow.fresh(host, state, _check_status=True)
+            host.status.assert_called_once_with(require_armed=False)
+            host.status.return_value = {"guest": {"target": {**self.target, "clientWidth": 800}}}
+            with self.assertRaisesRegex(flow.InspectionBlocked, "geometry"):
+                flow.fresh(host, state, _check_status=True)
+        self.assertEqual(host.status.call_count, 2)
+
+    def test_combined_fresh_refuses_changed_identity_endpoint_before_status(self):
+        from types import SimpleNamespace
+        host = MagicMock()
+        host.config = SimpleNamespace(ui_port=1000, vmx="vm", vnc_port=5962, vmrun="vmrun", output_directory="out")
+        state = {**self.state, "vmIdentity": {"epoch": 1}}
+        def identity_query(*args, **kwargs):
+            return kwargs["_status_supplier"](SimpleNamespace(ui_port=1001))
+        with patch.object(flow, "validate_config"), patch.object(flow, "query", side_effect=identity_query):
+            with self.assertRaisesRegex(flow.InspectionBlocked, "configuration changed"):
+                flow.fresh(host, state, _check_status=True)
+        host.status.assert_not_called()
+
+    def test_joined_admissions_use_combined_check_and_split_paths_do_not(self):
+        for operation in (flow.capture, flow.capture_native):
+            for admitted in (None, {"host": "joined"}):
+                if operation is flow.capture_native and admitted is None:
+                    continue
+                host = MagicMock()
+                with self.subTest(operation=operation.__name__, admitted=admitted), \
+                        patch.object(flow, "reopen", return_value=(self.state, host)), \
+                        patch.object(flow, "check_status") as status, \
+                        patch.object(flow, "fresh", side_effect=RuntimeError("stop")) as fresh:
+                    with self.assertRaisesRegex(RuntimeError, "stop"):
+                        operation(self.root, flow.Timings(), _admitted=admitted)
+                    if admitted is None:
+                        status.assert_called_once_with(host, self.state)
+                        fresh.assert_called_once_with(host, self.state)
+                    else:
+                        status.assert_not_called()
+                        fresh.assert_called_once_with(host, self.state, _check_status=True)
 
     def test_wrong_lab_rejected_before_host_creation(self):
         flow.publish(self.root / "state.json", {"lab": "lab1"})
@@ -334,7 +380,7 @@ class InspectionTests(unittest.TestCase):
                 with ExitStack() as stack:
                     stack.enter_context(patch.object(flow, "ensure_inspection_dependency"))
                     stack.enter_context(patch.object(flow, "ensure_guest_agent"))
-                    admitted_factory = stack.enter_context(patch.object(flow, "admit_lab2_inspection_host", side_effect=factory))
+                    admitted_factory = stack.enter_context(patch.object(flow, "admit_lab2_inspection_host_with_status", side_effect=lambda *args: (factory(*args), host.status.return_value)))
                     standard_factory = stack.enter_context(patch.object(flow, "write_managed_host_plan", side_effect=lambda *args: factory(*args).plan_path))
                     constructor = stack.enter_context(patch.object(flow, "ManagedPinnedHost", return_value=host))
                     stack.enter_context(patch.object(flow, "ready_epoch", return_value="epoch"))
@@ -346,6 +392,7 @@ class InspectionTests(unittest.TestCase):
                     self.assertEqual(admitted_factory.call_count, 1 if combined else 0)
                     self.assertEqual(standard_factory.call_count, 0 if combined else 1)
                     self.assertEqual(constructor.call_count, 0 if combined else 1)
+                    self.assertEqual(host.status.call_count, 0 if combined else 1)
                     if combined:
                         self.assertIs(context["host"], host)
                         self.assertEqual(flow.load(root / "state.json")["nativeRequest"]["agentInstanceId"], "agent-instance")
@@ -367,7 +414,7 @@ class InspectionTests(unittest.TestCase):
                         return host
                     with ExitStack() as stack:
                         stack.enter_context(patch.object(flow, "ensure_inspection_dependency"))
-                        stack.enter_context(patch.object(flow, "admit_lab2_inspection_host", side_effect=factory))
+                        stack.enter_context(patch.object(flow, "admit_lab2_inspection_host_with_status", side_effect=lambda *args: (factory(*args), host.status.return_value)))
                         fresh = stack.enter_context(patch.object(flow, "fresh"))
                         native = stack.enter_context(patch.object(flow, "capture_native"))
                         queue = stack.enter_context(patch.object(flow, "AccessQueue"))
@@ -391,7 +438,7 @@ class InspectionTests(unittest.TestCase):
             flow.publish(host.plan_path, host.plan)
             return host
         with patch.object(flow, "OUTPUT_BASE", self.root), patch.object(flow, "ensure_inspection_dependency"), \
-             patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
+             patch.object(flow, "admit_lab2_inspection_host_with_status", side_effect=lambda *args: (factory(*args), host.status.return_value)), \
              patch.object(flow, "capture_native") as native, patch.object(flow, "AccessQueue") as queue, \
              redirect_stderr(StringIO()) as error:
             self.assertEqual(flow.main(["run", "--native-vitals", "--output", str(root)]), 2)
@@ -409,7 +456,7 @@ class InspectionTests(unittest.TestCase):
         def factory(*args):
             flow.publish(host.plan_path, host.plan)
             return host
-        with patch.object(flow, "ensure_inspection_dependency"), patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
+        with patch.object(flow, "ensure_inspection_dependency"), patch.object(flow, "admit_lab2_inspection_host_with_status", side_effect=lambda *args: (factory(*args), host.status.return_value)), \
              patch.object(flow, "ready_epoch", return_value="epoch"), patch.object(flow, "fresh"), \
              patch.object(flow, "check_status", return_value={"guest": {"freshIdentityVersion": 1, "nativeVitalsVersion": False}}):
             with self.assertRaisesRegex(flow.InspectionBlocked, "native-vitals-unsupported"):

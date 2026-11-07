@@ -20,7 +20,8 @@ from scripts.control_host import HostConfig, ControlHostError, validate_identity
 from scripts.vm_console_native import Blocked, validate_config, collect_identity, verify_identity
 
 
-def query(config, expected_vm, expected_game, host_config_path, *, client_factory=ControlClient):
+def query(config, expected_vm, expected_game, host_config_path, *, client_factory=ControlClient,
+          _status_supplier=None):
     """Rehash the exact expected game, bracketed by fresh VM identity checks."""
     try:
         host = HostConfig.load(Path(host_config_path))
@@ -41,7 +42,8 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
         verify_identity(config, expected_vm)
         client = client_factory(host)
         try:
-            status = client.request("/api/status", method="GET")
+            status = (client.request("/api/status", method="GET") if _status_supplier is None
+                      else _status_supplier(host))
             if (status.get("host", {}).get("connected") is not True
                     or status["host"].get("machineName") != expected["machineName"]):
                 raise Blocked("identity-host-target-mismatch")

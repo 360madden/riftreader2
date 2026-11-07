@@ -47,6 +47,49 @@ class FreshIdentityTests(unittest.TestCase):
         self.assertEqual(client.request.call_args_list[1].kwargs["payload"],
                          {**self.expected, "machineName": "RIFT-LAB-2"})
 
+    def test_supplied_status_is_freshly_called_inside_vm_bracket(self):
+        events = []
+        client = Mock()
+        client.request.side_effect = lambda *a, **kw: (events.append("hash") or self.response)
+        def supplier(host_config):
+            self.assertIs(host_config, self.host)
+            events.append("status")
+            return self.status
+        with patch.object(identity.HostConfig, "load", return_value=self.host), \
+                patch.object(identity, "verify_identity", side_effect=lambda *a: events.append("vm")):
+            identity.query(self.config, self.vm, self.game, Path("host.json"),
+                           client_factory=lambda _: client, _status_supplier=supplier)
+        self.assertEqual(events, ["vm", "status", "hash", "vm"])
+        client.request.assert_called_once()
+        self.assertEqual(client.request.call_args.args, ("/api/identity",))
+
+    def test_supplier_failure_still_checks_final_vm_and_never_hashes(self):
+        client, verifier = Mock(), Mock()
+        with patch.object(identity.HostConfig, "load", return_value=self.host), \
+                patch.object(identity, "verify_identity", verifier), \
+                self.assertRaisesRegex(identity.Blocked, "status-refused"):
+            identity.query(self.config, self.vm, self.game, Path("host.json"),
+                           client_factory=lambda _: client,
+                           _status_supplier=Mock(side_effect=identity.Blocked("status-refused")))
+        self.assertEqual(verifier.call_count, 2)
+        client.request.assert_not_called()
+
+    def test_supplied_status_still_enforces_identity_predicates(self):
+        for change in ("vm", "connected", "capability"):
+            status = copy.deepcopy(self.status)
+            if change == "vm":
+                status["host"]["vmIdentity"] = {}
+            elif change == "connected":
+                status["host"]["connected"] = False
+            else:
+                status["guest"]["freshIdentityVersion"] = True
+            client = Mock()
+            with self.subTest(change=change), patch.object(identity.HostConfig, "load", return_value=self.host), \
+                    patch.object(identity, "verify_identity"), self.assertRaises(identity.Blocked):
+                identity.query(self.config, self.vm, self.game, Path("host.json"),
+                               client_factory=lambda _: client, _status_supplier=lambda _: status)
+            client.request.assert_not_called()
+
     def test_wrong_exact_identity_is_rejected(self):
         for field, bad in (("machineName", "RIFT-LAB-1"), ("processId", 13),
                            ("processStartUtcTicks", 1235), ("executableSha256", "cd" * 32)):

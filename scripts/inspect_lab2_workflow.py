@@ -26,7 +26,7 @@ from scripts.ensure_controller import CONFIGS, QUEUE, _probe
 from scripts.ensure_guest_agent import ensure as ensure_guest_agent, _check_waiting, _idle
 from scripts.fresh_game_identity import query
 from scripts.vm_console_native import Blocked, validate_config
-from scripts.run_movement_session import ManagedPinnedHost, write_managed_host_plan, admit_lab2_inspection_host, load, sanitized
+from scripts.run_movement_session import ManagedPinnedHost, write_managed_host_plan, admit_lab2_inspection_host_with_status, load, sanitized
 from scripts.control_host import HostConfig
 from scripts.nav_access_queue import AccessQueue
 from scripts.capture_lab_hp_screenshot import ready_epoch, idle_queue, await_release
@@ -118,10 +118,16 @@ def expected_game(state):
             ("processId", "processStartUtcTicks", "executableSha256")}}
 
 
-def fresh(host, state):
+def fresh(host, state, *, _check_status=False):
     config = host.config
     native = validate_config(config.vmx, config.vnc_port, config.vmrun,
                              config.output_directory, require_files=True)
+    if _check_status:
+        def supplied_status(identity_config):
+            require(identity_config == host.config, "identity host configuration changed")
+            return check_status(host, state)
+        return query(native, state["vmIdentity"], expected_game(state), CONFIGS["lab2"],
+                     _status_supplier=supplied_status)
     return query(native, state["vmIdentity"], expected_game(state), CONFIGS["lab2"])
 
 
@@ -209,13 +215,13 @@ def preflight(root, timing, *, _admitted=None, _native=None):
         if _admitted is None:
             path = write_managed_host_plan("lab2", root)
         else:
-            host = admit_lab2_inspection_host(root)
+            host, status = admit_lab2_inspection_host_with_status(root)
             _admitted.update(host=host, root=root)
             path = host.plan_path
     with timing.stage("managed-host-admission"):
         if _admitted is None:
             host = ManagedPinnedHost(path)
-        status = host.status(require_armed=False)
+            status = host.status(require_armed=False)
         if _native is not None and _native.get("mode") == "persistent":
             require_persistent_capabilities(status)
     state = {"version": 1, "lab": "lab2", "resource": RESOURCE, "output": str(root),
@@ -313,8 +319,11 @@ def validate_native(summary, state, before, after):
 def capture_native(root, timing, *, _admitted):
     with timing.stage("native-vitals-candidate"):
         state, host = reopen(root, _admitted=_admitted)
-        check_status(host, state)
-        fresh(host, state)
+        if _admitted is None:
+            check_status(host, state)
+            fresh(host, state)
+        else:
+            fresh(host, state, _check_status=True)
         request = state["nativeRequest"]
         before = utc()
         if request.get("mode") == "persistent":
@@ -370,8 +379,11 @@ def capture(root, timing, *, _admitted=None):
             and not (root / "capture-attempt.json").exists(), "capture phase already attempted")
     with timing.stage("capture-admission"):
         state, host = reopen(root, _admitted=_admitted)
-        check_status(host, state)
-        fresh(host, state)
+        if _admitted is None:
+            check_status(host, state)
+            fresh(host, state)
+        else:
+            fresh(host, state, _check_status=True)
     publish(root / "capture-attempt.json", {"startedAtUtc": utc().isoformat()})
     queue = AccessQueue(QUEUE)
     request_id = "lab2-inspect-" + uuid.uuid4().hex

@@ -384,7 +384,7 @@ def admit_managed_host(lab: str, output: Path, *, require_foreground=True) -> Ma
     return admitted
 
 
-def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
+def admit_lab2_inspection_host_with_status(output: Path):
     from scripts.managed_controller_receipt import prepared_lab2_inspection_pair
     # Both queries remain at their original resolver boundaries. Only the
     # interpreter is shared; each callback triggers a fresh complete manager proof.
@@ -393,7 +393,13 @@ def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
             _discover_managed_host_plan("lab2", output, inspect_lab2=True,
                                         _inspection_task_verifier=verify_first),
             _inspection_task_verifier=verify_second)
-        admitted.status(require_armed=False, require_foreground=True)
+        status = admitted.status(require_armed=False, require_foreground=True)
+    return admitted, status
+
+
+def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
+    """Compatibility wrapper returning the validated host only."""
+    admitted, _ = admit_lab2_inspection_host_with_status(output)
     return admitted
 
 

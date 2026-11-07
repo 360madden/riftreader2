@@ -389,6 +389,28 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.prepared_verifier.assert_not_called()
         self.assertEqual(self.proof_events, ["first-proof", "first-proof"])
 
+    def test_inspection_compatibility_wrapper_returns_only_host(self):
+        host, status = object(), {"guest": {}}
+        with patch.object(runner, "admit_lab2_inspection_host_with_status", return_value=(host, status)) as factory:
+            self.assertIs(runner.admit_lab2_inspection_host(self.output), host)
+        factory.assert_called_once_with(self.output)
+
+    def test_inspection_pair_returns_fresh_status_without_host_cache(self):
+        from scripts import managed_controller_receipt as managed
+        host, status = MagicMock(), {"guest": {"target": {}}}
+        host.status.return_value = status
+        @contextmanager
+        def pair():
+            yield object(), object()
+        with patch.object(managed, "prepared_lab2_inspection_pair", side_effect=pair), \
+                patch.object(runner, "_discover_managed_host_plan", return_value=self.output), \
+                patch.object(runner, "Lab2InspectionHost", return_value=host):
+            result, observed = runner.admit_lab2_inspection_host_with_status(self.output)
+        self.assertIs(result, host)
+        self.assertIs(observed, status)
+        host.status.assert_called_once_with(require_armed=False, require_foreground=True)
+        self.assertNotIn("last_status", host.__dict__)
+
     def test_inspection_checks_inventory_at_both_boundaries_and_epoch_around_status(self):
         host = self.generate(inspection=True)
         self.assertIsInstance(host, runner.Lab2InspectionHost)
