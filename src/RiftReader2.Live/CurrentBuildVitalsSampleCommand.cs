@@ -5,6 +5,25 @@ using RiftReader2.Infrastructure;
 
 namespace RiftReader2.Live;
 
+internal sealed record CurrentBuildVitalsReport(CurrentBuildVitalsObservation Observation)
+{
+    public int SchemaVersion => 1;
+    public string ContractVersion => "native-current-vitals-candidate-sample/2";
+    public string Status => "complete";
+    public string SourceBuildSha256 => CurrentBuildPositionSampleCommand.GameSha256;
+    public string Source => Observation.Source;
+    public string Qualification => Observation.Qualification;
+    public string[] Limitations =>
+    [
+        "The executable and process epoch are pinned; loaded module bytes are not independently hashed.",
+        "Player/component ownership, type fingerprints and stable record inputs are bracketed; the process-sourced game clock may advance, reads are sequential, and ABA cannot be excluded.",
+        "Health, Mana and Energy calculations are candidates; inspect each field status and unavailableReason before using its values.",
+        "Mana is emitted only for type-fingerprinted kind three; Energy is emitted only for type-fingerprinted kind four.",
+        "Independent same-player changed-state correspondence, passive freshness, continuity and full-game restart qualification remain unverified.",
+        "No native game getter is invoked; no memory, revision, refcount or game state is written."
+    ];
+}
+
 /// <summary>One exact-build passive vitals candidate capture; no game actions.</summary>
 internal static class CurrentBuildVitalsSampleCommand
 {
@@ -33,36 +52,13 @@ internal static class CurrentBuildVitalsSampleCommand
         CancellationToken cancellationToken)
     {
         RequireNewOutput(path);
-        cancellationToken.ThrowIfCancellationRequested();
-        var observation = read(session);
-        var invalidated = await session.RevalidateAsync(cancellationToken);
-        if (invalidated is not null)
-            throw new InvalidDataException("Native vitals candidate process identity was invalidated; no report was published.");
-        cancellationToken.ThrowIfCancellationRequested();
-        var report = new
-        {
-            schemaVersion = 1,
-            contractVersion = "native-current-vitals-candidate-sample/2",
-            status = "complete",
-            sourceBuildSha256 = CurrentBuildPositionSampleCommand.GameSha256,
-            observation.Source,
-            observation.Qualification,
-            observation,
-            limitations = new[]
-            {
-                "The executable and process epoch are pinned; loaded module bytes are not independently hashed.",
-                "Player/component ownership, type fingerprints and stable record inputs are bracketed; the process-sourced game clock may advance, reads are sequential, and ABA cannot be excluded.",
-                "Health, Mana and Energy calculations are candidates; inspect each field status and unavailableReason before using its values.",
-                "Mana is emitted only for type-fingerprinted kind three; Energy is emitted only for type-fingerprinted kind four.",
-                "Independent same-player changed-state correspondence, passive freshness, continuity and full-game restart qualification remain unverified.",
-                "No native game getter is invoked; no memory, revision, refcount or game state is written."
-            }
-        };
+        var report = await CaptureAsync(session, read, cancellationToken);
+        var observation = report.Observation;
         await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
             recordType = "native-current-vitals-candidate-summary/2",
-            report.status,
+            status = report.Status,
             report.Qualification,
             healthStatus = observation.Health.Status,
             manaStatus = observation.Mana.Status,
@@ -70,6 +66,21 @@ internal static class CurrentBuildVitalsSampleCommand
             output = Path.GetFullPath(path)
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
+    }
+
+    // Shared no-file acquisition boundary for the CLI and authenticated channel.
+    internal static async Task<CurrentBuildVitalsReport> CaptureAsync(
+        IReadOnlyNativeMemorySession session,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildVitalsObservation> read,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var observation = read(session);
+        var invalidated = await session.RevalidateAsync(cancellationToken);
+        if (invalidated is not null)
+            throw new InvalidDataException("Native vitals candidate process identity was invalidated; no report was published.");
+        cancellationToken.ThrowIfCancellationRequested();
+        return new CurrentBuildVitalsReport(observation);
     }
 
     private static void RequireNewOutput(string path)

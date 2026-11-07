@@ -5,8 +5,11 @@ import copy
 import base64
 import hashlib
 import json
+import os
 from pathlib import Path
 import tempfile
+import shutil
+import subprocess
 import unittest
 from unittest import mock
 
@@ -15,6 +18,11 @@ from tests.test_sample_current_native_xyz import FakeLab
 from scripts.vmware_guest_session import MAX_ENCODED_POWERSHELL_CHARS
 
 PID, TICKS = 11572, 639293038821710082
+GUEST_READER = r"C:\RIFT_TRANSFER\RiftReader2Control\managed-fleet-20261029\releases\agent-379637a8d2c0-zip\RiftReader2.Live.exe"
+EXPECTED_GAME = {"processId": PID, "processStartUtcTicks": TICKS, "executableSha256": module.GAME_SHA}
+EXPECTED_VM = {"vmx": r"c:\vms\lab2.vmx", "port": 5962, "logEpoch": "2026-11-06T12:00:00Z",
+               "listenerPid": 20020, "pid": 20020, "image": r"C:\VMware\vmware-vmx.exe",
+               "startTicks": 639293030000000000}
 
 
 def report():
@@ -34,7 +42,7 @@ def report():
 
 
 class FakeGuest:
-    def __init__(self, result=None, corrupt_hash=False, raw_report=None):
+    def __init__(self, result=None, corrupt_hash=False, raw_report=None, installed=False):
         self.result = result or report()
         self.raw_report = raw_report if raw_report is not None else json.dumps(self.result).encode()
         self.corrupt_hash = corrupt_hash
@@ -42,6 +50,7 @@ class FakeGuest:
         self.copies = []
         self.staged = {}
         self.launch_arguments = []
+        self.installed = installed
 
     def __enter__(self): return self
     def __exit__(self, *_): return False
@@ -57,7 +66,7 @@ class FakeGuest:
         else: raise AssertionError(action)
     def copy_from_guest(self, source, destination, **_):
         if destination.name == "identity.json":
-            destination.write_text(json.dumps({"pid": PID, "ticks": TICKS, "sha": module.GAME_SHA, "installed": False}))
+            destination.write_text(json.dumps({"pid": PID, "ticks": TICKS, "sha": module.GAME_SHA, "installed": self.installed}))
         elif destination.name == "samples.json":
             destination.write_bytes(self.raw_report)
         elif destination.name == "samples.sha256":
@@ -158,14 +167,215 @@ class VitalsHostTests(unittest.TestCase):
             r = report(); r["observation"][key] = value
             with self.subTest(key=key), self.assertRaises(ValueError): self.validate(r)
 
-    def run_fake(self, root, guest, guest_root=None):
+    def run_fake(self, root, guest, guest_root=None, *, lab_name="lab2", **kwargs):
         exe = root / "RiftReader2.Live.exe"; exe.write_bytes(b"fake-published-executable")
         sha = module.digest(exe)
         lab = FakeLab(guest)
         if guest_root is not None:
             lab._configuration = lambda _: (None, None, {"vmrun": "mock"}, {"guestRoot": guest_root})
         with mock.patch.object(module, "EVIDENCE", root / "runs"), mock.patch.object(module, "LabCodex", return_value=lab):
-            return module.run("lab2", exe, sha), sha
+            return module.run(lab_name, exe, sha, **kwargs), sha
+
+    def test_explicit_reader_reuse_skips_only_binary_copy(self):
+        with tempfile.TemporaryDirectory() as folder:
+            guest = FakeGuest(installed=True)
+            expected = {"lab": "lab2", "processId": PID, "processStartUtcTicks": TICKS,
+                        "executableSha256": module.GAME_SHA.lower()}
+            result, sha = self.run_fake(Path(folder), guest, guest_reader=GUEST_READER, expected_game=expected)
+            self.assertTrue(result["guestReaderReused"])
+            self.assertEqual(GUEST_READER, result["guestReaderPath"])
+            self.assertEqual(2, len(guest.copies))
+            self.assertTrue(all(Path(item[0]).suffix == ".ps1" for item in guest.copies))
+            self.assertEqual(2, len(guest.scripts))
+            for script in guest.scripts:
+                self.assertIn(GUEST_READER, script)
+                self.assertIn(sha, script)
+                self.assertIn("ReparsePoint", script)
+            self.assertIn("Get-FileHash -LiteralPath $exe -Algorithm SHA256", guest.scripts[0])
+            self.assertIn("$hasher.ComputeHash($readerGuard)", guest.scripts[1])
+            self.assertIn("[IO.FileShare]::Read", guest.scripts[1])
+            self.assertTrue(guest.scripts[1].endswith("}finally{$readerGuard.Dispose()}"))
+            self.assertLess(guest.scripts[1].index("guest-reader-sha-mismatch"),
+                            guest.scripts[1].index("& $exe sample-current-vitals"))
+            self.assertEqual(50, result["metrics"]["readMilliseconds"])
+            self.assertIn("guestLaunch", result["phaseWallSeconds"])
+            self.assertTrue(all(value >= 0 for value in result["phaseWallSeconds"].values()))
+
+    def test_expected_epoch_mismatch_stops_before_binary_copy_or_native_launch(self):
+        for field, bad in (("processId", PID + 1), ("processStartUtcTicks", TICKS + 1)):
+            expected = {"processId": PID, "processStartUtcTicks": TICKS, "executableSha256": module.GAME_SHA}
+            expected[field] = bad
+            with tempfile.TemporaryDirectory() as folder:
+                guest = FakeGuest(installed=True)
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, "expected-game-epoch-mismatch"):
+                    self.run_fake(Path(folder), guest, guest_reader=GUEST_READER, expected_game=expected)
+                self.assertEqual(1, len(guest.copies))
+                self.assertEqual(1, len(guest.scripts))
+                self.assertNotIn("sample-current-vitals", guest.scripts[0])
+
+    def test_expected_vm_mismatch_refuses_session_and_guest_staging(self):
+        with tempfile.TemporaryDirectory() as folder:
+            guest = FakeGuest(installed=True)
+            wrong = {**EXPECTED_VM, "startTicks": EXPECTED_VM["startTicks"] + 1}
+            with mock.patch.object(FakeLab, "collect_identity", return_value=wrong), \
+                    mock.patch.object(FakeLab, "_session") as session, \
+                    self.assertRaisesRegex(ValueError, "expected-vm-epoch-mismatch"):
+                self.run_fake(Path(folder), guest, guest_reader=GUEST_READER,
+                              expected_game=EXPECTED_GAME, expected_vm=EXPECTED_VM)
+            session.assert_not_called()
+            self.assertEqual([], guest.copies)
+            self.assertEqual([], guest.scripts)
+            self.assertEqual([], list(Path(folder).rglob("summary.json")))
+
+    def test_exact_expected_vm_is_bound_to_successful_summary(self):
+        with tempfile.TemporaryDirectory() as folder:
+            guest = FakeGuest(installed=True)
+            with mock.patch.object(FakeLab, "collect_identity", return_value=dict(EXPECTED_VM)):
+                result, _ = self.run_fake(Path(folder), guest, guest_reader=GUEST_READER,
+                                          expected_game=EXPECTED_GAME, expected_vm=EXPECTED_VM)
+            self.assertEqual(EXPECTED_VM, result["vmIdentity"])
+            self.assertEqual(2, len(guest.scripts))
+
+    def test_malformed_expected_vm_is_rejected_before_lab_access(self):
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(module, "LabCodex") as lab:
+            exe = Path(folder) / "RiftReader2.Live.exe"
+            exe.write_bytes(b"reader")
+            for vm in ({}, {**EXPECTED_VM, "extra": 1}, {**EXPECTED_VM, "pid": True},
+                       {**EXPECTED_VM, "vmx": None}, {**EXPECTED_VM, "port": 65536},
+                       {**EXPECTED_VM, "startTicks": 0}):
+                with self.subTest(vm=vm), self.assertRaisesRegex(ValueError, "expected-vm-identity-invalid"):
+                    module.run("lab2", exe, module.digest(exe), expected_vm=vm)
+            lab.assert_not_called()
+
+    def test_reader_reuse_missing_or_changed_reader_has_no_copy_fallback(self):
+        class RejectedReaderGuest(FakeGuest):
+            def run(self, action, *args, **kwargs):
+                super().run(action, *args, **kwargs)
+                if action == "runProgramInGuest":
+                    raise module.SessionError("guest-reader-sha-mismatch")
+        with tempfile.TemporaryDirectory() as folder:
+            guest = RejectedReaderGuest(installed=True)
+            with self.assertRaisesRegex(module.SessionError, "guest-reader-sha-mismatch"):
+                self.run_fake(Path(folder), guest, guest_reader=GUEST_READER, expected_game=EXPECTED_GAME)
+            self.assertEqual(1, len(guest.copies))
+            self.assertEqual(1, len(guest.scripts))
+            self.assertNotIn("sample-current-vitals", guest.scripts[0])
+
+    def test_reuse_still_rejects_changed_report_epoch(self):
+        wrong = report()
+        wrong["observation"]["identity"]["processStartUtcTicks"] += 1
+        with tempfile.TemporaryDirectory() as folder, self.assertRaisesRegex(ValueError, "epoch"):
+            self.run_fake(Path(folder), FakeGuest(installed=True, result=wrong), guest_reader=GUEST_READER,
+                          expected_game=EXPECTED_GAME)
+
+    def test_lab1_default_staging_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as folder:
+            guest = FakeGuest()
+            result, _ = self.run_fake(Path(folder), guest, lab_name="lab1")
+            self.assertFalse(result["guestReaderReused"])
+            self.assertEqual("lab1", result["lab"])
+            self.assertEqual(3, len(guest.copies))
+
+    def test_invalid_reuse_path_or_pin_refused_before_lab_access(self):
+        invalid_paths = [GUEST_READER.replace("releases\\agent-379637a8d2c0-zip", "releases\\.."),
+                         GUEST_READER.replace("RiftReader2.Live.exe", "other.exe"),
+                         GUEST_READER + ":stream", GUEST_READER.replace("C:\\", "\\\\server\\"),
+                         GUEST_READER.replace("\\", "/"), GUEST_READER.replace("releases\\", "releases\\nested\\")]
+        invalid_pins = [{}, {"processId": True, "processStartUtcTicks": TICKS, "executableSha256": module.GAME_SHA},
+                        {"processId": PID, "processStartUtcTicks": TICKS, "executableSha256": "0" * 64},
+                        {"processId": PID, "processStartUtcTicks": TICKS, "executableSha256": module.GAME_SHA, "lab": "lab1"}]
+        with tempfile.TemporaryDirectory() as folder, mock.patch.object(module, "LabCodex") as lab:
+            exe = Path(folder) / "RiftReader2.Live.exe"
+            exe.write_bytes(b"fake")
+            sha = module.digest(exe)
+            for path in invalid_paths:
+                with self.subTest(path=path), self.assertRaisesRegex(ValueError, "guest-reader-path-not-allowed"):
+                    module.run("lab2", exe, sha, guest_reader=path)
+            with self.assertRaisesRegex(ValueError, "guest-reader-path-not-allowed"):
+                module.run("lab1", exe, sha, guest_reader=GUEST_READER)
+            with self.assertRaisesRegex(ValueError, "guest-reader-reuse-requires-expected-game"):
+                module.run("lab2", exe, sha, guest_reader=GUEST_READER)
+            for pin in invalid_pins:
+                with self.subTest(pin=pin), self.assertRaises(ValueError):
+                    module.run("lab2", exe, sha, expected_game=pin)
+            lab.assert_not_called()
+
+    def test_reader_guard_real_powershell_hash_and_missing_file_fail_before_next_command(self):
+        powershell = shutil.which("powershell")
+        if powershell is None:
+            self.skipTest("Windows PowerShell is unavailable")
+        environment = {key: value for key, value in os.environ.items() if key.casefold() != "psmodulepath"}
+        with tempfile.TemporaryDirectory() as folder:
+            exe = Path(folder) / "RiftReader2.Live.exe"
+            exe.write_bytes(b"reader")
+            marker = Path(folder) / "executed.txt"
+            tail = "[IO.File]::WriteAllText(" + module.ps_literal(str(marker)) + ",'reached');"
+            valid = "$ErrorActionPreference='Stop';" + module.guest_reader_check(str(exe), module.digest(exe)) + tail
+            completed = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", valid],
+                                       capture_output=True, text=True, timeout=15, env=environment)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertTrue(marker.exists())
+            marker.unlink()
+            for path, sha in ((str(exe), "0" * 64), (str(exe.with_name("missing.exe")), module.digest(exe))):
+                script = "$ErrorActionPreference='Stop';" + module.guest_reader_check(path, sha) + tail
+                completed = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+                                           capture_output=True, text=True, timeout=15, env=environment)
+                self.assertNotEqual(0, completed.returncode)
+                self.assertFalse(marker.exists())
+            junction = Path(folder) / "release-link"
+            make_junction = ("$ErrorActionPreference='Stop';New-Item -ItemType Junction -Path "
+                             + module.ps_literal(str(junction)) + " -Target "
+                             + module.ps_literal(folder) + " | Out-Null")
+            created = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", make_junction],
+                                     capture_output=True, text=True, timeout=15, env=environment)
+            self.assertEqual(0, created.returncode, created.stderr)
+            try:
+                script = ("$ErrorActionPreference='Stop';"
+                          + module.guest_reader_check(str(junction / exe.name), module.digest(exe)) + tail)
+                completed = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+                                           capture_output=True, text=True, timeout=15, env=environment)
+                self.assertNotEqual(0, completed.returncode)
+                self.assertIn("guest-reader-reparse-point", completed.stderr)
+                self.assertFalse(marker.exists())
+            finally:
+                # Remove only the junction itself; its target is the test temp directory.
+                junction.rmdir()
+
+    def test_reader_handle_denies_write_and_delete_until_release(self):
+        powershell = shutil.which("powershell")
+        if powershell is None:
+            self.skipTest("Windows PowerShell is unavailable")
+        environment = {key: value for key, value in os.environ.items() if key.casefold() != "psmodulepath"}
+        with tempfile.TemporaryDirectory() as folder:
+            exe = Path(folder) / "RiftReader2.Live.exe"
+            exe.write_bytes(b"reader")
+            script = ("$ErrorActionPreference='Stop';"
+                      + module.guest_reader_check(str(exe), module.digest(exe), hold_open=True)
+                      + "try{$writeDenied=$false;$deleteDenied=$false;"
+                      "try{$w=[IO.File]::Open($exe,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::Read);"
+                      "$w.Dispose()}catch{$writeDenied=$true};"
+                      "try{[IO.File]::Delete($exe)}catch{$deleteDenied=$true};"
+                      "if(!$writeDenied -or !$deleteDenied){throw 'reader-guard-did-not-deny-mutation'}"
+                      "}finally{$readerGuard.Dispose()};"
+                      "[IO.File]::WriteAllText($exe,'after-release');[IO.File]::Delete($exe)")
+            completed = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+                                       capture_output=True, text=True, timeout=15, env=environment)
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertFalse(exe.exists())
+
+    def test_read_share_guard_permits_benign_native_image_launch(self):
+        powershell = shutil.which("powershell")
+        exe = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "whoami.exe"
+        if powershell is None or not exe.is_file():
+            self.skipTest("Windows native launch fixture is unavailable")
+        environment = {key: value for key, value in os.environ.items() if key.casefold() != "psmodulepath"}
+        script = ("$ErrorActionPreference='Stop';"
+                  + module.guest_reader_check(str(exe), module.digest(exe), hold_open=True)
+                  + "try{& $exe | Out-Null;if($LASTEXITCODE -ne 0){throw 'fixture-launch-failed'}}"
+                    "finally{$readerGuard.Dispose()}")
+        completed = subprocess.run([powershell, "-NoProfile", "-NonInteractive", "-Command", script],
+                                   capture_output=True, text=True, timeout=15, env=environment)
+        self.assertEqual(0, completed.returncode, completed.stderr)
 
     def test_stages_unique_hash_pinned_reader_and_verifies_report(self):
         with tempfile.TemporaryDirectory() as folder:

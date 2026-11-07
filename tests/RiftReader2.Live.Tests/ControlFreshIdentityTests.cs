@@ -16,8 +16,9 @@ public sealed class ControlFreshIdentityTests
     private static ControlIdentityRequest Expected => new(
         Target.MachineName, Target.ProcessId, Target.ProcessStartUtcTicks, Target.ExecutableSha256);
 
-    [Fact]
-    public async Task BusyIdentityCommandRejectsBeforeParsingOrFreshHashWork()
+    [Theory]
+    [InlineData("identity")]
+    public async Task BusyReadCommandRejectsBeforeParsingOrFreshHashWork(string operation)
     {
         var directory = Path.Combine(Path.GetTempPath(), "rr2-identity-test-" + Guid.NewGuid().ToString("N"));
         try
@@ -35,7 +36,7 @@ public sealed class ControlFreshIdentityTests
             using var peer = await listener.AcceptTcpClientAsync();
             using var malformedIdentity = JsonDocument.Parse("{}");
             var command = new ControlCommand("command", Guid.NewGuid().ToString("N"), 1,
-                "identity", malformedIdentity.RootElement);
+                operation, malformedIdentity.RootElement);
             var handler = typeof(ControlAgent).GetMethod("HandleCommandAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic)!;
             var handling = (Task)handler.Invoke(agent, [peer.GetStream(), command, CancellationToken.None])!;

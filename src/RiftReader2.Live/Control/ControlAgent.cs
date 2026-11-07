@@ -76,11 +76,21 @@ public sealed class ControlAgent
     private long armedAt;
     private CancellationTokenSource? actionCancellation;
     private Task? activeAction;
+    private Task? activeNativeRead;
+    private CancellationTokenSource? nativeReadCancellation;
+    private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+        Task<ControlNativeVitalsResponse>> nativeVitalsCapture;
     private string PendingPath => Path.Combine(configuration.OutputDirectory, "pending.json");
 
     public ControlAgent(ControlAgentConfiguration configuration)
+        : this(configuration, ControlNativeVitals.CaptureAsync) { }
+
+    internal ControlAgent(ControlAgentConfiguration configuration,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeVitalsResponse>> nativeVitalsCapture)
     {
         configuration.Validate();
+        this.nativeVitalsCapture = nativeVitalsCapture;
         this.configuration = configuration;
         Directory.CreateDirectory(configuration.OutputDirectory);
     }
@@ -176,21 +186,7 @@ public sealed class ControlAgent
                         || File.Exists(Path.Combine(configuration.OutputDirectory, command.Id + ".json")))
                         throw new InvalidDataException("Invalid or replayed command.");
                     sequence = command.Sequence;
-                    if (command.Operation == "action")
-                    {
-                        lock (stateLock)
-                        {
-                            if (activeAction is { IsCompleted: false })
-                                throw new InvalidDataException("Concurrent action rejected; connection disarmed.");
-                            actionCancellation?.Dispose();
-                            actionCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                            activeAction = HandleActionAsync(stream, command, actionCancellation.Token);
-                        }
-                    }
-                    else
-                    {
-                        await HandleCommandAsync(stream, command, cancellationToken);
-                    }
+                    await DispatchCommandAsync(stream, command, cancellationToken);
                 }
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
@@ -199,8 +195,15 @@ public sealed class ControlAgent
             }
             finally
             {
+                nativeReadCancellation?.Cancel();
                 Disarm();
                 captureId = null;
+                var pendingRead = activeNativeRead;
+                if (pendingRead is not null)
+                {
+                    try { await pendingRead; }
+                    catch (Exception) { /* Session disposal must finish before reconnect. */ }
+                }
                 var pendingTask = activeAction;
                 if (pendingTask is not null)
                 {
@@ -211,6 +214,70 @@ public sealed class ControlAgent
             }
             await Task.Delay(1000, cancellationToken);
         }
+    }
+
+    internal async Task DispatchCommandAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
+    {
+        Task? refusal = null;
+        if (command.Operation == "native-vitals")
+        {
+            lock (stateLock)
+            {
+                if (activeNativeRead is { IsCompleted: false })
+                    refusal = ReplyAsync(stream, command,
+                        new { error = "Native read still active.", errorType = "InvalidOperationException" }, token);
+                else
+                {
+                    nativeReadCancellation?.Dispose();
+                    nativeReadCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    nativeReadCancellation.CancelAfter(TimeSpan.FromSeconds(5));
+                    activeNativeRead = HandleNativeReadAsync(stream, command, nativeReadCancellation.Token);
+                }
+            }
+        }
+        else if (command.Operation == "action")
+        {
+            lock (stateLock)
+            {
+                if (activeNativeRead is { IsCompleted: false })
+                    refusal = ReplyAsync(stream, command,
+                        new { error = "Native read still active.", errorType = "InvalidOperationException" }, token);
+                else
+                {
+                    if (activeAction is { IsCompleted: false })
+                        throw new InvalidDataException("Concurrent action rejected; connection disarmed.");
+                    actionCancellation?.Dispose();
+                    actionCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    activeAction = HandleActionAsync(stream, command, actionCancellation.Token);
+                }
+            }
+        }
+        else
+            await HandleCommandAsync(stream, command, token);
+        if (refusal is not null)
+            await refusal;
+    }
+
+    private async Task HandleNativeReadAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
+    {
+        await Task.Yield();
+        object response;
+        try
+        {
+            if (activeAction is { IsCompleted: false } || IsArmed() || File.Exists(PendingPath))
+                throw new InvalidOperationException("Native reads require disarmed, idle control with no pending recovery.");
+            var identity = command.Payload.Deserialize<ControlIdentityRequest>(JsonFormat.Options)
+                ?? throw new InvalidDataException("Missing expected identity.");
+            token.ThrowIfCancellationRequested();
+            var result = await nativeVitalsCapture(configuration, identity, token);
+            token.ThrowIfCancellationRequested();
+            response = result with { InstanceId = instanceId };
+        }
+        catch (Exception exception)
+        {
+            response = new { error = exception.Message, errorType = exception.GetType().Name };
+        }
+        await ReplyAsync(stream, command, response, CancellationToken.None);
     }
 
     private async Task HandleCommandAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
@@ -226,11 +293,13 @@ public sealed class ControlAgent
                         instanceId,
                         targetedClickVersion = 1,
                         freshIdentityVersion = 1,
+                        nativeVitalsVersion = 1,
                         gracefulShutdownVersion = 1,
                         target = Inspect(),
                         armed = IsArmed(),
                         expiresInSeconds = IsArmed() ? Math.Max(0, 15 - Stopwatch.GetElapsedTime(armedAt).TotalSeconds) : 0,
-                        busy = activeAction is { IsCompleted: false },
+                        busy = activeAction is { IsCompleted: false } || activeNativeRead is { IsCompleted: false },
+                        nativeReadBusy = activeNativeRead is { IsCompleted: false },
                         recoveryRequired = File.Exists(PendingPath),
                         desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
                         desktopInputEvidence = "Sampled Windows key/button state, not RIFT consumption or ownership.",
@@ -259,6 +328,7 @@ public sealed class ControlAgent
                     response = new { released = true, armed = IsArmed(), recoveryRequired = File.Exists(PendingPath) };
                     break;
                 case "recover":
+                    RequireNoNativeRead();
                     BeginRecovery();
                     if (activeAction is not null)
                         await activeAction;
@@ -438,6 +508,12 @@ public sealed class ControlAgent
     {
         if (activeAction is { IsCompleted: false })
             throw new InvalidOperationException("Action still active.");
+        RequireNoNativeRead();
+    }
+    private void RequireNoNativeRead()
+    {
+        if (activeNativeRead is { IsCompleted: false })
+            throw new InvalidOperationException("Native read still active.");
     }
     private void Disarm()
     {
@@ -449,6 +525,7 @@ public sealed class ControlAgent
     private void BeginCapture() => StopSession();
     private void StopSession()
     {
+        nativeReadCancellation?.Cancel();
         Disarm();
         captureId = null;
         reviewedTarget = null;
