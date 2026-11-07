@@ -1,6 +1,6 @@
 # Lab 1 mouse setup continuation — November 7, 2026
 
-Checkpoint 18:53 EST. Authoritative checkout C:/work/riftreader2,
+Checkpoint 18:55 EST. Authoritative checkout C:/work/riftreader2,
 branch codex/modular-foundation. Read AGENTS.md. The earlier nine-hour discovery
 goal ended at 17:26:48; this is the subsequently requested Lab 1 mouse setup,
 not a resumed timed goal. Practical results; focused checks and no framework.
@@ -98,3 +98,7 @@ similar but different. RRE's repository is a valuable framework information
 source: reuse its findings/readers/artifacts/techniques with provenance, preserve
 its owners and coordinate shared lab access. Imported historical/static evidence
 does not silently become qualified current RR2 live data. AGENTS.md records this.
+
+Verified mouse milestone committed b78e17f. Accepted adapter SHA256
+9B38ED5C04C89CC6B4DA79F632F19650C1D55834862C3CFF70A1F20FB8D30804.
+All operations are terminal; no further input/window is requested.

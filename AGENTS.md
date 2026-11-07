@@ -2,10 +2,33 @@
 
 ## Purpose and current scope
 
-RiftReader2 gathers reliable RIFT information for other programs. Optimize for
-discovery speed, efficiency, durable knowledge, restart recovery, update recovery,
+RiftReader2 is a practical discovery and retrieval framework for wide-ranging
+RIFT data, serving other programs. Its purpose includes discovering information
+and reliably retrieving it again on demand. Optimize for discovery speed,
+usable retrieval, efficiency, durable knowledge, restart recovery, update recovery,
 and less repetitive AI work. Movement and turning support controlled tests.
 Dedicated navigation, combat, and player automation belong to a future program.
+
+**Discovery framework — Joey's clarification, 2026-11-07:** A useful finding
+should feed a practical repeatable retrieval capability: resolve the current
+source/owner, acquire the requested data under fresh identity and applicable
+freshness checks, and return structured values or an honest unavailable reason.
+Reuse existing readers, commands and contracts; do not build a new generalized
+framework before useful retrieval works. Reports distinguish what was discovered,
+what can be retrieved on demand, and what remains unqualified (including changed
+state, freshness and restart recovery). Discovery-first means prioritizing useful
+findings AND working retrieval paths; refinement remains optional, later or never.
+
+**Parallel RRE effort — Joey's clarification, 2026-11-07:** RR2 and RRE are
+parallel, complementary efforts: similar subject matter, distinct approaches
+and owners. The RRE repository is a valuable information source for this
+framework, including findings, readers, artifacts and retrieval techniques.
+Consult and reuse useful peer results rather than repeating completed discovery.
+Preserve source/build/capture provenance and distinguish imported findings,
+historical observations and freshly acquired data. RRE evidence can inform
+discovery and retrieval immediately; it does not by itself qualify a current
+RR2 live field. Preserve separate repository ownership and serialize any shared
+lab access. Do not assume either project replaces the other or must duplicate it.
 
 **Practical-results policy — user decision, 2026-10-25:** This is a personal
 tool, not an enterprise compliance program. Prefer the shortest reliable route

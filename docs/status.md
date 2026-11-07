@@ -1,5 +1,18 @@
 # Current status
 
+**18:53 EST — LAB1 MOUSE LIVE ACCEPTED; DISCOVERY AND RETRIEVAL FRAMEWORK:**
+[Current mouse/setup continuation](handoff-2026-11-07-lab1-mouse.md).
+Host vncdotool capture, reviewed pointer move, and reviewed Browse/Close clicks
+succeeded;11 focused tests passed. Fresh same-SID canonical interactive login
+resolved VMware's username-spelling mismatch without credential changes.
+Button release/disconnect/mutex cleanup verified; controller absent and queue
+blocked/unheld/no pending Lab1 request. No reload/cast/bind/deployment.
+Joey clarified the product purpose: practical discovery PLUS reliable on-demand
+retrieval of wide-ranging data. AGENTS.md now distinguishes findings, working
+retrieval capabilities and outstanding qualification; refinement remains optional.
+RR2 and RRE are parallel complementary efforts; the RRE repo is a valuable
+framework information source, with separate ownership and explicit provenance.
+
 **17:23 Eastern - CURRENT CONTINUATION AND VERIFIED CLEAN CLOSE:**
 [Short native-discovery handoff](handoff-2026-11-07-1700-native-discovery.md).
 All root lab jobs terminal. RRE0.2.3 CLI exit0/54records and explicit clean return
