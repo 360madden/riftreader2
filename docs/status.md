@@ -1,6 +1,8 @@
 # Current status
 
-Updated: 2026-11-06 (standalone-first runtime checkpoint; older entries are retained chronologically).
+Updated: 2026-11-06 (Codex interaction-speed handoff; standalone-first remains main priority).
+
+**CODEX TRANSFER HANDOFF — 2026-11-06:** [Interaction-speed coding assignment and continuation](handoff-2026-11-06-codex-interaction-speed.md). Transfer from clean `codex/modular-foundation` at `4c88a23` into a Codex session attached to the **same Windows `C:\work\riftreader2` checkout**. Timebox 60–90 minutes to measure and simplify the existing guarded console/window workflow using focused offline tests, without any RIFT input or replay of successful `/reloadui`/`/rr2guide bind`. Commit meaningful results and handoff, then resume the priority: standalone RR2 runtime dependency closure. This is a documentation handoff only; no live operation or performance improvement has been performed.
 
 **LATEST RESTART HANDOFF — 2026-11-06, after Lab 1 PASS:** [Read this standalone-first handoff before resuming](handoff-2026-11-06-standalone-lab1-accepted.md). Git code `f034fc4` and validation `e5b103f` were committed locally (30/30 focused tests for live XYZ's RR2R1-only route); the Workbridge tree was clean before this documentation checkpoint. Lab 1's one reviewed `/reloadui` and one `/rr2guide bind` **already succeeded**; Joey's delayed "try again" is **cancelled—do not repeat input**. RR2-owned host receivers were started/reused (Lab 1 PID 13208; Lab 2 PID 49220, historical checkpoint PIDs), but both feeds remain `not-verified` for freshness; Lab 2 and physical loaded-addon acceptance are pending. Priority: finish standalone runtime closure, **not** broad discovery. Source-hashed acceptance and precise gaps are in [Lab 1 validation](validation/self-contained-lab1-live-acceptance-2026-11-06.md).
 
