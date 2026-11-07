@@ -3,7 +3,7 @@ using RiftReader2.Application;
 using RiftReader2.Domain;
 namespace RiftReader2.Live;
 internal sealed record PlayerContextOwner(ulong Key,ulong Entity,ulong Health,Action Verify);
-internal sealed record CurrentBuildPlayerContextObservation(NativeProcessIdentity Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong UnitKey,ulong Entity,ulong HealthComponent,ulong Owner,ulong CachedContext,ulong RawFallbackKey,string TargetStatus,ulong? TargetKeyCandidate,string? TargetUnitIdCandidate,int RawLevel,string LevelStatus,byte RawCombat,string CombatStatus,bool CombatCandidate)
+internal sealed record CurrentBuildPlayerContextObservation(NativeProcessIdentity Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong UnitKey,ulong Entity,ulong HealthComponent,ulong Owner,ulong CachedContext,ulong RawFallbackKey,string TargetStatus,ulong? TargetKeyCandidate,string? TargetUnitIdCandidate,int RawLevel,string LevelStatus,byte RawCombat,string CombatStatus,bool CombatCandidate,uint? RawCalling = null,string? CallingCandidate = null)
 {
  public string Qualification=>"candidate-only; changed-state, API correspondence and restart unverified";
 }
@@ -22,7 +22,7 @@ internal static class CurrentBuildPlayerContextCandidateReader
   if(Q(system+0x360)!=lookup.Key||Q(system+0x3F8)!=entity||Q(health+0x10)!=entity)throw new InvalidDataException("Cached self identity mismatch.");
   var cachedContext=Q(system+0x400);var owner=Ptr(Q(health+0x40),0x19E);
   if(Q(owner)!=id.ModuleBaseAddress+0x2927448||Q(id.ModuleBaseAddress+0x2927488)!=id.ModuleBaseAddress+0x19D21E0||Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60)throw new InvalidDataException("Player owner type fingerprint mismatch.");
-  var fallback=Q(owner+0x20);var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];
+  var fallback=Q(owner+0x20);var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];var calling=BinaryPrimitives.ReadUInt32LittleEndian(Take(owner+0x168,4));
   byte Selector(ulong rva){var index=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+rva,4));if(index is <0 or >=0x60)throw new InvalidDataException("Invalid component selector.");return Take(entity+0x18+(ulong)index,1)[0];}
   ulong Component(byte slot){if(slot==0xFF)return 0;var table=Ptr(Q(entity+0x78));return Q(checked(table+slot*8UL));}
   string levelStatus;
@@ -54,7 +54,7 @@ internal static class CurrentBuildPlayerContextCandidateReader
   catch(InvalidDataException){if(budget>2*1024*1024)throw;targetStatus="guard-unreadable-or-invalid";target=null;}
   foreach(var a in anchors)CurrentBuildPlayerLookup.RequireSame(Take(a.Key.Item1,a.Key.Item2,false),a.Value);
   lookup.Verify();if(session.Identity!=id)throw new InvalidDataException("Player context epoch changed.");
-  return new(id,started,DateTimeOffset.UtcNow,lookup.Key,entity,health,owner,cachedContext,fallback,targetStatus,target,target.HasValue&&target.Value!=0?$"u{target.Value:X16}":null,level,levelStatus,combat,"raw-byte-candidate",combat!=0);
+  return new(id,started,DateTimeOffset.UtcNow,lookup.Key,entity,health,owner,cachedContext,fallback,targetStatus,target,target.HasValue&&target.Value!=0?$"u{target.Value:X16}":null,level,levelStatus,combat,"raw-byte-candidate",combat!=0,calling,calling switch {1=>"warrior",2=>"cleric",3=>"mage",4=>"rogue",7=>"primalist",_=>null});
  }
  static ulong U64(ReadOnlySpan<byte>b)=>BinaryPrimitives.ReadUInt64LittleEndian(b);
 }

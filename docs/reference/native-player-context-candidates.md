@@ -222,6 +222,44 @@ SHA142161FA963807DA74EC24FBF7F0F24F18E3D788DD2F7DDBDD6CFB65BFBDE864.
 Do not equate raw keys across worlds, assume API correspondence, or retry an
 unchanged null-provider state. Full-game restart/freshness remain unverified.
 
+Lab2 independent self-name read also yielded **Bolinao**, direct branch/raw
+decoration1704. Receipt
+`artifacts/native-player-name-20261107/runs/lab2/ba92ad859fe54d4caba95bdd137a9ce1/samples.json`,
+SHA1AEDC1655637E05CC69959363F2C96EE442C2DC8A4A8A976BBA897736AA728EF.
+PID9752/start639294897826627677, same game and name-reader SHA. No API/shard
+agreement is established by matching a previously reported human-readable name.
+
+## Calling source —15:00 Eastern
+
+Unit.Detail9BA078 uses5E36D0 to read DWORD[typed0294owner+168]; formatterA0E100
+maps1warrior,2cleric,3mage,4rogue,7primalist. Unknown values stay unmapped.
+The existing self-context reader now exposes that anchored field and mapping.
+Lab1 raw3 gave **mage** in9.17ms with usual self/owner/process rechecks. Receipt
+`artifacts/native-player-calling-20261107/runs/lab1/b8f791e2937c4cf2909261eb3b084a1d/samples.json`,
+SHA9140D2BCE87C54F352D64D9A90B7674554C4BFB91EE13F08B65BC971F6FF84C9.
+Reader1C57C5311062CF6F41E6492AF988BC2378A29E52BC6D84A4FA1E10600BADC654,
+117589856 bytes,`artifacts/native-player-calling-20261107/publish/`.
+Sixteen focused cases include known/unknown mapping and mutation rejection.
+Lab2 independent raw4 mapped to **rogue** in15.05ms. Receipt
+`artifacts/native-player-calling-20261107/runs/lab2/e2eec314d6f54f2ea328afe503983c31/samples.json`,
+SHA576604D27F6BA842C8375AAD4235714C35CCE2B32A53E1F89E7245F03DC41A2A.
+Lab2 target stayed guarded zero; Lab1 selected target remained separate.
+Static producer correspondence is not independent current API/UI comparison,
+changed-state freshness or restart acceptance. No resource-availability inference.
+
+## Raw race-referent seed —15:02 Eastern
+
+Lab1 independently bound H+48 yielded raw DWORD+30 key1, referent vtable
+module+0x2A75CA8 and getterRVA0x1CD58F0 (raw fingerprints, type unknown).
+Race provider336F1F8 is resident; its typed0718 cache lookup/text is the next
+bounded read. Do not interpret key1 as a race name. Receipt
+`artifacts/native-player-race-20261107/runs/lab1/9009e7b1f7fd4331b7dcfc812c4e7418/samples.json`,
+SHA5F1E8E1002AB32520179FDD88F17070EA44440A42E1C944498626DC4948B263C.
+Raw readerAFA473BD8C69B0AE6D8BE9D2BD781E375007512703ADD6DC27DFD2EBC2664B58,
+117602144 bytes,`artifacts/native-player-race-20261107/publish/`.
+Three focused cases cover self mismatch/null/mutation. No race type/text/API,
+freshness or restart qualification; no native getter/refcount/write performed.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its

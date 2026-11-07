@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **14:57 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **15:05 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -70,117 +70,54 @@ observed on generic Use, not the common spell route. Context overrides remain.
 
 ## Current active work — resume here
 
-Latest batch COMPLETE: self-name Lab1 yielded Trio/raw decoration1704; Lab2
-buff definitions resolved21 typed keys,11 named/10 unavailable. Full24-node raw
-list matched before/after. Receipts in the player-context and buff references.
-No active capture; helper sources are unfrozen. Zone raw/typed read completed
-on both labs with NULL PROVIDER, so no full zone ID/name is claimed; do not
-invoke an initializer/getter or retry unchanged state. Lab1 rawZoneKey1216123138,
-Lab2 rawZoneKey12, candidate only; different worlds/contexts are not compared.
-Receipts:`artifacts/native-zone-seed-20261107/runs/lab1/52956b1b9c3047008325a19d53ebb876/samples.json`
-SHA007294609B8EFDF7D82DEA876E89A2A0FFD6DF93498CA014BEAF125309EC2460;
-Lab2`runs/lab2/fc869831d4af40fd9c0d39795874e436/samples.json`
-SHA142161FA963807DA74EC24FBF7F0F24F18E3D788DD2F7DDBDD6CFB65BFBDE864.
-Zone readerEAE14779A5FDFA1667858083C1AEDB92541CD064D821A964DAC6FFF0705DF807
-at`artifacts/native-zone-id-20261107/publish/`,117581664 bytes. Seven focused
-synthetic cases cover null/cache/type/ID/epoch guards; no live typed zone hit.
-Static calling route reuses owner+168; race route under bounded static followup.
-Native workers have no live authority; root remains sole live operator.
+Checkpoint commit f6cea6f preserves self-name/zone readers, Lab2 buff definitions,
+and clean RRE return. The current goal remains ACTIVE until17:26:48 Eastern.
 
-Lab2 variant-aware catalog completed successfully. Receipt
-`artifacts/native-ability-catalog-20261107/runs/lab2/c89e9f59c2fc4e88a14eea18bf4e34ff/catalog-summary.json`,
-SHA256ED675A6C9A74A83302FFAE46722ECF399431FC6C1185B6B7B0FDB4FA3D3D9841.
-Lab1 result:
-`artifacts/native-ability-catalog-20261107/runs/lab1/b4975f0021344082b8802e174cae155c/catalog-summary.json`,
-SHA2560155EDCFBA158A09F22D69EC04E0844A7FE1856095EB012119AAFBA4D4B3B643.
-Native raw-variant slice passed9 focused cases; root reviewed boundaries and used it.
+- COMPLETE: Lab1 self-name Trio and Lab2 Bolinao, both raw decoration1704.
+  Reader0E7014C8CAA14F0D09152EDD856E55615CEF02EC29941B5D9897B319D28E4142,
+  117589856 bytes,`artifacts/native-player-name-20261107/publish/`.
+- COMPLETE: Lab2 buff definitions:24 raw nodes matched before/after,21 typed
+  definition keys,11 name candidates/10 unavailable. All24 kind1 are excluded
+  by native List. Helper accepts374/F86 or the existing EAE timing reader.
+- COMPLETE/BLOCKED: both zone captures found NULL PROVIDER337EBF8. Raw keys
+  Lab1=1216123138,Lab2=12; full ID/name unavailable. No repeated same-state
+  attempt, native getter or initializer. Typed0073/hash guards have7 synthetic
+  cases; no live typed hit. ReaderEAE14779A5FDFA1667858083C1AEDB92541CD064D821A964DAC6FFF0705DF807,
+  117581664 bytes,`artifacts/native-zone-id-20261107/publish/`.
+- NEW: calling owner+168 mapping (1warrior/2cleric/3mage/4rogue/7primalist).
+  Lab1 raw3/mage and Lab2 raw4/rogue captured.16 focused cases passed.
+  Reader1C57C5311062CF6F41E6492AF988BC2378A29E52BC6D84A4FA1E10600BADC654,
+  117589856 bytes,`artifacts/native-player-calling-20261107/publish/`.
+- COMPLETE: raw race-referent Lab1 key1/provider RESIDENT. H+48 reference/key+30
+  are bracketed; referent type and race text unknown. Typed0718 cache reader and
+  independent name-decoration candidate reader are implemented, not yet live.
+  ReaderAFA473BD8C69B0AE6D8BE9D2BD781E375007512703ADD6DC27DFD2EBC2664B58,
+  117602144 bytes,`artifacts/native-player-race-20261107/publish/`;3 focused cases.
+  No active live capture at this checkpoint.
 
-Both variant-definition lookups COMPLETED successfully; no active live process.
-NEW launcher
-`scripts/sample_current_native_variant_definitions.py --lab lab1 --catalog`
-followed by the absolute Lab1 catalog path above. Root reviewed it; it resolves
-referenced keys with the SAME reader, fresh source epoch and ordered parent-vector
-rechecks before/after, preserving cache misses and decoding names/raw timing.
-Lab1 all12 and Lab2 all16 referenced definitions typed and named. Detailed
-receipts/results are in the variant reference note below. Lookup deduplication
-does not discard relationship order or holes. No selected-winner/learned claim.
+Next: inspect new typed-race/name-decoration readers, focused checks and passive
+live followup; commit useful results. Raw1704/text must not be called shardID
+without correspondence. Native/host workers have no live authority.
+Experience full output needs another dataset/calculations: parked. Dead/mounted
+labels belong to unrelated enum families: no player-state claim. Restriction
+array was empty; no full variant eligibility engine. Actual selected variant,
+adjusted costs/range, positive cooldown/cast timers, API/UI agreement, passive
+freshness and full-game restart remain unresolved.
 
-Raw variant-guard command PASSED live; before/after effectiveD41,type0736row,
-typed0743specialKey70, completed role-cache guard0x800017A5 and40 keys matched.
-Fresh definition requiredLevelRaw is0 for ALL12 Lab1 variants: above-level
-exclusion does NOT apply. Do not select the base variant from its name/level.
-Receipts and exact lifetime proof are in the variant reference. No active run.
-High static worker is checking ONE next cheap rejection branch; stop that lead
-if it needs rebuilding the whole eligibility engine. No generic review loop.
-Guard/required-level milestone committedfc990bc. The next restriction-array read
-also passed but was EMPTY, closing the5AFF10 shortcut. No selected winner or
-further full-engine work. F86 restriction code/receipt is the next commit.
-Restriction milestone committedefe1785. New useful track: native Buff seed capture passed28 raw nodes in12.29ms;
-27 descriptorKind1 are excluded by List,1 kind4 is a candidate. Raw timer
-profiles are captured, not yet times. [Buff receipt and limits](reference/native-buff-candidates-2026-11-07.md).
-NEW buff definition helper is ready from tls_metadata, not yet live:
-`scripts/sample_current_native_buff_definitions.py --lab lab1 --seed`
-absolute path`artifacts/native-buff-seeds-20261107/runs/lab1/a47a249a4bce478e903d6d24c864f5e3/summary.json`.
-It pins BOTH374 buff reader andF86 records reader, fresh full-list before/after,
-and source identity. First live follow-up PASSED28 nodes/22 distinct typed/named
-keys; kind4 definition candidate Rested. Other names include passive soul gifts.
-Receipt`artifacts/native-buff-definitions-20261107/runs/lab1/66b24cd5c8a741e989d4bf6ef4f42bb1/summary.json`.
+All prior raw receipts and exact hashes are in the reference notes below. Latest
+player/name/zone receipts are in native-player-context-candidates; buff receipts
+in native-buff-candidates. Historical session addresses are never current authority.
+No candidate feeds action preflight. No game input/reload/restart/constructor or
+memory/refcount write in this discovery batch. Lab2 controller remains stopped,
+queue BLOCKED/no holder after clean RRE return; passive readers do not need it.
 
-First buff timing live run COMPLETED successfully, command
-`C:\Python314\python.exe -B scripts/sample_current_native_buff_timing.py --lab lab1`.
-ReaderBDE40E279E0E6CB22B167A9A3CF98B425B4380E6BF21B53C78B5AB18D50659FE,
-117552992 bytes,`artifacts/native-buff-timing-20261107/publish/`. Native core
-passed6 focused tests; root reviewed finite clock/type/tick/sentinel behavior.
-All28 begins/reference profiles captured, six tick inputs0/duration0, no active
-positive timer proof.22 dynamic refs MATCH065A VT28EC200/getter194CCE0/base4F180;
-duration remained unavailable as intended inBDE. Receipt
-`artifacts/native-buff-timing-20261107/runs/lab1/f0e050c9c0c84ebcb88aae21ac79ed74/samples.json`.
-No active run. Root alone owns live operations; helper sources can now be edited.
-
-Static high worker SOLVED dynamic type065A directfloat reference+24, exact
-property !6b50761c fieldindex4/kind2/offset24; actual ref profile must be observed
-before claiming it applies. Note`artifacts/discovery-20261107-buffs/buff-dynamic-duration-next-step.md`.
-Actual065A matches, so next small reader slice can use
-the direct field with full profile/property anchors. No general reflection engine.
-COMPLETED: initial fixed field ordinal failed safely; metadata diagnostic proved
-loaded order differs. Corrected reader verifies all five fields/inline names in
-any order. Live Lab1 all28/Lab2 all24 timing candidates pass; duration0 on all.
-ReaderEAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060,
+Stable catalog/variant/guard readerF86DBB418D19D6B7B0FA3D55F3EE0DC63B156881FFCE5A910EBAADC588763DFC,
+117537120 bytes,`artifacts/native-variant-key-restrictions-20261107/publish/`.
+Fixed buff timing readerEAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060,
 117565792 bytes,`artifacts/native-buff-loaded-field-table-20261107/publish/`.
-No active native capture. Python timing helper pins it; seven focused cases pass.
-Reader/property milestone commit is next; preserve failed-case receipts.
-Completedb357f97. Visibility first live read also PASSED:27 excluded,1 pass,
-ordinary-source Rested candidate IDb80000003086737D6. [Receipt](reference/native-buff-candidates-2026-11-07.md).
-No stateful visibility engine or independent API/UI agreement is claimed.
-
-Prepared, NOT live: Buff-definition helper can now accept374 seed orEAE timing
-source, using existing EAE copy for seed/record/dictionary when appropriate.
-Lookup deduplication preserves relationships; timing fields alone are normalized
-out of parent-list equality, all raw ownership/object fields stay exact. Lab2
-source has24 nodes/21 distinct keys. DO NOT RUN until RRE's explicit clean return.
-Native basic-state static leads: typed0294 owner+150 raw zone key is concrete;
-full zID requires its own provider/type0073 proof. dead/mounted native enum
-labels were not bound to player state; do not infer from health or enum constants.
-Medium worker classifies actual buff descriptorVT28DC6A8 for later visibility.
-Existing native workers are idle; assign new meaningful work when
-an observed result supplies a useful next step, not another generic review.
-
-Current catalog/variant/guard reader:117537120 bytes, SHA256
-F86DBB418D19D6B7B0FA3D55F3EE0DC63B156881FFCE5A910EBAADC588763DFC,
-`artifacts/native-variant-key-restrictions-20261107/publish/`. Prior publications
-remain intact; accepted source catalogs explicitly whitelistB562/3239/F86.
-Selected-target reader:117499744 bytes, SHA256
-6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970,
-`artifacts/native-target-level-20261107/publish/`.
-Name-mode reader:117496160 bytes, SHA256
-4B481314B7E72B83CB8F5163D895818236E1C1B4E48FEFD2C6C56B66BCB1BB0F,
-`artifacts/native-target-template-name-mode-20261107/publish/`.
-Never overwrite an earlier publication or active workflow bundle.
-
-Buff seed reader117544800 bytes, SHA256
-3747822638FEC0F1035187C7142E7A7A0AC84B8D9C6100106AE1BF21A2BFD8A2,
-`artifacts/native-buff-seeds-20261107/publish/`. Three focused cases passed and
-first live receipt succeeded. Keep it immutable for the first definition run.
+Selected-target level reader6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970,
+117499744 bytes,`artifacts/native-target-level-20261107/publish/`.
+Never overwrite a publication or the active workflow bundle.
 
 ## Durable findings, receipts and milestones
 

@@ -1,6 +1,6 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:57 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 15:01 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
@@ -14,6 +14,13 @@ queue BLOCKED/no holder. Prior addon/nonce assumptions require fresh evidence.
 **14:54 Eastern — ZONE PROVIDER ABSENT:** Fresh bounded reads in both labs
 captured raw owner zone keys but found a null resident zone provider. Full zone
 ID/name remain unavailable. No getter/initializer was invoked to force a result.
+
+**15:00 Eastern — SELF NAME/CALLING CANDIDATES:** Names Trio/Bolinao captured
+independently on Lab1/Lab2; Lab1 raw calling3 maps to mage on this build. Lab2
+calling raw4 maps to rogue; Lab1 race key1/provider resident seed also completed.
+Typed race cache/name-decoration followups underway. Checkpointf6cea6f committed
+the name/zone readers and Lab2 buff followup (21 keys,11 names/10 unavailable).
+[Player receipts and limits](reference/native-player-context-candidates.md).
 
 **14:23 Eastern — LOADED FIELD FIX LIVE ON BOTH LABS:** Corrected a fixed file
 ordinal assumption by validating/searching the complete loaded field table.
