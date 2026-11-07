@@ -237,7 +237,9 @@ def summarize(reports: list[tuple[str, dict]], *, maximum_run_gap_seconds: float
 
 def assess(before_run: Path, after_run: Path, cli: Path, output: Path,
            maximum_run_gap_seconds: float, dotnet: str = "dotnet",
-           session_id: str | None = None) -> dict:
+           session_id: str | None = None, historical_rrapival2: bool = False) -> dict:
+    if (session_id is None) == (not historical_rrapival2):
+        raise AssessmentError("specify exactly one of session_id or historical_rrapival2")
     if session_id is not None:
         require_session_id(session_id)
     if not 0 < maximum_run_gap_seconds <= 3600:
@@ -264,7 +266,8 @@ def assess(before_run: Path, after_run: Path, cli: Path, output: Path,
                 result = subprocess.run(
                     [dotnet, str(cli), "inspect-typed-wire", "--before", str(before),
                      "--after", str(after), "--output", str(destination)]
-                    + (["--session-id", session_id] if session_id is not None else []),
+                    + (["--session-id", session_id] if session_id is not None
+                       else ["--protocol", "historical-rrapival2"]),
                     capture_output=True, text=True, timeout=30, check=False,
                 )
                 if result.returncode != 0 or not destination.is_file():
@@ -305,12 +308,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--maximum-run-gap-seconds", required=True, type=float)
     parser.add_argument("--dotnet", default="dotnet")
-    parser.add_argument("--session-id")
+    protocol = parser.add_mutually_exclusive_group(required=True)
+    protocol.add_argument("--session-id")
+    protocol.add_argument("--historical-rrapival2", action="store_true")
     args = parser.parse_args(argv)
     try:
         result = assess(
             args.before_run, args.after_run, args.cli, args.output,
-            args.maximum_run_gap_seconds, args.dotnet, args.session_id)
+            args.maximum_run_gap_seconds, args.dotnet, args.session_id, args.historical_rrapival2)
     except (AssessmentError, OSError, subprocess.SubprocessError) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)}), file=sys.stderr)
         return 2

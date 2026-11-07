@@ -378,6 +378,20 @@ public sealed class TypedWireSnapshotCommandTests
         Assert.Equal(expected, doc.RootElement.GetProperty("status").GetString());
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("--protocol invalid")]
+    [InlineData("--protocol historical-rrapival2 --session-id 0123456789abcdef0123456789abcdef")]
+    public async Task ProtocolSelectionMustBeExplicitAndExclusive(string selection)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var args = new List<string> { "inspect-typed-wire", "--before", "missing-before", "--after", "missing-after" };
+        args.AddRange(selection.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        Assert.Equal(2, await CliRunner.RunAsync([.. args], output, error));
+        Assert.Contains("--protocol", error.ToString());
+    }
+
     private static async Task<(int Code, string Output, string Error)> RunAsync(
         string before, string after, string? outputFile = null, string? sessionId = null)
     {
@@ -386,6 +400,7 @@ public sealed class TypedWireSnapshotCommandTests
         var args = new List<string> { "inspect-typed-wire", "--before", before, "--after", after };
         if (outputFile is not null) args.AddRange(["--output", outputFile]);
         if (sessionId is not null) args.AddRange(["--session-id", sessionId]);
+        else args.AddRange(["--protocol", "historical-rrapival2"]);
         var code = await CliRunner.RunAsync([.. args], output, error);
         return (code, output.ToString(), error.ToString());
     }

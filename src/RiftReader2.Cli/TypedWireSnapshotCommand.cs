@@ -49,6 +49,11 @@ internal static class TypedWireSnapshotCommand
             throw new ArgumentException("--before and --after are required.");
 
         options.TryGetValue("--session-id", out var sessionId);
+        var historical = options.TryGetValue("--protocol", out var protocol);
+        if (historical && protocol != "historical-rrapival2")
+            throw new ArgumentException("--protocol must be historical-rrapival2.");
+        if ((sessionId is null) == !historical)
+            throw new ArgumentException("Specify exactly one of --session-id or --protocol historical-rrapival2.");
         if (sessionId is not null && (sessionId.Length != 32 || sessionId.Any(c => !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))))
             throw new ArgumentException("--session-id must be 32 lowercase hexadecimal characters.");
         var before = await NativeMemorySnapshotFile.LoadAsync(beforePath, cancellationToken);

@@ -40,7 +40,7 @@ public static class CliRunner
                     Exit 0 for qualification means a valid report; inspect its claim statuses before use.
                     Exit codes: 0 success, 2 invalid input/IO failure, 130 canceled.
                     """);
-                await output.WriteLineAsync("inspect-typed-wire --before PATH --after PATH [--session-id HEX] [--output PATH] (session-id selects RiftReader2 RR2R1; omitted selects historical RRAPIVAL2)");
+                await output.WriteLineAsync("inspect-typed-wire --before PATH --after PATH (--session-id HEX | --protocol historical-rrapival2) [--output PATH]");
                 return 0;
             }
 
@@ -62,7 +62,7 @@ public static class CliRunner
             }
             if (command == "inspect-typed-wire")
                 return await TypedWireSnapshotCommand.RunAsync(
-                    ParseOptions(args[1..], "--before", "--after", "--session-id", "--output"), output, cancellationToken);
+                    ParseOptions(args[1..], "--before", "--after", "--session-id", "--protocol", "--output"), output, cancellationToken);
             if (command == "compare-targeted-health")
                 return await TargetedHealthAuditCommand.CompareAsync(
                     ParseOptions(args[1..], "--before", "--after", "--output"), output, cancellationToken);

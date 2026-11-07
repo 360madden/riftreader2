@@ -7,7 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.assess_typed_wire_runs import _run, summarize
+from scripts.assess_typed_wire_runs import AssessmentError, _run, assess, summarize
 
 
 IDENTITY = {
@@ -165,6 +165,16 @@ class ReferenceBindingAssessmentTests(unittest.TestCase):
             value["selected"]["after"].update(changes)
             with self.assertRaises(ValueError):
                 summarize([("bad", value)], maximum_run_gap_seconds=15, session_id=nonce)
+
+
+class ProtocolSelectionTests(unittest.TestCase):
+    def test_requires_exactly_one_protocol_selection_before_reading_files(self):
+        missing = Path("does-not-exist")
+        for session_id, historical in ((None, False), ("a" * 32, True)):
+            with self.subTest(session_id=session_id, historical=historical):
+                with self.assertRaisesRegex(AssessmentError, "exactly one"):
+                    assess(missing, missing, missing, missing, 15, session_id=session_id,
+                           historical_rrapival2=historical)
 
 
 if __name__ == "__main__":
