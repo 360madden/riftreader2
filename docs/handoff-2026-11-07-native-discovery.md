@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **13:58 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **14:05 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -100,11 +100,25 @@ NEW buff definition helper is ready from tls_metadata, not yet live:
 `scripts/sample_current_native_buff_definitions.py --lab lab1 --seed`
 absolute path`artifacts/native-buff-seeds-20261107/runs/lab1/a47a249a4bce478e903d6d24c864f5e3/summary.json`.
 It pins BOTH374 buff reader andF86 records reader, fresh full-list before/after,
-and source identity, preserving28 nodes/22 distinct lookup keys. Root review then
-first live read is next. cooldown_discovery traced actual clock methods; next
-native slice can read begins/clock and06ED/06CE tick durations, keeping22 dynamic
-property durations unavailable. No need full selector reconstruction.
-Root alone performs live operations; none active.
+and source identity. First live follow-up PASSED28 nodes/22 distinct typed/named
+keys; kind4 definition candidate Rested. Other names include passive soul gifts.
+Receipt`artifacts/native-buff-definitions-20261107/runs/lab1/66b24cd5c8a741e989d4bf6ef4f42bb1/summary.json`.
+
+**First buff timing live run ACTIVE: exec session76426**, command
+`C:\Python314\python.exe -B scripts/sample_current_native_buff_timing.py --lab lab1`.
+ReaderBDE40E279E0E6CB22B167A9A3CF98B425B4380E6BF21B53C78B5AB18D50659FE,
+117552992 bytes,`artifacts/native-buff-timing-20261107/publish/`. Native core
+passed6 focused tests; root reviewed finite clock/type/tick/sentinel behavior.
+Keep Python timing/seed helpers frozen until terminal. It captures begins,
+reference VT/+40/+48 and six typed tick durations;22 dynamic durations stay
+unavailable in this published reader. Root alone owns live operations.
+
+Static high worker SOLVED dynamic type065A directfloat reference+24, exact
+property !6b50761c fieldindex4/kind2/offset24; actual ref profile must be observed
+before claiming it applies. Note`artifacts/discovery-20261107-buffs/buff-dynamic-duration-next-step.md`.
+After current receipt, if actual065A matches, next small reader slice can use
+the direct field with full profile/property anchors. No general reflection engine.
+Medium worker classifies actual buff descriptorVT28DC6A8 for later visibility.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
 
@@ -139,7 +153,8 @@ Recent local commits:015f784 target position;6359c38 user-requested checkpoint
 then immediate resume;71ff9a3 template-name inputs;b04edf8 mode-selected name and
 four-hour extension;073a38d target raw context;5ec07e4 target numeric level;
 3943cfc factory/cooldown-gate findings;f2b5f24 raw ordered variants;
-0d0e31c independent two-lab capture;4bee4b9 definition lookups. No push.
+0d0e31c independent two-lab capture;4bee4b9 definition lookups;fc990bc guards;
+efe1785 empty restriction lead;f3c3112 raw buff seeds. No push.
 
 Optional Lab2 UI comparison is CLOSED after dependency-admission SessionError;
 no image/API/UI agreement was accepted. Later status was connected/disarmed-idle,

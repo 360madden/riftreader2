@@ -51,3 +51,20 @@ plus16 uppercase hex digits; grouping uses different fields and can aggregate.
 Visibility720630 and grouping remain separate qualification work.
 Static notes:`artifacts/discovery-20261107-buffs/passive-buff-next-step.md`,
 `buff-name-time-next-step.md`, `buff-visibility-next-step.md` in that directory.
+
+## Definition names resolved —14:00 Eastern
+
+The fresh follow-up resolved all22 distinct DWORD+3C keys to typed0051 records
+and name candidates while rechecking the complete28-node seed before AND after.
+All node order/duplicates/kind1 relationships remain in output; lookup alone is
+deduplicated. The kind4 node maps to **Rested**. Kind1 examples include Warlock
+Soul Gift, Natural Awareness, Lightning Rod, Healing Balance and Natural Power.
+These are ability-definition name candidates;0743+110 alternate name selection
+and visibility are not inferred from matching text.
+
+Command:`python scripts/sample_current_native_buff_definitions.py --lab lab1 --seed ABSOLUTE_SEED_SUMMARY_PATH`.
+Receipt`artifacts/native-buff-definitions-20261107/runs/lab1/66b24cd5c8a741e989d4bf6ef4f42bb1/summary.json`,
+SHA256`DFF1FA6E0F159A4267FBFA515714EDBCB9B558456AFD8992BD22BAA296BCEF9D`.
+It pins the374 seed reader andF86 definition reader separately, same VM/game
+epoch, source/reader hashes, complete parent-list checks and bounded chunks.
+No new publication or input was needed for this named result.

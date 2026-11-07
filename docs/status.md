@@ -1,10 +1,15 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:56 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:05 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**14:00 Eastern — BUFF DEFINITION NAMES LIVE:** All22 distinct keys typed/named,
+all28 node relationships preserved/rechecked. Kind4 maps to Rested; kind1 includes
+passive soul/talent effects. No API-selected name or visibility claim.
+[Receipt](reference/native-buff-candidates-2026-11-07.md). First timing capture running.
 
 **13:53 Eastern — NATIVE BUFF SEED LIVE:** Lab1 captured28 raw nodes in12.29ms;
 27 kind1 are excluded by the List path, one kind4 remains a visibility candidate.
