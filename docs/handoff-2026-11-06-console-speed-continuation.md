@@ -9,6 +9,8 @@ Repository: `C:\work\riftreader2`, branch `codex/modular-foundation`. Read `AGEN
 - Removed unreachable legacy live cached capture; the compatibility wrapper delegates only to the reviewed current RR2R1 route. Receiver startup skips malformed ownership receipts and fails closed on malformed task status; this does not establish feed freshness.
 - Code commits: `e328ffd`, `bbdac65`, `3e42775`, `fa76ac0`, `74cab44`, `9c3cd14`, `56016c9`. No RIFT input, reload/bind, VM/game restart, deployment or push occurred.
 
+Full local gate passed: `pwsh -NoProfile -File scripts/validate.ps1` exit 0; 380 portable and 301 Live .NET tests, 1,587 Python tests (2 skipped), Lua contracts, synthetic native smoke, formatting and 1,014 links. Evidence: `artifacts/validation/20261107T002622Z-466f9e12`. This is offline validation, not live acceptance.
+
 ## Remaining work
 
 1. **Standalone helper ownership:** `ensure_receiver.py`, `ensure_controller.py`, and `controller_task_entry.py` still depend on `C:\work\workbridge-mcp\scripts\Manage-HelperTask.ps1` and its registration state. A narrow RR2-owned adapter needs Register/Start/Status for four fixed receiver/controller IDs, a separate namespace, strict same-user/task/action/argument/receipt verification and offline mocked tests. Preserve existing running owners; do not silently adopt, stop or replace them. Controller migration requires the existing verified STOP/release and clean ownership handoff. Runtime migration is separate from offline implementation and needs applicable authority.
