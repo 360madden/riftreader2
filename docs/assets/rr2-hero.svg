@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 500" role="img" aria-labelledby="title desc">
-<title id="title">RiftReader2 — Evidence-first telemetry for RIFT</title><desc id="desc">Dark navy and violet developer banner with colorful telemetry signals and a technical grid.</desc>
+<title id="title">RiftReader2 by 360madden — Evidence-first telemetry for RIFT</title><desc id="desc">Dark navy, cyan, violet and pink banner by 360madden with a source-integrity dashboard, telemetry traces and a technical grid.</desc>
 <defs>
 <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#080e23"/><stop offset=".52" stop-color="#141b3e"/><stop offset="1" stop-color="#091832"/></linearGradient>
 <linearGradient id="brand" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#75e5ff"/><stop offset=".5" stop-color="#b8a0ff"/><stop offset="1" stop-color="#fa9ed1"/></linearGradient>
@@ -37,5 +37,11 @@
 <path d="M32 302L66 299 95 314 126 267 153 292 182 287 213 251 244 279 275 266 306 280 338 247 369 258 416 244" fill="none" stroke="#81e6f6" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M32 320L63 305 93 312 124 308 154 322 185 315 216 310 246 318 277 299 308 308 338 302 370 312 416 300" fill="none" stroke="#bd9dff" stroke-width="2" opacity=".8"/>
 </g>
-<text x="1510" y="473" font-size="14" font-family="Segoe UI,Arial,sans-serif" text-anchor="end" fill="#7c92b9">INDEPENDENT RIFT RESEARCH TOOLKIT</text>
+<g transform="translate(72 448)" font-family="Segoe UI,Arial,sans-serif">
+<rect width="318" height="38" rx="19" fill="#152b4e" stroke="#967bea" stroke-opacity=".85"/>
+<circle cx="22" cy="19" r="9" fill="#b89bff"/><path d="M18 19l3 3 5-7" fill="none" stroke="#142241" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="42" y="25" font-size="14" font-weight="750" letter-spacing="1.2" fill="#c5d2ee">BUILT BY</text>
+<text x="141" y="25" font-size="22" font-weight="800" fill="#ecb3ff">360madden</text>
+</g>
+<text x="1510" y="473" font-size="14" font-family="Segoe UI,Arial,sans-serif" text-anchor="end" fill="#8ca1c7">INDEPENDENT RIFT RESEARCH TOOLKIT</text>
 </svg>
