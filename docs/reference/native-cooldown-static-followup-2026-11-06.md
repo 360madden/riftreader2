@@ -81,7 +81,9 @@ This narrows an ability-related keyspace but does not establish public API
 
 Two passive root candidates are concrete: `[module+0x33624C8]` returns an
 object whose word `+0x40` supplies the selector; `[module+0x3372C18]` supplies
-the lookup owner passed to `0x129043C`. Null roots trigger initialization in
+an eight-byte wrapper passed to `0x129043C`. That wrapper's first qword supplies
+the actual owner: `0x1290442` executes `mov rcx,[rcx]` before `0x1290458`.
+Null roots trigger initialization in
 game code, which a reader must never call. Conditional collection traversal
 remains unresolved. Bounded exact-build disassembly and call-site details are
 retained in `artifacts/discovery-20261107-cooldown/key-provenance.md`.
@@ -104,10 +106,78 @@ links and node+0x10 -> result-holder+0x18. A cache miss enters a separate
 unreconstructed fallback, so neither a fallback-only scan nor a cache miss
 proves an ID absent. No game TLS function or resolver was invoked.
 
+### TLS writer and passive selection
+
+Owner initialization `0x128EF3C` calls TlsAlloc, stores the index at owner+0x274,
+then `0x128EF84..0x128EF8D` calls TlsSetValue(index, owner+0x200) for the
+initializing thread. Its unchecked return does not establish other threads'
+values. Cleanup calls TlsFree and destroys the collection, so its lifetime must
+be bracketed. A bounded setter search found no additional owner-linked writer,
+but does not exclude indirect writes. Full trace:
+`artifacts/discovery-20261107-cooldown/collection-followup.md`.
+
+`--cooldown-collections` queries bounded thread metadata using query-only
+Windows handles in a small query executable, then uses the existing exact-epoch native reader for each TEB's
+TLS slot. It supports x64 inline and expansion slots, validates TEB self/PID/TID,
+and rereads consumed bytes. Before/after thread IDs, creation ticks and TEBs must
+match with complete query coverage; roots/selector/TLS index and process identity
+are also rechecked. Per-thread non-null TLS selects that pointer; zero selects
+owner+0x200. The output observes enumerated threads and does not identify which
+one executes the resolver. No target thread is suspended or called.
+
+**SUPERSEDED wrong-owner trial:** Lab2 run
+`artifacts/native-unit-manager/lab2/59472c4dca2445daaf8dc87f57d49963/`
+completed at `2026-11-07T13:18:26.2367288Z`, PID9752/start639294897826627677,
+on the exact build above. Both metadata passes covered all **26 threads** with
+no query failures and matching thread ID/start/TEB rows, but incorrectly read
+wrapper+0x274 instead of actual owner+0x274. Its observed zero slot values and
+computed collection `0x1B0212E6660` DO NOT establish resolver selection. The
+Lab1 follow-up `1b0bb8a9ca324babbfa28ef74351a404/` rejected out-of-range
+index3866674 at the same wrong offset, exposing the missing dereference.
+The chain was corrected before further selection claims. The raw evidence is
+retained; neither trial is acceptance evidence. Lab2 `review.json`
+SHA256 `F3B90D276D0A02A4F83998E4210F4536AAF108E86454DA0C468656D05E4FEF76`.
+
+The guest's script-file policy refused the first staged PowerShell query before
+TLS acquisition (`0a86f0c1c46940aca1881aa3fccdd09e/diagnostic/error.json`).
+The working route builds a small .NET Framework console executable on the host,
+verifies its SHA before each guest invocation, and leaves that policy intact.
+It changes no helper owner or service. Compile/query timeouts and no-overwrite
+artifacts remain bounded. The Windows x64 TEB layout is based on the published
+[Microsoft TEB structure](https://learn.microsoft.com/en-us/windows/win32/api/winternl/ns-winternl-teb),
+with observed self/PID/TID validation; this is not a portable OS-independent layout.
+
+### Corrected live selection — November 7
+
+Lab2 run `artifacts/native-unit-manager/lab2/44b1eeb84b434b6d9c01fd4db810a6a0/`
+completed at `2026-11-07T13:23:28.2190105Z` on the same exact game epoch.
+Wrapper `0x1B0212E6460` dereferenced to actual owner `0x1B021337AB0`;
+the true TLS index was **20**. Thread5604 explicitly held `0x1B021337CB0`,
+the owner's embedded collection; the other25 observed threads held zero.
+All26 therefore selected the SAME collection. Both complete metadata passes,
+TEB identities, TLS/owner/root/header rereads, source and process checks passed.
+The selected map header had stride24 and bucket count3444, not 3444 abilities.
+`review.json` SHA256
+`03D72B81837E0538192BBF0BC7FE86F5B44F5EDBB8FCE522A928F06371A426A3`.
+Root independently checked `48 8B 09` at `0x1290442`, the missing owner
+dereference. These sequential observations do not exclude ABA or qualify
+ability IDs, cooldown math or future collection selections.
+
+Independent Lab1 run
+`artifacts/native-unit-manager/lab1/effd113dbaf040fc9d4856abd5c8ec2a/`
+completed at `2026-11-07T13:25:06.9925639Z`, PID11672/start639296016581575957,
+same exact build. Its true TLS index was also20: one thread held embedded
+collection `0x268BF957B20`, and the other27 held zero. All28 selected that
+collection. Complete matching thread metadata passes and all byte/source/process
+checks passed; map stride24/bucket count3444 matched the shape independently.
+This establishes the passive selection route across two current process epochs,
+without proving cache-key meaning, cooldown values or full-game restart recovery.
+
 ## Next discriminating work
 
-Resolve the relevant game-thread TLS collection passively, or label an
-owner+0x200 snapshot as fallback-only. Reconstruct `0x128CCB0` before treating
+Reacquire owner/thread/TLS selection for each new observation; never retain
+these session addresses. Traverse the selected bounded cache and correlate
+known candidate keys, while reconstructing `0x128CCB0` before treating
 a cache miss as absence. Then, under the coordinator's normal
 fresh identity and controlled-action gates, compare independent ability/API
 observations with bracketed native candidate changes. Full-game restart and

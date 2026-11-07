@@ -481,9 +481,11 @@ def calculate_energy(fields: dict, clock: float) -> dict:
 
 
 def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
-        cast_record: bool = False, cooldown_roots: bool = False) -> dict:
+        cast_record: bool = False, cooldown_roots: bool = False,
+        cooldown_collections: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
+    cooldown_roots = cooldown_roots or cooldown_collections
     probe_path = Path(__file__)
     probe_sha = sha(probe_path.read_bytes())
     sys.path.insert(0, str(ROOT))
@@ -519,6 +521,11 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
               "deadlineSemantics": "checked-before-each-operation; admitted operations use separate bounded timeouts",
               "status": "incomplete",
               "qualification": "candidate-only; no passive-freshness or restart qualification"}
+    helper_sources = ({ROOT / "scripts" / name: sha((ROOT / "scripts" / name).read_bytes())
+                       for name in ("native_thread_metadata.py", "native_tls_collections.py")}
+                      if cooldown_collections else {})
+    if helper_sources:
+        review["helperSourceSha256"] = {path.name: value for path, value in helper_sources.items()}
     try:
         with api._session(config, settings, vm_identity, folder) as guest:
             def native(mode: str, name: str, request: dict | None = None) -> dict:
@@ -579,6 +586,43 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                                        "address": f"0x{address:X}", "byteLength": length}
                                       for address, length in ranges]}
                 return snapshot_bytes(native("snapshot-native", name, request), request, identity)
+
+            thread_query_exe = None
+
+            def thread_metadata(name: str) -> dict:
+                nonlocal thread_query_exe
+                from scripts.native_thread_metadata import build_thread_metadata_executable
+                if time.monotonic() >= deadline:
+                    raise ValueError("probe-operation-budget-exceeded")
+                guest_report = prefix + "-" + name + ".json"
+                guest_query = prefix + "-thread-query.exe"
+                if thread_query_exe is None:
+                    thread_query_exe = build_thread_metadata_executable(folder / "thread-query.exe")
+                    evidence[thread_query_exe.name] = sha(thread_query_exe.read_bytes())
+                    evidence["thread-query.cs"] = sha(thread_query_exe.with_suffix(".cs").read_bytes())
+                    guest.run("copyFileFromHostToGuest", str(thread_query_exe), guest_query)
+                arguments = [str(identity["processId"]), str(identity["processStartUtcTicks"]),
+                             identity["executableSha256"], identity["executablePath"], guest_report]
+                guest.powershell(
+                    "$ErrorActionPreference='Stop';if((Get-FileHash -LiteralPath " +
+                    ps_literal(guest_query) + ").Hash -ne " + ps_literal(evidence[thread_query_exe.name]) +
+                    "){throw 'thread-query-source-mismatch'};& " + ps_literal(guest_query) + " " +
+                    " ".join(ps_literal(value) for value in arguments) +
+                    ";if($LASTEXITCODE -ne 0){throw 'thread-query-failed'}",
+                    timeout=60)
+                output = folder / (name + ".json")
+                guest.copy_from_guest(guest_report, output, timeout=60)
+                raw = output.read_bytes()
+                if len(raw) > 256 * 1024:
+                    raise ValueError("thread-metadata-report-size-exceeded")
+                evidence[output.name] = sha(raw)
+                data = json.loads(raw.decode("utf-8-sig"))
+                if (data.get("processId") != identity["processId"] or
+                        data.get("processStartUtcTicks") != str(identity["processStartUtcTicks"]) or
+                        data.get("executableSha256") != identity["executableSha256"] or
+                        data.get("executablePath") != identity["executablePath"]):
+                    raise ValueError("thread-metadata-process-epoch-mismatch")
+                return data
 
             roots_ranges = [(MANAGER_RVA, 8), (PLAYER_SYSTEM_RVA, 8),
                             (POSITION_INDEX_RVA, 4), (HEALTH_INDEX_RVA, 4)]
@@ -760,23 +804,72 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             cooldown_anchors = {}
             if cooldown_roots:
                 selector_owner = struct.unpack("<Q", roots[base + 0x33624C8])[0]
-                lookup_owner = struct.unpack("<Q", roots[base + 0x3372C18])[0]
+                lookup_wrapper = struct.unpack("<Q", roots[base + 0x3372C18])[0]
                 cooldown = {"qualification": "static-resolver-root-candidate",
                             "status": "unavailable", "selectorOwner": selector_owner,
-                            "lookupOwner": lookup_owner, "selector": None,
+                            "lookupWrapper": lookup_wrapper, "lookupOwner": None, "selector": None,
                             "playerOwnershipEstablished": False}
-                if selector_owner and lookup_owner:
+                if selector_owner and lookup_wrapper:
                     pointer(selector_owner, 0x42)
-                    pointer(lookup_owner, 0x278)
-                    cooldown_anchors = take("cooldown-selector", [(selector_owner + 0x40, 2)])
-                    cooldown.update({"status": "candidate-roots-present",
+                    pointer(lookup_wrapper)
+                    cooldown_ranges = [(selector_owner + 0x40, 2), (lookup_wrapper, 8)]
+                    cooldown_anchors = take("cooldown-selector", cooldown_ranges)
+                    lookup_owner = struct.unpack("<Q", cooldown_anchors[lookup_wrapper])[0]
+                    cooldown.update({"lookupOwner": lookup_owner,
                                      "selector": struct.unpack(
                                          "<H", cooldown_anchors[selector_owner + 0x40])[0]})
+                    if lookup_owner:
+                        pointer(lookup_owner, 0x278)
+                        cooldown["status"] = "candidate-roots-present"
+                        if cooldown_collections:
+                            cooldown_anchors.update(take("cooldown-owner", [(lookup_owner + 0x274, 4)]))
+                    else:
+                        cooldown["reason"] = "null-resolver-owner-no-game-initialization"
                 else:
                     cooldown["reason"] = "null-resolver-root-no-game-initialization"
                 cooldown["observedAtUtc"] = observation_times.get(
                     "cooldown-selector", observation_times["roots"])
                 review["cooldownResolverCandidate"] = cooldown
+                if cooldown_collections and cooldown["status"] == "candidate-roots-present":
+                    from scripts.native_tls_collections import read_tls_collections
+                    metadata = thread_metadata("threads-before")
+                    tls_index = struct.unpack("<I", cooldown_anchors[lookup_owner + 0x274])[0]
+                    threads = [{**row, "tebAddress": int(row["tebAddress"], 16)}
+                               for row in metadata["threads"]]
+                    tls_read_count = 0
+
+                    def read_tls(name, ranges):
+                        nonlocal tls_read_count
+                        tls_read_count += 1
+                        return take(f"{name}-{tls_read_count}", ranges)
+
+                    selected = read_tls_collections(
+                        read_tls, threads=threads, process_id=identity["processId"],
+                        tls_index=tls_index, embedded_collection=lookup_owner + 0x200)
+                    after_metadata = thread_metadata("threads-after")
+                    if (metadata.get("partial") is not False or
+                            after_metadata.get("partial") is not False or
+                            sorted(metadata["threads"], key=lambda row: row["threadId"]) !=
+                            sorted(after_metadata["threads"], key=lambda row: row["threadId"])):
+                        selected = {"status": "unavailable", "reason": "thread-coverage-or-epoch-changed",
+                                    "threads": []}
+                    cooldown.update({"tlsIndex": tls_index, "collections": selected,
+                                     "threadCoverageBefore": metadata["enumerated"],
+                                     "threadCoverageAfter": after_metadata["enumerated"]})
+                    if selected["status"] == "candidate":
+                        collections = sorted({row["selectedCollection"] for row in selected["threads"]})
+                        if len(collections) <= 32:
+                            headers = take("cooldown-cache-headers", [
+                                (pointer(address, 0x40) + 0x20, 32) for address in collections])
+                            cooldown_anchors.update(headers)
+                            cooldown["cacheHeaders"] = [
+                                {"collection": address, "rawHex": headers[address + 0x20].hex(),
+                                 "bucketBase": struct.unpack_from("<Q", headers[address + 0x20])[0],
+                                 "stride": struct.unpack_from("<Q", headers[address + 0x20], 8)[0],
+                                 "count": struct.unpack_from("<Q", headers[address + 0x20], 16)[0]}
+                                for address in collections]
+                        else:
+                            cooldown["cacheHeadersOmitted"] = "collection-count-exceeds-32"
 
             if cast_record:
                 cast_read_count = 0
@@ -929,7 +1022,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             review["error"] = str(error)[:200]
         raise
     finally:
-        source_stable = sha(probe_path.read_bytes()) == probe_sha
+        source_stable = (sha(probe_path.read_bytes()) == probe_sha and
+                         all(sha(path.read_bytes()) == value for path, value in helper_sources.items()))
         review["sourceStableAtPublish"] = source_stable
         if not source_stable:
             review["status"] = "failed"
@@ -954,13 +1048,16 @@ def main() -> None:
                         help="Capture read-only cast topology candidates; cast semantics remain unqualified.")
     parser.add_argument("--cooldown-roots", action="store_true",
                         help="Read candidate cooldown resolver roots and selector, not cooldown values.")
+    parser.add_argument("--cooldown-collections", action="store_true",
+                        help="Observe per-thread TLS collection candidates without calling game code.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
         print(json.dumps(run(lab, health_record=args.health_record,
                              resource_record=args.resource_record,
                              cast_record=args.cast_record,
-                             cooldown_roots=args.cooldown_roots), indent=2), flush=True)
+                             cooldown_roots=args.cooldown_roots,
+                             cooldown_collections=args.cooldown_collections), indent=2), flush=True)
 
 
 if __name__ == "__main__":

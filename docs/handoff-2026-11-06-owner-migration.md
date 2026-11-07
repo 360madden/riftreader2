@@ -48,6 +48,28 @@ exposes this as a fingerprint-gated raw durationCandidate, after producer guards
 with semantic begin/duration still null. Eleven focused cases passed; no live
 matching duration object was observed. See [formula](reference/native-current-cast-candidate.md#type-specific-passive-duration--november-7).
 
+**Cooldown continuation:** `--cooldown-collections` now observes thread TEB/TLS
+through the existing exact-epoch snapshot reader. A small host-compiled metadata
+executable uses query-only OS handles and is SHA-checked on guest invocation;
+guest script-file policy is preserved. The actual chain is
+`[module+0x3372C18] -> wrapper -> [wrapper] -> owner`, then owner+0x274.
+The first Lab2/Lab1 trials used the wrapper as owner and are SUPERSEDED, not
+selection evidence. Corrected Lab2 `44b1eeb84b434b6d9c01fd4db810a6a0`
+and Lab1 `effd113dbaf040fc9d4856abd5c8ec2a` runs passed with TLS index20:
+one explicit embedded collection pointer each, all other slots zero, and all
+26/28 threads respectively selecting owner+0x200. Bracketed thread metadata,
+TEB/TLS/owner/root/cache-header/source/process checks passed; both map headers
+had stride24/count3444. See [receipts and correction](reference/native-cooldown-static-followup-2026-11-06.md#corrected-live-selection--november-7).
+
+**Next useful experiment:** reacquire the corrected owner and TLS selection,
+then read a bounded selected-cache bucket/chain set and correlate candidate
+selector83 keys with independent ability data. A cache miss cannot establish
+absence until fallback0x128CCB0 is understood. For duration, use the gated helper
+when a non-null child is observed; do not apply object+0x18 to an unmatched
+virtual type or claim a live duration before matching-object evidence. Preserve
+all existing input/ownership gates; this batch performed no game input or owner
+transition. Keep checks focused, and leave maintenance deferred.
+
 ## Reader startup readiness P2 fixed — November 7
 
 The launcher no longer treats a nonempty last snapshot as readiness after its
