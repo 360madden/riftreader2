@@ -25,7 +25,7 @@ from scripts.control_client import ControlClient, _capture
 from scripts.ensure_controller import CONFIGS, QUEUE
 from scripts.ensure_guest_agent import ensure as ensure_guest_agent
 from scripts.fresh_game_identity import query
-from scripts.vm_console_native import validate_config
+from scripts.vm_console_native import Blocked, validate_config
 from scripts.run_movement_session import ManagedPinnedHost, write_managed_host_plan, admit_lab2_inspection_host, load, sanitized
 from scripts.control_host import HostConfig
 from scripts.nav_access_queue import AccessQueue
@@ -163,6 +163,15 @@ def reopen(root, *, _admitted=None):
     return state, host
 
 
+def require_persistent_capabilities(status):
+    guest = status.get("guest") if isinstance(status, dict) else None
+    guest = guest if isinstance(guest, dict) else {}
+    for key, code in (("freshIdentityVersion", "fresh-identity-unsupported"),
+                      ("nativeVitalsVersion", "native-vitals-unsupported")):
+        value = guest.get(key)
+        require(type(value) is int and value == 1, code)
+
+
 def preflight(root, timing, *, _admitted=None, _native=None):
     root.mkdir(parents=True, exist_ok=False)
     publish(root / "workflow-owner.json", {"workflow": "lab2-inspection/1", "output": str(root)})
@@ -179,6 +188,8 @@ def preflight(root, timing, *, _admitted=None, _native=None):
         if _admitted is None:
             host = ManagedPinnedHost(path)
         status = host.status(require_armed=False)
+        if _native is not None and _native.get("mode") == "persistent":
+            require_persistent_capabilities(status)
     state = {"version": 1, "lab": "lab2", "resource": RESOURCE, "output": str(root),
              "createdAtUtc": utc().isoformat(), "planSha256": digest(path),
              "vmIdentity": host.plan["vmIdentity"], "target": status["guest"]["target"]}
@@ -190,7 +201,9 @@ def preflight(root, timing, *, _admitted=None, _native=None):
     with timing.stage("fresh-identity"):
         fresh(host, state)
     with timing.stage("final-preflight-status"):
-        check_status(host, state)
+        final_status = check_status(host, state)
+        if _native is not None and _native.get("mode") == "persistent":
+            require_persistent_capabilities(final_status)
     publish(root / "state.json", state)
     publish(root / "state.sha256.json", {"sha256": digest(root / "state.json")})
     if _admitted is not None:
@@ -252,6 +265,11 @@ def validate_native(summary, state, before, after):
             "native source report hash mismatch")
     report = json.loads(raw.decode("utf-8-sig"), parse_constant=vitals.reject_nonfinite,
                         parse_float=vitals.finite_float)
+    if request.get("mode") == "persistent":
+        require(isinstance(report, dict) and report.get("contractVersion") == "native-current-vitals-candidate-sample/2",
+                "native-vitals-report-contract-invalid")
+        from scripts.fresh_native_vitals import validate_response_time
+        validate_response_time(report, summary.get("observedAtUtc"), before, after)
     metrics = vitals.validate_report(report, pid=state["target"]["processId"],
                                      ticks=state["target"]["processStartUtcTicks"])
     require(metrics == summary.get("metrics"), "native summary metrics differ from source")
@@ -506,8 +524,10 @@ def main(argv=None):
         print(json.dumps(console))
         return 0
     except Exception as exc:
+        safe_capability = isinstance(exc, Blocked) and str(exc) in {
+            "fresh-identity-unsupported", "native-vitals-unsupported"}
         failure = {"status": "blocked", "phase": args.phase, "errorType": type(exc).__name__,
-                   "reason": str(exc) if isinstance(exc, InspectionBlocked) else "operation refused; inspect retained stage timings",
+                   "reason": str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
                    "startUtc": before, "endUtc": utc().isoformat(),
                    "elapsedSeconds": time.perf_counter()-started, "stages": timer.rows}
         if admitted is not None and "finalInventoryFailure" in admitted:

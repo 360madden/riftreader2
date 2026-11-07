@@ -247,7 +247,7 @@ class InspectionTests(unittest.TestCase):
                 host = MagicMock()
                 host.plan = {"vmIdentity": {"pid": 10}, "guestInstance": "agent-instance"}
                 host.plan_path = root / "managed-host-plan.json"
-                host.status.return_value = {"guest": {"target": self.target}}
+                host.status.return_value = {"guest": {"target": self.target, "freshIdentityVersion": 1, "nativeVitalsVersion": 1}}
                 def factory(*args):
                     flow.publish(host.plan_path, host.plan)
                     return host
@@ -258,7 +258,7 @@ class InspectionTests(unittest.TestCase):
                     constructor = stack.enter_context(patch.object(flow, "ManagedPinnedHost", return_value=host))
                     stack.enter_context(patch.object(flow, "ready_epoch", return_value="epoch"))
                     stack.enter_context(patch.object(flow, "fresh"))
-                    stack.enter_context(patch.object(flow, "check_status"))
+                    stack.enter_context(patch.object(flow, "check_status", return_value=host.status.return_value))
                     context = {} if combined else None
                     flow.preflight(root, flow.Timings(), _admitted=context,
                                    _native={"mode": "persistent"} if combined else None)
@@ -268,6 +268,84 @@ class InspectionTests(unittest.TestCase):
                     if combined:
                         self.assertIs(context["host"], host)
                         self.assertEqual(flow.load(root / "state.json")["nativeRequest"]["agentInstanceId"], "agent-instance")
+
+    def test_persistent_preflight_rejects_unsupported_capabilities_before_native_or_lease(self):
+        from contextlib import ExitStack
+        for field in ("freshIdentityVersion", "nativeVitalsVersion"):
+            for value in (None, True, 0, "1", 2):
+                with self.subTest(field=field, value=value):
+                    root = self.root / (field + "-" + str(value))
+                    host = MagicMock()
+                    host.plan = {"vmIdentity": {"pid": 10}, "guestInstance": "agent-instance"}
+                    host.plan_path = root / "managed-host-plan.json"
+                    guest = {"target": self.target, "freshIdentityVersion": 1, "nativeVitalsVersion": 1}
+                    guest[field] = value
+                    host.status.return_value = {"guest": guest}
+                    def factory(*args):
+                        flow.publish(host.plan_path, host.plan)
+                        return host
+                    with ExitStack() as stack:
+                        stack.enter_context(patch.object(flow, "ensure_guest_agent"))
+                        stack.enter_context(patch.object(flow, "admit_lab2_inspection_host", side_effect=factory))
+                        fresh = stack.enter_context(patch.object(flow, "fresh"))
+                        native = stack.enter_context(patch.object(flow, "capture_native"))
+                        queue = stack.enter_context(patch.object(flow, "AccessQueue"))
+                        expected = "fresh-identity-unsupported" if field == "freshIdentityVersion" else "native-vitals-unsupported"
+                        with self.assertRaisesRegex(flow.InspectionBlocked, expected):
+                            flow.preflight(root, flow.Timings(), _admitted={}, _native={"mode": "persistent"})
+                        fresh.assert_not_called()
+                        native.assert_not_called()
+                        queue.assert_not_called()
+                        self.assertFalse((root / "state.json").exists())
+
+    def test_run_missing_capability_never_reaches_native_capture_or_queue(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        root = self.root / "missing-capability"
+        host = MagicMock()
+        host.plan = {"vmIdentity": {"pid": 10}, "guestInstance": "agent-instance"}
+        host.plan_path = root / "managed-host-plan.json"
+        host.status.return_value = {"guest": {"target": self.target, "freshIdentityVersion": 1}}
+        def factory(*args):
+            flow.publish(host.plan_path, host.plan)
+            return host
+        with patch.object(flow, "OUTPUT_BASE", self.root), patch.object(flow, "ensure_guest_agent"), \
+             patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
+             patch.object(flow, "capture_native") as native, patch.object(flow, "AccessQueue") as queue, \
+             redirect_stderr(StringIO()) as error:
+            self.assertEqual(flow.main(["run", "--native-vitals", "--output", str(root)]), 2)
+            self.assertEqual(json.loads(error.getvalue())["reason"], "native-vitals-unsupported")
+            native.assert_not_called()
+            queue.assert_not_called()
+        self.assertFalse((root / "state.json").exists())
+
+    def test_persistent_final_status_capability_drift_blocks_preflight(self):
+        root = self.root / "final-drift"
+        host = MagicMock()
+        host.plan = {"vmIdentity": {"pid": 10}, "guestInstance": "agent-instance"}
+        host.plan_path = root / "managed-host-plan.json"
+        host.status.return_value = {"guest": {"target": self.target, "freshIdentityVersion": 1, "nativeVitalsVersion": 1}}
+        def factory(*args):
+            flow.publish(host.plan_path, host.plan)
+            return host
+        with patch.object(flow, "ensure_guest_agent"), patch.object(flow, "admit_lab2_inspection_host", side_effect=factory), \
+             patch.object(flow, "ready_epoch", return_value="epoch"), patch.object(flow, "fresh"), \
+             patch.object(flow, "check_status", return_value={"guest": {"freshIdentityVersion": 1, "nativeVitalsVersion": False}}):
+            with self.assertRaisesRegex(flow.InspectionBlocked, "native-vitals-unsupported"):
+                flow.preflight(root, flow.Timings(), _admitted={}, _native={"mode": "persistent"})
+        self.assertFalse((root / "state.json").exists())
+
+    def test_cli_exposes_only_fixed_capability_blocked_reasons(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        for reason in ("fresh-identity-unsupported", "native-vitals-unsupported", "private credential text"):
+            with self.subTest(reason=reason), patch.object(flow, "preflight", side_effect=flow.Blocked(reason)), \
+                 patch.object(flow, "native_options", return_value=None), redirect_stderr(StringIO()) as error:
+                self.assertEqual(flow.main(["run", "--output", str(self.root)]), 2)
+                value = json.loads(error.getvalue())
+                expected = reason if reason != "private credential text" else "operation refused; inspect retained stage timings"
+                self.assertEqual(value["reason"], expected)
+                self.assertNotIn("credential", error.getvalue())
 
     def test_final_inventory_failure_prevents_report(self):
         self.artifact()
@@ -400,7 +478,7 @@ class InspectionTests(unittest.TestCase):
     def test_persistent_native_rejects_other_authenticated_agent_instance(self):
         state, summary, base, source = self.native_fixture()
         state["nativeRequest"] = {"mode": "persistent", "agentInstanceId": "expected-agent"}
-        summary.update(transport="persistent-control-agent", activeAgentInstanceId="expected-agent")
+        summary.update(transport="persistent-control-agent", activeAgentInstanceId="expected-agent", observedAtUtc=self.now.isoformat())
         for key in ("readerExecutableSha256", "guestReaderPath", "guestReaderReused"):
             summary.pop(key)
         with patch.object(flow.vitals, "EVIDENCE", base):
@@ -408,6 +486,38 @@ class InspectionTests(unittest.TestCase):
             summary["activeAgentInstanceId"] = "replacement-agent"
             with self.assertRaisesRegex(flow.InspectionBlocked, "agent binding"):
                 flow.validate_native(summary, state, self.now, self.now)
+
+    def test_persistent_replay_requires_v2_and_valid_ordered_envelope(self):
+        state, summary, base, source = self.native_fixture()
+        state["nativeRequest"] = {"mode": "persistent", "agentInstanceId": "agent"}
+        summary.update(transport="persistent-control-agent", activeAgentInstanceId="agent", observedAtUtc=self.now.isoformat())
+        for key in ("readerExecutableSha256", "guestReaderPath", "guestReaderReused"):
+            summary.pop(key)
+        with patch.object(flow.vitals, "EVIDENCE", base):
+            flow.validate_native(summary, state, self.now, self.now)
+            for observed in (None, "bad", (self.now - timedelta(seconds=1)).isoformat(),
+                             (self.now + timedelta(seconds=6)).isoformat(),
+                             self.now.replace(tzinfo=None).isoformat()):
+                with self.subTest(observed=observed):
+                    summary["observedAtUtc"] = observed
+                    with self.assertRaises(flow.Blocked):
+                        flow.validate_native(summary, state, self.now, self.now)
+            summary["observedAtUtc"] = (self.now - timedelta(milliseconds=1)).isoformat()
+            with self.assertRaisesRegex(flow.Blocked, "native-vitals-response-before-sample"):
+                flow.validate_native(summary, state, self.now, self.now)
+            value = json.loads(source.read_text())
+            value["contractVersion"] = "native-current-vitals-candidate-sample/1"
+            del value["observation"]["mana"]
+            source.write_text(json.dumps(value))
+            summary["sourceReportSha256"] = flow.digest(source)
+            summary["metrics"] = flow.vitals.validate_report(value, pid=state["target"]["processId"], ticks=state["target"]["processStartUtcTicks"])
+            summary["observedAtUtc"] = self.now.isoformat()
+            with self.assertRaisesRegex(flow.InspectionBlocked, "native-vitals-report-contract-invalid"):
+                flow.validate_native(summary, state, self.now, self.now)
+            state["nativeRequest"] = {"mode": "explicit-reader", "readerSha256": "B"*64, "guestReader": "guest"}
+            summary.update(readerExecutableSha256="B"*64, guestReaderPath="guest", guestReaderReused=True)
+            metrics, _ = flow.validate_native(summary, state, self.now, self.now)
+            self.assertEqual(metrics["contractVersion"], "native-current-vitals-candidate-sample/1")
 
     def test_persistent_requested_failure_never_falls_back_to_reader(self):
         state = {**self.state, "nativeRequest": {"mode": "persistent", "agentInstanceId": "agent"}}
