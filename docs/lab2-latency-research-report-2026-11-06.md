@@ -4,6 +4,8 @@
 **Scope:** VMware Lab 2, Windows 11, one running RIFT game, and the surrounding ChatGPT/Codex tool workflow.  
 **Evidence basis:** Completed research, approved light live tests, implementation measurements, independent review, and retained acceptance receipts. This report introduces no new live testing.
 
+**November 7 receipt audit:** The headline measurements reproduce from retained traces. See the [independent artifact audit](validation/lab2-latency-report-audit-2026-11-07.md) for exact test counts, visual-review coverage, source boundaries and evidence limitations.
+
 ## Executive finding
 
 The largest measured delays came from workflow orchestration and repeated setup work. Separate remote jobs introduced long gaps between phases; guest operations repeatedly launched scripts, transferred files, and copied a 117 MB executable for a diagnostic whose native read took milliseconds.
@@ -94,7 +96,7 @@ A delayed-reader integration test proved STOP acknowledgement before read comple
 
 ## Stability, reconnect and validation results
 
-All **ten light checks at one-minute intervals passed**, spanning **9 minutes 4.397 seconds** from first dispatch to final return. Their child median was 4.2219 seconds, and their local subprocess dispatch median was 4.4464 seconds. Native completion preceded screenshot capture by a median 0.569634 seconds.
+All **ten light checks at one-minute intervals passed machine verification**, spanning **9 minutes 4.397 seconds** from first dispatch to final return. Their child median was 4.2219 seconds, and their local subprocess dispatch median was 4.4464 seconds. Native completion preceded screenshot capture by a median 0.569634 seconds. The terminal status was `verified-awaiting-visual-review`; a separate visual-review record is retained only for check 10 among these ten runs.
 
 An independent [stability audit](../artifacts/e2e-latency-20261106/stability-audit.json) verified every retained native report, image/metadata hash, VM/game pin, controller/source/configuration proof, unique named request and distinct cleanup receipt. Approximately 55 seconds between checks were unobserved; this establishes sampled stability, not continuous freshness or general reliability.
 
@@ -103,10 +105,10 @@ Additional acceptance results:
 - A live wrong-PID native request was rejected in about 0.050 seconds without publishing a report.
 - After a controller-only graceful reconnect, the old admission was refused in 0.0152 seconds and a fresh joined workflow passed in 4.0796 seconds.
 - The running agent's actual process epoch, executable path, instance ID and full executable SHA matched the activated release.
-- Final acceptance recorded ready, disarmed, idle control, no active native read, no sampled held inputs and an attested released lease.
-- Full validation passed 380 portable and 336 Live .NET tests, plus 1,720 Python tests with two skips; locked restore/build/format, published native smoke, Lua/C# contracts and deterministic replay passed. A later documentation check resolved 1,035 relative links.
+- The final joined workflow recorded ready, disarmed, idle control, no active native read, no sampled held inputs and an attested released lease. Its generation-2332 cleanup preceded a generation-2333 shutdown at 03:21:05 UTC. The controller then disconnected and exited. `final-acceptance.json`, assembled at 03:21:20 UTC, repeats the earlier workflow status; it does not prove readiness at its own timestamp. The shutdown record showed stopped control and no sampled held inputs, with the resource marked `stopped-still-blocked`.
+- Full validation passed 380 portable and 336 Live .NET tests; Python ran 1,720 tests, with 1,718 passed and two skipped. Locked restore/build/format, published native smoke, Lua/C# contracts and deterministic replay passed. The retained full-gate log records 1,029 relative links. The originally reported later 1,035-link check has no corroborating raw result in the bounded artifact search and is excluded from the verified findings.
 
-The [final acceptance receipt](../artifacts/e2e-latency-20261106/final-acceptance.json), [release proof](../artifacts/e2e-latency-20261106/active-release-proof.json) and [source provenance](../artifacts/e2e-latency-20261106/final-source-provenance.json) record the ending evidence. They are historical observations, not reusable authority for a later run.
+The [acceptance summary](../artifacts/e2e-latency-20261106/final-acceptance.json), [release proof](../artifacts/e2e-latency-20261106/active-release-proof.json) and [source provenance](../artifacts/e2e-latency-20261106/final-source-provenance.json) retain historical evidence. The summary's composition timestamp is not a fresh status observation; the [artifact audit](validation/lab2-latency-report-audit-2026-11-07.md) reconciles it with the subsequent shutdown. None is reusable authority for a later run.
 
 ## Remaining cost and limits
 

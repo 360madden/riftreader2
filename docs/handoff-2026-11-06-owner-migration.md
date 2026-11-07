@@ -2,6 +2,43 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Lab 2 report audit — November 7
+
+Three parallel reviewers checked the consolidated Lab 2 investigation against raw
+timing traces, native/capture receipts, retained controller logs, validation logs,
+release bytes and historical Git source. See the
+[verified audit and discrepancies](validation/lab2-latency-report-audit-2026-11-07.md).
+No live operations, input, helper changes or owner transfers were used.
+
+The headline measurements reproduce: screenshot44.049 to5.898s (15 to3 calls),
+joined remote5.826s, native persistent median0.2185915s, and ten light checks over
+544.397046s. The release ZIP executable matches the reported full SHA. Retained
+STOP and cleanup evidence supports the bounded historical trial; it is not a new
+current-state qualification. Exact figures and source paths are in the audit.
+
+Corrections: Python1720 means1718 passed plus2 skipped; the full-gate log records
+1029 relative links. No raw result for the later1035 count was found in the
+bounded search, so that count is excluded from verified acceptance. All ten
+interval runs passed machine verification; only10 retains a separate visual
+review. Approximately55s between samples were unobserved. Source provenance is
+historical `af6662b`:23/26 raw Git hashes match, and the other three reconcile
+through line-ending normalization. These observations do not qualify subsequent
+runtime changes or establish continuous freshness/native semantics/restart.
+
+**Material chronology discrepancy:** `final-acceptance.json` was composed at
+03:21:20 UTC with copied ready/generation2332 fields. The retained host log records
+generation2333 `stopped-still-blocked` at03:21:05.566885, disconnect at03:21:05.975067,
+and the independent exit marker confirms controller PID59400 exited at03:21:05.985506.
+The earlier joined workflow and its release passed; readiness at the summary's
+timestamp did not. Shutdown was stopped/disarmed/not busy/no sampled held inputs.
+The next logged connection was03:28:20 under a later controller. Preserve raw
+receipts; do not reuse this summary as current ownership or readiness authority.
+
+The report now reflects these boundaries. Local reproducible audit outputs are in
+`artifacts/lab2-report-audit-20261107/`. Preserve current owners and STOP/release
+gates; reacquire identities for any later live use. The P1 console-attempt defect
+below remains open and is still the next fix before any further console input.
+
 ## Review checkpoint — November 7
 
 The user requested a review after clearing the timed goal. Independent reviewers
