@@ -51,6 +51,12 @@ smoke check. Only the failed launch's generated config is eligible, inside its
 own guest session and with zero readers; unresolved cleanup remains explicit.
 No additional game input or owner replacement occurred for that check.
 
+The [offline consistency verifier](validation/lab1-sustained480-2026-11-06.md#offline-consistency-verifier)
+reproduces the retained 515-sample metrics and rejects inconsistent rehashed
+schemas/timelines/expiry. Its 12 focused tests pass. It checks selected recorded
+output only; it grants no current freshness, artifact authenticity, VM/live
+admission or full-scan-anchor qualification.
+
 ## Prior resume point — short-window cleanup and freshness passed
 
 See [the live validation](validation/lab1-receiver-freshness-2026-11-06.md). The
