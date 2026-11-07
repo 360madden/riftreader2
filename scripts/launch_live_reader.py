@@ -40,6 +40,7 @@ from scripts.vm_console_native import (
     verify_identity,
 )
 from scripts.vmware_guest_session import GuestSession, POWERSHELL, SessionError
+from scripts.guest_staging_cleanup import guest_body as cleanup_body, validate_receipt as validate_cleanup_receipt
 from scripts.live_reader_config import (
     DEFAULT_SCAN_LIMITS,
     build_live_configuration,
@@ -195,7 +196,7 @@ def run_guest_script(session: GuestSession, output: Path, body: str, run_id: str
     host_receipt = output / f"{label}.json"
     guest_script = rf"C:\Users\Public\Documents\RR2Hour-{run_id}-{label}.ps1"
     guest_receipt = rf"C:\Users\Public\Documents\RR2Hour-{run_id}-{label}.json"
-    script = "$ErrorActionPreference='Stop'\n" + body
+    script = "$ErrorActionPreference='Stop'\n" + body + "\n"
     script += f"$payload|ConvertTo-Json -Depth 12 -Compress|Set-Content -LiteralPath {quote(guest_receipt)} -Encoding UTF8\n"
     host_script.write_text(script, encoding="utf-8-sig")
     session.run("copyFileFromHostToGuest", str(host_script), guest_script, timeout=90)
@@ -276,6 +277,8 @@ def execute(args: argparse.Namespace) -> dict:
     guest_stdout = guest_dir + r"\reader.stdout.txt"
     guest_stderr = guest_dir + r"\reader.stderr.txt"
     staging = None
+    config_copy_attempted = False
+    cleanup_handled = False
     try:
         staging, config, config_sha = private_config(
             run_id, endpoint, receiver_token, guest_output, args.duration_seconds,
@@ -299,53 +302,74 @@ $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$
             if pre.get("status") != "guest-preflight-passed":
                 fail("guest-preflight-failed")
 
-            session.run("copyFileFromHostToGuest", str(reader), guest_exe, timeout=300)
-            session.run("copyFileFromHostToGuest", str(config), guest_config, timeout=90)
-            clean_private(staging)
-            staging = None
+            try:
+                session.run("copyFileFromHostToGuest", str(reader), guest_exe, timeout=300)
+                config_copy_attempted = True
+                session.run("copyFileFromHostToGuest", str(config), guest_config, timeout=90)
+                clean_private(staging)
+                staging = None
 
-            launch = game_guard(args) + rf"""
-$other=@(Get-CimInstance Win32_Process -Filter "Name='RiftReader2.Live.exe'" | Where-Object {{
-    $_.CommandLine -notmatch '(?i)(^|\s)control-agent(\s|$)'
-}})
-if($other.Count -ne 0){{throw 'reader-start-race'}}
-$exe={quote(guest_exe)};$cfg={quote(guest_config)};$latest={quote(guest_output)}
-$stdout={quote(guest_stdout)};$stderr={quote(guest_stderr)}
-if((Get-FileHash -LiteralPath $exe).Hash -ne {quote(args.reader_sha256)}){{throw 'guest-reader-hash'}}
-if((Get-FileHash -LiteralPath $cfg).Hash -ne {quote(config_sha)}){{throw 'guest-config-hash'}}
-$p=Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -WindowStyle Hidden `
-    -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
-$deadline=[DateTime]::UtcNow.AddSeconds(90);$nonce=$null;$snapshot=$null
-while([DateTime]::UtcNow -lt $deadline -and -not $p.HasExited){{
-    Start-Sleep -Milliseconds 250
-    if(Test-Path -LiteralPath $stdout){{
-        $text=Get-Content -LiteralPath $stdout -Raw
-        if($text -match '/rr2bind ([0-9a-f]{{32}})'){{$nonce=$Matches[1]}}
+                launch = game_guard(args) + rf"""
+    $other=@(Get-CimInstance Win32_Process -Filter "Name='RiftReader2.Live.exe'" | Where-Object {{
+        $_.CommandLine -notmatch '(?i)(^|\s)control-agent(\s|$)'
+    }})
+    if($other.Count -ne 0){{throw 'reader-start-race'}}
+    $exe={quote(guest_exe)};$cfg={quote(guest_config)};$latest={quote(guest_output)}
+    $stdout={quote(guest_stdout)};$stderr={quote(guest_stderr)}
+    if((Get-FileHash -LiteralPath $exe).Hash -ne {quote(args.reader_sha256)}){{throw 'guest-reader-hash'}}
+    if((Get-FileHash -LiteralPath $cfg).Hash -ne {quote(config_sha)}){{throw 'guest-config-hash'}}
+    $p=Start-Process -FilePath $exe -WorkingDirectory (Split-Path -Parent $exe) -WindowStyle Hidden `
+        -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    $deadline=[DateTime]::UtcNow.AddSeconds(90);$nonce=$null;$snapshot=$null
+    while([DateTime]::UtcNow -lt $deadline -and -not $p.HasExited){{
+        Start-Sleep -Milliseconds 250
+        if(Test-Path -LiteralPath $stdout){{
+            $text=Get-Content -LiteralPath $stdout -Raw
+            if($text -match '/rr2bind ([0-9a-f]{{32}})'){{$nonce=$Matches[1]}}
+        }}
+        if($nonce -and (Test-Path -LiteralPath $latest)){{
+            try{{$snapshot=Get-Content -LiteralPath $latest -Raw|ConvertFrom-Json}}catch{{}}
+            if($snapshot -and $snapshot.nonce -eq $nonce -and $snapshot.target -and
+               $snapshot.target.processId -eq {args.expected_game_pid} -and
+               $snapshot.target.executableSha256 -eq {quote(args.expected_game_sha256)}){{break}}
+        }}
     }}
-    if($nonce -and (Test-Path -LiteralPath $latest)){{
-        try{{$snapshot=Get-Content -LiteralPath $latest -Raw|ConvertFrom-Json}}catch{{}}
-        if($snapshot -and $snapshot.nonce -eq $nonce -and $snapshot.target -and
-           $snapshot.target.processId -eq {args.expected_game_pid} -and
-           $snapshot.target.executableSha256 -eq {quote(args.expected_game_sha256)}){{break}}
-    }}
-}}
-if($p.HasExited){{throw 'reader-exited-before-ready'}}
-if(-not $nonce -or -not $snapshot){{throw 'reader-not-ready'}}
-if(-not $snapshot.delivery.enabled -or $snapshot.delivery.endpoint -ne {quote(endpoint)}){{throw 'delivery-binding-mismatch'}}
-$p.Refresh();$readerTicks=[string]$p.StartTime.ToUniversalTime().Ticks
-$payload=@{{status='reader-ready';readerPid=$p.Id;readerStartUtcTicks=$readerTicks;
- readerSha256=(Get-FileHash -LiteralPath $exe).Hash;nonce=$nonce;
- expiresAtUtc=$p.StartTime.ToUniversalTime().AddSeconds({args.duration_seconds}).ToString('o');
- guestDirectory={quote(guest_dir)};guestOutput=$latest;gamePid=$game.Id;gameStartUtcTicks=$gameTicks;
- gameSha256=$gameSha;scanStatus=$snapshot.riftReader2.scan.status;
- selectionStatus=$snapshot.riftReader2.selectionStatus;deliveryStatus=$snapshot.delivery.status;
- inputSent=$false;controlAgentStopped=$false}}
-"""
-            ready = run_guest_script(session, output, launch, run_id, "launch", timeout=150)
-            if (ready.get("status") != "reader-ready" or ready.get("readerSha256") != args.reader_sha256
-                    or not re.fullmatch(r"[0-9a-f]{32}", str(ready.get("nonce", "")))):
-                fail("reader-launch-receipt-mismatch")
-            session.copy_from_guest(guest_output, output / "latest.json", timeout=90)
+    if($p.HasExited){{throw 'reader-exited-before-ready'}}
+    if(-not $nonce -or -not $snapshot){{throw 'reader-not-ready'}}
+    if(-not $snapshot.delivery.enabled -or $snapshot.delivery.endpoint -ne {quote(endpoint)}){{throw 'delivery-binding-mismatch'}}
+    $p.Refresh();$readerTicks=[string]$p.StartTime.ToUniversalTime().Ticks
+    $payload=@{{status='reader-ready';readerPid=$p.Id;readerStartUtcTicks=$readerTicks;
+     readerSha256=(Get-FileHash -LiteralPath $exe).Hash;nonce=$nonce;
+     expiresAtUtc=$p.StartTime.ToUniversalTime().AddSeconds({args.duration_seconds}).ToString('o');
+     guestDirectory={quote(guest_dir)};guestOutput=$latest;gamePid=$game.Id;gameStartUtcTicks=$gameTicks;
+     gameSha256=$gameSha;scanStatus=$snapshot.riftReader2.scan.status;
+     selectionStatus=$snapshot.riftReader2.selectionStatus;deliveryStatus=$snapshot.delivery.status;
+     inputSent=$false;controlAgentStopped=$false}}
+    """
+                ready = run_guest_script(session, output, launch, run_id, "launch", timeout=150)
+                if (ready.get("status") != "reader-ready" or ready.get("readerSha256") != args.reader_sha256
+                        or not re.fullmatch(r"[0-9a-f]{32}", str(ready.get("nonce", "")))):
+                    fail("reader-launch-receipt-mismatch")
+                session.copy_from_guest(guest_output, output / "latest.json", timeout=90)
+            except Exception:
+                if config_copy_attempted:
+                    cleanup_handled = True
+                    cleanup = {"status": "unverified", "lab": args.lab, "runId": run_id}
+                    try:
+                        check()
+                        receipt = validate_cleanup_receipt(run_guest_script(
+                            session, output, cleanup_body(args.lab, run_id), run_id, "cleanup"))
+                        check()
+                        cleanup = {**receipt, "lab": args.lab, "runId": run_id,
+                                   "vmIdentityStable": True}
+                    except Exception:
+                        # Never print guest output or replace the launch failure.
+                        pass
+                    try:
+                        write_new(output / "guest-cleanup.json", cleanup)
+                    except Exception:
+                        pass
+                raise
 
         vm_after = verify_identity(cfg, vm_before)
         write_new(output / "vm-after.json", vm_after)
@@ -374,8 +398,25 @@ $payload=@{{status='reader-ready';readerPid=$p.Id;readerStartUtcTicks=$readerTic
         write_new(output / "summary.json", summary)
         return summary
     finally:
+        if sys.exc_info()[0] is not None and config_copy_attempted and not cleanup_handled:
+            try:
+                write_new(output / "guest-cleanup.json", {
+                    "status": "unverified", "reason": "session-closed",
+                    "lab": args.lab, "runId": run_id,
+                })
+            except Exception:
+                pass
         if staging is not None and staging.exists():
-            clean_private(staging)
+            if sys.exc_info()[0] is None:
+                clean_private(staging)
+            else:
+                try:
+                    clean_private(staging)
+                except Exception:
+                    try:
+                        write_new(output / "host-cleanup.json", {"status": "unverified"})
+                    except Exception:
+                        pass
 
 
 def parser() -> argparse.ArgumentParser:

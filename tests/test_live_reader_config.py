@@ -153,5 +153,110 @@ class LiveReaderConfigTests(unittest.TestCase):
                 launch_live_reader.clean_private(link)
             self.assertTrue(staging.is_dir())
 
+class LaunchFailureCleanupTests(unittest.TestCase):
+    def test_guest_script_separates_body_without_trailing_newline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            session = mock.Mock()
+            session.copy_from_guest.side_effect = lambda source, target, **kwargs: target.write_text('{}')
+            result = launch_live_reader.run_guest_script(
+                session, output, "$payload=@{status='ok'}", "lab1-test", "test")
+            script = (output / "test.ps1").read_text(encoding="utf-8-sig")
+            self.assertIn("$payload=@{status='ok'}\n$payload|ConvertTo-Json", script)
+            self.assertEqual(result, {})
+
+    def test_generated_scope_is_strict(self):
+        from scripts.guest_staging_cleanup import guest_body
+        valid = "lab2-" + "a" * 32
+        body = guest_body("lab2", valid)
+        self.assertIn(valid, body)
+        self.assertIn(r"RIFT-LAB-2\mrkoo", body)
+        for lab, run in (("lab3", valid), ("lab1", valid), ("lab2", "../escape"),
+                         ("lab2", "lab2-" + "A" * 32)):
+            with self.subTest(lab=lab, run=run), self.assertRaises(RuntimeError):
+                guest_body(lab, run)
+
+    def test_launch_failures_clean_only_after_config_copy_attempt(self):
+        from contextlib import ExitStack
+        from types import SimpleNamespace
+        receipt = {"status": "deleted", "fileExisted": True, "deleted": True,
+                   "otherReaderCountBefore": 0, "otherReaderCountAfter": 0,
+                   "inputSent": False}
+        for failure in ("preflight", "reader-copy", "config-copy", "launch", "cleanup-fails",
+                        "host-cleanup-fails", "vm-drift", "post-session", "success"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                root = Path(directory)
+                reader = root / "reader.exe"
+                reader.write_bytes(b"reader")
+                receiver = root / "receiver.json"
+                receiver.write_text("{}")
+                staging = root / "private"
+                staging.mkdir()
+                config = staging / "config.json"
+                config.write_text("private")
+                args = SimpleNamespace(output=root / "out", reader=reader,
+                    reader_sha256=launch_live_reader.sha(reader), receiver_config=receiver,
+                    lab="lab1", duration_seconds=900, poll_interval_milliseconds=500,
+                    max_scan_bytes=1000, expected_game_pid=1, expected_game_start_ticks=2,
+                    expected_game_sha256="A" * 64)
+                def patch(name, **kwargs):
+                    return stack.enter_context(mock.patch.object(launch_live_reader, name, **kwargs))
+                patch("receiver_preflight", return_value=({}, "token", "endpoint"))
+                patch("validate_config", return_value=SimpleNamespace(vmrun="vmrun", vmx="vmx"))
+                patch("collect_identity", return_value={"vm": 1})
+                patch("verify_identity", side_effect=(RuntimeError("original-post-session") if failure == "post-session"
+                                                       else RuntimeError("drift") if failure == "vm-drift"
+                                                       else None), return_value={"vm": 1})
+                patch("private_config", return_value=(staging, config, "hash"))
+                session_type = patch("GuestSession")
+                session = session_type.return_value.__enter__.return_value
+                session.credential_source = "cache"
+                def copy(*args, **kwargs):
+                    if failure == "reader-copy" and str(args[1]).endswith("reader.exe"):
+                        raise RuntimeError("original-reader-copy")
+                    if failure == "config-copy" and str(args[1]).endswith("config.json"):
+                        raise RuntimeError("original-config-copy")
+                session.run.side_effect = copy
+                def guest_script(session, output, body, run_id, label, **kwargs):
+                    if label == "preflight":
+                        if failure == "preflight":
+                            raise RuntimeError("original-preflight")
+                        return {"status": "guest-preflight-passed"}
+                    if label == "cleanup":
+                        if failure == "cleanup-fails":
+                            raise RuntimeError("secret-cleanup-error")
+                        return receipt
+                    if failure in ("success", "post-session"):
+                        return {"status": "reader-ready", "readerSha256": args.reader_sha256,
+                                "nonce": "a" * 32, "readerPid": 5, "readerStartUtcTicks": "6",
+                                "expiresAtUtc": "later"}
+                    raise RuntimeError("original-launch")
+                run = patch("run_guest_script", side_effect=guest_script)
+                if failure == "host-cleanup-fails":
+                    patch("clean_private", side_effect=RuntimeError("original-host-cleanup"))
+                else:
+                    patch("clean_private")
+                if failure == "success":
+                    self.assertEqual(launch_live_reader.execute(args)["status"],
+                                     "reader-running-postflight-verified")
+                else:
+                    with self.assertRaisesRegex(RuntimeError, "original-"):
+                        launch_live_reader.execute(args)
+                labels = [call.args[4] for call in run.call_args_list]
+                if failure in ("preflight", "reader-copy", "success"):
+                    self.assertNotIn("cleanup", labels)
+                    self.assertFalse((args.output / "guest-cleanup.json").exists())
+                else:
+                    self.assertEqual(labels.count("cleanup"), 0 if failure in ("vm-drift", "post-session") else 1)
+                    outcome = json.loads((args.output / "guest-cleanup.json").read_text())
+                    self.assertEqual(outcome["status"], "unverified" if failure in ("cleanup-fails", "vm-drift", "post-session") else "deleted")
+                    if failure == "post-session":
+                        self.assertEqual(outcome["reason"], "session-closed")
+                    self.assertNotIn("secret", json.dumps(outcome))
+                if failure == "host-cleanup-fails":
+                    self.assertEqual(json.loads((args.output / "host-cleanup.json").read_text()),
+                                     {"status": "unverified"})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -75,3 +75,22 @@ field semantics or a separate RR2R1 typed-reference assessment. The bounded
 reader's expiry ends this run; do not call its later cached packets fresh or
 reuse its nonce. Lab 2 freshness remains unverified. Reacquire every identity
 and honor the existing owner and STOP/release gates for future work.
+
+## Launch-failure cleanup follow-up, 10:13 PM Eastern
+
+The launcher now attempts metadata-only cleanup of its own generated guest
+configuration after a failed configuration-copy or launch attempt. It uses the
+same reviewed exclusive-handle deletion helper, exact lab/run directory,
+machine/user/VM checks and zero-reader guard. Cleanup stays in the owning guest
+session; refusal or an unavailable session records `unverified` without masking
+the original launch error. Successful launches retain their configuration.
+Abrupt termination can still prevent a cleanup receipt.
+
+The focused cleanup/configuration suites passed 19 tests, including partial
+copy, launch, cleanup, VM-drift and post-session failures. A nonsecret Lab 1
+fixture was deleted, then independently confirmed absent in a fresh cached-login
+guest session; evidence is
+`artifacts/receiver-migrations/owned-cleanup-smoke-2664f91a10d74030af530b22c268ca9f`.
+This smoke check sent no input and did not stop or replace a controller/reader.
+It also exposed a missing separator for guest-script bodies without a final
+newline; the helper now always separates the appended receipt pipeline.

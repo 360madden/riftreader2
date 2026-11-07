@@ -74,6 +74,16 @@ class CleanupLab1StagingTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "cleanup-receipt-guard-failed"):
             cleanup.validate_receipt(receipt)
 
+    def test_rejects_boolean_counters_and_non_string_status(self):
+        receipt = {"status": "already-absent", "fileExisted": False, "deleted": False,
+                   "otherReaderCountBefore": 0, "otherReaderCountAfter": 0, "inputSent": False}
+        for key, value in (("otherReaderCountBefore", False),
+                           ("otherReaderCountAfter", False), ("status", [])):
+            with self.subTest(key=key):
+                bad = {**receipt, key: value}
+                with self.assertRaises(RuntimeError):
+                    cleanup.validate_receipt(bad)
+
     def test_rejects_extra_fields_that_could_expose_private_content(self):
         receipt = {
             "status": "deleted",

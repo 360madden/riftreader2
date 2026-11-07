@@ -12,8 +12,9 @@ capture gap2.983s and planar drift0.0. The unchanged first attempt failed after
 implemented and tested in `1802c4b`. Passing run had zero unavailable polls.
 The original failed artifact was retained. All acceptance gates remain strict.
 
-Current recorded reader PID6464/nonce622041afc6a14371aa45ec5efcc57c8c expires
-November6 9:43:08 PM Eastern. Never reuse its pin or cached packets after expiry.
+Recorded reader PID6464/nonce622041afc6a14371aa45ec5efcc57c8c expired
+November6 9:43:08 PM Eastern; a fresh guest check verified its exit and the
+receipt reader rejected the stale feed. Never reuse its pin or cached packets.
 Controller restored as PID68160/generation`eac96b09093643e09cbb4795e1ac9c2a`,
 ready/disarmed/idle, initial cleanup verified, queue generation5212 unheld/free.
 This is sustained observer-side receiver evidence, not restart, native-field,
@@ -43,6 +44,12 @@ updated after the compatibility merge. The corrected operator design holds
 launch locks across vacancy, checks actual listener PID before STOP, retains
 exact task/process/registration evidence and requires safe retirement before
 any selective rollback. It was source-reviewed, never executed.
+
+The [launch-failure cleanup follow-up](validation/lab1-receiver-freshness-2026-11-06.md#launch-failure-cleanup-follow-up-1013-pm-eastern)
+passed 19 focused tests and a nonsecret Lab1 deletion/fresh-session absence
+smoke check. Only the failed launch's generated config is eligible, inside its
+own guest session and with zero readers; unresolved cleanup remains explicit.
+No additional game input or owner replacement occurred for that check.
 
 ## Prior resume point — short-window cleanup and freshness passed
 
