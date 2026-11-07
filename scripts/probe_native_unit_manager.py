@@ -482,9 +482,10 @@ def calculate_energy(fields: dict, clock: float) -> dict:
 
 def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
         cast_record: bool = False, cooldown_roots: bool = False,
-        cooldown_collections: bool = False) -> dict:
+        cooldown_collections: bool = False, cooldown_cache: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
+    cooldown_collections = cooldown_collections or cooldown_cache
     cooldown_roots = cooldown_roots or cooldown_collections
     probe_path = Path(__file__)
     probe_sha = sha(probe_path.read_bytes())
@@ -522,7 +523,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
               "status": "incomplete",
               "qualification": "candidate-only; no passive-freshness or restart qualification"}
     helper_sources = ({ROOT / "scripts" / name: sha((ROOT / "scripts" / name).read_bytes())
-                       for name in ("native_thread_metadata.py", "native_tls_collections.py")}
+                       for name in (("native_thread_metadata.py", "native_tls_collections.py") +
+                                    (("native_resolver_cache.py",) if cooldown_cache else ())) }
                       if cooldown_collections else {})
     if helper_sources:
         review["helperSourceSha256"] = {path.name: value for path, value in helper_sources.items()}
@@ -632,6 +634,8 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 roots_ranges += [(0x355F430, 8), (0x2C281B8, 8)]
             if cooldown_roots:
                 roots_ranges += [(0x33624C8, 8), (0x3372C18, 8)]
+            if cooldown_cache:
+                roots_ranges.append((0x33DC1B8, 8))
             roots = take("roots", roots_ranges, relative=True)
             manager = pointer(struct.unpack("<Q", roots[base + MANAGER_RVA])[0])
             player_system = pointer(struct.unpack("<Q", roots[base + PLAYER_SYSTEM_RVA])[0])
@@ -830,6 +834,38 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 cooldown["observedAtUtc"] = observation_times.get(
                     "cooldown-selector", observation_times["roots"])
                 review["cooldownResolverCandidate"] = cooldown
+                if cooldown_cache and cooldown["status"] == "candidate-roots-present":
+                    store_fields = take("cooldown-store-fields", [(lookup_owner + 4, 8)])
+                    cooldown_anchors.update(store_fields)
+                    store_mode, store_kind = struct.unpack("<II", store_fields[lookup_owner + 4])
+                    store = lookup_owner + (0x110 if store_mode == 0 else 0x20)
+                    compression = take("cooldown-store-compression", [(store + 0x83, 1)])
+                    cooldown_anchors.update(compression)
+                    path_address = struct.unpack("<Q", roots[base + 0x33DC1B8])[0]
+                    path_text = None
+                    path_interpretation = "null-path-global"
+                    if path_address:
+                        if not 0x10000 <= path_address <= MAX_USER - 255:
+                            raise ValueError("invalid-database-path-address")
+                        path_length = min(256, 4096 - (path_address & 4095))
+                        path_bytes = take("cooldown-database-path", [(path_address, path_length)])
+                        cooldown_anchors.update(path_bytes)
+                        raw_path = path_bytes[path_address]
+                        if b"\x00" in raw_path:
+                            try:
+                                path_text = raw_path.split(b"\x00", 1)[0].decode("utf-8")
+                                path_interpretation = "utf8-candidate-not-selected-store-proof"
+                            except UnicodeDecodeError:
+                                path_interpretation = "not-a-valid-utf8-path"
+                        else:
+                            path_interpretation = "no-terminator-in-bounded-read"
+                    cooldown["datasetStoreCandidate"] = {
+                        "ownerMode": store_mode, "ownerKind": store_kind,
+                        "storeAddress": store, "compressionByte": compression[store + 0x83][0],
+                        "configuredPathTextCandidate": path_text,
+                        "configuredPathInterpretation": path_interpretation,
+                        "configuredPathAddress": path_address,
+                        "selectedStoreMayBeMemoryOnly": store_mode == 0 and store_kind == 2}
                 if cooldown_collections and cooldown["status"] == "candidate-roots-present":
                     from scripts.native_tls_collections import read_tls_collections
                     metadata = thread_metadata("threads-before")
@@ -837,25 +873,31 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                     threads = [{**row, "tebAddress": int(row["tebAddress"], 16)}
                                for row in metadata["threads"]]
                     tls_read_count = 0
+                    tls_observed = {}
 
                     def read_tls(name, ranges):
                         nonlocal tls_read_count
                         tls_read_count += 1
-                        return take(f"{name}-{tls_read_count}", ranges)
+                        captured = take(f"{name}-{tls_read_count}", ranges)
+                        for address, raw in captured.items():
+                            if address in tls_observed and tls_observed[address] != raw:
+                                raise ValueError("tls-input-changed")
+                            tls_observed[address] = raw
+                        return captured
 
                     selected = read_tls_collections(
                         read_tls, threads=threads, process_id=identity["processId"],
                         tls_index=tls_index, embedded_collection=lookup_owner + 0x200)
-                    after_metadata = thread_metadata("threads-after")
-                    if (metadata.get("partial") is not False or
-                            after_metadata.get("partial") is not False or
-                            sorted(metadata["threads"], key=lambda row: row["threadId"]) !=
-                            sorted(after_metadata["threads"], key=lambda row: row["threadId"])):
-                        selected = {"status": "unavailable", "reason": "thread-coverage-or-epoch-changed",
-                                    "threads": []}
+
+                    def same_threads(current_metadata):
+                        return (metadata.get("partial") is False and
+                                current_metadata.get("partial") is False and
+                                sorted(metadata["threads"], key=lambda row: row["threadId"]) ==
+                                sorted(current_metadata["threads"], key=lambda row: row["threadId"]))
+
+                    after_metadata = None
                     cooldown.update({"tlsIndex": tls_index, "collections": selected,
-                                     "threadCoverageBefore": metadata["enumerated"],
-                                     "threadCoverageAfter": after_metadata["enumerated"]})
+                                     "threadCoverageBefore": metadata["enumerated"]})
                     if selected["status"] == "candidate":
                         collections = sorted({row["selectedCollection"] for row in selected["threads"]})
                         if len(collections) <= 32:
@@ -870,6 +912,56 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                                 for address in collections]
                         else:
                             cooldown["cacheHeadersOmitted"] = "collection-count-exceeds-32"
+                        if cooldown_cache and len(collections) == 1:
+                            from scripts.native_resolver_cache import SnapshotPageReader, read_resolver_cache
+                            cache_read_count = 0
+
+                            def read_cache(name, ranges):
+                                nonlocal cache_read_count
+                                cache_read_count += 1
+                                return take(f"{name}-{cache_read_count}", ranges)
+
+                            page_reader = SnapshotPageReader(read_cache)
+                            cooldown["cacheInventory"] = read_resolver_cache(
+                                page_reader, collection=collections[0],
+                                selector=cooldown["selector"], max_chain_nodes=2048)
+                            cooldown["cacheInventory"]["snapshotReadCalls"] = page_reader.read_calls
+                            cooldown["cacheInventory"]["snapshotPages"] = len(page_reader.pages)
+                            cooldown["cacheInventory"]["collectionAddress"] = collections[0]
+                            post_walk_metadata = thread_metadata("threads-post-walk")
+                            if same_threads(post_walk_metadata):
+                                tls_items = list(tls_observed.items())
+                                for start in range(0, len(tls_items), 128):
+                                    batch = tls_items[start:start + 128]
+                                    current = take(f"tls-post-cache-{start}", [
+                                        (address, len(raw)) for address, raw in batch])
+                                    if any(current[address] != raw for address, raw in batch):
+                                        raise ValueError("tls-selection-changed-during-cache-walk")
+                            else:
+                                # Do not touch TEBs whose thread lifetime ended.
+                                # Embedded collection bytes can remain raw candidates;
+                                # an execution-thread selection claim cannot survive.
+                                after_metadata = post_walk_metadata
+                        elif cooldown_cache:
+                            cooldown["cacheInventory"] = {"status": "partial",
+                                                          "reason": "ambiguous-thread-collections", "entries": []}
+                    if after_metadata is None:
+                        after_metadata = thread_metadata("threads-after")
+                    cooldown["threadCoverageAfter"] = after_metadata["enumerated"]
+                    selection_verified = selected["status"] == "candidate" and same_threads(after_metadata)
+                    if not selection_verified:
+                        cooldown["collections"] = {"status": "unavailable",
+                                                   "reason": "thread-coverage-or-epoch-changed", "threads": []}
+                        if "cacheInventory" in cooldown:
+                            inventory = cooldown["cacheInventory"]
+                            if (inventory.get("status") != "complete" or
+                                    inventory.get("collectionAddress") != lookup_owner + 0x200):
+                                cooldown["cacheInventory"] = {"status": "partial",
+                                                              "reason": "thread-coverage-or-epoch-changed", "entries": []}
+                    if "cacheInventory" in cooldown:
+                        cooldown["cacheInventory"]["threadSelectionVerified"] = selection_verified
+                        cooldown["cacheInventory"]["qualification"] = (
+                            "thread-selected-cache-candidate" if selection_verified else "collection-only-candidate")
 
             if cast_record:
                 cast_read_count = 0
@@ -1050,6 +1142,8 @@ def main() -> None:
                         help="Read candidate cooldown resolver roots and selector, not cooldown values.")
     parser.add_argument("--cooldown-collections", action="store_true",
                         help="Observe per-thread TLS collection candidates without calling game code.")
+    parser.add_argument("--cooldown-cache", action="store_true",
+                        help="Inventory one unanimous selected resolver cache and raw dataset-store metadata.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
@@ -1057,7 +1151,8 @@ def main() -> None:
                              resource_record=args.resource_record,
                              cast_record=args.cast_record,
                              cooldown_roots=args.cooldown_roots,
-                             cooldown_collections=args.cooldown_collections), indent=2), flush=True)
+                             cooldown_collections=args.cooldown_collections,
+                             cooldown_cache=args.cooldown_cache), indent=2), flush=True)
 
 
 if __name__ == "__main__":

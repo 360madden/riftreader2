@@ -4,6 +4,25 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
+**Active five-hour goal:** started November7 at08:26 Eastern, target13:26
+Eastern (18:26 UTC). Keep working through useful discovery batches; this
+checkpoint does not complete that time window. Latest accepted Lab2 cache run:
+`artifacts/native-unit-manager/lab2/d7008a54e6774bacaff7837df90e0a1a/`.
+All2048 entries accounted for,380 selector83 rows,379 nonnull records; all
+thread/TLS/owner/content/process/source gates passed. Seven guest snapshot
+calls used two independent page phases. Initial timing/thread-exit failures
+remain incomplete, with no acceptance claims. A verified embedded-cache-only
+candidate can survive thread membership changes only with thread selection
+explicitly unavailable and all final owner/header/process checks retained.
+
+Current cache keys match21 of55 historical named public-ID high words; these
+are cross-build correlation leads, not current object names or spellbook proof.
+Next use `native_ability_record_seed.py` (pending live integration) for bounded
+raw record/name/type seeds, inspect its captured virtual getter RVAs statically,
+and compare Lab1. Static fallback work found compressed SQLite dataset lookup,
+a memory-store copy path and a candidate pager filename chain; don't treat the
+invalid current path-global bytes or adjacent assets strings as filenames.
+
 Joey redirected work to discovery: use the shortest reliable experiment and
 proportional checks. Remaining maintenance P2s are deferred, not the next task.
 Parallel static cast/cooldown workers own separate retained artifacts; the root

@@ -84,6 +84,24 @@ through the PE section mapping. Useful bounded slice hashes (end exclusive):
 
 ## Next useful code opportunity
 
+### November7 continuation
+
+The shared registry selection and a complete raw cache inventory are now
+[observed on Lab2](native-cooldown-static-followup-2026-11-06.md#accepted-raw-cache-inventory--november-7).
+Selector83 matched380 cache keys,379 non-null records, with exact process and
+owner/selection/content checks. This does not establish type0x0051, learned
+membership, player-adjusted cost, or a name for those records.
+
+The public-ID formatter is narrowed: successful `0x1357250` resolution truncates
+its low accumulator via `mov edi,edi` at `0x13574AE`, then adds inputDWORD<<32.
+`0xA17E00` emits `A%016llX`, so its high word reproduces the input key without
+carry. Historical named IDs remain cross-build search seeds, not current names.
+The current name route follows record+0x8E0 to a type0x1E17 child; child+0x18
+is a localization key and child+0x20 a NUL-terminated UTF16 fallback pointer.
+Both type fingerprints and active localization must still be established before
+calling raw fallback text the API name. Trace:
+`artifacts/discovery-20261107-cast/ability-reference-followup.md`.
+
 Finish `0x1290458`'s selector/ID-to-reference branch with the cooldown worker;
 then add an isolated bounded *ability record/vector candidate inspector* using
 existing exact-build memory-session and identity guards. Require the outer type

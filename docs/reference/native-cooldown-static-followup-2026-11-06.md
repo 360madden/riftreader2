@@ -175,11 +175,52 @@ without proving cache-key meaning, cooldown values or full-game restart recovery
 
 ## Next discriminating work
 
+### Accepted raw cache inventory — November 7
+
+`--cooldown-cache` now walks the unanimous selected collection, follows tagged
+collision chains and reads nullable result-holder slots. Header H+0x18 is the
+current entry count (insertion `0x1294C34` increments it; removal `0x1294B83`
+decrements it). Completion requires unique nodes to equal that count, bounded
+reads, stable consumed bytes and the usual final owner/process/source checks.
+One initial page set is independently recaptured for verification; verification
+never reuses initial bytes. Unused padding is not a semantic anchor.
+
+Lab2 `artifacts/native-unit-manager/lab2/d7008a54e6774bacaff7837df90e0a1a/`
+completed at `2026-11-07T13:55:17.3240961Z` on PID9752/start639294897826627677,
+same exact build: **1162 occupied heads +886 chain nodes =2048 entries**,
+matching the bracketed header. Selector83 matched **380 records**,379 with a
+non-null result pointer. All thread, TLS, wrapper/owner/header, source and
+process checks passed; `threadSelectionVerified=true`. Cache snapshots used
+56 pages and7 guest snapshot calls. This is a raw cache inventory, not a
+spellbook, player ownership, named ability identity or cooldown reading.
+`review.json` SHA256
+`A978758603D79F98477EC04C11865947C5AE6530A1D166777F9105946E7BEA6E`.
+
+Earlier per-node reads hit the fixed240s budget; a later paged walk completed
+its byte checks but lost a thread before the final TLS reread. Those runs remain
+incomplete. The working route batches page reads while separately verifying
+the exact node fields. When thread membership changes, the all-thread selection
+gate remains unavailable. Only a fully byte-verified **embedded owner+0x200**
+inventory may survive as `collection-only-candidate`, with
+`threadSelectionVerified=false` and final wrapper/owner/header/process/source
+checks still required. A thread-private TLS pointer cannot use that fallback.
+
+Static cache-miss work identified `SELECT value FROM dataset WHERE datasetId = ?
+AND datasetKey = ?`, followed by blob materialization. In this observation,
+ownerMode0/kind2 selects owner+0x110 with compression enabled: the constructor
+can populate this memory store using a conditional SQLite-style backup from
+owner+0x20. Compressed values begin with a base128 decoded-size header and a
+frequency-derived bitstream, but tree/record decoding remains incomplete.
+The current path global was not valid UTF8; adjacent UTF16 assets strings are
+not accepted filenames. Retained instruction evidence:
+`artifacts/discovery-20261107-cooldown/fallback-followup.md`.
+
 Reacquire owner/thread/TLS selection for each new observation; never retain
 these session addresses. Traverse the selected bounded cache and correlate
 known candidate keys, while reconstructing `0x128CCB0` before treating
 a cache miss as absence. Then, under the coordinator's normal
 fresh identity and controlled-action gates, compare independent ability/API
 observations with bracketed native candidate changes. Full-game restart and
-freshness checks remain necessary before any live telemetry claim. This work
-performed no game, VM, controller, process-memory or addon operation.
+freshness checks remain necessary before any live telemetry claim. The original
+November6 static pass performed no live operation; the November7 captures above
+read process memory without game input or owner transitions.
