@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **15:05 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **15:23 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -70,8 +70,8 @@ observed on generic Use, not the common spell route. Context overrides remain.
 
 ## Current active work — resume here
 
-Checkpoint commit f6cea6f preserves self-name/zone readers, Lab2 buff definitions,
-and clean RRE return. The current goal remains ACTIVE until17:26:48 Eastern.
+Checkpointf6cea6f preserves name/zone;9d6e560 calling;8a7a69b historical API
+comparison/online findings. The current goal remains ACTIVE until17:26:48 Eastern.
 
 - COMPLETE: Lab1 self-name Trio and Lab2 Bolinao, both raw decoration1704.
   Reader0E7014C8CAA14F0D09152EDD856E55615CEF02EC29941B5D9897B319D28E4142,
@@ -88,21 +88,45 @@ and clean RRE return. The current goal remains ACTIVE until17:26:48 Eastern.
   Lab1 raw3/mage and Lab2 raw4/rogue captured.16 focused cases passed.
   Reader1C57C5311062CF6F41E6492AF988BC2378A29E52BC6D84A4FA1E10600BADC654,
   117589856 bytes,`artifacts/native-player-calling-20261107/publish/`.
-- COMPLETE: raw race-referent Lab1 key1/provider RESIDENT. H+48 reference/key+30
-  are bracketed; referent type and race text unknown. Typed0718 cache reader and
-  independent name-decoration candidate reader are implemented, not yet live.
-  ReaderAFA473BD8C69B0AE6D8BE9D2BD781E375007512703ADD6DC27DFD2EBC2664B58,
-  117602144 bytes,`artifacts/native-player-race-20261107/publish/`;3 focused cases.
-  No active live capture at this checkpoint.
+- COMPLETE: BOTH labs typed0718 race token mathosian, key1/selector1817/TLS20.
+  Reader3DAD7030355FB1694538BEBE6CA91153294C3A25D54B82393319EC58B83CD43D,
+  117618528 bytes,`artifacts/native-player-race-name-final-20261107/publish/`.
+- COMPLETE: Lab1 localized seed mode1/key74456494/empty fallback, dictionary
+  locale1 candidate Mathosian. API raceName selection remains unverified.
+  Reader594D9D9E07EB86B0D928842B4A572863D2EC03D54DEA7937BD03BAD881B40184,
+  117630816 bytes,`artifacts/native-player-race-localized-20261107/publish/`.
+- COMPLETE: BOTH current-shard name candidates Deepwood, rawlookup1704. Exact
+  Inspect.Shard registration proved; public numeric ID remains unknown.
+  ReaderD44A45B15BE5592BD3BD56A9C7BB7606BA0D0F675AA3B0230DA409BE5C1C49CD,
+  117626720 bytes,`artifacts/native-current-shard-20261107/publish/`.
+- COMPLETE: Lab2 experience RAW seed: owner02AE, selected0736 record L43,
+  int64+18=3507422; not current XP. Reader723C499D90FA10B02AC22E85441DE132E525650178DA4CF841C73C9B6781448E,
+  117647200 bytes,`artifacts/native-experience-seed-20261107/publish/`.
+  New typed cap/dataset/value reader and host are being implemented; no live
+  calculated experience yet. Source profiles in experience-needed-profile.md
+  and experience-owner-rested-profile.md under artifacts/discovery-20261107-player-state/.
+  No active native capture at this checkpoint.
 
-Next: inspect new typed-race/name-decoration readers, focused checks and passive
-live followup; commit useful results. Raw1704/text must not be called shardID
-without correspondence. Native/host workers have no live authority.
-Experience full output needs another dataset/calculations: parked. Dead/mounted
+Next: review/pin experience-values reader, focused checks and passive first use;
+commit useful result. Raw1704 must not be called a public shardID.
+Native/host workers have no live authority. Dead/mounted
 labels belong to unrelated enum families: no player-state claim. Restriction
 array was empty; no full variant eligibility engine. Actual selected variant,
 adjusted costs/range, positive cooldown/cast timers, API/UI agreement, passive
 freshness and full-game restart remain unresolved.
+
+Joey explicitly authorized coordinating with the RRE chat and using available
+workers, assigning idle workers meaningful online research. RRE chat
+01a1b613-07a4-76e3-a4e1-e11f70a0b567 owns its repo/addon/reader. Its seq5 packet
+and7source files were hash-verified; [historical comparison](reference/native-api-historical-comparison-2026-11-07.md)
+found54exactIDs/names matching native54filter candidates,13 primary castingTime
+matches and4base/APIcooldown differences. Captures differ by over an hour;
+NO current parity/freshness/variant-selection acceptance. [Source research](reference/native-api-reference-research-2026-11-07.md).
+RRE is preparing SC628 minimal optional race/raceName/zone projection expansion.
+Await exact reviewed package/reader hashes/checks and proposed bounded window;
+NO new Lab2 window is granted yet. Before any grant, finish native jobs, verify
+actual controller/queue/mutex mode using inert status, then hold all RR2 Lab2
+operations until explicit clean return. Do not auto-start/reset/force-release.
 
 All prior raw receipts and exact hashes are in the reference notes below. Latest
 player/name/zone receipts are in native-player-context-candidates; buff receipts

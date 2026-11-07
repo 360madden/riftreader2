@@ -1,6 +1,6 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 15:01 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 15:19 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
@@ -21,6 +21,15 @@ calling raw4 maps to rogue; Lab1 race key1/provider resident seed also completed
 Typed race cache/name-decoration followups underway. Checkpointf6cea6f committed
 the name/zone readers and Lab2 buff followup (21 keys,11 names/10 unavailable).
 [Player receipts and limits](reference/native-player-context-candidates.md).
+
+**15:17 Eastern — TWO-LAB RACE/SHARD CANDIDATES:** Both labs yielded typed race
+token mathosian and current-shard name Deepwood. Exact Inspect.Shard registration
+was proved; raw lookup1704 is not a publicID. Localized race seed and raw experience
+seed first captures are running. Independent current API/freshness/restart remain
+open. [Receipts](reference/native-player-context-candidates.md).
+User authorized cross-chat coordination; RRE historical packet/all7 source hashes
+verified. A minimal future API field expansion is being prepared by its owner;
+no new Lab2 window granted yet. [Online reference limits](reference/native-api-reference-research-2026-11-07.md).
 
 **14:23 Eastern — LOADED FIELD FIX LIVE ON BOTH LABS:** Corrected a fixed file
 ordinal assumption by validating/searching the complete loaded field table.

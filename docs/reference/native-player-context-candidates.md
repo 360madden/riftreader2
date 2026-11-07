@@ -260,6 +260,82 @@ Raw readerAFA473BD8C69B0AE6D8BE9D2BD781E375007512703ADD6DC27DFD2EBC2664B58,
 Three focused cases cover self mismatch/null/mutation. No race type/text/API,
 freshness or restart qualification; no native getter/refcount/write performed.
 
+## Typed race token and current shard name —15:17 Eastern
+
+Both labs yielded raw key1 through the resident race provider336F1F8, selector1817,
+TLSindex20 and profile-verified0718 record: text candidate **mathosian**. This is
+separate from localized raceName. The observed referent's static type is0282;
+the sampler still labels it raw rather than assuming its type. All consumed
+provider/cache/text anchors and final self/context/thread epochs were checked.
+Nine focused race cases cover the added localized seed as well. Lab1's localized
+seed subsequently captured mode1, typed1E17 key74456494, empty fallback and a
+dictionary locale1 candidate **Mathosian**. Public raceName remains unverified.
+Receipt`artifacts/native-player-race-localized-20261107/runs/lab1/4077f295a39a4e4d9365ec56ec561a84/samples.json`,
+SHA28436A4DA1EDF093C521118FB9F4D547408EFAC20AA75CD77683645309747DD3.
+
+- Lab1`artifacts/native-player-race-name-20261107/runs/lab1/4a9250e7d74b4b269040861687052a97/samples.json`,
+  SHAD2D3848FE97D64F2B29919F8FC70AAEA5512C5030328377A07B80054C5C46C20.
+- Lab2`artifacts/native-player-race-name-20261107/runs/lab2/72629ea30ce54a63a540b727129cb87b/samples.json`,
+  SHA97961E9AB0E42E974FAB0F9A929976C64A5C6460E97764B8182D065F8E3DE42C.
+
+Reader3DAD7030355FB1694538BEBE6CA91153294C3A25D54B82393319EC58B83CD43D,
+117618528 bytes,`artifacts/native-player-race-name-final-20261107/publish/`.
+Current source also exposes raw localized key/fallback/dictionary inputs via
+separate594D9D9E07EB86B0D928842B4A572863D2EC03D54DEA7937BD03BAD881B40184,
+117630816 bytes,`artifacts/native-player-race-localized-20261107/publish/`.
+
+Static registration9B3A6D..9B3AA9 binds Inspect_Shard to9B4230; it reads manager
+key+46C and map+4B8 via552630 and emits name/pvp/rp. This proves the named
+producer route, independently of a historical documentation field-shape match.
+Fresh bounded name lookup yielded **Deepwood** in BOTH labs, raw lookup key1704.
+This key is not a documented public shard ID. Three focused shard cases passed.
+
+- Lab1`artifacts/native-current-shard-20261107/runs/lab1/225c92dde56a4f93b64e5187a09884d5/samples.json`,
+  SHA429A521DE98B75E50BF01F0999A547BBE30547A3881274C69C348BCFF7CC750E.
+- Lab2`artifacts/native-current-shard-20261107/runs/lab2/b9fdcd771ffe4962b959c9b6ff5cb955/samples.json`,
+  SHA7836DAE6DB91ECE257B092FF4CE6F24875933E46D442573DFE6AEE2BAEDCC0A2.
+
+Shard readerD44A45B15BE5592BD3BD56A9C7BB7606BA0D0F675AA3B0230DA409BE5C1C49CD,
+117626720 bytes,`artifacts/native-current-shard-20261107/publish/`.
+Lab1's separate decoration read found1704==manager1704, so producer adds no
+suffix; it did not look up or fabricate decoration text. Receipt
+`artifacts/native-player-decoration-20261107/runs/lab1/4cffbcb84955418cbd34295d874cd3a5/samples.json`,
+SHA4F2D28C8ED948848ABAD68D31A90297BB2844821D8FB69C14EF821C280B9D940.
+Decoration reader04BE241818DEC5057180B55C0AEEF45AAFA248F1C4940378D2A02C08E7A28E07,
+117610336 bytes;3 focused cases. No game input/init/getter/refcount writes.
+Independent current API/UI agreement, passive freshness and restart remain open.
+
+## Experience raw seed —15:20 Eastern
+
+Lab2's independent self/health/component back-references, owner/vector and selected
+record anchors passed. Owner observed VT2A46738/getter1C48CC0 has static type02AE;
+selected VT2BD4388/getter201A050 has static type0736. Index0 selects the first
+of40 raw reference entries. Raw int64+18=3507422, DWORD+24=43, float+20=0,
+ownerDWORD+160=3. These are inputs, **not current XP, cap or rested amounts**.
+The needed dataset, cap profile and baseline calculation are a separate next read.
+
+Receipt`artifacts/native-experience-seed-20261107/runs/lab2/29fdbbd8eb3e45b0ada03664b9d25349/samples.json`,
+SHACA045A66681C1038EC713AACADED1BDE828C44D8BB8FFA152793AC3C0A8DF918.
+Reader723C499D90FA10B02AC22E85441DE132E525650178DA4CF841C73C9B6781448E,
+117647200 bytes,`artifacts/native-experience-seed-20261107/publish/`.
+Two focused cases cover the plain branch and mutation rejection; special index-1
+is emitted as raw pointers, never guessed as an empty progress list. No native
+getter/refcount/write/API call, freshness or restart acceptance.
+
+## RRE historical reference —15:19 Eastern
+
+Joey explicitly authorized direct cross-chat coordination. RRE supplied
+`C:\work\rre\artifacts\rre-rr2-reference-20261107-1512\api-reference.json`,
+SHAD26FE63D90BD8D6B1A71E18C7DBD27B9192DF01A4BB4F1DD98B4A90081CE8420.
+RR2 verified all7 retained source hashes, self/session/sequence and54 ability
+rows/10 field-presence counts without discrepancies. Verification:
+`artifacts/rre-peer-reference-20261107/verification.json`.
+Seq5 manual image clock14:38:30 Eastern, snapshot19:43:07.529..626Z, same Lab2
+PID/start/build: Bolinao/rogue/43. Race/raceName/zone/decoration were NOT PROJECTED;
+absence in that document is not API absence. This is historical consistency,
+not current native/API agreement or advancing freshness. New RRE field expansion
+needs a separately granted exclusive window; none granted at this checkpoint.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its
