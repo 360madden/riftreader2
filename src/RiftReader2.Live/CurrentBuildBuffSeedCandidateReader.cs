@@ -11,28 +11,36 @@ internal sealed record BuffRawObject(string Status, ulong? VtableRva = null, uin
     string? StateStatus = null, uint? StateDword88 = null, string? ClockStatus = null,
     ulong? ClockAddress = null, ulong? ClockVtableRva = null,
     ulong? ClockSlot30Rva = null, ulong? ClockSlot38Rva = null, ulong? ClockSlot48Rva = null);
-internal sealed record BuffRawNode(ulong Address, ulong Next, ulong Object, ulong Control, BuffRawObject RawObject);
+internal sealed record BuffTimingCandidate(string Status, uint? BeginRawBits = null, float? Begin = null,
+    ulong? TimerReference = null, ulong? ReferenceVtableRva = null, ulong? ReferenceGetterRva = null,
+    long? DurationTicks = null, float? Duration = null, float? Remaining = null, ulong? ReferenceSlot48Rva = null);
+internal sealed record BuffRawNode(ulong Address, ulong Next, ulong Object, ulong Control, BuffRawObject RawObject)
+{
+    public BuffTimingCandidate? Timing { get; init; }
+}
 internal sealed record CurrentBuildBuffSeedObservation(NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc,
     DateTimeOffset CompletedAtUtc, ulong UnitKey, ulong Context, ulong Sentinel, IReadOnlyList<BuffRawNode> Nodes)
 {
     public string Qualification => "raw-list-candidates; visibility, buff IDs, names, freshness and restart unverified";
+    public float? ClockBefore { get; init; }
+    public float? ClockAfter { get; init; }
 }
 
 internal static class CurrentBuildBuffSeedCandidateReader
 {
-    internal static CurrentBuildBuffSeedObservation Read(IReadOnlyNativeMemorySession session)
+    internal static CurrentBuildBuffSeedObservation Read(IReadOnlyNativeMemorySession session, bool includeTiming = false)
     {
         var started = DateTimeOffset.UtcNow;
         var lookup = CurrentBuildPlayerLookup.Resolve(session);
         var health = lookup.ResolveComponent(0x2F57850);
         var context = lookup.ResolveComponent(0x2F57260);
         return ReadResolved(session, session.Identity, started, lookup.PlayerKey, lookup.EntityAddress,
-            health, context, lookup.VerifyUnchanged);
+            health, context, lookup.VerifyUnchanged, includeTiming);
     }
 
     internal static CurrentBuildBuffSeedObservation ReadResolved(IReadOnlyNativeMemorySession session,
         NativeProcessIdentity id, DateTimeOffset started, ulong key, ulong entity, ulong health, ulong context,
-        Action verifyOwner)
+        Action verifyOwner, bool includeTiming = false)
     {
         if (session.Identity != id || id.ProcessId <= 0 || id.ProcessStartUtcTicks <= 0 || key == 0 ||
             id.ModuleSize < 0x33623E8 || !string.Equals(id.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
@@ -62,6 +70,14 @@ internal static class CurrentBuildBuffSeedCandidateReader
         if (Q(checked(system + 0x3F8)) != entity || Q(checked(Ptr(health, 0x18) + 0x10)) != entity ||
             Q(checked(Ptr(context, 0x318) + 0x10)) != entity)
             throw new InvalidDataException("Buff seed owner mismatch.");
+        ulong clockAddress = 0; float? clockBefore = null, clockAfter = null;
+        float F(uint bits) => BitConverter.Int32BitsToSingle(unchecked((int)bits));
+        if (includeTiming)
+        {
+            clockAddress = Ptr(Q(checked(id.ModuleBaseAddress + 0x33DC2B0)), 0x1C);
+            clockBefore = F(BinaryPrimitives.ReadUInt32LittleEndian(Read(clockAddress + 0x18, 4, false)));
+            if (!float.IsFinite(clockBefore.Value)) throw new InvalidDataException("Invalid buff clock.");
+        }
         var sentinel = checked(context + 0x310);
         var next = Q(sentinel);
         var nodes = new List<BuffRawNode>();
@@ -100,7 +116,7 @@ internal static class CurrentBuildBuffSeedCandidateReader
                     if (clock == 0) clockStatus = "null";
                     else
                     {
-                        var clockAddress = Ptr(clock.Value); var vtable = Q(clockAddress); clockVt = Rva(vtable);
+                        var timerAddress = Ptr(clock.Value); var vtable = Q(timerAddress); clockVt = Rva(vtable);
                         if (!clockVt.HasValue || clockVt.Value > id.ModuleSize - 0x50) clockStatus = "vtable-outside-module";
                         else
                         {
@@ -114,12 +130,74 @@ internal static class CurrentBuildBuffSeedCandidateReader
                     descriptorStatus, stateStatus, state88, clockStatus, clock, clockVt, slot30, slot38, slot48);
             }
             catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { raw = new("unavailable"); }
-            nodes.Add(new(node, next, obj, control, raw));
+            BuffTimingCandidate? timing = null;
+            if (includeTiming)
+            {
+                timing = new("unavailable");
+                if (raw.StateDword88.HasValue && raw.ClockAddress is > 0 && raw.ClockVtableRva.HasValue)
+                {
+                    try
+                    {
+                        var timer = Ptr(raw.ClockAddress.Value, 0x1C);
+                        var reference = Q(timer + 0x10);
+                        var beginBits = D(timer + 0x18); var begin = F(beginBits);
+                        if (!float.IsFinite(begin)) throw new InvalidDataException("Nonfinite timer begin.");
+                        ulong? refVt = null, refGetter = null, refSlot48 = null;
+                        if (reference != 0)
+                        {
+                            var refAddress = Ptr(reference, 0x20); var vtable = Q(refAddress); refVt = Rva(vtable);
+                            if (refVt.HasValue && refVt.Value <= id.ModuleSize - 0x50)
+                            {
+                                refGetter = Rva(Q(vtable + 0x40));
+                                refSlot48 = Rva(Q(vtable + 0x48));
+                            }
+                        }
+                        timing = new("unsupported-clock-profile", beginBits, begin, reference, refVt, refGetter, ReferenceSlot48Rva: refSlot48);
+                        var vt = raw.ClockVtableRva.Value;
+                        ulong? expectedDuration = vt switch { 0x26BC950 => 0x72AE00, 0x26BC9A0 => 0x72AE70, 0x26BCE50 => 0x72B040, _ => null };
+                        if (raw.StateDword88 == 5) timing = timing with { Status = "state-sentinel" };
+                        else if (expectedDuration.HasValue && raw.ClockSlot30Rva == expectedDuration && raw.ClockSlot38Rva == 0x72B3C0 && raw.ClockSlot48Rva == 0x09D680)
+                        {
+                            timing = timing with { Status = "dynamic-duration-unavailable" };
+                            if (vt != 0x26BCE50)
+                            {
+                                var expectedRef = vt == 0x26BC950 ? 0x286CDC8UL : 0x2CC0618UL;
+                                var expectedGetter = vt == 0x26BC950 ? 0x18254A0UL : 0x225CA20UL;
+                                var descriptor = vt == 0x26BC950 ? 0x343B3C0UL : 0x3598870UL;
+                                var descVt = vt == 0x26BC950 ? 0x2876CA8UL : 0x2CD1DE8UL;
+                                var descGetter = vt == 0x26BC950 ? 0x184B530UL : 0x22892E0UL;
+                                timing = timing with { Status = "reference-type-unavailable" };
+                                if (reference != 0 && refVt == expectedRef && refGetter == expectedGetter &&
+                                    Q(checked(id.ModuleBaseAddress + descriptor)) == checked(id.ModuleBaseAddress + descVt) &&
+                                    Q(checked(id.ModuleBaseAddress + descVt + 8)) == checked(id.ModuleBaseAddress + descGetter))
+                                {
+                                    var ticks = BinaryPrimitives.ReadInt64LittleEndian(Read(checked(reference + 0x18), 8));
+                                    var duration = (float)(ticks / 10000L) * 0.001f;
+                                    var remaining = duration - (clockBefore!.Value - begin);
+                                    if (float.IsFinite(duration) && float.IsFinite(remaining))
+                                        timing = timing with { Status = "raw-timing-candidate", DurationTicks = ticks, Duration = duration, Remaining = remaining };
+                                }
+                            }
+                        }
+                    }
+                    catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { timing = timing with { Status = raw.StateDword88 == 5 ? "state-sentinel" : "read-or-type-unavailable" }; }
+                }
+                else if (raw.StateDword88 == 5) timing = new("state-sentinel");
+            }
+            nodes.Add(new BuffRawNode(node, next, obj, control, raw) { Timing = timing });
+        }
+        if (includeTiming)
+        {
+            clockAfter = F(BinaryPrimitives.ReadUInt32LittleEndian(Read(clockAddress + 0x18, 4, false)));
+            if (!float.IsFinite(clockAfter.Value) || clockAfter.Value < clockBefore!.Value)
+                throw new InvalidDataException("Buff clock invalid or moved backward.");
         }
         foreach (var anchor in anchors)
             CurrentBuildPlayerLookup.RequireSame(Read(anchor.Key.Item1, anchor.Key.Item2, false), anchor.Value);
         verifyOwner();
         if (session.Identity != id) throw new InvalidDataException("Buff seed process identity changed.");
-        return new(id, started, DateTimeOffset.UtcNow, key, context, sentinel, nodes);
+        return new(id, started, DateTimeOffset.UtcNow, key, context, sentinel, nodes)
+            { ClockBefore = clockBefore, ClockAfter = clockAfter };
     }
 }
+

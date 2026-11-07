@@ -68,3 +68,27 @@ SHA256`DFF1FA6E0F159A4267FBFA515714EDBCB9B558456AFD8992BD22BAA296BCEF9D`.
 It pins the374 seed reader andF86 definition reader separately, same VM/game
 epoch, source/reader hashes, complete parent-list checks and bounded chunks.
 No new publication or input was needed for this named result.
+
+## First timing capture —14:05:41 Eastern
+
+`python scripts/sample_current_native_buff_timing.py --lab lab1` captured all28
+finite begins and verified all three referenced types. ClockBefore/After73485.67;
+begin57.492565. Six typed06ED/06CE raw tick inputs were0, giving duration0 and
+UNCLAMPED remaining candidate-73428.18 at the sampled clock. They are hidden
+kind1 nodes; no positive-duration active timer or API publication is demonstrated.
+The22 remaining references matched065A object VT28EC200/getter194CCE0/storage
+leaf4F180, but duration stayed unavailable in this first published reader.
+
+Receipt`artifacts/native-buff-timing-20261107/runs/lab1/f0e050c9c0c84ebcb88aae21ac79ed74/samples.json`,
+SHA256`956D28F826F356DC2455D7F6AD7B506437AE88221CCB4C02709479B002C6093C`.
+Reader117552992 bytes, SHA256
+`BDE40E279E0E6CB22B167A9A3CF98B425B4380E6BF21B53C78B5AB18D50659FE`,
+at`artifacts/native-buff-timing-20261107/publish/`. Six focused reader checks
+passed, including signed ticks, sentinel, mutation and reference storage slot.
+Old374 seed andF86 definition workflows remain pinned and functional.
+
+Static next field is now applicable to the observed065A profile: float32ref+24,
+property`!6b50761c`, index4/kind2, storage base is the object. Initialized
+descriptor3462A70/VT28F5968/type method1978670, field303E7E0/VT28ED1E8,
+kind/offset methods194DCC0/194DD00, name bytes345DE38 must be verified and
+anchored before exposing it. No tick conversion for this profile.

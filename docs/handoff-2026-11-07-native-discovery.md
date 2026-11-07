@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **14:05 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **14:08 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -104,19 +104,21 @@ and source identity. First live follow-up PASSED28 nodes/22 distinct typed/named
 keys; kind4 definition candidate Rested. Other names include passive soul gifts.
 Receipt`artifacts/native-buff-definitions-20261107/runs/lab1/66b24cd5c8a741e989d4bf6ef4f42bb1/summary.json`.
 
-**First buff timing live run ACTIVE: exec session76426**, command
+First buff timing live run COMPLETED successfully, command
 `C:\Python314\python.exe -B scripts/sample_current_native_buff_timing.py --lab lab1`.
 ReaderBDE40E279E0E6CB22B167A9A3CF98B425B4380E6BF21B53C78B5AB18D50659FE,
 117552992 bytes,`artifacts/native-buff-timing-20261107/publish/`. Native core
 passed6 focused tests; root reviewed finite clock/type/tick/sentinel behavior.
-Keep Python timing/seed helpers frozen until terminal. It captures begins,
-reference VT/+40/+48 and six typed tick durations;22 dynamic durations stay
-unavailable in this published reader. Root alone owns live operations.
+All28 begins/reference profiles captured, six tick inputs0/duration0, no active
+positive timer proof.22 dynamic refs MATCH065A VT28EC200/getter194CCE0/base4F180;
+duration remained unavailable as intended inBDE. Receipt
+`artifacts/native-buff-timing-20261107/runs/lab1/f0e050c9c0c84ebcb88aae21ac79ed74/samples.json`.
+No active run. Root alone owns live operations; helper sources can now be edited.
 
 Static high worker SOLVED dynamic type065A directfloat reference+24, exact
 property !6b50761c fieldindex4/kind2/offset24; actual ref profile must be observed
 before claiming it applies. Note`artifacts/discovery-20261107-buffs/buff-dynamic-duration-next-step.md`.
-After current receipt, if actual065A matches, next small reader slice can use
+Actual065A matches, so next small reader slice can use
 the direct field with full profile/property anchors. No general reflection engine.
 Medium worker classifies actual buff descriptorVT28DC6A8 for later visibility.
 Existing native workers are idle; assign new meaningful work when

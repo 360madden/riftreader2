@@ -1,10 +1,15 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:05 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:08 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**14:05 Eastern — FIRST BUFF TIMER INPUTS LIVE:** All28 begins and reference
+profiles captured; six tick durations are0, not active positive timers. The22
+dynamic refs match065A, so the statically resolved float+24 path is the next
+small capture. [Receipt and exact limits](reference/native-buff-candidates-2026-11-07.md).
 
 **14:00 Eastern — BUFF DEFINITION NAMES LIVE:** All22 distinct keys typed/named,
 all28 node relationships preserved/rechecked. Kind4 maps to Rested; kind1 includes

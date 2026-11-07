@@ -35,6 +35,45 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         s = Fixture(); s.Q(Sentinel, Node1); s.Node(Node1, Sentinel, 0, 0); s.Changed = (Node1, 8);
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
+    [Theory]
+    [InlineData(12345678L, 1.234f)]
+    [InlineData(-12345678L, -1.234f)]
+    public void TypedTimerUsesSignedTruncatedTicks(long ticks, float expected)
+    {
+        var s = TimingFixture(ticks, 0);
+        var result = ReadTiming(s); var timing = result.Nodes[0].Timing!;
+        Assert.Equal("raw-timing-candidate", timing.Status);
+        Assert.Equal(ticks, timing.DurationTicks);
+        Assert.Equal(expected, timing.Duration!.Value, 5);
+        Assert.Equal(expected - 5f, timing.Remaining!.Value, 5);
+        Assert.Equal(0x2220UL, timing.ReferenceSlot48Rva);
+    }
+    [Fact] public void SentinelAndChangedTimerAreNotNumeric()
+    {
+        var s = TimingFixture(12345678, 5);
+        var timing = ReadTiming(s).Nodes[0].Timing!;
+        Assert.Equal("state-sentinel", timing.Status); Assert.Null(timing.Duration);
+        Assert.Equal(0x200A0000UL, timing.TimerReference);
+        s = TimingFixture(12345678, 0); s.Changed = (0x200A0018, 8);
+        Assert.Throws<InvalidDataException>(() => ReadTiming(s));
+    }
+    static CurrentBuildBuffSeedObservation ReadTiming(Fake s) => CurrentBuildBuffSeedCandidateReader.ReadResolved(s,
+        s.Identity, DateTimeOffset.UtcNow, 123, Entity, Health, Context, () => { }, true);
+    static Fake TimingFixture(long ticks, uint state)
+    {
+        var s = Fixture(); s.Q(Sentinel, Node1); s.Node(Node1, Sentinel, Object1, 0);
+        s.Q(Module + 0x33DC2B0, 0x200B0000); s.D(0x200B0018, (uint)BitConverter.SingleToInt32Bits(15f));
+        s.Q(Object1, Module + 0x2000); s.D(Object1 + 8, 17); s.Q(Object1 + 0x10, 0);
+        s.Q(Object1 + 0x20, 0x20080000); s.D(0x20080088, state); s.Q(Object1 + 0x28, 0);
+        s.D(Object1 + 0x3C, 3); s.Q(Object1 + 0x48, 0); s.Q(Object1 + 0x68, 0x20090000);
+        s.Q(0x20090000, Module + 0x26BC950); s.Q(Module + 0x26BC980, Module + 0x72AE00);
+        s.Q(Module + 0x26BC988, Module + 0x72B3C0); s.Q(Module + 0x26BC998, Module + 0x09D680);
+        s.Q(0x20090010, 0x200A0000); s.D(0x20090018, (uint)BitConverter.SingleToInt32Bits(10f));
+        s.Q(0x200A0000, Module + 0x286CDC8); s.Q(Module + 0x286CE08, Module + 0x18254A0);
+        s.Q(Module + 0x286CE10, Module + 0x2220); s.Q(Module + 0x343B3C0, Module + 0x2876CA8);
+        s.Q(Module + 0x2876CB0, Module + 0x184B530); s.Q(0x200A0018, unchecked((ulong)ticks));
+        return s;
+    }
     static CurrentBuildBuffSeedObservation Read(Fake s) => CurrentBuildBuffSeedCandidateReader.ReadResolved(s,
         s.Identity, DateTimeOffset.UtcNow, 123, Entity, Health, Context, () => { });
     static Fake Fixture()
