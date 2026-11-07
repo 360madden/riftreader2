@@ -1,3 +1,13 @@
+**SC625 CLEAN RETURN VERIFIED16:41:03 Eastern; passive RR2 reads resumed.**
+Root verified control-return.json and hash-bound recovery inventory: zero exact
+UUID residual files and zero owned native processes, no unreadable native command
+lines. Existing fleet-agent PID3252 was outside scope and untouched. Independently
+checked controller ABSENT, queue BLOCKED1/no holder and matching VM identity.
+Receipt `artifacts/lab2-rre-sc625-handoff-20261107/after.json`. Failed trial remains
+FAILED/liveAdapterAccepted=false; original quarantine receipts unchanged. RRE is
+OFFLINE until a new grant; no automatic retry, controller start or queue reset.
+The hold/quarantine notices below are historical, resolved by this explicit return.
+
 **SC625 FAILED TRIAL / LAB2 QUARANTINE - 16:37 Eastern.** Reader invocation
 21:34:41-21:35:17Z exited2 (SessionError); guest cleanup reports missing snapshot
 process journal/unverified residual. RRE reports identity/output filename collision
@@ -153,6 +163,42 @@ E631EBEE96BA33FF5303074CA38352FE21319731DA2073DD1538CDAA4820AE9F,
 RRE clean return. No mode0 live result yet. Next cheap discriminator after payload
 is typed0E29 config clamps+64/+7C and special ability key+88; see
 `artifacts/discovery-20261107-cast/range-adjustment-next-step.md`.
+
+## 16:49 checkpoint - range inputs and forty-field stat comparison
+
+SC625 failure recovered; root16:41:03 verified explicit clean return, scoped
+inventory SHA and actual stopped-controller/BLOCKED-no-holder/matching-VM mode.
+All RR2 native jobs below completed. RRE remains offline fixing its filename
+collision; no retry or next ownership window is granted.
+
+Lab2 full20 stat capture produced40/40 values matching retained SC628 API,
+including zeros. Native receipt
+`artifacts/native-current-stats-20261107/runs/lab2/0b7bacdc86484498a11105399af2f03c/samples.json`
+SHA25630023E0CC59F85A3BED72F7444C54B40A574F18EBA9EF5FD82FB0D8B521F9B36.
+API export already contained40 fields, no new API call/projection/deploy needed.
+Manual capture20:40:54Z versus native21:45:00Z (~64minutes); historical baseline
+only. `artifacts/rre-peer-reference-sc628-20261107/native-stats-all40-comparison.json`.
+
+Fresh mode0 payload: float24=1, float18=0, op0, flag33=1; source entry matches
+reported self key, raw entry+0C=5. The actual producer compares entity+10; the
+self-source branch does NOT simply use raw5. Capture that discriminator and
+P+A0 typed073C +18/+1C next, before any full role traversal. Correct alternate
+owner type is02AE;213E is its separate DD0 tree. Coefficient remains UNOBSERVED.
+Source recipe `artifacts/discovery-20261107-cast/mode0-self-scale.md`.
+
+F46 combined reader SHA256F46E827E5CA29D9CA5CBDDC43CC30D37CBC26CB4E745A9CAFAE1793AB7B6D523,
+117733216bytes, captured typed0E29 config min5/max105 and specialKey1871006214,
+which identifies Toggle Auto Attack's equipment path. Receipt
+`artifacts/native-cooldown-modifiers-20261107/runs/lab2/b05d568527a94122b8d69d7e298f2b89/samples.json`
+SHA2560DA2C0FB2CEE9938008B990A3E0CE2F39EB0A007FB0CDD7AC2C480221127A7B6.
+New bounded range helper captured24/24 typed records, including actual definition
+tags+588 (distinct from stealth conditions+740) and Energy child+20 byte:
+`artifacts/native-range-inputs-20261107/runs/lab2/a740d2e7fa7249c7bc7382228509f8fd/samples.json`
+SHA256E1F49185CEF52ADD7D744116EB1576C892B4CBB579E43D6E70A244B07C7CB5B2.
+Eighteen Energy flags were0 and two1 among20 typed Energy children. No adjusted
+energy cost is inferred; mode2 modifiers and gated alternate multiplier remain.
+Focused checks: modifier10, definition range13, ability costs15 passed. No getter,
+game input, owner reset or qualified API/freshness/restart claim.
 
 ## Working repository commands
 

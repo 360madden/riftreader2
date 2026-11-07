@@ -418,3 +418,11 @@ Receipt: `artifacts/native-current-stats-20261107/runs/lab1/d293915ba6ec4e90a51d
 | critPower | 83 | 146 | 40 |
 | block | 27 | 10 | 0 |
 | dodge | 30 | 12 | 20 |
+
+## Lab 2: 40 stat fields against historical SC628 API baseline
+
+The fresh native capture at **2026-11-07 21:45:00.8197433–21:45:00.8336304 UTC**, PID `9752`, start ticks `639294897826627677`, executable SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`, produced 20 ordinary/unbuffed stat pairs. All **40/40 raw signed values matched** the separately captured historical SC628 API export, including zero-valued fields. The candidate native unit ID and historical player ID both format as `u035400012DFEB5BC` (Bolinao). The historical replay's *declared/requested* PID, start ticks and executable hash also match the fresh native identity, but those declarations and replay consistency do not independently prove the current process epoch or loaded bytes.
+
+Native receipt `artifacts/native-current-stats-20261107/runs/lab2/0b7bacdc86484498a11105399af2f03c/samples.json` SHA-256 `30023E0CC59F85A3BED72F7444C54B40A574F18EBA9EF5FD82FB0D8B521F9B36`; original export `C:\work\rre\artifacts\rre-rr2-stats-reference-20261107-1614\api-stats-all40.json` SHA-256 `07AC4455985A04FB89A6AF4A61F85BF3D358935677CC325FB02CCE34EFBF5DEA`. All six source hashes listed by that export were independently verified, and its 40 values match the original SC628 wire document. The historical manual capture is labeled **20:40:54 UTC**, approximately **64 minutes 7 seconds** before the native read; its replay reports snapshot time `20:41:57.9574972 UTC` and frame clock `191076.640625`. Exact per-field comparison and source identity details are in `artifacts/rre-peer-reference-sc628-20261107/native-stats-all40-comparison.json`.
+
+This is a useful historical baseline, not an atomic same-time comparison, changed-state response, passive freshness, API-availability semantics, or full-game-restart qualification. Intervening state changes and unchanged-value coincidence remain possible.

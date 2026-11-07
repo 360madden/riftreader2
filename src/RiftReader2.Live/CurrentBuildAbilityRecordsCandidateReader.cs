@@ -5,11 +5,11 @@ using RiftReader2.Domain;
 namespace RiftReader2.Live;
 
 internal sealed record AbilityRecordChild(string Status, ulong Address, uint? LocalizationKey);
-internal sealed record RawCostChild(string Status, ulong Address, ulong? Vtable = null, ulong? GetterRva = null, string? RawPayloadHex = null, int? Int18 = null, int? Int1C = null, float? Float18 = null, float? Float1C = null, byte? Flag1C = null, int? Int20 = null, float? Float20 = null, int? Int24 = null, byte? Flag28 = null);
+internal sealed record RawCostChild(string Status, ulong Address, ulong? Vtable = null, ulong? GetterRva = null, string? RawPayloadHex = null, int? Int18 = null, int? Int1C = null, float? Float18 = null, float? Float1C = null, byte? Flag1C = null, int? Int20 = null, float? Float20 = null, int? Int24 = null, byte? Flag28 = null, byte? Flag20 = null);
 internal sealed record RawCostVector(string Status, ulong Begin, ulong End, IReadOnlyList<RawCostChild> Children);
 internal sealed record RawTimingVector(string Status, ulong Begin, ulong End, ulong Count, ulong? ChildAddress = null, ulong? Vtable = null, ulong? GetterRva = null, int? RawMilliseconds = null);
 internal sealed record RawAbilityTiming(int RawGate88, int BaseCooldownMilliseconds, RawTimingVector Primary, RawTimingVector Secondary);
-internal sealed record RawAbilityRangeInputs(string BaseMinRawHex, float? BaseMin, string BaseMaxRawHex, float? BaseMax, ulong ConditionsBegin, ulong ConditionsEnd, IReadOnlyList<uint> Conditions, bool StealthRequiredCandidate)
+internal sealed record RawAbilityRangeInputs(string BaseMinRawHex, float? BaseMin, string BaseMaxRawHex, float? BaseMax, ulong ConditionsBegin, ulong ConditionsEnd, IReadOnlyList<uint> Conditions, bool StealthRequiredCandidate, ulong? TagsBegin = null, ulong? TagsEnd = null, IReadOnlyList<uint>? Tags = null)
 {
     public string Qualification => "raw definition inputs; adjusted range and usability unverified";
 }
@@ -103,7 +103,7 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
                 var fa = BitConverter.Int32BitsToSingle(a); var fb = BitConverter.Int32BitsToSingle(b);
                 var c = raw.Length == 17 ? BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(8)) : (int?)null;
                 var fc = c.HasValue ? BitConverter.Int32BitsToSingle(c.Value) : (float?)null;
-                children.Add(new(profile.Item1 + "-raw-candidate", address, vt, getter, Convert.ToHexString(raw).ToLowerInvariant(), a, b, float.IsFinite(fa) ? fa : null, float.IsFinite(fb) ? fb : null, raw[4], c, fc.HasValue && float.IsFinite(fc.Value) ? fc : null, raw.Length == 17 ? BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(12)) : null, raw.Length == 17 ? raw[16] : null));
+                children.Add(new(profile.Item1 + "-raw-candidate", address, vt, getter, Convert.ToHexString(raw).ToLowerInvariant(), a, b, float.IsFinite(fa) ? fa : null, float.IsFinite(fb) ? fb : null, raw[4], c, fc.HasValue && float.IsFinite(fc.Value) ? fc : null, raw.Length == 17 ? BinaryPrimitives.ReadInt32LittleEndian(raw.AsSpan(12)) : null, raw.Length == 17 ? raw[16] : null, profile.Item1 == "energy" ? ReadBytes(address + 0x20, 1)[0] : null));
             }
             return new(children.Count == 0 ? "empty" : "raw-candidates", begin, end, children);
         }
@@ -137,7 +137,11 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
             if ((begin == 0) != (end == 0) || end < begin || (end - begin) % 4 != 0 || (end - begin) / 4 > 64 || (begin != 0 && (begin < 0x10000 || begin % 4 != 0 || end > 0x7FFFFFFFFFFFUL))) throw new InvalidDataException("Invalid condition vector.");
             var values = new List<uint>();
             for (var address = begin; address < end; address += 4) values.Add(BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(address, 4)));
-            return new(Convert.ToHexString(minRaw).ToLowerInvariant(), float.IsFinite(min) ? min : null, Convert.ToHexString(maxRaw).ToLowerInvariant(), float.IsFinite(max) ? max : null, begin, end, values, values.Contains(1U));
+            var tagsHeader = ReadBytes(record + 0x588, 16); var tagsBegin = U64(tagsHeader); var tagsEnd = U64(tagsHeader.AsSpan(8));
+            if ((tagsBegin == 0) != (tagsEnd == 0) || tagsEnd < tagsBegin || (tagsEnd - tagsBegin) % 4 != 0 || (tagsEnd - tagsBegin) / 4 > 64 || (tagsBegin != 0 && (tagsBegin < 0x10000 || tagsBegin % 4 != 0 || tagsEnd > 0x7FFFFFFFFFFFUL))) throw new InvalidDataException("Invalid definition tag vector.");
+            var tags = new List<uint>();
+            for (var address = tagsBegin; address < tagsEnd; address += 4) tags.Add(BinaryPrimitives.ReadUInt32LittleEndian(ReadBytes(address, 4)));
+            return new(Convert.ToHexString(minRaw).ToLowerInvariant(), float.IsFinite(min) ? min : null, Convert.ToHexString(maxRaw).ToLowerInvariant(), float.IsFinite(max) ? max : null, begin, end, values, values.Contains(1U), tagsBegin, tagsEnd, tags);
         }
         RawAbilityVariants Variants(ulong record)
         {

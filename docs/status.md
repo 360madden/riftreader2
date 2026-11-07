@@ -1,5 +1,23 @@
 # Current status
 
+**16:49 Eastern - ALL40 STATS MATCH HISTORICAL API; RANGE INPUTS CAPTURED:**
+Lab2 native20 pairs agree with the retained64-minute-earlier SC628 values.
+Typed range config min5/max105 identifies Toggle Auto Attack special key;24
+selected definitions yielded actual tags and Energy flags. The mode0 self-source
+factor remains unobserved; raw entry5 is not a multiplier claim. RRE is offline
+after verified SC625 failed-trial cleanup/return; no new window is granted.
+[Receipts and next discriminator](handoff-2026-11-07-native-discovery.md).
+
+**SC625 CLEAN RETURN VERIFIED16:41:03 Eastern; passive RR2 reads resumed.**
+Root verified control-return.json and hash-bound recovery inventory: zero exact
+UUID residual files and zero owned native processes, no unreadable native command
+lines. Existing fleet-agent PID3252 was outside scope and untouched. Independently
+checked controller ABSENT, queue BLOCKED1/no holder and matching VM identity.
+Receipt `artifacts/lab2-rre-sc625-handoff-20261107/after.json`. Failed trial remains
+FAILED/liveAdapterAccepted=false; original quarantine receipts unchanged. RRE is
+OFFLINE until a new grant; no automatic retry, controller start or queue reset.
+The hold/quarantine notices below are historical, resolved by this explicit return.
+
 **SC625 FAILED TRIAL / LAB2 QUARANTINE - 16:37 Eastern.** Reader invocation
 21:34:41-21:35:17Z exited2 (SessionError); guest cleanup reports missing snapshot
 process journal/unverified residual. RRE reports identity/output filename collision

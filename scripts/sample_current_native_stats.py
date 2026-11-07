@@ -8,8 +8,8 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = 'C3DD11B5B7AA94BCE1D5C64F78ED41FB3FC38C0E3FB8E45856D732189DF2ACBD'
-READER = ROOT / 'artifacts/native-current-stats-20-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = 'E631EBEE96BA33FF5303074CA38352FE21319731DA2073DD1538CDAA4820AE9F'
+READER = ROOT / 'artifacts/native-range-modifiers-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-current-stats-20261107/runs'
 
 QUALIFICATION='raw typed stat candidates; API availability, units, freshness and restart unverified'

@@ -6,8 +6,9 @@ using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
 internal sealed record RawModifierSpan(ulong Begin,ulong End,IReadOnlyList<uint> Values);
 internal sealed record DirectScaleObservation(string Status, uint Key, int? RawMultiplier=null);
+internal sealed record RawRangeConfig(string Status, ulong? Root, ulong? Address = null, uint? MinBits = null, float? Min = null, uint? MaxBits = null, float? Max = null, uint? SpecialKey = null);
 internal sealed record RawCooldownModifier(ulong EntryAddress,string RawEntryHex,ulong Pointer,string Status,int? Mode=null,ulong? Vtable=null,ulong? GetterRva=null,uint? Float18Bits=null,float? Float18=null,uint? Float24Bits=null,float? Float24=null,uint? Operation=null,byte? Flag30=null,byte? Flag33=null,byte? Flag34=null,byte? Flag36=null,RawModifierSpan? Exclusions=null,RawModifierSpan? DirectKeys=null,RawModifierSpan? Tags1=null,RawModifierSpan? Tags2=null,RawModifierSpan? Tags3=null,uint? RawScaleKey=null,DirectScaleObservation? DirectScale=null);
-internal sealed record CooldownModifierObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong Component,ulong Begin,ulong End,string CensusStatus,uint? RawContextKey,IReadOnlyList<RawCooldownModifier> Rows)
+internal sealed record CooldownModifierObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong Component,ulong Begin,ulong End,string CensusStatus,uint? RawContextKey,IReadOnlyList<RawCooldownModifier> Rows,RawRangeConfig RangeConfig)
 {public string Qualification=>"raw modifier census only; eligibility, adjusted cooldown, freshness and restart unverified";}
 internal static class CurrentBuildCooldownModifierSampleCommand
 {
@@ -27,6 +28,24 @@ internal static class CurrentBuildCooldownModifierSampleCommand
   RawModifierSpan Span(ulong address){var raw=Take(address,16);var b=U64(raw);var e=U64(raw.AsSpan(8));if((b==0)!=(e==0)||e<b||(e-b)%4!=0||(e-b)/4>512||(b!=0&&(b<0x10000||b%4!=0||e>0x7FFFFFFFFFFFUL)))throw new InvalidDataException("Invalid modifier filter span.");var values=new List<uint>();for(var a=b;a<e;a+=4)values.Add(D(a));return new(b,e,values);}
   PlayerContextOwner? alternateOwner=null;
   bool Type(ulong a,ulong vt,ulong getter,ulong descriptor,ulong descVt,ulong descGetter)=>Q(a)==id.ModuleBaseAddress+vt && Q(id.ModuleBaseAddress+vt+0x40)==id.ModuleBaseAddress+getter && Q(id.ModuleBaseAddress+descriptor)==id.ModuleBaseAddress+descVt && Q(id.ModuleBaseAddress+descVt+8)==id.ModuleBaseAddress+descGetter;
+  RawRangeConfig ReadRangeConfig()
+  {
+   ulong? root=null, address=null;
+   try
+   {
+    root=Q(id.ModuleBaseAddress+0x33E0AB0);
+    if(root==0)return new("null-root",root);
+    address=Q(Ptr(root.Value,0x850)+0x848);
+    if(address==0)return new("null-config",root,address);
+    var config=Ptr(address.Value,0x8C);
+    if(!Type(config,0x2ADB030,0x1DD2CD0,0x34FC1D0,0x2AEB9E8,0x1DFCAF0))
+     return new("unverified-type",root,address);
+    var minBits=D(config+0x64);var maxBits=D(config+0x7C);
+    var min=BitConverter.UInt32BitsToSingle(minBits);var max=BitConverter.UInt32BitsToSingle(maxBits);
+    return new("typed-0e29-candidate",root,address,minBits,float.IsFinite(min)?min:null,maxBits,float.IsFinite(max)?max:null,D(config+0x88));
+   }
+   catch(InvalidDataException){if(budget>2*1024*1024)throw;return new("read-unavailable",root,address);}
+  }
   DirectScaleObservation Scale(uint key)
   {
    if(key==0)return new("zero-key-unresolved",key);
@@ -64,19 +83,29 @@ internal static class CurrentBuildCooldownModifierSampleCommand
   {
    var entry=Take(at,32);var p=U64(entry);var raw=Convert.ToHexString(entry).ToLowerInvariant();
    if(p==0){rows.Add(new(at,raw,0,"null-reference"));incomplete=true;continue;}
+   RawCooldownModifier? rangeSeed=null;
    try
    {
     Ptr(p,0x38);var mode=BinaryPrimitives.ReadInt32LittleEndian(Take(p+0x28,4));var vt=Q(p);ulong? getter=null;if(vt>=id.ModuleBaseAddress&&vt<=id.ModuleBaseAddress+id.ModuleSize-0x48){var target=Q(vt+0x40);if(target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize)getter=target-id.ModuleBaseAddress;}
-    if(mode!=4){rows.Add(new(at,raw,p,"mode-candidate",mode,vt,getter));continue;}
+    if(mode is not (0 or 4)){rows.Add(new(at,raw,p,"mode-candidate",mode,vt,getter));continue;}
+    if(mode==0)rangeSeed=new(at,raw,p,"mode-0-payload-unavailable",mode,vt,getter);
     contextKey??=D(component+0x2F0);var bits18=D(p+0x18);var bits24=D(p+0x24);var f18=BitConverter.Int32BitsToSingle(unchecked((int)bits18));var f24=BitConverter.Int32BitsToSingle(unchecked((int)bits24));
     var operation=D(p+0x2C);var flag30=Take(p+0x30,1)[0];var flag33=Take(p+0x33,1)[0];var flag34=Take(p+0x34,1)[0];var flag36=Take(p+0x36,1)[0];
     var ex=Span(p+0x110);var direct=Span(p+0x178);var tag1=Span(p+0x1E0);var tag2=Span(p+0x248);var tag3=Span(p+0x2B0);var scaleKey=D(p+0x20);
-    rows.Add(new(at,raw,p,"mode-4-raw-candidate",mode,vt,getter,bits18,float.IsFinite(f18)?f18:null,bits24,float.IsFinite(f24)?f24:null,operation,flag30,flag33,flag34,flag36,ex,direct,tag1,tag2,tag3,scaleKey,flag36==1?Scale(scaleKey):null));
+    var status=mode==0?"mode-0-raw-candidate":"mode-4-raw-candidate";
+    var directScale=flag36==1 && (mode==4 || flag33==0) ? Scale(scaleKey) : null;
+    rows.Add(new(at,raw,p,status,mode,vt,getter,bits18,float.IsFinite(f18)?f18:null,bits24,float.IsFinite(f24)?f24:null,operation,flag30,flag33,flag34,flag36,ex,direct,tag1,tag2,tag3,scaleKey,directScale));
    }
-   catch(InvalidDataException){if(budget>2*1024*1024)throw;rows.Add(new(at,raw,p,"unavailable"));incomplete=true;}
+   catch(InvalidDataException)
+   {
+    if(budget>2*1024*1024)throw;
+    if(rangeSeed is not null){rows.Add(rangeSeed);continue;}
+    rows.Add(new(at,raw,p,"unavailable"));incomplete=true;
+   }
   }
+  var rangeConfig=ReadRangeConfig();
   alternateOwner?.Verify();lookup.Verify();var after=context(session);if(after.Identity!=id||after.UnitKey!=before.UnitKey||after.Entity!=lookup.Entity||after.HealthComponent!=before.HealthComponent||after.Owner!=before.Owner||session.Identity!=id)throw new InvalidDataException("Self or process changed.");foreach(var a in anchors)CurrentBuildPlayerLookup.RequireSame(Take(a.Key.Item1,a.Key.Item2,false),a.Value);if(session.Identity!=id)throw new InvalidDataException("Process changed.");
-  return new(id,started,DateTimeOffset.UtcNow,lookup.Key,component,begin,end,incomplete?"incomplete":rows.Any(r=>r.Mode==4)?"mode-4-present":"no-mode-4-observed",contextKey,rows);
+  return new(id,started,DateTimeOffset.UtcNow,lookup.Key,component,begin,end,incomplete?"incomplete":rows.Any(r=>r.Mode==4)?"mode-4-present":"no-mode-4-observed",contextKey,rows,rangeConfig);
  }
  static PlayerContextOwner ResolveAlternate(IReadOnlyNativeMemorySession session){var owner=CurrentBuildPlayerLookup.Resolve(session);return new(owner.PlayerKey,owner.EntityAddress,owner.ResolveComponent(0x2F582E0),owner.VerifyUnchanged);}
  static ulong U64(ReadOnlySpan<byte>b)=>BinaryPrimitives.ReadUInt64LittleEndian(b);
