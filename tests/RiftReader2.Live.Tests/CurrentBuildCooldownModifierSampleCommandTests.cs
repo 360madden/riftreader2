@@ -28,6 +28,34 @@ public sealed class CurrentBuildCooldownModifierSampleCommandTests
   Assert.Equal("no-mode-4-observed",observation.CensusStatus);Assert.Equal("mode-0-payload-unavailable",row.Status);
   Assert.Equal(0,row.Mode);Assert.Null(row.Float18Bits);Assert.Null(row.DirectKeys);
  }
+ [Theory]
+ [InlineData(-3,4,"typed-073c-direct-branch")]
+ [InlineData(0,4,"typed-073c-fallback-branch")]
+ [InlineData(3,-1,"typed-073c-fallback-branch")]
+ public void Flag33UsesComparedEntityFieldAndTypedReference(int key,int slot,string status)
+ {
+  const ulong source=0x20140000;
+  var s=Fixture();SetupRow(s,0);s.Put(P+0x33,[1]);
+  var entry=new byte[32];Q(P).CopyTo(entry,0);Q(88).CopyTo(entry,0x10);s.Put(B,entry);
+  s.Put(E+0x10,Q(88));s.Put(P+0xA0,Q(source));Type(s,source,0x2A062F8,0x1BF3DD0,0x34BD9D0,0x2A1F988,0x1C29690);
+  byte[] fields=[..BitConverter.GetBytes(key),..BitConverter.GetBytes(slot)];s.Put(source+0x18,fields);
+  var seed=Assert.Single(Read(s).Rows).Flag33Seed!;
+  Assert.Equal(status,seed.Status);Assert.Equal(E,seed.Entity);Assert.Equal(88UL,seed.EntrySourceKey);
+  Assert.Equal(88UL,seed.EntitySourceKey);Assert.True(seed.SourceMatches);Assert.Equal(source,seed.Address);
+  Assert.Equal(key,seed.Key18);Assert.Equal(slot,seed.Slot1C);
+  s.Change(source+0x18,BitConverter.GetBytes(70L));Assert.Throws<InvalidDataException>(()=>Read(s));
+ }
+ [Fact] public void Flag33DistinguishesOtherSourceNullAndUnverifiedReference()
+ {
+  var s=Fixture();SetupRow(s,0);s.Put(P+0x33,[1]);
+  Flag33Seed Seed()=>Assert.Single(Read(s).Rows).Flag33Seed!;
+  var seed=Seed();Assert.Equal("read-unavailable",seed.Status);Assert.Null(seed.SourceMatches);
+  s.Put(E+0x10,Q(44));seed=Seed();Assert.Equal("entry-count-branch",seed.Status);Assert.False(seed.SourceMatches);Assert.Null(seed.Address);
+  s.Put(E+0x10,Q(0));s.Put(P+0xA0,Q(0));seed=Seed();Assert.Equal("null-073c-reference",seed.Status);Assert.Equal(0UL,seed.Address);
+  const ulong source=0x20140000;s.Put(P+0xA0,Q(source));s.Put(source,Q(M));seed=Seed();
+  Assert.Equal("unverified-073c-type",seed.Status);Assert.Equal(source,seed.Address);Assert.Null(seed.Key18);Assert.Null(seed.Slot1C);
+  s.Put(P+0x33,[0]);Assert.Null(Assert.Single(Read(s).Rows).Flag33Seed);
+ }
  [Fact] public void NullReferenceIsIncomplete(){var s=Fixture();SetupRow(s,4);s.Put(B,new byte[32]);Assert.Equal("incomplete",Read(s).CensusStatus);}
  [Fact] public void RangeConfigRequiresInitializedTypedReference()
  {

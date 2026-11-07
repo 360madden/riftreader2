@@ -1,3 +1,16 @@
+**ACTIVE SC625 TRIAL2 HOLD16:56-17:11 Eastern /21:56-22:11UTC.**
+ALL RR2 Lab2 operations are HELD until explicit independently verified clean
+return. Root16:56:12 checked controller absent, queue BLOCKED1/no holder and
+matching VM identity; all RR2 native jobs terminal. Source fix84c711a separates
+identity/output namespaces; reviewed0.2.2 DLL B8D297866CF92BD30F4A987E72D5CD6A6822AC1952D2AD8C960B9995D19CCC04,
+helper4F3315324DF204D9C40F0477A65578B3126BA5C8DB74CFB159C9E9E739D95154,
+all12 source/all5 release hashes verified. Before/release receipts:
+`artifacts/lab2-rre-sc625-trial2-handoff-20261107/`. Scope: one fresh reviewed
+manual Capture and one0.2.2 acquisition, unchanged Collector0.4.13, no new API
+calls/deploy. Preserve strict54-record gate, STOP/releases, scoped cleanup and
+process journals. No auto-retry, controller start, queue reset or forced release.
+The prior failed trial remains failed. End time alone is not a return.
+
 **SC625 CLEAN RETURN VERIFIED16:41:03 Eastern; passive RR2 reads resumed.**
 Root verified control-return.json and hash-bound recovery inventory: zero exact
 UUID residual files and zero owned native processes, no unreadable native command

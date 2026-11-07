@@ -71,3 +71,52 @@ RRE repositories and owners were read-only here. Keep this independent addon
 reference separate from native and derived evidence. The next useful comparison
 is a same-epoch exact-ID observation within an authorized ownership window,
 not a general selector reconstruction or another broad test campaign.
+
+## Range modifier tag predicate
+
+The bounded static check of the mode-0 modifier call establishes the caller's
+actual argument mapping: definition tags at `+0x588` must satisfy **ANY** of
+nonempty modifier tags at `P+0x1E0`, **ALL** of nonempty tags at `P+0x2B0`,
+and be **DISJOINT** from nonempty tags at `P+0x248`. The groups are combined
+with AND after a direct-key miss; a direct-key match bypasses these tag checks.
+The all-tags helper compares each untransformed DWORD. See the bounded branch
+and ABI evidence in
+[range-tag-predicate-check.md](../../artifacts/discovery-20261107-cast/range-tag-predicate-check.md).
+
+The initial offline **0/24** interpretation swapped the ALL and DISJOINT
+inputs and is superseded; it was not a live result. The corrected comparison
+receipt and reproducer are pending and should be linked here when available.
+The meaning and effect of modifier flag `+0x33` remain unresolved. These
+separately timed historical API and native captures do not establish adjusted
+range parity or changed-state behavior.
+
+## Corrected Lab 2 range-tag comparison
+
+The offline comparison of 24 captured parent definitions against the captured
+mode-0 modifier now yields 13 predicate-pass candidates. The correct mapping is
+ANY for the +0x1E0 group, ALL for +0x2B0, and DISJOINT for +0x248; the actual
+ALL group was empty. One other key takes the special range branch. The earlier
+0/24 result used the wrong argument mapping and is explicitly preserved as
+superseded. See `artifacts/discovery-20261107-cast/range-applicability-comparison.json`
+and `range-tag-predicate-check.md` in that directory.
+
+These cross-phase parent-record results do not identify selected variants,
+resolve flag33 scaling, or establish final adjusted range, current API parity,
+changed-state freshness, or restart qualification.
+
+The fresh Lab 2 energy-input capture has a flag value of zero on 18 rows and one on
+2 rows: Hasted Shot and Head Shot. In the historical comparison, 11 raw energy
+inputs agreed with the API values and 9 differed. Mode-2 adjustment and ability
+selection remain unresolved; these counts do not establish effective costs or
+same-epoch API parity. Sources: the hashed range/input receipt
+`artifacts/native-range-inputs-20261107/runs/lab2/a740d2e7fa7249c7bc7382228509f8fd/samples.json`
+(SHA256 `E1F49185CEF52ADD7D744116EB1576C892B4CBB579E43D6E70A244B07C7CB5B2`)
+and `artifacts/rre-peer-reference-20261107/cost-range-comparison.json`.
+
+The separately captured typed 0E29 range configuration has minimum 5, maximum
+105, and special key `1871006214`; Toggle Auto Attack takes the special range
+path rather than the ordinary mode-0 adjustment path. Receipt:
+`artifacts/native-cooldown-modifiers-20261107/runs/lab2/b05d568527a94122b8d69d7e298f2b89/samples.json`
+(SHA256 `0DA2C0FB2CEE9938008B990A3E0CE2F39EB0A007FB0CDD7AC2C480221127A7B6`).
+These are cross-phase candidate observations, with variant selection and final
+range still unqualified.

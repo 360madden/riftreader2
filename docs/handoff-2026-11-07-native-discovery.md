@@ -1,3 +1,16 @@
+**ACTIVE SC625 TRIAL2 HOLD16:56-17:11 Eastern /21:56-22:11UTC.**
+ALL RR2 Lab2 operations are HELD until explicit independently verified clean
+return. Root16:56:12 checked controller absent, queue BLOCKED1/no holder and
+matching VM identity; all RR2 native jobs terminal. Source fix84c711a separates
+identity/output namespaces; reviewed0.2.2 DLL B8D297866CF92BD30F4A987E72D5CD6A6822AC1952D2AD8C960B9995D19CCC04,
+helper4F3315324DF204D9C40F0477A65578B3126BA5C8DB74CFB159C9E9E739D95154,
+all12 source/all5 release hashes verified. Before/release receipts:
+`artifacts/lab2-rre-sc625-trial2-handoff-20261107/`. Scope: one fresh reviewed
+manual Capture and one0.2.2 acquisition, unchanged Collector0.4.13, no new API
+calls/deploy. Preserve strict54-record gate, STOP/releases, scoped cleanup and
+process journals. No auto-retry, controller start, queue reset or forced release.
+The prior failed trial remains failed. End time alone is not a return.
+
 **SC625 CLEAN RETURN VERIFIED16:41:03 Eastern; passive RR2 reads resumed.**
 Root verified control-return.json and hash-bound recovery inventory: zero exact
 UUID residual files and zero owned native processes, no unreadable native command
@@ -199,6 +212,29 @@ Eighteen Energy flags were0 and two1 among20 typed Energy children. No adjusted
 energy cost is inferred; mode2 modifiers and gated alternate multiplier remain.
 Focused checks: modifier10, definition range13, ability costs15 passed. No getter,
 game input, owner reset or qualified API/freshness/restart claim.
+
+## 16:56 checkpoint - direct flag33 discriminator and corrected tags
+
+Fresh flag33 receipt
+`artifacts/native-cooldown-modifiers-20261107/runs/lab2/624ef149433344b2b7ce6494c4a46b17/samples.json`
+SHA256857774AEEE48FD1A9C2005CA30DBE8C5753DEC461145E19CB5DA45AD0DCBEAC2
+establishes actual entity+10 equals entry source and typed073C DIRECT branch,
+key18=36/slot1C=1. Multiplier is still unobserved. Reader
+F6AE10900E67D23EC1C43F03CD17C1F015969C5A2D67AEACA603163112EC6FB0,
+117737312bytes;14 focused checks passed. Next implement only the short selected
+role/tree36/vector slot1 lookup from mode0-self-scale.md; no general fallback.
+
+A real source-interpretation error was found and independently checked: ANY list
+is P+1E0; ALL is P+2B0; DISJOINT is P+248. Initial0/24 replay had the last two
+swapped. Original invalid result retained as range-applicability-comparison.superseded.json;
+corrected replay of the SAME captures gives13/24 raw parent predicate passes,
+plus one distinct special-key path. No new live capture is implied by replay.
+Selected variants and coefficient remain unresolved. See corrected historical
+comparison and artifacts/discovery-20261107-cast/range-tag-predicate-check.md.
+
+Sammie also proved current Inspect.Experience callback's needed==-1 branch
+returns one EMPTY table, omitting accumulated/needed/rested together; both cap
+and lookup failure can produce sentinel. No capped live comparison is claimed.
 
 ## Working repository commands
 

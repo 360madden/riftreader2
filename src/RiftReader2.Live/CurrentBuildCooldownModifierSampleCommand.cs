@@ -6,8 +6,15 @@ using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
 internal sealed record RawModifierSpan(ulong Begin,ulong End,IReadOnlyList<uint> Values);
 internal sealed record DirectScaleObservation(string Status, uint Key, int? RawMultiplier=null);
+internal sealed record Flag33Seed(string Status, ulong Entity, ulong EntrySourceKey, ulong? EntitySourceKey = null, ulong? Address = null, int? Key18 = null, int? Slot1C = null)
+{
+ public bool? SourceMatches => EntitySourceKey.HasValue ? EntrySourceKey==EntitySourceKey.Value : null;
+}
 internal sealed record RawRangeConfig(string Status, ulong? Root, ulong? Address = null, uint? MinBits = null, float? Min = null, uint? MaxBits = null, float? Max = null, uint? SpecialKey = null);
-internal sealed record RawCooldownModifier(ulong EntryAddress,string RawEntryHex,ulong Pointer,string Status,int? Mode=null,ulong? Vtable=null,ulong? GetterRva=null,uint? Float18Bits=null,float? Float18=null,uint? Float24Bits=null,float? Float24=null,uint? Operation=null,byte? Flag30=null,byte? Flag33=null,byte? Flag34=null,byte? Flag36=null,RawModifierSpan? Exclusions=null,RawModifierSpan? DirectKeys=null,RawModifierSpan? Tags1=null,RawModifierSpan? Tags2=null,RawModifierSpan? Tags3=null,uint? RawScaleKey=null,DirectScaleObservation? DirectScale=null);
+internal sealed record RawCooldownModifier(ulong EntryAddress,string RawEntryHex,ulong Pointer,string Status,int? Mode=null,ulong? Vtable=null,ulong? GetterRva=null,uint? Float18Bits=null,float? Float18=null,uint? Float24Bits=null,float? Float24=null,uint? Operation=null,byte? Flag30=null,byte? Flag33=null,byte? Flag34=null,byte? Flag36=null,RawModifierSpan? Exclusions=null,RawModifierSpan? DirectKeys=null,RawModifierSpan? Tags1=null,RawModifierSpan? Tags2=null,RawModifierSpan? Tags3=null,uint? RawScaleKey=null,DirectScaleObservation? DirectScale=null)
+{
+ public Flag33Seed? Flag33Seed { get; init; }
+}
 internal sealed record CooldownModifierObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong Component,ulong Begin,ulong End,string CensusStatus,uint? RawContextKey,IReadOnlyList<RawCooldownModifier> Rows,RawRangeConfig RangeConfig)
 {public string Qualification=>"raw modifier census only; eligibility, adjusted cooldown, freshness and restart unverified";}
 internal static class CurrentBuildCooldownModifierSampleCommand
@@ -45,6 +52,28 @@ internal static class CurrentBuildCooldownModifierSampleCommand
     return new("typed-0e29-candidate",root,address,minBits,float.IsFinite(min)?min:null,maxBits,float.IsFinite(max)?max:null,D(config+0x88));
    }
    catch(InvalidDataException){if(budget>2*1024*1024)throw;return new("read-unavailable",root,address);}
+  }
+  Flag33Seed ReadFlag33Seed(ulong p,byte[] entry)
+  {
+   var entrySource=U64(entry.AsSpan(0x10));
+   var entity=lookup.Entity;
+   ulong? entitySource=null, address=null;
+   try
+   {
+    entitySource=Q(entity+0x10);
+    if(entitySource!=entrySource)return new("entry-count-branch",entity,entrySource,entitySource);
+    address=Q(Ptr(p,0xA8)+0xA0);
+    if(address==0)return new("null-073c-reference",entity,entrySource,entitySource,address);
+    var source=Ptr(address.Value,0x20);
+    if(!Type(source,0x2A062F8,0x1BF3DD0,0x34BD9D0,0x2A1F988,0x1C29690))
+     return new("unverified-073c-type",entity,entrySource,entitySource,address);
+    var fields=Take(source+0x18,8);
+    var key=BinaryPrimitives.ReadInt32LittleEndian(fields);
+    var slot=BinaryPrimitives.ReadInt32LittleEndian(fields.AsSpan(4));
+    var status=key!=0 && slot!=-1 ? "typed-073c-direct-branch" : "typed-073c-fallback-branch";
+    return new(status,entity,entrySource,entitySource,address,key,slot);
+   }
+   catch(InvalidDataException){if(budget>2*1024*1024)throw;return new("read-unavailable",entity,entrySource,entitySource,address);}
   }
   DirectScaleObservation Scale(uint key)
   {
@@ -94,7 +123,8 @@ internal static class CurrentBuildCooldownModifierSampleCommand
     var ex=Span(p+0x110);var direct=Span(p+0x178);var tag1=Span(p+0x1E0);var tag2=Span(p+0x248);var tag3=Span(p+0x2B0);var scaleKey=D(p+0x20);
     var status=mode==0?"mode-0-raw-candidate":"mode-4-raw-candidate";
     var directScale=flag36==1 && (mode==4 || flag33==0) ? Scale(scaleKey) : null;
-    rows.Add(new(at,raw,p,status,mode,vt,getter,bits18,float.IsFinite(f18)?f18:null,bits24,float.IsFinite(f24)?f24:null,operation,flag30,flag33,flag34,flag36,ex,direct,tag1,tag2,tag3,scaleKey,directScale));
+    var flag33Seed=mode==0 && flag33!=0 ? ReadFlag33Seed(p,entry) : null;
+    rows.Add(new RawCooldownModifier(at,raw,p,status,mode,vt,getter,bits18,float.IsFinite(f18)?f18:null,bits24,float.IsFinite(f24)?f24:null,operation,flag30,flag33,flag34,flag36,ex,direct,tag1,tag2,tag3,scaleKey,directScale){Flag33Seed=flag33Seed});
    }
    catch(InvalidDataException)
    {
