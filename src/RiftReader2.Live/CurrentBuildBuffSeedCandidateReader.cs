@@ -13,7 +13,7 @@ internal sealed record BuffRawObject(string Status, ulong? VtableRva = null, uin
     ulong? ClockSlot30Rva = null, ulong? ClockSlot38Rva = null, ulong? ClockSlot48Rva = null);
 internal sealed record BuffTimingCandidate(string Status, uint? BeginRawBits = null, float? Begin = null,
     ulong? TimerReference = null, ulong? ReferenceVtableRva = null, ulong? ReferenceGetterRva = null,
-    long? DurationTicks = null, float? Duration = null, float? Remaining = null, ulong? ReferenceSlot48Rva = null);
+    long? DurationTicks = null, float? Duration = null, float? Remaining = null, ulong? ReferenceSlot48Rva = null, uint? DurationInputRawBits = null);
 internal sealed record BuffRawNode(ulong Address, ulong Next, ulong Object, ulong Control, BuffRawObject RawObject)
 {
     public BuffTimingCandidate? Timing { get; init; }
@@ -66,6 +66,21 @@ internal static class CurrentBuildBuffSeedCandidateReader
         ulong Ptr(ulong value, int length = 8) => CurrentBuildPlayerLookup.Pointer(value, length);
         ulong? Rva(ulong value) => value >= id.ModuleBaseAddress && value - id.ModuleBaseAddress < id.ModuleSize
             ? value - id.ModuleBaseAddress : null;
+        bool ValidFieldTable()
+        {
+            var table = Read(checked(id.ModuleBaseAddress + 0x303E8A8), 48);
+            var expected = new HashSet<ulong> { 0x303E860, 0x303E720, 0x303E790, 0x303E828, 0x303E7E0 };
+            for (int i = 0; i < 5; i++)
+            {
+                var pointer = BinaryPrimitives.ReadUInt64LittleEndian(table.AsSpan(i * 8, 8));
+                if (pointer < id.ModuleBaseAddress || !expected.Remove(pointer - id.ModuleBaseAddress)) return false;
+            }
+            return expected.Count == 0 && BinaryPrimitives.ReadUInt64LittleEndian(table.AsSpan(40, 8)) == 0 &&
+                Read(checked(id.ModuleBaseAddress + 0x345DE18), 10).AsSpan().SequenceEqual("!8dca2bf7\0"u8) &&
+                Read(checked(id.ModuleBaseAddress + 0x345DE48), 10).AsSpan().SequenceEqual("!8f2b42db\0"u8) &&
+                Read(checked(id.ModuleBaseAddress + 0x345DE28), 10).AsSpan().SequenceEqual("!a0843f13\0"u8) &&
+                Read(checked(id.ModuleBaseAddress + 0x345DE58), 10).AsSpan().SequenceEqual("!1381549c\0"u8);
+        }
         var system = Ptr(Q(checked(id.ModuleBaseAddress + 0x33623E0)), 0x400);
         if (Q(checked(system + 0x3F8)) != entity || Q(checked(Ptr(health, 0x18) + 0x10)) != entity ||
             Q(checked(Ptr(context, 0x318) + 0x10)) != entity)
@@ -159,7 +174,28 @@ internal static class CurrentBuildBuffSeedCandidateReader
                         else if (expectedDuration.HasValue && raw.ClockSlot30Rva == expectedDuration && raw.ClockSlot38Rva == 0x72B3C0 && raw.ClockSlot48Rva == 0x09D680)
                         {
                             timing = timing with { Status = "dynamic-duration-unavailable" };
-                            if (vt != 0x26BCE50)
+                            if (vt == 0x26BCE50)
+                            {
+                                timing = timing with { Status = "dynamic-type-or-property-unavailable" };
+                                if (reference != 0 && refVt == 0x28EC200 && refGetter == 0x194CCE0 && refSlot48 == 0x04F180 &&
+                                    Q(checked(id.ModuleBaseAddress + 0x3462A70)) == checked(id.ModuleBaseAddress + 0x28F5968) &&
+                                    Q(checked(id.ModuleBaseAddress + 0x28F5968 + 8)) == checked(id.ModuleBaseAddress + 0x1978670) &&
+                                    Q(checked(id.ModuleBaseAddress + 0x28F5968 + 0x28)) == checked(id.ModuleBaseAddress + 0x197A330) &&
+                                    Q(checked(id.ModuleBaseAddress + 0x28F5968 + 0x38)) == checked(id.ModuleBaseAddress + 0x197D520) &&
+                                    ValidFieldTable() &&
+                                    Q(checked(id.ModuleBaseAddress + 0x303E7E0)) == checked(id.ModuleBaseAddress + 0x28ED1E8) &&
+                                    Q(checked(id.ModuleBaseAddress + 0x28ED1E8 + 0x58)) == checked(id.ModuleBaseAddress + 0x194DCC0) &&
+                                    Q(checked(id.ModuleBaseAddress + 0x28ED1E8 + 0x68)) == checked(id.ModuleBaseAddress + 0x194DD00) &&
+                                    Q(checked(id.ModuleBaseAddress + 0x28ED1E8 + 0x78)) == checked(id.ModuleBaseAddress + 0x194DD40) &&
+                                    Read(checked(id.ModuleBaseAddress + 0x345DE38), 10).AsSpan().SequenceEqual("!6b50761c\0"u8))
+                                {
+                                    var bits = D(checked(reference + 0x24)); var duration = F(bits);
+                                    var remaining = duration - (clockBefore!.Value - begin);
+                                    if (float.IsFinite(duration) && float.IsFinite(remaining))
+                                        timing = timing with { Status = "raw-timing-candidate", DurationInputRawBits = bits, Duration = duration, Remaining = remaining };
+                                }
+                            }
+                            else
                             {
                                 var expectedRef = vt == 0x26BC950 ? 0x286CDC8UL : 0x2CC0618UL;
                                 var expectedGetter = vt == 0x26BC950 ? 0x18254A0UL : 0x225CA20UL;
@@ -200,4 +236,3 @@ internal static class CurrentBuildBuffSeedCandidateReader
             { ClockBefore = clockBefore, ClockAfter = clockAfter };
     }
 }
-

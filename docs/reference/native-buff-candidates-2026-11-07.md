@@ -92,3 +92,36 @@ property`!6b50761c`, index4/kind2, storage base is the object. Initialized
 descriptor3462A70/VT28F5968/type method1978670, field303E7E0/VT28ED1E8,
 kind/offset methods194DCC0/194DD00, name bytes345DE38 must be verified and
 anchored before exposing it. No tick conversion for this profile.
+
+## Loaded field order corrected; both labs pass —14:23 Eastern
+
+The first direct-float reader withheld22 durations. A bounded repeat-bracketed
+metadata diagnostic found exactly ONE bad expectation: the loaded table's
+index4 referenced Boolean field303E828, while the retained file's index4 held
+duration field303E7E0. Every other checked metadata pointer and inline property
+name matched. Native lookup SEARCHES the loaded table by name; file ordinal is
+not runtime identity. No duration was fabricated from that failed observation.
+
+The corrected reader anchors the complete five unique known descriptors plus
+null terminator in ANY order, checks all five ten-byte inline property names,
+then retains the exact target type/kind/offset/storage checks. A regression uses
+the observed permutation and rejects missing/duplicate fields. Seven focused
+checks passed. Diagnostic:
+`artifacts/native-buff-timing-20261107/lab1/64162bad7cf546b68770cd3e65d2ab45/summary.json`,
+SHA256`DE31C84275B5DBC423AA171DBD709EB86CFFA36F03C1F016C1468F14636EF634`.
+
+Lab1 subsequently captured **28/28** timing candidates, including22 direct065A
+floats. All durations were0. Lab2 independently captured **24/24** timing
+candidates, also duration0, with24 raw kind1 descriptors and21 distinct
+definition-key candidates. These are passive effects, not demonstrated active
+positive-duration timers. No API publication/freshness/restart qualification.
+
+- Lab1`artifacts/native-buff-timing-20261107/runs/lab1/2e9669be691c4b01a0ce5ebe61c12105/samples.json`,
+  SHA256`BE8C5E414BB468EC2B8E5047186DACD51A41EDD29429E88D197A46B723431B14`.
+- Lab2`artifacts/native-buff-timing-20261107/runs/lab2/69c5f7e5f3f14580a9f8e208bf5647f4/samples.json`,
+  SHA256`30E470DD7C3CF8E688349366EE14490579C9E159530F12722E02AFECDB62497A`.
+
+Reader117565792 bytes, SHA256
+`EAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060`,
+at`artifacts/native-buff-loaded-field-table-20261107/publish/`. All earlier
+publications, failed-case receipts and seed/definition workflows remain intact.

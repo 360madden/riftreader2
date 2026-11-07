@@ -1,10 +1,20 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:08 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:34 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**LAB2 RRE WINDOW — NO RR2 LAB2 OPERATIONS:** The verified idle RR2 controller
+exited normally; task Ready/result0, no holder, queue left blocked. RRE has a
+window through14:49 Eastern; wait for explicit clean return before any resume.
+[Ownership transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
+
+**14:23 Eastern — LOADED FIELD FIX LIVE ON BOTH LABS:** Corrected a fixed file
+ordinal assumption by validating/searching the complete loaded field table.
+Lab1 all28 andLab2 all24 buff timing candidates captured, all durations0. No
+active positive timers or API publication claimed. [Receipts](reference/native-buff-candidates-2026-11-07.md).
 
 **14:05 Eastern — FIRST BUFF TIMER INPUTS LIVE:** All28 begins and reference
 profiles captured; six tick durations are0, not active positive timers. The22

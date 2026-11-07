@@ -57,6 +57,36 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         s = TimingFixture(12345678, 0); s.Changed = (0x200A0018, 8);
         Assert.Throws<InvalidDataException>(() => ReadTiming(s));
     }
+    [Fact] public void DynamicFloatRequiresExactPropertyMetadata()
+    {
+        var s = DynamicFixture(); var timing = ReadTiming(s).Nodes[0].Timing!;
+        Assert.Equal("raw-timing-candidate", timing.Status);
+        Assert.Equal((uint)BitConverter.SingleToInt32Bits(12.5f), timing.DurationInputRawBits);
+        Assert.Equal(12.5f, timing.Duration); Assert.Equal(7.5f, timing.Remaining); Assert.Null(timing.DurationTicks);
+        s = DynamicFixture(); s.Bytes(Module + 0x345DE38, "!6b50761x\0"u8.ToArray());
+        Assert.Equal("dynamic-type-or-property-unavailable", ReadTiming(s).Nodes[0].Timing!.Status);
+        s = DynamicFixture(); s.Q(0x200A0000, Module + 0x286CDC8);
+        Assert.Equal("dynamic-type-or-property-unavailable", ReadTiming(s).Nodes[0].Timing!.Status);
+        s = DynamicFixture(); s.FieldTable(0x303E860, 0x303E720, 0x303E790, 0x303E828, 0x303E828);
+        Assert.Equal("dynamic-type-or-property-unavailable", ReadTiming(s).Nodes[0].Timing!.Status);
+    }
+    static Fake DynamicFixture()
+    {
+        var s = TimingFixture(0, 0);
+        s.Q(0x20090000, Module + 0x26BCE50); s.Q(Module + 0x26BCE80, Module + 0x72B040);
+        s.Q(Module + 0x26BCE88, Module + 0x72B3C0); s.Q(Module + 0x26BCE98, Module + 0x09D680);
+        s.Q(0x200A0000, Module + 0x28EC200); s.Q(Module + 0x28EC240, Module + 0x194CCE0);
+        s.Q(Module + 0x28EC248, Module + 0x04F180); s.Q(Module + 0x3462A70, Module + 0x28F5968);
+        s.Q(Module + 0x28F5970, Module + 0x1978670); s.Q(Module + 0x28F5990, Module + 0x197A330);
+        s.Q(Module + 0x28F59A0, Module + 0x197D520);
+        s.FieldTable(0x303E860, 0x303E720, 0x303E790, 0x303E7E0, 0x303E828);
+        s.Q(Module + 0x303E7E0, Module + 0x28ED1E8); s.Q(Module + 0x28ED240, Module + 0x194DCC0);
+        s.Q(Module + 0x28ED250, Module + 0x194DD00); s.Q(Module + 0x28ED260, Module + 0x194DD40);
+        s.Bytes(Module + 0x345DE18, "!8dca2bf7\0"u8.ToArray()); s.Bytes(Module + 0x345DE48, "!8f2b42db\0"u8.ToArray());
+        s.Bytes(Module + 0x345DE28, "!a0843f13\0"u8.ToArray()); s.Bytes(Module + 0x345DE58, "!1381549c\0"u8.ToArray());
+        s.Bytes(Module + 0x345DE38, "!6b50761c\0"u8.ToArray()); s.D(0x200A0024, (uint)BitConverter.SingleToInt32Bits(12.5f));
+        return s;
+    }
     static CurrentBuildBuffSeedObservation ReadTiming(Fake s) => CurrentBuildBuffSeedCandidateReader.ReadResolved(s,
         s.Identity, DateTimeOffset.UtcNow, 123, Entity, Health, Context, () => { }, true);
     static Fake TimingFixture(long ticks, uint state)
@@ -86,6 +116,13 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         readonly Dictionary<(ulong, int), byte[]> data = []; readonly Dictionary<(ulong, int), int> reads = [];
         public (ulong, int)? Changed { get; set; }
         public NativeProcessIdentity Identity { get; } = new(1, 2, "rift_x64.exe", CurrentBuildPlayerLookup.GameSha256, Module, 64 * 1024 * 1024);
+        public void FieldTable(params ulong[] values)
+        {
+            var b = new byte[48];
+            for (int i = 0; i < values.Length; i++) BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(i * 8), Module + values[i]);
+            Bytes(Module + 0x303E8A8, b);
+        }
+        public void Bytes(ulong a, byte[] b) => data[(a,b.Length)] = b.ToArray();
         public void Q(ulong a, ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); data[(a,8)] = b; }
         public void D(ulong a, uint v) { var b = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(b, v); data[(a,4)] = b; }
         public void Node(ulong a, ulong next, ulong obj, ulong control) { Q(a,next); Q(a+0x10,obj); Q(a+0x18,control); }

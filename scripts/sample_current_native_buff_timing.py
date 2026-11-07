@@ -9,8 +9,8 @@ from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 from scripts.sample_current_native_buff_seeds import validate_report as validate_seeds
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = 'BDE40E279E0E6CB22B167A9A3CF98B425B4380E6BF21B53C78B5AB18D50659FE'
-READER = ROOT / 'artifacts/native-buff-timing-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = 'EAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060'
+READER = ROOT / 'artifacts/native-buff-loaded-field-table-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-buff-timing-20261107/runs'
 
 def validate_report(report, *, pid, ticks):
@@ -20,7 +20,7 @@ def validate_report(report, *, pid, ticks):
     def invalid(): raise ValueError('invalid buff-timing report')
     before=o.get('clockBefore'); after=o.get('clockAfter')
     if not real(before) or not real(after) or after<before: invalid()
-    statuses=('unavailable','unsupported-clock-profile','state-sentinel','dynamic-duration-unavailable','reference-type-unavailable','raw-timing-candidate','read-or-type-unavailable')
+    statuses=('unavailable','unsupported-clock-profile','state-sentinel','dynamic-duration-unavailable','dynamic-type-or-property-unavailable','reference-type-unavailable','raw-timing-candidate','read-or-type-unavailable')
     for node in o['nodes']:
         t=node.get('timing'); raw=node['rawObject']
         if not isinstance(t,dict) or t.get('status') not in statuses: invalid()
@@ -31,24 +31,27 @@ def validate_report(report, *, pid, ticks):
         for field in ('timerReference','referenceVtableRva','referenceGetterRva','referenceSlot48Rva'):
             v=t.get(field)
             if v is not None and not integer(v,0,2**64-1): invalid()
-        ticks_value=t.get('durationTicks'); duration=t.get('duration'); remaining=t.get('remaining')
+        ticks_value=t.get('durationTicks'); duration=t.get('duration'); remaining=t.get('remaining'); duration_bits=t.get('durationInputRawBits')
         if t['status']=='raw-timing-candidate':
-            if not integer(ticks_value,-2**63,2**63-1) or not real(duration) or not real(remaining) or bits is None or not integer(ref,1,2**64-1): invalid()
-            vt=raw.get('clockVtableRva'); profiles={0x26BC950:(0x72AE00,0x286CDC8,0x18254A0),0x26BC9A0:(0x72AE70,0x2CC0618,0x225CA20)}
+            if not real(duration) or not real(remaining) or bits is None or not integer(ref,1,2**64-1): invalid()
+            vt=raw.get('clockVtableRva'); profiles={0x26BC950:(0x72AE00,0x286CDC8,0x18254A0),0x26BC9A0:(0x72AE70,0x2CC0618,0x225CA20),0x26BCE50:(0x72B040,0x28EC200,0x194CCE0)}
             if vt not in profiles: invalid()
             duration_slot,refvt,refgetter=profiles[vt]
             if raw.get('stateDword88') in (None,5) or raw.get('clockSlot30Rva')!=duration_slot or raw.get('clockSlot38Rva')!=0x72B3C0 or raw.get('clockSlot48Rva')!=0x09D680 or t.get('referenceVtableRva')!=refvt or t.get('referenceGetterRva')!=refgetter: invalid()
-        elif any(v is not None for v in (ticks_value,duration,remaining)): invalid()
+            if vt==0x26BCE50:
+                if ticks_value is not None or not integer(duration_bits,0,2**32-1) or abs(duration)>3.4028234663852886e38 or struct.pack('<f',duration)!=struct.pack('<I',duration_bits) or t.get('referenceSlot48Rva')!=0x04F180: invalid()
+            elif not integer(ticks_value,-2**63,2**63-1) or duration_bits is not None: invalid()
+        elif any(v is not None for v in (ticks_value,duration,remaining,duration_bits)): invalid()
         if t['status']=='state-sentinel' and raw.get('stateDword88')!=5: invalid()
     return o
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117552992 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117565792 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-buff-timing-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-buff-loaded-field-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"

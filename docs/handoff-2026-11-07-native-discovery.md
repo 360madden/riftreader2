@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **14:08 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **14:34 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -20,6 +20,11 @@ owners, exact VM/PID/start/build, freshness and STOP/release gates. This discove
 has used no game input, target selection, reload/rebind/restart, getter/native
 constructor, debugger/injection, memory/refcount writes or active-reader takeover.
 New casting/combat/input authority is not implied by the time extension.
+
+**LAB2 HELD FOR RRE through14:49 Eastern AND until explicit clean return.**
+The verified idle RR2 controller exited normally via its owned marker; no queue
+reset/forced mutex release. Queue blocked/no holder, task Ready/result0. No RR2
+Lab2 reads/input/reload/auto-start during the window. [Transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
 
 ## Working repository commands
 
@@ -120,6 +125,13 @@ property !6b50761c fieldindex4/kind2/offset24; actual ref profile must be observ
 before claiming it applies. Note`artifacts/discovery-20261107-buffs/buff-dynamic-duration-next-step.md`.
 Actual065A matches, so next small reader slice can use
 the direct field with full profile/property anchors. No general reflection engine.
+COMPLETED: initial fixed field ordinal failed safely; metadata diagnostic proved
+loaded order differs. Corrected reader verifies all five fields/inline names in
+any order. Live Lab1 all28/Lab2 all24 timing candidates pass; duration0 on all.
+ReaderEAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060,
+117565792 bytes,`artifacts/native-buff-loaded-field-table-20261107/publish/`.
+No active native capture. Python timing helper pins it; seven focused cases pass.
+Reader/property milestone commit is next; preserve failed-case receipts.
 Medium worker classifies actual buff descriptorVT28DC6A8 for later visibility.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
