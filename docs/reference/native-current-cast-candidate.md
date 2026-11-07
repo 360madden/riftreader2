@@ -51,6 +51,36 @@ validation needs another reference.
 
 ## Checks and next useful use
 
+### First live capture — November 7
+
+`probe_native_unit_manager.py --lab lab2 --cast-record` now supplies this
+helper from the existing identity-pinned read session and brackets it with the
+probe's player/entity/root and final process checks. The first run completed at
+`2026-11-07T12:54:58.1959684Z`, PID9752/start639294897826627677, on the exact
+build above. Native self key `u035400012DFEB5BC` resolved entity
+`0x1B0693C1410`; selector0/slot0 selected component `0x1B0793AE810`. Both
+`+0x280` and `+0x290` child pointers were zero. Anchor rereads and source
+stability checks passed; output is `candidate-no-nonzero-child`, with all
+semantic cast/timer fields still null. These are session addresses, not locators.
+
+Raw receipts: `artifacts/native-unit-manager/lab2/001cf7a517da4dc38971a0041e1f05b8/`;
+`review.json` SHA256
+`38292BDB6D178B73C99636A14E6EB51A8AA919DF8E8F36CAC70F9D660C238C95`.
+An earlier fresh screenshot/native-vitals pair in
+`artifacts/e2e-latency-20261106/discovery-1794055884095/` showed the AFK player
+and HP10635/10635, Energy100/100. It is context, not a simultaneous independent
+cast observation. No game input, addon bind/reload, restart or ownership change
+occurred. This establishes a working live raw topology read, not idle/casting,
+changed-state, passive freshness or restart qualification.
+
+An independent Lab1 run completed at `2026-11-07T13:00:03.8395761Z`,
+PID11672/start639296016581575957, same build, native self key
+`u035400012FA2D678`. It also found selector0/slot0 with both child pointers
+null; source stability, process and ownership checks passed. Receipts are in
+`artifacts/native-unit-manager/lab1/3c1fb6acef4f4f6c9aa7098532d49d99/`.
+This checks the raw locating route on a second player/process, without
+establishing cast semantics or full-game restart recovery.
+
 On November 6 the physical installed executable was read-only SHA-256 checked:
 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`, matching
 the existing map. No new instruction disassembly, live memory acquisition,

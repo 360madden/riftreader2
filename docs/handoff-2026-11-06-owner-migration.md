@@ -2,6 +2,30 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Discovery priority — November 7
+
+Joey redirected work to discovery: use the shortest reliable experiment and
+proportional checks. Remaining maintenance P2s are deferred, not the next task.
+Parallel static cast/cooldown workers own separate retained artifacts; the root
+retains sole live-operation ownership. Existing STOP/release and identity gates
+remain intact.
+
+First live `probe_native_unit_manager.py --lab lab2 --cast-record` completed:
+native self key `u035400012DFEB5BC`, exact SHA1935A05C..., PID9752/start
+639294897826627677, stable anchors, cast selector0/slot0 and both child pointers
+null. It exposes raw topology, not qualified cast/idle/timer semantics. See
+[receipt and limits](reference/native-current-cast-candidate.md#first-live-capture--november-7).
+Cooldown research traced the original map key and two candidate resolver roots;
+see [findings](reference/native-cooldown-static-followup-2026-11-06.md#key-provenance-and-candidate-roots--november-7).
+No game input, bind/reload, restart or owner transition was performed.
+
+**Resume:** continue native cast/timer and ability/cooldown discovery. Reacquire
+each process epoch; read candidate cooldown roots before attempting collection
+traversal, and use retained exact-build getter disassembly for timer fields.
+Do not restart the full validation gate or maintenance queue merely because
+those items appear chronologically below. Save concise concrete findings and
+commit useful slices; no new framework or validation campaign.
+
 ## Reader startup readiness P2 fixed — November 7
 
 The launcher no longer treats a nonempty last snapshot as readiness after its

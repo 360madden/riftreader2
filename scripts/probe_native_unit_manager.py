@@ -480,7 +480,8 @@ def calculate_energy(fields: dict, clock: float) -> dict:
             "scope": "finite-normal-int32-values-only"}
 
 
-def run(lab: str, *, health_record: bool = False, resource_record: bool = False) -> dict:
+def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
+        cast_record: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
     probe_path = Path(__file__)
@@ -489,6 +490,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
     from scripts.lab_codex import LabCodex
     from scripts.inventory_passive_rift_sources import ps_literal
     from scripts.vmware_guest_session import SessionError
+    from scripts.native_cast_candidate import read_cast_topology
 
     workflow_path = ROOT / "artifacts" / "control-fleet-live" / lab / "workflow.json"
     workflow_raw = workflow_path.read_bytes()
@@ -753,6 +755,18 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False)
             require_disjoint_records(
                 record_address if health is not None else None, resource_record_address)
 
+            if cast_record:
+                cast_read_count = 0
+
+                def read_cast(address: int, length: int) -> bytes:
+                    nonlocal cast_read_count
+                    cast_read_count += 1
+                    return take(f"cast-read-{cast_read_count}", [(address, length)])[address]
+
+                review["castCandidate"] = read_cast_topology(
+                    read_cast, module_base=base, entity=entity,
+                    build_sha=identity["executableSha256"])
+
             # Recheck every ownership anchor after staged reads. This is NOT an
             # atomic snapshot or proof that no transient ABA change occurred.
             checks = {base + rva: length for rva, length in roots_ranges}
@@ -910,11 +924,14 @@ def main() -> None:
                         help="Also capture/type-check the health record and calculate ordinary-value HP candidates.")
     parser.add_argument("--resource-record", action="store_true",
                         help="Capture raw resource records; Energy gets exact-build type/ordinary-value candidates, not production-qualified current.")
+    parser.add_argument("--cast-record", action="store_true",
+                        help="Capture read-only cast topology candidates; cast semantics remain unqualified.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
         print(json.dumps(run(lab, health_record=args.health_record,
-                             resource_record=args.resource_record), indent=2), flush=True)
+                             resource_record=args.resource_record,
+                             cast_record=args.cast_record), indent=2), flush=True)
 
 
 if __name__ == "__main__":

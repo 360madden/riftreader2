@@ -64,11 +64,32 @@ returning (`0x12904E5..0x1290560`). This behavior is static instruction
 analysis: it does not identify those collection types or prove numeric key
 provenance. Native calls have side effects and must not be invoked by a reader.
 
+## Key provenance and candidate roots — November 7
+
+The initial `context+0x1C0` map key is now traced: producer `0x5A9440`
+saves its incoming EDX at entry RSP+0x10. After its 0xA8-byte stack adjustment,
+`0x5A951C` passes that saved DWORD as R8 to `0x58C790` at `0x5A952C`.
+The lookup hashes DWORD[R8] and compares entry DWORD+0x08. Thus the initial
+key is the producer's original second 32-bit argument.
+
+Caller/selector `0x5A6F20` obtains candidate keys from resolved child DWORD
+`+0x18`, through an object's `+0x5F0` reference span. The same key uses resolver
+`0x1274AD8`; `0x1353620` tests a resolved first child for type `0x078A`.
+This narrows an ability-related keyspace but does not establish public API
+`abilityId`, learned/template/variant identity, cooldown units or player ownership.
+
+Two passive root candidates are concrete: `[module+0x33624C8]` returns an
+object whose word `+0x40` supplies the selector; `[module+0x3372C18]` supplies
+the lookup owner passed to `0x129043C`. Null roots trigger initialization in
+game code, which a reader must never call. Conditional collection traversal
+remains unresolved. Bounded exact-build disassembly and call-site details are
+retained in `artifacts/discovery-20261107-cooldown/key-provenance.md`.
+
 ## Next discriminating work
 
-Trace the key supplied to `0x58C790` at the call site and the exact input and
-result types of `0x128FFA4` / `0x128CCB0`; inspect whether both collection
-paths can be passively reconstructed. Then, under the coordinator's normal
+Read the two candidate roots and selector in a fresh pinned process, and trace
+the exact input/result types of `0x128FFA4` / `0x128CCB0`; inspect whether both
+collection paths can be passively reconstructed. Then, under the coordinator's normal
 fresh identity and controlled-action gates, compare independent ability/API
 observations with bracketed native candidate changes. Full-game restart and
 freshness checks remain necessary before any live telemetry claim. This work
