@@ -25,3 +25,44 @@ Both session reuse and cached-login validation changed between the retained
 historical and later trials, so no single change receives causal credit.
 See [short-window](lab1-receiver-freshness-2026-11-06.md) and
 [sustained](lab1-sustained480-2026-11-06.md) evidence for the live limits.
+
+## Running-helper status inspection
+
+`bb3d95c` reuses the existing two-observation COM inspection for ordinary
+Status on all four running RR2 helpers. Both observations verify the exact
+registration, owner, settings, absent legacy collision and sole matching
+engine PID/instance GUID. Null or ambiguous results fail closed. Known
+nonrunning states retain the previous ScheduledTasks path; observing Running
+during that fallback refuses the result and requires a fresh call. Ordinary
+Status retains its unsigned task result and note; explicit Lab2 inspection
+retains its narrower behavior. Register/Start and STOP/release are unchanged.
+
+The read-only baseline used one warmup and three samples per path on the same
+Lab2 controller: normal Status mean **1.986 s**, explicit COM inspection
+**0.662 s**, with the same PID/GUID. After integration, 19 read-only calls
+(four warmups, twelve ordinary measured calls and three explicit inspections)
+all matched their independently pinned owners:
+
+| Helper | Mean / median, seconds |
+| --- | --- |
+| Lab1 controller | 0.666 / 0.661 |
+| Lab2 controller | 0.673 / 0.662 |
+| Lab1 receiver | 0.668 / 0.669 |
+| Lab2 receiver | 0.651 / 0.652 |
+| Explicit Lab2 inspection | 0.663 / 0.666 |
+
+The post-change Lab2 ordinary query was about1.31 s below the earlier mean.
+The reader expired between the batches and host load changed, so this is not
+a controlled before/after benchmark. No helper start, stop, registration,
+lease or game input was issued for measurement. Evidence:
+`artifacts/receiver-migrations/helper-status-latency/results.json` and
+`postflight.json` (current source/config/process/listener admission, both
+controllers ready/disarmed/idle and both queues free). Cold start under this
+generalized status path was not repeated against healthy owners.
+
+Focused checks passed99 Python tests and both PowerShell mock suites, including
+all IDs, fallback races, ambiguity, null collections, altered registrations and
+PID/GUID changes. Independent control review passed. The combined gate passed
+716 .NET and1,748 Python tests (2 skips), native/Lua/ownership/format and1,015
+links; evidence:`artifacts/validation/20261107T040344Z-13a31e2a`, log
+`artifacts/validation/helper-status-fast-20261106.log`.
