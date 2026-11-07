@@ -66,7 +66,8 @@ class GuestAgentDependencyTests(unittest.TestCase):
              patch.object(agent.HostConfig, "load"), \
              patch.object(agent, "ControlClient") as client, \
              patch.object(agent, "_stage_and_request") as stage:
-            client.return_value.request.side_effect = [_status(connected=False), _status()]
+            client.return_value.request.side_effect = [
+                _status(connected=False), _status(coordination="starting"), _status()]
             stage.return_value = {
                 "taskName": "RiftReader2 OnDemand Control Agent",
                 "noAutomaticTrigger": True, "created": True, "started": True,
@@ -74,7 +75,70 @@ class GuestAgentDependencyTests(unittest.TestCase):
             result = agent.ensure("lab2")
             self.assertEqual(result["state"], "started")
             stage.assert_called_once()
-            self.assertEqual(client.return_value.request.call_count, 2)
+            self.assertEqual(client.return_value.request.call_count, 3)
+
+    def test_existing_connection_starting_is_reused_without_staging(self):
+        with patch.object(agent, "ensure_controller"), \
+             patch.object(agent, "_launch_lock", side_effect=_no_lock), \
+             patch.object(agent.HostConfig, "load"), \
+             patch.object(agent, "ControlClient") as client, \
+             patch.object(agent, "_stage_and_request") as stage, \
+             patch.object(agent.time, "sleep"):
+            client.return_value.request.side_effect = [
+                _status(coordination="waiting"), _status(coordination="starting"), _status()]
+            self.assertEqual(agent.ensure("lab1")["state"], "reused")
+            stage.assert_not_called()
+
+    def test_starting_connection_times_out_without_staging(self):
+        with patch.object(agent, "ensure_controller"), \
+             patch.object(agent, "_launch_lock", side_effect=_no_lock), \
+             patch.object(agent.HostConfig, "load"), \
+             patch.object(agent, "ControlClient") as client, \
+             patch.object(agent, "_stage_and_request") as stage, \
+             patch.object(agent.time, "sleep"), \
+             patch.object(agent.time, "monotonic", side_effect=[0, 0, 2]):
+            client.return_value.request.return_value = _status(coordination="starting")
+            with self.assertRaisesRegex(DependencyUnavailable, "agent-connection-timeout"):
+                agent.ensure("lab1", timeout_seconds=1)
+            stage.assert_not_called()
+
+    def test_starting_connection_rejects_unsafe_or_failed_status(self):
+        cases = []
+        armed = _status(coordination="starting", armed=True)
+        cases.append(armed)
+        faulted = _status(coordination="starting")
+        faulted["host"]["consoleReservation"]["faulted"] = True
+        cases.append(faulted)
+        blocked = _status(coordination="starting")
+        blocked["host"]["coordination"]["errorCode"] = "failure"
+        cases.append(blocked)
+        for key, value in (("busy", True), ("recoveryRequired", True),
+                           ("desktopInputsDown", ["W"])):
+            unsafe = _status(coordination="starting")
+            unsafe["guest"][key] = value
+            cases.append(unsafe)
+        for key in ("closing", "acquiring"):
+            unsafe = _status(coordination="starting")
+            unsafe["host"]["consoleReservation"][key] = True
+            cases.append(unsafe)
+        for supervisor in ({"state": "blocked"}, {"errorCode": "failure"}, []):
+            unsafe = _status(coordination="starting")
+            unsafe["host"]["coordination"]["supervisor"] = supervisor
+            cases.append(unsafe)
+        cases.extend([None, {}, {"host": []}, {"host": {"coordination": [],
+                      "consoleReservation": {}}}, {"host": {"coordination": {},
+                      "consoleReservation": []}}])
+        for guest in (None, [], "invalid"):
+            malformed = _status(coordination="starting")
+            malformed["guest"] = guest
+            cases.append(malformed)
+        for status in cases:
+            with self.subTest(status=status):
+                with self.assertRaises(DependencyUnavailable):
+                    agent._check_waiting(status)
+        disconnected = _status(connected=False)
+        del disconnected["guest"]
+        self.assertFalse(agent._check_waiting(disconnected))
 
     def test_connected_but_armed_does_not_launch(self):
         with TemporaryDirectory() as directory, \

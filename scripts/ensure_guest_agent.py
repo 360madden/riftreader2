@@ -47,6 +47,60 @@ def _idle(status: dict) -> bool:
             and guest.get("desktopInputsDown") == [])
 
 
+def _check_waiting(status: dict) -> bool:
+    """Validate a disconnected or safely starting connection; return connected."""
+    host = status.get("host") if isinstance(status, dict) else None
+    if not isinstance(host, dict):
+        raise DependencyUnavailable("guest-agent", "controller-not-waiting-safely")
+    coordination = host.get("coordination")
+    console = host.get("consoleReservation")
+    if not isinstance(coordination, dict) or not isinstance(console, dict):
+        raise DependencyUnavailable("guest-agent", "controller-not-waiting-safely")
+    supervisor = coordination.get("supervisor")
+    if (console.get("held") is not True or console.get("faulted") is not False
+            or console.get("closing", False) is not False
+            or console.get("acquiring", False) is not False
+            or coordination.get("errorCode") is not None
+            or supervisor is not None and not isinstance(supervisor, dict)
+            or isinstance(supervisor, dict) and (supervisor.get("state") == "blocked"
+                                                  or supervisor.get("errorCode") is not None)):
+        raise DependencyUnavailable("guest-agent", "controller-not-waiting-safely")
+    connected = host.get("connected")
+    if "guest" in status and not isinstance(status["guest"], dict):
+        raise DependencyUnavailable("guest-agent", "connected-but-not-idle"
+                                    if connected is True else "controller-not-waiting-safely")
+    if _idle(status):
+        return True
+    if connected is False and coordination.get("state") == "waiting":
+        return False
+    guest = status.get("guest")
+    if (connected is True and coordination.get("state") in ("waiting", "starting")
+            and isinstance(guest, dict) and guest.get("armed") is False
+            and guest.get("busy") is False and guest.get("recoveryRequired") is False
+            and guest.get("desktopInputsDown") == []):
+        return True
+    raise DependencyUnavailable("guest-agent", "connected-but-not-idle"
+                                if connected is True else "controller-not-waiting-safely")
+
+
+def _wait_for_idle(client, timeout_seconds, initial=None):
+    deadline = time.monotonic() + timeout_seconds
+    status = initial
+    while time.monotonic() < deadline:
+        if status is None:
+            try:
+                status = client.request("/api/status", method="GET")
+            except Exception:
+                time.sleep(0.5)
+                continue
+        _check_waiting(status)
+        if _idle(status):
+            return status
+        status = None
+        time.sleep(0.5)
+    raise DependencyUnavailable("guest-agent", "agent-connection-timeout")
+
+
 def _summary(lab: str, status: dict, state: str) -> dict:
     host = status["host"]
     return {
@@ -126,15 +180,12 @@ def ensure(lab: str, *, timeout_seconds: int = 45) -> dict:
         config = HostConfig.load(CONFIGS[lab])
         client = ControlClient(config)
         status = client.request("/api/status", method="GET")
+        connected = _check_waiting(status)
         if _idle(status):
             return _summary(lab, status, "reused")
-        host = status["host"]
-        if host.get("connected"):
-            raise DependencyUnavailable("guest-agent", "connected-but-not-idle")
-        console = host["consoleReservation"]
-        if (console.get("held") is not True or console.get("faulted") is not False
-                or host["coordination"].get("state") != "waiting"):
-            raise DependencyUnavailable("guest-agent", "controller-not-waiting-safely")
+        if connected:
+            # Another agent is already connecting: never dispatch a duplicate.
+            return _summary(lab, _wait_for_idle(client, timeout_seconds, status), "reused")
 
         output = ROOT / "artifacts/guest-agent-recovery" / lab / uuid.uuid4().hex
         output.mkdir(parents=True, exist_ok=False)
@@ -144,21 +195,10 @@ def ensure(lab: str, *, timeout_seconds: int = 45) -> dict:
             "onDemand": receipt["noAutomaticTrigger"],
             "created": receipt["created"], "started": receipt["started"],
         })
-        deadline = time.monotonic() + timeout_seconds
-        while time.monotonic() < deadline:
-            try:
-                status = client.request("/api/status", method="GET")
-            except Exception:
-                time.sleep(0.5)
-                continue
-            if _idle(status):
-                summary = _summary(lab, status, "started")
-                _save(output / "summary.json", summary)
-                return summary
-            if status["host"].get("connected"):
-                raise DependencyUnavailable("guest-agent", "connected-but-not-idle")
-            time.sleep(0.5)
-        raise DependencyUnavailable("guest-agent", "agent-connection-timeout")
+        status = _wait_for_idle(client, timeout_seconds)
+        summary = _summary(lab, status, "started")
+        _save(output / "summary.json", summary)
+        return summary
 
 
 def main() -> int:
