@@ -2,6 +2,48 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
+## Console replay P1 fixed — November 7
+
+The reviewed console now creates an exclusive `execution-attempt.json` under
+the existing `ControlMutex`, flushes and fsyncs it before any connection/input,
+and checks legacy `execution.json` again under the mutex. A partial marker is
+never removed to permit retry. Attempt-state lookup errors fail closed; dangling
+legacy reports count as existing. Only the reservation owner publishes a final
+report, so a busy or losing caller cannot overwrite the owner's result.
+
+Independent safety review found no remaining P1 replay path. Eleven new offline
+regression tests cover two callers passing the early check, collision after the
+owner's report write fails, the post-mutex publication window, marker
+write/flush/fsync failures, inaccessible metadata, dangling legacy reports,
+send/cancellation cleanup and failed final publication. The focused console
+suite passes 80 tests; the combined console/native-console/reservation suite
+passes 140. The new regressions also fail against vulnerable baseline `c5edf0c`;
+a separate report-write-failure reproduction sent twice before the fix and once
+after it, with retry refused. All input was mocked.
+
+Full gate PASS: 380 portable plus 339 Live .NET tests; Python ran 1,803 tests,
+with 1,801 passed and two skipped. Locked restore/build/format, native published
+smoke, real Lua/C# contracts, helper ownership mocks, deterministic replay and
+1,057 relative links passed. Evidence:
+`artifacts/validation/20261107T095604Z-d546dc58`; logs and verified source hashes
+are in `artifacts/console-replay-fix-20261107/`.
+The first gate encountered two tests mid-edit in concurrent managed admission
+work; its log is retained. That module then passed 29 focused tests and the
+complete recheck passed. The broad gate covered the shared checkout, including
+concurrent admission edits; those changes are excluded from this P1 commit.
+
+Use a fresh output directory, preparation and screenshot review for a new
+authorized operation after a consumed/uncertain attempt. Preserve original
+markers and reports; do not clear them to replay a command. Existing VM/game
+identity, source/review freshness and key/mouse release/disconnect gates retain
+their order. No live input, bind/reload, helper restart or ownership transfer
+was used. Details: [console validation](validation/console-interaction-speed-2026-11-06.md#durable-console-attempt-reservation--november-7).
+
+The P1 is resolved in source; seven P2 review findings remain outside this fix.
+Continue with a separate focused repair of STOP/release optional-output handling.
+Any later live console use still needs fresh identities, an independently
+reviewed screenshot and the existing exclusive ownership handoff.
+
 ## Lab 2 report audit — November 7
 
 Three parallel reviewers checked the consolidated Lab 2 investigation against raw
@@ -36,20 +78,20 @@ receipts; do not reuse this summary as current ownership or readiness authority.
 
 The report now reflects these boundaries. Local reproducible audit outputs are in
 `artifacts/lab2-report-audit-20261107/`. Preserve current owners and STOP/release
-gates; reacquire identities for any later live use. The P1 console-attempt defect
-below remains open and is still the next fix before any further console input.
+gates; reacquire identities for any later live use. At this audit checkpoint the
+P1 console-attempt defect was open; the subsequent fix is recorded above.
 
 ## Review checkpoint — November 7
 
 The user requested a review after clearing the timed goal. Independent reviewers
 checked committed runtime `399d463` and retained evidence; later `8ded91e` is
 documentation only. No live input or helper mutation was used in the review.
-The sustained480 and native-v2 results still reconcile. These functional findings
-remain open; fix the P1 before further reviewed console input.
+The sustained480 and native-v2 results still reconcile. This table records the
+historical review; the P1 is now fixed above and the seven P2 findings remain open.
 
 | Priority | Finding | Owning source |
 | --- | --- | --- |
-| P1 | Failed final report publication or two callers passing the pre-mutex check can dispatch the same reviewed plan twice. Reserve a durable exclusive attempt under the mutex before possible input. | `scripts/addon_command_console.py:1053,1179` |
+| P1 FIXED | Failed final report publication or two callers passing the pre-mutex check could dispatch the same reviewed plan twice. Exclusive durable reservation and owner-only report publication now block replay. | `scripts/addon_command_console.py`; November 7 fix above |
 | P2 | `stop`/`release --output` can refuse delivery when output reservation fails. Direct cleanup without optional output is unaffected. | `scripts/control_client.py:356` |
 | P2 | Default `action` tries disarmed guest recovery and rejects an already armed guest before dispatch. | `scripts/control_client.py:431`, `scripts/ensure_guest_agent.py:72` |
 | P2 | Failed controller receipt collection/serialization leaves empty `process.json`; malformed historical generations poison later admission. | `scripts/controller_task_entry.py:92`, managed receipt generation scan |

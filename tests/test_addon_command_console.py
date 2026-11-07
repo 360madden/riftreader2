@@ -10,6 +10,7 @@ import os
 import socket
 import shutil
 import struct
+from contextlib import ExitStack, contextmanager, nullcontext
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -461,6 +462,343 @@ class ExecuteTests(unittest.TestCase):
         review_path.write_text(json.dumps(review), encoding="utf-8")
         config = module.Config(Path("lab.vmx"), 5905, Path("vmrun.exe"), output)
         return config, plan_path, review_path, game, vm, command, client or self.Client()
+
+    @contextmanager
+    def replay_execution_environment(self, output):
+        fixture = self.normal_execution_fixture(output)
+        config, plan_path, review_path, game, vm, command, client = fixture
+
+        def capture(_client, destination):
+            destination.write_bytes(b"after")
+            return 800, 600
+
+        with ExitStack() as stack:
+            for name, replacement in (
+                ("ControlMutex", mock.Mock(side_effect=lambda *_: nullcontext())),
+                ("collect_identity", mock.Mock(return_value=vm)),
+                ("verify_identity", mock.Mock(return_value=vm)),
+                ("game_identity_session", mock.Mock(side_effect=lambda *_: nullcontext(object()))),
+                ("query_game_identity_in_session", mock.Mock(
+                    return_value={key: game[key] for key in game if key != "lab"})),
+                ("connect", mock.Mock(return_value=client)),
+                ("_capture", mock.Mock(side_effect=capture)),
+                ("_type_text", mock.Mock(side_effect=lambda _client, text:
+                                         client.events.append(("text", text)))),
+            ):
+                stack.enter_context(mock.patch.object(module, name, replacement))
+            stack.enter_context(mock.patch.object(module.time, "sleep"))
+            yield config, plan_path, review_path, command, client
+
+    def test_report_publication_failure_cannot_replay_sent_command(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, command, client):
+                atomic_json = module._atomic_json
+
+                def fail_final_report(path, value):
+                    if path == output / "execution.json":
+                        raise OSError("fixture report publication failure")
+                    return atomic_json(path, value)
+
+                with mock.patch.object(module, "_atomic_json", side_effect=fail_final_report), \
+                        self.assertRaises(OSError):
+                    module.execute(config, plan, review)
+                self.assertFalse((output / "execution.json").exists())
+                marker = (output / "execution-attempt.json").read_bytes()
+                with self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                    module.execute(config, plan, review)
+                self.assertEqual(marker, (output / "execution-attempt.json").read_bytes())
+                self.assertEqual([("text", command)], [e for e in client.events if e[0] == "text"])
+                self.assertEqual([("press", "enter")], [e for e in client.events if e[0] == "press"])
+                self.assertIn(("up", "enter"), client.events)
+                self.assertIn(("disconnect",), client.events)
+
+    def test_claim_blocks_contender_before_final_report_is_published(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, command, client):
+                atomic_json = module._atomic_json
+                contenders = []
+
+                def contender_before_publication(path, report):
+                    if path == output / "execution.json":
+                        self.assertFalse(path.exists())
+                        with self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                            module.execute(config, plan, review)
+                        contenders.append(None)
+                    return atomic_json(path, report)
+
+                with mock.patch.object(module, "_atomic_json", side_effect=contender_before_publication):
+                    winner = module.execute(config, plan, review)
+                self.assertEqual(1, len(contenders))
+                self.assertEqual(winner, json.loads((output / "execution.json").read_text()))
+                self.assertEqual([("text", command)], [e for e in client.events if e[0] == "text"])
+
+    def test_cancelled_send_with_unwritable_report_still_blocks_replay(self):
+        for cancellation in (KeyboardInterrupt, SystemExit):
+            with self.subTest(cancellation=cancellation), tempfile.TemporaryDirectory() as folder:
+                output = Path(folder)
+                with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                    atomic_json = module._atomic_json
+
+                    def fail_report(path, value):
+                        if path == output / "execution.json":
+                            raise OSError("fixture final publication failure")
+                        return atomic_json(path, value)
+
+                    def cancelled_send(*_args):
+                        client.keyPress("enter")
+                        raise cancellation()
+
+                    with mock.patch.object(module, "_send_operation", side_effect=cancelled_send) as send, \
+                            mock.patch.object(module, "_atomic_json", side_effect=fail_report):
+                        with self.assertRaises(OSError):
+                            module.execute(config, plan, review)
+                        self.assertFalse((output / "execution.json").exists())
+                        marker = (output / "execution-attempt.json").read_bytes()
+                        with self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                            module.execute(config, plan, review)
+                        send.assert_called_once()
+                    self.assertEqual(marker, (output / "execution-attempt.json").read_bytes())
+                    self.assertIn(("up", "enter"), client.events)
+                    self.assertIn(("disconnect",), client.events)
+
+    def test_two_callers_passing_early_check_keep_single_winning_report(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, command, client):
+                entries = []
+                winner = []
+
+                @contextmanager
+                def interleaved_mutex(*_args):
+                    entries.append(None)
+                    # Outer caller reached mutex admission with no report/marker.
+                    # Let a second caller acquire and finish before outer acquires.
+                    if len(entries) == 1:
+                        self.assertFalse((output / "execution-attempt.json").exists())
+                        self.assertFalse((output / "execution.json").exists())
+                        module.execute(config, plan, review)
+                        winner.append((output / "execution.json").read_bytes())
+                    yield
+
+                with mock.patch.object(module, "ControlMutex", side_effect=interleaved_mutex), \
+                        self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                    module.execute(config, plan, review)
+                self.assertEqual(2, len(entries))
+                self.assertEqual(winner[0], (output / "execution.json").read_bytes())
+                self.assertEqual("completed", json.loads(winner[0])["status"])
+                self.assertEqual([("text", command)], [e for e in client.events if e[0] == "text"])
+                self.assertEqual([("press", "enter")], [e for e in client.events if e[0] == "press"])
+
+    def test_waiting_contender_cannot_send_after_owner_report_publication_fails(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, command, client):
+                entered = []
+                retained = []
+                atomic_json = module._atomic_json
+
+                def fail_report(path, value):
+                    if path == output / "execution.json":
+                        raise OSError("fixture final publication failure")
+                    return atomic_json(path, value)
+
+                @contextmanager
+                def owner_first(*_args):
+                    entered.append(None)
+                    if len(entered) == 1:
+                        with self.assertRaises(OSError):
+                            module.execute(config, plan, review)
+                        self.assertFalse((output / "execution.json").exists())
+                        retained.append((output / "execution-attempt.json").read_bytes())
+                    yield
+
+                with mock.patch.object(module, "ControlMutex", side_effect=owner_first), \
+                        mock.patch.object(module, "_atomic_json", side_effect=fail_report), \
+                        self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                    module.execute(config, plan, review)
+                self.assertEqual(2, len(entered))
+                self.assertFalse((output / "execution.json").exists())
+                self.assertEqual(retained[0], (output / "execution-attempt.json").read_bytes())
+                self.assertEqual([("text", command)], [e for e in client.events if e[0] == "text"])
+                self.assertEqual([("press", "enter")], [e for e in client.events if e[0] == "press"])
+
+    def test_legacy_report_appearing_at_mutex_admission_is_not_overwritten(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                legacy = b'{"status":"completed","legacyEvidence":"retain exact bytes"}'
+
+                @contextmanager
+                def report_wins(*_args):
+                    (output / "execution.json").write_bytes(legacy)
+                    yield
+
+                with mock.patch.object(module, "ControlMutex", side_effect=report_wins), \
+                        self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                    module.execute(config, plan, review)
+                self.assertEqual(legacy, (output / "execution.json").read_bytes())
+                self.assertFalse((output / "execution-attempt.json").exists())
+                self.assertEqual([], client.events)
+                module.connect.assert_not_called()
+
+    def test_attempt_state_stat_failure_blocks_without_input_or_publication(self):
+        for target, fail_at in (("execution.json", 1), ("execution-attempt.json", 1),
+                                ("execution.json", 2)):
+            with self.subTest(target=target, fail_at=fail_at), tempfile.TemporaryDirectory() as folder:
+                output = Path(folder)
+                with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                    actual_lstat = Path.lstat
+                    calls = []
+
+                    def inaccessible_stat(path, *args, **kwargs):
+                        if path == output / target:
+                            calls.append(None)
+                            if len(calls) == fail_at:
+                                raise PermissionError("fixture inaccessible attempt state")
+                        return actual_lstat(path, *args, **kwargs)
+
+                    with mock.patch.object(Path, "lstat", inaccessible_stat), \
+                            self.assertRaisesRegex(module.Blocked, "^attempt-state-unavailable$"):
+                        module.execute(config, plan, review)
+                    self.assertEqual(fail_at, len(calls))
+                    self.assertEqual([], client.events)
+                    module.connect.assert_not_called()
+                    self.assertFalse((output / "execution.json").exists())
+                    self.assertFalse((output / "execution-attempt.json").exists())
+
+    def test_dangling_legacy_report_entry_blocks_without_following_link(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                actual_lstat = Path.lstat
+
+                def dangling_entry_stat(path, *args, **kwargs):
+                    if path == output / "execution.json":
+                        # lstat observes the directory entry even when its target
+                        # cannot be opened. No privileged symlink creation needed.
+                        return os.stat_result((0o120777, 0, 0, 1, 0, 0, 0, 0, 0, 0))
+                    return actual_lstat(path, *args, **kwargs)
+
+                with mock.patch.object(Path, "lstat", dangling_entry_stat), \
+                        self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                    module.execute(config, plan, review)
+                self.assertEqual([], client.events)
+                module.connect.assert_not_called()
+                self.assertFalse((output / "execution-attempt.json").exists())
+
+    def test_marker_storage_failures_send_nothing_and_retain_partial_claim(self):
+        for failure in ("create", "write", "flush", "fsync"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                output = Path(folder)
+                marker = output / "execution-attempt.json"
+                with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                    original_open = Path.open
+
+                    class FailingStream:
+                        def __init__(self, stream):
+                            self.stream = stream
+
+                        def __enter__(self):
+                            return self
+
+                        def __exit__(self, *_args):
+                            self.stream.close()
+
+                        def write(self, data):
+                            if failure == "write":
+                                self.stream.write(data[:8])
+                                raise OSError("fixture partial marker write")
+                            return self.stream.write(data)
+
+                        def flush(self):
+                            self.stream.flush()
+                            if failure == "flush":
+                                raise OSError("fixture marker flush failure")
+
+                        def fileno(self):
+                            return self.stream.fileno()
+
+                    def failing_open(path, *args, **kwargs):
+                        if path == marker and args and args[0] == "xb":
+                            if failure == "create":
+                                raise PermissionError("fixture marker create failure")
+                            return FailingStream(original_open(path, *args, **kwargs))
+                        return original_open(path, *args, **kwargs)
+
+                    with ExitStack() as stack:
+                        stack.enter_context(mock.patch.object(Path, "open", failing_open))
+                        if failure == "fsync":
+                            stack.enter_context(mock.patch.object(
+                                module.os, "fsync", side_effect=OSError("fixture marker fsync failure")))
+                        with self.assertRaises(module.Blocked):
+                            module.execute(config, plan, review)
+                    self.assertEqual([], client.events)
+                    module.connect.assert_not_called()
+                    self.assertFalse((output / "execution.json").exists())
+                    if failure == "create":
+                        self.assertFalse(marker.exists())
+                    else:
+                        retained = marker.read_bytes()
+                        self.assertTrue(retained)
+                        with self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                            module.execute(config, plan, review)
+                        self.assertEqual(retained, marker.read_bytes())
+                        self.assertEqual([], client.events)
+
+    def test_send_failure_or_cancellation_releases_and_retains_attempt(self):
+        for failure in (RuntimeError, KeyboardInterrupt, SystemExit):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                output = Path(folder)
+                with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                    def partially_send(*_args):
+                        client.keyPress("enter")
+                        raise failure("fixture interrupted send")
+
+                    with mock.patch.object(module, "_send_operation", side_effect=partially_send) as send:
+                        with self.assertRaises(module.Blocked):
+                            module.execute(config, plan, review)
+                        marker = (output / "execution-attempt.json").read_bytes()
+                        with self.assertRaisesRegex(module.Blocked, "^operation-already-attempted$"):
+                            module.execute(config, plan, review)
+                        send.assert_called_once()
+                    self.assertEqual(marker, (output / "execution-attempt.json").read_bytes())
+                    self.assertIn(("up", "enter"), client.events)
+                    self.assertIn(("disconnect",), client.events)
+                    report = json.loads((output / "execution.json").read_text())
+                    self.assertTrue(report["inputMayHaveBeenSent"])
+                    self.assertTrue(report["releaseSucceeded"])
+
+    def test_success_claim_is_bound_and_synced_before_first_input(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            with self.replay_execution_environment(output) as (config, plan, review, _, client):
+                syncs = []
+                actual_fsync = module.os.fsync
+                actual_send = module._send_operation
+                expected_plan = json.loads(plan.read_text())
+
+                def record_sync(fd):
+                    actual_fsync(fd)
+                    syncs.append(fd)
+
+                def inspect_before_send(*args):
+                    self.assertTrue(syncs, "claim must reach fsync before any key or text input")
+                    self.assertEqual([], client.events)
+                    claim = json.loads((output / "execution-attempt.json").read_text())
+                    self.assertEqual(1, claim["schemaVersion"])
+                    self.assertEqual(expected_plan["captureId"], claim["captureId"])
+                    self.assertEqual(expected_plan["planSha256"], claim["planSha256"])
+                    datetime.fromisoformat(claim["attemptedAtUtc"].replace("Z", "+00:00"))
+                    return actual_send(*args)
+
+                with mock.patch.object(module.os, "fsync", side_effect=record_sync), \
+                        mock.patch.object(module, "_send_operation", side_effect=inspect_before_send):
+                    report = module.execute(config, plan, review)
+                self.assertEqual("completed", report["status"])
+                self.assertTrue(report["releaseSucceeded"])
+                self.assertTrue((output / "execution-attempt.json").exists())
 
     def test_execute_revalidates_and_types_one_exact_command(self):
         now = datetime.now(timezone.utc)

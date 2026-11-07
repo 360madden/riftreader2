@@ -63,6 +63,16 @@ def _fail(reason: str):
     raise Blocked(reason)
 
 
+def _attempt_state_exists(path: Path) -> bool:
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        _fail("attempt-state-unavailable")
+    return True
+
+
 def _uint(value: str, *, positive: bool = False) -> int:
     if not value.isascii() or not value.isdecimal() or len(value) > 16:
         _fail("invalid-addon-result-integer")
@@ -1050,7 +1060,8 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
     review = _load_json(review_path, "review-unavailable")
     validate_review(plan, review)
     report_path = config.output / "execution.json"
-    if report_path.exists():
+    attempt_path = config.output / "execution-attempt.json"
+    if _attempt_state_exists(report_path) or _attempt_state_exists(attempt_path):
         _fail("operation-already-attempted")
     report = {"schemaVersion": 1, "startedAtUtc": utc_now(), "status": "failed",
               "captureId": plan["captureId"], "operation": operation,
@@ -1058,8 +1069,24 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
               "releaseSucceeded": False,
               "before": None, "after": None}
     operation_error = None
+    owns_attempt = False
     try:
         with ControlMutex(config.vmx):
+            # Reserve the operation before any input can occur.  Even an
+            # incomplete marker must prevent a replay after a crash or a
+            # failure to persist the final report.
+            if _attempt_state_exists(report_path):
+                _fail("operation-already-attempted")
+            try:
+                with attempt_path.open("xb") as stream:
+                    marker = {"schemaVersion": 1, "planSha256": plan["planSha256"],
+                              "captureId": plan["captureId"], "attemptedAtUtc": utc_now()}
+                    stream.write(json.dumps(marker, sort_keys=True).encode("utf-8"))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except FileExistsError:
+                _fail("operation-already-attempted")
+            owns_attempt = True
             _timing.activate()
             vm = _timing.call("vm-identity-before", collect_identity, config)
             if vm != plan["vmIdentity"]:
@@ -1176,7 +1203,8 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
         report["status"] = "blocked"
         report["reason"] = str(operation_error)
     report["completedAtUtc"] = utc_now()
-    _atomic_json(report_path, report)
+    if owns_attempt:
+        _atomic_json(report_path, report)
     if operation_error:
         raise operation_error
     return report

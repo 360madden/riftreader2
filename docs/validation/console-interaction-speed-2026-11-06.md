@@ -72,8 +72,9 @@ links; evidence:`artifacts/validation/20261107T040344Z-13a31e2a`, log
 `84fe0fb` adds `prepare-timings.json` and `execution-timings.json` beside the
 owned console artifacts. These version1 sidecars contain fixed phase names and
 monotonic elapsed nanoseconds, with no command text or credentials. Plan,
-review, execution and stdout contracts remain unchanged. The canonical
-`execution.json` remains authoritative for attempts and same-plan refusal.
+review, execution and stdout contracts remain unchanged. This historical slice
+used `execution.json` for same-plan refusal; the November 7 durable-attempt fix
+below closes its report-publication and concurrent-caller gaps.
 Timing failure cannot turn a blocked or cancelled operation into a successful
 attempt, suppress pre-input cancellation, or prevent direct key release and
 disconnect. Publication runs after cleanup, checks the original non-reparse
@@ -101,3 +102,50 @@ native/Lua/ownership/format and1,016 links. Evidence:
 After-screen reuse remains unimplemented. The existing image precedes release
 and has no receipt-bound image hash/dimensions/capture timestamp; any future
 reuse also needs fresh VM/game checks and a separate new screenshot review.
+
+## Durable console attempt reservation — November 7
+
+The P1 review found that input could be repeated if final `execution.json`
+publication failed, or if two callers passed its check before taking the mutex.
+Execution now exclusively creates `execution-attempt.json` under the existing
+VM console mutex, flushes and fsyncs it before connecting or sending input, and
+rechecks legacy `execution.json` under that mutex. The marker records only
+schema version, plan hash, capture ID and attempt time.
+
+Any existing attempt marker, including partial or malformed content, blocks
+reuse. Marker persistence failure sends no input and retains any created leaf.
+Only the successfully reserved caller may publish the final execution report;
+a refused or busy caller cannot overwrite the owner's report. Failed report
+publication, cancellation and uncertain sends retain the marker. Existing
+legacy reports, including dangling links, also prevent reuse.
+
+The operation consumes its reviewed output directory once reservation succeeds,
+including a later pre-input rejection. Preserve its artifacts; use a fresh
+preparation and screenshot review for a separately authorized new operation.
+Do not delete a marker to retry an uncertain command. This assumes the existing
+trusted local artifact tree and does not claim resistance to deliberate marker
+deletion or directory replacement.
+
+VM/game identity, final review/source freshness, exclusive ownership and direct
+key/mouse release/disconnect remain in their existing order. No live console
+operation, game input, bind/reload, helper restart or ownership transfer was
+performed for this fix. Offline regression and validation results are recorded
+in the owner-migration handoff.
+
+The console suite passes 80 tests, including 11 new regressions; the combined
+console/native-console/reservation suite passes 140. A separate mocked
+report-publication failure reproduction sent twice with vulnerable `c5edf0c`
+and once with the fix; its retry was refused while the marker remained and
+`execution.json` was absent. Send cancellation still released keys and
+disconnected, including when final report publication also failed. Independent
+control review found no remaining P1 replay path. Local logs, reproduction and
+verified source hashes are under `artifacts/console-replay-fix-20261107/`.
+
+The full shared-checkout recheck passed 719 .NET tests and 1,803 Python tests
+run (1,801 passed, two skipped), plus locked restore/build/format, native smoke,
+Lua/C# contracts, ownership mocks, deterministic replay and 1,057 links.
+Evidence: `artifacts/validation/20261107T095604Z-d546dc58` and
+`artifacts/console-replay-fix-20261107/full-validation-recheck.log`.
+The initial gate's two failures occurred during concurrent managed-admission
+edits; its log is retained, and that module subsequently passed 29 focused tests.
+The concurrent admission changes are preserved outside this fix's commit.
