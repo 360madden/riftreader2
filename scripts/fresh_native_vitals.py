@@ -16,18 +16,35 @@ from scripts import sample_current_native_vitals as vitals
 
 
 def validate_response_time(report, observed_at_utc, before, after):
-    """Validate the acquisition and response times against their host bracket."""
+    """Validate host bounds and compare guest times at .NET tick precision."""
+    def ticks(value):
+        match = re.fullmatch(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?(?:Z|\+00:00)", value)
+        if match is None:
+            raise ValueError("invalid UTC timestamp")
+        parsed = datetime.fromisoformat(match.group(1)).replace(tzinfo=timezone.utc)
+        fraction = int((match.group(2) or "").ljust(7, "0"))
+        return host_ticks(parsed) + fraction, parsed + timedelta(microseconds=fraction // 10)
+
+    def host_ticks(value):
+        epoch = datetime(1, 1, 1, tzinfo=timezone.utc)
+        delta = value - epoch
+        return (delta.days * 86400 + delta.seconds) * 10_000_000 + delta.microseconds * 10
+
     try:
-        observed = datetime.fromisoformat(observed_at_utc.replace("Z", "+00:00"))
+        if (before.utcoffset() != timedelta(0) or after.utcoffset() != timedelta(0)
+                or after < before):
+            raise Blocked("native-vitals-host-window-invalid")
+        lower = host_ticks(before) - 50_000_000
+        upper = host_ticks(after) + 50_000_000
+        observed_ticks, observed = ticks(observed_at_utc)
         row = report["observation"]
-        sample_start = datetime.fromisoformat(row["startedAtUtc"].replace("Z", "+00:00"))
-        sample_end = datetime.fromisoformat(row["completedAtUtc"].replace("Z", "+00:00"))
-        if observed.utcoffset() != timedelta(0) or not before - timedelta(seconds=5) <= observed <= after + timedelta(seconds=5):
+        start_ticks, _ = ticks(row["startedAtUtc"])
+        end_ticks, _ = ticks(row["completedAtUtc"])
+        if not lower <= observed_ticks <= upper:
             raise Blocked("native-vitals-response-stale")
-        if (sample_start.utcoffset() != timedelta(0) or sample_end.utcoffset() != timedelta(0)
-                or not before - timedelta(seconds=5) <= sample_start <= sample_end <= after + timedelta(seconds=5)):
+        if not lower <= start_ticks <= end_ticks <= upper:
             raise Blocked("native-vitals-acquisition-stale")
-        if observed < sample_end:
+        if observed_ticks < end_ticks:
             raise Blocked("native-vitals-response-before-sample")
         return observed
     except Blocked:

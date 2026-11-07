@@ -131,6 +131,37 @@ class NativeVitalsClientTests(unittest.TestCase):
                 native.validate_response_time(self.response["report"], lower.isoformat(), before, after)
             row[key] = original
 
+    def test_tick_precision_and_host_window(self):
+        base = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        row = self.response["report"]["observation"]
+        row.update(startedAtUtc="2026-01-01T00:00:00.0000000Z",
+                   completedAtUtc="2026-01-01T00:00:00.0000009Z")
+        with self.assertRaisesRegex(native.Blocked, "native-vitals-response-before-sample"):
+            native.validate_response_time(self.response["report"], "2026-01-01T00:00:00.0000008Z", base, base)
+        self.assertEqual(base, native.validate_response_time(
+            self.response["report"], "2026-01-01T00:00:00.0000009+00:00", base, base))
+        row.update(startedAtUtc="2026-01-01T00:00:00+00:00",
+                   completedAtUtc="2026-01-01T00:00:00Z")
+        self.assertEqual(base, native.validate_response_time(self.response["report"],
+                                                             "2026-01-01T00:00:00+00:00", base, base))
+        for before, after in ((base + timedelta(microseconds=1), base),
+                              (base.replace(tzinfo=None), base),
+                              (base, base.astimezone(timezone(timedelta(hours=1))))):
+            with self.subTest(before=before, after=after), self.assertRaises(native.Blocked):
+                native.validate_response_time(self.response["report"], "2026-01-01T00:00:00Z", before, after)
+        for malformed in ("2026-01-01T00:00:00.00000009Z", "2026-01-01T00:00:00.Z"):
+            with self.subTest(malformed=malformed), self.assertRaises(native.Blocked):
+                native.validate_response_time(self.response["report"], malformed, base, base)
+
+    def test_one_tick_reversal_never_publishes(self):
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "")
+        self.response["report"]["observation"].update(startedAtUtc=now + ".0000000Z",
+                                                       completedAtUtc=now + ".0000009Z")
+        self.response["observedAtUtc"] = now + ".0000008Z"
+        with self.assertRaisesRegex(native.Blocked, "native-vitals-response-before-sample"):
+            self.query()
+        self.assertEqual([], list(self.evidence.rglob("samples.json")))
+
     def test_reconnected_response_instance_is_not_attributed_to_prestatus_agent(self):
         for instance in (None, "", "b" * 32, True):
             self.response["instanceId"] = instance
