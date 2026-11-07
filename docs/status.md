@@ -1,10 +1,15 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:36 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:44 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**13:43 Eastern — LIVE COUNTEREXAMPLE CLOSES LEVEL SHORTCUT:** Effective41 and
+typed exception/cache guards captured; all12 referenced definitions instead have
+requiredLevelRaw0. No above-level first-variant exclusion applies. Guards matched
+before/after; winner remains unresolved. [Receipts and limits](reference/native-ability-variants-2026-11-07.md).
 
 **13:33 Eastern — ALL REFERENCED VARIANT DEFINITIONS RESOLVED:** Lab1 all12 and
 Lab2 all16 keys typed/named with before/after ordered parent rechecks. Captured

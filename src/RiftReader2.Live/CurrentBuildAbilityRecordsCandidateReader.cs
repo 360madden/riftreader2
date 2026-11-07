@@ -15,7 +15,7 @@ internal sealed record RawAbilityRangeInputs(string BaseMinRawHex, float? BaseMi
 }
 internal sealed record RawVariantChild(string Status, ulong Address, ulong? Vtable = null, ulong? GetterRva = null, uint? Key = null);
 internal sealed record RawAbilityVariants(string Status, ulong? SourceAddress = null, IReadOnlyList<RawVariantChild>? Entries = null);
-internal sealed record AbilityRecordCandidate(uint Key, string Status, ulong? RecordAddress = null, byte? ApiListFilterNonzeroRaw = null, AbilityRecordChild? Child = null, AbilityRecordChild? SecondaryChild = null, string? FullIdCandidate = null, RawCostVector? RawCosts = null, RawAbilityTiming? RawTiming = null, RawAbilityRangeInputs? RawRange = null, RawAbilityVariants? RawVariants = null);
+internal sealed record AbilityRecordCandidate(uint Key, string Status, ulong? RecordAddress = null, byte? ApiListFilterNonzeroRaw = null, AbilityRecordChild? Child = null, AbilityRecordChild? SecondaryChild = null, string? FullIdCandidate = null, RawCostVector? RawCosts = null, RawAbilityTiming? RawTiming = null, RawAbilityRangeInputs? RawRange = null, RawAbilityVariants? RawVariants = null, int? RequiredLevelRaw = null);
 internal sealed record CurrentBuildAbilityRecordsObservation(NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, ushort Selector, uint TlsIndex, ulong Collection, IReadOnlyList<AbilityRecordCandidate> Records)
 {
     public string Qualification => "candidate-only; membership, freshness and restart unverified";
@@ -183,7 +183,7 @@ internal static class CurrentBuildAbilityRecordsCandidateReader
             if (!Fingerprint(record, 0x28A08C0, 0x1899BF0, 0x344A6B0, 0x28A9C38, 0x18C06C0)) { rows.Add(new(key, "unverified-type", record)); continue; }
             var flag = ReadBytes(record + 0xC9, 1)[0]; var child = Child(Q(record + 0x8E0)); var second = Child(Q(record + 0x958));
             string? full = child.LocalizationKey.HasValue && second.LocalizationKey.HasValue ? $"A{(((ulong)key << 32) | unchecked((uint)(Hash(child.LocalizationKey.Value) + Hash(second.LocalizationKey.Value)))):X16}" : null;
-            rows.Add(new(key, "type-verified-candidate", record, flag, child, second, full, includeRawCosts ? Costs(record) : null, includeRawTiming ? Timing(record) : null, includeRawRange ? Range(record) : null, includeRawVariants ? Variants(record) : null));
+            rows.Add(new(key, "type-verified-candidate", record, flag, child, second, full, includeRawCosts ? Costs(record) : null, includeRawTiming ? Timing(record) : null, includeRawRange ? Range(record) : null, includeRawVariants ? Variants(record) : null, includeRawVariants ? BinaryPrimitives.ReadInt32LittleEndian(ReadBytes(record + 0x20, 4)) : null));
         }
         foreach (var anchor in anchors) CurrentBuildPlayerLookup.RequireSame(ReadBytes(anchor.Key.Item1, anchor.Key.Item2, false), anchor.Value);
         var after = threads();

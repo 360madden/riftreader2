@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **13:36 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **13:44 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -82,19 +82,21 @@ Lab1 all12 and Lab2 all16 referenced definitions typed and named. Detailed
 receipts/results are in the variant reference note below. Lookup deduplication
 does not discard relationship order or holes. No selected-winner/learned claim.
 
-Current native_map_command task: NEW sample-current-variant-guards command,
-effective-level D, raw0743 special key, alternate/role-cache guards; add raw0051
-required level+20 to the record reader when variants requested. No full selector
-or winner output. Worker tls_metadata owns NEW host guard launcher. New publication
-`artifacts/native-variant-guards-20261107/publish/` is pending. Current source/B562
-publications remain valid. Root performs first live reads after boundary review.
-High static worker is resolving static-init guard semantics, not another review.
+Raw variant-guard command PASSED live; before/after effectiveD41,type0736row,
+typed0743specialKey70, completed role-cache guard0x800017A5 and40 keys matched.
+Fresh definition requiredLevelRaw is0 for ALL12 Lab1 variants: above-level
+exclusion does NOT apply. Do not select the base variant from its name/level.
+Receipts and exact lifetime proof are in the variant reference. No active run.
+High static worker is checking ONE next cheap rejection branch; stop that lead
+if it needs rebuilding the whole eligibility engine. No generic review loop.
+The guard/required-level implementation is ready for its verified milestone.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
 
-Current catalog reader:117503840 bytes, SHA256
-B56216935082462AF9B381EC37C84D83E74B35FBE97BAD515ADCB63DA8C39D62,
-`artifacts/native-ability-variants-20261107/publish/`.
+Current catalog/variant/guard reader:117520224 bytes, SHA256
+3239D8FE72077051AC19781847D703E702D29CEF29A2001A8CA910A1DD60247E,
+`artifacts/native-variant-guards-20261107/publish/`. Prior B562 publication is
+retained, and explicitly accepted source catalogs are B562 or current3239 only.
 Selected-target reader:117499744 bytes, SHA256
 6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970,
 `artifacts/native-target-level-20261107/publish/`.
@@ -116,7 +118,7 @@ Recent local commits:015f784 target position;6359c38 user-requested checkpoint
 then immediate resume;71ff9a3 template-name inputs;b04edf8 mode-selected name and
 four-hour extension;073a38d target raw context;5ec07e4 target numeric level;
 3943cfc factory/cooldown-gate findings;f2b5f24 raw ordered variants;
-0d0e31c independent two-lab capture. Definition-lookup milestone is next. No push.
+0d0e31c independent two-lab capture;4bee4b9 definition lookups. No push.
 
 Optional Lab2 UI comparison is CLOSED after dependency-admission SessionError;
 no image/API/UI agreement was accepted. Later status was connected/disarmed-idle,

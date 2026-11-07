@@ -87,6 +87,41 @@ An above-level first row can then be proven non-scoring; the two-key selector's
 only normal return is second. No such exclusion is currently established.
 Trace:`artifacts/discovery-20261107-cooldown/variant-eligibility-next-step.md`.
 
+## Raw guards captured; level shortcut rejected —13:43 Eastern
+
+The new `sample_current_native_variant_guards.py --lab lab1` command captured
+effective level41 via type0736 row, typed0743 special key70, raw state byte0,
+and a40-key role-cache array. Guard336EE90 was0x800017A5 (INT_MIN+6053).
+Exact PE header/footer code shows zero=uninitialized,-1=initializing; the array
+is constructed BEFORE footer publishes this completed epoch. All six first keys
+were absent from its complete rechecked array. The before/after observations
+matched; source/report fields stay raw candidates, not a selected-winner claim.
+
+Fresh typed0051 record+20 signed requiredLevelRaw was **0 for ALL twelve**
+referenced Lab1 definitions. Therefore requiredLevel>D is FALSE here. Displayed
+level41 and Legendary names cannot exclude those first variants. The level
+shortcut is CLOSED for this capture; other eligibility remains unresolved.
+
+Before guard receipt:
+`artifacts/native-variant-guards-20261107/runs/lab1/ea288b41749042bca26629b46cb3a944/samples.json`,
+SHA256`68580942C5CF96A8FCD31FDB2EFD7819EDFC2B01B415868AD6D7E4DA6A52FF4C`.
+After guard:
+`artifacts/native-variant-guards-20261107/runs/lab1/6e2849c9b7214aa3a856402beb49998d/samples.json`,
+SHA256`977B5286E9A704E2AEEA101C01F980D54272F884AE3C68183735F85C3109609C`.
+Required-level definitions and ordered parent rechecks:
+`artifacts/native-variant-definitions-20261107/runs/lab1/fd04372fcd9c47ffbd3334fe577d6dbd/summary.json`.
+Reader117520224 bytes, SHA256
+`3239D8FE72077051AC19781847D703E702D29CEF29A2001A8CA910A1DD60247E`,
+at`artifacts/native-variant-guards-20261107/publish/`. Six focused guard and nine
+variant-reader cases passed. Catalog/definition validators reject unverified or
+non-int32 required-level leakage. The follow-up accepts only reviewed B562 or
+current3239 source-catalog readers, with SAME VM/game epoch and fresh parents.
+
+Initialization/lifetime trace:
+`artifacts/discovery-20261107-cooldown/variant-role-cache-initialization.md`.
+Known limitation retained until actually relevant: nonzero state byte with empty
+special span reports role-cache inputs unknown; no silent role bypass is assumed.
+
 Next useful observation resolves those possible keys to resident0051 definitions,
 names and raw timing, with fresh epoch and ordered parent-vector rechecks. Cache
 misses are not absence, raw filter is not learned membership, and referenced

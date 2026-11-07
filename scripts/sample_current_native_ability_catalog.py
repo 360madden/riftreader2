@@ -23,8 +23,8 @@ from scripts.sample_current_native_ability_records import validate_report as val
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
 
-READER = ROOT / 'artifacts/native-ability-variants-20261107/publish/RiftReader2.Live.exe'
-READER_SHA = 'B56216935082462AF9B381EC37C84D83E74B35FBE97BAD515ADCB63DA8C39D62'
+READER = ROOT / 'artifacts/native-variant-guards-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '3239D8FE72077051AC19781847D703E702D29CEF29A2001A8CA910A1DD60247E'
 
 DICTIONARY_QUALIFICATION = 'candidate-only; framing, freshness and restart unverified'
 
@@ -32,8 +32,10 @@ def validate_record_costs_timing(report, *, pid, ticks, keys):
     validate_records(report, pid=pid, ticks=ticks, keys=keys)
     for row in report['observation']['records']:
         if row['status'] != 'type-verified-candidate':
-            if row.get('rawRange') is not None or row.get('rawVariants') is not None: raise ValueError('unexpected-raw-fields')
+            if row.get('rawRange') is not None or row.get('rawVariants') is not None or row.get('requiredLevelRaw') is not None: raise ValueError('unexpected-raw-fields')
             continue
+        required_level=row.get('requiredLevelRaw')
+        if type(required_level) is not int or not -2**31<=required_level<=2**31-1: raise ValueError('invalid-required-level')
         costs=row.get('rawCosts'); timing=row.get('rawTiming')
         variants=row.get('rawVariants')
         if not isinstance(variants,dict): raise ValueError('invalid-raw-variants')
@@ -143,14 +145,14 @@ def run(lab):
     if lab not in ('lab1', 'lab2'): raise ValueError('invalid-lab')
     sources=[Path(__file__), ROOT/'scripts/sample_current_native_ability_maps.py', ROOT/'scripts/sample_current_native_ability_records.py', ROOT/'scripts/probe_native_unit_manager.py', ROOT/'scripts/native_localization_huffman.py', ROOT/'scripts/native_localization_record.py']
     source_hashes={str(p):sha(p.read_bytes()) for p in sources}
-    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size != 117503840 or sha(READER.read_bytes()) != READER_SHA: raise ValueError('reader-mismatch')
+    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size != 117520224 or sha(READER.read_bytes()) != READER_SHA: raise ValueError('reader-mismatch')
     api = LabCodex()
     _, _, config, settings = api._configuration(lab)
     vm = api.collect_identity(api._native(config, settings, api.run_root / '.doctor'))
     token = uuid.uuid4().hex
     folder = ROOT / 'artifacts/native-ability-catalog-20261107/runs' / lab / token
     folder.mkdir(parents=True, exist_ok=False)
-    cache = settings['guestRoot'] + r'\current-ability-variants-' + READER_SHA[:16]
+    cache = settings['guestRoot'] + r'\current-variant-guards-' + READER_SHA[:16]
     reader = cache + r'\RiftReader2.Live.exe'
     prefix = settings['guestRoot'] + r'\catalog-' + token
     evidence = {}
@@ -257,7 +259,7 @@ def run(lab):
                         reason=None if candidate else 'empty_candidate_text'
                     except (ValueError,KeyError,TypeError) as exc:
                         failures+=1; reason='decode_or_parse_failed: '+str(exc)
-            rows.append({'key':key,'fullIdCandidate':ability.get('fullIdCandidate'),'apiListFilterNonzeroRaw':ability.get('apiListFilterNonzeroRaw'),'mapPrimaryRawHex':maprow.get('valueRawHex'),'mapSecondaryRawHex':maprow.get('secondaryRawHex'),'nameKey':name_key,'nameCandidate':candidate,'nameUnavailableReason':reason,'rawCosts':ability.get('rawCosts'),'rawTiming':ability.get('rawTiming'),'rawRange':ability.get('rawRange'),'rawVariants':ability.get('rawVariants'),'recordSource':record_source,'dictionarySource':dict_source})
+            rows.append({'key':key,'fullIdCandidate':ability.get('fullIdCandidate'),'apiListFilterNonzeroRaw':ability.get('apiListFilterNonzeroRaw'),'mapPrimaryRawHex':maprow.get('valueRawHex'),'mapSecondaryRawHex':maprow.get('secondaryRawHex'),'nameKey':name_key,'nameCandidate':candidate,'nameUnavailableReason':reason,'rawCosts':ability.get('rawCosts'),'rawTiming':ability.get('rawTiming'),'rawRange':ability.get('rawRange'),'rawVariants':ability.get('rawVariants'),'requiredLevelRaw':ability.get('requiredLevelRaw'),'recordSource':record_source,'dictionarySource':dict_source})
         observations=[first]+[r['observation'] for r in record_reports]+[r['observation'] for r in dictionary_reports]+[last]
         times=[datetime.fromisoformat(o[k].replace('Z','+00:00')) for o in observations for k in ('startedAtUtc','completedAtUtc')]
         joined={'qualification':'candidate-only; separate observations and chunks are not atomic or freshness-qualified','identity':identity,'vmIdentity':vm,'readerSha256':READER_SHA,'guestReaderReused':state=='True','sourceSha256':source_hashes,'evidence':evidence,'summary':{'total':len(rows),'filterNonzero':sum(bool(r['apiListFilterNonzeroRaw']) for r in rows),'names':sum(r['nameCandidate'] is not None for r in rows),'decoderFailures':failures},'records':rows,'observationIntervals':[{'source':name,'startedAtUtc':o['startedAtUtc'],'completedAtUtc':o['completedAtUtc']} for name,o in zip(['maps-before']+[f'records-{i+1}' for i in range(len(record_reports))]+[f'dictionary-{i+1}' for i in range(len(dictionary_reports))]+['maps-after'],observations)],'maximumObservationGapSeconds':(max(times)-min(times)).total_seconds(),'limitations':['Chunks and observations are separate and cannot exclude intervening changes.','No learned-ability, current API name, cost or cooldown semantic claim.']}

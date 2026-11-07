@@ -1,0 +1,18 @@
+using System.Buffers.Binary;
+using RiftReader2.Application;
+using RiftReader2.Domain;
+namespace RiftReader2.Live.Tests;
+public sealed class CurrentBuildVariantGuardSampleCommandTests
+{
+ const ulong M=0x140000000,E=0x20000000,H=0x20010000,O=0x20020000,Root=0x20030000;
+ [Fact] public void AbsentAlternateUsesOwnerAndRawConfig(){var s=Fixture();var r=Read(s);Assert.Equal(65,r.EffectiveLevel);Assert.Equal("owner",r.LevelBranch);Assert.True(r.RoleExceptionBypassed);Assert.Equal(777U,r.SpecialKey);}
+ [Theory][InlineData(0)][InlineData(-1)] public void TypedRowSelection(int index){var s=Fixture();ConfigureAlternate(s,index);var r=Read(s);Assert.Equal(73,r.EffectiveLevel);Assert.Equal("typed-0736-row",r.LevelBranch);Assert.True(r.RoleExceptionBypassed);}
+ [Fact] public void UnverifiedRowDoesNotFallback(){var s=Fixture();ConfigureAlternate(s,0);s.Put(0x20070000,Q(M+0x1000));var r=Read(s);Assert.Equal("unverified-row",r.EffectiveLevelStatus);Assert.Null(r.EffectiveLevel);}
+ static void ConfigureAlternate(Fake s,int index){const ulong table=0x20050000,alt=0x20060000,row=0x20070000,p=0x20080000,regular=0x20090000,special=0x200A0000;s.Put(E+0x19,[0]);s.Put(E+0x78,Q(table));s.Put(table,Q(alt));s.Put(alt+0x48,Q(p));s.Put(p+0x1D8,BitConverter.GetBytes(index));s.Put(p+0x24F,[1]);var h=new byte[16];Q(regular).CopyTo(h,0);Q(regular+8).CopyTo(h,8);s.Put(p+0xDE0,h);h=new byte[16];Q(special).CopyTo(h,0);Q(special+8).CopyTo(h,8);s.Put(p+0x7D8,h);s.Put(regular,Q(row));s.Put(special,Q(row));s.Put(row,Q(M+0x2BD4388));s.Put(M+0x2BD43C8,Q(M+0x201A050));s.Put(M+0x3548720,Q(M+0x2BE0EF8));s.Put(M+0x2BE0F00,Q(M+0x20482A0));s.Put(row+0x24,BitConverter.GetBytes(73));}
+ [Fact] public void ChangedOwnerValueFails(){var s=Fixture();s.Change(O+0x138,BitConverter.GetBytes(66));Assert.Throws<InvalidDataException>(()=>Read(s));}
+ [Fact] public void BadConfigDoesNotInventKey(){var s=Fixture();s.Put(Root+0x868,Q(0));var r=Read(s);Assert.Equal("null-config",r.SpecialKeyStatus);Assert.Null(r.SpecialKey);Assert.Equal(65,r.EffectiveLevel);}
+ static VariantGuardObservation Read(Fake s)=>CurrentBuildVariantGuardSampleCommand.Read(s,_=>new(s.Identity,DateTimeOffset.UtcNow,DateTimeOffset.UtcNow,123,E,H,O,H,0,"x",null,null,0,"x",0,"x",false),_=>new(123,E,H,()=>{}));
+ static Fake Fixture(){var s=new Fake();s.Put(H+0x10,Q(E));s.Put(H+0x40,Q(O));s.Put(O,Q(M+0x2927448));s.Put(M+0x2927488,Q(M+0x19D21E0));s.Put(M+0x34731B0,Q(M+0x2929BD0));s.Put(M+0x2929BD8,Q(M+0x19F4D60));s.Put(O+0x138,BitConverter.GetBytes(65));s.Put(M+0x2F582E0,BitConverter.GetBytes(1));s.Put(E+0x19,[255]);s.Put(M+0x33E0AB0,Q(Root));s.Put(Root+0x868,Q(0x20040000));s.Put(0x20040000,Q(M+0x29ABD08));s.Put(M+0x29ABD48,Q(M+0x1B064A0));s.Put(M+0x349E980,Q(M+0x29B8660));s.Put(M+0x29B8668,Q(M+0x1B35A50));s.Put(0x20040048,BitConverter.GetBytes(777U));return s;}
+ static byte[] Q(ulong v){var b=new byte[8];BinaryPrimitives.WriteUInt64LittleEndian(b,v);return b;}
+ sealed class Fake:IReadOnlyNativeMemorySession{readonly Dictionary<ulong,byte[]> data=[];readonly Dictionary<ulong,byte[]> changed=[];readonly HashSet<ulong> seen=[];public NativeProcessIdentity Identity{get;}=new(123,456,@"C:\RIFT\rift_x64.exe",CurrentBuildPlayerLookup.GameSha256,M,0x4000000);public void Put(ulong a,byte[] b)=>data[a]=b;public void Change(ulong a,byte[] b)=>changed[a]=b;public NativeReadResult Read(ulong a,int n){var b=!seen.Add(a)&&changed.TryGetValue(a,out var c)?c:data.GetValueOrDefault(a);return b is not null&&b.Length==n?new("success",b.ToArray(),null,null):new("unavailable",[],null,null);}public ValueTask<string?> RevalidateAsync(CancellationToken c)=>ValueTask.FromResult<string?>(null);public ValueTask DisposeAsync()=>ValueTask.CompletedTask;}
+}
