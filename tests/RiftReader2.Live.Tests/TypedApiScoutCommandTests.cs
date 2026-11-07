@@ -168,7 +168,8 @@ public sealed class TypedApiScoutCommandTests
             maxScanBytes = maxBytes,
             maxDurationMilliseconds = maxMilliseconds,
             maxRegionCount = maxRegions,
-            maxMatchCount = maxMatches
+            maxMatchCount = maxMatches,
+            marker = TypedApiPrefixMatcher.MarkerText
         }, JsonFormat.Options);
 
     private static string Hex(ulong address) => $"0x{address:X}";

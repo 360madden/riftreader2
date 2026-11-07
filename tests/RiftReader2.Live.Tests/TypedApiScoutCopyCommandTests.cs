@@ -11,9 +11,9 @@ namespace RiftReader2.Live.Tests;
 public sealed class TypedApiScoutCopyCommandTests
 {
     [Theory]
-    [InlineData(null)]
+    [InlineData("RRAPIVAL2|")]
     [InlineData("RR2R1|")]
-    public async Task ScoutCopy_WindowsSelfProcessPublishesStrictSnapshotsAndRejectsOverwrite(string? selectedMarker)
+    public async Task ScoutCopy_WindowsSelfProcessPublishesStrictSnapshotsAndRejectsOverwrite(string selectedMarker)
     {
         if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
             return;
@@ -21,7 +21,7 @@ public sealed class TypedApiScoutCopyCommandTests
         var bytes = new byte[TypedApiPrefixScout.ChunkBytes + 8192];
         Array.Fill(bytes, (byte)0x61);
         const int markerOffset = 2 * TypedApiImmediateNeighborhood.PageBytes + 100;
-        var marker = Encoding.ASCII.GetBytes((selectedMarker ?? "RRAPIVAL2|") + "{");
+        var marker = Encoding.ASCII.GetBytes(selectedMarker + "{");
         marker.CopyTo(bytes.AsSpan(markerOffset));
         var allocation = Marshal.AllocHGlobal(bytes.Length + TypedApiImmediateNeighborhood.PageBytes);
         var root = Path.Combine(Path.GetTempPath(), $"rr2-copy-command-{Guid.NewGuid():N}");
@@ -52,7 +52,7 @@ public sealed class TypedApiScoutCopyCommandTests
                 maxCopiedCandidates = 2
             };
             var requestNode = JsonSerializer.SerializeToNode(request, JsonFormat.Options)!;
-            if (selectedMarker is not null) requestNode["marker"] = selectedMarker;
+            requestNode["marker"] = selectedMarker;
             await File.WriteAllTextAsync(requestPath, requestNode.ToJsonString(JsonFormat.Options));
             var outputDirectory = Path.Combine(root, "trial-01");
             var stdout = new StringWriter();
@@ -67,7 +67,7 @@ public sealed class TypedApiScoutCopyCommandTests
             Assert.True(File.Exists(Path.Combine(outputDirectory, "index.json")));
             using var manifest = JsonDocument.Parse(await File.ReadAllBytesAsync(
                 Path.Combine(outputDirectory, "index.json")));
-            Assert.Equal(selectedMarker ?? "RRAPIVAL2|", manifest.RootElement.GetProperty("marker").GetString());
+            Assert.Equal(selectedMarker, manifest.RootElement.GetProperty("marker").GetString());
             var rootJson = manifest.RootElement;
             Assert.Equal("native-typed-inline-capture/1",
                 rootJson.GetProperty("evidenceKind").GetString());
@@ -110,7 +110,7 @@ public sealed class TypedApiScoutCopyCommandTests
             Assert.Contains("already exists", stderr.ToString(), StringComparison.OrdinalIgnoreCase);
             Assert.Equal(originalIndex,
                 await File.ReadAllBytesAsync(Path.Combine(outputDirectory, "index.json")));
-            Assert.Equal(selectedMarker ?? "RRAPIVAL2|", manifest.RootElement.GetProperty("marker").GetString());
+            Assert.Equal(selectedMarker, manifest.RootElement.GetProperty("marker").GetString());
             Assert.Null(await session.RevalidateAsync(CancellationToken.None));
         }
         finally
@@ -145,7 +145,8 @@ public sealed class TypedApiScoutCopyCommandTests
                 maxDurationMilliseconds = 5000,
                 maxRegionCount = 32768,
                 maxMatchCount = 8,
-                maxCopiedCandidates = 1
+                maxCopiedCandidates = 1,
+                marker = "RR2R1|"
             };
             var requestPath = Path.Combine(root, "invalid.json");
             var requestNode = JsonSerializer.SerializeToNode(request, JsonFormat.Options)!;

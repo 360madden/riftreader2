@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using RiftReader2.Application;
 using RiftReader2.Domain;
 using RiftReader2.Infrastructure;
@@ -661,7 +662,7 @@ internal sealed record TypedPrefixScoutRequest(
     int MaxDurationMilliseconds,
     int MaxRegionCount,
     int MaxMatchCount,
-    string Marker = TypedApiPrefixMatcher.MarkerText);
+    [property: JsonRequired] string Marker);
 
 internal sealed record TypedPrefixScoutSpanReport(string BaseAddress, long ByteLength);
 
@@ -705,7 +706,7 @@ internal sealed record TypedInlineCaptureRequest(
     int MaxRegionCount,
     int MaxMatchCount,
     int MaxCopiedCandidates,
-    string Marker = TypedApiPrefixMatcher.MarkerText);
+    [property: JsonRequired] string Marker);
 
 internal sealed record TypedInlineCaptureScope(
     string Status,
