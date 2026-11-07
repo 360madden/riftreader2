@@ -148,3 +148,21 @@ at`artifacts/native-buff-visibility-20261107/publish/`. Four focused native case
 passed; host rejects an ID leaked from an unresolved row. Stateful/nonempty
 qualifier and special-config paths remain unresolved. Static grouping receipt:
 `artifacts/discovery-20261107-buffs/buff-list-grouping.md`.
+
+## Lab2 definition followup —14:57 Eastern
+
+After verified clean RRE control return, fresh passive capture preserved all24
+raw node relationships before/after and resolved all21 distinct typed0051
+definition keys. **11 name candidates**,10 unavailable (key0/missing name child),
+not21 names. Examples include Rising Flare, Steady Hand, Rejuvenate, Legacy of
+the Shade, Doubleshot, Total Recall, Lucky Penny and the three calling masteries.
+All24 descriptorKind values remain1, excluded by the native List path; these
+definition names do not establish visible/API-selected buffs.
+
+Receipt`artifacts/native-buff-definitions-20261107/runs/lab2/e43352d04e3e4850be3b113eb3e18198/summary.json`,
+SHAA35EFAAB9CC26E6470B6BBDE80F1BB0287159F73840C78B4C496FAF931227CC3.
+PID9752/start639294897826627677, pinned game SHA unchanged. The helper now
+accepts the verified EAE timing source and reuses that exact reader for seed,
+record and dictionary commands; the374/F86 route remains available. Only timing
+outputs are excluded from raw-list equality; object/owner/definition anchors stay
+exact. No controller restart, queue reset, game input or API/freshness claim.

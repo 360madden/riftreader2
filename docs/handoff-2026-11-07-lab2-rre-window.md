@@ -1,6 +1,19 @@
 # Lab2 RRE window — November7,2026
 
-**NO RR2 Lab2 operations through14:49 Eastern and until explicit clean RRE return.**
+**CLEAN RETURN verified14:51:45 Eastern; passive RR2 reads resumed.**
+RRE's final control-return receipt at19:49:14Z confirms nonabandoned mutex
+acquire/release, no pending live jobs, mouse release/connection close verified,
+no RR2 controller restart and no queue reset. Root read
+`C:\work\rre\artifacts\sc622-live-bridge-20261107-1428\control-return.json`.
+The extension request was canceled before acknowledgement. Fresh RR2 mode check
+found no controller endpoint, queue holder null/BLOCKED1 and matching VM identity.
+The controller remains STOPPED; passive native readers do not require it.
+
+RRE reports RRECollector0.4.12 sync/reload and seq5 capture verified. Earlier
+RR2 loaded-addon/nonce/zone assumptions are historical. No further RRE Lab2
+operations occur without a new coordinated window. These observations do not
+qualify any RR2 addon feed. The following preserves the ownership transition.
+
 RRE chat01a1b613-07a4-76e3-a4e1-e11f70a0b567 requested this user-authorized
 15-minute window at14:27. Its scope is RRECollector-only addon sync/reload/manual
 Capture in Lab2. RR2 does not perform those actions. Lab1/offline discovery

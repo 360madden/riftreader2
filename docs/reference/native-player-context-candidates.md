@@ -198,6 +198,30 @@ Reader117499744 bytes, SHA256
 `6479EF0959FA6BE36B3B27D0586DE8C0E1625E0011DED53FCFECD2226674F970`,
 at`artifacts/native-target-level-20261107/publish/`. No input or getter calls.
 
+## Self name and zone seed —14:57 Eastern, November7
+
+Fresh Lab1 direct-name branch yielded **Trio**, raw decorationDWORD1704, with
+independent self/health/owner and consumed-byte rechecks. The name reader is the
+existing selected-target branch logic shared unchanged with the new self command;
+nine focused self/target cases passed. This is an undecorated base-name candidate,
+not API/shard agreement. Receipt
+`artifacts/native-player-name-20261107/runs/lab1/520a0de19ed14a94b814b048e01a9f25/samples.json`,
+SHABF900EA2052A26FEAA70783A9531109CED084A83186D8BCECB94A972276CDB6B.
+PID11672/start639296016581575957; same pinned game SHA as above. Reader
+0E7014C8CAA14F0D09152EDD856E55615CEF02EC29941B5D9897B319D28E4142,
+117589856 bytes,`artifacts/native-player-name-20261107/publish/`.
+
+Zone source is typed0294 owner+150. Lab1 raw key1216123138 and Lab2 raw key12
+were captured with NULL provider337EBF8 on each, so no full zone ID/name is
+available. No initializer/getter was called. The typed0073/hash route has seven
+focused synthetic cases but no live typed hit. Lab1 receipt
+`artifacts/native-zone-seed-20261107/runs/lab1/52956b1b9c3047008325a19d53ebb876/samples.json`,
+SHA007294609B8EFDF7D82DEA876E89A2A0FFD6DF93498CA014BEAF125309EC2460;
+Lab2`runs/lab2/fc869831d4af40fd9c0d39795874e436/samples.json`,
+SHA142161FA963807DA74EC24FBF7F0F24F18E3D788DD2F7DDBDD6CFB65BFBDE864.
+Do not equate raw keys across worlds, assume API correspondence, or retry an
+unchanged null-provider state. Full-game restart/freshness remain unverified.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its

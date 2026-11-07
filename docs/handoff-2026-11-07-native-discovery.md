@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **14:34 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **14:57 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -21,10 +21,10 @@ has used no game input, target selection, reload/rebind/restart, getter/native
 constructor, debugger/injection, memory/refcount writes or active-reader takeover.
 New casting/combat/input authority is not implied by the time extension.
 
-**LAB2 HELD FOR RRE through14:49 Eastern AND until explicit clean return.**
-The verified idle RR2 controller exited normally via its owned marker; no queue
-reset/forced mutex release. Queue blocked/no holder, task Ready/result0. No RR2
-Lab2 reads/input/reload/auto-start during the window. [Transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
+**LAB2 RETURNED CLEANLY; passive reads resumed14:51:45 Eastern.**
+Root verified RRE return receipt and actual mode: no controller endpoint,
+queue BLOCKED/no holder. No auto-start or queue reset. Earlier loaded addon/nonce
+assumptions are historical after RRE's reload. [Transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
 
 ## Working repository commands
 
@@ -69,6 +69,23 @@ captured signed child+20 milliseconds directly; the tick-snapshot0653 route is
 observed on generic Use, not the common spell route. Context overrides remain.
 
 ## Current active work — resume here
+
+Latest batch COMPLETE: self-name Lab1 yielded Trio/raw decoration1704; Lab2
+buff definitions resolved21 typed keys,11 named/10 unavailable. Full24-node raw
+list matched before/after. Receipts in the player-context and buff references.
+No active capture; helper sources are unfrozen. Zone raw/typed read completed
+on both labs with NULL PROVIDER, so no full zone ID/name is claimed; do not
+invoke an initializer/getter or retry unchanged state. Lab1 rawZoneKey1216123138,
+Lab2 rawZoneKey12, candidate only; different worlds/contexts are not compared.
+Receipts:`artifacts/native-zone-seed-20261107/runs/lab1/52956b1b9c3047008325a19d53ebb876/samples.json`
+SHA007294609B8EFDF7D82DEA876E89A2A0FFD6DF93498CA014BEAF125309EC2460;
+Lab2`runs/lab2/fc869831d4af40fd9c0d39795874e436/samples.json`
+SHA142161FA963807DA74EC24FBF7F0F24F18E3D788DD2F7DDBDD6CFB65BFBDE864.
+Zone readerEAE14779A5FDFA1667858083C1AEDB92541CD064D821A964DAC6FFF0705DF807
+at`artifacts/native-zone-id-20261107/publish/`,117581664 bytes. Seven focused
+synthetic cases cover null/cache/type/ID/epoch guards; no live typed zone hit.
+Static calling route reuses owner+168; race route under bounded static followup.
+Native workers have no live authority; root remains sole live operator.
 
 Lab2 variant-aware catalog completed successfully. Receipt
 `artifacts/native-ability-catalog-20261107/runs/lab2/c89e9f59c2fc4e88a14eea18bf4e34ff/catalog-summary.json`,

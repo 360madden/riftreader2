@@ -113,7 +113,7 @@ def validate_dictionary(report, *, pid, ticks, keys):
     return {"rowCount":len(rows),"rawCandidateCount":sum(r["status"]=="raw-candidate" for r in rows),"acquisitionDurationMilliseconds":(end-start).total_seconds()*1000,"qualification":DICTIONARY_QUALIFICATION}
 
 
-def build_launch(guest_exe, guest_keys, guest_report, pid, ticks, key_sha, mode):
+def build_launch(guest_exe, guest_keys, guest_report, pid, ticks, key_sha, mode, *, reader_sha=READER_SHA):
     if mode not in ('sample-current-ability-records', 'sample-current-localization-dictionary'): raise ValueError('invalid-mode')
     folder = ntpath.dirname(guest_exe)
     if not folder or any(ntpath.dirname(path).lower() != folder.lower() for path in (guest_keys, guest_report)):
@@ -123,7 +123,7 @@ def build_launch(guest_exe, guest_keys, guest_report, pid, ticks, key_sha, mode)
         "$d=" + ps_literal(folder) + ";"
         "$exe=$d+" + ps_literal("\\" + ntpath.basename(guest_exe)) + ";"
         "if((Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash -cne "
-        + ps_literal(READER_SHA) + "){throw 'guest-reader-sha-mismatch'};"
+        + ps_literal(reader_sha) + "){throw 'guest-reader-sha-mismatch'};"
         "$g=Get-Process -Id " + str(pid) + " -ErrorAction Stop;"
         "if($g.ProcessName -cne 'rift_x64' -or "
         "[long]$g.StartTime.ToUniversalTime().Ticks -ne " + str(ticks)

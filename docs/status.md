@@ -1,15 +1,19 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:34 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 14:57 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
 
-**LAB2 RRE WINDOW — NO RR2 LAB2 OPERATIONS:** The verified idle RR2 controller
-exited normally; task Ready/result0, no holder, queue left blocked. RRE has a
-window through14:49 Eastern; wait for explicit clean return before any resume.
+**LAB2 RRE WINDOW RETURNED CLEANLY:** Root verified return and actual mode at
+14:51:45 Eastern. Passive native reads resumed; controller stays stopped,
+queue BLOCKED/no holder. Prior addon/nonce assumptions require fresh evidence.
 [Ownership transition and caveats](handoff-2026-11-07-lab2-rre-window.md).
+
+**14:54 Eastern — ZONE PROVIDER ABSENT:** Fresh bounded reads in both labs
+captured raw owner zone keys but found a null resident zone provider. Full zone
+ID/name remain unavailable. No getter/initializer was invoked to force a result.
 
 **14:23 Eastern — LOADED FIELD FIX LIVE ON BOTH LABS:** Corrected a fixed file
 ordinal assumption by validating/searching the complete loaded field table.
