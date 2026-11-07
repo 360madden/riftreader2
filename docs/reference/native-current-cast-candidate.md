@@ -1,5 +1,37 @@
 # Passive cast topology candidate — November 6, 2026
 
+## Passive world observations — November7, 10:56 Eastern
+
+`sample-current-world-casts` observes a bounded unit-manager subset without input
+or native calls. It retains raw child/control pairs and IDs, unknown+2B8 DWORD,
+producer guards and only fingerprint-matched duration fields. Each observation
+checks unit/component/reference/value anchors and process identity. Caps are256
+units and2MiB read bytes per observation,30 samples and15 seconds of requested
+delays. Sequential reads cannot exclude ABA or establish complete world coverage,
+cast semantics, independent freshness or restart recovery.
+
+Lab1's initial prefix run completed30 observations with zero interesting rows
+and zero unavailable units. Each sample reached256 units in the same prefix;
+this supplies no duration object or world absence claim. Receipt:
+`artifacts/native-world-casts-20261107/runs/lab1/00b54612d51047728a21043a881b9037/samples.json`,
+SHA256`F200677DF85C9C15C5AE8D39F3DE5E2BAC1F9034E1647919042A5706F4A5AE39`.
+
+The next version rotates the starting bucket after each bounded observation.
+Lab2 completed30 observations,5534 total entity examinations across its303-bucket
+table, clock173847.84→173865.14, again zero interesting rows and zero unavailable.
+All buckets fit under the unit cap there, so its start remained0 as expected.
+Receipt: `artifacts/native-world-casts-20261107/rotating-runs/lab2/f2635dfff9e74a1eab7ba3676216a792/samples.json`,
+SHA256`73D8929D02CD40EA97BD6BCD1A915AD46AB302BD227D00523499BA953DCDFEDE`.
+No matching non-null duration object has been captured. Eight focused reader
+checks passed, including rotation; no broad suite or gameplay stimulus occurred.
+
+Rotating reader SHA256`30F7ADFABF2401AACD14104D3AECB219DD4ABBA71D38A4810FD39DAB7E819B81`,
+117348192 bytes, separately published under
+`artifacts/native-world-casts-20261107/rotating-publish/`.
+The artifact launcher is `launch_rotating_world_casts.py --lab lab1|lab2` in that
+artifact root. It uses the checked VM/guest session and per-SHA cache; existing
+active readers and control owners were not replaced.
+
 P5 delivers a small offline-testable passive topology reader in
 `scripts/native_cast_candidate.py`. It accepts an existing identity-pinned memory
 read callback and the entity resolved by the common player-key lookup; it opens

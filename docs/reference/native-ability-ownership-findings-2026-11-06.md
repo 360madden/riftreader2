@@ -130,6 +130,25 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Fast current localization candidates — November7, 10:57 Eastern
+
+The single-process `sample-current-localization --pid N --start-ticks N
+--keys CSV --output PATH` command captured8 requested localization keys onLab2
+in11.406ms. Three returned typed text candidates:1071143829=`Ascended Resurrection`,
+507994655=`Toggle Ranged Attack`,489178066=`Track Fish`. The other five were
+cache misses; no absence or fallback conclusion follows. Mode1/locale1,
+provider/record/child initialized fingerprints, tree/text ownership and consumed
+bytes were verified, followed by process revalidation. This is current text for
+those keys, not independent API agreement, ability ownership or restart proof.
+
+Receipt: `artifacts/native-localization-20261107/runs/lab2/11be9198a5874f8cbcdc276daa597e30/samples.json`,
+SHA256`2DD767F27C87500C5601FDD80488BCCB66F81E4AC62B9285F7D05B5C6C54B60A`.
+Separate reader117368672 bytes,
+SHA256`7B44F193F9B47A57E2F18AE7219FB9AF4B4252E1ABBC5812B3ABD2609946F4F9`.
+Artifact launcher: `python artifacts/native-localization-20261107/launch_localization.py
+--lab lab2 --key 1071143829`. Five focused native checks passed. No input,
+fallback invocation, initialization, active-reader replacement or owner transition.
+
 ### Actual localization provider — November7, 10:50 Eastern
 
 The default-provider refusal was correct but did not describe the active route.

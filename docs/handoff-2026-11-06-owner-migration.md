@@ -4,13 +4,13 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 10:54 Eastern
+### Checkpoint — 2026-11-07 10:57 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
 | Native maps | 🟢 Verified | Lab1 122/0 entries in10.013ms; Lab2 134/0 in17.146ms; raw parity with Python |
 | Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
-| Localization | 🟡 Capture interval blocker | Actual provider vtable26C1EA8/method7D3230 verified live. Multi-request hot-cache capture changed; single-process capture and resident dictionary next. |
+| Localization | 🟢 Three current text candidates | Single-process read11.406ms: Ascended Resurrection, Toggle Ranged Attack, Track Fish. Five cache misses; resident dictionary capture underway. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -45,6 +45,14 @@ Use a single-process acquisition to shorten the interval; do not relax anchors.
 The backing dictionary is already resident at inner+78, with its own keyed
 offset map,1024 frequency bytes and compressed blob. Capture bounded bytes
 before attempting a decoder; first varint framing remains unverified.
+
+**10:57 Eastern — single-process milestone:** New localization sampler captured
+three typed text candidates from eight keys in11.406ms, retaining all anchors
+and final process validation. [Command, exact receipts and limits](reference/native-ability-ownership-findings-2026-11-06.md#fast-current-localization-candidates--november7-1057-eastern).
+The earlier partial receipt stays unaccepted. Raw resident-dictionary capture
+for659874270/1612084406 is running; a bounded offline Huffman candidate is ready,
+but decoded records/text are not yet accepted. Preserve key/text versus ability
+membership distinctions. World-cast observations still contain no duration object.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

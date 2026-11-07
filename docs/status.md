@@ -1,5 +1,14 @@
 # Current status
 
+**2026-11-07 10:57 Eastern — CURRENT LOCALIZATION TEXT:** Single-process Lab2
+capture returned Ascended Resurrection, Toggle Ranged Attack and Track Fish as
+typed locale1 text candidates in11.406ms; five other requested keys were cache
+misses. All consumed-byte/type/provider/process checks passed. Backing dictionary
+capture is underway for missing keys; no fallback calls or game input. Passive
+world samples still produced no matching duration object. See [receipts and
+limits](reference/native-ability-ownership-findings-2026-11-06.md#fast-current-localization-candidates--november7-1057-eastern)
+and the [continuation handoff](handoff-2026-11-06-owner-migration.md).
+
 **2026-11-07 10:54 Eastern — DISCOVERY CHECKPOINT:** Actual heap localization
 provider fingerprint verified live. The later multi-request cache capture was
 withheld after real head/chain changes; no names accepted. A single-process
