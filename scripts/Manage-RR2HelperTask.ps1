@@ -64,11 +64,6 @@ function Join-HelperArguments([string[]]$Values) {
     return $line
 }
 
-function Get-RunningTaskInstance([string]$Name) {
-    $service = New-Object -ComObject 'Schedule.Service'
-    $service.Connect()
-    return Get-TaskInstanceIdentity ($service.GetFolder('\').GetTask($Name))
-}
 function Get-TaskInstanceIdentity($Task) {
     $instances = $Task.GetInstances(0)
     if ($instances.Count -ne 1) { throw 'TASK_INSTANCE: expected exactly one running instance.' }
@@ -96,7 +91,9 @@ function Assert-OwnedHelperTask($Task, $Config) {
             $trigger.Enabled -and $triggerSid -ieq $sid -and !$trigger.Delay -and
             !$trigger.StartBoundary -and !$trigger.EndBoundary -and !$trigger.Repetition.Interval
     }
-    $settingsMatch = $Task.Settings.ExecutionTimeLimit -ceq 'PT0S' -and
+    $settingsMatch = $null -ne $Task.Settings.DisallowStartIfOnBatteries -and
+        $null -ne $Task.Settings.StopIfGoingOnBatteries -and $null -ne $Task.Settings.RestartCount -and
+        $Task.Settings.ExecutionTimeLimit -ceq 'PT0S' -and
         [int]$Task.Settings.MultipleInstances -eq 2 -and $Task.Settings.Enabled -and
         !$Task.Settings.DisallowStartIfOnBatteries -and !$Task.Settings.StopIfGoingOnBatteries -and
         $Task.Settings.RestartCount -eq 0
@@ -105,7 +102,7 @@ function Assert-OwnedHelperTask($Task, $Config) {
         $Task.Actions.Execute -ine $Config.executable -or
         [string]$Task.Actions.Arguments -cne [string]$Config.arguments -or
         $Task.Actions.WorkingDirectory -ine $Config.workingDirectory -or
-        $taskSid -ine $sid -or [int]$Task.Principal.RunLevel -ne 0 -or
+        $taskSid -ine $sid -or $null -eq $Task.Principal.RunLevel -or [int]$Task.Principal.RunLevel -ne 0 -or
         [int]$Task.Principal.LogonType -ne 3 -or !$triggerMatches -or !$settingsMatch) {
         $differences = [ordered]@{
             path=($Task.TaskPath -cne '\'); name=($Task.TaskName -cne $taskName)
@@ -146,13 +143,24 @@ function Assert-HelperContract($Exe, $ArgsLine, $Directory) {
         $ArgsLine -cne $expectedArguments) { throw 'HELPER_CONTRACT: executable, arguments or working directory differ.' }
 }
 if ($config) { Assert-HelperContract $config.executable $config.arguments $config.workingDirectory }
-if ($InspectLab2Controller) {
+if ($InspectLab2Controller -or ($Action -eq 'Status' -and $config)) {
     if (!$config) { throw 'Unknown helper registration.' }
     $scheduler = New-Object -ComObject Schedule.Service
     $scheduler.Connect()
     $folder = $scheduler.GetFolder('\')
-    # Refresh both names twice, as in ordinary Status. Only ERROR_FILE_NOT_FOUND
-    # proves absence of the competing legacy registration.
+    # Only a confirmed absent or non-running task falls through to the original
+    # ScheduledTasks path. Unexpected COM errors never certify absence.
+    $absent = $false
+    try { $current = $folder.GetTask($taskName) }
+    catch {
+        if ($_.Exception.GetBaseException().HResult -ne -2147024894 -or $InspectLab2Controller) { throw }
+        $absent = $true; $current = $null
+    }
+    if (!$absent -and $null -eq $current) { throw 'TASK_OWNERSHIP: task query returned no object.' }
+    $initialState = if ($current) { $current.State } else { $null }
+    if (!$absent -and ($null -eq $initialState -or $initialState -notin @(1,2,3,4)) -and !$InspectLab2Controller) { throw 'TASK_OWNERSHIP: unrecognized task state.' }
+    if ($InspectLab2Controller -or (!$absent -and $initialState -eq 4)) {
+    # Refresh both names twice; only ERROR_FILE_NOT_FOUND proves legacy absence.
     $priorInstance = $null
     foreach ($observation in 1..2) {
         try {
@@ -163,13 +171,13 @@ if ($InspectLab2Controller) {
             $cause = $_.Exception.GetBaseException()
             if ($cause.HResult -ne -2147024894) { throw }
         }
-        $current = $folder.GetTask($taskName)
+        if ($observation -eq 2) { $current = $folder.GetTask($taskName) }
         if ($current.Path -cne ('\' + $taskName) -or $current.Name -cne $taskName -or $current.State -ne 4) {
             throw 'TASK_OWNERSHIP: exact root task must be running.'
         }
         $definition = $current.Definition
-        if ($definition.Actions.Count -ne 1 -or $definition.Actions.Item(1).Type -ne 0 -or
-            $definition.Triggers.Count -ne 0) { throw 'TASK_OWNERSHIP: expected one Exec action and no triggers.' }
+        if ($null -eq $definition.Actions -or $definition.Actions.Count -ne 1 -or $definition.Actions.Item(1).Type -ne 0 -or
+            $null -eq $definition.Triggers -or $null -eq $definition.Triggers.Count -or $definition.Triggers.Count -ne 0) { throw 'TASK_OWNERSHIP: expected one Exec action and no triggers.' }
         $execAction = $definition.Actions.Item(1)
         # Adapt ITaskDefinition to the same assertions used by ScheduledTasks.
         $task = [pscustomobject]@{
@@ -183,10 +191,15 @@ if ($InspectLab2Controller) {
             $priorInstance.instanceGuid -cne $instance.instanceGuid)) { throw 'TASK_INSTANCE: identity changed during inspection.' }
         $priorInstance = $instance
     }
-    [ordered]@{helperId=$HelperId; taskName=$taskName; state='Running'; runLevel='Limited';
-        atLogon=$config.atLogon; lastTaskResult=$current.LastTaskResult; registration=$configPath;
-        enginePid=$instance.enginePid; instanceGuid=$instance.instanceGuid} | ConvertTo-Json
+    $lastTaskResult = $current.LastTaskResult
+    if ($null -eq $lastTaskResult) { throw 'TASK_OWNERSHIP: task result unavailable.' }
+    $output = [ordered]@{helperId=$HelperId; taskName=$taskName; state='Running'; runLevel='Limited';
+        atLogon=$config.atLogon; lastTaskResult=$(if ($InspectLab2Controller) { $lastTaskResult } else { [long]$lastTaskResult -band 0xffffffffL }); registration=$configPath;
+        enginePid=$instance.enginePid; instanceGuid=$instance.instanceGuid}
+    if (!$InspectLab2Controller) { $output.note = 'Task state is not application health. Inspect the helper heartbeat/output; no elevation is granted.' }
+    $output | ConvertTo-Json
     return
+    }
 }
 Import-Module (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/Modules/ScheduledTasks') -ErrorAction Stop
 $tasks = @(Get-ScheduledTask -TaskPath '\' -ErrorAction Stop)
@@ -241,7 +254,9 @@ $matches = @($tasks | Where-Object { $_.TaskName -ieq $taskName })
 if ($matches.Count -gt 1) { throw 'TASK_COLLISION: duplicate task names.' }
 $task = if ($matches.Count) { $matches[0] } else { $null }
 if ($task) { Assert-OwnedHelperTask $task $config }
-$instance = if ($Action -eq 'Status' -and $task -and $task.State -eq 'Running') { Get-RunningTaskInstance $taskName } else { $null }
+# A task becoming Running after the initial COM probe needs a fresh two-read proof.
+if ($Action -eq 'Status' -and $task -and $task.State -eq 'Running') { throw 'TASK_INSTANCE: state changed during status; retry.' }
+$instance = $null
 $info = if ($task) { Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName } else { $null }
 [ordered]@{
     helperId=$HelperId; taskName=$taskName; state=$(if ($task) { [string]$task.State } else { 'NotRegistered' })

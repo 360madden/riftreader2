@@ -36,8 +36,10 @@ $global:mockTasks = @()
 $global:mockStarts = 0
 $global:mockRegistrations = 0
 $global:queryFailure = $false
+$global:scheduledQueries = 0
 function global:Get-ScheduledTask {
     param($TaskPath, $TaskName, $ErrorAction)
+    $global:scheduledQueries++
     if ($global:queryFailure) { throw 'mock query failure' }
     if ($TaskName) { return @($global:mockTasks | Where-Object TaskName -CEQ $TaskName) }
     return $global:mockTasks
@@ -52,7 +54,7 @@ function global:Register-ScheduledTask {
 }
 function global:Start-ScheduledTask { param($TaskPath,$TaskName) $global:mockStarts++; ($global:mockTasks | Where-Object TaskName -CEQ $TaskName).State = 'Running' }
 function global:Get-ScheduledTaskInfo { param($TaskPath,$TaskName) [pscustomobject]@{LastTaskResult=0} }
-function Must-Fail([scriptblock]$Block) { try { & $Block | Out-Null } catch { return }; throw 'Expected refusal' }
+function Must-Fail([scriptblock]$Block) { try { & $Block | Out-Null } catch { return }; throw ('Expected refusal at ' + (Get-PSCallStack | Select-Object -Skip 1 -First 1).ScriptLineNumber) }
 function Register-Test { & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts 'receiver_task_entry.py'),'--lab','lab1') -WorkingDirectory $root }
 function New-InspectionTask($registration) {
     $actions = [pscustomobject]@{Count=1; First=[pscustomobject]@{Type=0; Path=$registration.Actions[0].Execute;
@@ -63,8 +65,21 @@ function New-InspectionTask($registration) {
         RegistrationInfo=[pscustomobject]@{Description=$registration.Description}}
     $result = [pscustomobject]@{Path=('\' + $registration.TaskName); Name=$registration.TaskName;
         State=4; Definition=$definition; LastTaskResult=0}
+    $result.State = if ($registration.State -ceq 'Running') { 4 } else { 3 }
     $result | Add-Member ScriptMethod GetInstances { param($flags) $global:collection }
     return $result
+}
+$global:mockScheduler = [pscustomobject]@{Folder=[pscustomobject]@{}}
+$global:mockScheduler | Add-Member ScriptMethod Connect {}
+$global:mockScheduler | Add-Member ScriptMethod GetFolder { param($path) $this.Folder }
+$global:mockScheduler.Folder | Add-Member ScriptMethod GetTask {
+    param($name)
+    if ($global:queryFailure) { throw [UnauthorizedAccessException]::new('denied') }
+    $matches = @($global:mockTasks | Where-Object TaskName -IEQ $name)
+    if ($matches.Count -eq 0) { throw [IO.FileNotFoundException]::new('absent') }
+    if ($matches.Count -ne 1) { throw 'ambiguous' }
+    if ($name -like 'Workbridge Helper *') { return $matches[0] }
+    return New-InspectionTask $matches[0]
 }
 try {
     [IO.File]::WriteAllText((Join-Path $root 'pythonw.exe'), '')
@@ -115,6 +130,24 @@ try {
     $global:mockInstances = @($instance)
     & $manager -Action Start -HelperId $id | Out-Null
     if ($global:mockStarts -ne 1) { throw 'Start was not idempotent.' }
+    # All four allowlisted running helpers use COM; Ready and absent use the
+    # existing ScheduledTasks path, without starting any owner.
+    foreach ($other in @('rr2-receiver-lab1','rr2-receiver-lab2','rr2-controller-lab1','rr2-controller-lab2')) {
+        $id = $other; $kind = $id.Split('-')[1]; $lab = $id.Split('-')[2]
+        $global:mockTasks = @()
+        & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts ($kind + '_task_entry.py')),'--lab',$lab) -WorkingDirectory $root | Out-Null
+        $registeredOther = $global:mockTasks[0]
+        $global:scheduledQueries = 0
+        $ready = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+        if ($ready.state -cne 'Ready' -or $global:scheduledQueries -lt 1) { throw 'Ready fallback failed' }
+        $global:mockTasks = @(); $global:scheduledQueries = 0
+        $absent = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+        if ($absent.state -cne 'NotRegistered' -or $global:scheduledQueries -lt 1) { throw 'Absent fallback failed' }
+        $registeredOther.State = 'Running'; $global:mockTasks = @($registeredOther); $global:scheduledQueries = 0
+        $running = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+        if ($running.enginePid -ne 123 -or !$running.instanceGuid -or $global:scheduledQueries -ne 0) { throw 'Running COM path failed' }
+    }
+    $id = 'rr2-receiver-lab1'; $global:mockTasks = @($task)
     $receipt = Join-Path $root ('.local/rr2-helpers/' + $id + '/registration.json')
     $data = Get-Content $receipt -Raw | ConvertFrom-Json
     $data.arguments = 'forged'
@@ -124,6 +157,7 @@ try {
     $global:mockTasks = @()
     & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts 'controller_task_entry.py'),'--lab','lab2') -WorkingDirectory $root | Out-Null
     $registered = $global:mockTasks[0]
+    $registered.State = 'Running'
     $global:mockLegacy = $false
     $global:mockDenied = $false
     $global:mockReads = 0
@@ -139,51 +173,75 @@ try {
             throw [IO.FileNotFoundException]::new('absent')
         }
         if ($name -cne 'RiftReader2 Helper rr2-controller-lab2') { throw 'foreign task' }
+        if ($global:currentNull) { return $null }
+        if ($global:currentDenied) { throw [UnauthorizedAccessException]::new('denied') }
+        if ($global:currentMissing) { throw [IO.FileNotFoundException]::new('absent') }
         $global:mockReads++
+        if ($global:nullSecond -and $global:mockReads -eq 2) { return $null }
+        if ($global:changeDefinition -and $global:mockReads -eq 2) { $global:inspectionTask.Definition.Actions.First.Arguments = 'changed' }
         if ($global:changeIdentity -and $global:mockReads -eq 2) { $global:mockInstances=@($global:changeIdentity) }
         if ($global:changeOnSecondRead -and $global:mockReads -eq 2) { $global:inspectionTask.State = 3 }
         return $global:inspectionTask
     }
     $inspect = { & $manager -Action Status -HelperId $id -InspectLab2Controller }
+    $fast = { & $manager -Action Status -HelperId $id }
     $global:inspectionTask = New-InspectionTask $registered
+    $normalProof = & $fast | ConvertFrom-Json
+    if ($normalProof.enginePid -ne 123 -or !$normalProof.instanceGuid -or !$normalProof.note) { throw 'Normal COM proof missing' }
+    $global:inspectionTask.LastTaskResult = -2147024891
+    if ((& $fast | ConvertFrom-Json).lastTaskResult -ne 2147942405) { throw 'Unsigned result mismatch' }
+    if ((& $inspect | ConvertFrom-Json).lastTaskResult -ne -2147024891) { throw 'Inspection result changed' }
+    $global:inspectionTask.LastTaskResult = 0
+    $global:currentNull=$true; Must-Fail $fast; $global:currentNull=$false
+    $global:mockReads=0; $global:nullSecond=$true; Must-Fail $fast; $global:nullSecond=$false
+    $global:currentDenied=$true; Must-Fail $fast; $global:currentDenied=$false
+    $global:currentMissing=$true; Must-Fail $fast; $global:currentMissing=$false
+    $global:inspectionTask.State=0; Must-Fail $fast; $global:inspectionTask.State=4
+    $global:mockReads = 0
     $proof = & $inspect | ConvertFrom-Json
     if ($proof.enginePid -ne 123 -or !$proof.instanceGuid) { throw 'Inspection instance identity missing' }
     if ($proof.state -cne 'Running' -or $global:mockReads -ne 2) { throw 'Two fresh task proofs required.' }
     $instance = $global:mockInstances[0]
-    $global:mockInstances=@(); Must-Fail $inspect
-    $global:mockInstances=@($instance,$instance); Must-Fail $inspect
+    $global:mockInstances=@(); Must-Fail $inspect; Must-Fail $fast
+    $global:mockInstances=@($instance,$instance); Must-Fail $inspect; Must-Fail $fast
     foreach ($bad in @([pscustomobject]@{EnginePID=0; InstanceGuid=$instance.InstanceGuid},
                          [pscustomobject]@{EnginePID=123; InstanceGuid='invalid'})) {
-        $global:mockInstances=@($bad); Must-Fail $inspect
+        $global:mockInstances=@($bad); Must-Fail $inspect; Must-Fail $fast
     }
     $global:mockInstances=@($instance)
     foreach ($alter in @(
         {$t.Path='\other\task'}, {$t.Name='wrong'}, {$t.State=3}, {$d.RegistrationInfo.Description='wrong'},
         {$d.Actions.Count=2}, {$d.Actions.First.Type=5}, {$d.Actions.First.Path='foreign.exe'},
         {$d.Actions.First.Arguments='wrong'}, {$d.Actions.First.WorkingDirectory='wrong'},
-        {$d.Principal.UserId='S-1-5-18'}, {$d.Principal.RunLevel=1}, {$d.Principal.LogonType=0},
-        {$d.Triggers.Count=1}, {$d.Settings.ExecutionTimeLimit='PT1M'}, {$d.Settings.MultipleInstances=0},
+        {$d.Principal.UserId='S-1-5-18'}, {$d.Principal.RunLevel=1}, {$d.Principal.RunLevel=$null}, {$d.Principal.LogonType=0},
+        {$d.Triggers.Count=1}, {$d.Triggers=$null}, {$d.Triggers=[pscustomobject]@{Count=$null}}, {$d.Settings.ExecutionTimeLimit='PT1M'}, {$d.Settings.MultipleInstances=0},
         {$d.Settings.Enabled=$false}, {$d.Settings.DisallowStartIfOnBatteries=$true},
-        {$d.Settings.StopIfGoingOnBatteries=$true}, {$d.Settings.RestartCount=1}
+        {$d.Settings.StopIfGoingOnBatteries=$true}, {$d.Settings.RestartCount=1},
+        {$d.Settings.DisallowStartIfOnBatteries=$null}, {$d.Settings.StopIfGoingOnBatteries=$null},
+        {$d.Settings.RestartCount=$null}, {$t.LastTaskResult=$null}
     )) {
         $global:inspectionTask = New-InspectionTask $registered
         $t=$global:inspectionTask; $d=$t.Definition
         & $alter
-        Must-Fail $inspect
+        Must-Fail $inspect; Must-Fail $fast
     }
     $global:inspectionTask = New-InspectionTask $registered
     $global:mockReads = 0; $global:changeOnSecondRead = $true
     Must-Fail $inspect
     $global:changeOnSecondRead = $false
+    $global:inspectionTask = New-InspectionTask $registered; $global:mockReads=0; $global:changeDefinition=$true
+    Must-Fail $fast
+    $global:changeDefinition=$false
     foreach ($changed in @([pscustomobject]@{EnginePID=124; InstanceGuid=$instance.InstanceGuid},
                             [pscustomobject]@{EnginePID=123; InstanceGuid='1a048a33-b778-4f2f-9a90-e139cd4ce100'})) {
         $global:mockInstances=@($instance); $global:mockReads=0; $global:changeIdentity=$changed
         Must-Fail $inspect
+        $global:mockInstances=@($instance); $global:mockReads=0; Must-Fail $fast
     }
     $global:changeIdentity=$null; $global:mockInstances=@($instance)
     $global:inspectionTask = New-InspectionTask $registered
-    $global:mockLegacy = $true; Must-Fail $inspect; $global:mockLegacy = $false
-    $global:mockDenied = $true; Must-Fail $inspect; $global:mockDenied = $false
+    $global:mockLegacy = $true; Must-Fail $inspect; Must-Fail $fast; $global:mockLegacy = $false
+    $global:mockDenied = $true; Must-Fail $inspect; Must-Fail $fast; $global:mockDenied = $false
     Must-Fail { & $manager -Action Start -HelperId $id -InspectLab2Controller }
     Must-Fail { & $manager -Action Register -HelperId $id -InspectLab2Controller }
     Must-Fail { & $manager -Action Status -HelperId 'rr2-controller-lab1' -InspectLab2Controller }
