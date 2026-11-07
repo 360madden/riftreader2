@@ -130,6 +130,61 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Bulk native names and raw costs — November7, 11:14 Eastern
+
+Lab1's one-process dictionary reader captured114/114 requested nonzero name keys
+in25.493ms. All114 decoded and passed the strict locale1 parser, with zero failures.
+A same-identity join verifies exact equality of the122 H1 map keys and record
+keys:119/122 rows have candidate names, including all43 nonzero List-filter rows.
+Three rows have zero name keys. The first join spans124.21057 seconds and remains
+separate observations, not an atomic/freshness-qualified player list.
+
+Dictionary receipt:
+`artifacts/native-localization-dictionary-20261107/runs/lab1/026be696efea40f2b49a8737e0f2394a/samples.json`,
+SHA256`3F01D2639D119204DA3C4D21B56F2B665FB8FBE447A84FCB2E7F021135D59154`.
+Reader117389152 bytes,
+SHA256`5B80C6BD79CF43FA42A71886B27A462F92B6297318E9D6FA5D3D0192AFD6D6A1`.
+Command: `sample-current-localization-dictionary --pid N --start-ticks N
+--keys CSV --output PATH`. Three focused reader checks passed. The artifact
+launcher `artifacts/native-localization-dictionary-20261107/launch_dictionary.py`
+uses the existing VM/session checks and SHA-specific cache.
+
+Opt-in `sample-current-ability-records ... --include-costs true` captures the
+verified0051 record's+6D0 vector with bounded8-byte child references. The first
+Lab1 run captured122 records in44.127ms:55 empty vectors and67 children with
+initially unknown vtables. Static follow-up identified62 as1E2B (combined
+Mana/Charge producer) and5 as1E2D (skipped by that cost-output loop; another
+consumer treats+18 as a lookup key). A second fresh run verified all67 initialized
+type fingerprints and retained62 raw input payloads in37.899ms; no unknown or
+unverified child remained. No adjusted costs were published.
+
+Expanded receipt:
+`artifacts/native-ability-costs-20261107/expanded-runs/lab1/14d5524792d44c88984305c46e48124e/samples.json`,
+SHA256`FE4BC690D4DE53FDF652DFC4C6B01C5A0D5053E8FB5A64FC10DD51001CAE1550`.
+Reader117393248 bytes,
+SHA256`21E0B1B10FA0A899DAD5D886E387EC658CF8FB3C24E2D01E3A5462BB67A27143`.
+Use `artifacts/native-ability-costs-20261107/launch_expanded_costs.py --lab lab1
+--key <native DWORD>` for the per-SHA experimental reader. Final focused cost
+checks passed14 cases, retaining existing default-off behavior and all record/
+thread/TLS/owner checks. This does not replace existing workflow readers.
+
+The1E2B profile is objectVT29F7628/getter1BBF8B0, initialized descriptor34B4B20,
+descriptorVT2A04450/slot8 getter1BED910. Its producer consumes float+1C,
+signed DWORDs+20/+24 and byte+28;17 raw bytes at+18..28 are retained. In this
+sample all62 flags were1, float+1C ranged0..15, +20 ranged0..30 and+24 ranged
+-30..22. These are raw inputs, not Mana points or final Charge changes. The Mana
+branch depends on player context; Charge can apply per-ability modifiers.
+The1E2D profile is objectVT2CEF3D8/getter22CCCF0, descriptor35A8330,
+descriptorVT2D060C0/getter2303720; it is reported as typed but unhandled, with
+no assigned cost amount. Other supported profiles are Power1E29, Mana1E2A and
+Energy1E2C; none appeared in this Lab1 sample. Exact producer evidence:
+`artifacts/discovery-20261107-cast/cost-next-step.md`.
+
+Joined report: `artifacts/native-ability-costs-20261107/lab1-joined-expanded-20261107.json`.
+It retains source hashes, times, full identity, names, raw map values, raw filter
+and raw cost children. No input, native getter, initialization, refcount write,
+controller/receiver transition, reload/restart or active-bundle replacement.
+
 ### Resident dictionary decoded — November7, 11:04 Eastern
 
 Eight requested localization keys now decode from the already-loaded backing

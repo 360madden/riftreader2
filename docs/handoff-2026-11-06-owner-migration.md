@@ -4,14 +4,14 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 11:06 Eastern
+### Checkpoint — 2026-11-07 11:14 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
 | Native maps | 🟢 Verified | Lab1 122/0 entries in10.013ms; Lab2 134/0 in17.146ms; raw parity with Python |
 | Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
-| Localization | 🟢 Eight dictionary text candidates | All8 requested records decoded;3 exactly match typed cache text/locale. Single-locale strict parser; broader native capture next. |
-| Raw ability costs | ▶ Implementation ready | Power/Mana/Energy profiles traced; opt-in vector capture passed18 focused checks. Root reviewing before live. |
+| Localization | 🟢 Bulk native capture verified |114/114 name keys captured25.493ms and decoded;119/122 rows named, all43 nonzero-filter rows named. |
+| Raw ability costs | 🟢 Typed raw payloads captured |122 records37.899ms;55 empty,62 type1E2B Mana/Charge raw inputs,5 typed-unhandled1E2D. No adjusted amounts. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -62,6 +62,18 @@ Native bulk raw dictionary capture is being implemented to avoid repeated guest
 snapshots for larger key sets. The opt-in raw-cost sampler is ready for a fresh
 bounded live run after root checks; no adjusted-cost claim. Five-hour window
 remains active through13:26 Eastern. No game input or owner changes.
+
+**11:14 Eastern — bulk names/raw-cost milestone:** Native dictionary capture
+and strict offline decoding produced114/114 candidate texts. The joined122-key
+Lab1 report has119 names and43/43 named nonzero-filter rows, with exact matching
+source identities/key sets. Expanded raw-cost capture verified all67 nonempty
+children:62 combinedMana/Charge and5 explicitly unhandled1E2D, with55 empty
+vectors. [Receipts, commands and limitations](reference/native-ability-ownership-findings-2026-11-06.md#bulk-native-names-and-raw-costs--november7-1114-eastern).
+Next useful discovery: resolve the actual1E2B player-context scaling/modifier
+branches from retained evidence and a bounded passive discriminant. Do not label
+raw floats as Mana points or raw signed fields as final Charge changes.
+Duration still lacks a live matching object; repeated idle samples are not the
+next default task. Keep the five-hour goal active until13:26 Eastern.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

@@ -1,0 +1,14 @@
+using System.Buffers.Binary;
+using RiftReader2.Application;
+using RiftReader2.Domain;
+namespace RiftReader2.Live.Tests;
+public sealed class CurrentBuildLocalizationDictionaryCandidateReaderTests
+{
+    const ulong M=0x140000000, Manager=0x20000000, Wrapper=0x20010000, Inner=0x20020000, Buckets=0x20030000, Blob=0x20040000;
+    [Fact] public void CapturesRawPayloadAndMiss() { var s=Fixture(); var o=CurrentBuildLocalizationDictionaryCandidateReader.Read(s,[1,2]); Assert.Equal("raw-candidate",o.Rows[0].Status); Assert.Equal("qrs=",o.Rows[0].CompressedBytesBase64); Assert.Equal(3U,o.Rows[0].DecodedSize); Assert.Equal("cache-miss",o.Rows[1].Status); Assert.Equal(1024,Convert.FromBase64String(o.FrequencyBytesBase64).Length); }
+    [Fact] public void ChangedAnchorRejects() { var s=Fixture(); s.Change(Inner+0x78+0x40,new byte[1024]); Assert.Throws<InvalidDataException>(()=>CurrentBuildLocalizationDictionaryCandidateReader.Read(s,[1])); }
+    [Fact] public void TruncatedUlebRejects() { var s=Fixture(); var meta=new byte[12]; Q(Blob).CopyTo(meta,0); BinaryPrimitives.WriteUInt32LittleEndian(meta.AsSpan(8),1); s.Put(Inner+0x78+0x440,meta); s.Put(Blob,[0x80]); Assert.Throws<InvalidDataException>(()=>CurrentBuildLocalizationDictionaryCandidateReader.Read(s,[1])); }
+    static Fake Fixture() { var s=new Fake(); s.Put(M+0x33623E8,Q(Manager)); s.Put(Manager+0x98,Q(Wrapper)); var wrapper=new byte[16]; Q(M+0x26C1EA8).CopyTo(wrapper,0); Q(Inner).CopyTo(wrapper,8); s.Put(Wrapper,wrapper); s.Put(M+0x26C1EA8,Q(M+0x7D3230)); var h=new byte[32]; Q(Buckets).CopyTo(h,0); Q(16).CopyTo(h,8); Q(1).CopyTo(h,16); Q(1).CopyTo(h,24); s.Put(Inner+0x78,h); var f=new byte[1024]; f[0]=1; s.Put(Inner+0x78+0x40,f); var meta=new byte[12]; Q(Blob).CopyTo(meta,0); BinaryPrimitives.WriteUInt32LittleEndian(meta.AsSpan(8),4); s.Put(Inner+0x78+0x440,meta); var node=new byte[16]; node[8]=1; s.Put(Buckets,node); s.Put(Blob,[2,3,0xaa,0xbb]); s.Put(Blob+2,[0xaa,0xbb]); return s; }
+    static byte[] Q(ulong v) { var b=new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b,v); return b; }
+    sealed class Fake:IReadOnlyNativeMemorySession { readonly Dictionary<ulong,byte[]> data=[]; readonly Dictionary<ulong,byte[]> changed=[]; readonly HashSet<ulong> seen=[]; public NativeProcessIdentity Identity {get;}=new(123,456,@"C:\RIFT\rift_x64.exe",CurrentBuildPlayerLookup.GameSha256,M,0x4000000); public void Put(ulong a,byte[] b)=>data[a]=b; public void Change(ulong a,byte[] b)=>changed[a]=b; public NativeReadResult Read(ulong a,int n) { var b=!seen.Add(a)&&changed.TryGetValue(a,out var c)?c:data.GetValueOrDefault(a); return b is not null&&b.Length==n?new("success",b.ToArray(),null,null):new("unavailable",[],null,null); } public ValueTask<string?> RevalidateAsync(CancellationToken c)=>ValueTask.FromResult<string?>(null); public ValueTask DisposeAsync()=>ValueTask.CompletedTask; }
+}

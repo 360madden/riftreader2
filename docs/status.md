@@ -1,5 +1,13 @@
 # Current status
 
+**2026-11-07 11:14 Eastern — BULK NAMES / RAW COSTS:** Lab1 native dictionary
+capture returned114/114 keys in25.493ms; all decoded under the strict shape.
+Joined122 rows have119 candidate names and43/43 named nonzero-filter rows.
+The expanded cost reader captured122 records37.899ms:55 empty vectors,
+62 verified1E2B raw Mana/Charge inputs and5 typed-unhandled1E2D children.
+No adjusted-cost, learned-membership, atomic/freshness or restart qualification.
+Owners and STOP/release gates preserved. [Receipts and next step](reference/native-ability-ownership-findings-2026-11-06.md#bulk-native-names-and-raw-costs--november7-1114-eastern).
+
 **2026-11-07 11:06 Eastern — EIGHT CURRENT DICTIONARY CANDIDATES:** The resident
 dictionary capture and bounded decoder recovered all8 requested locale1 text
 candidates, including Break Free and Soul Recall. Three exactly match the separate
