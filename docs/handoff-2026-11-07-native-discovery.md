@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **13:56 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **13:58 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -29,6 +29,7 @@ C:\Python314\python.exe -B scripts/sample_current_native_ability_catalog.py --la
 C:\Python314\python.exe -B scripts/sample_current_native_player_context.py --lab lab1
 C:\Python314\python.exe -B scripts/sample_current_native_selected_target.py --lab lab1
 C:\Python314\python.exe -B scripts/sample_current_native_target_template_name.py --lab lab1
+C:\Python314\python.exe -B scripts/sample_current_native_buff_seeds.py --lab lab1
 ```
 
 They reacquire VM/game identities and use SHA-bound isolated guest caches.
@@ -92,11 +93,18 @@ if it needs rebuilding the whole eligibility engine. No generic review loop.
 Guard/required-level milestone committedfc990bc. The next restriction-array read
 also passed but was EMPTY, closing the5AFF10 shortcut. No selected winner or
 further full-engine work. F86 restriction code/receipt is the next commit.
-New useful track: native Buff seed capture passed28 raw nodes in12.29ms;
+Restriction milestone committedefe1785. New useful track: native Buff seed capture passed28 raw nodes in12.29ms;
 27 descriptorKind1 are excluded by List,1 kind4 is a candidate. Raw timer
-profiles are captured, not yet times. Buff milestone/receipts are being recorded.
-NEW buff definition helper is being prepared by tls_metadata; cooldown_discovery
-traces actual clock methods. Root alone performs live operations; none active.
+profiles are captured, not yet times. [Buff receipt and limits](reference/native-buff-candidates-2026-11-07.md).
+NEW buff definition helper is ready from tls_metadata, not yet live:
+`scripts/sample_current_native_buff_definitions.py --lab lab1 --seed`
+absolute path`artifacts/native-buff-seeds-20261107/runs/lab1/a47a249a4bce478e903d6d24c864f5e3/summary.json`.
+It pins BOTH374 buff reader andF86 records reader, fresh full-list before/after,
+and source identity, preserving28 nodes/22 distinct lookup keys. Root review then
+first live read is next. cooldown_discovery traced actual clock methods; next
+native slice can read begins/clock and06ED/06CE tick durations, keeping22 dynamic
+property durations unavailable. No need full selector reconstruction.
+Root alone performs live operations; none active.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
 
@@ -112,11 +120,17 @@ Name-mode reader:117496160 bytes, SHA256
 `artifacts/native-target-template-name-mode-20261107/publish/`.
 Never overwrite an earlier publication or active workflow bundle.
 
+Buff seed reader117544800 bytes, SHA256
+3747822638FEC0F1035187C7142E7A7A0AC84B8D9C6100106AE1BF21A2BFD8A2,
+`artifacts/native-buff-seeds-20261107/publish/`. Three focused cases passed and
+first live receipt succeeded. Keep it immutable for the first definition run.
+
 ## Durable findings, receipts and milestones
 
 - [Target/self/HP/XYZ/name/level receipts and limits](reference/native-player-context-candidates.md).
 - [Catalog, cost, raw timing/range/condition findings](reference/native-ability-ownership-findings-2026-11-06.md).
 - [Ordered variant references](reference/native-ability-variants-2026-11-07.md).
+- [Raw buff nodes and timer fingerprints](reference/native-buff-candidates-2026-11-07.md).
 - [Primary cast-duration factories](reference/native-cast-duration-factories-2026-11-07.md).
 - [Cooldown TLS/cache/gate and public-value findings](reference/native-cooldown-static-followup-2026-11-06.md).
 - [Earlier owner/receiver chronology](handoff-2026-11-06-owner-migration.md).

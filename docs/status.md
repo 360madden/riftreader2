@@ -6,6 +6,11 @@ working commands, verified results, accepted selected-target capture and remaini
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
 
+**13:53 Eastern — NATIVE BUFF SEED LIVE:** Lab1 captured28 raw nodes in12.29ms;
+27 kind1 are excluded by the List path, one kind4 remains a visibility candidate.
+Three actual timer profiles captured. No API-visible count, name or timer values
+claimed. [Receipt and next useful reads](reference/native-buff-candidates-2026-11-07.md).
+
 **13:52 Eastern — RESTRICTION SHORTCUT CLOSED:** The self-owned restriction array
 was empty, so its nonempty-array rejection cannot select variants. No full-engine
 follow-up; winner remains unknown. Native buff telemetry is the next useful track.
