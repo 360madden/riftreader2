@@ -234,17 +234,35 @@ def validate_operation(command: str | None, ui_step: str | None, lab: str,
 
 
 def _read_regular(path: Path, maximum: int, reason: str) -> bytes:
+    def regular(info):
+        return (stat.S_ISREG(info.st_mode)
+                and not getattr(info, "st_file_attributes", 0)
+                & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
     try:
-        info = path.lstat()
-        reparse = getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
-        if not stat.S_ISREG(info.st_mode) or path.is_symlink() or reparse or not 0 < info.st_size <= maximum:
+        # This first check rejects an existing link, but its size/identity can
+        # legitimately change when a receiver atomically publishes a new file.
+        if not regular(path.lstat()):
             _fail(reason)
-        data = path.read_bytes()
+        with path.open("rb") as stream:
+            before = os.fstat(stream.fileno())
+            if not regular(before) or not 0 < before.st_size <= maximum:
+                _fail(reason)
+            data = stream.read(maximum + 1)
+            after = os.fstat(stream.fileno())
+            final = path.lstat()
+            if (not regular(after) or not regular(final)
+                    or not os.path.samestat(before, after)
+                    or not os.path.samestat(after, final)
+                    or after.st_size != before.st_size
+                    or after.st_mtime_ns != before.st_mtime_ns
+                    or final.st_size != after.st_size
+                    or final.st_mtime_ns != after.st_mtime_ns
+                    or len(data) != before.st_size):
+                _fail(reason)
+            return data
     except OSError:
         _fail(reason)
-    if len(data) != info.st_size:
-        _fail(reason)
-    return data
 
 
 def _strict_json_bytes(data: bytes, reason: str) -> dict:

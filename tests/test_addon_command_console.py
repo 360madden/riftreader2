@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from unittest import mock
 import json
+import os
 import socket
 import shutil
 import struct
@@ -18,6 +19,140 @@ SPEC = importlib.util.spec_from_file_location(
 )
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
+
+
+class RegularReadTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.directory = Path(self.temp.name)
+        self.path = self.directory / "receipt.json"
+        self.path.write_bytes(b"old")
+
+    def replacement_before_open(self, content):
+        replacement = self.directory / "replacement.json"
+        replacement.write_bytes(content)
+        original_open = Path.open
+
+        def replace_then_open(path, *args, **kwargs):
+            if path == self.path:
+                os.replace(replacement, self.path)
+            return original_open(path, *args, **kwargs)
+        return mock.patch.object(Path, "open", replace_then_open)
+
+    def test_atomic_replacement_before_open_accepts_new_size(self):
+        with self.replacement_before_open(b"new content"):
+            self.assertEqual(module._read_regular(self.path, 32, "blocked"), b"new content")
+
+    def test_oversize_replacement_rejected_before_read(self):
+        replacement = self.directory / "replacement.json"
+        replacement.write_bytes(b"x" * 33)
+        original_open = Path.open
+        reads = []
+        class Tracked:
+            def __init__(self, stream):
+                self.stream = stream
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.stream.close()
+            def fileno(self):
+                return self.stream.fileno()
+            def read(self, count):
+                reads.append(count)
+                return self.stream.read(count)
+        def replace_then_open(path, *args, **kwargs):
+            os.replace(replacement, self.path)
+            return Tracked(original_open(path, *args, **kwargs))
+        with mock.patch.object(Path, "open", replace_then_open):
+            with self.assertRaisesRegex(module.Blocked, "blocked"):
+                module._read_regular(self.path, 32, "blocked")
+        self.assertEqual(reads, [])
+
+    def test_growth_after_fstat_is_bounded_and_rejected(self):
+        original_open = Path.open
+        real_fstat = module.os.fstat
+        reads = []
+        class Tracked:
+            def __init__(self, stream):
+                self.stream = stream
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                self.stream.close()
+            def fileno(self):
+                return self.stream.fileno()
+            def read(self, count):
+                reads.append(count)
+                return self.stream.read(count)
+        def opened(path, *args, **kwargs):
+            return Tracked(original_open(path, *args, **kwargs))
+        calls = 0
+        def grow(fd):
+            nonlocal calls
+            info = real_fstat(fd)
+            calls += 1
+            if calls == 1:
+                with original_open(self.path, "ab") as stream:
+                    stream.write(b"x" * 100)
+            return info
+        with mock.patch.object(Path, "open", opened), mock.patch.object(module.os, "fstat", grow):
+            with self.assertRaisesRegex(module.Blocked, "blocked"):
+                module._read_regular(self.path, 32, "blocked")
+        self.assertEqual(reads, [33])
+
+    def test_path_swap_after_open_rejected(self):
+        other = self.directory / "other.json"
+        other.write_bytes(b"new")  # Same size and timestamp, but a different file.
+        initial = self.path.stat()
+        os.utime(other, ns=(initial.st_atime_ns, initial.st_mtime_ns))
+        self.assertEqual(other.stat().st_size, initial.st_size)
+        self.assertEqual(other.stat().st_mtime_ns, initial.st_mtime_ns)
+        self.assertFalse(os.path.samestat(initial, other.stat()))
+        real_lstat = Path.lstat
+        calls = 0
+        def changed(path, *args, **kwargs):
+            nonlocal calls
+            if path == self.path:
+                calls += 1
+                if calls == 2:
+                    return real_lstat(other)
+            return real_lstat(path, *args, **kwargs)
+        with mock.patch.object(Path, "lstat", changed):
+            with self.assertRaisesRegex(module.Blocked, "blocked"):
+                module._read_regular(self.path, 32, "blocked")
+
+    def test_inplace_truncation_rejected(self):
+        real_fstat = module.os.fstat
+        calls = 0
+        def mutate(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                self.path.write_bytes(b"x")
+            return real_fstat(fd)
+        with mock.patch.object(module.os, "fstat", mutate):
+            with self.assertRaisesRegex(module.Blocked, "blocked"):
+                module._read_regular(self.path, 32, "blocked")
+
+    def test_reparse_flag_after_open_rejected(self):
+        real_lstat = Path.lstat
+        calls = 0
+        def changed(path, *args, **kwargs):
+            nonlocal calls
+            info = real_lstat(path, *args, **kwargs)
+            if path == self.path:
+                calls += 1
+                if calls == 2:
+                    values = {name: getattr(info, name) for name in (
+                        "st_mode", "st_size", "st_mtime_ns", "st_dev", "st_ino")}
+                    values["st_file_attributes"] = 0x400
+                    return type("Stat", (), values)()
+            return info
+        with mock.patch.object(Path, "lstat", changed), mock.patch.object(
+                module.stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400, create=True):
+            with self.assertRaisesRegex(module.Blocked, "blocked"):
+                module._read_regular(self.path, 32, "blocked")
 
 
 class AddonCommandValidationTests(unittest.TestCase):
