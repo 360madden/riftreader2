@@ -1,5 +1,7 @@
 # Current status
 
+**2026-11-06 — RR2 HELPER MANAGER:** [Current continuation](handoff-2026-11-06-rr2-helper-manager.md). RR2 owns the helper-task manager and verifies four fixed task contracts; the optional legacy inspection is read-only and does not run Workbridge code. Both existing receivers passed read-only process/ownership preflight; feed freshness was not tested. Existing legacy registrations block new RR2 task startup until a safe explicit handoff. New task activation and controller migration remain unverified; no task, process, VM or game was changed.
+
 **2026-11-06 — OFFLINE CONSOLE AND STANDALONE CONTINUATION:** [Current handoff](handoff-2026-11-06-console-speed-continuation.md) and [console validation](validation/console-interaction-speed-2026-11-06.md). Normal console execution reuses one authenticated guest session while retaining both exact identity checks and reviewed input/release gates; the route saves one `vmrun` child by inspection, with live timing unverified. Explicit RR2/legacy source and marker selection closes implicit legacy defaults in typed inspection and acquisition; unreachable legacy live cached capture was removed, and malformed receiver receipts are handled safely. Receiver/controller task startup still depends on the external Workbridge helper manager; feed freshness and live cross-target acceptance remain unverified. No game input, reload, bind, restart, deployment or push in this work.
 
 Updated: 2026-11-06 (Codex interaction-speed handoff; standalone-first remains main priority).
