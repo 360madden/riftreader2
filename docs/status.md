@@ -1,5 +1,12 @@
 # Current status
 
+**2026-11-07 — STANDALONE RUNTIME AUDIT (DOCUMENTATION-ONLY):**
+[Handoff and bounded source audit](handoff-2026-11-07-standalone-runtime-audit.md).
+RR2 owns the current reference/reader/receiver implementations; Lab 1 passed
+64/64 advancing RR2R1 comparisons. Lab 2/physical loaded-source acceptance,
+receiver-feed freshness, obsolete movement-profile closure and restart
+qualification remain pending. No game input or code changes in this audit.
+
 **2026-11-07 11:40 Eastern — REPOSITORY CATALOG COMMAND LIVE PASS:**
 `python scripts/sample_current_native_ability_catalog.py --lab lab1` completed
 122 rows/119 candidate names, all43 nonzero-filter rows named, zero decoder
