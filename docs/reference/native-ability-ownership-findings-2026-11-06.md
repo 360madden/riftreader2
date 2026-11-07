@@ -130,6 +130,40 @@ Cache misses remain cache-only; current-language names, same-build independent
 API List comparison, changed-state/freshness and restart qualification remain
 open. No game input, reload, restart, owner transition or active-bundle change.
 
+### Resident dictionary decoded — November7, 11:04 Eastern
+
+Eight requested localization keys now decode from the already-loaded backing
+dictionary as locale1 text candidates: Break Free, Soul Recall, Planar Lure,
+Toggle Auto Attack, Nexus Infusion, Ascended Resurrection, Toggle Ranged Attack
+and Track Fish. The last three exactly match the separate typed-cache capture's
+text and locale in the same process epoch. No getter or fallback was invoked.
+
+Accepted raw receipt:
+`artifacts/discovery-20261107-cast/lab2/7414babb243e40f499201e5c526f267d/summary.json`,
+SHA256`27E8F981A876D003CF3CFF063FC25F56AC4615DA4E5E5DDE715B75D97183DA13`;
+decoded results and cross-checks are in `decoded-candidates.json` beside it.
+Seventeen snapshot calls completed with stable provider/inner/index/frequency/
+blob/record anchors, exact source hashes and final process inspection. Earlier
+invalid-stride and torn hot-cache attempts remain partial and unaccepted.
+
+The backing index is at inner+78 and uses16-byte nodes (tagged link, DWORD key,
+DWORD blob offset), unlike the24-byte hot-cache nodes. Its observed header was
+220640 buckets/165480 entries; only requested hash chains were read. Frequency
+table:1024 bytes at D+40. Blob pointer/size: D+440/+448. Two ULEB32 fields at
+each record give an apparent compressed length and exact decoded length. The
+native decoder ignores its input-length argument; our decoder bounds every bit
+read. All eight decoded records fit their apparent payload lengths.
+
+The independently reconstructed tree uses signed32 frequency sums, deterministic
+heap tie ordering and MSB-first bits. A strict small parser accepts only the
+observed outer1E1B/field2 one-pair locale1 map, nested1E1D/field0 UTF8 string and
+two END tags, with no trailing bytes. Other shapes fail closed. Two retained
+compressed vectors verify exact decoded bytes and bit counts; eight focused
+capture/decoder/parser tests passed. This yields useful candidate locale text;
+independent API agreement, player membership, full schema and restart qualification
+remain separate. The field-to-runtime-offset mapping is corroborated on three
+keys, not universally qualified.
+
 ### Fast current localization candidates — November7, 10:57 Eastern
 
 The single-process `sample-current-localization --pid N --start-ticks N

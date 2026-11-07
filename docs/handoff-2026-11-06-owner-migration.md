@@ -4,13 +4,14 @@ Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this hand
 
 ## Discovery priority — November 7
 
-### Checkpoint — 2026-11-07 10:57 Eastern
+### Checkpoint — 2026-11-07 11:06 Eastern
 
 | Track | State | Concrete result / next step |
 | --- | --- | --- |
 | Native maps | 🟢 Verified | Lab1 122/0 entries in10.013ms; Lab2 134/0 in17.146ms; raw parity with Python |
 | Native record IDs | 🟢 Verified | Lab2 eight IDs match references; Lab1 122/122 typed records/IDs in39.111ms;43 List-filter candidates |
-| Localization | 🟢 Three current text candidates | Single-process read11.406ms: Ascended Resurrection, Toggle Ranged Attack, Track Fish. Five cache misses; resident dictionary capture underway. |
+| Localization | 🟢 Eight dictionary text candidates | All8 requested records decoded;3 exactly match typed cache text/locale. Single-locale strict parser; broader native capture next. |
+| Raw ability costs | ▶ Implementation ready | Power/Mana/Energy profiles traced; opt-in vector capture passed18 focused checks. Root reviewing before live. |
 | Passive world casts | 🟡 No matching live object | Lab1 prefix and Lab2 rotating runs each30 observations: zero interesting cast rows and zero unavailable. Duration remains unverified. |
 | Owners / input | 🟢 Preserved | No game input, reload/restart, controller/receiver handoff or active-bundle replacement |
 | Five-hour goal | ▶ Active | Window08:26–13:26 Eastern; do not mark complete at this checkpoint |
@@ -53,6 +54,14 @@ The earlier partial receipt stays unaccepted. Raw resident-dictionary capture
 for659874270/1612084406 is running; a bounded offline Huffman candidate is ready,
 but decoded records/text are not yet accepted. Preserve key/text versus ability
 membership distinctions. World-cast observations still contain no duration object.
+
+**11:06 Eastern — dictionary milestone:** The corrected16-byte backing index
+capture completed for8 keys. All8 strict locale1 records decoded, with3 exact
+text/locale matches to the earlier typed-cache read. [Names, receipts and limits](reference/native-ability-ownership-findings-2026-11-06.md#resident-dictionary-decoded--november7-1104-eastern).
+Native bulk raw dictionary capture is being implemented to avoid repeated guest
+snapshots for larger key sets. The opt-in raw-cost sampler is ready for a fresh
+bounded live run after root checks; no adjusted-cost claim. Five-hour window
+remains active through13:26 Eastern. No game input or owner changes.
 
 **DURABLE USER POLICY:** Practical discovery results first. Refinement may
 happen later, or never; it is not a default task or completion requirement.

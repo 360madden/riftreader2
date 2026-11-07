@@ -1,5 +1,13 @@
 # Current status
 
+**2026-11-07 11:06 Eastern — EIGHT CURRENT DICTIONARY CANDIDATES:** The resident
+dictionary capture and bounded decoder recovered all8 requested locale1 text
+candidates, including Break Free and Soul Recall. Three exactly match the separate
+typed-cache text/locale. The observed record shape is parsed strictly; other
+shapes remain unsupported. No getters/fallback calls or game input. Bulk native
+dictionary capture and opt-in raw ability costs are the next practical slices.
+[Evidence and limits](reference/native-ability-ownership-findings-2026-11-06.md#resident-dictionary-decoded--november7-1104-eastern).
+
 **2026-11-07 10:57 Eastern — CURRENT LOCALIZATION TEXT:** Single-process Lab2
 capture returned Ascended Resurrection, Toggle Ranged Attack and Track Fish as
 typed locale1 text candidates in11.406ms; five other requested keys were cache
