@@ -376,3 +376,16 @@ The raw definition condition4 consumer uses the same combat getter: when its
 EFFECTIVE vector contains4 it rejects nonzero combat. Context can replace the
 definition vector; raw4 alone is not overall eligibility. See
 `artifacts/discovery-20261107-cast/ability-condition-next-step.md`.
+
+## Historical Lab 2 stats comparison
+
+A native candidate captured at 21:15:38 UTC and an independent SC628 API
+capture at 20:40:54 UTC on 2026-11-07 agreed on all ten ordinary and unbuffed
+values: armor 1876, powerAttack 332, powerSpell 22, critAttack 295, and
+critSpell 22 in each form. The receipts identify the same Lab 2 VM and full
+player ID `u035400012DFEB5BC`; their hashes and field-by-field comparison are
+in `artifacts/rre-peer-reference-sc628-20261107/native-stats-comparison.json`.
+The observations are approximately 35 minutes apart, and the API receipt does
+not bind the game process build or epoch. This is a historical baseline only,
+not changed-state response, passive freshness, restart qualification, Lab 1
+correspondence, or simultaneous API parity.

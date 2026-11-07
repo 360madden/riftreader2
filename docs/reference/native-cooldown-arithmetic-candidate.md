@@ -34,3 +34,24 @@ step remains a smaller or cached disassembly route for that lookup, then an
 identity-pinned passive acquisition of its actual inputs. A changed cooldown
 comparison still requires independent ability evidence and the coordinator's
 narrow controlled-action gates.
+
+## Lab 2 Soul Recall cross-phase candidate
+
+On 2026-11-07, a 21:30:47 UTC modifier census found one mode-4 row with a
+direct match for Soul Recall key `1012591716`, no exclusion or tag entries,
+operation 0, float inputs -300000 and 0, and an observed direct scale candidate
+of 2. A separate 21:31:06 UTC typed-definition capture found base cooldown
+3600000 milliseconds for the same key and game process identity. Using the
+traced float32 multiply/add operations gives -600000, then 3000000 milliseconds;
+int32 truncation and float32 multiplication by 0.001 give
+`3000.000244140625` seconds. The historical SC628 API record for the same full
+ability ID also contains that value.
+
+The raw sources and their hashes, calculation, and limits are in
+`artifacts/discovery-20261107-cast/soul-recall-reconciliation.json`; the
+single-case offline reproducer is beside it. These are cross-phase candidate
+observations, not an atomic capture. The historical API record was captured
+around 50 minutes earlier and does not establish a shared process epoch.
+Sequential stable bytes cannot exclude release/reuse (ABA), and this agreement
+does not establish changed-state response, passive freshness, API parity at the
+native capture, or restart qualification.

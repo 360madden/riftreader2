@@ -1,3 +1,24 @@
+# LAB2 SC625 HOLD - November 7, 2026
+
+**ACTIVE EXCLUSIVE RRE WINDOW16:32-16:47 Eastern /21:32-21:47UTC.**
+ALL RR2 Lab2 operations are HELD until explicit independently verified clean return.
+Root21:31:58UTC checked controller absent, queue BLOCKED1/no holder and matching
+VM identity. All RR2 native jobs completed. Before receipt
+rtifacts/lab2-rre-sc625-handoff-20261107/before.json.
+Root verified SC625 reader0.2.0 DLL F9575AFAFA69A35F3CE6E5B41110C6792F70B2630CF9549E52B4AD2537BA398A,
+helper2EC86C1183BC16C42936B07BC55AA6FF368D9A6FBCC152B5B257923ED44F998C
+and all12 source-manifest hashes. Collector0.4.13 unchanged; no new API calls.
+Amended16:33 Eastern to reader0.2.1 DLL9847CF4093049F7313DF6B0AB9C052C37E8EA149C3DC467721F3E46129268D54.
+Root reviewed added native acquisition-interval containment and verified all12
+source/all5 release hashes; helper unchanged. Verification receipt
+`artifacts/lab2-rre-sc625-handoff-20261107/reader021-verification.json`.
+Scope: fresh identity/foreground/mutex, reviewed manual Capture and PNG/token/seq
+binding, one adapter capture using existing F414, strict54-record acceptance,
+scoped cleanup/process journals; optional ordinary reload/Saved only in window.
+No controller start, queue reset or forced owner release. End time alone is not
+a return. Preserve STOP/release; unknown cleanup quarantines Lab2.
+Lab1/offline/Sammie315 work continues.
+
 # Lab2 RRE window — November7,2026
 
 ## SC628 second window —15:36:32..15:51:32 Eastern

@@ -1,5 +1,14 @@
 # Current status
 
+**16:34 Eastern - SOUL RECALL CANDIDATE RECONCILED:** Fresh native base3600000ms
+and typed modifier factor2/coefficient-300000ms reproduce3000.000244140625seconds,
+equal to the historical API value. Separate capture times; no changed-state,
+freshness or restart qualification. Lab2 native stats matched all10 retained API
+baseline values. Sammie315 acknowledged the next queue and dispatched six lanes.
+**LAB2 HOLD16:32-16:47 Eastern:** RRE SC625 exclusive window; no RR2 Lab2 operation
+until explicit verified clean return. Reader0.2.1 amendment source/hash-verified.
+[Current handoff](handoff-2026-11-07-native-discovery.md).
+
 **16:05 Eastern — XP, ZONE AND MODIFIER CHECKPOINT:** Corrected Lab2 zone ID
 matches the retained SC628 projected value; old wrong-address NULL claims are
 withdrawn. XP raw candidates are Lab1 144585/245308/rested0, level41, and

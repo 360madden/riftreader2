@@ -1,3 +1,7 @@
+**LAB2 HOLD16:32-16:47 Eastern: RRE SC625 exclusive window.** No RR2 Lab2
+operations until explicit verified clean return; see Lab2 ownership handoff.
+Root verified controller absent/queue BLOCKED/no holder at16:31:58.
+
 # Native discovery continuation â€” November 7, 2026
 
 **SC628 LAB2 RETURNED CLEANLY; root verified15:46:56 Eastern.** Controller
@@ -73,6 +77,43 @@ direct key1012591716; entry DWORD+8=83142380 is a Total Recall candidate.
 Missing P+20 and scaling leave applicability unresolved; do not claim a
 600-second adjustment or cause. Host validator contract-string correction was
 replayed offline against independent identity.json, not a new live capture.
+
+## 16:34 checkpoint - Sammie coordination and Soul Recall
+
+Sammie315 chat6aef8868-2abc-83ea-90ed-b0cae9c065a2 received the new queue;
+readback reports ACTIVE and six research lanes dispatched. Earlier six completed
+workers supplied exact stat selectors/owner paths. The first Lab2 native stats
+capture matched all10 ordinary/Unbuffed values against SC628 historical API:
+armor1876, powerAttack332, powerSpell22, critAttack295, critSpell22. API time
+20:40:54Z versus native21:15:38Z; same VM/player, API game epoch not proven.
+Comparison `artifacts/rre-peer-reference-sc628-20261107/native-stats-comparison.json`.
+Twenty stat selectors are now implemented; first Lab1 full capture is running.
+
+Fresh Soul Recall modifier receipt
+`artifacts/native-cooldown-modifiers-20261107/runs/lab2/683f793b52104947b6940890e7aa55e4/samples.json`
+SHA256 FBF42A073E015F4F1A1F555ECDB726F446380963040DD83B979E148855D90847
+shows direct raw scale key83142380 and typed multiplier2. Direct ability key
+1012591716 matches; float24=-300000, float18=0, operation0, flag36=1;
+exclusions/other selectors empty and no other mode4 rows. Current base receipt
+`artifacts/native-soul-recall-timing-20261107/runs/lab2/36e00d3f44fc489280b79b3084d82512/samples.json`
+SHA256 81DA2203AFEAA19FBEB30C842691A0984B494AEE2436107464853A9DD0367EEA
+reports3600000ms. The captures share exact game PID/start/SHA but are separate
+observations. Single-case offline reconciliation produces3000000ms and native
+float32 seconds3000.000244140625, equal to the roughly50-minute-earlier API
+value for the same full ability ID. This is cross-phase candidate agreement,
+not atomicity, changed-state freshness or restart qualification. Reproducer and
+receipt: `artifacts/discovery-20261107-cast/soul-recall-reconciliation.py/.json`.
+Reader7C2E38B9BF825CB4613DAD6A5A5140C41A81200CD344CBE7D9C76706D76344B1,
+117720928bytes; six focused modifier tests passed. No getter/write/input used.
+
+Primary runtime cast-duration0650 branch implemented with live wrapper backlink,
+type fingerprints and raw signed milliseconds;16 focused tests passed. No positive
+live cast observed. This source slice is pending its separate commit.
+
+SC625 window remains16:32-16:47 Eastern: ALL RR2 Lab2 operations HELD until
+explicit verified clean return. Reader amendment0.2.1 DLL9847CF4093049F7313DF6B0AB9C052C37E8EA149C3DC467721F3E46129268D54
+was reviewed (strict acquisition interval containment) and all12 source/all5
+release hashes verified. Helper unchanged; no new API calls/deployment scope.
 
 ## Working repository commands
 

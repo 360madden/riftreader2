@@ -8,9 +8,9 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = 'A96508FE963E4DFDE6EABD50889FD0432A72C0309AEC562E35CBF87B584F49D9'
-READER_SIZE = 117704544
-READER = ROOT / 'artifacts/native-zone-provider-fix-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '7C2E38B9BF825CB4613DAD6A5A5140C41A81200CD344CBE7D9C76706D76344B1'
+READER_SIZE = 117720928
+READER = ROOT / 'artifacts/native-cooldown-direct-scale-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-cooldown-modifiers-20261107/runs'
 
 QUALIFICATION = 'raw modifier census only; eligibility, adjusted cooldown, freshness and restart unverified'
@@ -39,7 +39,23 @@ def validate_report(report, *, pid, ticks):
         try: raw=bytes.fromhex(r['rawEntryHex'])
         except ValueError: invalid()
         if len(raw)!=32 or not integer(r.get('pointer'),0,2**64-1) or struct.unpack_from('<Q',raw)[0]!=r['pointer']: invalid()
-        status=r.get('status'); p=r['pointer']
+        status=r.get('status'); p=r['pointer']; scale=r.get('rawScaleKey')
+        if scale is not None and (status!='mode-4-raw-candidate' or not integer(scale,0,2**32-1)): invalid()
+        direct=r.get('directScale')
+        if direct is not None:
+            if status!='mode-4-raw-candidate' or r.get('flag36')!=1 or not isinstance(direct,dict) or not integer(scale,0,2**32-1) or type(direct.get('key')) is not int or direct['key']!=scale: invalid()
+            ds=direct.get('status'); multiplier=direct.get('rawMultiplier')
+            if ds=='raw-factor-candidate':
+                if scale<=1 or not integer(multiplier,-2**31,2**31-1): invalid()
+            elif ds in ('null-link-zero-candidate','null-row-zero-candidate'):
+                if scale<=1 or type(multiplier) is not int or multiplier!=0: invalid()
+            elif ds=='zero-key-unresolved':
+                if scale!=0 or multiplier is not None: invalid()
+            elif ds=='caller-bypass':
+                if scale!=1 or multiplier is not None: invalid()
+            elif ds in ('owner-type-unavailable','tree-unavailable','tree-type-unavailable','unmatched-header-unavailable','cycle-unavailable','row-type-unavailable','node-budget-unavailable','read-or-binding-unavailable'):
+                if scale<=1 or multiplier is not None: invalid()
+            else: invalid()
         if status=='null-reference':
             if p!=0: invalid()
             incomplete=True
