@@ -8,14 +8,18 @@ internal sealed record TargetPositionCandidate(string Status, ulong UnitKey, ulo
 {
  public string Qualification => "cached position candidate; freshness and target semantics unverified";
 }
-internal sealed record SelectedTargetObservation(NativeProcessIdentity Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,string Status,string BeforeGuardStatus,string? AfterGuardStatus,ulong? TargetKey,string? TargetUnitId,ulong? TargetEntity,CurrentBuildVitalsObservation? TargetVitals, TargetNameSeed? NameSeed = null, TargetPositionCandidate? TargetPosition = null)
+internal sealed record TargetRawContext(string Status, ulong? Owner = null, int? RawLevel = null, byte? RawCombat = null, bool? CombatCandidate = null)
+{
+ public string Qualification => "typed owner raw inputs; target level presentation, combat semantics and freshness unverified";
+}
+internal sealed record SelectedTargetObservation(NativeProcessIdentity Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,string Status,string BeforeGuardStatus,string? AfterGuardStatus,ulong? TargetKey,string? TargetUnitId,ulong? TargetEntity,CurrentBuildVitalsObservation? TargetVitals, TargetNameSeed? NameSeed = null, TargetPositionCandidate? TargetPosition = null, TargetRawContext? TargetContext = null)
 {
  public string Qualification=>"candidate-only; target and vitals semantics, freshness and restart unverified";
 }
 internal static class CurrentBuildSelectedTargetCandidateReader
 {
- internal static SelectedTargetObservation Read(IReadOnlyNativeMemorySession session, bool includeNameSeed = false, bool includePosition = false)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,(s,owner)=>CurrentBuildVitalsCandidateReader.Read(s,_=>owner), includeNameSeed, includePosition);
- internal static SelectedTargetObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyNativeMemorySession,CurrentBuildVitalsOwnerSnapshot,CurrentBuildVitalsObservation> vitals, bool includeNameSeed = false, bool includePosition = false)
+ internal static SelectedTargetObservation Read(IReadOnlyNativeMemorySession session, bool includeNameSeed = false, bool includePosition = false, bool includeContext = false)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,(s,owner)=>CurrentBuildVitalsCandidateReader.Read(s,_=>owner), includeNameSeed, includePosition, includeContext);
+ internal static SelectedTargetObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyNativeMemorySession,CurrentBuildVitalsOwnerSnapshot,CurrentBuildVitalsObservation> vitals, bool includeNameSeed = false, bool includePosition = false, bool includeContext = false)
  {
   var start=DateTimeOffset.UtcNow;var id=session.Identity;var before=context(session);
   if(before.Identity!=id)throw new InvalidDataException("Self context identity mismatch.");
@@ -83,8 +87,24 @@ internal static class CurrentBuildSelectedTargetCandidateReader
     position=new("candidate",key,pos,positionStart,DateTimeOffset.UtcNow,xyz);
    }
   }
+  TargetRawContext? targetContext=null;
+  if(includeContext)
+  {
+   try
+   {
+    var rawOwner=Q(health+0x40);
+    if(rawOwner==0) targetContext=new("owner-unavailable");
+    else
+    {
+     var owner=Ptr(rawOwner,0x19E);
+     if(Q(owner)!=id.ModuleBaseAddress+0x2927448||Q(id.ModuleBaseAddress+0x2927488)!=id.ModuleBaseAddress+0x19D21E0||Q(id.ModuleBaseAddress+0x34731B0)!=id.ModuleBaseAddress+0x2929BD0||Q(id.ModuleBaseAddress+0x2929BD8)!=id.ModuleBaseAddress+0x19F4D60) targetContext=new("unverified-type",owner);
+     else {var level=BinaryPrimitives.ReadInt32LittleEndian(Take(owner+0x100,4));var combat=Take(owner+0x19D,1)[0];targetContext=new("raw-typed-candidate",owner,level,combat,combat!=0);}
+    }
+   }
+   catch(InvalidDataException){if(budget>2*1024*1024)throw;targetContext=new("owner-or-fields-unavailable");}
+  }
   Verify();
-  return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,"candidate",before.TargetStatus,afterStatus,key,$"u{key:X16}",entity,observation,name,position);
+  return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,"candidate",before.TargetStatus,afterStatus,key,$"u{key:X16}",entity,observation,name,position,targetContext);
  }
  static ulong U64(ReadOnlySpan<byte>b)=>BinaryPrimitives.ReadUInt64LittleEndian(b);
 }

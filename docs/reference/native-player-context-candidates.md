@@ -166,6 +166,22 @@ capture36.257ms. Reader117496160 bytes, SHA256
 at`artifacts/native-target-template-name-mode-20261107/publish/`. Five focused
 native checks passed, including changed formatting-flag rejection.
 
+## Target raw context —13:13 Eastern
+
+Optional target context resolved `[targetHealth+40]` and passed the exact0294
+object/getter/initialized-descriptor fingerprint. Raw signed owner+100 was0;
+raw combat byte+19D was0 (candidate predicate false). The reader retains typed
+raw inputs only: the generic level getter can choose an alternate component,
+and the target's public level/presentation is not inferred from zero. Six focused
+cases passed, including mutated payload rejection and unavailable preservation.
+
+Receipt`artifacts/native-selected-target-20261107/runs/lab1/56d78bd7aa174f48b7048931ef962071/samples.json`,
+SHA256`93E3F4260B084ADE7DD883A60B44B50FE8EB029E34515814B1F6ACBFF99346BC`.
+Existing target HP/XYZ capture remained available. Reader117495648 bytes, SHA256
+`5843EF6E58EA0E43CB3C08732934561476D3E726FF367E3C2DAC9B6BF19CD803`,
+at`artifacts/native-target-context-20261107/publish/`. No self-owner substitution,
+public combat/level agreement, input, passive freshness or restart claim.
+
 ## Optional UI comparison stopped
 
 The first Lab2 screenshot attempt was rejected before admission because its

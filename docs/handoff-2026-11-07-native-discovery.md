@@ -1,6 +1,6 @@
 # Native discovery continuation — November7, 2026
 
-Checkpoint13:11 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
+Checkpoint13:14 Eastern. Authoritative checkout`C:\work\riftreader2`, branch
 `codex/modular-foundation`. Read`AGENTS.md`, this note and the latest status.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 documentation-only commit1056ff4 from the parallel runtime audit was retained.
@@ -123,7 +123,7 @@ The host summary exposes rawFallbackNameCandidate separately. Retained receipt
 replay passed without a new capture.
 
 New template-name sampler, command registration, host launcher and four focused
-native tests are ready for the verified milestone commit. Separate published reader:
+native tests were committed71ff9a3. Separate published reader:
 `artifacts/native-target-template-name-20261107/publish/RiftReader2.Live.exe`,
 117491552 bytes, SHA256
 `2390DB519546D4884E14D7B00DD78257740104808792E15B8C58F1E57F9806FD`.
@@ -143,10 +143,21 @@ capture36.257ms. New reader117496160 bytes, SHA256
 under`artifacts/native-target-template-name-mode-20261107/publish/`. Five focused
 native tests passed; host mode1/mode2 derivation checks passed. No active capture.
 
-Next working slice: optional raw selected-target level/combat, only after fresh
-target health-owner type0294 fingerprint; never transfer self-only system guards.
-Workers native_map_command and tls_metadata own native/host slices respectively.
-Root alone performs live reads; no new input authority from the time extension.
+Mode result committedb04edf8, along with the four-hour goal extension.
+Raw target context slice passed live13:13:31 Eastern: same target health-owner
+type0294 verified, rawLevel0/rawCombat0, HP/XYZ retained. Public level remains
+unresolved because generic getter has an alternate component; no self-system
+presentation guard was transferred. Six focused native cases and host branch
+checks passed. Receipt
+`artifacts/native-selected-target-20261107/runs/lab1/56d78bd7aa174f48b7048931ef962071/samples.json`,
+SHA256`93E3F4260B084ADE7DD883A60B44B50FE8EB029E34515814B1F6ACBFF99346BC`.
+Reader117495648 bytes, SHA256
+`5843EF6E58EA0E43CB3C08732934561476D3E726FF367E3C2DAC9B6BF19CD803`,
+at`artifacts/native-target-context-20261107/publish/`. Host launcher pins it.
+No active live process. Root alone performs live reads; no new input authority
+from the time extension. Parallel static work: cooldown public value bridge,
+passive cast-duration discriminator, target alternate level branch. Next useful
+implementation depends on those concrete findings, not idle repetition/refinement.
 
 Parallel workers are now complete; root retains sole live ownership. Do not
 invent follow-up work to fill slots. Two additional static leads are retained:
