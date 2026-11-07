@@ -1,6 +1,6 @@
 # Native discovery continuation — November 7, 2026
 
-Checkpoint **13:29 Eastern**. Authoritative checkout `C:\work\riftreader2`,
+Checkpoint **13:36 Eastern**. Authoritative checkout `C:\work\riftreader2`,
 branch `codex/modular-foundation`. Read AGENTS.md, this note and docs/status.md.
 Use PowerShell with login profiles disabled. Preserve other writers' changes;
 the separate documentation-only runtime-audit commit1056ff4 was retained.
@@ -72,15 +72,23 @@ Lab1 result:
 SHA2560155EDCFBA158A09F22D69EC04E0844A7FE1856095EB012119AAFBA4D4B3B643.
 Native raw-variant slice passed9 focused cases; root reviewed boundaries and used it.
 
-**Lab1 definition lookup ACTIVE: exec session15970.** NEW uncommitted launcher
+Both variant-definition lookups COMPLETED successfully; no active live process.
+NEW launcher
 `scripts/sample_current_native_variant_definitions.py --lab lab1 --catalog`
 followed by the absolute Lab1 catalog path above. Root reviewed it; it resolves
 referenced keys with the SAME reader, fresh source epoch and ordered parent-vector
 rechecks before/after, preserving cache misses and decoding names/raw timing.
-Source files remain PINNED while this operation runs; do not edit launcher/catalog
-or decoder helpers. Lookup deduplication does not discard relationship order or
-holes. No selected-winner/learned claim. Root owns this first live run.
-Static workers investigate0743 shortcut owner and variant fallback edge cases.
+Lab1 all12 and Lab2 all16 referenced definitions typed and named. Detailed
+receipts/results are in the variant reference note below. Lookup deduplication
+does not discard relationship order or holes. No selected-winner/learned claim.
+
+Current native_map_command task: NEW sample-current-variant-guards command,
+effective-level D, raw0743 special key, alternate/role-cache guards; add raw0051
+required level+20 to the record reader when variants requested. No full selector
+or winner output. Worker tls_metadata owns NEW host guard launcher. New publication
+`artifacts/native-variant-guards-20261107/publish/` is pending. Current source/B562
+publications remain valid. Root performs first live reads after boundary review.
+High static worker is resolving static-init guard semantics, not another review.
 Existing native workers are idle; assign new meaningful work when
 an observed result supplies a useful next step, not another generic review.
 
@@ -107,7 +115,8 @@ Never overwrite an earlier publication or active workflow bundle.
 Recent local commits:015f784 target position;6359c38 user-requested checkpoint
 then immediate resume;71ff9a3 template-name inputs;b04edf8 mode-selected name and
 four-hour extension;073a38d target raw context;5ec07e4 target numeric level;
-3943cfc factory/cooldown-gate findings;f2b5f24 raw ordered variants. No push.
+3943cfc factory/cooldown-gate findings;f2b5f24 raw ordered variants;
+0d0e31c independent two-lab capture. Definition-lookup milestone is next. No push.
 
 Optional Lab2 UI comparison is CLOSED after dependency-admission SessionError;
 no image/API/UI agreement was accepted. Later status was connected/disarmed-idle,

@@ -1,10 +1,16 @@
 # Current status
 
-**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:29 Eastern:**
+**CURRENT DISCOVERY CONTINUATION — 2026-11-07 13:36 Eastern:**
 [Short native-discovery handoff](handoff-2026-11-07-native-discovery.md) has the
 working commands, verified results, accepted selected-target capture and remaining
 time window. Preserve its practical discovery priority and existing owners/gates.
 Joey extended the current goal by FOUR HOURS: new end17:26:48 Eastern today.
+
+**13:33 Eastern — ALL REFERENCED VARIANT DEFINITIONS RESOLVED:** Lab1 all12 and
+Lab2 all16 keys typed/named with before/after ordered parent rechecks. Captured
+Blight base cooldown8/30s, Splinter Shot zero-path/1500ms and On the Double0/40s
+differences. Candidate inputs only; no selected-winner or learned claim.
+[Receipts and next guards](reference/native-ability-variants-2026-11-07.md).
 
 **13:26 Eastern — ORDERED ABILITY VARIANTS LIVE:** Lab1 captured six type078A
 parent abilities, each with two typed0061 variant keys. Catalog122/119 names,

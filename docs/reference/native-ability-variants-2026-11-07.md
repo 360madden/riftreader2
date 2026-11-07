@@ -45,6 +45,48 @@ zero decoder failures,23.247498s span. Receipt
 SHA256`ED675A6C9A74A83302FFAE46722ECF399431FC6C1185B6B7B0FDB4FA3D3D9841`.
 Different VM/game epochs were independently checked; no addresses were copied.
 
+## Referenced definitions resolved —13:30–13:33 Eastern
+
+The repository follow-up command is
+`python scripts/sample_current_native_variant_definitions.py --lab lab1 --catalog ABSOLUTE_CATALOG_PATH`.
+It reuses the same reader/cache, requires the source VM/game epoch, and rechecks
+complete ordered parent vectors before AND after fresh definition/dictionary
+capture. Lookup deduplication preserves original relationships and holes.
+No variant is labelled selected or learned.
+
+Both runs resolved every referenced key to type0051 and a name candidate:
+Lab1 twelve/twelve, Lab2 sixteen/sixteen. Every referenced definition had raw
+filter0; parent membership/filter must not be transferred to those children.
+The Lab2 run included DWORD keys above signed-int32 range without truncation.
+
+| Pair or parent | Captured raw timing inputs |
+| --- | --- |
+|Legendary Blight / Blight|Base cooldown8000/30000ms|
+|Legendary Bloom / Bloom|Both primary0650 input2000ms|
+|Legendary Life Leech / Life Leech|Both primary0650 input1500ms|
+|Legendary Raging Storm / Raging Storm|Both secondary0678 input4000ms|
+|Call: Razorbeast|First primary0648 zero-path/cooldown30000ms; second primary0650 input8000ms|
+|Splinter Shot|First primary0648 zero-path; second0650 input1500ms|
+|On the Double|Base cooldown0/40000ms|
+
+Zero-path does not by itself establish an instant cast; context and secondary
+selection remain distinct. Second reference is fallback ONLY when no immediate
+success and no scored row remains. False status2 or7 can enter scoring; minimum
+finite score wins, first on ties. Last-slot null/unverified does not scan backward.
+
+Receipts:
+
+- Lab1`artifacts/native-variant-definitions-20261107/runs/lab1/f7635b463e71438e84735c4946f8e2db/summary.json`,
+  SHA256`77F54062452AE537AC5DDA8E8AF9DCD90AC08B933FF3681F96FC3CFF941D941B`.
+- Lab2`artifacts/native-variant-definitions-20261107/runs/lab2/fcb2b493233144cbbcc0d8af3fe87807/summary.json`,
+  SHA256`54C9E1DD88A181435A9476775BC87691B3535E0669482A3515850FE0E1CD3D51`.
+
+Next minimal eligibility fields: signed required level0051+20, actual effective
+level (not displayed level), and earlier special-key/mode5/role exceptions.
+An above-level first row can then be proven non-scoring; the two-key selector's
+only normal return is second. No such exclusion is currently established.
+Trace:`artifacts/discovery-20261107-cooldown/variant-eligibility-next-step.md`.
+
 Next useful observation resolves those possible keys to resident0051 definitions,
 names and raw timing, with fresh epoch and ordered parent-vector rechecks. Cache
 misses are not absence, raw filter is not learned membership, and referenced
