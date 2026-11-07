@@ -27,7 +27,7 @@ internal static class CurrentBuildStatsSampleCommand
   if(Q(system+0x360)!=lookup.Key||Q(system+0x3F8)!=entity||Q(system+0x400)!=health||Q(health+0x10)!=entity)throw new InvalidDataException("Cached stat receiver mismatch.");
   var owner=Ptr(Q(health+0x40),0x648);if(owner!=before.Owner||!Type(owner,0x2927448,0x19D21E0,0x34731B0,0x2929BD0,0x19F4D60))throw new InvalidDataException("Stat owner fingerprint mismatch.");
   var record=Ptr(Q(owner+0x640),0x158);if(!Type(record,0x2C0EE88,0x20CCC60,0x355F430,0x2C281B0,0x20F2480))throw new InvalidDataException("Stat record fingerprint mismatch.");
-  var map=Ptr(Q(id.ModuleBaseAddress+0x33E3AE8),152);
+  var map=Ptr(Q(id.ModuleBaseAddress+0x33E3AE8),336);
   (ulong Begin,ulong Count) Span(ulong address){var h=Take(address,16);var b=U64(h);var e=U64(h.AsSpan(8));if((b==0)!=(e==0)||e<b||(e-b)%8!=0||(e-b)/8>4096)throw new InvalidDataException("Invalid stat vector.");if(b!=0)Ptr(b,e==b?8:checked((int)(e-b)));return(b,(e-b)/8);}
   var ordinary=Span(record+0x78);var unbuffed=Span(record+0x148);
   StatValueCandidate Value((ulong Begin,ulong Count) vector,int index)
@@ -35,7 +35,7 @@ internal static class CurrentBuildStatsSampleCommand
    if(index<0||(ulong)index>=vector.Count)return new("index-unavailable");
    var raw=BinaryPrimitives.ReadInt64LittleEndian(Take(checked(vector.Begin+(ulong)index*8),8));return new("raw-candidate",raw,(double)raw,raw is >= -9007199254740992L and <= 9007199254740992L?"exact-integer-range":"may-round");
   }
-  var rows=new List<StatCandidate>();foreach(var (name,selector) in new[]{("armor",37),("powerAttack",24),("powerSpell",32),("critAttack",26),("critSpell",33)}){var index=BinaryPrimitives.ReadInt32LittleEndian(Take(checked(map+(ulong)selector*4),4));rows.Add(new(name,selector,index,Value(ordinary,index),Value(unbuffed,index)));}
+  var rows=new List<StatCandidate>();foreach(var (name,selector) in new[]{("armor",37),("powerAttack",24),("powerSpell",32),("critAttack",26),("critSpell",33),("strength",5),("dexterity",1),("intelligence",3),("wisdom",4),("endurance",2),("resistLife",35),("resistDeath",36),("resistFire",38),("resistWater",39),("resistEarth",40),("resistAir",41),("hit",31),("critPower",83),("block",27),("dodge",30)}){var index=BinaryPrimitives.ReadInt32LittleEndian(Take(checked(map+(ulong)selector*4),4));rows.Add(new(name,selector,index,Value(ordinary,index),Value(unbuffed,index)));}
   lookup.Verify();var after=context(session);if(after.Identity!=id||after.UnitKey!=lookup.Key||after.Entity!=entity||after.HealthComponent!=health||after.Owner!=owner||after.CachedContext!=health||session.Identity!=id)throw new InvalidDataException("Stats self changed.");foreach(var a in anchors)CurrentBuildPlayerLookup.RequireSame(Take(a.Key.Item1,a.Key.Item2,false),a.Value);if(session.Identity!=id)throw new InvalidDataException("Stats process changed.");
   return new(id,started,DateTimeOffset.UtcNow,lookup.Key,entity,health,owner,record,map,rows);
  }

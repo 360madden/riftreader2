@@ -87,7 +87,12 @@ capture matched all10 ordinary/Unbuffed values against SC628 historical API:
 armor1876, powerAttack332, powerSpell22, critAttack295, critSpell22. API time
 20:40:54Z versus native21:15:38Z; same VM/player, API game epoch not proven.
 Comparison `artifacts/rre-peer-reference-sc628-20261107/native-stats-comparison.json`.
-Twenty stat selectors are now implemented; first Lab1 full capture is running.
+Twenty stat selectors are now implemented; Lab1 captured all40 ordinary/Unbuffed
+raw values successfully at21:33:44Z, each pair equal. Receipt
+`artifacts/native-current-stats-20261107/runs/lab1/d293915ba6ec4e90a51d52eddf3698f9/samples.json`
+SHA25675F68E48B44A2FB50F71654B5B7A82E65909D9A72A27FA87597B7BD8F153E064.
+ReaderC3DD11B5B7AA94BCE1D5C64F78ED41FB3FC38C0E3FB8E45856D732189DF2ACBD,
+117725024bytes. Five focused tests passed. Lab2full20 is deferred during RRE hold.
 
 Fresh Soul Recall modifier receipt
 `artifacts/native-cooldown-modifiers-20261107/runs/lab2/683f793b52104947b6940890e7aa55e4/samples.json`

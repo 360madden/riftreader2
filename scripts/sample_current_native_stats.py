@@ -8,13 +8,13 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '082B4BD670E6BF52ED35E07BEA3549AE07A5A58C89D8D67B2CF1FA98ADCCB156'
-READER = ROOT / 'artifacts/native-current-stats-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = 'C3DD11B5B7AA94BCE1D5C64F78ED41FB3FC38C0E3FB8E45856D732189DF2ACBD'
+READER = ROOT / 'artifacts/native-current-stats-20-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-current-stats-20261107/runs'
 
 QUALIFICATION='raw typed stat candidates; API availability, units, freshness and restart unverified'
 
-def validate_report(report, *, pid, ticks):
+def validate_report(report, *, pid, ticks, require_full=False):
     def integer(v,low,high): return type(v) is int and low<=v<=high
     def invalid(): raise ValueError('invalid stats report')
     if not isinstance(report,dict) or type(report.get('schemaVersion')) is not int or report['schemaVersion']!=1 or report.get('contractVersion')!='native-current-stats-candidate/1' or report.get('status')!='complete': invalid()
@@ -27,8 +27,9 @@ def validate_report(report, *, pid, ticks):
     if start.utcoffset() is None or end.utcoffset() is None or start.utcoffset().total_seconds()!=0 or end.utcoffset().total_seconds()!=0 or end<start or not integer(o.get('unitKey'),1,2**64-1): invalid()
     for field in ('entity','health','owner','record','mapping'):
         if not integer(o.get(field),0x10000,0x7fffffffffff): invalid()
-    rows=o.get('stats'); expected=[('armor',37),('powerAttack',24),('powerSpell',32),('critAttack',26),('critSpell',33)]
-    if not isinstance(rows,list) or len(rows)!=len(expected): invalid()
+    rows=o.get('stats'); expected=[('armor',37),('powerAttack',24),('powerSpell',32),('critAttack',26),('critSpell',33),('strength',5),('dexterity',1),('intelligence',3),('wisdom',4),('endurance',2),('resistLife',35),('resistDeath',36),('resistFire',38),('resistWater',39),('resistEarth',40),('resistAir',41),('hit',31),('critPower',83),('block',27),('dodge',30)]
+    if not isinstance(rows,list) or len(rows) not in ((20,) if require_full else (5,20)): invalid()
+    expected=expected[:len(rows)]
     for row,(name,selector) in zip(rows,expected):
         if not isinstance(row,dict) or row.get('name')!=name or type(row.get('selector')) is not int or row['selector']!=selector or not integer(row.get('mappedIndex'),-2**31,2**31-1): invalid()
         for field in ('ordinary','unbuffed'):
@@ -45,11 +46,11 @@ def validate_report(report, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117716832 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117725024 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)
-    folder=settings['guestRoot'] + r'\current-stats-' + READER_SHA[:16]
+    folder=settings['guestRoot'] + r'\current-zone-id-' + READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe'; report=folder+r'\sample-'+token+'.json'; probe=folder+r'\identity-'+token+'.json'
     with api._session(config,settings,vm,output) as guest:
         preflight=("$ErrorActionPreference='Stop';$folder="+ps_literal(folder)+";[IO.Directory]::CreateDirectory($folder)|Out-Null;"
@@ -72,7 +73,7 @@ def run(lab):
     raw=(output/'samples.json').read_bytes()
     if len(raw)>8000000: raise ValueError('report too large')
     data=json.loads(raw.decode('utf-8-sig'))
-    observation=validate_report(data,pid=pid,ticks=ticks)
+    observation=validate_report(data,pid=pid,ticks=ticks,require_full=True)
     summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'observation':observation}
     with (output/'summary.json').open('x',encoding='utf-8') as f: json.dump(summary,f,indent=2)
     return summary

@@ -389,3 +389,32 @@ The observations are approximately 35 minutes apart, and the API receipt does
 not bind the game process build or epoch. This is a historical baseline only,
 not changed-state response, passive freshness, restart qualification, Lab 1
 correspondence, or simultaneous API parity.
+
+## Lab 1: twenty raw stat candidates — 2026-11-07
+
+A passive exact-build sample captured all 20 ordinary and 20 unbuffed vector values as raw candidates. In this single observation each ordinary value equaled its unbuffed counterpart; this does not establish API field availability or meaning, changed-state response, passive freshness, or full-game restart recovery. Selector and mapped index are build/session-specific inputs, not byte offsets or durable addresses. Zero is the captured signed value, not an unavailable marker.
+
+Receipt: `artifacts/native-current-stats-20261107/runs/lab1/d293915ba6ec4e90a51d52eddf3698f9/samples.json`, SHA-256 `75F68E48B44A2FB50F71654B5B7A82E65909D9A72A27FA87597B7BD8F153E064`; PID `11672`, start ticks `639296016581575957`, executable SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`; capture `2026-11-07T21:33:44.095124Z`–`21:33:44.1049832Z`.
+
+| Field | Selector | Mapped index | Ordinary = unbuffed (raw signed64) |
+| --- | ---: | ---: | ---: |
+| armor | 37 | 20 | 1163 |
+| powerAttack | 24 | 8 | 20 |
+| powerSpell | 32 | 14 | 678 |
+| critAttack | 26 | 9 | 20 |
+| critSpell | 33 | 15 | 235 |
+| strength | 5 | 2 | 20 |
+| dexterity | 1 | 3 | 20 |
+| intelligence | 3 | 4 | 232 |
+| wisdom | 4 | 5 | 154 |
+| endurance | 2 | 6 | 226 |
+| resistLife | 35 | 18 | 133 |
+| resistDeath | 36 | 19 | 153 |
+| resistFire | 38 | 21 | 134 |
+| resistWater | 39 | 22 | 133 |
+| resistEarth | 40 | 23 | 133 |
+| resistAir | 41 | 24 | 133 |
+| hit | 31 | 13 | 1 |
+| critPower | 83 | 146 | 40 |
+| block | 27 | 10 | 0 |
+| dodge | 30 | 12 | 20 |
