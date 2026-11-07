@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/rr2-hero.svg" alt="RiftReader2 — evidence-first RIFT telemetry, native discovery, and reproducible research" width="100%" />
+<img src="docs/assets/rr2-hero.svg" alt="RiftReader2 by 360madden — evidence-first RIFT telemetry, native discovery, and reproducible research" width="100%" />
 
 <br />
 
@@ -9,17 +9,19 @@
 [![Lua 5.1](https://img.shields.io/badge/Lua-5.1-2C2D72?style=for-the-badge&logo=lua&logoColor=white)](addon/)
 [![Python](https://img.shields.io/badge/Python-Tooling-3776AB?style=for-the-badge&logo=python&logoColor=white)](scripts/)
 [![Windows](https://img.shields.io/badge/Windows-Live_Reader-0078D4?style=for-the-badge&logo=windows11&logoColor=white)](src/RiftReader2.Live/)
+[![Creator](https://img.shields.io/badge/CREATOR-360madden-E879F9?style=for-the-badge&logo=github&logoColor=white)](https://github.com/360madden)
 
 ![Stage](https://img.shields.io/badge/STAGE-Research_Preview-8e6be8?style=flat-square)
 ![Native](https://img.shields.io/badge/NATIVE-Read--Only-21a88a?style=flat-square)
 ![Evidence](https://img.shields.io/badge/EVIDENCE-SHA--256_Pinned-1689bc?style=flat-square)
+[![Self-contained](https://img.shields.io/badge/RUNTIME-RR2--Owned-0e9f86?style=flat-square)](docs/reference/self-contained-api-reference.md)
 ![Scope](https://img.shields.io/badge/SCOPE-Independent_RIFT_Tooling-f29c46?style=flat-square)
 
 **A modular toolkit for observing, validating, and understanding the RIFT game client.**
 
 *In-game Lua references. Native Windows observations. Independent verification. Durable research.*
 
-[🚀 Quick Start](#-quick-start) · [🧠 Architecture](#-architecture-at-a-glance) · [📊 Capability Map](#-capability-map) · [🧪 Research Tools](#-explore-the-toolkit) · [📚 Documentation](#-documentation-hub)
+[🚀 Quick Start](#-quick-start) · [🧠 Architecture](#-architecture-at-a-glance) · [📊 Capability Map](#-capability-map) · [🧪 Research Tools](#-explore-the-toolkit) · [🧭 Roadmap](#-where-the-research-is-going) · [📚 Documentation](#-documentation-hub)
 
 </div>
 
@@ -28,6 +30,19 @@
 ## ✨ What is RiftReader2?
 
 **RiftReader2 (RR2)** is an independently developed, hybrid telemetry and reverse-engineering research toolkit for the **RIFT MMORPG**. It brings together a versioned **in-game Lua addon**, a modular **.NET 10** codebase, read-only native observation tools, and reproducible evidence workflows.
+
+### 📡 Project signal board
+
+<table>
+<tr>
+<td width="25%" align="center"><strong>🟢 OFFLINE CORE</strong><br/><sub>Contracts, capture validation and reproducible analysis</sub></td>
+<td width="25%" align="center"><strong>🔵 LIVE REFERENCE</strong><br/><sub>Identified-session workflows; RR2R1 acceptance pending</sub></td>
+<td width="25%" align="center"><strong>🟡 NATIVE FIELDS</strong><br/><sub>Build-bound candidates; semantics still under qualification</sub></td>
+<td width="25%" align="center"><strong>🟣 RR2-OWNED</strong><br/><sub>Legacy RiftReader is a reference, not a runtime dependency</sub></td>
+</tr>
+</table>
+
+*Colors describe the linked scope, not the current health of a running RIFT client. [Live status and blockers →](docs/status.md)*
 
 Its central question is simple:
 
@@ -54,6 +69,27 @@ Instead of treating a matching number in memory as proof, RR2 records *where a v
 - 🧡 **Saved evidence** — hashed capture manifests, offline replay, assessments, and reproducible comparison artifacts remain useful without a running game.
 
 They feed the **Domain → Application → Infrastructure** core, composed by either **CLI** or the isolated **Live** executable. See the [architecture guide](docs/architecture.md) and [hybrid design decision](docs/decisions/0002-hybrid-addon-and-reader.md).
+
+### 🔎 The proof ladder
+
+A data point progresses through distinct evidence states; collecting a matching value does **not** skip the checks in between.
+
+```mermaid
+flowchart LR
+    A["🩵 Observe<br/>Source + time"] --> B["💜 Bind identity<br/>Build + process + session"]
+    B --> C["🟠 Correlate<br/>Controlled changed state"]
+    C --> D["🟢 Qualify<br/>Meaning + freshness + restart"]
+    classDef observe fill:#133d52,stroke:#46cdec,color:#eafaff;
+    classDef bind fill:#352657,stroke:#ae8aff,color:#f5edff;
+    classDef compare fill:#53341d,stroke:#f6b76d,color:#fff4e7;
+    classDef qualified fill:#153f35,stroke:#51d9a9,color:#edfff8;
+    class A observe;
+    class B bind;
+    class C compare;
+    class D qualified;
+```
+
+For the precise qualification rules, see [field catalog](docs/reference/field-catalog.md), [native capture](docs/reference/native-capture.md) and [current status](docs/status.md).
 
 ## 📊 Capability map
 
@@ -213,14 +249,32 @@ The bounded experiment layer supports explicitly supervised movement/turning val
 
 ## 🧭 Where the research is going
 
-```text
-FOUNDATION       ██████████  Versioned offline analysis and strict contracts
-LIVE REFERENCE   ███████░░░  Identified-session transport; RR2R1 acceptance pending
-NATIVE RESEARCH  ██████░░░░  Candidate sampling; per-field qualification ongoing
-AUTOMATION       ███░░░░░░░  Supervised experiments only; player bot out of scope
+```mermaid
+flowchart TD
+    A["🟢 Offline contracts and evidence"] --> B["🔵 RR2-owned live reference"]
+    A --> C["🔵 Build-pinned native discovery"]
+    B --> D["🟡 Changed-state field qualification"]
+    C --> D
+    D -. "Separate future applications" .-> E["⚪ Navigation / combat consumers"]
+    classDef verified fill:#153f35,stroke:#51d9a9,color:#edfff8;
+    classDef controlled fill:#123d57,stroke:#5dbde9,color:#f0faff;
+    classDef research fill:#51401b,stroke:#e3bb59,color:#fff6dd;
+    classDef deferred fill:#2f3446,stroke:#9aa4b7,color:#f0f3fa;
+    class A verified;
+    class B,C controlled;
+    class D research;
+    class E deferred;
 ```
 
-*These bars are an **illustrative stage map**, not measured completion percentages.*
+| Track | Current position | Evidence needed next |
+|:--|:--|:--|
+| 🟢 **Offline foundation** | Versioned contracts and analysis implemented | Maintain deterministic regression coverage |
+| 🔵 **Self-contained live reference** | Session-bound workflow demonstrated | Accept the newer installed RR2R1 addon end to end |
+| 🔵 **Native discovery** | Build-specific XYZ candidates sampled in labs | Independent movement and field-ownership checks |
+| 🟡 **Field qualification** | Health/resources/cast candidates under investigation | Changed-state, freshness and restart evidence |
+| ⚪ **Future consumers** | Dedicated bot/navigation applications are separate | Qualified RR2 data contracts before integration |
+
+*The diagram shows the intended research path—not measured percentages, a release date, or a guarantee of fresh live telemetry.*
 
 Current priorities emphasize **reproducible current-build field discovery**, **changed-state evidence**, **session/restart identity**, and **self-contained RR2-owned telemetry**. Older RiftReader and probe work can inform research but are **not runtime requirements**.
 
@@ -246,7 +300,7 @@ Current priorities emphasize **reproducible current-build field discovery**, **c
 
 <div align="center">
 
-**Built for curious RIFT developers, toolmakers, and reverse-engineering researchers.**
+**Built by [360madden](https://github.com/360madden) for curious RIFT developers, toolmakers, and reverse-engineering researchers.**
 
 <sub>Independent community research project. Not affiliated with, endorsed by, or operated by the RIFT game's publisher.</sub>
 
