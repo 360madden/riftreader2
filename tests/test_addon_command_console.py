@@ -516,6 +516,15 @@ class ExecuteTests(unittest.TestCase):
                     mock.patch.object(module, "validate_review", wraps=module.validate_review) as review_check, \
                     mock.patch.object(module.time, "sleep"):
                 report = module.execute(config, plan_path, review_path)
+            sidecar = json.loads((output / "execution-timings.json").read_text())
+            self.assertEqual([e["phase"] for e in sidecar["events"]],
+                             ["vm-identity-before", "guest-session-acquire", "game-identity-before",
+                              "vnc-connect-initiate", "input", "screen-capture",
+                              "vm-identity-after", "game-identity-after"])
+            self.assertNotIn(command, json.dumps(sidecar))
+            self.assertEqual(set(sidecar), {"schemaVersion", "operation", "events"})
+            self.assertTrue(all(set(e) == {"phase", "elapsedNs"} and e["elapsedNs"] >= 0
+                                for e in sidecar["events"]))
 
         self.assertEqual("completed", report["status"])
         self.assertTrue(report["inputSent"])
@@ -573,6 +582,10 @@ class ExecuteTests(unittest.TestCase):
                         self.assertRaisesRegex(module.Blocked, "console-operation-failed"):
                     module.execute(config, plan_path, review_path)
 
+                sidecar = json.loads((output / "execution-timings.json").read_text())
+                phases = [e["phase"] for e in sidecar["events"]]
+                self.assertIn("input", phases)
+                self.assertNotIn("fixture", json.dumps(sidecar))
                 self.assertLess(timeline.index("client-disconnect"), timeline.index("session-exit"))
                 self.assertTrue(any(event[0] == "up" for event in client.events))
 
@@ -642,11 +655,177 @@ class ExecuteTests(unittest.TestCase):
                     mock.patch.object(module, "connect", return_value=client), \
                     mock.patch.object(module, "_capture", side_effect=fake_capture):
                 plan = module.prepare(config, "/rr2guide status", None, game)
+            sidecar = json.loads((output / "prepare-timings.json").read_text())
+            self.assertEqual([e["phase"] for e in sidecar["events"]],
+                             ["vm-identity-before", "game-identity", "vnc-connect-initiate",
+                              "screen-capture", "vm-identity-after"])
+            self.assertNotIn("rr2guide", json.dumps(sidecar))
 
         self.assertEqual(1, query.call_count)
         verify.assert_called_once_with(config, vm)
         self.assertEqual(["game", "capture", "vm"], order)
         self.assertEqual({"type": "command", "command": "/rr2guide status"}, plan["operation"])
+
+    def test_timing_output_failure_does_not_mask_operation_or_delay_release(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            config, plan_path, review_path, game, vm, _, client = self.normal_execution_fixture(output)
+            actual_game = {key: game[key] for key in game if key != "lab"}
+            with mock.patch.object(module, "ControlMutex", return_value=__import__("contextlib").nullcontext()), \
+                 mock.patch.object(module, "collect_identity", return_value=vm), \
+                 mock.patch.object(module, "game_identity_session", return_value=__import__("contextlib").nullcontext(object())), \
+                 mock.patch.object(module, "query_game_identity_in_session", return_value=actual_game), \
+                 mock.patch.object(module, "connect", return_value=client), \
+                 mock.patch.object(module, "_send_operation", side_effect=RuntimeError("secret-error")), \
+                 mock.patch.object(module._PhaseTimings, "publish", side_effect=OSError("timing-output-error")), \
+                 self.assertRaisesRegex(module.Blocked, "console-operation-failed"):
+                module.execute(config, plan_path, review_path)
+            self.assertTrue(any(event[0] == "up" for event in client.events))
+            self.assertEqual(json.loads((output / "execution.json").read_text())["reason"], "console-operation-failed")
+
+    def test_timing_interrupt_does_not_send_and_releases_connected_client(self):
+        from contextlib import nullcontext
+        for interrupt_at, cancellation in ((8, KeyboardInterrupt), (8, SystemExit),
+                                           (9, KeyboardInterrupt), (9, SystemExit)):
+            # Connect completion and immediately before input.
+            with self.subTest(interrupt_at=interrupt_at, cancellation=cancellation), tempfile.TemporaryDirectory() as folder:
+                output = Path(folder)
+                config, plan_path, review_path, game, vm, _, client = self.normal_execution_fixture(output)
+                actual = {key: game[key] for key in game if key != "lab"}
+                calls = []
+                def clock():
+                    calls.append(None)
+                    if len(calls) == interrupt_at:
+                        raise cancellation()
+                    return len(calls)
+                with mock.patch.object(module, "ControlMutex", return_value=nullcontext()), \
+                     mock.patch.object(module, "collect_identity", return_value=vm), \
+                     mock.patch.object(module, "game_identity_session", return_value=nullcontext(object())), \
+                     mock.patch.object(module, "query_game_identity_in_session", return_value=actual), \
+                     mock.patch.object(module, "connect", return_value=client), \
+                     mock.patch.object(module, "_send_operation") as send, \
+                     mock.patch.object(module.time, "monotonic_ns", side_effect=clock), \
+                     self.assertRaisesRegex(module.Blocked, "console-operation-failed"):
+                    module.execute(config, plan_path, review_path)
+                receipt = json.loads((output / "execution.json").read_text())
+                self.assertFalse(receipt["inputSent"])
+                send.assert_not_called()
+                self.assertTrue(any(event[0] == "up" for event in client.events))
+                self.assertIn(("disconnect",), client.events)
+
+    def test_end_clock_interrupt_after_input_records_attempt_and_blocks_retry(self):
+        from contextlib import nullcontext
+        for cancellation in (KeyboardInterrupt, SystemExit):
+            with self.subTest(cancellation=cancellation), tempfile.TemporaryDirectory() as folder:
+                output = Path(folder)
+                config, plan_path, review_path, game, vm, _, client = self.normal_execution_fixture(output)
+                actual = {key: game[key] for key in game if key != "lab"}
+                ticks = []
+                def clock():
+                    ticks.append(None)
+                    if len(ticks) == 10:
+                        raise cancellation()
+                    return len(ticks)
+                with mock.patch.object(module, "ControlMutex", return_value=nullcontext()), \
+                     mock.patch.object(module, "collect_identity", return_value=vm), \
+                     mock.patch.object(module, "game_identity_session", return_value=nullcontext(object())), \
+                     mock.patch.object(module, "query_game_identity_in_session", return_value=actual), \
+                     mock.patch.object(module, "connect", return_value=client), \
+                     mock.patch.object(module, "_send_operation") as send, \
+                     mock.patch.object(module.time, "monotonic_ns", side_effect=clock):
+                    with self.assertRaisesRegex(module.Blocked, "console-operation-failed"):
+                        module.execute(config, plan_path, review_path)
+                    receipt = json.loads((output / "execution.json").read_text())
+                    self.assertEqual(receipt["status"], "blocked")
+                    self.assertTrue(receipt["inputMayHaveBeenSent"])
+                    self.assertTrue(receipt["inputSent"])
+                    self.assertTrue(receipt["releaseSucceeded"])
+                    self.assertIn(("disconnect",), client.events)
+                    with self.assertRaisesRegex(module.Blocked, "operation-already-attempted"):
+                        module.execute(config, plan_path, review_path)
+                    send.assert_called_once()
+
+    def test_phase_end_cancellation_propagates_even_during_handled_outer_error(self):
+        timing = module._PhaseTimings(Path("unused"), "execution")
+        try:
+            raise ValueError("handled")
+        except ValueError:
+            with mock.patch.object(module.time, "monotonic_ns", side_effect=[1, KeyboardInterrupt()]):
+                with self.assertRaises(KeyboardInterrupt):
+                    timing.call("input", lambda: None)
+
+    def test_timing_busy_mutex_does_not_publish_sidecar(self):
+        from contextlib import contextmanager
+        @contextmanager
+        def busy():
+            raise module.Blocked("mutex-busy")
+            yield
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder)
+            config, plan_path, review_path, *_ = self.normal_execution_fixture(output)
+            with mock.patch.object(module, "ControlMutex", return_value=busy()), \
+                 self.assertRaisesRegex(module.Blocked, "mutex-busy"):
+                module.execute(config, plan_path, review_path)
+            self.assertFalse((output / "execution-timings.json").exists())
+
+    def test_timing_directory_replacement_refuses_publish(self):
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "owned"
+            output.mkdir()
+            timing = module._PhaseTimings(output, "prepare")
+            timing.activate()
+            output.rename(Path(folder) / "old")
+            output.mkdir()
+            timing.publish()
+            self.assertFalse((output / "prepare-timings.json").exists())
+
+    def test_timing_end_clock_interrupt_does_not_mask_existing_error(self):
+        timing = module._PhaseTimings(Path("unused"), "execution")
+        with mock.patch.object(module.time, "monotonic_ns", side_effect=[1, KeyboardInterrupt()]):
+            with self.assertRaisesRegex(ValueError, "original-error"):
+                timing.call("input", mock.Mock(side_effect=ValueError("original-error")))
+
+    def test_timing_publish_cancel_preserves_prior_error(self):
+        from types import SimpleNamespace
+        @module._with_timings("prepare")
+        def fake(config, *, _timing):
+            raise ValueError("original-error")
+        with mock.patch.object(module._PhaseTimings, "publish", side_effect=KeyboardInterrupt()):
+            with self.assertRaisesRegex(ValueError, "original-error"):
+                fake(SimpleNamespace(output=Path("unused")))
+        @module._with_timings("prepare")
+        def succeeded(config, *, _timing):
+            return 1
+        with mock.patch.object(module._PhaseTimings, "publish", side_effect=KeyboardInterrupt()):
+            with self.assertRaises(KeyboardInterrupt):
+                succeeded(SimpleNamespace(output=Path("unused")))
+
+    def test_timing_clock_failure_preserves_operation_result(self):
+        timing = module._PhaseTimings(Path("unused"), "execution")
+        with mock.patch.object(module.time, "monotonic_ns", side_effect=RuntimeError("clock failure")):
+            self.assertEqual(timing.call("input", lambda: "original-result"), "original-result")
+            with self.assertRaisesRegex(ValueError, "original-error"):
+                timing.call("release", mock.Mock(side_effect=ValueError("original-error")))
+        self.assertEqual(timing.events, [])
+
+    def test_prepare_capture_failure_records_partial_phases_after_disconnect(self):
+        game = module.validate_expected_game("lab2", 55, 639288075394270241, "d" * 64)
+        actual_game = {key: game[key] for key in game if key != "lab"}
+        vm = {"vmwarePid": 99, "vmwareStartUtc": "epoch"}
+        client = self.Client()
+        with tempfile.TemporaryDirectory() as parent:
+            output = Path(parent) / "prepared"
+            config = module.Config(Path("lab.vmx"), 5906, Path("vmrun.exe"), output)
+            with mock.patch.object(module, "ControlMutex", return_value=__import__("contextlib").nullcontext()), \
+                 mock.patch.object(module, "collect_identity", return_value=vm), \
+                 mock.patch.object(module, "query_game_identity", return_value=actual_game), \
+                 mock.patch.object(module, "connect", return_value=client), \
+                 mock.patch.object(module, "_capture", side_effect=ValueError("original capture error")), \
+                 self.assertRaisesRegex(ValueError, "original capture error"):
+                module.prepare(config, "/rr2guide status", None, game)
+            self.assertIn(("disconnect",), client.events)
+            phases = [e["phase"] for e in json.loads((output / "prepare-timings.json").read_text())["events"]]
+            self.assertEqual(phases, ["vm-identity-before", "game-identity", "vnc-connect-initiate", "screen-capture"])
 
     def test_release_failure_is_reported(self):
         client = self.Client(fail_release=True)

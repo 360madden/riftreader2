@@ -9,7 +9,8 @@ fresh, exact review receipt and revalidates both VM and game epochs.
 from __future__ import annotations
 
 import argparse
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager, nullcontext, ExitStack
+from functools import wraps
 import ctypes
 from ctypes import wintypes
 import importlib.util
@@ -656,11 +657,96 @@ def _post_input_receipt(pin: dict, source: dict, input_sent_at: datetime,
         time.sleep(0.05)
 
 
+class _PhaseTimings:
+    """Advisory timings for an owned, trusted output directory only."""
+    def __init__(self, output: Path, name: str):
+        self.output, self.name, self.events, self.identity = output, name, [], None
+
+    def _directory_identity(self):
+        info = self.output.lstat()
+        if (not stat.S_ISDIR(info.st_mode) or
+                getattr(info, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)):
+            return None
+        return (info.st_dev, info.st_ino) if info.st_ino else None
+
+    def activate(self):
+        try:
+            self.identity = self._directory_identity()
+        except Exception:
+            self.identity = None
+
+    @contextmanager
+    def phase(self, name):
+        try:
+            start = time.monotonic_ns()
+        except Exception:
+            start = None
+        completed = False
+        try:
+            yield
+            completed = True
+        finally:
+            try:
+                if start is not None:
+                    elapsed = time.monotonic_ns() - start
+                    if elapsed >= 0:
+                        self.events.append({"phase": name, "elapsedNs": elapsed})
+            except Exception:
+                pass
+            except BaseException:
+                if completed:
+                    raise
+
+    def call(self, phase, function, *args, **kwargs):
+        with self.phase(phase):
+            return function(*args, **kwargs)
+
+    def publish(self):
+        try:
+            if self.identity is None or self._directory_identity() != self.identity:
+                return
+            with (self.output / (self.name + "-timings.json")).open("x", encoding="utf-8") as stream:
+                json.dump({"schemaVersion": 1, "operation": self.name, "events": self.events}, stream)
+                stream.write("\n")
+        except Exception:
+            pass
+
+
+def _with_timings(name):
+    def decorate(function):
+        @wraps(function)
+        def wrapped(config, *args, **kwargs):
+            timing = _PhaseTimings(config.output, name)
+            try:
+                result = function(config, *args, _timing=timing, **kwargs)
+            except BaseException:
+                try:
+                    timing.publish()
+                except BaseException:
+                    pass
+                raise
+            try:
+                timing.publish()
+            except Exception:
+                pass
+            return result
+        return wrapped
+    return decorate
+
+
+@contextmanager
+def _timed_session(context, timing):
+    with ExitStack() as stack:
+        session = timing.call("guest-session-acquire", stack.enter_context, context)
+        yield session
+
+
+@_with_timings("prepare")
 def prepare(config: Config, command: str | None, ui_step: str | None,
             expected_game: dict, fast_source_pin_path: Path | None = None,
             guidance_report_path: Path | None = None, hide_frame: str | None = None,
             hide_x: int | None = None, hide_y: int | None = None,
-            deferred_intent_path: Path | None = None) -> dict:
+            deferred_intent_path: Path | None = None, *, _timing: _PhaseTimings) -> dict:
     if deferred_intent_path is not None:
         if command is not None or ui_step is not None or any(
                 value is not None for value in (hide_frame, hide_x, hide_y)):
@@ -688,10 +774,11 @@ def prepare(config: Config, command: str | None, ui_step: str | None,
     screen = config.output / "review-screen.png"
     plan_path = config.output / "plan.json"
     with ControlMutex(config.vmx):
-        vm_before = collect_identity(config)
+        _timing.activate()
+        vm_before = _timing.call("vm-identity-before", collect_identity, config)
         fast_source = None
         if fast_source_pin_path is None:
-            game_before = query_game_identity(config, vm_before)
+            game_before = _timing.call("game-identity", query_game_identity, config, vm_before)
             _require_game(game_before, expected_game)
         else:
             pin, pin_sha = load_source_pin(fast_source_pin_path)
@@ -739,8 +826,9 @@ def prepare(config: Config, command: str | None, ui_step: str | None,
                 fast_source["guidanceReport"] = report_evidence
         client = None
         try:
-            client = connect(config)
-            screen_size = _capture(client, screen)
+            with _timing.phase("vnc-connect-initiate"):
+                client = connect(config)
+            screen_size = _timing.call("screen-capture", _capture, client, screen)
             captured_at = utc_now()
         finally:
             if client is not None:
@@ -752,7 +840,7 @@ def prepare(config: Config, command: str | None, ui_step: str | None,
         # Recheck the VM epoch after capture, but leave the next exact game
         # query to execute's mandatory last-moment pre-input gate.  A second
         # GuestSession query here adds 10-12 seconds without protecting input.
-        verify_identity(config, vm_before)
+        _timing.call("vm-identity-after", verify_identity, config, vm_before)
     if operation.get("step") == "hide-addon":
         width, height = screen_size
         if not 0 <= operation["x"] < width or not 0 <= operation["y"] < height:
@@ -905,7 +993,8 @@ def _send_operation(client, operation: dict, command: str) -> None:
         client.mousePress(1)
 
 
-def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
+@_with_timings("execution")
+def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _PhaseTimings) -> dict:
     try:
         if plan_path.resolve(strict=True) != (config.output / "plan.json").resolve(strict=True):
             _fail("plan-output-mismatch")
@@ -971,12 +1060,15 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
     operation_error = None
     try:
         with ControlMutex(config.vmx):
-            vm = collect_identity(config)
+            _timing.activate()
+            vm = _timing.call("vm-identity-before", collect_identity, config)
             if vm != plan["vmIdentity"]:
                 _fail("target-drift")
             identity_session_context = (nullcontext(None) if fast_mode
                                         else game_identity_session(config, vm))
-            with identity_session_context as identity_session:
+            timed_context = (identity_session_context if fast_mode else
+                             _timed_session(identity_session_context, _timing))
+            with timed_context as identity_session:
                 if fast_mode:
                     source = plan["fastResultSource"]
                     if not isinstance(source, dict) or not isinstance(source.get("sourcePin"), dict):
@@ -1011,12 +1103,13 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
                     game = {key: pin["gameIdentity"][key] for key in
                             ("processId", "processStartUtcTicks", "executableSha256")}
                 else:
-                    game = query_game_identity_in_session(config, identity_session)
+                    game = _timing.call("game-identity-before", query_game_identity_in_session, config, identity_session)
                     _require_game(game, plan["gameIdentity"])
                 report["before"] = {"vm": vm, "game": game}
                 client = None
                 try:
-                    client = connect(config)
+                    with _timing.phase("vnc-connect-initiate"):
+                        client = connect(config)
                     # The guest identity/hash query can be slow.  Recheck freshness
                     # at the last possible point before the first key event.
                     validate_review(plan, review)
@@ -1034,12 +1127,13 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
                     report["inputMayHaveBeenSent"] = True
                     # Commands reach only a reviewed open, focused, empty chat
                     # entry. UI steps are exactly one reviewed key attempt.
-                    _send_operation(client, operation, command)
-                    report["inputSent"] = True
+                    with _timing.phase("input"):
+                        _send_operation(client, operation, command)
+                        report["inputSent"] = True
                     input_sent_at = datetime.now(timezone.utc)
                     report["inputSentAtUtc"] = input_sent_at.isoformat().replace("+00:00", "Z")
                     time.sleep(0.5)
-                    _capture(client, config.output / "after-screen.png")
+                    _timing.call("screen-capture", _capture, client, config.output / "after-screen.png")
                 finally:
                     if client is not None:
                         report["releaseSucceeded"] = _release_operation(client, command, operation)
@@ -1064,12 +1158,12 @@ def execute(config: Config, plan_path: Path, review_path: Path) -> dict:
                         "capturedAtUtc": post_receipt["observation"]["capturedAtUtc"],
                         "outerSequence": post_receipt["observation"]["sequence"],
                     }
-                    verify_identity(config, vm)
+                    _timing.call("vm-identity-after", verify_identity, config, vm)
                     game_after = {key: pin["gameIdentity"][key] for key in
                                   ("processId", "processStartUtcTicks", "executableSha256")}
                 else:
-                    verify_identity(config, vm)
-                    game_after = query_game_identity_in_session(config, identity_session)
+                    _timing.call("vm-identity-after", verify_identity, config, vm)
+                    game_after = _timing.call("game-identity-after", query_game_identity_in_session, config, identity_session)
                     _require_game(game_after, plan["gameIdentity"])
                 report["after"] = {"vm": vm, "game": game_after}
                 report["status"] = "completed"
