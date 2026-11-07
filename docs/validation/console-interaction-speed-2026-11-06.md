@@ -51,7 +51,7 @@ all matched their independently pinned owners:
 | Lab2 receiver | 0.651 / 0.652 |
 | Explicit Lab2 inspection | 0.663 / 0.666 |
 
-The post-change Lab2 ordinary query was about1.31 s below the earlier mean.
+The post-change Lab2 ordinary query was about 1.31 s below the earlier mean.
 The reader expired between the batches and host load changed, so this is not
 a controlled before/after benchmark. No helper start, stop, registration,
 lease or game input was issued for measurement. Evidence:
@@ -60,9 +60,44 @@ lease or game input was issued for measurement. Evidence:
 controllers ready/disarmed/idle and both queues free). Cold start under this
 generalized status path was not repeated against healthy owners.
 
-Focused checks passed99 Python tests and both PowerShell mock suites, including
+Focused checks passed 99 Python tests and both PowerShell mock suites, including
 all IDs, fallback races, ambiguity, null collections, altered registrations and
 PID/GUID changes. Independent control review passed. The combined gate passed
-716 .NET and1,748 Python tests (2 skips), native/Lua/ownership/format and1,015
+716 .NET and 1,748 Python tests (2 skips), native/Lua/ownership/format and 1,015
 links; evidence:`artifacts/validation/20261107T040344Z-13a31e2a`, log
 `artifacts/validation/helper-status-fast-20261106.log`.
+
+## Advisory phase measurements
+
+`84fe0fb` adds `prepare-timings.json` and `execution-timings.json` beside the
+owned console artifacts. These version1 sidecars contain fixed phase names and
+monotonic elapsed nanoseconds, with no command text or credentials. Plan,
+review, execution and stdout contracts remain unchanged. The canonical
+`execution.json` remains authoritative for attempts and same-plan refusal.
+Timing failure cannot turn a blocked or cancelled operation into a successful
+attempt, suppress pre-input cancellation, or prevent direct key release and
+disconnect. Publication runs after cleanup, checks the original non-reparse
+output directory identity and creates its leaf exclusively. This assumes a
+trusted artifact tree, not an atomic defense against malicious directory swaps.
+
+Interpret phases by their actual scope: prepare's game-identity phase includes
+the guest session and query; execute's acquisition phase includes credential
+lookup/login validation and VM rechecks. `vnc-connect-initiate` creates the
+proxy; RFB authentication can continue into the first capture or input call.
+Mutex waits, teardown and release are not separately measured. Do not sum these
+records into a complete end-to-end profile or claim a VNC saving from them.
+
+The focused console, feedback and guidance suite passed125 tests; independent
+review passed69 console tests and reproduced interrupted-send refusal with a
+single mocked send. No live console operation was performed for this slice.
+Collect its actual stage timings during the next independently authorized
+operation; do not repeat reload/bind solely to fill a benchmark table.
+
+The combined local gate passed716 .NET and1,758 Python tests (2 skips), plus
+native/Lua/ownership/format and1,016 links. Evidence:
+`artifacts/validation/20261107T042150Z-b4cf4cb7`; log
+`artifacts/validation/console-phase-timings-20261106.log`.
+
+After-screen reuse remains unimplemented. The existing image precedes release
+and has no receipt-bound image hash/dimensions/capture timestamp; any future
+reuse also needs fresh VM/game checks and a separate new screenshot review.

@@ -96,12 +96,81 @@ atomic publisher, not never-follow confinement or every same-metadata in-place
 rewrite. Existing freshness, identity, expiry and STOP/release gates are unchanged.
 
 That fresh-reader/bind/strict480 batch is now complete as recorded above. Root
-retains all live-input ownership. The next isolated optimization candidate is
-`C:\work\riftreader2\.worktrees\helper-status-com`: reuse the existing double-
-observed COM status route for all four running helpers while preserving the
-nonrunning behavior and every ownership gate. A three-sample read-only baseline
-measured normal Lab2 Status1.986s mean versus existing inspection0.662s, same
-PID/GUID. Candidate source review is still pending; it is not integrated.
+retains all live-input ownership. The [running-helper status optimization](validation/console-interaction-speed-2026-11-06.md#running-helper-status-inspection)
+was integrated as`bb3d95c`. All19 live read-only calls matched current PID/GUID;
+ordinary queries averaged0.651–0.673s across four helpers, versus earlier Lab2
+normal1.986s/existing inspection0.662s (three measured samples each; changed
+host load prevents a controlled before/after claim). No helper restart or input
+was needed. Final source/config/process/listener postflight again found both
+controllers ready/disarmed/idle, queues free, same current owners. Full gate
+passed716 .NET,1748 Python (2 skips), native/Lua/ownership/format and1015 links:
+`artifacts/validation/20261107T040344Z-13a31e2a`. No cold start was repeated for
+this status-only change.
+
+### Advisory console phase timings integrated
+
+`84fe0fb` integrates the reviewed timing slice (isolated commit`4a42288`, branch
+`codex/console-phase-timings`). Fixed-name monotonic events go to separate v1
+sidecars only after owned cleanup; canonical plan/review/execution/stdout stay
+unchanged. Direct release remains untimed. Tests cover busy mutex, replaced
+directories, clock/publish failure, cancellation before input, cleanup visibility,
+and cancellation immediately after a successful send with canonical attempt
+recording and same-plan retry refusal. The125-test console/feedback/guidance
+suite passed; independent review passed69 console tests and the retry repro.
+Trusted artifact directories are assumed. The combined gate passed716 .NET,
+1758 Python tests (2 skips), native/Lua/ownership/format and1016 links. Evidence:
+`artifacts/validation/20261107T042150Z-b4cf4cb7`; log
+`artifacts/validation/console-phase-timings-20261106.log`.
+
+No live console operation was performed for the timing change. The
+`vnc-connect-initiate` phase only creates a proxy; first input/capture can include
+RFB authentication. Prepare game identity is inclusive of its guest session.
+Mutex waits, teardown and release are not separately measured. Collect actual
+phase records during the next authorized operation; root retains all input
+ownership. Do not repeat successful reload/bind merely for a benchmark.
+
+Screenshot reuse is not implemented. Current after-screen is captured before
+release and lacks hash/dimensions/actual capture-time proof. Reuse would still
+need fresh VM/game admission and a separate new review; first measure the
+existing phases rather than claiming the whole prepare duration can be saved.
+
+### Next standalone slice — native-vitals admission and replay
+
+The bounded source audit found three reproduced validator gaps. Two isolated
+workers are implementing them; no native operation, helper update, input or
+restart has been performed for this slice:
+
+- `.worktrees/native-response-order`, branch`codex/native-response-order`, owns
+  `scripts/fresh_native_vitals.py` and its test. Add shared
+  `validate_response_time(report, observed_at_utc, before, after)`, preserving
+  UTC/host±5s bounds while requiring guest sample completion no later than its
+  response timestamp. A response two seconds before completion previously passed.
+  Use fixed refusal`native-vitals-response-before-sample`.
+- `.worktrees/native-workflow-admission`, branch`codex/native-workflow-admission`,
+  owns `scripts/inspect_lab2_workflow.py` and its test. Check exact integer1
+  capability versions for both fresh identity and native vitals during requested
+  persistent preflight; retain per-operation checks and expose only fixed safe
+  refusal reasons. Persistent replay must require reportv2 and a validated
+  `observedAtUtc`, using the shared timestamp helper. Keep explicit-reader v1
+  historical replay. A retained v1 report with no envelope timestamp previously
+  passed a synthetic persistent wrapper.
+
+The response helper is committed as`77e0159` plus`12318fd` (exact100ns guest
+timestamps and ordered UTC host brackets), with14 focused tests and independent
+review passed. Workflow`49c0170` has88 focused tests and review passed against
+the first helper; its public import consumes the stricter follow-up. Both start
+from`84fe0fb`. Integrate helper, follow-up, then workflow; run the combined
+focused suite before the full gate. No full gate or live acceptance has run for
+the new slice. Lab1's recorded idle agent advertised neither native-vitals nor fresh-
+identity version, while Lab2 advertised both as1; do not infer unsupported handler
+details or update the agent from this observation. The current persistent native
+workflow is explicitly Lab2-only. Reuse its exact identity, passive read and
+subsequent screenshot lease/STOP/release guards; do not promote candidate field
+semantics or restart qualification.
+
+The five-hour goal remains active (started about9:22 PM Eastern; target about
+2:22 AM November7), and is not marked complete at this checkpoint.
+
 The bounded current-runtime dependency scan found no confirmed remaining active
 default dependency on Workbridge, the original reader or its probe in
 scripts/src/addon/config; explicit historical replay/legacy inspection remain.
