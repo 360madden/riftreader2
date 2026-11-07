@@ -1,6 +1,6 @@
 # Current status
 
-**2026-11-06 — LAB 1 SUSTAINED480 PASS:** [Measured validation](validation/lab1-sustained480-2026-11-06.md), [current handoff](handoff-2026-11-06-owner-migration.md). 481.134s,515 samples, max arrival/capture gaps3.058/2.983s (<4.5), drift0; independent ledger/raw-hash replay passed. A failed85s attempt was retained; observer bounded unavailable-poll fix`1802c4b` preserved acceptance gates, and the passing run had zero such polls. Controller restored ready/disarmed with initial cleanup. Reader expired Nov6 9:43:08 PM ET; exit and stale-feed rejection were verified; no restart/native/movement/Lab2 claim. Full gate:697 .NET,1,668 Python (2 skips), Lua/native/ownership/format/1,022 links. Five-hour standalone goal continues; isolated instance-binding work is not yet integrated.
+**2026-11-06 — LAB 1 SUSTAINED480 PASS:** [Measured validation](validation/lab1-sustained480-2026-11-06.md), [current handoff](handoff-2026-11-06-owner-migration.md). 481.134s,515 samples, max arrival/capture gaps3.058/2.983s (<4.5), drift0; independent ledger/raw-hash replay passed. A failed85s attempt was retained; observer bounded unavailable-poll fix`1802c4b` preserved acceptance gates, and the passing run had zero such polls. Controller restored ready/disarmed with initial cleanup. Reader expired Nov6 9:43:08 PM ET; exit and stale-feed rejection were verified; no restart/native/movement/Lab2 claim. Latest combined gate:716 .NET,1,748 Python (2 skips), Lua/native/ownership/format/1,010 links. Five-hour standalone goal continues. Instance-bound admission is integrated (`23b78fb`); both labs' new receivers/controllers passed independent ownership and ready/disarmed postflight. The earlier feed interval does not requalify the restarted receivers.
 
 **2026-11-06 — LAB 1 RECEIVER FRESHNESS PASS:** [Validation and limits](validation/lab1-receiver-freshness-2026-11-06.md), [resume handoff](handoff-2026-11-06-owner-migration.md). Fixed-file guest cleanup and independent absence check passed; the previous interactive/Tools discrepancy was resolved for the launcher context. One newly reviewed rebind produced 12 strict advancing receiver samples over 8.935 seconds, same player/epoch. Controller safely released and restored ready/disarmed/idle with current source and initial cleanup verification. Reader expiry is November6 8:49:59 PM Eastern; no persistent or sustained480 claim. No reload/movement/cast/Lab2 input. 89 focused tests passed.
 
@@ -208,35 +208,35 @@ CONSOLE RECOVERY NEEDED:** The former ignored 6 GiB Lab-1 wrapper is replaced
 by tracked [per-lab scan limits](../config/live-reader-scan-limits.json): 4 GiB
 by default and 6 GiB for Lab-1. Anchored 512 MiB candidate-region observations
 were measured at 155.45–175.69 ms (roughly 155–178 ms) in retained Lab-1
-[low](../artifacts/practical-movement-20261029/lab1-onegib-postturn-forward-run-01/feedback/next-1476-1477-receipt.json)
-and [high](../artifacts/practical-movement-20261029/lab1-onegib-postturn-forward-run-01/feedback/barrier-1473-1475-receipt.json)
+low (`artifacts/practical-movement-20261029/lab1-onegib-postturn-forward-run-01/feedback/next-1476-1477-receipt.json`, local evidence)
+and high (`artifacts/practical-movement-20261029/lab1-onegib-postturn-forward-run-01/feedback/barrier-1473-1475-receipt.json`, local evidence)
 receipts,
 while the complete multi-gigabyte scan remains the fallback rather than being
 removed. Lab-2 accepted a reviewed `rebind` to reader nonce
 `9f9bbf86987d4b108a3218bcd47056dc` without `/reloadui`; the unchanged game
-process identity is in the [console execution receipt](../artifacts/practical-movement-20261029/lab2-headroom-rebind/execution.json),
+process identity is in the console execution receipt (`artifacts/practical-movement-20261029/lab2-headroom-rebind/execution.json`, local evidence),
 and the successor reader then produced a bound
-[calibration result](../artifacts/practical-movement-20261029/lab2-headroom-wcal-run-02/result.json).
+calibration result (`artifacts/practical-movement-20261029/lab2-headroom-wcal-run-02/result.json`, local evidence).
 
 The current feedback-headroom and anchor-before-action ordering changes produced
 two accepted Lab-2 paths. A straight reviewed run arrived after two W pulses
 (208 ms total), ending 0.095 planar units from its chosen point
-([result](../artifacts/practical-movement-20261029/lab2-reorder-forward2-run-01/result.json)).
+(result (`artifacts/practical-movement-20261029/lab2-reorder-forward2-run-01/result.json`, local evidence)).
 A separate reviewed chain completed a 50 ms D turn without claiming heading,
 then a fresh 150 ms W calibration, then two W pulses (263 ms total), ending
 0.100 planar units from its chosen point
-([turn](../artifacts/practical-movement-20261029/lab2-reorder-turnforward-turn-run-01/result.json),
-[calibration](../artifacts/practical-movement-20261029/lab2-reorder-turnforward-cal-run-01/result.json),
-[arrival](../artifacts/practical-movement-20261029/lab2-reorder-turnforward-goal-run-01/result.json)).
+(turn (`artifacts/practical-movement-20261029/lab2-reorder-turnforward-turn-run-01/result.json`, local evidence),
+calibration (`artifacts/practical-movement-20261029/lab2-reorder-turnforward-cal-run-01/result.json`, local evidence),
+arrival (`artifacts/practical-movement-20261029/lab2-reorder-turnforward-goal-run-01/result.json`, local evidence)).
 An independent repeat completed only its reviewed 50 ms D turn; the next
-[pre-input capture](../artifacts/practical-movement-20261029/lab2-reorder-repeat-cal-probe-01/capture/image.bmp)
+pre-input capture (`artifacts/practical-movement-20261029/lab2-reorder-repeat-cal-probe-01/capture/image.bmp`, local evidence)
 showed nearby bears, so the calibration and forward stages were deliberately
 not reviewed, armed or run. That safety stop remains valid. A later independent
 repeat on cleared terrain completed a fresh reviewed 50 ms A turn, a post-turn
 150 ms W calibration, and a calibration-derived 1.5-displacement forward goal.
 It reported `ARRIVED` after two W actions (219 ms total), ending 0.061 planar
 units from that point
-([result](../artifacts/practical-movement-20261029/lab2-reorder-repeat2-goal-run-01/result.json)).
+(result (`artifacts/practical-movement-20261029/lab2-reorder-repeat2-goal-run-01/result.json`, local evidence)).
 This establishes one independent repeat of the narrow reviewed
 turn-calibrate-forward flow, not arbitrary-coordinate steering, changing-world
 reliability or 3-D navigation.
@@ -244,17 +244,17 @@ reliability or 3-D navigation.
 A stronger Lab-2 trial fixed X/Z goal `(7139.149, 3191.491)` before a reviewed
 20 ms D turn and kept that exact point through the fresh post-turn W calibration
 and all three movement preparations
-([pre-turn review](../artifacts/practical-movement-20261029/lab2-fixedgoal-turn-plan-01/review.json)).
+(pre-turn review (`artifacts/practical-movement-20261029/lab2-fixedgoal-turn-plan-01/review.json`, local evidence)).
 The first two movement executions expired at the lease/pre-arm boundary without
 an action artifact or input; both ended disarmed with no sampled input down
-([run 1 final](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-01/final-status.json),
-[run 2 final](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-02/final-status.json)).
+(run 1 final (`artifacts/practical-movement-20261029/lab2-fixedgoal-run-01/final-status.json`, local evidence),
+run 2 final (`artifacts/practical-movement-20261029/lab2-fixedgoal-run-02/final-status.json`, local evidence)).
 The third preparation preserved the same goal and reported `ARRIVED` after one
 44 ms W pulse, ending 0.057 planar units away. Release succeeded, and final
 status was disarmed, idle, recovery-free and showed no sampled input down
-([accepted result](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/result.json),
-[action](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/action-1.json),
-[final status](../artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/final-status.json)).
+(accepted result (`artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/result.json`, local evidence),
+action (`artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/action-1.json`, local evidence),
+final status (`artifacts/practical-movement-20261029/lab2-fixedgoal-run-03/final-status.json`, local evidence)).
 This proves one fixed-before-turn reviewed coordinate arrival in the retained
 Lab-2 epoch; it does not establish arbitrary-coordinate routing or 3-D arrival.
 An independent second fixed-goal workflow then selected X/Z
@@ -263,9 +263,9 @@ exact point through a fresh 150 ms W calibration, and reported `ARRIVED` after
 one 52 ms W action. It ended 0.010 planar units from the goal; release succeeded,
 and final status was disarmed, idle, recovery-free and showed no sampled input
 down
-([pre-turn review](../artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-turn-plan-01/review.json),
-[calibration](../artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-cal-run-02/result.json),
-[arrival](../artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-goal-run-02/result.json)).
+(pre-turn review (`artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-turn-plan-01/review.json`, local evidence),
+calibration (`artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-cal-run-02/result.json`, local evidence),
+arrival (`artifacts/practical-movement-20261029/lab2-fixedgoal-repeat-goal-run-02/result.json`, local evidence)).
 This is a second independent reviewed success in the same retained Lab-2
 game/reader epoch. It improves repeatability evidence for this narrow planar
 procedure, but still does not prove arbitrary goal selection, 3-D navigation,
@@ -273,7 +273,7 @@ changing-world reliability or operation on Lab-1.
 
 The stalled-VNC cleanup fix at `3253ece` then completed and saved a new Lab-2
 live capture through the patched client
-([capture receipt](../artifacts/practical-movement-20261029/lab2-patched-console-capture-01/capture/capture.json)).
+(capture receipt (`artifacts/practical-movement-20261029/lab2-patched-console-capture-01/capture/capture.json`, local evidence)).
 That is a Lab-2 console-path check only. Lab-1 still has no listener after its
 reset and remains a separate recovery task; the Lab-2 result does not qualify
 Lab-1's console.
@@ -281,11 +281,11 @@ Lab-1's console.
 Lab-1's reviewed 96 ms W pulse was delivered and released, and a later retained
 fast observation placed the character at `(7417.4199, 2926.6099)`, 0.081 planar
 units from fixed chosen point `(7417.5, 2926.62)`
-([post-timeout observation](../artifacts/practical-movement-20261029/lab1-repeat-chosen-final-posttimeout-observe-01/next-2306-2307-receipt.json)).
+(post-timeout observation (`artifacts/practical-movement-20261029/lab1-repeat-chosen-final-posttimeout-observe-01/next-2306-2307-receipt.json`, local evidence)).
 The synchronous runner timed out before accepting that observation, so this is
 physical arrival evidence, not an accepted movement result. After the later
 Lab-1 reset, the latest host check found no VNC listener and three guest audits
-found no RIFT process ([latest audit](../artifacts/practical-movement-20261029/lab1-cold-game-audit-01/result-03.json));
+found no RIFT process (latest audit (`artifacts/practical-movement-20261029/lab1-cold-game-audit-01/result-03.json`, local evidence));
 Lab-1 therefore is not currently console/game ready. All arrival numbers above
 are planar X/Z evidence for the exact retained game/reader epochs, not 3-D,
 unattended navigation or patch-stable qualification. Next practical task:
@@ -300,11 +300,11 @@ units in two actions. Both results include verified release, STOP/disarm and a
 distinct advancing stationary confirmation. These are planar X/Z arrivals,
 not 3-D arrival evidence: Lab-2 was on a slope and its Y changed by about 0.64
 units while the 1-D controller intentionally evaluated planar distance. See
-the retained [Lab-1 result](../artifacts/practical-movement-20261029/lab1-goal-run/result.json)
-and [Lab-2 result](../artifacts/practical-movement-20261029/lab2-goal-run/result.json).
+the retained Lab-1 result (`artifacts/practical-movement-20261029/lab1-goal-run/result.json`, local evidence)
+and Lab-2 result (`artifacts/practical-movement-20261029/lab2-goal-run/result.json`, local evidence).
 The new addon files were installed on both guests without reloading the UI.
 Lab-1 then accepted a reviewed live `rebind` to a successor reader without a
-reload ([execution](../artifacts/practical-movement-20261029/lab1-rebind-01/execution.json));
+reload (execution (`artifacts/practical-movement-20261029/lab1-rebind-01/execution.json`, local evidence));
 Lab-2's already-loaded addon did not expose the newly installed command until
 `/reloadui`, as expected for changed Lua source. Lab-1's scan used a temporary,
 ignored 6 GiB launcher wrapper after its readable-private-memory total crossed

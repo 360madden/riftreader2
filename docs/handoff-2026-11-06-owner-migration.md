@@ -2,7 +2,7 @@
 
 Work in `C:\work\riftreader2`. Read `AGENTS.md`, `docs/status.md`, and this handoff. Reacquire all PIDs, start times, receiver nonces and VM identities; values below are historical observations, not reusable authority. Prior offline context: [RR2 helper manager](handoff-2026-11-06-rr2-helper-manager.md).
 
-## Current resume point — Lab 1 sustained480 passed
+## Current resume point — sustained480 and helper ownership accepted
 
 [Strict sustained validation](validation/lab1-sustained480-2026-11-06.md) passed
 481.134 seconds with 515 samples; independent replay verified all raw/ledger
@@ -15,35 +15,75 @@ The original failed artifact was retained. All acceptance gates remain strict.
 Recorded reader PID6464/nonce622041afc6a14371aa45ec5efcc57c8c expired
 November6 9:43:08 PM Eastern; a fresh guest check verified its exit and the
 receipt reader rejected the stale feed. Never reuse its pin or cached packets.
-Controller restored as PID68160/generation`eac96b09093643e09cbb4795e1ac9c2a`,
-ready/disarmed/idle, initial cleanup verified, queue generation5212 unheld/free.
 This is sustained observer-side receiver evidence, not restart, native-field,
 movement or Lab2 qualification. No reload/movement/cast/Lab2 input occurred.
 
-Full gate passed: 380 portable +317 Live .NET, 1,668 Python (2 skipped), Lua,
+The sustained-run gate passed: 380 portable +317 Live .NET, 1,668 Python (2 skipped), Lua,
 native smoke, ownership, format and1,022 links; evidence
 `artifacts/validation/20261107T023836Z-51b6dc01`. Guest startup race fix
 `54d5e95` also has26 focused passing tests. User's five-hour meaningful-work
-goal remains active. Next standalone ownership-instance hardening is isolated
-in `C:\work\riftreader2\.worktrees\helper-instance-binding`, branch
-`codex/helper-instance-binding`; it is not integrated or deployed. Preserve
-other sessions' edits and all current owners. No new gameplay authority follows.
+goal remains active; preserve other sessions' changes and current owners.
 
-The isolated candidate is committed as `a2ab524` on
-`codex/helper-instance-binding`. High review passed its offline contract;
-focused Python/PowerShell checks passed. Its isolated full gate passed build,
-697 .NET and 1,650 Python tests (12 skips), Lua/native/ownership/format, then
-failed an existing link to a missing ignored historical artifact. This is not
-a full-gate PASS. **No rollout occurred.** Concurrent authoritative changes
-overlap the manager, managed receipt and mocks, adding a Lab2 fast inspection
-path; that path needs the expected-PID contract merged and tested. Hash-pinned
-`control_host.py` is also being edited elsewhere. Preserve these changes and
-reassess the settled source/receipt baseline. Do not execute the stored
-`instance-binding` rollout operator as-is: its candidate baseline must be
-updated after the compatibility merge. The corrected operator design holds
-launch locks across vacancy, checks actual listener PID before STOP, retains
-exact task/process/registration evidence and requires safe retirement before
-any selective rollback. It was source-reviewed, never executed.
+### Instance-bound owners accepted, 10:30 PM Eastern
+
+Ownership hardening was merged with the newer Lab2 inspection route, reviewed
+and integrated as `23b78fb` (isolated candidate `22f91d0`). Scheduler status
+now exposes the sole running PID/GUID, and controller/receiver admission binds
+that PID to the verified process receipt and listener. Lab2 fast inspection
+checks the same instance across both observations and retains no-legacy
+admission. Explicit no-auto-start status stays diagnostic; protected operations
+verify an existing owner, while STOP/release remain directly available.
+
+All four old owners were retired before source integration. Both controllers
+completed authenticated STOP, generation-specific shutdown, verified cleanup,
+queue quarantine and process/port exit. The exact older Lab1 generation was
+retired against all nine pinned `b2e3fa1` source blobs and its immutable receipt;
+ordinary current-source admission was not relaxed. A transient immediate
+receiver-vacancy failure stopped v2b safely; the continuation verified durable
+queue history and all vacancies before proceeding. Lab2's intervening successful
+diagnostic accounted for generations2331/2332 before shutdown2333. No queue reset,
+silent re-arm, game input, reload or VM/game restart occurred.
+
+Independent postflight verified current source/config/process receipts, Scheduler
+PID/GUID, listeners, fresh VM identities, unchanged bound guest/game identities,
+initial cleanup, ready/disarmed/idle status and free/unheld queues:
+
+| Lab | Controller PID / generation | Receiver PID | Queue generation |
+| --- | --- | --- | --- |
+| Lab1 | 61336 / `feaac3fdb44e4027a5ad31da2dba7c7f` | 63376 | 5214 |
+| Lab2 | 24412 / `37bd686548f241649ca6f5dde0586c98` | 65764 | 2334 |
+
+These are historical checkpoint values. Reacquire them before any operation.
+Evidence is under `artifacts/receiver-migrations/instance-binding-rollout-v2b`
+and `instance-binding-rollout-v2b-continuation`; the latter's
+`independent-postflight.json` SHA256 is
+`84FBC54678981FE1F7DCB8516D138FA1426357E65B96B7DF00F50ED67A2BD6A3`.
+Never rerun the one-shot migration operators against these successors.
+Receiver freshness was not requalified after their restart; the earlier
+sustained480 evidence applies to its recorded, now-expired reader epoch.
+
+Host PowerShell module imports were made interpreter-local in `8a1815a` after
+the first read-only preflight found `Get-FileHash` unavailable under an inherited
+module path. Production import prefixes pass fresh-process tests with invalid
+module paths and autoload disabled. Cleanup, configuration, replay and import
+suites pass33 focused tests. The isolated ownership gate passed716 .NET and
+1,724 Python tests (12 skips), Lua/native/ownership checks, then stopped at a
+preexisting ignored-artifact link. The25 local evidence links are now represented
+as paths. The combined main gate then passed:716 .NET,1,748 Python tests
+(2 skips), native/Lua/ownership/format and1,010 links. Evidence:
+`artifacts/validation/20261107T033228Z-f42863ae`; log
+`artifacts/validation/combined-owner-freshness-20261106.log`.
+
+`d68a398` bounds receipt reads through one verified handle and checks the final
+same-file regular leaf and unchanged metadata. It accepts atomic replacement
+completed before open;89 console/feedback tests passed. This is for the trusted
+atomic publisher, not never-follow confinement or every same-metadata in-place
+rewrite. Existing freshness, identity, expiry and STOP/release gates are unchanged.
+
+Next authorized batch: a fresh bounded Lab1 reader and reviewed new-nonce bind,
+then strict480 against the current receiver. Root retains all live input. Use
+fresh screenshots/identities, verified controller handoff and restoration;
+no Lab2 input, reload or restart. Never reuse the old reader nonce.
 
 The [launch-failure cleanup follow-up](validation/lab1-receiver-freshness-2026-11-06.md#launch-failure-cleanup-follow-up-1013-pm-eastern)
 passed 19 focused tests and a nonsecret Lab1 deletion/fresh-session absence
