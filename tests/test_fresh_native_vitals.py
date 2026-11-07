@@ -96,6 +96,41 @@ class NativeVitalsClientTests(unittest.TestCase):
         self.response["report"]["observation"].update(startedAtUtc=stale, completedAtUtc=stale)
         with self.assertRaisesRegex(native.Blocked, "acquisition-stale"): self.query()
 
+    def test_response_before_completed_sample_is_rejected_without_publication(self):
+        end = datetime.now(timezone.utc)
+        self.response["report"]["observation"].update(
+            startedAtUtc=(end - timedelta(seconds=1)).isoformat(), completedAtUtc=end.isoformat())
+        self.response["observedAtUtc"] = (end - timedelta(seconds=2)).isoformat()
+        with self.assertRaisesRegex(native.Blocked, "native-vitals-response-before-sample"):
+            self.query()
+        self.assertEqual([], list(self.evidence.rglob("samples.json")))
+
+    def test_response_time_helper_boundaries_and_invalid_values(self):
+        before = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        after = before + timedelta(seconds=2)
+        lower, upper = before - timedelta(seconds=5), after + timedelta(seconds=5)
+        row = self.response["report"]["observation"]
+        row.update(startedAtUtc=lower.isoformat(), completedAtUtc=upper.isoformat())
+        self.assertEqual(upper, native.validate_response_time(self.response["report"], upper.isoformat(), before, after))
+        row.update(startedAtUtc=lower.isoformat(), completedAtUtc=lower.isoformat())
+        self.assertEqual(lower, native.validate_response_time(self.response["report"], lower.isoformat(), before, after))
+        for value in (None, "bad", before.replace(tzinfo=None).isoformat(),
+                      (lower - timedelta(microseconds=1)).isoformat(),
+                      (upper + timedelta(microseconds=1)).isoformat(),
+                      before.astimezone(timezone(timedelta(hours=1))).isoformat()):
+            with self.subTest(value=value), self.assertRaises(native.Blocked):
+                native.validate_response_time(self.response["report"], value, before, after)
+        for key, value in (("startedAtUtc", "bad"), ("completedAtUtc", None),
+                           ("startedAtUtc", (lower - timedelta(microseconds=1)).isoformat()),
+                           ("completedAtUtc", (upper + timedelta(microseconds=1)).isoformat()),
+                           ("completedAtUtc", before.replace(tzinfo=None).isoformat()),
+                           ("startedAtUtc", (lower + timedelta(seconds=1)).isoformat())):
+            original = row[key]
+            row[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(native.Blocked):
+                native.validate_response_time(self.response["report"], lower.isoformat(), before, after)
+            row[key] = original
+
     def test_reconnected_response_instance_is_not_attributed_to_prestatus_agent(self):
         for instance in (None, "", "b" * 32, True):
             self.response["instanceId"] = instance

@@ -15,6 +15,27 @@ from scripts.vm_console_native import Blocked, verify_identity
 from scripts import sample_current_native_vitals as vitals
 
 
+def validate_response_time(report, observed_at_utc, before, after):
+    """Validate the acquisition and response times against their host bracket."""
+    try:
+        observed = datetime.fromisoformat(observed_at_utc.replace("Z", "+00:00"))
+        row = report["observation"]
+        sample_start = datetime.fromisoformat(row["startedAtUtc"].replace("Z", "+00:00"))
+        sample_end = datetime.fromisoformat(row["completedAtUtc"].replace("Z", "+00:00"))
+        if observed.utcoffset() != timedelta(0) or not before - timedelta(seconds=5) <= observed <= after + timedelta(seconds=5):
+            raise Blocked("native-vitals-response-stale")
+        if (sample_start.utcoffset() != timedelta(0) or sample_end.utcoffset() != timedelta(0)
+                or not before - timedelta(seconds=5) <= sample_start <= sample_end <= after + timedelta(seconds=5)):
+            raise Blocked("native-vitals-acquisition-stale")
+        if observed < sample_end:
+            raise Blocked("native-vitals-response-before-sample")
+        return observed
+    except Blocked:
+        raise
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        raise Blocked("native-vitals-unavailable") from None
+
+
 def query(config, expected_vm, expected_game, host_config_path, *, client_factory=ControlClient):
     """Collect one bounded candidate report; never acquire input authority or fall back."""
     started = time.perf_counter()
@@ -57,10 +78,6 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
                 raise Blocked("native-vitals-response-invalid")
             if response["instanceId"] != instance:
                 raise Blocked("native-vitals-instance-changed")
-            observed = datetime.fromisoformat(response["observedAtUtc"].replace("Z", "+00:00"))
-            if (observed.utcoffset() != timedelta(0) or observed < before - timedelta(seconds=5)
-                    or observed > after + timedelta(seconds=5)):
-                raise Blocked("native-vitals-response-stale")
             report = response["report"]
             if (not isinstance(report, dict)
                     or report.get("contractVersion") != "native-current-vitals-candidate-sample/2"):
@@ -69,12 +86,7 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
             if len(raw) > vitals.REPORT_MAX_BYTES:
                 raise Blocked("native-vitals-report-too-large")
             metrics = vitals.validate_report(report, pid=expected["processId"], ticks=expected["processStartUtcTicks"])
-            row = report["observation"]
-            sample_start = datetime.fromisoformat(row["startedAtUtc"].replace("Z", "+00:00"))
-            sample_end = datetime.fromisoformat(row["completedAtUtc"].replace("Z", "+00:00"))
-            if (sample_start.utcoffset() != timedelta(0) or sample_end.utcoffset() != timedelta(0)
-                    or not before - timedelta(seconds=5) <= sample_start <= sample_end <= after + timedelta(seconds=5)):
-                raise Blocked("native-vitals-acquisition-stale")
+            validate_response_time(report, response["observedAtUtc"], before, after)
         finally:
             verify_identity(config, vm)
         # Publish only after the final VM check. Each response owns a new report.
