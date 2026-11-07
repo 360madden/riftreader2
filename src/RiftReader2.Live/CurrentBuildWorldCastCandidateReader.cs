@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 using RiftReader2.Application;
 using RiftReader2.Domain;
 namespace RiftReader2.Live;
-internal sealed record WorldCastRow(ulong UnitKey, ulong Entity, ulong Component, ulong FirstChild, ulong FirstControl, uint? FirstRawId, ulong SecondChild, ulong SecondControl, uint? SecondRawId, uint RawDword2B8, string DurationStatus, int? SelectedBranch, float? Begin, ulong? DurationObject, ulong? Vtable, ulong? GetterRva, float? Duration);
+internal sealed record WorldCastRow(ulong UnitKey, ulong Entity, ulong Component, ulong FirstChild, ulong FirstControl, uint? FirstRawId, ulong SecondChild, ulong SecondControl, uint? SecondRawId, uint RawDword2B8, string DurationStatus, int? SelectedBranch, float? Begin, ulong? DurationObject, ulong? Vtable, ulong? GetterRva, float? Duration, ulong? DurationInput = null, int? DurationMillisecondsRaw = null);
 internal sealed record WorldCastObservation(NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, int Examined, int Unavailable, int BucketsExamined, ulong StartBucket, ulong BucketCount, bool UnitLimitReached, float ClockBefore, float ClockAfter, IReadOnlyList<WorldCastRow> Rows)
 {
     public string Qualification => "candidate-only; incomplete-world, cast semantics and freshness unverified";
@@ -49,6 +49,8 @@ internal static class CurrentBuildWorldCastCandidateReader
                             uint? f=first==0?null:BinaryPrimitives.ReadUInt32LittleEndian(A(Ptr(first,12)+8,4)); uint? s=second==0?null:BinaryPrimitives.ReadUInt32LittleEndian(A(Ptr(second,12)+8,4));
                             var unknown=BinaryPrimitives.ReadUInt32LittleEndian(A(component+0x2B8,4));
                             string status=(f.GetValueOrDefault()!=0 || s.GetValueOrDefault()!=0)?"no-selected-child":"no-nonzero-child-id"; int? branch=null; float? begin=null,duration=null; ulong? obj=null,vt=null,getter=null;
+                            ulong? durationInput = null;
+                            int? durationMilliseconds = null;
                             var selected=firstControl!=0&&first!=0?first:secondControl!=0&&second!=0?second:0;
                             if(selected!=0 && (f.GetValueOrDefault()!=0 || s.GetValueOrDefault()!=0))
                             {
@@ -66,12 +68,40 @@ internal static class CurrentBuildWorldCastCandidateReader
                                         if(v>=id.ModuleBaseAddress && v<=id.ModuleBaseAddress+id.ModuleSize-16) {var target=U64(A(v+8,8)); getter=target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize?target-id.ModuleBaseAddress:null;}
                                         if(v==id.ModuleBaseAddress+0x26AA0E0 && getter==0x09D680)
                                         {var d=F(A(rawObj+0x18,4)); duration=float.IsFinite(d)?d:null; status=duration.HasValue&&begin.HasValue?"raw-fingerprint-candidate":"nonfinite";}
+                                        else if (branch == 0 && v == id.ModuleBaseAddress + 0x26AA020 && getter == 0x537270)
+                                        {
+                                            // This wrapper retains the selected runtime input at +0x10.
+                                            // Its +8 backlink must identify the child from which we reached it.
+                                            if (U64(A(rawObj + 8, 8)) != selected)
+                                                status = "duration-wrapper-owner-mismatch";
+                                            else
+                                            {
+                                                var input = U64(A(rawObj + 0x10, 8));
+                                                durationInput = input;
+                                                if (input == 0)
+                                                    status = "duration-input-absent";
+                                                else if (id.ModuleSize < 0x3448E58 ||
+                                                    U64(A(Ptr(input, 0x24), 8)) != id.ModuleBaseAddress + 0x28940E0 ||
+                                                    U64(A(id.ModuleBaseAddress + 0x2894120, 8)) != id.ModuleBaseAddress + 0x188FAC0 ||
+                                                    U64(A(id.ModuleBaseAddress + 0x3448E50, 8)) != id.ModuleBaseAddress + 0x28A7EF8 ||
+                                                    U64(A(id.ModuleBaseAddress + 0x28A7F00, 8)) != id.ModuleBaseAddress + 0x18C0680)
+                                                    status = "duration-input-type-unverified";
+                                                else
+                                                {
+                                                    var milliseconds = BinaryPrimitives.ReadInt32LittleEndian(A(input + 0x20, 4));
+                                                    durationMilliseconds = milliseconds;
+                                                    duration = (float)milliseconds * 0.001f;
+                                                    status = !begin.HasValue ? "nonfinite" :
+                                                        milliseconds > 0 ? "raw-fingerprint-candidate" : "nonpositive-primary-duration";
+                                                }
+                                            }
+                                        }
                                         else status="unsupported-type";
                                     }
                                 }
                             }
                             foreach(var anchor in anchors) CurrentBuildPlayerLookup.RequireSame(ReadBytes(anchor.Item1,anchor.Item2.Length),anchor.Item2);
-                            if(first!=0 || second!=0 || unknown!=0) rows.Add(new(key,entity,component,first,firstControl,f,second,secondControl,s,unknown,status,branch,begin,obj,vt,getter,duration));
+                            if(first!=0 || second!=0 || unknown!=0) rows.Add(new(key,entity,component,first,firstControl,f,second,secondControl,s,unknown,status,branch,begin,obj,vt,getter,duration,durationInput,durationMilliseconds));
                         }
                         else foreach(var anchor in anchors) CurrentBuildPlayerLookup.RequireSame(ReadBytes(anchor.Item1,anchor.Item2.Length),anchor.Item2);
                     }

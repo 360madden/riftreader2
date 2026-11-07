@@ -56,3 +56,16 @@ fresh identity and existing guards. For0650 capture saved reference/type/+20;
 for0653 capture the actual instance+18, preserving-1. An independent castbar
 comparison and changed-state/restart/freshness work remain separate. Detailed
 retained instruction trace:`artifacts/discovery-20261107-cast/cast-duration-next-discriminator.md`.
+
+## Primary live wrapper decoder - 2026-11-07 16:35 Eastern
+
+The world-cast reader now decodes primary runtime wrapper26AA020/slot8=537270,
+requiring its +8 backlink to the selected child and following the actual saved
+input at +10. It verifies the existing typed0650 profile and reports signedDWORD
+input+20 milliseconds and float32 seconds. These fields join consumed-byte
+rereads; nonpositive values retain raw evidence with a separate status. The
+0653 path and fallback branch remain unchanged. Sixteen focused cases passed.
+This closes an offline reader gap; no positive live cast or API/changed-state,
+freshness or restart qualification has been observed. Idle definition inputs do
+not fill missing live cast values. Evidence note:
+`artifacts/discovery-20261107-cast/live-cast-duration-gap.md`.

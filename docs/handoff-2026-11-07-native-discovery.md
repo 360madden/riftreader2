@@ -113,7 +113,7 @@ Reader7C2E38B9BF825CB4613DAD6A5A5140C41A81200CD344CBE7D9C76706D76344B1,
 
 Primary runtime cast-duration0650 branch implemented with live wrapper backlink,
 type fingerprints and raw signed milliseconds;16 focused tests passed. No positive
-live cast observed. This source slice is pending its separate commit.
+live cast observed. The source slice is verified offline; live positive cast remains pending.
 
 SC625 window remains16:32-16:47 Eastern: ALL RR2 Lab2 operations HELD until
 explicit verified clean return. Reader amendment0.2.1 DLL9847CF4093049F7313DF6B0AB9C052C37E8EA149C3DC467721F3E46129268D54
