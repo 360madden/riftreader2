@@ -56,26 +56,38 @@ class ControllerEnsureTests(unittest.TestCase):
              patch.object(controller_task_entry.subprocess, "run", return_value=Mock(
                  returncode=0, stdout=json.dumps([]).encode())) as run:
             with self.assertRaisesRegex(RuntimeError, "managed-helper-status-invalid"):
-                controller_task_entry._require_owned_task("lab1")
+                controller_task_entry._require_owned_task("lab1", 123)
         args = run.call_args.args[0]
         self.assertIn(str(ensure_controller.ROOT / "scripts" / "Manage-RR2HelperTask.ps1"), args)
         self.assertEqual(args[-4:], ["-Action", "Status", "-HelperId", "rr2-controller-lab1"])
 
+    def test_task_instance_must_match_expected_process(self):
+        status = {"state": "Running", "atLogon": False, "runLevel": "Limited",
+                  "enginePid": 123, "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
+        with patch("pathlib.Path.is_file", return_value=True), \
+             patch.object(controller_task_entry.subprocess, "run") as run:
+            run.return_value = Mock(returncode=0, stdout=json.dumps(status).encode())
+            controller_task_entry._require_owned_task("lab1", 123)
+            with self.assertRaisesRegex(RuntimeError, "managed-helper-not-running"):
+                controller_task_entry._require_owned_task("lab1", 124)
+
+    @patch.object(ensure_controller, "_verify_existing_owner", return_value=None)
     @patch.object(ensure_controller.HostConfig, "load")
     @patch.object(ensure_controller, "_probe")
     @patch.object(ensure_controller, "_launch")
-    def test_healthy_existing_host_is_reused(self, launch, probe, config):
+    def test_healthy_existing_host_is_reused(self, launch, probe, config, verify):
         probe.return_value = {"host": {"connected": True}}
         value = ensure_controller.ensure("lab1")
         self.assertEqual(value["state"], "reused")
         launch.assert_not_called()
 
+    @patch.object(ensure_controller, "_verify_existing_owner", return_value=None)
     @patch.object(ensure_controller.HostConfig, "load")
     @patch.object(ensure_controller, "_probe")
     @patch.object(ensure_controller, "_launch_lock", side_effect=lambda _: _folder())
     @patch.object(ensure_controller, "_launch", return_value="rr2-controller-lab2")
     @patch.object(ensure_controller.time, "sleep")
-    def test_missing_host_started_only_once(self, sleep, launch, lock, probe, config):
+    def test_missing_host_started_only_once(self, sleep, launch, lock, probe, config, verify):
         probe.side_effect = [None, None, {"host": {"connected": False}}]
         value = ensure_controller.ensure("lab2")
         self.assertEqual(value["state"], "started")
@@ -83,12 +95,13 @@ class ControllerEnsureTests(unittest.TestCase):
         launch.assert_called_once()
         self.assertEqual(probe.call_count, 3)
 
+    @patch.object(ensure_controller, "_verify_existing_owner", return_value=None)
     @patch.object(ensure_controller.HostConfig, "load")
     @patch.object(ensure_controller, "_probe")
     @patch.object(ensure_controller, "_launch_lock", side_effect=lambda _: _folder())
     @patch.object(ensure_controller, "_launch", return_value="rr2-controller-lab1")
     @patch.object(ensure_controller.time, "sleep")
-    def test_new_listener_warmup_does_not_create_duplicate(self, sleep, launch, lock, probe, config):
+    def test_new_listener_warmup_does_not_create_duplicate(self, sleep, launch, lock, probe, config, verify):
         probe.side_effect = [
             None, None,
             DependencyUnavailable("controller", "existing-endpoint-unhealthy"),
@@ -114,6 +127,33 @@ class ControllerEnsureTests(unittest.TestCase):
             "state": "waiting", "errorCode": None, "supervisor": None}}}
         client.return_value.request.return_value = status
         self.assertIs(ensure_controller._probe(Mock()), status)
+
+    def test_listener_and_scheduler_must_both_match_receipt(self):
+        config = Mock(ui_port=1234)
+        with patch("scripts.managed_controller_receipt.resolve_current_managed_controller", return_value=(None, {"pid": 123}, None)) as resolve, \
+             patch("scripts.vm_console_native.listener_owner", return_value=124):
+            with self.assertRaisesRegex(DependencyUnavailable, "managed-owner-refused"):
+                ensure_controller._verify_existing_owner("lab1", config)
+            resolve.side_effect = ValueError("no task")
+            with self.assertRaisesRegex(DependencyUnavailable, "managed-owner-refused"):
+                ensure_controller._verify_existing_owner("lab1", config)
+
+    def test_unowned_healthy_listener_is_never_replaced(self):
+        with patch.object(ensure_controller.HostConfig, "load"), \
+             patch.object(ensure_controller, "_probe", return_value={"host": {}}), \
+             patch.object(ensure_controller, "_verify_existing_owner", side_effect=DependencyUnavailable("controller", "managed-owner-refused")), \
+             patch.object(ensure_controller, "_launch") as launch:
+            with self.assertRaisesRegex(DependencyUnavailable, "managed-owner-refused"):
+                ensure_controller.ensure("lab1")
+            launch.assert_not_called()
+
+    def test_existing_only_never_launches(self):
+        with patch.object(ensure_controller.HostConfig, "load"), \
+             patch.object(ensure_controller, "_probe", return_value=None), \
+             patch.object(ensure_controller, "_launch") as launch:
+            with self.assertRaisesRegex(DependencyUnavailable, "existing-endpoint-missing"):
+                ensure_controller.ensure_existing("lab1")
+            launch.assert_not_called()
 
     def test_unknown_lab_never_launches(self):
         with self.assertRaisesRegex(DependencyUnavailable, "unknown-lab"):

@@ -60,6 +60,22 @@ function Join-HelperArguments([string[]]$Values) {
     return $line
 }
 
+function Get-RunningTaskInstance([string]$Name) {
+    $service = New-Object -ComObject 'Schedule.Service'
+    $service.Connect()
+    return Get-TaskInstanceIdentity ($service.GetFolder('\').GetTask($Name))
+}
+function Get-TaskInstanceIdentity($Task) {
+    $instances = $Task.GetInstances(0)
+    if ($instances.Count -ne 1) { throw 'TASK_INSTANCE: expected exactly one running instance.' }
+    $instance = $instances.Item(1)
+    $pidValue = [long]$instance.EnginePID
+    $guidValue = [guid]::Empty
+    if ($pidValue -le 0 -or $pidValue -gt [int]::MaxValue -or
+        ![guid]::TryParse([string]$instance.InstanceGuid, [ref]$guidValue) -or $guidValue -eq [guid]::Empty) { throw 'TASK_INSTANCE: invalid instance identity.' }
+    return @{enginePid=[int]$pidValue; instanceGuid=$guidValue.ToString()}
+}
+
 function Assert-OwnedHelperTask($Task, $Config) {
     # Task Scheduler may normalize an input SID to a local account name.
     $taskSid = if ($Task.Principal.UserId -match '^S-1-') { $Task.Principal.UserId } else {
@@ -133,6 +149,7 @@ if ($InspectLab2Controller) {
     $folder = $scheduler.GetFolder('\')
     # Refresh both names twice, as in ordinary Status. Only ERROR_FILE_NOT_FOUND
     # proves absence of the competing legacy registration.
+    $priorInstance = $null
     foreach ($observation in 1..2) {
         try {
             $null = $folder.GetTask('Workbridge Helper ' + $HelperId)
@@ -157,9 +174,14 @@ if ($InspectLab2Controller) {
             Principal=$definition.Principal; Triggers=@(); Settings=$definition.Settings
         }
         Assert-OwnedHelperTask $task $config
+        $instance = Get-TaskInstanceIdentity $current
+        if ($priorInstance -and ($priorInstance.enginePid -ne $instance.enginePid -or
+            $priorInstance.instanceGuid -cne $instance.instanceGuid)) { throw 'TASK_INSTANCE: identity changed during inspection.' }
+        $priorInstance = $instance
     }
     [ordered]@{helperId=$HelperId; taskName=$taskName; state='Running'; runLevel='Limited';
-        atLogon=$config.atLogon; lastTaskResult=$current.LastTaskResult; registration=$configPath} | ConvertTo-Json
+        atLogon=$config.atLogon; lastTaskResult=$current.LastTaskResult; registration=$configPath;
+        enginePid=$instance.enginePid; instanceGuid=$instance.instanceGuid} | ConvertTo-Json
     return
 }
 Import-Module (Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/Modules/ScheduledTasks') -ErrorAction Stop
@@ -215,11 +237,13 @@ $matches = @($tasks | Where-Object { $_.TaskName -ieq $taskName })
 if ($matches.Count -gt 1) { throw 'TASK_COLLISION: duplicate task names.' }
 $task = if ($matches.Count) { $matches[0] } else { $null }
 if ($task) { Assert-OwnedHelperTask $task $config }
+$instance = if ($Action -eq 'Status' -and $task -and $task.State -eq 'Running') { Get-RunningTaskInstance $taskName } else { $null }
 $info = if ($task) { Get-ScheduledTaskInfo -TaskPath '\' -TaskName $taskName } else { $null }
 [ordered]@{
     helperId=$HelperId; taskName=$taskName; state=$(if ($task) { [string]$task.State } else { 'NotRegistered' })
     runLevel=$(if ($task) { 'Limited' } else { $null })
     lastTaskResult=$(if ($info) { $info.LastTaskResult } else { $null })
     atLogon=$config.atLogon; registration=$configPath
+    enginePid=$(if ($instance) { $instance.enginePid } else { $null }); instanceGuid=$(if ($instance) { $instance.instanceGuid } else { $null })
     note='Task state is not application health. Inspect the helper heartbeat/output; no elevation is granted.'
 } | ConvertTo-Json

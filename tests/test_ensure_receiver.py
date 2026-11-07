@@ -67,10 +67,10 @@ class ManagedReceiverTests(unittest.TestCase):
             legacy.assert_called_once_with("lab1", candidate)
 
     def test_legacy_inspection_requires_exact_verified_status(self):
-        candidate = {"image": "C:/Python/pythonw.exe"}
+        candidate = {"image": "C:/Python/pythonw.exe", "pid": 123}
         status = {"helperId": "rr2-receiver-lab1", "state": "Running",
                   "atLogon": False, "runLevel": "Limited",
-                  "ownership": "verified-legacy-read-only"}
+                  "ownership": "verified-legacy-read-only", "enginePid": 123, "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
         with mock.patch("pathlib.Path.is_file", return_value=True), \
              mock.patch.object(receiver.subprocess, "run") as run:
             run.return_value = mock.Mock(returncode=0, stdout=json.dumps(status).encode())
@@ -78,7 +78,7 @@ class ManagedReceiverTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0][-4:],
                              ["-HelperId", "rr2-receiver-lab1", "-Executable", candidate["image"]])
             for key, value in (("helperId", "rr2-receiver-lab2"), ("atLogon", True),
-                               ("ownership", "unknown"), ("state", "Ready")):
+                               ("ownership", "unknown"), ("state", "Ready"), ("enginePid", 124), ("instanceGuid", "bad")):
                 invalid = dict(status, **{key: value})
                 run.return_value.stdout = json.dumps(invalid).encode()
                 with self.subTest(key=key), self.assertRaisesRegex(
@@ -120,13 +120,15 @@ class ManagedReceiverTests(unittest.TestCase):
                  mock.patch.object(receiver.subprocess, "run", return_value=mock.Mock(
                      returncode=0, stdout=json.dumps(value).encode("utf-8"))):
                 with self.assertRaisesRegex(DependencyUnavailable, "managed-helper-status-invalid"):
-                    receiver._task_status("lab1")
+                    receiver._task_status("lab1", 123)
 
     def test_status_uses_rr2_owned_manager_and_exact_helper(self):
-        status = {"state": "Running", "atLogon": False, "runLevel": "Limited"}
+        status = {"state": "Running", "atLogon": False, "runLevel": "Limited", "enginePid": 123, "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
         with mock.patch.object(receiver.subprocess, "run", return_value=mock.Mock(
                 returncode=0, stdout=json.dumps(status).encode())) as run:
-            self.assertEqual(receiver._task_status("lab2"), status)
+            self.assertEqual(receiver._task_status("lab2", 123), status)
+            with self.assertRaisesRegex(DependencyUnavailable, "managed-helper-not-running"):
+                receiver._task_status("lab2", 124)
         args = run.call_args.args[0]
         self.assertIn(str(receiver.ROOT / "scripts" / "Manage-RR2HelperTask.ps1"), args)
         self.assertEqual(args[-4:], ["-Action", "Status", "-HelperId", "rr2-receiver-lab2"])

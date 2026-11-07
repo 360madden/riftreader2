@@ -35,7 +35,7 @@ def start(lab):
          (output / "stderr.private.log").open("x", encoding="utf-8", buffering=1) as stderr, \
          contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
-            _task_status(lab)
+            _task_status(lab, os.getpid())
             config_path = _config(lab)
             if _port_owners(PORTS[lab]):
                 raise RuntimeError("receiver-endpoint-already-owned")

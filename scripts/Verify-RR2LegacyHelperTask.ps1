@@ -6,6 +6,19 @@ param(
 )
 # Compatibility inspection only: never invokes Workbridge code or changes a task.
 $ErrorActionPreference = 'Stop'
+function Get-RunningTaskInstance([string]$Name) {
+    $service = New-Object -ComObject 'Schedule.Service'
+    $service.Connect()
+    $instances = $service.GetFolder('\').GetTask($Name).GetInstances(0)
+    if ($instances.Count -ne 1) { throw 'TASK_INSTANCE: expected exactly one running instance.' }
+    $instance = $instances.Item(1)
+    $pidValue = [long]$instance.EnginePID
+    $guidValue = [guid]::Empty
+    if ($pidValue -le 0 -or $pidValue -gt [int]::MaxValue -or
+        ![guid]::TryParse([string]$instance.InstanceGuid, [ref]$guidValue) -or $guidValue -eq [guid]::Empty) { throw 'TASK_INSTANCE: invalid instance identity.' }
+    return @{enginePid=[int]$pidValue; instanceGuid=$guidValue.ToString()}
+}
+
 function Read-LegacyRegistration([string]$Path) {
     $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
     try {
@@ -66,5 +79,6 @@ $expectedState = if ($InspectReadyController) { 'Ready' } else { 'Running' }
 $legacyTask = Get-LegacyTask $HelperId
 $config = Read-LegacyRegistration (Join-Path 'C:\work\workbridge-mcp\.local\helpers' ($HelperId + '/registration.json'))
 Assert-LegacyHelper $legacyTask $config $expected $sid $expectedState
+$instance = if (!$InspectReadyController) { Get-RunningTaskInstance $expected.taskName } else { $null }
 $ownership = if ($InspectReadyController) { 'verified-legacy-ready-read-only' } else { 'verified-legacy-read-only' }
-[ordered]@{helperId=$HelperId; taskName=$expected.taskName; state=$expectedState; atLogon=$false; runLevel='Limited'; ownership=$ownership} | ConvertTo-Json -Compress
+[ordered]@{helperId=$HelperId; taskName=$expected.taskName; state=$expectedState; atLogon=$false; runLevel='Limited'; ownership=$ownership; enginePid=$(if ($instance) { $instance.enginePid } else { $null }); instanceGuid=$(if ($instance) { $instance.instanceGuid } else { $null })} | ConvertTo-Json -Compress

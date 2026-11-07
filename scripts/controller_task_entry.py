@@ -40,7 +40,7 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 
-def _require_owned_task(lab):
+def _require_owned_task(lab, expected_pid):
     """Verify the exact on-demand helper registration, not a mere task name."""
     if not MANAGER.is_file():
         fail("managed-helper-unavailable")
@@ -59,8 +59,11 @@ def _require_owned_task(lab):
         fail("managed-helper-status-invalid")
     if not isinstance(status, dict):
         fail("managed-helper-status-invalid")
+    from scripts.ensure_receiver import _valid_instance_guid
     if (status.get("state") != "Running" or status.get("atLogon") is not False
-            or status.get("runLevel") != "Limited"):
+            or status.get("runLevel") != "Limited"
+            or type(status.get("enginePid")) is not int or status["enginePid"] != expected_pid
+            or not _valid_instance_guid(status.get("instanceGuid"))):
         fail("managed-helper-not-running-or-not-on-demand")
 
 
@@ -74,7 +77,7 @@ def start(lab):
          (output / "stderr.private.log").open("x", encoding="utf-8", buffering=1) as stderr, \
          contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
         try:
-            _require_owned_task(lab)
+            _require_owned_task(lab, os.getpid())
             config_path = CONFIGS[lab]
             config = HostConfig.load(config_path)
             if not QUEUE.is_file():

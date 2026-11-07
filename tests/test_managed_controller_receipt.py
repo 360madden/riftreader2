@@ -67,7 +67,8 @@ class ManagedReceiptTests(unittest.TestCase):
             raise RuntimeError("process-unavailable")
         return self.live[pid]
 
-    def verify_owner(self, lab):
+    def verify_owner(self, lab, expected_pid):
+        self.assertEqual(expected_pid, 321)
         self.verified.append(lab)
 
     def test_one_live_receipt_builds_canonical_no_start_host_plan(self):
@@ -120,7 +121,7 @@ class ManagedReceiptTests(unittest.TestCase):
         legacy = Mock()
         with patch.object(self, "verify_owner", side_effect=RuntimeError("not-rr2")):
             self.resolve(verify_legacy=legacy)
-            legacy.assert_called_once_with("lab2", self.identity["image"], self.root)
+            legacy.assert_called_once_with("lab2", self.identity["image"], self.root, 321)
             legacy.reset_mock()
             (self.root / self.sources[0]).write_bytes(b"changed")
             with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-runtime-changed"):
@@ -139,25 +140,40 @@ class ManagedReceiptTests(unittest.TestCase):
                 self.resolve(allow_legacy=False, verify_legacy=legacy)
         legacy.assert_not_called()
 
+    def test_inspection_task_binds_instance_to_receipt_pid(self):
+        status = {"helperId": "rr2-controller-lab2", "taskName": "RiftReader2 Helper rr2-controller-lab2",
+                  "state": "Running", "runLevel": "Limited", "atLogon": False,
+                  "enginePid": 321, "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
+        with patch.object(managed.subprocess, "run") as run:
+            run.return_value = Mock(returncode=0, stdout=json.dumps(status).encode())
+            managed.verify_lab2_inspection_task("lab2", 321)
+            for invalid in (dict(status, enginePid=322), dict(status, enginePid=0),
+                            dict(status, instanceGuid="bad"), dict(status, instanceGuid=None)):
+                run.return_value.stdout = json.dumps(invalid).encode()
+                with self.assertRaises(managed.ManagedReceiptError):
+                    managed.verify_lab2_inspection_task("lab2", 321)
+            with self.assertRaises(managed.ManagedReceiptError):
+                managed.verify_lab2_inspection_task("lab1", 321)
+
     def test_legacy_inspector_requires_strict_status_and_image(self):
         inspector = self.root / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
         inspector.write_text("offline mock")
         status = {"helperId": "rr2-controller-lab2", "state": "Running", "atLogon": False,
-                  "runLevel": "Limited", "ownership": "verified-legacy-read-only"}
+                  "runLevel": "Limited", "ownership": "verified-legacy-read-only", "enginePid": 321, "instanceGuid": "4a048a33-b778-4f2f-9a90-e139cd4ce100"}
         with patch.object(managed.subprocess, "run") as run:
             run.return_value = Mock(returncode=0, stdout=json.dumps(status).encode())
-            managed._verify_legacy_owner("lab2", self.identity["image"], self.root)
+            managed._verify_legacy_owner("lab2", self.identity["image"], self.root, 321)
             self.assertEqual(run.call_args.args[0][-4:],
                              ["-HelperId", "rr2-controller-lab2", "-Executable", self.identity["image"]])
             for invalid in ([], dict(status, helperId="rr2-controller-lab1"),
                             dict(status, state="Ready"), dict(status, atLogon=True),
-                            dict(status, ownership="unknown")):
+                            dict(status, ownership="unknown"), dict(status, enginePid=322), dict(status, instanceGuid="bad")):
                 run.return_value.stdout = json.dumps(invalid).encode()
                 with self.subTest(invalid=invalid), self.assertRaises(managed.ManagedReceiptError):
-                    managed._verify_legacy_owner("lab2", self.identity["image"], self.root)
+                    managed._verify_legacy_owner("lab2", self.identity["image"], self.root, 321)
             run.return_value = Mock(returncode=1, stdout=b"")
             with self.assertRaises(managed.ManagedReceiptError):
-                managed._verify_legacy_owner("lab2", self.identity["image"], self.root)
+                managed._verify_legacy_owner("lab2", self.identity["image"], self.root, 321)
     def test_missing_or_extra_source_hashes_are_refused(self):
         for bad in ({"sourceHashes": {self.sources[0]: "a" * 64}},
                     {"sourceHashes": {"extra": "a" * 64,

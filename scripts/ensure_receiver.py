@@ -98,7 +98,15 @@ def _port_owners(port):
     return parse_tcp_listener_rows(bytes(data.raw[:size.value]), port, listener_table=True)
 
 
-def _task_status(lab):
+def _valid_instance_guid(value):
+    from uuid import UUID
+    try:
+        return isinstance(value, str) and UUID(value).int != 0
+    except (ValueError, AttributeError):
+        return False
+
+
+def _task_status(lab, expected_pid):
     powershell = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
     result = subprocess.run(
         [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
@@ -117,7 +125,9 @@ def _task_status(lab):
         _blocked("managed-helper-status-invalid")
     if (status.get("state") != "Running"
             or status.get("atLogon") is not False
-            or status.get("runLevel") != "Limited"):
+            or status.get("runLevel") != "Limited"
+            or type(status.get("enginePid")) is not int or status["enginePid"] != expected_pid
+            or not _valid_instance_guid(status.get("instanceGuid"))):
         _blocked("managed-helper-not-running-or-not-on-demand")
     return status
 
@@ -142,7 +152,9 @@ def _legacy_task_status(lab, receiver):
     if (not isinstance(status, dict) or status.get("helperId") != "rr2-receiver-" + lab
             or status.get("ownership") != "verified-legacy-read-only"
             or status.get("state") != "Running" or status.get("atLogon") is not False
-            or status.get("runLevel") != "Limited"):
+            or status.get("runLevel") != "Limited"
+            or type(status.get("enginePid")) is not int or status["enginePid"] != receiver.get("pid")
+            or not _valid_instance_guid(status.get("instanceGuid"))):
         _blocked("receiver-legacy-ownership-refused")
     return status
 
@@ -194,7 +206,7 @@ def _probe(lab, config_path):
     if not _matching_receipt(lab, receiver, config_path):
         _blocked("receiver-listener-not-owned-by-task")
     try:
-        _task_status(lab)
+        _task_status(lab, receiver["pid"])
     except DependencyUnavailable:
         # Only a matching live process receipt may reach the read-only legacy
         # verifier. Startup itself never uses or starts the legacy task.

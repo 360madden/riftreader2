@@ -190,7 +190,7 @@ class ClientWiringTests(unittest.TestCase):
              patch.object(control_client, "ControlClient"), \
              patch.object(control_client, "_capture", return_value={"ok": True}):
             self.assertEqual(control_client.run(args), {"ok": True})
-            host.assert_called_once_with("lab1")
+            host.assert_not_called()  # guest.ensure owns the controller preflight
             guest.assert_called_once_with("lab1")
 
     def test_status_does_not_start_guest_and_opt_out_skips_both(self):

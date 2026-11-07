@@ -412,23 +412,27 @@ def run(args, *, opener=None) -> dict:
         raise ClientError("config-error", str(error)) from error
     # Operational calls own their controller prerequisite. Test/openers and
     # non-fleet configurations stay inert; never launch an unrecognized target.
-    if opener is None and not getattr(args, "no_auto_start", False):
+    if (opener is None and args.command not in ("stop", "release")
+            and not (args.command == "status" and getattr(args, "no_auto_start", False))):
         repo_root = str(Path(__file__).resolve().parents[1])
         if repo_root not in sys.path:
             sys.path.insert(0, repo_root)
-        from scripts.ensure_controller import CONFIGS, ensure
+        from scripts.ensure_controller import CONFIGS, ensure, ensure_existing
         from scripts.operation_dependencies import DependencyUnavailable
         target = next((lab for lab, path in CONFIGS.items()
                        if path.resolve() == args.config.resolve()), None)
         if target is not None:
             try:
-                ensure(target)
-                # Live capture and reviewed actions need an authenticated guest,
-                # not merely a listening main-PC controller. Status and
-                # cleanup-only operations remain independently inspectable.
-                if args.command in ("capture", "arm", "action"):
+                no_auto_start = getattr(args, "no_auto_start", False)
+                # The guest dependency also verifies the controller. Avoid a
+                # duplicate ownership sweep on capture and reviewed actions.
+                if no_auto_start:
+                    ensure_existing(target)
+                elif args.command in ("capture", "arm", "action"):
                     from scripts.ensure_guest_agent import ensure as ensure_guest_agent
                     ensure_guest_agent(target)
+                else:
+                    ensure(target)
             except DependencyUnavailable as error:
                 raise ClientError("dependency-unavailable", str(error)) from None
     access = None

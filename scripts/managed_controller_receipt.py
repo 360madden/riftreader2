@@ -68,7 +68,7 @@ def _valid_time(text):
     return value.tzinfo is not None
 
 
-def _verify_legacy_owner(lab, image, root):
+def _verify_legacy_owner(lab, image, root, expected_pid):
     """Inspect an existing legacy task without invoking its manager."""
     require(isinstance(image, str) and bool(image), "managed-process-image-invalid")
     inspector = root / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
@@ -84,13 +84,16 @@ def _verify_legacy_owner(lab, image, root):
         status = json.loads(result.stdout.decode("utf-8-sig")) if result.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired, UnicodeError, ValueError) as error:
         raise ManagedReceiptError("managed-legacy-ownership-refused") from error
-    require(isinstance(status, dict) and status.get("helperId") == "rr2-controller-" + lab
+    from scripts.ensure_receiver import _valid_instance_guid
+    require(isinstance(status, dict) and type(status.get("enginePid")) is int
+            and status["enginePid"] == expected_pid and _valid_instance_guid(status.get("instanceGuid"))
+            and status.get("helperId") == "rr2-controller-" + lab
             and status.get("ownership") == "verified-legacy-read-only"
             and status.get("state") == "Running" and status.get("atLogon") is False
             and status.get("runLevel") == "Limited", "managed-legacy-ownership-refused")
 
 
-def verify_lab2_inspection_task(lab: str) -> None:
+def verify_lab2_inspection_task(lab: str, expected_pid: int) -> None:
     """Query fresh Task Scheduler registration and state for the read-only Lab 2 inspection."""
     require(lab == "lab2", "inspection-task-lab-invalid")
     from scripts.controller_task_entry import POWERSHELL
@@ -103,7 +106,10 @@ def verify_lab2_inspection_task(lab: str) -> None:
         capture_output=True, timeout=20, check=False)
     require(result.returncode == 0, "inspection-task-ownership-refused")
     status = json.loads(result.stdout.decode("utf-8-sig"))
-    require(isinstance(status, dict) and status.get("helperId") == "rr2-controller-lab2"
+    from scripts.ensure_receiver import _valid_instance_guid
+    require(isinstance(status, dict) and type(status.get("enginePid")) is int
+            and status["enginePid"] == expected_pid and _valid_instance_guid(status.get("instanceGuid"))
+            and status.get("helperId") == "rr2-controller-lab2"
             and status.get("taskName") == "RiftReader2 Helper rr2-controller-lab2"
             and status.get("state") == "Running" and status.get("runLevel") == "Limited"
             and status.get("atLogon") is False, "inspection-task-ownership-refused")
@@ -205,12 +211,12 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
                 "managed-source-hash-invalid")
         require(_sha(root / source) == expected.upper(), "managed-runtime-changed")
     try:
-        verify_owner(lab)
+        verify_owner(lab, receipt["pid"])
     except Exception as error:
         if not allow_legacy:
             raise ManagedReceiptError("managed-task-ownership-refused") from error
         try:
-            verify_legacy(lab, receipt["processIdentity"].get("image"), root)
+            verify_legacy(lab, receipt["processIdentity"].get("image"), root, receipt["pid"])
         except Exception as error:
             raise ManagedReceiptError("managed-task-ownership-refused") from error
     plan = {

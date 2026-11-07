@@ -34,7 +34,7 @@ class MigrationTests(unittest.TestCase):
                 (m.receiver, '_legacy_task_status', lambda *a: {}),
                 (m.receiver, '_port_owners', lambda *a: []),
                 (m.receiver, 'ensure', lambda lab: {'state': 'started', 'receiver': self.new}),
-                (m.receiver, '_task_status', lambda lab: {}),
+                (m.receiver, '_task_status', lambda lab, pid: {}),
                 (m.receiver, '_matching_receipt', lambda *a: True)]:
             self.stack.enter_context(patch.object(obj, name, val))
 
@@ -119,3 +119,23 @@ class MigrationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReceiptShapeTests(unittest.TestCase):
+    def test_malformed_receipts_do_not_hide_unique_valid_receipt(self):
+        import json
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            identity = {"pid": 1, "processStartUtcTicks": m.receiver.WINDOWS_TICKS_OFFSET + 7, "image": "pythonw.exe"}
+            record = {"lab": "lab1", "pid": 1, "configSha256": "hash", "sourceSha256": m.receiver.SOURCE_SHA256, "entrySha256": "hash", "processIdentity": {"startTicks": 7, "image": "pythonw.exe"}}
+            paths = []
+            for i, value in enumerate((record, dict(record, processIdentity={"startTicks": 7, "image": []}), dict(record, processIdentity=[]))):
+                path = root / "lab1" / str(i) / "process.json"
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps(value))
+                paths.append(path)
+            with patch.object(m.receiver, "TASKS", root), patch.object(m.receiver, "sha", return_value="hash"):
+                self.assertEqual(m.receipt_file("lab1", identity, root), paths[0])
+                paths[1].write_text(json.dumps(record))
+                with self.assertRaisesRegex(RuntimeError, "matching-receipt-not-unique"):
+                    m.receipt_file("lab1", identity, root)

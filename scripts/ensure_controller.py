@@ -163,6 +163,35 @@ def _launch(lab, config):
     return helper
 
 
+def _verify_existing_owner(lab, config):
+    """Bind the authenticated listener to one exact managed generation."""
+    from scripts.managed_controller_receipt import resolve_current_managed_controller
+    from scripts.vm_console_native import listener_owner
+    try:
+        _, receipt, _ = resolve_current_managed_controller(lab)
+        if listener_owner(config.ui_port) != receipt["pid"]:
+            raise ValueError("listener PID differs")
+    except Exception:
+        raise DependencyUnavailable("controller", "managed-owner-refused") from None
+
+
+def ensure_existing(lab):
+    """Verify an existing managed endpoint without starting a controller."""
+    if lab not in CONFIGS:
+        raise DependencyUnavailable("controller", "unknown-lab")
+    try:
+        config = HostConfig.load(CONFIGS[lab])
+        status = _probe(config)
+        if status is None:
+            raise DependencyUnavailable("controller", "existing-endpoint-missing")
+        _verify_existing_owner(lab, config)
+        return {"lab": lab, "state": "reused", "status": status}
+    except DependencyUnavailable:
+        raise
+    except (OSError, ValueError):
+        raise DependencyUnavailable("controller", "preflight-failed") from None
+
+
 def ensure(lab, *, timeout_seconds=40):
     """Use/recover a controller endpoint; guest telemetry is a separate dependency."""
     if lab not in CONFIGS:
@@ -173,10 +202,12 @@ def ensure(lab, *, timeout_seconds=40):
         config = HostConfig.load(CONFIGS[lab])
         status = _probe(config)
         if status is not None:
+            _verify_existing_owner(lab, config)
             return {"lab": lab, "state": "reused", "status": status}
         with _launch_lock(lab):
             status = _probe(config)
             if status is not None:
+                _verify_existing_owner(lab, config)
                 return {"lab": lab, "state": "reused", "status": status}
             helper = _launch(lab, config)
             deadline = time.monotonic() + timeout_seconds
@@ -192,6 +223,7 @@ def ensure(lab, *, timeout_seconds=40):
                         raise
                     continue
                 if status is not None:
+                    _verify_existing_owner(lab, config)
                     return {"lab": lab, "state": "started", "helper": helper, "status": status}
             raise DependencyUnavailable("controller", "managed-helper-not-ready")
     except DependencyUnavailable:

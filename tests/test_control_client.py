@@ -222,5 +222,59 @@ class ArtifactTests(unittest.TestCase):
             self.assertEqual(sent["action"]["deltaX"], 10)
 
 
+
+
+class ManagedAdmissionTests(unittest.TestCase):
+    def test_cleanup_bypasses_checks_and_never_launches(self):
+        from unittest.mock import patch
+        from scripts import ensure_controller
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_config(Path(directory))
+            with patch.dict(ensure_controller.CONFIGS, {"lab1": path}, clear=True), \
+                 patch.object(ensure_controller, "ensure", side_effect=AssertionError("must not start")), \
+                 patch.object(ensure_controller, "ensure_existing", side_effect=AssertionError("must not inspect")), \
+                 patch.object(client, "ControlClient") as control:
+                control.return_value.request.return_value = {"ok": True}
+                for operation in ("stop", "release"):
+                    for prefix in ([], ["--no-auto-start"]):
+                        client.run(parse(path, *prefix, operation))
+                self.assertEqual(control.return_value.request.call_count, 4)
+
+    def test_no_auto_start_protected_operations_verify_existing_owner(self):
+        from unittest.mock import patch
+        from scripts import ensure_controller
+        from scripts.operation_dependencies import DependencyUnavailable
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_config(Path(directory))
+            with patch.dict(ensure_controller.CONFIGS, {"lab1": path}, clear=True), \
+                 patch.object(ensure_controller, "ensure") as launch, \
+                 patch.object(ensure_controller, "ensure_existing", side_effect=DependencyUnavailable("controller", "managed-owner-refused")) as verify, \
+                 patch.object(client, "ControlClient") as control:
+                for args in (("recover",), ("capture", "--output", str(Path(directory) / "capture")),
+                             ("arm", "--capture", "capture", "--review-note", "review", "--output", "arm"),
+                             ("action", "--arm", "arm", "--output", "out")):
+                    with self.assertRaisesRegex(client.ClientError, "managed-owner-refused"):
+                        client.run(parse(path, "--no-auto-start", *args))
+                self.assertEqual(verify.call_count, 4)
+                launch.assert_not_called()
+                control.assert_not_called()
+
+    def test_status_defaults_to_ensure_but_no_auto_is_diagnostic(self):
+        from unittest.mock import patch
+        from scripts import ensure_controller
+        with tempfile.TemporaryDirectory() as directory:
+            path = write_config(Path(directory))
+            with patch.dict(ensure_controller.CONFIGS, {"lab1": path}, clear=True), \
+                 patch.object(ensure_controller, "ensure") as ensure, \
+                 patch.object(ensure_controller, "ensure_existing") as existing, \
+                 patch.object(client, "ControlClient") as control:
+                control.return_value.request.return_value = {"host": {}}
+                client.run(parse(path, "status"))
+                ensure.assert_called_once_with("lab1")
+                client.run(parse(path, "--no-auto-start", "status"))
+                ensure.assert_called_once_with("lab1")
+                existing.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,7 +47,11 @@ def receipt_file(lab, identity, config):
             if path.stat().st_size > 65536:
                 continue
             value = json.loads(path.read_text(encoding='utf-8'))
-            p = value['processIdentity']
+            if not isinstance(value, dict):
+                continue
+            p = value.get('processIdentity')
+            if not isinstance(p, dict) or not isinstance(p.get('image'), str) or not isinstance(identity.get('image'), str):
+                continue
             if (value['lab'] == lab and value['pid'] == identity['pid']
                 and value['configSha256'] == receiver.sha(config)
                 and value['sourceSha256'] == receiver.SOURCE_SHA256
@@ -114,7 +118,7 @@ def migrate(lab):
         result = receiver.ensure(lab)
         if result['state'] != 'started':
             raise RuntimeError('new-receiver-not-started-by-migration')
-        receiver._task_status(lab)
+        receiver._task_status(lab, result['receiver']['pid'])
         if not receiver._matching_receipt(lab, result['receiver'], config):
             raise RuntimeError('new-receipt-mismatch')
         return {'lab': lab, 'state': 'migrated', 'backup': str(folder),

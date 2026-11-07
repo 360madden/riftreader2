@@ -74,6 +74,18 @@ try {
     $script = $script.Replace("Import-Module (Join-Path `$env:WINDIR 'System32/WindowsPowerShell/v1.0/Modules/ScheduledTasks') -ErrorAction Stop", '# mocked module boundary')
     $script = $script.Replace('$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value', '$sid = ''S-1-5-21-1''')
     $script = $script.Replace('C:\work\workbridge-mcp\.local\helpers', $fixtureReceipts)
+    $script = $script.Replace("New-Object -ComObject 'Schedule.Service'", '$global:mockService')
+    $global:mockInstances = @([pscustomobject]@{EnginePID=123; InstanceGuid='4a048a33-b778-4f2f-9a90-e139cd4ce100'})
+    $collection = [pscustomobject]@{}
+    $collection | Add-Member ScriptProperty Count { $global:mockInstances.Count }
+    $collection | Add-Member ScriptMethod Item { param($index) $global:mockInstances[$index-1] }
+    $registeredTask = [pscustomobject]@{collection=$collection}
+    $registeredTask | Add-Member ScriptMethod GetInstances { param($flags) $this.collection }
+    $folderMock = [pscustomobject]@{registeredTask=$registeredTask}
+    $folderMock | Add-Member ScriptMethod GetTask { param($name) $this.registeredTask }
+    $global:mockService = [pscustomobject]@{folder=$folderMock}
+    $global:mockService | Add-Member ScriptMethod Connect { }
+    $global:mockService | Add-Member ScriptMethod GetFolder { param($path) $this.folder }
     $fixtureScript = Join-Path $fixtureScripts 'Verify-RR2LegacyHelperTask.ps1'
     [IO.File]::WriteAllText($fixtureScript, $script)
     $expect = [ordered]@{schema=1;helperId=$id;ownerSid='S-1-5-21-1';taskName=('Workbridge Helper ' + $id);executable=$exe;arguments=('"' + (Join-Path $fixture 'scripts/controller_task_entry.py') + '" "--lab" "lab2"');workingDirectory=$fixture;atLogon=$false}
@@ -87,6 +99,11 @@ try {
     $global:legacyTestTasks=@($fullTask)
     $result = & $fixtureScript -HelperId $id -Executable $exe | ConvertFrom-Json
     if ($result.ownership -cne 'verified-legacy-read-only' -or $result.state -cne 'Running') { throw 'Full verification failed' }
+    if ($result.enginePid -ne 123 -or !$result.instanceGuid) { throw 'Instance identity missing' }
+    $instance = $global:mockInstances[0]
+    $global:mockInstances = @(); Must-Fail { & $fixtureScript -HelperId $id -Executable $exe }
+    $global:mockInstances = @($instance, $instance); Must-Fail { & $fixtureScript -HelperId $id -Executable $exe }
+    $global:mockInstances = @($instance)
     # Explicit Ready inspection is limited to controllers and cannot certify Running.
     Must-Fail { & $fixtureScript -HelperId $id -Executable $exe -InspectReadyController }
     $fullTask.State='Ready'

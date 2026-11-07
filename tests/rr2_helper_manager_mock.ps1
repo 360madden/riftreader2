@@ -9,7 +9,20 @@ $manager = Join-Path $scripts 'Manage-RR2HelperTask.ps1'
 $source = Get-Content -LiteralPath $manager -Raw
 $source = $source -replace '(?m)^Import-Module .*ScheduledTasks.*\r?\n', ''
 $source = $source.Replace('New-Object -ComObject Schedule.Service', '$global:mockScheduler')
+$source = $source.Replace("New-Object -ComObject 'Schedule.Service'", '$global:mockService')
 [IO.File]::WriteAllText($manager, $source)
+$global:mockInstances = @([pscustomobject]@{EnginePID=123; InstanceGuid='4a048a33-b778-4f2f-9a90-e139cd4ce100'})
+$global:collection = [pscustomobject]@{}
+$collection = $global:collection
+$collection | Add-Member ScriptProperty Count { $global:mockInstances.Count }
+$collection | Add-Member ScriptMethod Item { param($index) $global:mockInstances[$index-1] }
+$registeredTask = [pscustomobject]@{collection=$collection}
+$registeredTask | Add-Member ScriptMethod GetInstances { param($flags) $this.collection }
+$folder = [pscustomobject]@{registeredTask=$registeredTask}
+$folder | Add-Member ScriptMethod GetTask { param($name) $this.registeredTask }
+$global:mockService = [pscustomobject]@{folder=$folder}
+$global:mockService | Add-Member ScriptMethod Connect { }
+$global:mockService | Add-Member ScriptMethod GetFolder { param($path) $this.folder }
 $id = 'rr2-receiver-lab1'
 $global:mockTasks = @()
 $global:mockStarts = 0
@@ -40,8 +53,10 @@ function New-InspectionTask($registration) {
     $definition = [pscustomobject]@{Actions=$actions; Principal=$registration.Principal.PSObject.Copy();
         Triggers=[pscustomobject]@{Count=0}; Settings=$registration.Settings.PSObject.Copy();
         RegistrationInfo=[pscustomobject]@{Description=$registration.Description}}
-    return [pscustomobject]@{Path=('\' + $registration.TaskName); Name=$registration.TaskName;
+    $result = [pscustomobject]@{Path=('\' + $registration.TaskName); Name=$registration.TaskName;
         State=4; Definition=$definition; LastTaskResult=0}
+    $result | Add-Member ScriptMethod GetInstances { param($flags) $global:collection }
+    return $result
 }
 try {
     [IO.File]::WriteAllText((Join-Path $root 'pythonw.exe'), '')
@@ -84,6 +99,12 @@ try {
     Must-Fail { & $manager -Action Status -HelperId $id }
     $global:mockTasks = @($task)
     & $manager -Action Start -HelperId $id | Out-Null
+    $status = & $manager -Action Status -HelperId $id | ConvertFrom-Json
+    if ($status.enginePid -ne 123 -or !$status.instanceGuid) { throw 'Instance identity missing' }
+    $instance = $global:mockInstances[0]
+    $global:mockInstances = @(); Must-Fail { & $manager -Action Status -HelperId $id }
+    $global:mockInstances = @($instance, $instance); Must-Fail { & $manager -Action Status -HelperId $id }
+    $global:mockInstances = @($instance)
     & $manager -Action Start -HelperId $id | Out-Null
     if ($global:mockStarts -ne 1) { throw 'Start was not idempotent.' }
     $receipt = Join-Path $root ('.local/rr2-helpers/' + $id + '/registration.json')
@@ -111,13 +132,23 @@ try {
         }
         if ($name -cne 'RiftReader2 Helper rr2-controller-lab2') { throw 'foreign task' }
         $global:mockReads++
+        if ($global:changeIdentity -and $global:mockReads -eq 2) { $global:mockInstances=@($global:changeIdentity) }
         if ($global:changeOnSecondRead -and $global:mockReads -eq 2) { $global:inspectionTask.State = 3 }
         return $global:inspectionTask
     }
     $inspect = { & $manager -Action Status -HelperId $id -InspectLab2Controller }
     $global:inspectionTask = New-InspectionTask $registered
     $proof = & $inspect | ConvertFrom-Json
+    if ($proof.enginePid -ne 123 -or !$proof.instanceGuid) { throw 'Inspection instance identity missing' }
     if ($proof.state -cne 'Running' -or $global:mockReads -ne 2) { throw 'Two fresh task proofs required.' }
+    $instance = $global:mockInstances[0]
+    $global:mockInstances=@(); Must-Fail $inspect
+    $global:mockInstances=@($instance,$instance); Must-Fail $inspect
+    foreach ($bad in @([pscustomobject]@{EnginePID=0; InstanceGuid=$instance.InstanceGuid},
+                         [pscustomobject]@{EnginePID=123; InstanceGuid='invalid'})) {
+        $global:mockInstances=@($bad); Must-Fail $inspect
+    }
+    $global:mockInstances=@($instance)
     foreach ($alter in @(
         {$t.Path='\other\task'}, {$t.Name='wrong'}, {$t.State=3}, {$d.RegistrationInfo.Description='wrong'},
         {$d.Actions.Count=2}, {$d.Actions.First.Type=5}, {$d.Actions.First.Path='foreign.exe'},
@@ -136,6 +167,12 @@ try {
     $global:mockReads = 0; $global:changeOnSecondRead = $true
     Must-Fail $inspect
     $global:changeOnSecondRead = $false
+    foreach ($changed in @([pscustomobject]@{EnginePID=124; InstanceGuid=$instance.InstanceGuid},
+                            [pscustomobject]@{EnginePID=123; InstanceGuid='1a048a33-b778-4f2f-9a90-e139cd4ce100'})) {
+        $global:mockInstances=@($instance); $global:mockReads=0; $global:changeIdentity=$changed
+        Must-Fail $inspect
+    }
+    $global:changeIdentity=$null; $global:mockInstances=@($instance)
     $global:inspectionTask = New-InspectionTask $registered
     $global:mockLegacy = $true; Must-Fail $inspect; $global:mockLegacy = $false
     $global:mockDenied = $true; Must-Fail $inspect; $global:mockDenied = $false
