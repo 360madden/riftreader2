@@ -87,6 +87,25 @@ try {
     $global:legacyTestTasks=@($fullTask)
     $result = & $fixtureScript -HelperId $id -Executable $exe | ConvertFrom-Json
     if ($result.ownership -cne 'verified-legacy-read-only' -or $result.state -cne 'Running') { throw 'Full verification failed' }
+    # Explicit Ready inspection is limited to controllers and cannot certify Running.
+    Must-Fail { & $fixtureScript -HelperId $id -Executable $exe -InspectReadyController }
+    $fullTask.State='Ready'
+    Must-Fail { & $fixtureScript -HelperId $id -Executable $exe }
+    $ready = & $fixtureScript -HelperId $id -Executable $exe -InspectReadyController | ConvertFrom-Json
+    if ($ready.state -cne 'Ready' -or $ready.ownership -cne 'verified-legacy-ready-read-only') { throw 'Ready verification failed' }
+    foreach ($invalidState in @('Disabled','Unknown','Queued')) {
+        $fullTask.State=$invalidState
+        Must-Fail { & $fixtureScript -HelperId $id -Executable $exe -InspectReadyController }
+    }
+    $fullTask.State='Ready'
+    $global:legacyTestTasks=@($fullTask, [pscustomobject]@{TaskName=('RiftReader2 Helper ' + $id);State='Ready'})
+    Must-Fail { & $fixtureScript -HelperId $id -Executable $exe -InspectReadyController }
+    $global:legacyTestTasks=@($fullTask)
+    Must-Fail { & $fixtureScript -HelperId 'rr2-receiver-lab2' -Executable $exe -InspectReadyController }
+    $fullTask.TaskPath='\foreign\'
+    Must-Fail { & $fixtureScript -HelperId $id -Executable $exe -InspectReadyController }
+    $fullTask.TaskPath='\'
+    $fullTask.State='Running'
     foreach ($state in @('Ready','Running','Disabled','Unknown')) {
         $global:legacyTestTasks=@($fullTask, [pscustomobject]@{TaskName=('RIFTREADER2 HELPER ' + $id);State=$state})
         Must-Fail { & $fixtureScript -HelperId $id -Executable $exe }

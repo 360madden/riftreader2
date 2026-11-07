@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][ValidateSet('rr2-receiver-lab1','rr2-receiver-lab2','rr2-controller-lab1','rr2-controller-lab2')][string]$HelperId,
-    [Parameter(Mandatory)][string]$Executable
+    [Parameter(Mandatory)][string]$Executable,
+    [switch]$InspectReadyController
 )
 # Compatibility inspection only: never invokes Workbridge code or changes a task.
 $ErrorActionPreference = 'Stop'
@@ -15,7 +16,9 @@ function Read-LegacyRegistration([string]$Path) {
     if ($null -eq $value -or $value.GetType().FullName -cne 'System.Management.Automation.PSCustomObject') { throw 'legacy-registration-invalid' }
     return $value
 }
-function Assert-LegacyHelper($Task, $Config, $Expected, [string]$Sid) {
+function Assert-LegacyHelper($Task, $Config, $Expected, [string]$Sid, [string]$ExpectedState = 'Running') {
+    if ($ExpectedState -cnotin @('Running','Ready') -or
+        ($ExpectedState -ceq 'Ready' -and $Expected.helperId -cnotmatch '^rr2-controller-lab[12]$')) { throw 'legacy-inspection-mode-invalid' }
     foreach ($name in $Expected.Keys) {
         $actual = $Config.PSObject.Properties[$name]
         if ($null -eq $actual -or ($name -eq 'schema' -and $actual.Value -isnot [int] -and $actual.Value -isnot [long]) -or ($name -ne 'schema' -and ($null -eq $actual.Value -or $actual.Value.GetType() -ne $Expected[$name].GetType())) -or $actual.Value -cne $Expected[$name]) { throw 'legacy-registration-mismatch' }
@@ -27,7 +30,7 @@ function Assert-LegacyHelper($Task, $Config, $Expected, [string]$Sid) {
     }
     $settings = $Task.Settings
     if ($Task.TaskPath -cne '\' -or $Task.TaskName -cne $Expected.taskName -or
-        $Task.Description -cne $Expected.description -or $Task.State -cne 'Running' -or
+        $Task.Description -cne $Expected.description -or $Task.State -cne $ExpectedState -or
         @($Task.Actions).Count -ne 1 -or $Task.Actions.Execute -ine $Expected.executable -or
         [string]$Task.Actions.Arguments -cne $Expected.arguments -or
         $Task.Actions.WorkingDirectory -ine $Expected.workingDirectory -or
@@ -58,7 +61,10 @@ $expected = [ordered]@{schema=1; helperId=$HelperId; ownerSid=$sid; taskName=('W
 $hasher = [Security.Cryptography.SHA256]::Create()
 try { $digest = [BitConverter]::ToString($hasher.ComputeHash([Text.Encoding]::UTF8.GetBytes(($expected | ConvertTo-Json -Compress)))).Replace('-','') } finally { $hasher.Dispose() }
 $expected.description = 'Workbridge user helper; registration SHA256 ' + $digest
+if ($InspectReadyController -and $HelperId -cnotmatch '^rr2-controller-lab[12]$') { throw 'legacy-inspection-mode-invalid' }
+$expectedState = if ($InspectReadyController) { 'Ready' } else { 'Running' }
 $legacyTask = Get-LegacyTask $HelperId
 $config = Read-LegacyRegistration (Join-Path 'C:\work\workbridge-mcp\.local\helpers' ($HelperId + '/registration.json'))
-Assert-LegacyHelper $legacyTask $config $expected $sid
-[ordered]@{helperId=$HelperId; taskName=$expected.taskName; state='Running'; atLogon=$false; runLevel='Limited'; ownership='verified-legacy-read-only'} | ConvertTo-Json -Compress
+Assert-LegacyHelper $legacyTask $config $expected $sid $expectedState
+$ownership = if ($InspectReadyController) { 'verified-legacy-ready-read-only' } else { 'verified-legacy-read-only' }
+[ordered]@{helperId=$HelperId; taskName=$expected.taskName; state=$expectedState; atLogon=$false; runLevel='Limited'; ownership=$ownership} | ConvertTo-Json -Compress
