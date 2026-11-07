@@ -8,8 +8,8 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = 'A96508FE963E4DFDE6EABD50889FD0432A72C0309AEC562E35CBF87B584F49D9'
-READER = ROOT / 'artifacts/native-zone-provider-fix-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = 'C3DD11B5B7AA94BCE1D5C64F78ED41FB3FC38C0E3FB8E45856D732189DF2ACBD'
+READER = ROOT / 'artifacts/native-current-stats-20-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-zone-seed-20261107/runs'
 
 QUALIFICATION='zone ID candidate only; API correspondence, name, freshness and restart unverified'
@@ -55,7 +55,7 @@ def validate_report(report, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117704544 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117725024 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)

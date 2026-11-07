@@ -8,9 +8,9 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = 'F6AE10900E67D23EC1C43F03CD17C1F015969C5A2D67AEACA603163112EC6FB0'
-READER_SIZE = 117737312
-READER = ROOT / 'artifacts/native-range-flag33-20261107/publish/RiftReader2.Live.exe'
+READER_SHA = '6F662E78BBE5A360914FA38F2B26EAB4B3C9004EA4B4B641E15D7FBBB9A2CDF6'
+READER_SIZE = 117741920
+READER = ROOT / 'artifacts/native-range-energy-role-factor-20261107/publish/RiftReader2.Live.exe'
 EVIDENCE = ROOT / 'artifacts/native-cooldown-modifiers-20261107/runs'
 
 QUALIFICATION = 'raw modifier census only; eligibility, adjusted cooldown, freshness and restart unverified'
@@ -66,10 +66,10 @@ def validate_report(report, *, pid, ticks):
         except ValueError: invalid()
         if len(raw)!=32 or not integer(r.get('pointer'),0,2**64-1) or struct.unpack_from('<Q',raw)[0]!=r['pointer']: invalid()
         status=r.get('status'); p=r['pointer']; scale=r.get('rawScaleKey')
-        if scale is not None and (status not in ('mode-4-raw-candidate','mode-0-raw-candidate') or not integer(scale,0,2**32-1)): invalid()
+        if scale is not None and (status not in ('mode-4-raw-candidate','mode-0-raw-candidate','mode-2-raw-candidate') or not integer(scale,0,2**32-1)): invalid()
         seed=r.get('flag33Seed')
         if seed is not None:
-            if status!='mode-0-raw-candidate' or not integer(r.get('flag33'),1,255) or not isinstance(seed,dict) or not pointer(seed.get('entity')): invalid()
+            if status not in ('mode-0-raw-candidate','mode-2-raw-candidate') or not integer(r.get('flag33'),1,255) or not isinstance(seed,dict) or not pointer(seed.get('entity')): invalid()
             es=seed.get('entrySourceKey'); source=seed.get('entitySourceKey'); match=seed.get('sourceMatches'); address=seed.get('address'); key=seed.get('key18'); slot=seed.get('slot1C'); ss=seed.get('status')
             if not integer(es,0,2**64-1) or es!=struct.unpack_from('<Q',raw,16)[0] or (source is not None and not integer(source,0,2**64-1)) or (match is not None and type(match) is not bool) or (source is None and match is not None) or (source is not None and match!=(source==es)) or (address is not None and not integer(address,0,2**64-1)): invalid()
             if ss=='entry-count-branch':
@@ -83,9 +83,27 @@ def validate_report(report, *, pid, ticks):
             elif ss=='read-unavailable':
                 if key is not None or slot is not None: invalid()
             else: invalid()
+            factor=seed.get('roleFactor')
+            if factor is not None:
+                if ss!='typed-073c-direct-branch' or not isinstance(factor,dict): invalid()
+                fs=factor.get('status'); rv=factor.get('rawMultiplier'); addresses=[factor.get(k) for k in ('roleAddress','nodeAddress','containerAddress','childAddress')]
+                if any(a is not None and not integer(a,0,2**64-1) for a in addresses): invalid()
+                if fs=='raw-factor-candidate':
+                    if not all(pointer(a) for a in addresses) or not integer(rv,-2**31,2**31-1): invalid()
+                elif fs in ('role-index-outside-zero-candidate','null-role-zero-candidate','tree-miss-zero-candidate','null-container-zero-candidate','slot-miss-zero-candidate'):
+                    if type(rv) is not int or rv!=0: invalid()
+                    role,node,container,child=addresses
+                    if fs=='role-index-outside-zero-candidate' and addresses!=[None,None,None,None]: invalid()
+                    if fs=='null-role-zero-candidate' and addresses!=[0,None,None,None]: invalid()
+                    if fs=='tree-miss-zero-candidate' and not (pointer(role) and node==0 and container is None and child is None): invalid()
+                    if fs=='null-container-zero-candidate' and not (pointer(role) and pointer(node) and container==0 and child is None): invalid()
+                    if fs=='slot-miss-zero-candidate' and not (pointer(role) and pointer(node) and pointer(container) and child is None): invalid()
+                elif fs in ('owner-type-unavailable','role-type-unavailable','tree-path-unavailable','container-type-unavailable','child-type-unavailable','read-or-binding-unavailable'):
+                    if rv is not None: invalid()
+                else: invalid()
         direct=r.get('directScale')
         if direct is not None:
-            if status not in ('mode-4-raw-candidate','mode-0-raw-candidate') or r.get('flag36')!=1 or (status=='mode-0-raw-candidate' and r.get('flag33')!=0) or not isinstance(direct,dict) or not integer(scale,0,2**32-1) or type(direct.get('key')) is not int or direct['key']!=scale: invalid()
+            if status not in ('mode-4-raw-candidate','mode-0-raw-candidate','mode-2-raw-candidate') or r.get('flag36')!=1 or (status in ('mode-0-raw-candidate','mode-2-raw-candidate') and r.get('flag33')!=0) or not isinstance(direct,dict) or not integer(scale,0,2**32-1) or type(direct.get('key')) is not int or direct['key']!=scale: invalid()
             ds=direct.get('status'); multiplier=direct.get('rawMultiplier')
             if ds=='raw-factor-candidate':
                 if scale<=1 or not integer(multiplier,-2**31,2**31-1): invalid()
@@ -104,16 +122,16 @@ def validate_report(report, *, pid, ticks):
         elif status=='unavailable':
             if p==0: invalid()
             incomplete=True
-        elif status in ('mode-candidate','mode-4-raw-candidate','mode-0-raw-candidate','mode-0-payload-unavailable'):
+        elif status in ('mode-candidate','mode-4-raw-candidate','mode-0-raw-candidate','mode-0-payload-unavailable','mode-2-raw-candidate','mode-2-payload-unavailable'):
             mode=r.get('mode');vt=r.get('vtable'); getter=r.get('getterRva')
             if not pointer(p) or not integer(mode,-2**31,2**31-1) or not integer(vt,0,2**64-1) or (getter is not None and not integer(getter,0,2**64-1)): invalid()
             if status=='mode-candidate':
                 if mode==4: invalid()
-            elif status=='mode-0-payload-unavailable':
-                if mode!=0 or any(r.get(k) is not None for k in ('float18Bits','float18','float24Bits','float24','operation','flag30','flag33','flag34','flag36','exclusions','directKeys','tags1','tags2','tags3','rawScaleKey','directScale')): invalid()
+            elif status in ('mode-0-payload-unavailable','mode-2-payload-unavailable'):
+                if mode!=(0 if status=='mode-0-payload-unavailable' else 2) or any(r.get(k) is not None for k in ('float18Bits','float18','float24Bits','float24','operation','flag30','flag33','flag34','flag36','exclusions','directKeys','tags1','tags2','tags3','rawScaleKey','directScale')): invalid()
                 mode0_attempt=True
             else:
-                if (status=='mode-4-raw-candidate' and mode!=4) or (status=='mode-0-raw-candidate' and mode!=0): invalid()
+                if (status=='mode-4-raw-candidate' and mode!=4) or (status=='mode-0-raw-candidate' and mode!=0) or (status=='mode-2-raw-candidate' and mode!=2): invalid()
                 if mode==4: mode4=True
                 else: mode0_payload=True; mode0_attempt=True
                 for bits_key,float_key in [('float18Bits','float18'),('float24Bits','float24')]:

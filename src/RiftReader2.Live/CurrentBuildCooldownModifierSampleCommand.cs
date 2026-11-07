@@ -6,9 +6,11 @@ using RiftReader2.Infrastructure;
 namespace RiftReader2.Live;
 internal sealed record RawModifierSpan(ulong Begin,ulong End,IReadOnlyList<uint> Values);
 internal sealed record DirectScaleObservation(string Status, uint Key, int? RawMultiplier=null);
+internal sealed record RoleFactorObservation(string Status,ulong? RoleAddress,ulong? NodeAddress,ulong? ContainerAddress,ulong? ChildAddress,int? RawMultiplier);
 internal sealed record Flag33Seed(string Status, ulong Entity, ulong EntrySourceKey, ulong? EntitySourceKey = null, ulong? Address = null, int? Key18 = null, int? Slot1C = null)
 {
  public bool? SourceMatches => EntitySourceKey.HasValue ? EntrySourceKey==EntitySourceKey.Value : null;
+ public RoleFactorObservation? RoleFactor { get; init; }
 }
 internal sealed record RawRangeConfig(string Status, ulong? Root, ulong? Address = null, uint? MinBits = null, float? Min = null, uint? MaxBits = null, float? Max = null, uint? SpecialKey = null);
 internal sealed record RawCooldownModifier(ulong EntryAddress,string RawEntryHex,ulong Pointer,string Status,int? Mode=null,ulong? Vtable=null,ulong? GetterRva=null,uint? Float18Bits=null,float? Float18=null,uint? Float24Bits=null,float? Float24=null,uint? Operation=null,byte? Flag30=null,byte? Flag33=null,byte? Flag34=null,byte? Flag36=null,RawModifierSpan? Exclusions=null,RawModifierSpan? DirectKeys=null,RawModifierSpan? Tags1=null,RawModifierSpan? Tags2=null,RawModifierSpan? Tags3=null,uint? RawScaleKey=null,DirectScaleObservation? DirectScale=null)
@@ -53,6 +55,72 @@ internal static class CurrentBuildCooldownModifierSampleCommand
    }
    catch(InvalidDataException){if(budget>2*1024*1024)throw;return new("read-unavailable",root,address);}
   }
+  (ulong Begin,ulong End) ReferenceSpan(ulong address,int maxCount)
+  {
+   var header=Take(address,16);var start=U64(header);var limit=U64(header.AsSpan(8));
+   if((start==0)!=(limit==0) || limit<start || (limit-start)%8!=0 || (limit-start)/8>(ulong)maxCount)
+    throw new InvalidDataException("Invalid role reference span.");
+   if(start!=0)Ptr(start,checked((int)Math.Max(8UL,limit-start)));
+   return(start,limit);
+  }
+  RoleFactorObservation RoleFactor(int key,int slot)
+  {
+   ulong? role=null, node=null, container=null, child=null;
+   RoleFactorObservation Result(string status,int? value=null)=>new(status,role,node,container,child,value);
+   try
+   {
+    alternateOwner??=resolveAlternate is null ? ResolveAlternate(session) : resolveAlternate(session);
+    if(alternateOwner.Key!=lookup.Key || alternateOwner.Entity!=lookup.Entity)
+     throw new InvalidDataException("Role owner identity mismatch.");
+    var alternate=Ptr(alternateOwner.Health,0x50);
+    if(Q(alternate+0x10)!=lookup.Entity || before.HealthComponent==0)
+     throw new InvalidDataException("Role component owner mismatch.");
+    var owner=Ptr(Q(alternate+0x48),0xDF0);
+    if(!Type(owner,0x2A46738,0x1C48CC0,0x34C9670,0x2A4B760,0x1C84130))return Result("owner-type-unavailable");
+    ulong roleSlot=0;
+    if(Take(owner+0x24F,1)[0]!=0)
+    {
+     var special=ReferenceSpan(owner+0x7D8,256);
+     if(special.Begin!=special.End)roleSlot=special.Begin;
+    }
+    if(roleSlot==0)
+    {
+     var regular=ReferenceSpan(owner+0xDE0,256);
+     var index=D(owner+0x1D8);
+     if(index>=(regular.End-regular.Begin)/8)return Result("role-index-outside-zero-candidate",0);
+     roleSlot=regular.Begin+index*8UL;
+    }
+    role=Q(roleSlot);
+    if(role==0)return Result("null-role-zero-candidate",0);
+    var r=Ptr(role.Value,0x190);
+    if(!Type(r,0x2BD4388,0x201A050,0x3548720,0x2BE0EF8,0x20482A0))return Result("role-type-unavailable");
+    node=Q(r+0x188);
+    var seen=new HashSet<ulong>();
+    while(node!=0)
+    {
+     var n=Ptr(node.Value,0x30);
+     if(n==r+0x180 || !seen.Add(n) || seen.Count>128)return Result("tree-path-unavailable");
+     var nodeKey=unchecked((int)D(n+0x20));
+     if(key==nodeKey)break;
+     node=Q(n+(key<nodeKey?0x10UL:0x18UL));
+    }
+    if(node==0)return Result("tree-miss-zero-candidate",0);
+    container=Q(node.Value+0x28);
+    if(container==0)return Result("null-container-zero-candidate",0);
+    var c=Ptr(container.Value,0x30);
+    if(!Type(c,0x2868CD8,0x1821880,0x343A3D0,0x2875988,0x184BD10))return Result("container-type-unavailable");
+    var vector=ReferenceSpan(c+0x20,256);
+    for(var at=vector.Begin;at<vector.End;at+=8)
+    {
+     child=Q(at);if(child==0)continue;
+     var ch=Ptr(child.Value,0x20);
+     if(!Type(ch,0x2AB13A8,0x1D5DF30,0x34E9BC0,0x2AB32D8,0x1D7CEC0))return Result("child-type-unavailable");
+     if(unchecked((int)D(ch+0x18))==slot)return Result("raw-factor-candidate",unchecked((int)D(ch+0x1C)));
+    }
+    child=null;return Result("slot-miss-zero-candidate",0);
+   }
+   catch(InvalidDataException){if(budget>2*1024*1024)throw;return Result("read-or-binding-unavailable");}
+  }
   Flag33Seed ReadFlag33Seed(ulong p,byte[] entry)
   {
    var entrySource=U64(entry.AsSpan(0x10));
@@ -71,7 +139,7 @@ internal static class CurrentBuildCooldownModifierSampleCommand
     var key=BinaryPrimitives.ReadInt32LittleEndian(fields);
     var slot=BinaryPrimitives.ReadInt32LittleEndian(fields.AsSpan(4));
     var status=key!=0 && slot!=-1 ? "typed-073c-direct-branch" : "typed-073c-fallback-branch";
-    return new(status,entity,entrySource,entitySource,address,key,slot);
+    return new Flag33Seed(status,entity,entrySource,entitySource,address,key,slot){RoleFactor=key!=0 && slot!=-1 ? RoleFactor(key,slot) : null};
    }
    catch(InvalidDataException){if(budget>2*1024*1024)throw;return new("read-unavailable",entity,entrySource,entitySource,address);}
   }
@@ -112,24 +180,24 @@ internal static class CurrentBuildCooldownModifierSampleCommand
   {
    var entry=Take(at,32);var p=U64(entry);var raw=Convert.ToHexString(entry).ToLowerInvariant();
    if(p==0){rows.Add(new(at,raw,0,"null-reference"));incomplete=true;continue;}
-   RawCooldownModifier? rangeSeed=null;
+   RawCooldownModifier? otherModeSeed=null;
    try
    {
     Ptr(p,0x38);var mode=BinaryPrimitives.ReadInt32LittleEndian(Take(p+0x28,4));var vt=Q(p);ulong? getter=null;if(vt>=id.ModuleBaseAddress&&vt<=id.ModuleBaseAddress+id.ModuleSize-0x48){var target=Q(vt+0x40);if(target>=id.ModuleBaseAddress&&target<id.ModuleBaseAddress+id.ModuleSize)getter=target-id.ModuleBaseAddress;}
-    if(mode is not (0 or 4)){rows.Add(new(at,raw,p,"mode-candidate",mode,vt,getter));continue;}
-    if(mode==0)rangeSeed=new(at,raw,p,"mode-0-payload-unavailable",mode,vt,getter);
+    if(mode is not (0 or 2 or 4)){rows.Add(new(at,raw,p,"mode-candidate",mode,vt,getter));continue;}
+    if(mode!=4)otherModeSeed=new(at,raw,p,$"mode-{mode}-payload-unavailable",mode,vt,getter);
     contextKey??=D(component+0x2F0);var bits18=D(p+0x18);var bits24=D(p+0x24);var f18=BitConverter.Int32BitsToSingle(unchecked((int)bits18));var f24=BitConverter.Int32BitsToSingle(unchecked((int)bits24));
     var operation=D(p+0x2C);var flag30=Take(p+0x30,1)[0];var flag33=Take(p+0x33,1)[0];var flag34=Take(p+0x34,1)[0];var flag36=Take(p+0x36,1)[0];
     var ex=Span(p+0x110);var direct=Span(p+0x178);var tag1=Span(p+0x1E0);var tag2=Span(p+0x248);var tag3=Span(p+0x2B0);var scaleKey=D(p+0x20);
-    var status=mode==0?"mode-0-raw-candidate":"mode-4-raw-candidate";
+    var status=$"mode-{mode}-raw-candidate";
     var directScale=flag36==1 && (mode==4 || flag33==0) ? Scale(scaleKey) : null;
-    var flag33Seed=mode==0 && flag33!=0 ? ReadFlag33Seed(p,entry) : null;
+    var flag33Seed=(mode is 0 or 2) && flag33!=0 ? ReadFlag33Seed(p,entry) : null;
     rows.Add(new RawCooldownModifier(at,raw,p,status,mode,vt,getter,bits18,float.IsFinite(f18)?f18:null,bits24,float.IsFinite(f24)?f24:null,operation,flag30,flag33,flag34,flag36,ex,direct,tag1,tag2,tag3,scaleKey,directScale){Flag33Seed=flag33Seed});
    }
    catch(InvalidDataException)
    {
     if(budget>2*1024*1024)throw;
-    if(rangeSeed is not null){rows.Add(rangeSeed);continue;}
+    if(otherModeSeed is not null){rows.Add(otherModeSeed);continue;}
     rows.Add(new(at,raw,p,"unavailable"));incomplete=true;
    }
   }

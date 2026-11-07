@@ -15,13 +15,13 @@ from scripts.sample_current_native_xyz import digest
 from scripts.sample_current_native_ability_catalog import build_launch,validate_record_costs_timing
 
 GAME_SHA='1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA='F46E827E5CA29D9CA5CBDDC43CC30D37CBC26CB4E745A9CAFAE1793AB7B6D523'
-READER=ROOT/'artifacts/native-range-context-20261107/publish/RiftReader2.Live.exe'
+READER_SHA='6F662E78BBE5A360914FA38F2B26EAB4B3C9004EA4B4B641E15D7FBBB9A2CDF6'
+READER=ROOT/'artifacts/native-range-energy-role-factor-20261107/publish/RiftReader2.Live.exe'
 SOURCE=ROOT/'artifacts/rre-peer-reference-20261107/cost-range-comparison.json'
 
-def run(lab):
+def run(lab, variant_source=None):
     if lab not in ('lab1','lab2'): raise ValueError('invalid-lab')
-    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size!=117733216 or digest(READER)!=READER_SHA: raise ValueError('reader-mismatch')
+    if READER.is_symlink() or not READER.is_file() or READER.stat().st_size!=117741920 or digest(READER)!=READER_SHA: raise ValueError('reader-mismatch')
     sources=[Path(__file__),ROOT/'scripts/sample_current_native_ability_catalog.py',ROOT/'scripts/sample_current_native_ability_records.py']
     pins={str(p):digest(p) for p in sources}
     source_raw=SOURCE.read_bytes(); source_sha=hashlib.sha256(source_raw).hexdigest().upper(); prior=json.loads(source_raw)
@@ -35,13 +35,35 @@ def run(lab):
             if type(key) is not int or not 0<=key<=0xffffffff or any(x['key']==key for x in selected): raise ValueError('invalid-provenance-keys')
             selected.append({'key':key,'id':row.get('id'),'reasons':reasons})
     if not 1<=len(selected)<=54: raise ValueError('invalid-selection-size')
-    keys=[x['key'] for x in selected]
+    source_identity=None
+    if variant_source is not None:
+        variant_source=Path(variant_source)
+        if not variant_source.is_absolute() or variant_source.is_symlink() or variant_source.stat().st_size>1000000: raise ValueError('invalid-variant-source')
+        variant_raw=variant_source.read_bytes(); variant_sha=hashlib.sha256(variant_raw).hexdigest().upper(); variant=json.loads(variant_raw.decode('utf-8-sig'))
+        source_identity=variant['observation']['identity']; source_rows=variant['observation']['records']
+        if source_identity.get('executableSha256')!=GAME_SHA: raise ValueError('variant-build-mismatch')
+        parent_keys=[x['key'] for x in selected]
+        validate_record_costs_timing(variant,pid=source_identity['processId'],ticks=source_identity['processStartUtcTicks'],keys=parent_keys)
+        positive={x['key'] for x in selected if 'historical-positive-range-max' in x['reasons']}
+        relationships=[]; keys=[]
+        for row in source_rows:
+            if row['key'] not in positive or row['rawVariants']['status']!='raw-candidates': continue
+            entries=row['rawVariants']['entries']
+            if any(entry['status']!='type-0061-raw-candidate' for entry in entries): raise ValueError('untyped-variant-child')
+            relationships.append({'parentKey':row['key'],'entries':entries})
+            for entry in entries:
+                if entry['key'] not in keys: keys.append(entry['key'])
+        if not 1<=len(keys)<=128: raise ValueError('invalid-variant-selection-size')
+        selected=[{'key':key,'reasons':['typed-variant-reference']} for key in keys]
+    else:
+        keys=[x['key'] for x in selected]
     api=LabCodex();_,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root/'.doctor'))
     token=uuid.uuid4().hex;output=ROOT/'artifacts/native-range-inputs-20261107/runs'/lab/token;output.mkdir(parents=True,exist_ok=False)
     folder=settings['guestRoot']+r'\current-zone-id-'+READER_SHA[:16]
     exe=folder+r'\RiftReader2.Live.exe';report=folder+r'\range-'+token+'.json';probe=folder+r'\identity-'+token+'.json';guest_key=folder+r'\key-'+token+'.txt'
     provenance={'sourcePath':str(SOURCE),'sourceSha256':source_sha,'selection':selected}
+    if variant_source is not None: provenance.update(variantSourcePath=str(variant_source),variantSourceSha256=variant_sha,parentReferences=relationships)
     with (output/'provenance.json').open('x',encoding='utf-8') as f:json.dump(provenance,f,indent=2)
     key_bytes=','.join(str(key) for key in keys).encode('ascii');key_sha=hashlib.sha256(key_bytes).hexdigest().upper();key_file=output/'key.txt'
     with key_file.open('xb') as f:f.write(key_bytes)
@@ -55,6 +77,7 @@ def run(lab):
         guest.powershell(preflight,timeout=80);guest.copy_from_guest(probe,output/'identity.json',timeout=50)
         identity=json.loads((output/'identity.json').read_text(encoding='utf-8-sig'));pid=identity['pid'];ticks=identity['ticks']
         if type(pid) is not int or pid<=0 or type(ticks) is not int or ticks<=0 or identity.get('sha')!=GAME_SHA or type(identity.get('installed')) is not bool: raise ValueError('invalid-process-identity')
+        if source_identity is not None and (pid!=source_identity['processId'] or ticks!=source_identity['processStartUtcTicks']): raise ValueError('variant-epoch-mismatch')
         if not identity['installed']:guest.run('copyFileFromHostToGuest',str(READER),exe,timeout=180)
         guest.powershell('if(Test-Path -LiteralPath '+ps_literal(guest_key)+"){throw 'key-exists'}",timeout=30)
         guest.run('copyFileFromHostToGuest',str(key_file),guest_key,timeout=60)
@@ -64,6 +87,7 @@ def run(lab):
     with (output/'samples.json').open('rb') as f:raw=f.read(1000001)
     if len(raw)>1000000:raise ValueError('report-too-large')
     result=json.loads(raw.decode('utf-8-sig'));validate_record_costs_timing(result,pid=pid,ticks=ticks,keys=keys);obs=result['observation']
+    if source_identity is not None and obs['identity']!=source_identity: raise ValueError('variant-identity-mismatch')
     for row in obs['records']:
         if row['status']!='type-verified-candidate': continue
         raw_range=row['rawRange']; begin=raw_range.get('tagsBegin'); end=raw_range.get('tagsEnd'); tags=raw_range.get('tags')
@@ -74,10 +98,11 @@ def run(lab):
                 if type(flag) is not int or not 0<=flag<=255: raise ValueError('invalid-energy-flag')
             elif flag is not None: raise ValueError('unexpected-energy-flag')
     if hashlib.sha256(SOURCE.read_bytes()).hexdigest().upper()!=source_sha or any(digest(p)!=pins[str(p)] for p in sources) or digest(READER)!=READER_SHA:raise ValueError('source-or-reader-changed')
+    if variant_source is not None and digest(variant_source)!=variant_sha: raise ValueError('variant-source-changed')
     summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'identity':obs['identity'],'readerSha256':READER_SHA,'guestReaderReused':identity['installed'],'selection':selected,'records':obs['records'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'keySha256':key_sha,'provenance':str(output/'provenance.json'),'provenanceSha256':digest(output/'provenance.json'),'sourceSha256':pins,'startedAtUtc':obs['startedAtUtc'],'completedAtUtc':obs['completedAtUtc'],'qualification':'raw definition inputs only; adjusted API range, costs, freshness and restart unverified'}
     with (output/'summary.json').open('x',encoding='utf-8') as f:json.dump(summary,f,indent=2)
     return summary
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--lab',required=True,choices=('lab1','lab2'));a=p.parse_args()
-    print(json.dumps(run(a.lab)),flush=True)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--lab',required=True,choices=('lab1','lab2'));p.add_argument('--variant-source',type=Path);a=p.parse_args()
+    print(json.dumps(run(a.lab,a.variant_source)),flush=True)

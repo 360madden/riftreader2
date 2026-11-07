@@ -1,3 +1,11 @@
+**SC625 TRIAL2 CLEAN RETURN VERIFIED17:06:12 Eastern.** Root checked exact
+return/recovery SHA, controller absent, queue BLOCKED/no holder and matching VM.
+Passive RR2 reads resumed; RRE offline, no new grant. Original CLI failure remains
+failed despite successful acquisition/cleanup; BOM journal-parser fix/replay is
+offline only. Receipt artifacts/lab2-rre-sc625-trial2-handoff-20261107/after.json.
+[Use the shorter current continuation](handoff-2026-11-07-1700-native-discovery.md).
+The older hold notices below are historical and resolved.
+
 **ACTIVE SC625 TRIAL2 HOLD16:56-17:11 Eastern /21:56-22:11UTC.**
 ALL RR2 Lab2 operations are HELD until explicit independently verified clean
 return. Root16:56:12 checked controller absent, queue BLOCKED1/no holder and

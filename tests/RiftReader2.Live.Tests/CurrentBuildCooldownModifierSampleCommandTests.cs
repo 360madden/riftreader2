@@ -56,6 +56,62 @@ public sealed class CurrentBuildCooldownModifierSampleCommandTests
   Assert.Equal("unverified-073c-type",seed.Status);Assert.Equal(source,seed.Address);Assert.Null(seed.Key18);Assert.Null(seed.Slot1C);
   s.Put(P+0x33,[0]);Assert.Null(Assert.Single(Read(s).Rows).Flag33Seed);
  }
+ const ulong Alt=0x20100000, AltOwner=0x20101000, Role=0x20104000, Node=0x20105000, Container=0x20106000, Child=0x20107000, RoleRefs=0x20109000, ChildRefs=0x2010A000;
+ static Fake RoleFixture(bool special)
+ {
+  const ulong seed=0x20120000;
+  var s=Fixture();SetupRow(s,0);s.Put(P+0x33,[1]);s.Put(E+0x10,Q(0));s.Put(P+0xA0,Q(seed));
+  Type(s,seed,0x2A062F8,0x1BF3DD0,0x34BD9D0,0x2A1F988,0x1C29690);
+  s.Put(seed+0x18,[..BitConverter.GetBytes(-36),..BitConverter.GetBytes(1)]);
+  s.Put(Alt+0x10,Q(E));s.Put(Alt+0x48,Q(AltOwner));Type(s,AltOwner,0x2A46738,0x1C48CC0,0x34C9670,0x2A4B760,0x1C84130);
+  s.Put(AltOwner+0x24F,[special?(byte)1:(byte)0]);
+  if(special)s.Put(AltOwner+0x7D8,[..Q(RoleRefs+8),..Q(RoleRefs+16)]);
+  else{s.Put(AltOwner+0xDE0,[..Q(RoleRefs),..Q(RoleRefs+16)]);s.Put(AltOwner+0x1D8,BitConverter.GetBytes(1U));}
+  s.Put(RoleRefs+8,Q(Role));Type(s,Role,0x2BD4388,0x201A050,0x3548720,0x2BE0EF8,0x20482A0);
+  s.Put(Role+0x188,Q(Node));s.Put(Node+0x20,BitConverter.GetBytes(2));s.Put(Node+0x10,Q(Node+0x100));
+  s.Put(Node+0x100+0x20,BitConverter.GetBytes(-36));s.Put(Node+0x100+0x28,Q(Container));
+  Type(s,Container,0x2868CD8,0x1821880,0x343A3D0,0x2875988,0x184BD10);s.Put(Container+0x20,[..Q(ChildRefs),..Q(ChildRefs+16)]);s.Put(ChildRefs,Q(Child));s.Put(ChildRefs+8,Q(Child+0x100));
+  Type(s,Child,0x2AB13A8,0x1D5DF30,0x34E9BC0,0x2AB32D8,0x1D7CEC0);
+  s.Put(Child+0x18,BitConverter.GetBytes(1));s.Put(Child+0x1C,BitConverter.GetBytes(-7));
+  return s;
+ }
+ static RoleFactorObservation Factor(Fake s)=>Assert.Single(ReadScale(s).Rows).Flag33Seed!.RoleFactor!;
+ [Theory]
+ [InlineData(true)]
+ [InlineData(false)]
+ public void DirectRoleReadsFirstMatchingSignedFactorFromSelectedReference(bool special)
+ {
+  var s=RoleFixture(special);var result=Factor(s);
+  Assert.Equal("raw-factor-candidate",result.Status);Assert.Equal(-7,result.RawMultiplier);Assert.Equal(Role,result.RoleAddress);
+  Assert.Equal(Node+0x100,result.NodeAddress);Assert.Equal(Container,result.ContainerAddress);Assert.Equal(Child,result.ChildAddress);
+  s.Change(Child+0x1C,BitConverter.GetBytes(8));Assert.Throws<InvalidDataException>(()=>ReadScale(s));
+ }
+ [Fact] public void DirectRoleDistinguishesMissingSlotUnknownChildAndTreeCycle()
+ {
+  var s=RoleFixture(false);s.Put(Child+0x18,BitConverter.GetBytes(2));s.Put(ChildRefs+8,Q(0));
+  var miss=Factor(s);Assert.Equal("slot-miss-zero-candidate",miss.Status);Assert.Equal(0,miss.RawMultiplier);
+  s.Put(Child,Q(M));var unknown=Factor(s);Assert.Equal("child-type-unavailable",unknown.Status);Assert.Null(unknown.RawMultiplier);
+  s.Put(Node+0x10,Q(Node));var cycle=Factor(s);Assert.Equal("tree-path-unavailable",cycle.Status);Assert.Null(cycle.RawMultiplier);
+ }
+ [Fact] public void ModeTwoCapturesPayloadWhileKeepingModeFourCensus()
+ {
+  var s=Fixture();SetupRow(s,2);SetupScale(s);var observation=ReadScale(s);var row=Assert.Single(observation.Rows);
+  Assert.Equal("no-mode-4-observed",observation.CensusStatus);Assert.Equal("mode-2-raw-candidate",row.Status);
+  Assert.Equal(2U,row.Operation);Assert.Equal(37,row.DirectScale!.RawMultiplier);Assert.Null(row.Flag33Seed);
+  s.Put(P+0x33,[1]);Assert.Null(Assert.Single(ReadScale(s).Rows).DirectScale);
+  s.Put(P+0x18,[]);var partial=ReadScale(s);Assert.Equal("mode-2-payload-unavailable",Assert.Single(partial.Rows).Status);
+  Assert.Equal("no-mode-4-observed",partial.CensusStatus);
+ }
+ [Fact] public void ModeTwoUsesFlag33RoleFactorForItsFractionalRow()
+ {
+  var s=RoleFixture(false);s.Put(P+0x28,BitConverter.GetBytes(2));
+  s.Put(P+0x24,BitConverter.GetBytes(-0.165f));s.Put(P+0x18,BitConverter.GetBytes(0f));
+  var observation=ReadScale(s);var row=Assert.Single(observation.Rows);
+  Assert.Equal("no-mode-4-observed",observation.CensusStatus);Assert.Equal("mode-2-raw-candidate",row.Status);
+  Assert.Equal(2U,row.Operation);Assert.Equal(-0.165f,row.Float24);Assert.Null(row.DirectScale);
+  Assert.Equal("typed-073c-direct-branch",row.Flag33Seed!.Status);
+  Assert.Equal("raw-factor-candidate",row.Flag33Seed.RoleFactor!.Status);Assert.Equal(-7,row.Flag33Seed.RoleFactor.RawMultiplier);
+ }
  [Fact] public void NullReferenceIsIncomplete(){var s=Fixture();SetupRow(s,4);s.Put(B,new byte[32]);Assert.Equal("incomplete",Read(s).CensusStatus);}
  [Fact] public void RangeConfigRequiresInitializedTypedReference()
  {

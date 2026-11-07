@@ -9,6 +9,16 @@ guest cache. Native command: `sample-current-player-context --pid N
 --start-ticks N --output PATH`. No getter, initialization, refcount update,
 game input or action-preflight integration is performed.
 
+## Lab1 corrected zone candidate — 17:59 Eastern
+
+A fresh Lab1 capture using corrected provider RVA `0x336EBF8` observed raw zone
+key `1216123138`, a typed `0073` record and typed `1E17` name reference with
+key `650763347`; its zone ID candidate is `z487C9102D2EA79BE`. The receipt is
+`artifacts/native-zone-seed-20261107/runs/lab1/5dcb40ae42e0473e9209f8c6d8edea9f/samples.json`,
+SHA256 `C7857E939B382FE12EC3B40EC90F9FB214681CE48E457056E6C558459E68F5FB`.
+The earlier wrong-RVA `0x337EBF8` NULL observation does not establish provider
+absence. Lab1 API correspondence, zone name, freshness and restart remain
+unverified.
 ## 16:05 checkpoint — corrected zone and independent baseline
 
 Earlier zone NULL reports sampled erroneous provider RVA337EBF8 and do not
