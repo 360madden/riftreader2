@@ -52,6 +52,39 @@ class ManagedReceiverTests(unittest.TestCase):
             with self.assertRaisesRegex(DependencyUnavailable, "receiver-listener-not-owned"):
                 receiver._probe("lab1", Path("not-read.json"))
 
+    def test_existing_receiver_prefers_rr2_then_checks_legacy_only_on_refusal(self):
+        candidate = {"pid": 123, "processStartUtcTicks": 1000, "image": "C:/Python/pythonw.exe"}
+        with mock.patch.object(receiver, "_port_owners", return_value=[(receiver.BIND, 123)]), \
+             mock.patch("scripts.launch_live_reader.receiver_preflight",
+                        return_value=(candidate, "private-token", "endpoint")), \
+             mock.patch.object(receiver, "_matching_receipt", return_value=True), \
+             mock.patch.object(receiver, "_task_status") as status, \
+             mock.patch.object(receiver, "_legacy_task_status") as legacy:
+            self.assertIs(receiver._probe("lab1", Path("safe")), candidate)
+            legacy.assert_not_called()
+            status.side_effect = DependencyUnavailable("receiver", "managed-helper-ownership-refused")
+            self.assertIs(receiver._probe("lab1", Path("safe")), candidate)
+            legacy.assert_called_once_with("lab1", candidate)
+
+    def test_legacy_inspection_requires_exact_verified_status(self):
+        candidate = {"image": "C:/Python/pythonw.exe"}
+        status = {"helperId": "rr2-receiver-lab1", "state": "Running",
+                  "atLogon": False, "runLevel": "Limited",
+                  "ownership": "verified-legacy-read-only"}
+        with mock.patch("pathlib.Path.is_file", return_value=True), \
+             mock.patch.object(receiver.subprocess, "run") as run:
+            run.return_value = mock.Mock(returncode=0, stdout=json.dumps(status).encode())
+            self.assertEqual(receiver._legacy_task_status("lab1", candidate), status)
+            self.assertEqual(run.call_args.args[0][-4:],
+                             ["-HelperId", "rr2-receiver-lab1", "-Executable", candidate["image"]])
+            for key, value in (("helperId", "rr2-receiver-lab2"), ("atLogon", True),
+                               ("ownership", "unknown"), ("state", "Ready")):
+                invalid = dict(status, **{key: value})
+                run.return_value.stdout = json.dumps(invalid).encode()
+                with self.subTest(key=key), self.assertRaisesRegex(
+                        DependencyUnavailable, "receiver-legacy-ownership-refused"):
+                    receiver._legacy_task_status("lab1", candidate)
+
     def test_matching_receipt_pins_process_epoch_and_sources(self):
         with tempfile.TemporaryDirectory() as scratch:
             base = Path(scratch)
@@ -88,6 +121,15 @@ class ManagedReceiverTests(unittest.TestCase):
                      returncode=0, stdout=json.dumps(value).encode("utf-8"))):
                 with self.assertRaisesRegex(DependencyUnavailable, "managed-helper-status-invalid"):
                     receiver._task_status("lab1")
+
+    def test_status_uses_rr2_owned_manager_and_exact_helper(self):
+        status = {"state": "Running", "atLogon": False, "runLevel": "Limited"}
+        with mock.patch.object(receiver.subprocess, "run", return_value=mock.Mock(
+                returncode=0, stdout=json.dumps(status).encode())) as run:
+            self.assertEqual(receiver._task_status("lab2"), status)
+        args = run.call_args.args[0]
+        self.assertIn(str(receiver.ROOT / "scripts" / "Manage-RR2HelperTask.ps1"), args)
+        self.assertEqual(args[-4:], ["-Action", "Status", "-HelperId", "rr2-receiver-lab2"])
 
     def test_ensure_reuses_without_starting_duplicate(self):
         candidate = {"pid": 123}

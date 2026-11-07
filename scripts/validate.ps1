@@ -69,6 +69,13 @@ try {
     }
     & $LuaPython scripts/test-addon-contract.py --cli $cli --output-directory (Join-Path $runDirectory 'addon')
     if ($LASTEXITCODE -ne 0) { throw 'Real Lua/C# contract validation failed.' }
+    # Run scheduler mocks in isolated Windows PowerShell processes. They replace
+    # Scheduler functions in memory and never register or start real tasks.
+    $windowsPowerShell = Join-Path $env:WINDIR 'System32/WindowsPowerShell/v1.0/powershell.exe'
+    foreach ($helperTest in @('rr2_helper_manager_mock.ps1', 'rr2_legacy_helper_mock.ps1')) {
+        & $windowsPowerShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $repoRoot ('tests/' + $helperTest))
+        if ($LASTEXITCODE -ne 0) { throw "Helper ownership mock failed: $helperTest" }
+    }
     # Discover every host Python test, including new VM/transfer guards, not a static module list.
     & $LuaPython -m unittest discover -s tests -p 'test_*.py'
     if ($LASTEXITCODE -ne 0) { throw 'Complete host Python unittest discovery suite failed.' }

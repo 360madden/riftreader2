@@ -8,8 +8,10 @@ from __future__ import annotations
 from datetime import datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
 
 
 SHA = re.compile(r"[0-9a-fA-F]{64}")
@@ -66,9 +68,31 @@ def _valid_time(text):
     return value.tzinfo is not None
 
 
+def _verify_legacy_owner(lab, image, root):
+    """Inspect an existing legacy task without invoking its manager."""
+    require(isinstance(image, str) and bool(image), "managed-process-image-invalid")
+    inspector = root / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
+    require(inspector.is_file(), "managed-legacy-inspector-unavailable")
+    powershell = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    try:
+        result = subprocess.run(
+            [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+             "RemoteSigned", "-File", str(inspector), "-HelperId",
+             "rr2-controller-" + lab, "-Executable", image],
+            cwd=str(root), stdin=subprocess.DEVNULL, capture_output=True,
+            timeout=20, check=False)
+        status = json.loads(result.stdout.decode("utf-8-sig")) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, UnicodeError, ValueError) as error:
+        raise ManagedReceiptError("managed-legacy-ownership-refused") from error
+    require(isinstance(status, dict) and status.get("helperId") == "rr2-controller-" + lab
+            and status.get("ownership") == "verified-legacy-read-only"
+            and status.get("state") == "Running" and status.get("atLogon") is False
+            and status.get("runLevel") == "Limited", "managed-legacy-ownership-refused")
+
+
 def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
                                        queue_path=None, runtime_files=None,
-                                       identity_reader=None, verify_owner=None,
+                                       identity_reader=None, verify_owner=None, verify_legacy=None,
                                        expected_receipt_path=None):
     """Return (exact process receipt path, validated receipt, synthetic host plan).
 
@@ -90,6 +114,8 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
     if verify_owner is None:
         from scripts.controller_task_entry import _require_owned_task
         verify_owner = _require_owned_task
+    if verify_legacy is None:
+        verify_legacy = _verify_legacy_owner
 
     config_path = Path(configs[lab]).resolve(strict=True)
     queue_path = Path(queue_path).resolve(strict=True)
@@ -161,8 +187,11 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
         require(_sha(root / source) == expected.upper(), "managed-runtime-changed")
     try:
         verify_owner(lab)
-    except Exception as error:
-        raise ManagedReceiptError("managed-task-ownership-refused") from error
+    except Exception:
+        try:
+            verify_legacy(lab, receipt["processIdentity"].get("image"), root)
+        except Exception as error:
+            raise ManagedReceiptError("managed-task-ownership-refused") from error
     plan = {
         "configPath": str(config_path), "database": str(queue_path),
         "resource": "vm:rift-lab-" + lab[-1],

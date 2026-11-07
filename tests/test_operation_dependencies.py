@@ -5,6 +5,8 @@ from unittest.mock import patch, Mock
 
 from scripts.operation_dependencies import Dependency, DependencyUnavailable, ensure_ready
 from scripts import ensure_controller
+from scripts import controller_task_entry
+import json
 
 
 @contextmanager
@@ -49,6 +51,16 @@ class DependencyGateTests(unittest.TestCase):
 
 
 class ControllerEnsureTests(unittest.TestCase):
+    def test_task_entry_checks_rr2_manager_and_rejects_malformed_status(self):
+        with patch("pathlib.Path.is_file", return_value=True), \
+             patch.object(controller_task_entry.subprocess, "run", return_value=Mock(
+                 returncode=0, stdout=json.dumps([]).encode())) as run:
+            with self.assertRaisesRegex(RuntimeError, "managed-helper-status-invalid"):
+                controller_task_entry._require_owned_task("lab1")
+        args = run.call_args.args[0]
+        self.assertIn(str(ensure_controller.ROOT / "scripts" / "Manage-RR2HelperTask.ps1"), args)
+        self.assertEqual(args[-4:], ["-Action", "Status", "-HelperId", "rr2-controller-lab1"])
+
     @patch.object(ensure_controller.HostConfig, "load")
     @patch.object(ensure_controller, "_probe")
     @patch.object(ensure_controller, "_launch")

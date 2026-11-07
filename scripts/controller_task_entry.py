@@ -1,6 +1,6 @@
 """On-demand, persistent Task-Scheduler-owned controller for one RIFT lab.
 
-Workbridge's pre-existing Manage-HelperTask verifies the Limited/Interactive
+The RR2 helper manager verifies the Limited/Interactive
 registration, disabled logon trigger, unlimited lifetime and IgnoreNew policy.
 This process remains owned by that task; it does not spawn an escaping child.
 """
@@ -22,10 +22,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts.control_host import HostConfig, VmEpochGuard
-from scripts.ensure_controller import CONFIGS, QUEUE, RUNTIME_FILES, _listening, _session_id
+from scripts.ensure_controller import CONFIGS, MANAGER, QUEUE, RUNTIME_FILES, _listening, _session_id
 from scripts.vm_console_native import process_identity
 
-MANAGER = Path(r"C:\work\workbridge-mcp\scripts\Manage-HelperTask.ps1")
 POWERSHELL = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
 
 
@@ -49,7 +48,7 @@ def _require_owned_task(lab):
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
          "RemoteSigned", "-File", str(MANAGER), "-Action", "Status",
          "-HelperId", "rr2-controller-" + lab],
-        cwd=str(MANAGER.parent.parent), stdin=subprocess.DEVNULL,
+        cwd=str(ROOT), stdin=subprocess.DEVNULL,
         capture_output=True, timeout=20, check=False,
     )
     if run.returncode:
@@ -57,6 +56,8 @@ def _require_owned_task(lab):
     try:
         status = json.loads(run.stdout.decode("utf-8-sig"))
     except (UnicodeError, ValueError):
+        fail("managed-helper-status-invalid")
+    if not isinstance(status, dict):
         fail("managed-helper-status-invalid")
     if (status.get("state") != "Running" or status.get("atLogon") is not False
             or status.get("runLevel") != "Limited"):

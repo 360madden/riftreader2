@@ -38,7 +38,8 @@ PORTS = {"lab1": 49813, "lab2": 49923}
 BIND = "192.168.56.1"
 SOURCE = ROOT / "scripts" / "observation_receiver.py"
 SOURCE_SHA256 = "8861B7E3EAC244C5C924F6F1F4B8C36A7D926142D6146B897A69AFBFF1D56DD6"
-MANAGER = Path(r"C:\work\workbridge-mcp\scripts\Manage-HelperTask.ps1")
+MANAGER = ROOT / "scripts" / "Manage-RR2HelperTask.ps1"
+LEGACY_INSPECTOR = ROOT / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
 ENTRY = ROOT / "scripts" / "receiver_task_entry.py"
 TASKS = ROOT / "artifacts" / "receiver-tasks"
 WINDOWS_TICKS_OFFSET = 504_911_232_000_000_000
@@ -121,6 +122,31 @@ def _task_status(lab):
     return status
 
 
+def _legacy_task_status(lab, receiver):
+    """Read-only verification for an already-running legacy task owner."""
+    image = receiver.get("image")
+    if not isinstance(image, str) or not image or not LEGACY_INSPECTOR.is_file():
+        _blocked("receiver-legacy-ownership-unavailable")
+    powershell = Path(os.environ.get("WINDIR", r"C:\Windows")) / "System32/WindowsPowerShell/v1.0/powershell.exe"
+    try:
+        result = subprocess.run(
+            [str(powershell), "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+             "RemoteSigned", "-File", str(LEGACY_INSPECTOR),
+             "-HelperId", "rr2-receiver-" + lab, "-Executable", image],
+            cwd=str(ROOT), stdin=subprocess.DEVNULL, capture_output=True,
+            timeout=20, check=False,
+        )
+        status = json.loads(result.stdout.decode("utf-8-sig")) if result.returncode == 0 else None
+    except (OSError, subprocess.TimeoutExpired, UnicodeError, ValueError):
+        _blocked("receiver-legacy-ownership-refused")
+    if (not isinstance(status, dict) or status.get("helperId") != "rr2-receiver-" + lab
+            or status.get("ownership") != "verified-legacy-read-only"
+            or status.get("state") != "Running" or status.get("atLogon") is not False
+            or status.get("runLevel") != "Limited"):
+        _blocked("receiver-legacy-ownership-refused")
+    return status
+
+
 def _matching_receipt(lab, receiver, config_path):
     base = TASKS / lab
     if not base.is_dir():
@@ -167,7 +193,12 @@ def _probe(lab, config_path):
         _blocked("receiver-listener-owner-drift")
     if not _matching_receipt(lab, receiver, config_path):
         _blocked("receiver-listener-not-owned-by-task")
-    _task_status(lab)
+    try:
+        _task_status(lab)
+    except DependencyUnavailable:
+        # Only a matching live process receipt may reach the read-only legacy
+        # verifier. Startup itself never uses or starts the legacy task.
+        _legacy_task_status(lab, receiver)
     return receiver
 
 

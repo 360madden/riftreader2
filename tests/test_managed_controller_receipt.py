@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import managed_controller_receipt as managed
 
@@ -116,6 +116,41 @@ class ManagedReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-runtime-changed"):
             self.resolve()
 
+    def test_legacy_verification_only_after_exact_runtime_checks(self):
+        legacy = Mock()
+        with patch.object(self, "verify_owner", side_effect=RuntimeError("not-rr2")):
+            self.resolve(verify_legacy=legacy)
+            legacy.assert_called_once_with("lab2", self.identity["image"], self.root)
+            legacy.reset_mock()
+            (self.root / self.sources[0]).write_bytes(b"changed")
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-runtime-changed"):
+                self.resolve(verify_legacy=legacy)
+            legacy.assert_not_called()
+
+    def test_legacy_failure_is_not_accepted(self):
+        with patch.object(self, "verify_owner", side_effect=RuntimeError("not-rr2")):
+            with self.assertRaisesRegex(managed.ManagedReceiptError, "managed-task-ownership-refused"):
+                self.resolve(verify_legacy=Mock(side_effect=RuntimeError("ambiguous")))
+
+    def test_legacy_inspector_requires_strict_status_and_image(self):
+        inspector = self.root / "scripts" / "Verify-RR2LegacyHelperTask.ps1"
+        inspector.write_text("offline mock")
+        status = {"helperId": "rr2-controller-lab2", "state": "Running", "atLogon": False,
+                  "runLevel": "Limited", "ownership": "verified-legacy-read-only"}
+        with patch.object(managed.subprocess, "run") as run:
+            run.return_value = Mock(returncode=0, stdout=json.dumps(status).encode())
+            managed._verify_legacy_owner("lab2", self.identity["image"], self.root)
+            self.assertEqual(run.call_args.args[0][-4:],
+                             ["-HelperId", "rr2-controller-lab2", "-Executable", self.identity["image"]])
+            for invalid in ([], dict(status, helperId="rr2-controller-lab1"),
+                            dict(status, state="Ready"), dict(status, atLogon=True),
+                            dict(status, ownership="unknown")):
+                run.return_value.stdout = json.dumps(invalid).encode()
+                with self.subTest(invalid=invalid), self.assertRaises(managed.ManagedReceiptError):
+                    managed._verify_legacy_owner("lab2", self.identity["image"], self.root)
+            run.return_value = Mock(returncode=1, stdout=b"")
+            with self.assertRaises(managed.ManagedReceiptError):
+                managed._verify_legacy_owner("lab2", self.identity["image"], self.root)
     def test_missing_or_extra_source_hashes_are_refused(self):
         for bad in ({"sourceHashes": {self.sources[0]: "a" * 64}},
                     {"sourceHashes": {"extra": "a" * 64,

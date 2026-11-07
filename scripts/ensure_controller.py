@@ -1,6 +1,6 @@
-"""On-demand, owned per-lab RIFT controller lifecycle through Workbridge helpers.
+"""On-demand, owned per-lab RIFT controller lifecycle through RR2 helpers.
 
-The already-tested Manage-HelperTask provides a Limited/Interactive, no-logon-
+The RR2 helper manager provides a Limited/Interactive, no-logon-
 trigger, unlimited-lifetime, IgnoreNew Windows task; its source and owner
 registration are checked on every call. No VM/game startup or game input.
 """
@@ -28,7 +28,7 @@ CONFIGS = {
 }
 QUEUE = ROOT / "artifacts/native-coordination-live/queue.sqlite3"
 ENTRY = ROOT / "scripts/controller_task_entry.py"
-MANAGER = Path(r"C:\work\workbridge-mcp\scripts\Manage-HelperTask.ps1")
+MANAGER = ROOT / "scripts" / "Manage-RR2HelperTask.ps1"
 RUNTIME_FILES = (
     "scripts/control_host.py", "scripts/vm_console_native.py",
     "scripts/nav_host_runtime.py", "scripts/nav_access_queue.py",
