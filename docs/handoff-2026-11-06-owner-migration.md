@@ -28,6 +28,22 @@ in `C:\work\riftreader2\.worktrees\helper-instance-binding`, branch
 `codex/helper-instance-binding`; it is not integrated or deployed. Preserve
 other sessions' edits and all current owners. No new gameplay authority follows.
 
+The isolated candidate is committed as `a2ab524` on
+`codex/helper-instance-binding`. High review passed its offline contract;
+focused Python/PowerShell checks passed. Its isolated full gate passed build,
+697 .NET and 1,650 Python tests (12 skips), Lua/native/ownership/format, then
+failed an existing link to a missing ignored historical artifact. This is not
+a full-gate PASS. **No rollout occurred.** Concurrent authoritative changes
+overlap the manager, managed receipt and mocks, adding a Lab2 fast inspection
+path; that path needs the expected-PID contract merged and tested. Hash-pinned
+`control_host.py` is also being edited elsewhere. Preserve these changes and
+reassess the settled source/receipt baseline. Do not execute the stored
+`instance-binding` rollout operator as-is: its candidate baseline must be
+updated after the compatibility merge. The corrected operator design holds
+launch locks across vacancy, checks actual listener PID before STOP, retains
+exact task/process/registration evidence and requires safe retirement before
+any selective rollback. It was source-reviewed, never executed.
+
 ## Prior resume point — short-window cleanup and freshness passed
 
 See [the live validation](validation/lab1-receiver-freshness-2026-11-06.md). The
