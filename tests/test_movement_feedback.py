@@ -95,6 +95,18 @@ class MovementFeedbackTests(unittest.TestCase):
             },
         }
 
+
+    def scoped(self, receipt):
+        """Model a gate-validated fresh scoped scan in the same publication loop."""
+        chosen = copy.deepcopy(receipt)
+        chosen["_movementSource"] = "fast"
+        chosen["observation"]["fastObservation"] = {
+            "provenance": "recent-full-scan-anchored-candidate-regions/1",
+            "scan": {"scope": "candidate-regions"},
+            "observation": copy.deepcopy(chosen["observation"]["riftReader2"]["observation"]),
+        }
+        return chosen
+
     def wire_receipt(self, folder, *, full_addon=20, full_clock=30.0,
                      fast_addon=21, fast_clock=31.0):
         pin = copy.deepcopy(self.pin)
@@ -421,9 +433,9 @@ class MovementFeedbackTests(unittest.TestCase):
             early_barrier = self.receipt(
                 outer=11, addon=21, clock=31,
                 captured=completed + timedelta(milliseconds=90))
-            accepted = self.receipt(
+            accepted = self.scoped(self.receipt(
                 outer=12, addon=22, clock=32, x=1.5,
-                captured=completed + timedelta(milliseconds=250))
+                captured=completed + timedelta(milliseconds=250)))
             adapter, reader = self.adapter(
                 folder, [early_barrier, accepted])
 
@@ -436,6 +448,84 @@ class MovementFeedbackTests(unittest.TestCase):
             self.assertEqual(2, reader.calls)
             self.assertTrue((Path(folder) / "barrier-10-11-receipt.json").is_file())
 
+
+    def test_async_full_completion_after_barrier_requires_later_scoped_capture(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prior = self.baseline(folder)
+            completed = self.now + timedelta(seconds=1)
+            barrier = self.receipt(
+                outer=11, addon=21, clock=31,
+                captured=completed + timedelta(milliseconds=90))
+            # Full scan may have started before input and finished after this
+            # barrier, so its later outer receipt is NOT post-action evidence.
+            in_flight_full = self.receipt(
+                outer=12, addon=22, clock=32, x=9.0,
+                captured=completed + timedelta(milliseconds=350))
+            fresh_scoped = self.scoped(self.receipt(
+                outer=13, addon=23, clock=33, x=1.5,
+                captured=completed + timedelta(milliseconds=700)))
+            adapter, reader = self.adapter(
+                folder, [barrier, in_flight_full, fresh_scoped])
+
+            sample = adapter.wait_after(completed, prior)
+
+            self.assertEqual(13, sample.outer_sequence)
+            self.assertEqual((1.5, 2.0, 3.0), sample.xyz)
+            self.assertEqual("candidate-regions", sample.source_scope)
+            self.assertEqual(3, reader.calls)
+            self.assertFalse((Path(folder) / "after-10-12-receipt.json").exists())
+            self.assertTrue((Path(folder) / "after-10-13-receipt.json").is_file())
+
+    def test_async_intervening_full_epoch_change_fails_immediately(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prior = self.baseline(folder)
+            completed = self.now + timedelta(seconds=1)
+            barrier = self.receipt(
+                outer=11, addon=21, clock=31,
+                captured=completed + timedelta(milliseconds=90))
+            changed_full = self.receipt(
+                outer=12, addon=22, clock=32, epoch=3,
+                captured=completed + timedelta(milliseconds=350))
+            future_fast = self.scoped(self.receipt(
+                outer=13, addon=23, clock=33,
+                captured=completed + timedelta(milliseconds=700)))
+            adapter, reader = self.adapter(
+                folder, [barrier, changed_full, future_fast])
+            with self.assertRaisesRegex(module._console.Blocked, "movement-feedback-continuity-lost"):
+                adapter.wait_after(completed, prior)
+            self.assertEqual(2, reader.calls)
+            self.assertEqual([], list(Path(folder).glob("after-*-receipt.json")))
+
+    def test_async_full_only_after_barrier_times_out_without_movement_evidence(self):
+        with tempfile.TemporaryDirectory() as folder:
+            prior = self.baseline(folder)
+            completed = self.now + timedelta(seconds=1)
+            barrier = self.receipt(
+                outer=11, addon=21, clock=31,
+                captured=completed + timedelta(milliseconds=90))
+            newer_full = self.receipt(
+                outer=12, addon=22, clock=32, x=9.0,
+                captured=completed + timedelta(milliseconds=500))
+            clock = Clock()
+
+            class FullOnlyReader:
+                def __init__(self):
+                    self.calls = 0
+
+                def __call__(self, pin, *, initial):
+                    self.calls += 1
+                    receipt = barrier if self.calls == 1 else newer_full
+                    return receipt, json.dumps(receipt).encode(), {"status": "fresh"}
+
+            reader = FullOnlyReader()
+            adapter = module.PinnedFeedback(
+                self.pin, Path(folder), receipt_reader=reader,
+                monotonic=clock.monotonic, sleep=clock.sleep)
+            with self.assertRaisesRegex(module._console.Blocked, "movement-feedback-timeout"):
+                adapter.wait_after(completed, prior, timeout_seconds=0.15)
+            self.assertGreaterEqual(reader.calls, 2)
+            self.assertEqual([], list(Path(folder).glob("after-*-receipt.json")))
+
     def test_wait_does_not_use_a_pre_action_capture_as_barrier(self):
         with tempfile.TemporaryDirectory() as folder:
             prior = self.baseline(folder)
@@ -447,9 +537,9 @@ class MovementFeedbackTests(unittest.TestCase):
             barrier = self.receipt(
                 outer=12, addon=22, clock=32,
                 captured=completed + timedelta(milliseconds=90))
-            accepted = self.receipt(
+            accepted = self.scoped(self.receipt(
                 outer=13, addon=23, clock=33,
-                captured=completed + timedelta(milliseconds=300))
+                captured=completed + timedelta(milliseconds=300)))
             adapter, reader = self.adapter(folder, [pre_action, barrier, accepted])
 
             sample = adapter.wait_after(completed, prior)
@@ -490,8 +580,9 @@ class MovementFeedbackTests(unittest.TestCase):
                                 captured=completed + timedelta(seconds=1))
             accepted = self.receipt(outer=11, addon=21, clock=31,
                                     captured=completed + timedelta(seconds=1))
-            final = self.receipt(outer=12, addon=22, clock=32,
-                                 captured=completed + timedelta(seconds=2))
+            final = self.scoped(self.receipt(
+                outer=12, addon=22, clock=32,
+                captured=completed + timedelta(seconds=2)))
             adapter, reader = self.adapter(folder, [stale, same, accepted, final])
 
             self.assertEqual(12, adapter.wait_after(completed, prior).outer_sequence)

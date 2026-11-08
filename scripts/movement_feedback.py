@@ -234,12 +234,10 @@ class PinnedFeedback:
             current_outer = receipt["observation"]["sequence"]
             if barrier_outer is None:
                 if _validate_barrier(prior, receipt, completed) == "accept":
-                    # The receiver handled this POST after the action.  Because
-                    # delivery is synchronous, a later outer sequence from the
-                    # same pinned reader must belong to an iteration whose full
-                    # scan began after this response, and therefore after the
-                    # action.  This receipt is only the barrier; it is never
-                    # promoted to post-action movement evidence itself.
+                    # Delivery after the action is a causal HTTP barrier.
+                    # An async full scan in a later receipt may still have
+                    # started before the action. The barrier itself is never
+                    # evidence of post-action movement.
                     _write_receipt(
                         self.evidence_dir,
                         f"barrier-{prior.outer_sequence}-{current_outer}",
@@ -248,7 +246,11 @@ class PinnedFeedback:
                     barrier_selected = _selected(receipt)
                     barrier_addon_sequence = barrier_selected["sequence"]
                     barrier_addon_clock = float(barrier_selected["clock"]["value"])
+            # Only a later scoped-fast scan is guaranteed to have started
+            # after this HTTP barrier: the reader performs that scan in its
+            # next publication iteration, unlike a pending async full scan.
             elif (_validate_advancing(prior, receipt, completed) == "accept"
+                    and receipt.get("_movementSource") == "fast"
                     and current_outer > barrier_outer
                     and _selected(receipt)["sequence"] > barrier_addon_sequence
                     and float(_selected(receipt)["clock"]["value"])
@@ -500,6 +502,16 @@ def _movement_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
         path, _console._live_gate.MAX_RECEIPT_BYTES, "live-receipt-unavailable")
     if initial and hashlib.sha256(data).hexdigest() != pin["receiptSha256"].lower():
         _console._fail("live-receipt-sha256-mismatch")
+    return _validate_movement_receipt_bytes(pin, data)
+
+
+def _validate_movement_receipt_bytes(pin: dict, data: bytes, *,
+                                     now_monotonic_ns=None, now_utc=None
+                                     ) -> tuple[dict, bytes, dict]:
+    """Reuse the same source gates for immutable receiver-time journal replay.
+
+    Live movement callers omit time overrides and remain current-time gated.
+    """
     receipt = _console._strict_json_bytes(data, "invalid-live-receipt")
     if set(receipt) != {"schemaVersion", "receiverInstance", "receivedAtUtc",
             "receivedMonotonicNs", "sourceAddress", "observation", "gameReady", "note"}:
@@ -535,7 +547,8 @@ def _movement_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
     accepted = {}
     try:
         full_gate = _console._live_gate.evaluate_receipt(
-            receipt, reader["nonce"], receiver["instanceId"])
+            receipt, reader["nonce"], receiver["instanceId"],
+            now_monotonic_ns=now_monotonic_ns, now_utc=now_utc)
         if _selected_contract(observation["riftReader2"].get("observation")):
             accepted["full"] = full_gate
     except _console._live_gate.GateError:
@@ -543,7 +556,8 @@ def _movement_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
     if "fastObservation" in observation:
         try:
             fast_gate = _console._live_gate.evaluate_fast_observation(
-                receipt, reader["nonce"], receiver["instanceId"])
+                receipt, reader["nonce"], receiver["instanceId"],
+            now_monotonic_ns=now_monotonic_ns, now_utc=now_utc)
             if _selected_contract(observation["fastObservation"].get("observation")):
                 accepted["fast"] = fast_gate
         except _console._live_gate.GateError:
