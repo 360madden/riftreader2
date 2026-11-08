@@ -861,15 +861,44 @@ class MovementSessionTests(unittest.TestCase):
         with self.assertRaisesRegex(MovementSessionError, "another game process"):
             _require_feedback_target({"target": dict(GAME_TARGET)}, pin)
 
-    def test_calibration_cannot_succeed_after_elapsed_budget(self):
-        ticks = iter((0.0, 0.0, 0.0, 0.0, 13.0))
+    def test_calibration_accepts_late_final_feedback_without_late_input(self):
+        elapsed = [0.0]
+
+        class LateFinalFeedback(Feedback):
+            def wait_after(self, completed, prior, timeout_seconds=3.0):
+                result = super().wait_after(completed, prior, timeout_seconds)
+                if self.waits == 2:
+                    elapsed[0] = 13.0  # after both released input pulses
+                return result
+
         host, lease = Host(), Lease()
-        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2),
-                             Sample(.5, 0, .5, 3)])
+        feedback = LateFinalFeedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2),
+                                      Sample(.5, 0, .5, 3)])
+        result = execute_armed_session(session=session("calibration"), review=review(),
+            output=self.root / "late-final", host=host, lease=lease, feedback=feedback,
+            clock=lambda: elapsed[0], now=lambda: NOW)
+        self.assertEqual(result["status"], "calibrated")
+        self.assertEqual(len(host.actions), 2)
+        self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_calibration_cannot_send_another_key_after_elapsed_budget(self):
+        elapsed = [0.0]
+
+        class LateFirstFeedback(Feedback):
+            def wait_after(self, completed, prior, timeout_seconds=3.0):
+                result = super().wait_after(completed, prior, timeout_seconds)
+                if self.waits == 1:
+                    elapsed[0] = 13.0
+                return result
+
+        host, lease = Host(), Lease()
+        feedback = LateFirstFeedback([Sample(0, 0, 0, 1), Sample(.5, 0, 0, 2),
+                                      Sample(.5, 0, .5, 3)])
         with self.assertRaisesRegex(MovementSessionError, "elapsed budget"):
             execute_armed_session(session=session("calibration"), review=review(),
-                output=self.root / "run", host=host, lease=lease, feedback=feedback,
-                clock=lambda: next(ticks), now=lambda: NOW)
+                output=self.root / "late-first", host=host, lease=lease, feedback=feedback,
+                clock=lambda: elapsed[0], now=lambda: NOW)
         self.assertEqual(len(host.actions), 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "failed")
 

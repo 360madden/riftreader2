@@ -955,7 +955,9 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 actions.append({"index": index, "decision": asdict(action), "result": response,
                                 "before": prior.to_dict(), "after": after.to_dict()})
                 prior = after
-                require(clock() - started <= 12, "elapsed budget")
+                # The next iteration checks the 12-second action budget before
+                # another input. Accept bounded feedback after the final key
+                # has already been released; it cannot extend action authority.
             cross = (validate_noncollinear(calibrations, calibration_keys[0], calibration_keys[1])
                      if dimension == "2d" else None)
             result_payload = {"mode": mode, "status": "calibrated",
