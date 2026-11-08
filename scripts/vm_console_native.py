@@ -224,9 +224,12 @@ def process_identity(pid: int) -> dict:
         api.CloseHandle(handle)
 
 
-def listener_owner(port: int) -> int:
+def tcp_listener_rows(port: int) -> list[tuple[str, int]]:
+    """Read the Windows IPv4 LISTEN table without guessing from connect_ex(10035)."""
     if os.name != "nt":
         raise Blocked("windows-required")
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise Blocked("listener-query-invalid")
     api = ctypes.WinDLL("iphlpapi", use_last_error=True)
     get_table = api.GetExtendedTcpTable
     get_table.argtypes = [
@@ -250,9 +253,13 @@ def listener_owner(port: int) -> int:
         TCP_TABLE_OWNER_PID_LISTENER, 0,
     ):
         raise Blocked("listener-query-failed")
-    matches = parse_tcp_listener_rows(
+    return parse_tcp_listener_rows(
         bytes(data.raw[: size.value]), port, listener_table=True
     )
+
+
+def listener_owner(port: int) -> int:
+    matches = tcp_listener_rows(port)
     if any(ip != "127.0.0.1" for ip, _ in matches):
         raise Blocked("console-not-loopback-only")
     owners = [pid for ip, pid in matches if ip == "127.0.0.1"]

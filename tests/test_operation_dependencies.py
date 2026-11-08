@@ -51,6 +51,44 @@ class DependencyGateTests(unittest.TestCase):
 
 
 class ControllerEnsureTests(unittest.TestCase):
+    @staticmethod
+    def _listening_with_rows(rows, *, code=10035):
+        with patch.object(ensure_controller.socket, "socket") as factory, \
+             patch("scripts.vm_console_native.tcp_listener_rows", return_value=rows) as table:
+            factory.return_value.__enter__.return_value.connect_ex.return_value = code
+            result = ensure_controller._listening(49811)
+            if code == 10035:
+                table.assert_called_once_with(49811)
+            else:
+                table.assert_not_called()
+            return result
+
+    def test_windows_10035_uses_exact_listener_table_to_prove_absence(self):
+        self.assertFalse(self._listening_with_rows([]))
+        # Ordinary connection refusal still requires no native table query.
+        self.assertFalse(self._listening_with_rows([("127.0.0.1", 111)], code=10061))
+
+    def test_windows_10035_single_loopback_listener_remains_occupied(self):
+        self.assertTrue(self._listening_with_rows([("127.0.0.1", 111)]))
+
+    def test_windows_10035_ambiguous_listener_table_fails_closed(self):
+        for rows in (
+            [("0.0.0.0", 111)],
+            [("127.0.0.1", 111), ("127.0.0.1", 222)],
+            [("127.0.0.1", 0)],
+        ):
+            with self.subTest(rows=rows), self.assertRaisesRegex(
+                DependencyUnavailable, "listener-state-uncertain"
+            ):
+                self._listening_with_rows(rows)
+
+    def test_windows_10035_failed_native_query_fails_closed(self):
+        with patch.object(ensure_controller.socket, "socket") as factory, \
+             patch("scripts.vm_console_native.tcp_listener_rows", side_effect=OSError("unavailable")):
+            factory.return_value.__enter__.return_value.connect_ex.return_value = 10035
+            with self.assertRaisesRegex(DependencyUnavailable, "listener-state-uncertain"):
+                ensure_controller._listening(49811)
+
     def test_task_entry_checks_rr2_manager_and_rejects_malformed_status(self):
         with patch("pathlib.Path.is_file", return_value=True), \
              patch.object(controller_task_entry.subprocess, "run", return_value=Mock(

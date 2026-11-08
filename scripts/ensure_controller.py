@@ -58,6 +58,20 @@ def _listening(port):
         return True
     if code in (10061, 111):
         return False
+    if code == 10035:
+        # Windows can report WSAEWOULDBLOCK for a *closed* loopback port.
+        # Only a successfully queried, exact-port LISTEN table can clear that
+        # ambiguity; never infer absence from a failed or nonloopback query.
+        from scripts.vm_console_native import Blocked, tcp_listener_rows
+        try:
+            rows = tcp_listener_rows(port)
+        except (Blocked, OSError, ValueError):
+            raise DependencyUnavailable("controller", "listener-state-uncertain") from None
+        if (type(rows) is not list or len(rows) > 1
+                or any(address != "127.0.0.1" or type(pid) is not int or pid <= 0
+                       for address, pid in rows)):
+            raise DependencyUnavailable("controller", "listener-state-uncertain")
+        return bool(rows)
     raise DependencyUnavailable("controller", "listener-state-uncertain")
 
 
