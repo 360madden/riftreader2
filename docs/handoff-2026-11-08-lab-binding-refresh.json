@@ -48,6 +48,7 @@
   "movementTested": false,
   "requirements": [
     "clean exact controller handoff",
+    "prefer same-lab /rr2guide rebind with fresh nonce when already bound; use bind only when unbound",
     "reviewed panel close and native chat open",
     "fresh nonexpired nonce bind",
     "fresh new matching receiver frames",
