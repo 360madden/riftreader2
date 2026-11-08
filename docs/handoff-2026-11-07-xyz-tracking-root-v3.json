@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-xyz-tracking-handoff-delta",
+  "dateEastern": "2026-11-07",
+  "host": "AMD-DESKTOP",
+  "workbridge": "0.16.4-dev",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "baseHandoff": "docs/handoff-2026-11-07-xyz-tracking-root-v2.json",
+  "commits": [
+    {
+      "sha": "16e8b9c4db06690ec5516879ec948f641a683ed6",
+      "kind": "jimmy-a088-reproduced-skew"
+    },
+    {
+      "sha": "3da08ed2a176335a0dbcc41be5210214866be73b",
+      "kind": "explicit-unqualified-crossfield-timing"
+    },
+    {
+      "sha": "685023f748b65b2c482e81b6df75ab029a472f34",
+      "kind": "same-buffer-raw-xyz-guard-fields"
+    },
+    {
+      "sha": "65bfecf27690cb995071730ceb0547e0c18f5a1a",
+      "kind": "windows-test-server-teardown"
+    }
+  ],
+  "pushed": true,
+  "validation": {
+    "dotnet": {
+      "passed": 1275,
+      "failed": 0,
+      "job": "rr2-root-full-dotnet-after-guards-20261108-01"
+    },
+    "python": {
+      "ran": 2102,
+      "skipped": 2,
+      "errors": 0,
+      "failures": 0,
+      "job": "rr2-root-full-python-after-win-lock-fix-20261108-02"
+    },
+    "nativeGuardFocused": {
+      "passed": 25
+    },
+    "gapWrapperFocused": {
+      "passed": 28
+    },
+    "controlHostFocused": {
+      "passed": 21
+    }
+  },
+  "peer": {
+    "title": "Greeting Jimmy",
+    "report": "docs/xyz-jimmy-location-skew-review-2026-11-07-a088.md",
+    "sha256": "F83B1699CC2C6A8FC1A7C5FF50822058E332B52B7334E73F30020BA5AC301ECE",
+    "syntheticGapMilliseconds": 9999,
+    "liveScanDurationMeasured": false,
+    "readerQuiescenceAcknowledged": false
+  },
+  "candidateTelemetry": {
+    "sameBufferRefreshGuardFields": [
+      "refreshHandleHex",
+      "refreshFlagRaw",
+      "refreshGuardStatus"
+    ],
+    "additionalNativeReads": 0,
+    "passiveFreshnessQualified": false,
+    "sourceLeaseCommands": 28,
+    "legacyReaderQuiescenceUnknown": true,
+    "locationCrossFieldTemporalStatus": "unqualified-sequential",
+    "worldInstanceQualified": false,
+    "playerHeadingQualified": false,
+    "mapTransformQualified": false,
+    "lab1RetainedRows": 30,
+    "lab1ExactlyEqualDeltaPairs": 29,
+    "lab1MotionQualified": false
+  },
+  "environment": {
+    "lab1ControllerStarted": false,
+    "lab2ControllerStarted": false,
+    "vmLogin": false,
+    "guestDeployment": false,
+    "gameInput": false,
+    "nativeLiveCapture": false,
+    "guestCapabilityKnown": false,
+    "guestProgramDataAclKnown": false
+  },
+  "hostOnlyRelease": {
+    "reference": "docs/handoff-2026-11-07-xyz-tracking-root-v2.json",
+    "deployed": false,
+    "includesLatestSameBufferGuards": false,
+    "mustRebuildBeforeDeployment": true
+  },
+  "next": [
+    "Explicit Greeting Jimmy and foreign-reader quiescence in one lab.",
+    "Fresh VM-specific cached credential and controller/agent/queue/ACL/SHA attestation with rollback.",
+    "Native before API, no-motion control, bounded movement+key release, native before/API/native after; exact process/owner epochs.",
+    "Profile wall and then monotonic cross-field zone timing before a threshold.",
+    "Independent screenshot body-turn versus camera-orbit negative control; retain unavailable world/heading/freshness until proven."
+  ],
+  "preserveUntracked": [
+    "scripts/project_current_native_energy_variants.py"
+  ]
+}
