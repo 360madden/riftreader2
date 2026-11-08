@@ -1,7 +1,8 @@
 # Opaque source-cache key: exact-build static return map
 
 Checkpoint: 2026-11-08 UTC. Authoritative checkout: C:\work\riftreader2.
-Reviewed HEAD: 001b14abedc1b3b97a23708049978dc888888e2f.
+Initial reviewed HEAD: 001b14abedc1b3b97a23708049978dc888888e2f.
+Import-symbol checkpoint HEAD: c1185051cf1e91d0b1b93bdebd19527418384d8a.
 Static evidence only; no live field, freshness or writer qualification.
 
 ## Result
@@ -22,19 +23,19 @@ within this helper are inside the combined export; no local tailcall was found.
 This describes normal local control flow, assuming external calls return normally;
 callee failures/exceptions, concurrency and runtime invariants were not qualified.
 
-This is consistent with interning/canonicalization of a refcounted payload pointer.
-That semantic label is an inference: exact length/comparison/copy helper identities
-remain unverified. K is a pointer-like cache token, not a numeric hash of X.
+The exact imported strlen/strcmp references now substantiate NUL-terminated
+byte-string canonicalization into a refcounted payload pointer. The copy/allocation
+callee identities remain unresolved; K is a pointer-like token, NOT the hash index.
 
 ## Instruction evidence
 
 - 0x1145C26 preserves X in R14. 0x1145C29..0x1145C36 returns zero for null.
-- 0x1145C5A calls 0x2504857(X); returned token/length-like value is retained in R15.
+- 0x1145C5A calls strlen(X) through import thunk 0x2504857; byte length is retained in R15.
 - Global service S is read from module+0x33D7D98.
 - 0x1145C95 calls 0x1145EF0(X,R15). Its EAX selects a 24-byte-stride entry:
   WORD(S+24*index+0x12) is iteration count and QWORD(S+24*index+0x08) the array.
 - 0x1145CD9 branches to 0x1145E1A for B==X. Otherwise nonnull B must satisfy
-  zero-extended WORD(B-0x08)==R15, and 0x250487B(B,X) must return EAX==0.
+  zero-extended WORD(B-0x08)==R15, and strcmp(B,X) through thunk 0x250487B must return EAX==0.
 - Match block 0x1145E35 atomically increments QWORD(B-0x10);
   0x1145E57 sets RAX=B and jumps to the common return epilogue.
 - Miss block 0x1145D19..0x1145D32 requests aligned-up-to-8 size R15+0x11
@@ -68,8 +69,8 @@ handle and resulting opaque K are DISTINCT roles. No equality is assumed.
 This closes the unknown nonnull RETURN SHAPE, not the full passive locating recipe.
 
 - Pointer-equality match can preserve X, but X cannot be substituted universally.
-- Existing equivalent content can resolve to another B; exact matching needs the
-  semantics of 0x2504857 and 0x250487B. Indexing is now decoded below.
+- Existing equivalent bytes can resolve to another B. Imported strlen/strcmp
+  semantics and indexing are now resolved; current source/table validity is not.
 - The initial export cut off 0x1145EF0 at 0x1145F1F; the third bounded export
   closes that former gap. The entire index helper is now covered.
 - A genuine miss constructs/inserts a new token. A passive reader must report
@@ -104,11 +105,11 @@ Retained headless logs under artifacts/rea:
 - opaque-key-1145d20-review2/headless.log:
   f9136cd5edbc12ea76f4c976a7b5b7651fd0e43d1192e526c1381c57e575902c
 
-Root executed the three guarded exports with -readOnly -noanalysis. This worker
+Root executed the retained guarded exports with -readOnly -noanalysis. This worker
 only decoded retained hex with GNU objdump 2.44 in x86-64 Intel mode via transient
-Linux memory-backed descriptors, independently verifying all three window byte digests.
+Linux memory-backed descriptors, independently verifying the source byte digests.
 No Ghidra rerun, live memory, input, VM operation or commit occurred in this analysis.
-The companion JSON retains all three raw hex windows and machine-readable conclusions.
+The companion JSON retains raw hex windows and the exact symbol-export payload and machine-readable conclusions.
 
 ## Index helper resolved: 0x1145EF0 (third bounded export)
 
@@ -131,11 +132,12 @@ division: 513*0xFF803FE1-2^41=481, and the conservative maximum of
 floor((2^32-1)/513)*481+512*0xFF803FE1 is 2198763715647 < 2^41.
 Thus no random-sample-only assertion is needed for the modulo equivalence.
 
-If RDX truly represents byte length before NUL, this reduces to the zero-seeded
-33x signed-byte polynomial over that string, modulo 513. That premise awaits
-0x2504857 identification; do not silently replace the proven prefix-plus-NUL
-algorithm with a length-bounded loop. A passive implementation must impose its
-own safe read budget and report missing terminator/bytes unavailable.
+Imported strlen now proves the length input. For a stable valid NUL-terminated
+byte sequence this reduces to the zero-seeded 33x signed-byte polynomial over all
+bytes before NUL, modulo 513. Preserve the raw prefix-plus-NUL description for
+contradictory/changing inputs; the separate strlen/hash reads are not atomic.
+A passive implementation must impose a safe read budget and report a missing
+terminator or missing bytes unavailable.
 
 Independent arithmetic fixtures (hex includes terminator):
 | Bytes | RDX | uint32 h | Index |
@@ -164,3 +166,53 @@ B762C9E0A7F65156C5B62E6F05171780EB7576D0B9D9A2202390E5AD4FB74D03.
 770fbb8ad46121104bb8b072133c572b213351b8ac81669282fb3e72a2f9faaf.
 artifacts/rea/opaque-index-1145ef0-review1/headless.log SHA256:
 de333eff64f89d2cc4984f86e9e33cd84981dd30c6b4ac34a02fa110a9fb743d.
+
+## Imported string helpers resolved
+
+Raw thunk window [0x2504830,0x2504930), 256 bytes, SHA256:
+637F6CE586F613D84A1272FAF789D42BF2E1535C13838611C069B6204A2B6356.
+Its first byte is inside a preceding instruction; decode at the known thunk entries.
+
+| Thunk RVA / bytes | IAT RVA | IMPORTED external reference |
+| --- | --- | --- |
+| 0x2504857 / FF256BBF0E00 | 0x25F07C8 | API-MS-WIN-CRT-STRING-L1-1-0.DLL!strlen |
+| 0x250487B / FF252FBE0E00 | 0x25F06B0 | API-MS-WIN-CRT-STRING-L1-1-0.DLL!strcmp |
+
+The exact IAT references have source=IMPORTED and type=DATA, targeting external
+locations EXTERNAL:00000288 and EXTERNAL:00000265 respectively. Thunk references
+are DEFAULT INDIRECTION. No labels were guessed from behavior. The external
+location address fields 02f540ce/02f54118 are retained import metadata, NOT
+verified runtime callable addresses. No current IAT/process read was performed.
+
+For stable valid inputs:
+- strlen returns the number of bytes before the first zero, excluding terminator.
+- strcmp equality (the only outcome used here) means identical byte sequences
+  through their first NUL; case-sensitive, not Unicode decoding or normalization.
+  Its lexical ordering treats differing bytes as unsigned; the custom HASH
+  separately sign-extends bytes. Do not apply signed-byte ordering to strcmp.
+- Input index: h starts at zero; each pre-NUL byte contributes
+  uint32(h*33 + int8(byte)); index=h%513.
+- Candidate iteration compares pointer identity FIRST. Otherwise candidate must
+  be nonnull, WORD(B-8) must equal full strlen(X), and strcmp(B,X) must equal zero.
+  Preserve this 16-bit header/full-length equality rather than truncating strlen.
+- Output remains existing B on hit, not the numeric hash/index. A miss is not
+  passively materializable; return unavailable rather than allocating or calling.
+
+Passive key lookup is now statically specifiable for an already materialized
+matching table entry, but is NOT implemented/live-qualified by this finding.
+Upstream metadata resolution and all exact-epoch/current-memory admission remain
+required. The native helper pins a found B by atomic refcount increment; a passive
+reader does not. Exported pointer values therefore do not confer a lifetime:
+source/table/object may change or be freed between reads; bracketing cannot
+exclude ABA. Return only a snapshot-scoped candidate with explicit unavailable
+states, never a reusable or independently fresh live pointer promise.
+
+Symbol receipt: rr2-root-ghidra-opaque-import-symbols-20261108-01, passed/exit0,
+untruncated. Exact payload from BEGIN through COMPLETE inclusive, LF-normalized
+UTF-8 with no trailing newline, SHA256:
+572afae2f29241ad1fd732829a87eb6303a787eba1a39a7e589ee9c320be5f8a.
+Symbol headless.log SHA256:
+531f7157f05c6ceee7450809fcdb0df5a4b96fedcd67cfd496ad18cbc18ac605.
+Raw thunk receipt: rr2-root-ghidra-opaque-compare-2504857-20261108-01, passed/exit0;
+headless.log SHA256:
+f40fa2d415dd593fe192195b952b6ec4f6f018e653309389abc4484f1c0e2298.

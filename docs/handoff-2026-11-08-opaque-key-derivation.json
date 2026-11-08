@@ -1,5 +1,5 @@
 {
-  "schema": "rr2-opaque-key-static-return-map/2",
+  "schema": "rr2-opaque-key-static-return-map/3",
   "checkpointUtc": "2026-11-08",
   "reviewedHead": "001b14abedc1b3b97a23708049978dc888888e2f",
   "scope": "static-retained-exact-build-only",
@@ -103,8 +103,8 @@
     "sentinelEqualitySkipsHelper": true
   },
   "interpretation": {
-    "label": "refcounted payload-pointer canonicalization/interning",
-    "confidence": "inference from table matching/creation/return code; string helper identities not confirmed",
+    "label": "NUL-terminated byte-string canonicalization into a refcounted payload pointer",
+    "confidence": "strlen/strcmp identities proven by retained IMPORTED external references; local return flow proven by raw bytes; copy/allocation helper identities unresolved",
     "universalKEqualsX": false,
     "numericHashIsReturnedKey": false
   },
@@ -113,14 +113,17 @@
     "pointerEqualityHitPreservesInput": true,
     "unmaterializedMiss": "unavailable; do not allocate or execute helper",
     "missing": [
-      "0x2504857 token/length semantics",
-      "0x250487B comparison semantics",
       "upstream metadata resolution",
       "current table/allocation and per-entry pointer validity; stable ownership",
       "raw confirmation of 0x67BFB0 cache layout",
-      "live freshness and identity admission"
+      "live freshness and identity admission",
+      "pointer lifetime/concurrent mutation/ABA protection without native refcount pin"
     ],
-    "indexAlgorithmQualifiedStatic": true
+    "indexAlgorithmQualifiedStatic": true,
+    "materializedHitStaticallySpecifiable": true,
+    "implementedByThisFinding": false,
+    "snapshotScopedOnly": true,
+    "nativeRefcountPinReproduced": false
   },
   "externalDirectCallees": [
     "0x2504857",
@@ -155,6 +158,18 @@
     {
       "path": "artifacts/rea/opaque-index-1145ef0-review1/headless.log",
       "sha256": "de333eff64f89d2cc4984f86e9e33cd84981dd30c6b4ac34a02fa110a9fb743d"
+    },
+    {
+      "path": "artifacts/rea/opaque-import-symbols-review1/headless.log",
+      "sha256": "531f7157f05c6ceee7450809fcdb0df5a4b96fedcd67cfd496ad18cbc18ac605"
+    },
+    {
+      "path": "artifacts/rea/opaque-compare-2504857-review1/headless.log",
+      "sha256": "f40fa2d415dd593fe192195b952b6ec4f6f018e653309389abc4484f1c0e2298"
+    },
+    {
+      "path": "artifacts/rea/opaque-import-symbols-review1/Rr2OpaqueImportSymbolExport.java",
+      "sha256": "2f4f84b29869e7bed92ce0df75bddc8864cc6f00c17f8d228171351fdd6ea5aa"
     }
   ],
   "activities": {
@@ -198,7 +213,9 @@
         0,
         512
       ],
-      "requiresExternalReadBudget": true
+      "requiresExternalReadBudget": true,
+      "callerLengthResolved": "strlen(X)",
+      "stableInputEquivalent": "uint32 signed-byte polynomial over all pre-NUL bytes, modulo513"
     },
     "reductionProof": {
       "magic": "0xFF803FE1",
@@ -260,5 +277,54 @@
     "unrelatedTruncatedRoutineRva": "0x11461C0",
     "outsideTargetRva": "0x11461F8",
     "affectsIndexFunctionCompleteness": false
+  },
+  "importSymbolCheckpointHead": "c1185051cf1e91d0b1b93bdebd19527418384d8a",
+  "importThunkWindow": {
+    "rva": "0x2504830",
+    "length": 256,
+    "sha256": "637F6CE586F613D84A1272FAF789D42BF2E1535C13838611C069B6204A2B6356",
+    "jobId": "rr2-root-ghidra-opaque-compare-2504857-20261108-01",
+    "rawHex": "B50E00FF25E7B50E00FF25E9B50E00FF25EBB50E00FF2545B60E00FF253FBE0E00FF2529BE0E00FF256BBF0E00FF25A5B90E00FF25CFB90E00FF25B1B90E00FF252BC00E00FF252DBE0E00FF252FBE0E00FF2559BA0E00FF2563BA0E00FF25F5BA0E00FF25F7BA0E00FF2529BC0E00FF25BBBA0E00FF255DBA0E00FF25F7B70E00FF2571BE0E00FF25BBBF0E00FF255DBE0E00FF25AFBA0E00FF25A1BA0E00FF2593BA0E00FF2595BF0E00FF25A7BD0E00FF25F1BD0E00FF2513BF0E00FF25DDBB0E00FF25DFBB0E00FF2561BB0E00FF2553BB0E00FF2525BC0E00FF25B7BC0E00FF25B9BC0E00FF25C3BC0E00FF25FDBC0E00FF2507BD0E00FF2511B90E00FF",
+    "startsInsidePreviousInstruction": true
+  },
+  "importSymbols": {
+    "jobId": "rr2-root-ghidra-opaque-import-symbols-20261108-01",
+    "payloadNormalization": "BEGIN through COMPLETE inclusive; LF normalized UTF-8, no trailing newline",
+    "payloadSha256": "572afae2f29241ad1fd732829a87eb6303a787eba1a39a7e589ee9c320be5f8a",
+    "payload": "RR2_OPAQUE_IMPORT_SYMBOL_EXPORT_BEGIN\nprogram=rift_x64.exe imageBase=0x140000000\noriginalExecutableSha256=1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8\nsource=retained-ghidra-import-symbols; per-address-category-limit=8\nthunk=142504857 bytes=FF256BBF0E00 iatSlot=1425f07c8\naddress=142504857 role=thunk\nsymbolsShown=0 symbolsTruncated=false\nreference from=142504857 to=1425f07c8 type=INDIRECTION source=DEFAULT\nreferencesShown=1 referencesTruncated=false\nlocationsShown=0 locationsTruncated=false\ninterpretation=metadata-only; missing or generic names remain UNKNOWN\naddress=1425f07c8 role=iat-slot\nsymbolsShown=0 symbolsTruncated=false\nreference from=1425f07c8 to=EXTERNAL:00000288 type=DATA source=IMPORTED\nexternal origin=reference library=API-MS-WIN-CRT-STRING-L1-1-0.DLL label=strlen originalImportedName=UNKNOWN source=IMPORTED externalSpace=EXTERNAL:00000288 address=02f540ce\nreferencesShown=1 referencesTruncated=false\nlocationsShown=0 locationsTruncated=false\ninterpretation=metadata-only; missing or generic names remain UNKNOWN\nthunk=14250487b bytes=FF252FBE0E00 iatSlot=1425f06b0\naddress=14250487b role=thunk\nsymbolsShown=0 symbolsTruncated=false\nreference from=14250487b to=1425f06b0 type=INDIRECTION source=DEFAULT\nreferencesShown=1 referencesTruncated=false\nlocationsShown=0 locationsTruncated=false\ninterpretation=metadata-only; missing or generic names remain UNKNOWN\naddress=1425f06b0 role=iat-slot\nsymbolsShown=0 symbolsTruncated=false\nreference from=1425f06b0 to=EXTERNAL:00000265 type=DATA source=IMPORTED\nexternal origin=reference library=API-MS-WIN-CRT-STRING-L1-1-0.DLL label=strcmp originalImportedName=UNKNOWN source=IMPORTED externalSpace=EXTERNAL:00000265 address=02f54118\nreferencesShown=1 referencesTruncated=false\nlocationsShown=0 locationsTruncated=false\ninterpretation=metadata-only; missing or generic names remain UNKNOWN\nRR2_OPAQUE_IMPORT_SYMBOL_EXPORT_COMPLETE",
+    "entries": [
+      {
+        "thunkRva": "0x2504857",
+        "bytes": "FF256BBF0E00",
+        "iatRva": "0x25F07C8",
+        "library": "API-MS-WIN-CRT-STRING-L1-1-0.DLL",
+        "label": "strlen",
+        "source": "IMPORTED",
+        "referenceType": "DATA",
+        "externalSpace": "EXTERNAL:00000288",
+        "metadataAddress": "02f540ce"
+      },
+      {
+        "thunkRva": "0x250487B",
+        "bytes": "FF252FBE0E00",
+        "iatRva": "0x25F06B0",
+        "library": "API-MS-WIN-CRT-STRING-L1-1-0.DLL",
+        "label": "strcmp",
+        "source": "IMPORTED",
+        "referenceType": "DATA",
+        "externalSpace": "EXTERNAL:00000265",
+        "metadataAddress": "02f54118"
+      }
+    ],
+    "runtimeIatVerified": false
+  },
+  "stringSemantics": {
+    "length": "strlen(X): bytes preceding first NUL, excluding terminator",
+    "equality": "strcmp(B,X)==0: identical NUL-terminated byte sequences; case-sensitive, no decoding/normalization",
+    "ordering": "strcmp lexical ordering uses unsigned bytes; only equality is used here",
+    "hash": "uint32 signed-int8 polynomial h=33*h+int8(byte), seed0, all pre-NUL bytes; return h%513",
+    "hashPrecondition": "stable valid NUL-terminated sequence across strlen and hash reads",
+    "candidateLengthCheck": "zeroExtend(WORD(B-8)) == full strlen(X), after pointer-identity comparison",
+    "lifetime": "native helper atomically increments refcount; passive lookup does not pin B; snapshot-scoped candidate only"
   }
 }
