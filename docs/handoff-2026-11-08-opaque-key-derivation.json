@@ -1,0 +1,168 @@
+{
+  "schema": "rr2-opaque-key-static-return-map/1",
+  "checkpointUtc": "2026-11-08",
+  "reviewedHead": "001b14abedc1b3b97a23708049978dc888888e2f",
+  "scope": "static-retained-exact-build-only",
+  "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+  "identityBasis": "retained-original-import-metadata",
+  "decoder": {
+    "name": "GNU objdump",
+    "version": "2.44",
+    "mode": "i386:x86-64 intel",
+    "executionEnvironment": "offline Linux memory-backed descriptor"
+  },
+  "windows": [
+    {
+      "rva": "0x1145C20",
+      "length": 256,
+      "sha256": "CA748A53F956B446A28E9897AA2F86193A7EAD60EBEA5443EDC921FDE283CD95",
+      "jobId": "rr2-root-ghidra-opaque-helper-1145c20-20261108-01",
+      "rawHex": "41564883EC404C8BF14885C9750933C04883C440415EC348895C245848896C2460488974246848897C24384C896424304C896C24284C897C2420E8F8EB3B01488B1D322129024C8BF8488D8B18300000FF15729A4A01FF15849A4A01FF8344300000498BD7898340300000498BCE488B3D03212902E856020000488DAF183000008BD8488BCDFF153C9A4A01FF154E9A4A01FF452C488D0C5B33DB894528440FB76CCF128BF34585ED743C4C8B64CF088BC6498B3CC4493BFE0F843B0100004885FF741C0FB747F8493BC77513498BD6488BCFE883EB3B0185C00F841A010000FFC6413BF572C983452CFF7503895D28488BCDFF15D7994A01498D4F11488BD1"
+    },
+    {
+      "rva": "0x1145D20",
+      "length": 512,
+      "sha256": "A40ADA4771C1E4372FCEA49C45E6EFFE6FF6FE91B014454A6F4F65D83C709FED",
+      "jobId": "rr2-root-ghidra-opaque-key-continuation-1145d20-20261108-01",
+      "rawHex": "83E207740BB808000000482BC24803C88BD3E869260400498BD7498BCE488BF8488D6810E8A70100008BD08BF0C1E2104D8D4701490BD748C7070200000048895708488BCD498BD6E83CEA3B014C8B3524202902498D8E18300000FF1567994A01FF1579994A0141FF8644300000488D0C76498D3CCE4189864030000066395F14740748FF05E61F29024885ED0F84C80000000FB777120FB7CB663BDE731D4C8B47080FB7C149391CC0498D14C00F848800000066FFC1663BCE72E70FB74710663BF072238BC8BAFFFF0000C1E902B8040000003BC80F42C803CE3BCA0F42D1488BCFE818DAF6FF488BCE663B7712725466FFC666897712EB5583452CFF7503895D28488BCDFF15C4984A014885FF0F84E4FEFFFFF048FF47F0488B0D571F29024881C11830000083412CFF7503895928FF1599984A01488BC7EB5C48892A66FF4714EB16488B470848391CF0750466FF4714488B470848892CC848FF05061F2902498D8E1830000083692C017503895928FF1558984A01488B0DF91E29024881C11830000083412CFF7503895928FF153B984A01488BC54C8B6C24284C8B642430488B7C2438488B742468488B6C2460488B5C24584C8B7C24204883C440415EC3CCCCCCCCCCCCCCCCCCCCCCCCCCCC4533C04C8BC983E2FC7649448D52FF41C1EA0241FFC266660F1F840000000000410FBE01416BC82103C8410FBE41016B"
+    }
+  ],
+  "combined": {
+    "length": 768,
+    "sha256": "f0aec894ba84494e56f63021eecf6ecacb21e9716f279065509eea68b6b25d3c"
+  },
+  "helper": {
+    "entryRva": "0x1145C20",
+    "endExclusiveRva": "0x1145EE2",
+    "length": 706,
+    "sha256": "615a8ef33e4c396118a0e87af7e6cd5726767407f130bb9e0edd0b0b61579d40",
+    "localNormalControlFlowCovered": true,
+    "externalCalleesFullyResolved": false,
+    "retRvas": [
+      "0x1145C36",
+      "0x1145EE1"
+    ]
+  },
+  "returns": [
+    {
+      "condition": "X==0",
+      "result": "0",
+      "proofRvas": [
+        "0x1145C29",
+        "0x1145C2E",
+        "0x1145C36"
+      ]
+    },
+    {
+      "condition": "table candidate B==X",
+      "result": "B (equals X)",
+      "sideEffect": "atomic increment QWORD(B-0x10)",
+      "proofRvas": [
+        "0x1145CD6",
+        "0x1145CD9",
+        "0x1145E35",
+        "0x1145E57"
+      ]
+    },
+    {
+      "condition": "B nonnull; WORD(B-8)==R15; call_250487B(B,X).EAX==0",
+      "result": "B (not required to equal X)",
+      "sideEffect": "atomic increment QWORD(B-0x10)",
+      "proofRvas": [
+        "0x1145CE4",
+        "0x1145CF3",
+        "0x1145CFA",
+        "0x1145E35",
+        "0x1145E57"
+      ]
+    },
+    {
+      "condition": "no matching candidate",
+      "result": "P=call_11883A0(aligned_size,0).RAX+0x10",
+      "sideEffect": "construct header/payload and normally insert P; defensive P==0 skips insertion",
+      "proofRvas": [
+        "0x1145D32",
+        "0x1145D40",
+        "0x1145D57",
+        "0x1145D68",
+        "0x1145E5C",
+        "0x1145E77",
+        "0x1145EB5"
+      ]
+    }
+  ],
+  "caller": {
+    "entryRva": "0x6126F0",
+    "sentinelGlobalRva": "0x274C990",
+    "metadataOffset": "0x38",
+    "inputLoadRva": "0x612864",
+    "helperCallRva": "0x612878",
+    "opaqueCacheCallRva": "0x6128F7",
+    "opaqueCacheRva": "0x67BFB0",
+    "actorSelectorRva": "0x2F58490",
+    "sentinelEqualitySkipsHelper": true
+  },
+  "interpretation": {
+    "label": "refcounted payload-pointer canonicalization/interning",
+    "confidence": "inference from table matching/creation/return code; string helper identities not confirmed",
+    "universalKEqualsX": false,
+    "numericHashIsReturnedKey": false
+  },
+  "passiveReproduction": {
+    "qualified": false,
+    "pointerEqualityHitPreservesInput": true,
+    "unmaterializedMiss": "unavailable; do not allocate or execute helper",
+    "missing": [
+      "complete 0x1145EF0 indexing",
+      "0x2504857 token/length semantics",
+      "0x250487B comparison semantics",
+      "upstream metadata resolution",
+      "valid service-table bounds and stable ownership",
+      "raw confirmation of 0x67BFB0 cache layout",
+      "live freshness and identity admission"
+    ]
+  },
+  "externalDirectCallees": [
+    "0x2504857",
+    "0x1145EF0",
+    "0x250487B",
+    "0x11883A0",
+    "0x25047A9",
+    "0x10B3820"
+  ],
+  "indirectCallSlotRvas": [
+    "0x25EF6E8",
+    "0x25EF700",
+    "0x25EF6F0"
+  ],
+  "partialNextHelper": {
+    "entryRva": "0x1145EF0",
+    "knownOutsideBranchRva": "0x1145F44",
+    "truncatedInstructionRva": "0x1145F1F",
+    "complete": false
+  },
+  "sourceFiles": [
+    {
+      "path": "artifacts/rea/ghidra-v7-callsite-instructions.txt",
+      "sha256": "ca66aca8543b4e2f0b70f7669025c0d3fe419c4a0864a7ae9832ac625e1ac530"
+    },
+    {
+      "path": "artifacts/rea/ghidra-v7-pseudocode.txt",
+      "sha256": "8ff54a70f56c18f453494b7977598ebfaea91f05920565f7563df99aac166c45"
+    },
+    {
+      "path": "artifacts/rea/opaque-key-1145c20-review1/headless.log",
+      "sha256": "4d8bf2fb11ecf3ffc0ea06f144c3d9e3ad5b8b2406af43d051d391439c540cb2"
+    },
+    {
+      "path": "artifacts/rea/opaque-key-1145d20-review2/headless.log",
+      "sha256": "f9136cd5edbc12ea76f4c976a7b5b7651fd0e43d1192e526c1381c57e575902c"
+    }
+  ],
+  "activities": {
+    "workerGhidraRuns": 0,
+    "liveReads": 0,
+    "input": 0,
+    "commits": 0
+  }
+}
