@@ -154,6 +154,33 @@ class QueuePaginationTests(unittest.TestCase):
         with self.assertRaisesRegex(runner.MovementSessionError, "cleanup pagination stalled"):
             lease.finish("succeeded", ["test"])
 
+    def test_cleanup_retries_transient_supervisor_release_between_pages(self):
+        completed = request(101)
+        completed["request_id"] = "movement-own"
+
+        class TransitionQueue(FakeQueue):
+            def __init__(self):
+                super().__init__({})
+                self.scan_number = 0
+
+            def status(self, *, after_sequence=0, limit=100):
+                self.cursors.append(after_sequence)
+                if after_sequence == 0:
+                    self.scan_number += 1
+                generation = 1 if self.scan_number == 1 and after_sequence == 0 else 2
+                return {
+                    "resources": [resource(generation=generation)],
+                    "requests": ([request(i) for i in range(1, 101)]
+                                 if after_sequence == 0 else [completed]),
+                    "next_sequence": 100 if after_sequence == 0 else None,
+                }
+
+        queue = TransitionQueue()
+        lease = runner.LiveQueueLease(queue, "movement-own", "a" * 64, RESOURCE)
+        self.assertEqual(lease.finish("succeeded", ["test"]), {
+            "request_id": "movement-own", "state": "succeeded"})
+        self.assertEqual(queue.cursors, [0, 100, 0, 100])
+
     def test_cleanup_rejects_resource_change(self):
         completed = request(101)
         completed["request_id"] = "movement-own"

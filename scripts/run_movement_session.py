@@ -454,15 +454,20 @@ class LiveQueueLease:
     def finish(self, outcome: str, evidence: list[str]):
         result = self.queue.finish(self.request_id, self.token, outcome, evidence)
         deadline = time.monotonic() + 5
+        changing_scans = 0
         while time.monotonic() < deadline:
             requests, after, resources = [], 0, None
+            changed_during_scan = False
             for _ in range(1000):
                 page = self.queue.status(after_sequence=after, limit=100)
                 batch, current_resources = page.get("requests"), page.get("resources")
                 require(isinstance(batch, list) and isinstance(current_resources, list),
                         "queue cleanup response invalid")
-                require(resources is None or current_resources == resources,
-                        "queue resource changed during cleanup")
+                if resources is not None and current_resources != resources:
+                    # The supervisor may finalize cleanup between status pages.
+                    # Restart to obtain one stable view; never accept mixed pages.
+                    changed_during_scan = True
+                    break
                 resources = current_resources
                 require(all(isinstance(row, dict) and type(row.get("sequence")) is int
                             and isinstance(row.get("request_id"), str) for row in batch),
@@ -477,6 +482,12 @@ class LiveQueueLease:
                 after = cursor
             else:
                 raise MovementSessionError("queue cleanup scan incomplete")
+            if changed_during_scan:
+                changing_scans += 1
+                require(changing_scans < 3, "queue resource changed during cleanup")
+                time.sleep(.05)
+                continue
+            changing_scans = 0
             request = next((row for row in requests if row["request_id"] == self.request_id), None)
             resource = next((row for row in resources if row["name"] == self.resource), None)
             if (request is not None and request["state"] == outcome and resource is not None

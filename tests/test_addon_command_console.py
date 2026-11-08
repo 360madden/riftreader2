@@ -230,6 +230,12 @@ class AddonCommandValidationTests(unittest.TestCase):
             {"type": "ui-step", "step": "hide-addon", "frame": "readiness", "x": 742, "y": 418},
             module.validate_operation(None, "hide-addon", "lab2", "readiness", 742, 418),
         )
+        for frame, x, y in (("luapad", 427, 150), ("rre", 925, 266)):
+            with self.subTest(frame=frame):
+                self.assertEqual(
+                    {"type": "ui-step", "step": "hide-addon", "frame": frame, "x": x, "y": y},
+                    module.validate_operation(None, "hide-addon", "lab1", frame, x, y),
+                )
         for args in (
             (None, "hide-addon", "lab2", None, 742, 418),
             (None, "hide-addon", "lab2", "casting", -1, 236),

@@ -234,7 +234,7 @@ def validate_operation(command: str | None, ui_step: str | None, lab: str,
     if ui_step not in ("open-chat", "close-ui", "hide-addon"):
         _fail("unsupported-ui-step")
     if ui_step == "hide-addon":
-        if hide_frame not in ("readiness", "casting") or type(hide_x) is not int \
+        if hide_frame not in ("readiness", "casting", "luapad", "rre") or type(hide_x) is not int \
                 or type(hide_y) is not int or not 0 <= hide_x < 16384 or not 0 <= hide_y < 16384:
             _fail("invalid-hide-addon-target")
         return {"type": "ui-step", "step": ui_step, "frame": hide_frame,
@@ -1050,7 +1050,7 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
         command = ""
     elif (operation.get("type") == "ui-step" and operation.get("step") == "hide-addon"
             and set(operation) == {"type", "step", "frame", "x", "y", "screenWidth", "screenHeight"}
-            and operation["frame"] in ("readiness", "casting")
+            and operation["frame"] in ("readiness", "casting", "luapad", "rre")
             and all(type(operation[key]) is int for key in ("x", "y", "screenWidth", "screenHeight"))
             and 0 <= operation["x"] < operation["screenWidth"] <= 16384
             and 0 <= operation["y"] < operation["screenHeight"] <= 16384):
@@ -1226,7 +1226,7 @@ def build_parser() -> argparse.ArgumentParser:
     operation.add_argument("--command")
     operation.add_argument("--ui-step", choices=("open-chat", "close-ui", "hide-addon"))
     operation.add_argument("--deferred-result-intent", type=Path)
-    prepare_parser.add_argument("--hide-frame", choices=("readiness", "casting"))
+    prepare_parser.add_argument("--hide-frame", choices=("readiness", "casting", "luapad", "rre"))
     prepare_parser.add_argument("--hide-x", type=int)
     prepare_parser.add_argument("--hide-y", type=int)
     prepare_parser.add_argument("--fast-source-pin", type=Path)
