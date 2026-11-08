@@ -352,6 +352,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         with patch.object(runner, "ROOT", self.root), \
              patch.dict(self.dependency.CONFIGS, {"lab2": self.config_path}, clear=True), \
              patch.object(self.dependency, "QUEUE", self.queue_path), \
+             patch.object(self.dependency, "ensure", return_value={"state": "reused"}) as ensure, \
              patch.object(self.dependency, "RUNTIME_FILES", tuple(self.source_hashes)), \
              patch.object(runner.HostConfig, "load", return_value=SimpleNamespace(ui_port=49921)), \
              patch.object(runner, "ControlClient", return_value=fake_client), \
@@ -374,8 +375,22 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
             self.assertEqual(status.call_args.kwargs,
                              {"require_armed": False, "require_foreground": require_foreground})
             if return_host or inspection:
+                ensure.assert_not_called()
                 self.assertIs(result, status.call_args.args[0])
+            else:
+                ensure.assert_called_once_with("lab2")
             return result
+
+    def test_on_demand_controller_failure_blocks_before_host_admission(self):
+        from scripts.operation_dependencies import DependencyUnavailable
+        with patch.object(self.dependency, "ensure",
+                          side_effect=DependencyUnavailable("controller", "not-ready")) as ensure, \
+             patch.object(runner, "admit_managed_host") as admission:
+            with self.assertRaisesRegex(runner.MovementSessionError,
+                                        "managed controller unavailable: not-ready"):
+                runner.write_managed_host_plan("lab2", self.output)
+            ensure.assert_called_once_with("lab2")
+            admission.assert_not_called()
 
     def test_factory_returns_validated_host_with_both_ownership_proofs(self):
         host = self.generate(return_host=True)

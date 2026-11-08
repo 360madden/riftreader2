@@ -404,6 +404,13 @@ def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
 
 
 def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) -> Path:
+    """Movement prepare owns the managed controller dependency; never arm here."""
+    from scripts.ensure_controller import ensure
+    from scripts.operation_dependencies import DependencyUnavailable
+    try:
+        ensure(lab)
+    except DependencyUnavailable as error:
+        raise MovementSessionError(f"managed controller unavailable: {error.code}") from error
     return admit_managed_host(lab, output, require_foreground=require_foreground).plan_path
 
 
