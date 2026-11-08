@@ -1,5 +1,32 @@
 # Current status
 
+**LATE NOVEMBER 7 — XYZ BRANCH RETRIEVAL + TRACKING + CONTROLLER RECOVERY (SOURCE/host-only):**
+Two milestone commits `9a62ced` (new leased `sample-current-position-refresh-branch`,
+lossless wrapper schema2, per-segment XYZ delta counts and offline raw-orientation
+comparison) and `641256c` (Windows closed-loopback-port 10035 table fallback)
+are pushed. Root verified **28/28** registered CurrentBuild CLI sample command
+lease callsites; prior agents and generic routes remain nonparticipants.
+Full .NET Release **1273/1273 PASS**. Full Python under repo-local Lua5.1/lupa2.8
+**2100 run, 2 skipped, 0 errors**: historical Mana source SHA remained pinned;
+only synthetic test fixture isolation changed (commit `0ffb812`).
+Retained Lab1 30-row XYZ replay has 29 equal admitted pairs and
+zero unequal; cached candidates are NOT independently fresh or motion-qualified.
+New host-only compact single-file reader SHA256
+`C1D9B75DD09096E0C98101D4795E7C4B78A56F518310F34863D6FC2315EB9FDA`
+(52,252,619 bytes) passed `--help` and synthetic native bundle smoke;
+matching agent.zip SHA256 `94C92F693162BB6C9DA3D736F2975D7FC98D8E5AAABAA1361E07403236DB4692`
+(46,807,306 bytes), ZIP integrity pass, **neither staged/deployed**.
+Read-only current host probe confirms no TCP listeners on configured RR2
+controller ports 49811/49921; foreign-reader state and guest agent capability
+are UNKNOWN, so no controller start or game/VM input was attempted.
+Greeting Jimmy shared a separate source-hashed review
+`docs/xyz-jimmy-lease-review-2026-11-07-a087.md` (independent 40/40 Python,
+51/51 .NET) confirming cooperative-lease limits, unbounded position/zone
+cross-field skew, and no live admission. Preserve separate position and zone
+candidate timestamps until controlled live skew/freshness evidence exists.
+Root continuation in [short Markdown handoff](handoff-2026-11-07-xyz-tracking-root-v2.md)
+and [machine JSON](handoff-2026-11-07-xyz-tracking-root-v2.json).
+
 **21:23 EST NOVEMBER 7 — OFFLINE XYZ TRACK SEGMENTS + HOST PACKAGE:**
 New `scripts/summarize_native_xyz_track.py` reuses the existing projector to
 report source-hashed contiguous candidate path and net XYZ displacement, but

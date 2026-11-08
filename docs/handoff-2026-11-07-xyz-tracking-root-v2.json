@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-xyz-tracking-handoff",
+  "dateEastern": "2026-11-07",
+  "host": "AMD-DESKTOP",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "commits": [
+    {
+      "sha": "9a62cedc7f57168e6f010c8698dfa3e467fe6608",
+      "purpose": "XYZ refresh branch retrieval, candidate tracking and lossless wrappers"
+    },
+    {
+      "sha": "641256c3f0266cf0825405e02731baf8b2f86111",
+      "purpose": "Windows controller listen-table fallback"
+    }
+  ],
+  "pushed": true,
+  "sourceLeaseRegisteredCliCount": 28,
+  "sourceLeaseFleetAccepted": false,
+  "validation": {
+    "dotnetSolution": {
+      "passed": 1273,
+      "failed": 0,
+      "skipped": 0,
+      "job": "rr2-root-xyz-all-dotnet-solution-slnx-20261108-01"
+    },
+    "pythonFull": {
+      "ran": 2100,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 2,
+      "runtime": "repo-local Lua5.1/lupa2.8",
+      "job": "rr2-mana-repo-local-full-python-discover-20261108-01"
+    },
+    "lab1RetainedCandidatePairs": {
+      "samples": 30,
+      "admitted": 29,
+      "exactlyEqual": 29,
+      "changed": 0,
+      "physicalMotionQualified": false
+    }
+  },
+  "hostOnlyRelease": {
+    "exeRelativePath": "artifacts/native-xyz-refresh-branch-20261108-0345z-002/publish/RiftReader2.Live.exe",
+    "exeSha256": "C1D9B75DD09096E0C98101D4795E7C4B78A56F518310F34863D6FC2315EB9FDA",
+    "exeBytes": 52252619,
+    "zipRelativePath": "artifacts/native-xyz-refresh-branch-20261108-0345z-002/release-bundle-hostonly-001/agent.zip",
+    "zipSha256": "94C92F693162BB6C9DA3D736F2975D7FC98D8E5AAABAA1361E07403236DB4692",
+    "zipBytes": 46807306,
+    "release": "agent-c1d9b75dd090",
+    "deployedToLabs": false,
+    "smokePassed": true
+  },
+  "jimmyPeer": {
+    "title": "Greeting Jimmy",
+    "report": "docs/xyz-jimmy-lease-review-2026-11-07-a087.md",
+    "reportSha256": "6A9F5AF76E0292059E9CFC2E985B68DD7D37741E01D7C3CD3E133CCD7930DAD1",
+    "pythonFocusedPassed": 40,
+    "dotnetFocusedPassed": 51,
+    "liveReaderQuiescenceAcknowledged": false
+  },
+  "controllers": {
+    "lab1Port": 49811,
+    "lab2Port": 49921,
+    "currentListeners": 0,
+    "hostStatusAvailable": false,
+    "startedOrRestarted": false
+  },
+  "liveEvidence": {
+    "newGuestDeployed": false,
+    "gameInput": false,
+    "vmGuestLogin": false,
+    "nativeCapture": false,
+    "worldIdentityQualified": false,
+    "passiveXyzFreshnessQualified": false
+  },
+  "next": [
+    "Get explicit foreign-reader/Greeting Jimmy quiescence for a lab.",
+    "Use guarded controller recovery and fresh VM-specific credential check before login.",
+    "Attest exact installed agent and reader binary SHA, capability1, queue/STOP/read drain and ProgramData ACL.",
+    "Acquire bounded candidate XYZ/zone/branch snapshots and independently observed changed-state/restart evidence."
+  ],
+  "preserveUntracked": [
+    "scripts/project_current_native_energy_variants.py"
+  ],
+  "qualifications": [
+    "Sequential zone and position are not atomic or same-world.",
+    "Cooperative lease excludes only participating readers.",
+    "Raw orientation matrix delta is not character facing or camera heading.",
+    "No full-game restart proof for newly built reader."
+  ]
+}
