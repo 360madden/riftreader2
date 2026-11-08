@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "project": "RiftReader2",
+  "capturedAtLocal": "2026-11-08T10:00:00-05:00",
+  "machine": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "headBeforeHandoff": "62316afd40fcda142df824aa0d9582d650aae3b6",
+  "remote": "https://github.com/360madden/riftreader2",
+  "pushedMilestones": [
+    "a057235",
+    "18e4576",
+    "bb9e301",
+    "1efc59e",
+    "15d5927",
+    "62316af"
+  ],
+  "otherSessionCommit": "39bbdec",
+  "tests": {
+    "observer": 21,
+    "liveDotNet": 995,
+    "catalog": 14,
+    "importer": "not yet written",
+    "importerRealReceiptSmoke": "passed read-only"
+  },
+  "live": {
+    "lab1PriorStrict480": {
+      "status": "passed",
+      "accepted": 515,
+      "seconds": 481.1341798000067,
+      "maxCaptureGapSeconds": 2.982705,
+      "artifact": "artifacts/receiver-migrations/lab1-strict480-observer-d/summary.json"
+    },
+    "lab2PriorStrict480": {
+      "status": "failed",
+      "accepted": 506,
+      "rejectedCaptureGapSeconds": 4.5140708,
+      "exclusiveThresholdSeconds": 4.5
+    },
+    "asyncShort": {
+      "status": "short-pass-only",
+      "lab1Frames60s": 82,
+      "lab1Frames90s": 126,
+      "lab2Frames60s": 75,
+      "lab2Frames90s": 108,
+      "gameReady": false
+    },
+    "newStrict480": "pending",
+    "nativeXYZLiveQualified": false,
+    "liveMovementAuthorized": false
+  },
+  "uncommitted": {
+    "ownDraft": {
+      "path": "scripts/navigation_anchor_capture.py",
+      "sha256": "6A99F30E3B1CD8F4197048C4F9CFBAD34923B878B774CD23BB172851A6F493EE",
+      "status": "real receipt smoke PASS; tests and docs pending"
+    },
+    "concurrentOwned": [
+      "scripts/movement_feedback.py",
+      "scripts/observation_receiver.py",
+      "scripts/observe_live_reader_freshness.py",
+      "scripts/project_current_native_energy_variants.py"
+    ]
+  },
+  "sample": {
+    "receipt": "artifacts/receiver-migrations/lab1-strict480-observer-d/raw/initial-receipt.json",
+    "sha256": "62446EBA9D7E4034DE9D2E0C5B8B44EEDEEBDE405EBA75B8840777B47A1F44EC",
+    "capturedAtUtc": "2026-11-07T02:29:24.3862102+00:00",
+    "xyz": {
+      "x": 7450.2998046875,
+      "y": 864.3099975585938,
+      "z": 2984.559814453125
+    },
+    "qualification": "offline-reference-only"
+  },
+  "next": [
+    "test and document importer before commit",
+    "connect anchors only to offline planner with tests",
+    "coordinate pinned receiver journal rollout",
+    "rerun strict480 both labs",
+    "preserve concurrent dirty work"
+  ],
+  "referenceDocs": [
+    "docs/reference/navigation-anchor-catalog.md",
+    "docs/handoff-2026-11-08-async-fullscan-cadence.md",
+    "docs/status.md",
+    "AGENTS.md"
+  ]
+}
