@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "retained-native-api-xyz-crosscheck/1",
+  "date": "2026-11-08",
+  "scope": "offline retained evidence only; no live test, writes to source evidence or runtime access",
+  "identity": {
+    "lab": "lab2",
+    "processId": 9752,
+    "processStartUtcTicks": "639294897826627677",
+    "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "unitId": "u035400012DFEB5BC",
+    "unitIdentityLimit": "Matching unit explicitly present in earliest/latest native reviews and RRE API; not all sixteen native reviews independently ownership-qualified."
+  },
+  "native": {
+    "componentAddress": "0x1B0793AEDC0",
+    "primaryOffsets": [
+      "0x48",
+      "0x4C",
+      "0x50"
+    ],
+    "secondaryOffsets": [
+      "0x88",
+      "0x8C",
+      "0x90"
+    ],
+    "xyz": [
+      7183.560546875,
+      820.7896118164062,
+      3156.038330078125
+    ],
+    "float32Bits": [
+      "0x45E07C7C",
+      "0x444D3289",
+      "0x4545409D"
+    ],
+    "matchingEpochCaptures": 16,
+    "inspectedComponentValueFiles": 25,
+    "allMatchingEpochPrimaryAndSecondaryEqual": true,
+    "earliestCompletedAtUtc": "2026-11-07T12:53:58.7607127Z",
+    "latestCompletedAtUtc": "2026-11-07T15:35:34.5868847Z",
+    "spanSeconds": 9695.826172,
+    "captures": [
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\001cf7a517da4dc38971a0041e1f05b8\\component-values.json",
+        "sha256": "60dd6cde1e81c4a8ddefecdd9c7d81191bfb2010d0739d6e8ac0ddfb6ab0d600",
+        "startedAtUtc": "2026-11-07T12:53:58.6663495Z",
+        "completedAtUtc": "2026-11-07T12:53:58.7607127Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\03b0475a18ff461b95184e55b28228d8\\component-values.json",
+        "sha256": "8326eaacd702d388caa74147e0fe26139b1f812c9bfc6e0fb0b003b6a8a4ece8",
+        "startedAtUtc": "2026-11-07T13:01:27.0048584Z",
+        "completedAtUtc": "2026-11-07T13:01:27.1043124Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\b2d1ef50f22049c8a94030dd7aa21ecd\\component-values.json",
+        "sha256": "6ce0a710b732fc00c3de7e8c7743bf3cc1b127244322fc986bbf25ab76b804a3",
+        "startedAtUtc": "2026-11-07T13:03:04.3150782Z",
+        "completedAtUtc": "2026-11-07T13:03:04.4058134Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\0a86f0c1c46940aca1881aa3fccdd09e\\component-values.json",
+        "sha256": "288c68b9983386fd807b43341fb6d7c40ff818ec4f268235f10a53e966cb608f",
+        "startedAtUtc": "2026-11-07T13:13:51.6679042Z",
+        "completedAtUtc": "2026-11-07T13:13:51.7634218Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\59472c4dca2445daaf8dc87f57d49963\\component-values.json",
+        "sha256": "10c516c8c241c79e7826429910043152d43e8e77d9684abe852235099a3d9a7e",
+        "startedAtUtc": "2026-11-07T13:17:58.0371072Z",
+        "completedAtUtc": "2026-11-07T13:17:58.1343417Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\44b1eeb84b434b6d9c01fd4db810a6a0\\component-values.json",
+        "sha256": "51159a5f3c88e0184a819a8af70a191c54216ca245af5358ac382c1eddd7b53d",
+        "startedAtUtc": "2026-11-07T13:22:51.9670288Z",
+        "completedAtUtc": "2026-11-07T13:22:52.0580513Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\33aa72bece574a5fac96ce19627745ae\\component-values.json",
+        "sha256": "31ded4d6eb39853083501b0c342d9d30bdb0e830e048091a987b47d03d918ee3",
+        "startedAtUtc": "2026-11-07T13:31:59.5782175Z",
+        "completedAtUtc": "2026-11-07T13:31:59.6745984Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\217241df50244258a5b884d78f97fff5\\component-values.json",
+        "sha256": "ddc58fbf510e02d5e47a29ee412b889f7654c42a6a75a1d6fb497713b50c7b6d",
+        "startedAtUtc": "2026-11-07T13:39:33.7665410Z",
+        "completedAtUtc": "2026-11-07T13:39:33.8570325Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\6391975fd6ff4781afcbd924eeadc4b2\\component-values.json",
+        "sha256": "d9e93f32e7dee3b0d42eb376f1025f5923f7f86cf9dd75f859509e8d04c62b56",
+        "startedAtUtc": "2026-11-07T13:47:42.6909777Z",
+        "completedAtUtc": "2026-11-07T13:47:42.7868599Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\96d9e5f41c284ecf879cc525a8fe3683\\component-values.json",
+        "sha256": "788e012fd0ab0cd1b78e42e42c3e934315e4ca98b09023c1e2426ba97d3c7431",
+        "startedAtUtc": "2026-11-07T13:48:38.0052716Z",
+        "completedAtUtc": "2026-11-07T13:48:38.0912790Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\d7008a54e6774bacaff7837df90e0a1a\\component-values.json",
+        "sha256": "0d5c1a14ca017f49f5ea63796394013f707b84ea88bdadce2627f45b765d3a29",
+        "startedAtUtc": "2026-11-07T13:53:47.1785572Z",
+        "completedAtUtc": "2026-11-07T13:53:47.2743206Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\91b764b785694e448b9175c3211c4e75\\component-values.json",
+        "sha256": "6386b5b77312c6f61e996b8df5b33f495c50833a3edbd5ce20ca80bbe323387d",
+        "startedAtUtc": "2026-11-07T14:02:47.2941698Z",
+        "completedAtUtc": "2026-11-07T14:02:47.3848926Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\4706be4d501f4fac9a22b36f07028c7a\\component-values.json",
+        "sha256": "b134f251617d49a7b063bfd09465b46107de901ff84a7f3e9eae6dee88ef0247",
+        "startedAtUtc": "2026-11-07T14:11:49.5733766Z",
+        "completedAtUtc": "2026-11-07T14:11:49.6617320Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\ab143b0d97da494ab9ecc4cbe2464601\\component-values.json",
+        "sha256": "292bf09b9d7c8140e70625b490cb624a1931a406dadf4c70f019f051eaa7b294",
+        "startedAtUtc": "2026-11-07T14:27:15.2986058Z",
+        "completedAtUtc": "2026-11-07T14:27:15.3921188Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\b0b846c1f4694741913f2866618e7aec\\component-values.json",
+        "sha256": "e4d7e74867cf81d07684486195f8c8b35f895d5fa86790eda44d45b5386551e1",
+        "startedAtUtc": "2026-11-07T14:50:42.2965353Z",
+        "completedAtUtc": "2026-11-07T14:50:42.3835120Z"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\714ab962c2e4487c85fe79f8d481ab6f\\component-values.json",
+        "sha256": "6d9170e1f6e8478d5b9f7344f4480a6900a03a13b7406869dab828d430879533",
+        "startedAtUtc": "2026-11-07T15:35:34.4942339Z",
+        "completedAtUtc": "2026-11-07T15:35:34.5868847Z"
+      }
+    ],
+    "ownershipReviews": [
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\001cf7a517da4dc38971a0041e1f05b8\\review.json",
+        "sha256": "38292bdb6d178b73c99636a14e6eb51a8aa919df8e8f36cac70f9d660c238c95"
+      },
+      {
+        "path": "C:\\work\\riftreader2\\artifacts\\native-unit-manager\\lab2\\714ab962c2e4487c85fe79f8d481ab6f\\review.json",
+        "sha256": "77978dd00f4fa7f8660bda2ce7299c8c8e79aa25afedaacf2f740dc63978fc6f"
+      }
+    ]
+  },
+  "api": {
+    "sourceKind": "RRECollector retained API publication; not native field owner evidence",
+    "player": "Bolinao",
+    "producerVersion": "0.4.13",
+    "readerVersion": "0.2.3",
+    "session": "0b9409263a43bfdb58ee6c11872dea26",
+    "sequence": 10,
+    "xyz": [
+      7183.56005859375,
+      820.7899780273438,
+      3156.0400390625
+    ],
+    "float32Bits": [
+      "0x45E07C7B",
+      "0x444D328F",
+      "0x454540A4"
+    ],
+    "frameTime": 196735.984375,
+    "realTime": 196735.984375,
+    "zone": "z0000000CB7B53FD7",
+    "bindingObservedAtUtc": "2026-11-07T22:15:34.552796Z",
+    "snapshotCompletedAtUtc": "2026-11-07T22:16:05.0512972Z",
+    "sources": [
+      {
+        "path": "C:\\work\\rre\\artifacts\\sc625-live-adapter-trial3-20261107-1714\\observation.json",
+        "sha256": "7575c604c3689ada4dd0d7b96067cdca4ba6100fd2516136ae156e20beae3dec"
+      },
+      {
+        "path": "C:\\work\\rre\\artifacts\\sc625-live-adapter-trial3-20261107-1714\\binding.json",
+        "sha256": "f64a9262be1649f4e4d4af03bfdd390bce8cde9c9e846b8cd40010f0e891c893"
+      },
+      {
+        "path": "C:\\work\\rre\\artifacts\\sc625-live-adapter-trial3-20261107-1714\\acquisition\\snapshot.json",
+        "sha256": "84fc04eaac672bf5e3e087a02c80ac03d3a1576979c2b8b1c84162ef00609f96"
+      }
+    ]
+  },
+  "comparison": {
+    "deltaDirection": "native-minus-api",
+    "deltaXyz": [
+      0.00048828125,
+      -0.0003662109375,
+      -0.001708984375
+    ],
+    "float32UlpDeltas": [
+      1,
+      -6,
+      -7
+    ],
+    "euclideanDifferenceRawCoordinateUnits": 0.0018147056576316536,
+    "latestNativeToRreSnapshotSeconds": 24030.4644125,
+    "earliestNativeToRreSnapshotSeconds": 33726.2905845,
+    "latestNativeToRreBindingSeconds": 23999.9659113,
+    "contemporaneous": false
+  },
+  "qualifications": {
+    "worldCoordinatesVerified": false,
+    "passiveFreshnessVerified": false,
+    "changedStateVerified": false,
+    "writerExecutionVerified": false,
+    "restartQualified": false
+  },
+  "limitations": [
+    "Historical captures are not contemporaneous; exact Lua Unit.Detail call time and native/API skew are unknown.",
+    "Native snapshots identify on-disk executable bytes, not a loaded-module hash; sequential owner reads are not atomic and ABA is not excluded.",
+    "All sixteen matching-epoch caches are unchanged; this proves neither stationary gameplay nor advancing source freshness.",
+    "The numerical mismatch is real float32-bit inequality, not only SavedVariables decimal formatting.",
+    "No cause assigned to the mismatch: motion, cache interpolation, distinct source or transform remain hypotheses.",
+    "No physical units, world frame, public zone equivalence, current-state or restart claim is established.",
+    "Scoped directory inspection is not exhaustive across all RR2 artifacts. One matching-epoch directory 6391975fd6ff4781afcbd924eeadc4b2 lacks review.json; do not promote all sixteen ownership claims."
+  ]
+}
