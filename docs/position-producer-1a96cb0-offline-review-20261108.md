@@ -1,0 +1,7 @@
+# Offline review: RVA 0x1A96CB0
+
+Exact-build retained Ghidra raw window `[0x1A96CB0,0x1A970B0)` (1,024 bytes) SHA-256 `F661D037C4134C05B46B2419EEC90D2BB50955D798D9640D299AD198A74664F9` was independently reproduced from stdout and decoded with GNU objdump x86-64. Source executable SHA-256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`; source job `rr2-root-ghidra-position-producer-1a96cb0-20261108-01` exit 0; exporter SHA-256 `BDC95F2C515492FD1292B1FD7768ECB32D670B3E41E8A9561DDE32FE71FD0A80`.
+
+At RVA `0x1A96CB0`, the function copies `*[RDX]` into `*[RCX]`. If non-null it increments the pointed object's DWORD at `+0x08`, calls `0x127303C` with that original pointer, and accepts only return `AX == 0x25B`. On mismatch it decrements `+0x08`, calls `0x1272C18` if the count becomes zero, and clears the destination pointer. It returns destination `RCX` in RAX at `0x1A96D14`; INT3 padding follows before the next routine at `0x1A96D20`.
+
+This is a **type-filtering pointer-wrapper candidate**, not a demonstrated vector/XYZ generator. Its returned pointer derives from the caller-supplied pointer-to-pointer; trace that caller's RDX input and the source object to determine provenance. The call's type meaning and runtime branch are not established. Neighboring routines and the truncated window do not establish the complete producer chain; no live freshness, writer execution, player ownership or movement semantics follow.

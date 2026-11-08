@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-offline-position-producer-review",
+  "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+  "sourceJob": "rr2-root-ghidra-position-producer-1a96cb0-20261108-01",
+  "exporterSha256": "BDC95F2C515492FD1292B1FD7768ECB32D670B3E41E8A9561DDE32FE71FD0A80",
+  "rawWindow": {
+    "rvaStart": "0x1A96CB0",
+    "rvaEndExclusive": "0x1A970B0",
+    "bytes": 1024,
+    "sha256": "F661D037C4134C05B46B2419EEC90D2BB50955D798D9640D299AD198A74664F9"
+  },
+  "finding": "Copies caller pointer *RDX to *RCX; nonnull reference count +8 increments, helper 0x127303C must return AX 0x25B else decrements and clears; returns destination pointer. No demonstrated XYZ generation.",
+  "functionRetRva": "0x1A96D14",
+  "nextStep": "Trace caller RDX pointer-to-pointer origin.",
+  "limitations": [
+    "static bounded decode",
+    "type meaning and live branch unproven",
+    "no freshness, ownership or movement qualification"
+  ]
+}
