@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-current-build-position-component-vptr-bridge",
+  "observedAtUtc": "2026-11-08T06:51:27.087Z",
+  "scope": "offline-retained-two-lab-cohort; no fresh process/lab access",
+  "host": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+  "source": {
+    "glob": "artifacts/native-unit-manager/lab[12]/*/component-values.json",
+    "filesScanned": 49,
+    "completeReports": 49,
+    "rawChunkLengthShaVerified": 67,
+    "fullReportShaCheckedAgainstSiblingReview": 48,
+    "fullReportSiblingReviewUnavailable": 1,
+    "fullReportMissingReview": {
+      "path": "artifacts/native-unit-manager/lab2/6391975fd6ff4781afcbd924eeadc4b2/component-values.json",
+      "computedSha256": "D9E93F32E7DEE3B0D42EB376F1025F5923F7F86CF9DD75F859509E8D04C62B56"
+    },
+    "reviewIdentityPidStartBuildModuleMatches": 48,
+    "priorOwnerEvidence": {
+      "path": "docs/reference/current-native-xyz-writer-evidence.md",
+      "sha256": "B29C08A611C74A452270274C0FCFDAA85B8BF389DA894720771AD075BEB968D8"
+    },
+    "ghidraV8": {
+      "path": "artifacts/rea/ghidra-v8-pseudocode.txt",
+      "sha256": "D2EDA069932B441F59520CE51C3904B21FF84AD92E088EAC333F50E5ACDC7961"
+    },
+    "tableBridge": {
+      "path": "docs/handoff-2026-11-08-constructor-vtable-bridge-0643z.md",
+      "sha256": "B356F8C9262B5E60F76CC7E5899FCB6FC9C526E31047351F720865C268199BF0"
+    }
+  },
+  "cohorts": [
+    {
+      "kind": "position-component",
+      "chunkBytes": 272,
+      "vptrRva": "0x26B4FB0",
+      "matchCount": 49,
+      "totalCount": 49,
+      "explicitReviewComponentPointerMatched": 42,
+      "withoutExplicitReviewComponentPointer": 7
+    },
+    {
+      "kind": "health-component-negative-control",
+      "chunkBytes": 72,
+      "vptrRva": "0x26AFBA0",
+      "matchCount": 18,
+      "totalCount": 18,
+      "explicitReviewComponentPointerMatched": 17,
+      "withoutExplicitReviewComponentPointer": 1
+    }
+  ],
+  "epochs": [
+    {
+      "lab": "lab1",
+      "pid": 1952,
+      "startTicks": "639294190379863806"
+    },
+    {
+      "lab": "lab1",
+      "pid": 7164,
+      "startTicks": "639294897866244204"
+    },
+    {
+      "lab": "lab1",
+      "pid": 8164,
+      "startTicks": "639290507142219120"
+    },
+    {
+      "lab": "lab1",
+      "pid": 11672,
+      "startTicks": "639296016581575957"
+    },
+    {
+      "lab": "lab2",
+      "pid": 7012,
+      "startTicks": "639290507554340644"
+    },
+    {
+      "lab": "lab2",
+      "pid": 9752,
+      "startTicks": "639294897826627677"
+    },
+    {
+      "lab": "lab2",
+      "pid": 11572,
+      "startTicks": "639293038821710082"
+    }
+  ],
+  "anchors": [
+    {
+      "lab": "lab1",
+      "pid": 8164,
+      "startTicks": "639290507142219120",
+      "positionComponent": "0x23D011C0150",
+      "moduleBase": "0x7FF7698E0000",
+      "vptr": "0x7FF76BF94FB0",
+      "reportSha256": "E5DBE57BBE80B9D6D03228630CBD5E96DF80975B5263D01CDD6B91FDA0B26971",
+      "rawChunkSha256": "26894F84F389118C2EC8CA972032ED00C956BE7AD7BFA4107708A41813C8AD6E",
+      "reviewSha256": "B24487B1857502D0D6DA3688A99AEB7344B46478B6B1D26D05D9FCC18035CF32"
+    },
+    {
+      "lab": "lab2",
+      "pid": 7012,
+      "startTicks": "639290507554340644",
+      "positionComponent": "0x2187FE4F400",
+      "moduleBase": "0x7FF678A10000",
+      "vptr": "0x7FF67B0C4FB0",
+      "reportSha256": "FE34732A410CDF3098635F42563F8F5B43757A7AE4981783F8992C2ED6B41253",
+      "rawChunkSha256": "4B687DE14028B1616339315DECACDEA8CF2B66DBCC9B823E3D13FEF549C212CC",
+      "reviewSha256": "761BCC15D1F66E7EFB18EFA13F42DBC995D8E39D8BEDA7517D5E61E1BD72D114"
+    }
+  ],
+  "jobs": [
+    {
+      "requestId": "rr2-xyzprov-owner-vptr-twoepoch-20261108-01",
+      "exitCode": 0
+    },
+    {
+      "requestId": "rr2-xyzprov-vtable-cohort-20261108-01",
+      "exitCode": 0
+    },
+    {
+      "requestId": "rr2-xyzprov-vtable-cohort-fullhash-20261108-02",
+      "exitCode": 0
+    }
+  ],
+  "auditCode": "inline ephemeral Python -c command; no saved script artifact or script hash claimed",
+  "interpretation": {
+    "historicalPositionVptrBridge": true,
+    "historicalHealthDistinctControl": true,
+    "genericEntityComponentDescriptorOnly": true,
+    "allocatorRva": "0x698170",
+    "allocatorSizeBytes": 280,
+    "allocatorClassification": "factory-or-clone-like allocator candidate; in-place constructor and virtual constructor not proven",
+    "virtualSlotIndexSemanticsQualified": false,
+    "currentRuntimeOwnerQualified": false,
+    "passiveFreshnessQualified": false,
+    "movementQualified": false,
+    "restartDurabilityQualified": false
+  },
+  "staticInstructionCorroboration": {
+    "scope": "host-only offline exact-installed-PE fixed code windows",
+    "installedExecutable": "C:\\Program Files (x86)\\Glyph\\Games\\RIFT\\Live\\rift_x64.exe",
+    "installedExecutableBytes": 60493640,
+    "freshInstalledExecutableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "sourceShaVerifiedBeforeRead": true,
+    "job": {
+      "requestId": "rr2-agent-xref-exact-pe-vptr-raw-review-20261108-01",
+      "status": "passed",
+      "exitCode": 0,
+      "outputTruncated": false,
+      "completionMarker": "RR2_EXACT_PE_VPTR_BOUNDED_COMPLETE"
+    },
+    "fixedWindows": [
+      {"role": "factory-or-clone-like allocator", "startRva": "0x698170", "byteCount": 256},
+      {"role": "deleting destructor", "startRva": "0x697F20", "byteCount": 128}
+    ],
+    "totalCodeBytesRead": 384,
+    "verifiedStaticLeaStores": [
+      {
+        "role": "allocator-vptr-initialization",
+        "leaRva": "0x698199",
+        "leaBytesHex": "488D0510CE0102",
+        "ripRelativeTargetVa": "0x1426B4FB0",
+        "storeRva": "0x6981A0",
+        "storeBytesHex": "488903",
+        "storeMeaning": "MOV [RBX],RAX"
+      },
+      {
+        "role": "destructor-derived-vptr-write",
+        "leaRva": "0x697F2A",
+        "leaBytesHex": "488D057FD00102",
+        "ripRelativeTargetVa": "0x1426B4FB0",
+        "storeRva": "0x697F34",
+        "storeBytesHex": "488901",
+        "storeMeaning": "MOV [RCX],RAX (after MOV RBX,RCX)"
+      },
+      {
+        "role": "destructor-base-vptr-switch",
+        "leaRva": "0x697F4E",
+        "leaBytesHex": "488D056B670102",
+        "ripRelativeTargetVa": "0x1426AE6C0",
+        "storeRva": "0x697F55",
+        "storeBytesHex": "488903",
+        "storeMeaning": "MOV [RBX],RAX"
+      }
+    ],
+    "codeDelivery": "inline ephemeral Python -c; no saved script SHA",
+    "noFilesOrLiveProcessesModified": true,
+    "limitations": [
+      "Static instructions do not prove slot18 dispatch, conventional or virtual constructor semantics.",
+      "No current runtime owner, live XYZ freshness, movement or restart qualification was established."
+    ]
+  },
+  "recommendedNext": "Exact-build, fresh-epoch read-only vptr secondary anchor with owner/selector/backlink rebracketing; fail unavailable on mismatch; coordinate exclusive native read lease first."
+}
