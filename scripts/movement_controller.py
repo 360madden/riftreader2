@@ -320,7 +320,10 @@ class WaypointController:
                     self.current.y,
                     self.current.z + vector.dz_per_ms * hold,
                 )
-                if self._cross_track(predicted_position) > self.max_cross_track:
+                # Keep 10% of the verified corridor for feedback quantization,
+                # animation settling and measured-vs-predicted displacement error.
+                # Observed positions still enforce the full hard limit.
+                if self._cross_track(predicted_position) > self.max_cross_track * 0.90:
                     continue
                 predicted = math.hypot(
                     error_x - vector.dx_per_ms * hold,

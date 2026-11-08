@@ -51,15 +51,17 @@ class WaypointControllerTests(unittest.TestCase):
     def test_greedy_recomputes_from_feedback_and_confirms_arrival_twice(self):
         ctl = WaypointController(basis(), Position(0, 10, 0), Position(1, 10, 1))
         first = ctl.decide(Position(0, 10, 0), 0)
-        self.assertEqual(("q", 70), (first.key, first.hold_ms))
-        feedback = ctl.record_feedback(Position(0, 10, .7), 1)
+        self.assertEqual(("q", 63), (first.key, first.hold_ms))
+        first_position = Position(0, 10, first.hold_ms / 100)
+        feedback = ctl.record_feedback(first_position, 1)
         self.assertGreater(feedback.progress, 0)
         self.assertEqual("active", feedback.status)
-        second = ctl.decide(Position(0, 10, .7), 1.1)
+        second = ctl.decide(first_position, 1.1)
         self.assertEqual(("w", 100), (second.key, second.hold_ms))
-        ctl.record_feedback(Position(1, 10, .7), 2)
-        third = ctl.decide(Position(1, 10, .7), 2.1)
-        self.assertEqual(("q", 30), (third.key, third.hold_ms))
+        second_position = Position(1, 10, first_position.z)
+        ctl.record_feedback(second_position, 2)
+        third = ctl.decide(second_position, 2.1)
+        self.assertEqual(("q", 37), (third.key, third.hold_ms))
         ctl.record_feedback(Position(1, 10, 1), 2.5)
         self.assertEqual("confirming-arrival", ctl.status)
         self.assertIsNone(ctl.decide(Position(1, 10, 1), 2.6))
@@ -68,6 +70,35 @@ class WaypointControllerTests(unittest.TestCase):
         self.assertEqual("arrived", ctl.status)
         self.assertEqual(3, ctl.feedback_iterations)
         self.assertIsNone(ctl.decide(Position(1, 10, 1), 2.8))
+
+    def test_live_two_axis_prediction_reserves_observation_headroom(self):
+        # Reproduces a 2026-11-08 live W/Q pulse that crossed the 0.50
+        # corridor by a few thousandths despite a corridor-safe prediction.
+        origin = Position(0, 10, 0)
+        w_dx, w_dz = -0.7197265625, -0.519775390625
+        q_dx, q_dz = -0.55029296875, 0.75
+        measured = {
+            "w": calibrate_displacement(
+                "w", origin, Position(w_dx, 10, w_dz), 150),
+            "q": calibrate_displacement(
+                "q", origin, Position(q_dx, 10, q_dz), 150),
+        }
+        ctl = WaypointController(
+            measured, origin, Position(w_dx + q_dx, 10, w_dz + q_dz))
+        action = ctl.decide(origin, 0)
+        vector = measured[action.key]
+        predicted = Position(vector.dx_per_ms * action.hold_ms, 10,
+                             vector.dz_per_ms * action.hold_ms)
+        self.assertLessEqual(ctl._cross_track(predicted), .45 + 1e-9)
+        observed = Position(predicted.x - .002, 10, predicted.z + .006)
+        ctl.record_feedback(observed, 1)
+        following = ctl.decide(observed, 1.1)
+        self.assertIsNotNone(following)
+        self.assertLessEqual(ctl._cross_track(Position(
+            observed.x + measured[following.key].dx_per_ms * following.hold_ms,
+            10,
+            observed.z + measured[following.key].dz_per_ms * following.hold_ms,
+        )), .45 + 1e-9)
 
     def test_does_not_assume_inverse_key(self):
         ctl = WaypointController({"w": basis()["w"]}, Position(0, 0, 0), Position(-1, 0, 0))
