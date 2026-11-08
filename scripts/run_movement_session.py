@@ -404,11 +404,30 @@ def admit_lab2_inspection_host(output: Path) -> Lab2InspectionHost:
 
 
 def write_managed_host_plan(lab: str, output: Path, *, require_foreground=True) -> Path:
-    """Movement prepare owns the managed controller dependency; never arm here."""
-    from scripts.ensure_controller import ensure
+    """Recover one managed controller and wait for actual idle guest readiness."""
+    from scripts.ensure_controller import ensure, ensure_existing
     from scripts.operation_dependencies import DependencyUnavailable
     try:
-        ensure(lab)
+        state = ensure(lab)
+        deadline = time.monotonic() + 25
+        while True:
+            status = state.get("status") if isinstance(state, dict) else None
+            host = status.get("host", {}) if isinstance(status, dict) else {}
+            guest = status.get("guest", {}) if isinstance(status, dict) else {}
+            target = guest.get("target", {}) if isinstance(guest, dict) else {}
+            if (isinstance(host, dict) and isinstance(guest, dict)
+                    and isinstance(target, dict) and host.get("connected") is True
+                    and host.get("coordination", {}).get("state") == "ready"
+                    and host.get("consoleReservation", {}).get("held") is True
+                    and type(target.get("processId")) is int and target["processId"] > 0
+                    and guest.get("armed") is False and guest.get("busy") is False
+                    and guest.get("desktopInputsDown") == []
+                    and guest.get("recoveryRequired") is False):
+                break
+            if time.monotonic() >= deadline:
+                raise MovementSessionError("managed controller did not become ready")
+            time.sleep(0.35)
+            state = ensure_existing(lab)  # read-only: never launch another owner
     except DependencyUnavailable as error:
         raise MovementSessionError(f"managed controller unavailable: {error.code}") from error
     return admit_managed_host(lab, output, require_foreground=require_foreground).plan_path

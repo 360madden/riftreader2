@@ -352,7 +352,7 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         with patch.object(runner, "ROOT", self.root), \
              patch.dict(self.dependency.CONFIGS, {"lab2": self.config_path}, clear=True), \
              patch.object(self.dependency, "QUEUE", self.queue_path), \
-             patch.object(self.dependency, "ensure", return_value={"state": "reused"}) as ensure, \
+             patch.object(self.dependency, "ensure", return_value={"state": "reused", "status": self.status_value}) as ensure, \
              patch.object(self.dependency, "RUNTIME_FILES", tuple(self.source_hashes)), \
              patch.object(runner.HostConfig, "load", return_value=SimpleNamespace(ui_port=49921)), \
              patch.object(runner, "ControlClient", return_value=fake_client), \
@@ -391,6 +391,35 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
                 runner.write_managed_host_plan("lab2", self.output)
             ensure.assert_called_once_with("lab2")
             admission.assert_not_called()
+
+    def test_started_controller_waits_for_guest_ready_before_pinning(self):
+        unavailable = {"host": {"connected": False}, "guest": {}}
+        with patch.object(self.dependency, "ensure",
+                          return_value={"state": "started", "status": unavailable}) as ensure, \
+             patch.object(self.dependency, "ensure_existing",
+                          return_value={"state": "reused", "status": self.status_value}) as existing, \
+             patch.object(runner, "admit_managed_host",
+                          return_value=SimpleNamespace(plan_path=Path("ready-plan"))) as admission, \
+             patch.object(runner.time, "sleep"):
+            self.assertEqual(runner.write_managed_host_plan("lab2", self.output),
+                             Path("ready-plan"))
+        ensure.assert_called_once_with("lab2")
+        existing.assert_called_once_with("lab2")
+        admission.assert_called_once_with("lab2", self.output, require_foreground=True)
+
+    def test_started_controller_times_out_without_admitting_input(self):
+        unavailable = {"host": {"connected": False}, "guest": {}}
+        with patch.object(self.dependency, "ensure",
+                          return_value={"state": "started", "status": unavailable}), \
+             patch.object(self.dependency, "ensure_existing",
+                          return_value={"state": "reused", "status": unavailable}), \
+             patch.object(runner, "admit_managed_host") as admission, \
+             patch.object(runner.time, "monotonic", side_effect=[0, 26]), \
+             patch.object(runner.time, "sleep"):
+            with self.assertRaisesRegex(runner.MovementSessionError,
+                                        "did not become ready"):
+                runner.write_managed_host_plan("lab2", self.output)
+        admission.assert_not_called()
 
     def test_factory_returns_validated_host_with_both_ownership_proofs(self):
         host = self.generate(return_host=True)
