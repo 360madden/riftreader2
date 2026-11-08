@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-host-only-release-readiness",
+  "sourceCommit": "8381932d7f78f2cc2ddfa42389ba8b79eb1e0b62",
+  "sdk": "10.0.302",
+  "directory": "artifacts/host-release-8381932-20261108-unique-001",
+  "executable": {
+    "path": "publish/RiftReader2.Live.exe",
+    "bytes": 118008160,
+    "sha256": "B837BC396C4F0738EB73C48669C028A9539721B3B499CF01416B6AD2E54E51ED"
+  },
+  "bundle": {
+    "path": "bundle/agent.zip",
+    "bytes": 47972059,
+    "sha256": "AA9BCCF1E73ECBEC7D60E2DB3DB5E5F63DD83724F0E094353FD4213040F61DF0"
+  },
+  "descriptor": {
+    "release": "agent-b837bc396c4f",
+    "sha256": "B837BC396C4F0738EB73C48669C028A9539721B3B499CF01416B6AD2E54E51ED"
+  },
+  "verification": {
+    "lockedRestore": "passed",
+    "releasePublish": "passed",
+    "help": "passed",
+    "syntheticHostNativeSmoke": "passed",
+    "zipCrcAndPayloadSha": "passed",
+    "jobs": [
+      "rr2-host-release-8381932-isolated-20261108-001",
+      "rr2-host-release-8381932-verify-20261108-001"
+    ]
+  },
+  "guestDeployed": false,
+  "priorInstalledAgentCapabilities": {
+    "lab1": "nativeXyzVersion and nativeReadLeaseVersion not advertised",
+    "lab2": "nativeXyzVersion and nativeReadLeaseVersion not advertised",
+    "freshStatusRequired": true
+  },
+  "foreignReaderQuiescence": "unconfirmed",
+  "scope": "host-only; no guest login, staging, deployment, controller, VM or game action"
+}
