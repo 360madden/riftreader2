@@ -1,5 +1,9 @@
 # Current status
 
+**15:23 EST NOVEMBER 8 — GUARDED REVIEW-LEASE HELPER DIRECT-ENTRYPOINT FIX (NO MOVEMENT):**
+Two Lab1 150ms S-key calibration preparations stopped safely before arming: each queue lease expired while awaiting reviewed input. The heartbeat-only `scripts/hold_review_lease.py` helper initially failed direct invocation with `ModuleNotFoundError: No module named 'scripts'`; its direct-entrypoint import path is now fixed. Direct `--help` succeeds and six focused tests pass, including a new subprocess regression. The live heartbeat path has not yet been retested.
+Both aborted trial receipts report `armed=false`, `busy=false`, `desktopInputsDown=[]`, `recoveryRequired=false`; no movement pulse was sent. Next trial must start the heartbeat-only helper immediately after prepare, review the screenshot promptly, and remain inside the original absolute queue deadline. Do not extend that deadline or relax action-ready gates. The expired-lease cleanup double-traceback also remains an ergonomic follow-up.
+
 **15:12 EST NOVEMBER 8 — LAB1 QUARTER-AGE ANCHOR RENEWAL LIVE TRIAL (NO MOVEMENT):**
 Experimental full-scan renewal now starts at 2.5 seconds of the unchanged 10-second anchor age (previously 5 seconds); strict 6,250 ms remaining-age and all input/freshness gates are unchanged. The focused .NET 10 Live/Core suites passed **1,391/1,391**, native smoke passed, and the pinned single-file reader SHA256 is `048D6DF64377374BD39B05966A87CF933F7FD5C3CD6F19D5C96CD640B0B0912A`.
 After the prior addon nonce refused a new reader (`Already bound; reload the UI`), the reviewed `/reloadui` cleared it. Reload reopened LuaPadModern and RR2 Casting, both hidden through separately screenshot-reviewed controls. Final Lab1 reader PID 1172, nonce `de88e7a2580a499589478b2ba8ca43f8`, bound to game PID 8508 on SHA256 `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`. Receiver verified advancing `fresh-scoped` XYZ and HP; no movement was sent.

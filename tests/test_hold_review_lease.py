@@ -1,6 +1,8 @@
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -55,6 +57,16 @@ class FakeQueue:
 
 
 class HoldReviewLeaseTests(unittest.TestCase):
+    def test_direct_script_help_imports_project_package(self):
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts" / "hold_review_lease.py"
+        result = subprocess.run(
+            [sys.executable, "-B", str(script), "--help"],
+            cwd=root, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--session-plan", result.stdout)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(); self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
