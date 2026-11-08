@@ -283,6 +283,62 @@ public sealed class CurrentBuildPositionSampleCommandTests
     }
 
     [Fact]
+    public void CachedXyzAndRefreshGuardsComeFromTheSameExistingComponentRead()
+    {
+        foreach (var (handle, flag, status) in new (ulong Handle, byte Flag, string Status)[]
+        {
+            (0, 0, "guard-ineligible-candidate"),
+            (0x123456789ABCDEF0UL, 0, "handle-present-guard-candidate"),
+            (0, 1, "alternate-flag-guard-candidate")
+        })
+        {
+            var session = Fixture();
+            var raw = session.Get(Position, 0x110);
+            BinaryPrimitives.WriteUInt64LittleEndian(raw.AsSpan(0x100, 8), handle);
+            raw[0x108] = flag;
+            session.Set(Position, raw);
+            var owned = CurrentBuildPositionCandidateReader.ReadOwned(session,
+                _ => new(Key, Position, () => { }));
+            Assert.Equal(2, session.Calls); // 0x110 component + existing 12-byte XYZ verification only
+            Assert.Equal($"0x{handle:X16}", owned.RefreshHandleHex);
+            Assert.Equal(flag, owned.RefreshFlagRaw);
+            Assert.Equal(status, owned.RefreshGuardStatus);
+            Assert.Equal(new CurrentBuildXyz(7181.80078125f, 820.8821411132812f, 3135.876220703125f),
+                owned.Position);
+        }
+    }
+
+    [Fact]
+    public async Task RealReaderPublishesOptionalSameBufferGuardFieldsWithoutChangingXyzContract()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-guards-" + Guid.NewGuid().ToString("N") + ".json");
+        var session = Fixture();
+        try
+        {
+            var opts = new Dictionary<string, string>
+            {
+                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path,
+                ["--samples"] = "1", ["--interval-ms"] = "0"
+            };
+            Assert.Equal(0, await CurrentBuildPositionSampleCommand.RunAsync(opts, TextWriter.Null, default,
+                (_, _, _) => Task.FromResult<IAsyncDisposable>(new TestLease(() => { })),
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
+                CurrentBuildPositionCandidateReader.ReadOwned));
+            using var json = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+            var root = json.RootElement;
+            Assert.Equal("native-current-position-candidate-samples/1",
+                root.GetProperty("contractVersion").GetString());
+            var row = root.GetProperty("observations")[0];
+            Assert.Equal("12345", row.GetProperty("unitKey").GetString());
+            Assert.Equal(7181.80078125f, row.GetProperty("x").GetSingle());
+            Assert.Equal("0x0000000000000000", row.GetProperty("refreshHandleHex").GetString());
+            Assert.Equal(0, row.GetProperty("refreshFlagRaw").GetInt32());
+            Assert.Equal("guard-ineligible-candidate", row.GetProperty("refreshGuardStatus").GetString());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
     public async Task ThirtySampleRunHoldsLeaseUntilSessionDisposed()
     {
         var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-lease-" + Guid.NewGuid().ToString("N") + ".json");

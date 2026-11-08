@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using RiftReader2.Application;
 using RiftReader2.Domain;
 using RiftReader2.Infrastructure;
@@ -72,7 +73,10 @@ internal static class CurrentBuildPositionSampleCommand
             {
                 UnitKey = owned.UnitKeyText,
                 UnitIdCandidate = owned.UnitIdCandidate,
-                OwnerIdentityStatus = "player-component-chain-anchored"
+                OwnerIdentityStatus = "player-component-chain-anchored",
+                RefreshHandleHex = owned.RefreshHandleHex,
+                RefreshFlagRaw = owned.RefreshFlagRaw,
+                RefreshGuardStatus = owned.RefreshGuardStatus
             };
             readings.Add(reading);
             await output.WriteLineAsync(JsonSerializer.Serialize(new
@@ -103,6 +107,7 @@ internal static class CurrentBuildPositionSampleCommand
                 "Within-sample ownership and XYZ reads are bracketed, but sequential reads are not atomic and ABA cannot be excluded.",
                 "Per-observation unit identity comes from the same anchored lookup; equal sampled keys do not prove uninterrupted owner continuity.",
                 "The cached XYZ component has not been independently proven to be passively refreshed player position.",
+                "Optional +0x100/+0x108 refresh guard bytes come from the same 0x110-byte component read as XYZ; they are not separately reread and do not prove native writer execution.",
                 "Separate same-unit API and changed-state evidence is required before navigation or freshness qualification.",
                 "Sampling intervals include overhead; they are not a promised polling rate."
             }
@@ -144,6 +149,12 @@ internal sealed record CurrentBuildPositionObservation(
     public string? UnitKey { get; init; }
     public string? UnitIdCandidate { get; init; }
     public string OwnerIdentityStatus { get; init; } = "unavailable";
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RefreshHandleHex { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public byte? RefreshFlagRaw { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RefreshGuardStatus { get; init; }
 }
 
 internal sealed record CurrentBuildXyz(float X, float Y, float Z);
@@ -152,6 +163,9 @@ internal sealed record CurrentBuildOwnedPosition(ulong UnitKey, CurrentBuildXyz 
 {
     public string UnitKeyText => UnitKey.ToString(CultureInfo.InvariantCulture);
     public string UnitIdCandidate => $"u{UnitKey:X16}";
+    public string? RefreshHandleHex { get; init; }
+    public byte? RefreshFlagRaw { get; init; }
+    public string? RefreshGuardStatus { get; init; }
 }
 
 internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong ComponentAddress, Action VerifyUnchanged);
@@ -193,6 +207,10 @@ internal static class CurrentBuildPositionCandidateReader
         var component = CurrentBuildPlayerLookup.Pointer(owner.ComponentAddress, 0x110);
         var valueRaw = CurrentBuildPlayerLookup.Exact(session, component, 0x110);
         var xyzBytes = valueRaw.AsSpan(0x48, 12).ToArray();
+        // These guards are co-sampled from the EXISTING full component read;
+        // no native getter or additional process read is needed.
+        var refreshHandle = BinaryPrimitives.ReadUInt64LittleEndian(valueRaw.AsSpan(0x100, 8));
+        var refreshFlag = valueRaw[0x108];
 
         owner.VerifyUnchanged();
         if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
@@ -205,7 +223,13 @@ internal static class CurrentBuildPositionCandidateReader
         var z = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(xyzBytes.AsSpan(8, 4)));
         if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
             throw new InvalidDataException("Native position component is nonfinite.");
-        return new(owner.UnitKey, new(x, y, z));
+        return new(owner.UnitKey, new(x, y, z))
+        {
+            RefreshHandleHex = $"0x{refreshHandle:X16}",
+            RefreshFlagRaw = refreshFlag,
+            RefreshGuardStatus = refreshHandle != 0 ? "handle-present-guard-candidate"
+                : refreshFlag != 0 ? "alternate-flag-guard-candidate" : "guard-ineligible-candidate"
+        };
     }
 
     internal static ulong BucketIndex(ulong key, ulong count) =>
