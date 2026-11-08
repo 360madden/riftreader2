@@ -80,6 +80,31 @@ class ValidationTests(unittest.TestCase):
             with self.subTest(startedAtUtc=earlier), self.assertRaises(ValueError):
                 self.check(value, "location-context")
 
+    def test_location_gap_discloses_large_positive_skew_without_invented_limit(self):
+        value = location()
+        value["observation"]["completedAtUtc"] = "2026-11-07T00:00:11.0000000Z"
+        zone = value["observation"]["zone"]
+        zone.update(startedAtUtc="2026-11-07T00:00:10.0000000Z",
+                    completedAtUtc="2026-11-07T00:00:11.0000000Z")
+        metrics = self.check(value, "location-context")
+        self.assertEqual(9999.0, metrics["crossFieldGapMilliseconds"])
+        self.assertEqual("position-complete-to-zone-start", metrics["crossFieldGapKind"])
+        self.assertEqual("utc-wall-clock", metrics["crossFieldGapMeasurementClock"])
+        self.assertEqual("unqualified-sequential", metrics["crossFieldTemporalStatus"])
+        self.assertEqual("null-provider", metrics["zoneStatus"])
+        self.assertEqual("unavailable", metrics["worldInstanceStatus"])
+
+    def test_pair_gap_disclosed_or_null_without_target(self):
+        pair = self.check(paired(), "paired-position")
+        self.assertEqual(1.0, pair["crossFieldGapMilliseconds"])
+        self.assertEqual("self-position-complete-to-target-start", pair["crossFieldGapKind"])
+        self.assertEqual("source-monotonic-milliseconds", pair["crossFieldGapMeasurementClock"])
+        self.assertEqual("unqualified-sequential", pair["crossFieldTemporalStatus"])
+        absent = self.check(paired(False), "paired-position")
+        self.assertIsNone(absent["crossFieldGapMilliseconds"])
+        self.assertEqual("unqualified-sequential", absent["crossFieldTemporalStatus"])
+        self.assertEqual("unavailable", absent["targetStatus"])
+
     def test_zone_full_formula_and_signed_child_boundaries(self):
         for child, expected in ((0, "A1DBBCFC"), (1, "B2B23994"),
                                 (2147483647, "A1DBBCFC"), (2147483648, "1104BD15"),
@@ -318,6 +343,8 @@ class WrapperTests(unittest.TestCase):
             raw = Path(summary["sourceReport"]).read_bytes()
             self.assertEqual(hashlib.sha256(raw).hexdigest().upper(), summary["sourceReportSha256"])
             self.assertEqual("candidate-only", summary["status"])
+            self.assertEqual("unqualified-sequential", summary["metrics"]["crossFieldTemporalStatus"])
+            self.assertEqual(1.0, summary["metrics"]["crossFieldGapMilliseconds"])
             self.assertEqual(2, summary["schemaVersion"])
             self.assertGreater(TICKS, 2**53)
             self.assertEqual(str(TICKS), summary["gameProcessStartUtcTicks"])

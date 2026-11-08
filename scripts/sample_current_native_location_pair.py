@@ -178,6 +178,10 @@ def _validate_report(report, *, mode, pid, ticks):
         zone_id = zone_candidate(zone)
         return {"unitKey": key, "unitIdCandidate": row["unitIdCandidate"], "position": xyz,
                 "zoneIdCandidate": zone_id, "zoneStatus": zone["status"],
+                "crossFieldTemporalStatus": "unqualified-sequential",
+                "crossFieldGapKind": "position-complete-to-zone-start",
+                "crossFieldGapMeasurementClock": "utc-wall-clock",
+                "crossFieldGapMilliseconds": (zone_interval[0] - position_interval[1]) / 10_000,
                 "worldInstanceStatus": "unavailable", "qualification": LOCATION_QUALIFICATION}
     if (row.get("qualification") != PAIR_QUALIFICATION or report.get("qualification") != PAIR_QUALIFICATION
             or report.get("processRevalidationStatus") != "passed-before-publication"
@@ -213,6 +217,7 @@ def _validate_report(report, *, mode, pid, ticks):
     if self_end - self_start > span:
         invalid()
     target = row.get("target")
+    cross_field_gap = None
     guard = row["beforeGuardStatus"]
     if (guard not in {"fallback-key-candidate", "raw-getter-zero-candidate",
                       "override-unavailable", "guard-unreadable-or-invalid"}
@@ -229,6 +234,7 @@ def _validate_report(report, *, mode, pid, ticks):
         if (target_start < self_end or row.get("targetStatus") != selected["status"]
                 or stamp(row["self"]["completedAtUtc"]) > stamp(target["startedAtUtc"])):
             invalid()
+        cross_field_gap = target_start - self_end
         expected_status = "paired-candidate" if selected["status"] == "candidate" else "target-unavailable"
         if row.get("status") != expected_status:
             invalid()
@@ -239,6 +245,10 @@ def _validate_report(report, *, mode, pid, ticks):
                 invalid()
     return {"self": own, "target": selected, "targetStatus": row["targetStatus"],
             "acquisitionSpanMilliseconds": span, "zoneIdentityStatus": "unavailable",
+            "crossFieldTemporalStatus": "unqualified-sequential",
+            "crossFieldGapKind": "self-position-complete-to-target-start",
+            "crossFieldGapMeasurementClock": "source-monotonic-milliseconds",
+            "crossFieldGapMilliseconds": cross_field_gap,
             "worldIdentityStatus": "unavailable", "atomicityQualified": False, "qualification": PAIR_QUALIFICATION}
 
 def validate_report(report, *, mode, pid, ticks):
