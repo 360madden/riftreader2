@@ -236,6 +236,96 @@ public sealed class WindowsMemoryScannerRetryTests
         Assert.Null(result.ErrorCode);
     }
 
+    [Theory]
+    [InlineData("scope-drifted")]
+    [InlineData("time-budget-exceeded")]
+    public void Experimental256KiB_PrimaryGuardRejectionHasDistinctDiagnosticStatus(string rejected)
+    {
+        var reads = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (_, _) => { reads++; return Chunk(false, 0, 299); },
+            (_, _) => false,
+            256 * 1024,
+            256 * 1024,
+            guardFailureReason: () => rejected);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal((nuint)0, result.BytesRead);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(rejected, result.Rejection);
+        Assert.Equal(1, reads);
+        var failure = WindowsMemoryScanner.DescribeFailedChunk(result, new nint(0x1234), 256 * 1024);
+        Assert.Equal(rejected, failure.Status);
+        Assert.Contains("0x1234", failure.Reason);
+        Assert.DoesNotContain("ReadProcessMemory", failure.Reason);
+    }
+
+    [Fact]
+    public void Experimental256KiB_FinalGuardRejectsOtherwiseSuccessfulStitch()
+    {
+        var primaryReads = 0;
+        var subreads = 0;
+        var guardCalls = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (_, length) =>
+            {
+                if (length == 256 * 1024)
+                {
+                    primaryReads++;
+                    return Chunk(false, 0, 299);
+                }
+                subreads++;
+                return Chunk(true, (nuint)length, null);
+            },
+            (_, _) => ++guardCalls < 8,
+            256 * 1024,
+            256 * 1024,
+            guardFailureReason: () => "scope-drifted");
+
+        Assert.False(result.Succeeded);
+        Assert.Equal("scope-drifted", result.Rejection);
+        Assert.Equal(3, primaryReads);
+        Assert.Equal(4, subreads);
+        Assert.Equal(8, guardCalls);
+        var failure = WindowsMemoryScanner.DescribeFailedChunk(result, new nint(0x5678), 256 * 1024);
+        Assert.Equal("scope-drifted", failure.Status);
+        Assert.DoesNotContain("ReadProcessMemory", failure.Reason);
+    }
+
+    [Fact]
+    public void TrueReadProcessMemoryZeroByteAndWin32FailuresKeepReadFailedStatus()
+    {
+        var zeroBytes = WindowsMemoryScanner.DescribeFailedChunk(
+            Chunk(true, 0, null), new nint(0x1234), 256 * 1024);
+        Assert.Equal("read-failed", zeroBytes.Status);
+        Assert.Contains("returned 0 of 262144 requested bytes", zeroBytes.Reason);
+
+        var win32 = WindowsMemoryScanner.DescribeFailedChunk(
+            Chunk(false, 0, 299), new nint(0x1234), 256 * 1024);
+        Assert.Equal("read-failed", win32.Status);
+        Assert.Contains("ReadProcessMemory failed", win32.Reason);
+        Assert.DoesNotContain("returned 0 of 262144", win32.Reason);
+    }
+
+    [Theory]
+    [InlineData("scope-drifted")]
+    [InlineData("time-budget-exceeded")]
+    public void ControlledRejectionDoesNotTriggerWholeScanRetry(string status)
+    {
+        var first = Attempt(false, status, 1, 299);
+        var starts = 0;
+        var calls = 0;
+        var returned = WindowsMemoryScanner.RunWithPartialCopyRetry(
+            () => { calls++; return first; },
+            () => TimeSpan.FromSeconds(2),
+            TimeSpan.FromSeconds(10),
+            () => starts++);
+
+        Assert.Same(first.Result, returned);
+        Assert.Equal(1, calls);
+        Assert.Equal(1, starts);
+    }
+
     [Fact]
     public void Experimental256KiB_ShortSuccessWithout299IsNotPromoted()
     {

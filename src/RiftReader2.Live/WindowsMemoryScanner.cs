@@ -283,15 +283,13 @@ public static class WindowsMemoryScanner
                     },
                     count,
                     fullScanChunkBytes,
-                    () => cancellationToken.ThrowIfCancellationRequested());
+                    () => cancellationToken.ThrowIfCancellationRequested(),
+                    () => stopwatch.Elapsed > maxScanTime ? "time-budget-exceeded" : "scope-drifted");
                 if (!readResult.Succeeded || readResult.BytesRead != (nuint)count)
                 {
-                    var error = readResult.ErrorCode;
-                    var detail = error is { } code
-                        ? Win32Error(code)
-                        : $"ReadProcessMemory returned {readResult.BytesRead} of {count} requested bytes without a Win32 error.";
-                    return new(Incomplete("read-failed", plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
-                        $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {detail}", accumulator), error);
+                    var failure = DescribeFailedChunk(readResult, address, count);
+                    return new(Incomplete(failure.Status, plannedBytes, scannedBytes, regions.Count, stopwatch.Elapsed,
+                        failure.Reason, accumulator), readResult.Rejection is null ? readResult.ErrorCode : null);
                 }
                 var candidateCountBefore = accumulator.ValidCandidates.Count;
                 accumulator.Feed(buffer.AsSpan(0, count));
@@ -366,7 +364,8 @@ public static class WindowsMemoryScanner
         Func<int, int, bool> regionStillCoversSegment,
         int requestedBytes,
         int primaryChunkBytes,
-        Action? checkCancellation = null)
+        Action? checkCancellation = null,
+        Func<string>? guardFailureReason = null)
     {
         ArgumentNullException.ThrowIfNull(readSegment);
         ArgumentNullException.ThrowIfNull(regionStillCoversSegment);
@@ -375,10 +374,19 @@ public static class WindowsMemoryScanner
         if (requestedBytes is < 1 || requestedBytes > primaryChunkBytes)
             throw new ArgumentOutOfRangeException(nameof(requestedBytes));
 
+        string? primaryGuardFailure = null;
         var primary = ReadChunkWithStableRegionRetry(
             () => readSegment(0, requestedBytes),
-            () => regionStillCoversSegment(0, requestedBytes),
+            () =>
+            {
+                if (regionStillCoversSegment(0, requestedBytes))
+                    return true;
+                primaryGuardFailure = GuardRejected(guardFailureReason).Rejection;
+                return false;
+            },
             (nuint)requestedBytes);
+        if (primaryGuardFailure is not null)
+            return new(false, 0, null, primaryGuardFailure);
         if ((primary.Succeeded && primary.BytesRead == (nuint)requestedBytes) ||
             primaryChunkBytes == ChunkBytes || requestedBytes <= ChunkBytes ||
             primary.ErrorCode != NativeMethods.ErrorPartialCopy)
@@ -387,17 +395,26 @@ public static class WindowsMemoryScanner
         // The original large exact read failed. Retry only this same stable
         // region using bounded 64-KiB exact subreads; accept no partial bytes.
         if (!regionStillCoversSegment(0, requestedBytes))
-            return new(false, 0, null);
+            return GuardRejected(guardFailureReason);
         for (var offset = 0; offset < requestedBytes; offset += ChunkBytes)
         {
             checkCancellation?.Invoke();
             var length = Math.Min(ChunkBytes, requestedBytes - offset);
             if (!regionStillCoversSegment(offset, length))
-                return new(false, 0, null);
+                return GuardRejected(guardFailureReason);
+            string? segmentGuardFailure = null;
             var segment = ReadChunkWithStableRegionRetry(
                 () => readSegment(offset, length),
-                () => regionStillCoversSegment(offset, length),
+                () =>
+                {
+                    if (regionStillCoversSegment(offset, length))
+                        return true;
+                    segmentGuardFailure = GuardRejected(guardFailureReason).Rejection;
+                    return false;
+                },
                 (nuint)length);
+            if (segmentGuardFailure is not null)
+                return new(false, 0, null, segmentGuardFailure);
             if (!segment.Succeeded || segment.BytesRead != (nuint)length)
                 return new(false, segment.BytesRead, segment.ErrorCode);
         }
@@ -405,7 +422,23 @@ public static class WindowsMemoryScanner
         // during the fallback or the scanner's bounded time expired.
         return regionStillCoversSegment(0, requestedBytes)
             ? new(true, (nuint)requestedBytes, null)
-            : new(false, 0, null);
+            : GuardRejected(guardFailureReason);
+    }
+
+    private static ChunkReadResult GuardRejected(Func<string>? reason) =>
+        new(false, 0, null, reason?.Invoke() == "time-budget-exceeded"
+            ? "time-budget-exceeded" : "scope-drifted");
+
+    internal static (string Status, string Reason) DescribeFailedChunk(
+        ChunkReadResult result, nint address, int requestedBytes)
+    {
+        if (result.Rejection is "scope-drifted" or "time-budget-exceeded")
+            return (result.Rejection,
+                $"Full-scan {result.Rejection} while validating an exact {requestedBytes}-byte chunk at 0x{address.ToInt64():X}.");
+        var detail = result.ErrorCode is { } code
+            ? Win32Error(code)
+            : $"ReadProcessMemory returned {result.BytesRead} of {requestedBytes} requested bytes without a Win32 error.";
+        return ("read-failed", $"ReadProcessMemory failed at 0x{address.ToInt64():X}: {detail}");
     }
 
     private static bool RegionStillCoversExactRead(
@@ -531,7 +564,8 @@ public static class WindowsMemoryScanner
     internal readonly record struct ChunkReadResult(
         bool Succeeded,
         nuint BytesRead,
-        int? ErrorCode);
+        int? ErrorCode,
+        string? Rejection = null);
 
     private static class NativeMethods
     {
