@@ -1,8 +1,25 @@
 # Development workflow
 
-Use this workflow for the RiftReader2 foundation. It is designed to give Joey
-and future coding agents one reproducible path from a clean checkout to a
-reviewable result.
+Use this as a reference when needed, not a mandatory checklist for every edit.
+The default is a short path to a working RR2 feature.
+
+## Default fast path
+
+1. **Choose an outcome:** one usable discovery, retrieval, or controlled
+   navigation capability. Prefer the existing reader, addon, and helpers.
+2. **Implement a vertical slice:** change the fewest necessary files.
+   Skip new infrastructure, planning artifacts, and speculative refactors.
+3. **Check what changed:** run focused tests and exercise the real workflow
+   when it is relevant and already authorized. Escalate to broad tests only
+   for cross-cutting risk or a full-repository validation claim.
+4. **Ship and continue:** commit only the verified files, push when authorized,
+   and take the next useful task. A short result/blocker note replaces routine
+   reports. Write a handoff only for a real session stop or ownership transfer.
+
+Live input still requires fresh exact identity, source/freshness gates,
+exclusive controller ownership, bounded action and verified STOP/key release.
+These checks are implemented by existing helpers; do not duplicate them as
+new forms, reviews or process layers.
 
 ## Discovery priority
 

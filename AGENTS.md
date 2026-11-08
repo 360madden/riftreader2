@@ -1,5 +1,26 @@
 # RiftReader2 repository instructions
 
+## Default: results-first development (Joey, 2026-11-08)
+
+Build a functional RR2 capability, not a process around it. Use this short loop:
+
+1. Pick one working outcome; reuse existing tools and code.
+2. Make the smallest coherent change; run its focused checks.
+3. Try the real RIFT workflow when authorized and ready; label offline or
+   candidate results honestly.
+4. Commit verified files, push when authorized, and move to the next result.
+
+For ordinary changes, a one-sentence goal and brief outcome are enough.
+Do **not** require per-batch plans, broad test sweeps, repeated reviews,
+new frameworks, manifests, handoffs, or status artifacts. Create a handoff
+only at a genuine stopping point or ownership transition. Use parallel work
+only for useful independent tasks, never to fill slots. Preserve concurrent edits.
+
+This fast path retains fresh process/build/session identity, source freshness,
+candidate labels, existing action authority, exclusive live-input ownership,
+STOP/key release, and verified cleanup. Broader validation is for changes
+that need it or claims of full-repository validation.
+
 ## Purpose and current scope
 
 RiftReader2 is a practical discovery and retrieval framework for wide-ranging
@@ -95,10 +116,10 @@ small reproducible experiments over prolonged planning.
 
 **Practical parallel development — Joey's correction, 2026-11-06:**
 Prioritize speed and useful results; preserve existing module boundaries and
-leave refinement optional, including never. Before each batch, give a short plan (3–5 bullets is enough): the
-outcome, independent goals, file ownership/shared interfaces, and focused checks.
-Decide core ownership and contracts early; polish is optional later. Segment
-independent goals and run useful workers in parallel, keeping independent work
+leave refinement optional, including never. For narrow tasks, state the outcome
+in one sentence and begin implementation. When parallel work is genuinely useful,
+briefly establish file ownership, shared interfaces and focused checks. Run
+independent goals in parallel, keeping useful work
 moving while a decision or review is pending. Do not invent work to fill slots.
 
 Use `gpt-6.1-sol` or `gpt-6.1-terra` at low/medium reasoning for routine workers;
@@ -117,9 +138,10 @@ Ship useful candidate output with honest labels, refine after actual use; live
 qualification is required for live capability claims, not as a prerequisite to
 implementing raw candidate output. Keep concise evidence notes for meaningful
 results and material limitations, not per-edit reports or new manifests. Give
-frequent visually clear progress updates with America/New_York timestamps, color
-status markers and emojis; use tables or charts when useful and CAPITALS for
-important emphasis. Make progress and blockers easy to scan without filler. Reuse existing tools; add no scheduler or process framework. Preserve module boundaries,
+brief visually clear progress updates at actual milestones or blockers, with
+America/New_York timestamps, color markers and emojis when useful. Avoid
+repeated SITREPs without a material change. Reuse existing tools; add no scheduler
+or process framework. Preserve module boundaries,
 versioned contracts and all authority, exact-identity, freshness and control
 protections. The root retains sole live-input ownership per lab and coordinates
 shared-host heavy work; workers gain no independent game-input authority.
