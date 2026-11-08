@@ -296,7 +296,7 @@ internal static class Program
                     after = discovery;
                     freshnessResult = tracker!.GetCurrent();
                     lastFastObservation = null;
-                    fastObservationDiagnostic = null;
+                    // Preserve only diagnostic evidence from the last completed full scan.
                 }
                 var nativePower = after.Target is not null && SameProcess(attachedTarget, after.Target)
                     ? await LivePowerReader.ReadAsync(after.Target, timeProvider, cancellation.Token)
