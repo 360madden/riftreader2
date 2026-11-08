@@ -67,7 +67,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
     }
 
     [Fact]
-    public void OwnedReadUsesOneResolvedSnapshotAndOneVerification()
+    public void OwnedReadUsesOneResolvedSnapshotAndTwoVerifications()
     {
         var session = Fixture();
         var resolutions = 0; var verifications = 0;
@@ -77,7 +77,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             return new(ulong.MaxValue, Entity, Position, () => verifications++);
         });
         Assert.Equal(1, resolutions);
-        Assert.Equal(1, verifications);
+        Assert.Equal(2, verifications);
         Assert.Equal(3, session.Calls);
         Assert.Equal(ulong.MaxValue, owned.UnitKey);
         Assert.Equal(new CurrentBuildXyz(7181.80078125f, 820.8821411132812f, 3135.876220703125f), owned.Position);
@@ -129,6 +129,18 @@ public sealed class CurrentBuildPositionSampleCommandTests
             _ => new(Key, Entity, Position, () =>
                 session.Set(Position + 0x10, Bytes64(Entity + 8)))));
         Assert.Equal(3, session.Calls);
+    }
+
+    [Fact]
+    public void RejectsPersistentOwnerKeyChangeDuringFinalXyzRead()
+    {
+        var session = Fixture();
+        var xyzBefore = session.Get(Position + 0x48, 12);
+        session.ChangeOwnerKeyOnFinalXyzRead = true;
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.Read(session));
+        Assert.Equal(Key + 1, BinaryPrimitives.ReadUInt64LittleEndian(session.Get(PlayerSystem + 0x360, 8)));
+        Assert.Equal(xyzBefore, session.Get(Position + 0x48, 12));
+        Assert.Equal(Entity, BinaryPrimitives.ReadUInt64LittleEndian(session.Get(Position + 0x10, 8)));
     }
 
     [Fact]
@@ -433,6 +445,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             CurrentBuildPositionSampleCommand.GameSha256, ModuleBase, 64 * 1024 * 1024);
         public int Calls { get; private set; }
         public bool Disposed { get; private set; }
+        public bool ChangeOwnerKeyOnFinalXyzRead { get; set; }
 
         public void Set(ulong address, byte[] bytes) => entries[(address, bytes.Length)] = (byte[])bytes.Clone();
         public void Remove(ulong address, int length) => entries.Remove((address, length));
@@ -446,6 +459,8 @@ public sealed class CurrentBuildPositionSampleCommandTests
             var key = (address, length);
             var n = reads.TryGetValue(key, out var seen) ? seen : 0;
             reads[key] = n + 1;
+            if (ChangeOwnerKeyOnFinalXyzRead && address == Position + 0x48 && length == 12)
+                Set(PlayerSystem + 0x360, Bytes64(Key + 1));
             if (n > 0 && swapAfterFirst.TryGetValue(key, out var swapped))
                 return new("success", (byte[])swapped.Clone(), null, null);
             if (!entries.TryGetValue(key, out var bytes))
