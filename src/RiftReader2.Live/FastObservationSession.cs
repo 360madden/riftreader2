@@ -7,6 +7,7 @@ internal sealed class FastObservationSession
 {
     internal const long MaximumRegionBytes = 1024L * 1024 * 1024;
     internal static readonly TimeSpan MaximumAnchorAge = TimeSpan.FromSeconds(10);
+    internal static readonly TimeSpan RenewalStartAge = TimeSpan.FromTicks(MaximumAnchorAge.Ticks / 4);
 
     private readonly TimeProvider timeProvider;
     private readonly LiveAddonFreshnessTracker tracker;

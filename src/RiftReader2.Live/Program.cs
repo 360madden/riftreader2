@@ -166,13 +166,15 @@ internal static class Program
                 };
                 LiveAddonFreshness freshnessResult;
                 TargetDiscoveryResult after;
-                // Start the next full refresh while the existing anchor is still valid.
+                // Start renewal early enough to overlap more of the action-ready window.
+                // Full scans can take seconds; the strict anchor and action gates remain unchanged.
                 // The sole publication loop continues bounded scoped observations.
+                // This is an experimental cadence adjustment, not a freshness relaxation.
                 if (pendingFullScan is null &&
                     (fastSession is null ||
                      !fastSession.CanObserve(attachedTarget, scanStartedAt, out _) ||
                      timeProvider.GetElapsedTime(fastSession.Anchor.FullScanCompletedAtTimestamp, scanStartedAt) >=
-                         TimeSpan.FromTicks(FastObservationSession.MaximumAnchorAge.Ticks / 2)))
+                         FastObservationSession.RenewalStartAge))
                 {
                     pendingFullScan = StartFullScan(
                         attachedTarget, nonce, configuration, fastSession, timeProvider, cancellation.Token);

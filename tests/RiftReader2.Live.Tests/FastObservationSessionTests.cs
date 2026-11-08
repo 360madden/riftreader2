@@ -11,6 +11,14 @@ public sealed class FastObservationSessionTests
     private static readonly DiscoveredTarget Target = new(Identity, @"C:\RIFT\rift_x64.exe", "rift_x64");
 
     [Fact]
+    public void RenewalStartsAtQuarterOfStrictAnchorLifetime()
+    {
+        Assert.Equal(TimeSpan.FromMilliseconds(2_500), FastObservationSession.RenewalStartAge);
+        Assert.Equal(FastObservationSession.MaximumAnchorAge / 4, FastObservationSession.RenewalStartAge);
+        Assert.True(FastObservationSession.RenewalStartAge < FastObservationSession.MaximumAnchorAge);
+    }
+
+    [Fact]
     public void AnchoredScopeProducesExplicitFreshScopedReportAfterStrictAdvance()
     {
         var time = new ManualTimeProvider(2_000_000);
