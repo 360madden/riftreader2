@@ -69,12 +69,12 @@ This closes the unknown nonnull RETURN SHAPE, not the full passive locating reci
 
 - Pointer-equality match can preserve X, but X cannot be substituted universally.
 - Existing equivalent content can resolve to another B; exact matching needs the
-  semantics of 0x2504857 and 0x250487B plus complete 0x1145EF0 indexing.
-- 0x1145EF0 begins at the end of the export; its branch to 0x1145F44 lies outside
-  coverage and its instruction at 0x1145F1F is truncated. It is NOT fully decoded.
+  semantics of 0x2504857 and 0x250487B. Indexing is now decoded below.
+- The initial export cut off 0x1145EF0 at 0x1145F1F; the third bounded export
+  closes that former gap. The entire index helper is now covered.
 - A genuine miss constructs/inserts a new token. A passive reader must report
   unavailable for an unmaterialized key, not allocate/invoke the helper.
-- Upstream metadata resolution, service-table valid bounds, stable ownership and
+- Upstream metadata resolution, current table/pointer validity, stable ownership and
   snapshot freshness still need separate evidence. No live address is supplied.
 - 0x67BFB0 cache-hit layout remains supported by V7 pseudocode, not independently
   complete raw-instruction confirmation in this report. Its miss path may mutate.
@@ -104,8 +104,63 @@ Retained headless logs under artifacts/rea:
 - opaque-key-1145d20-review2/headless.log:
   f9136cd5edbc12ea76f4c976a7b5b7651fd0e43d1192e526c1381c57e575902c
 
-Root executed the two guarded exports with -readOnly -noanalysis. This worker
+Root executed the three guarded exports with -readOnly -noanalysis. This worker
 only decoded retained hex with GNU objdump 2.44 in x86-64 Intel mode via transient
-Linux memory-backed descriptors, independently verifying both byte digests.
+Linux memory-backed descriptors, independently verifying all three window byte digests.
 No Ghidra rerun, live memory, input, VM operation or commit occurred in this analysis.
-The companion JSON retains both raw hex windows and machine-readable conclusions.
+The companion JSON retains all three raw hex windows and machine-readable conclusions.
+
+## Index helper resolved: 0x1145EF0 (third bounded export)
+
+RVA [0x1145EF0,0x1145F7E) is a complete 142-byte leaf helper: one RET at
+0x1145F7D, no calls, no memory stores, and no direct branch outside that body.
+Input RCX is byte pointer X; only the low 32 bits of input RDX control the prefix.
+
+Exact algorithm:
+1. Set uint32 h=0; p=0; prefix=uint32(RDX)&0xFFFFFFFC.
+2. For each of the first prefix bytes, including any embedded zero, update
+   h=uint32(33*h+int8(X[p])) and advance p. The code unrolls four bytes at a time.
+3. Starting at p, repeat the same update until the first zero byte; do not hash
+   that terminating zero. This suffix is NOT bounded by the original RDX value.
+4. Return uint32 h modulo 513 (0x201), hence index range 0..512.
+
+MOVSX at 0x1145F10/1A/24/2E and 0x1145F58 proves SIGNED byte contributions;
+all multiply/add operations use 32-bit registers. The reduction at 0x1145F66..7A
+uses q=(uint64(h)*0xFF803FE1)>>41, followed by h-q*513. It is exact unsigned
+division: 513*0xFF803FE1-2^41=481, and the conservative maximum of
+floor((2^32-1)/513)*481+512*0xFF803FE1 is 2198763715647 < 2^41.
+Thus no random-sample-only assertion is needed for the modulo equivalence.
+
+If RDX truly represents byte length before NUL, this reduces to the zero-seeded
+33x signed-byte polynomial over that string, modulo 513. That premise awaits
+0x2504857 identification; do not silently replace the proven prefix-plus-NUL
+algorithm with a length-bounded loop. A passive implementation must impose its
+own safe read budget and report missing terminator/bytes unavailable.
+
+Independent arithmetic fixtures (hex includes terminator):
+| Bytes | RDX | uint32 h | Index |
+| --- | ---: | --- | ---: |
+| 00 | 0 | 0x00000000 | 0 |
+| 61626300 | 3 | 0x0001A9A6 | 210 |
+| 6162636400 | 4 | 0x0036DECA | 361 |
+| 80FF00 | 2 | 0xFFFFEF7F | 360 |
+| 6100626300 | 4 | 0x00353DC6 | 309 |
+
+These are offline formula checks, not native execution. The last fixture preserves
+an embedded zero inside the unconditional prefix.
+
+The same export incidentally covers initializer 0x1146080: constants 0x201 at
+0x11460A9 and 0x11460B5, stride 0x18 at 0x11460D1, and the loop ending at
+0x11460D9 establish 513 fixed entries (513*24=0x3018). It stores the resulting
+service at global 0x33D7D98 at 0x1146104. This proves static index/entry-count
+compatibility, not current allocation validity, per-entry array bounds or freshness.
+The final unrelated routine at 0x11461C0 is truncated and branches to 0x11461F8
+outside the export; this does not truncate the index helper.
+
+Third receipt: rr2-root-ghidra-opaque-index-1145ef0-20261108-01, passed/exit0,
+untruncated. Window [0x1145EF0,0x11461F0), 768 bytes:
+B762C9E0A7F65156C5B62E6F05171780EB7576D0B9D9A2202390E5AD4FB74D03.
+142-byte index body SHA256:
+770fbb8ad46121104bb8b072133c572b213351b8ac81669282fb3e72a2f9faaf.
+artifacts/rea/opaque-index-1145ef0-review1/headless.log SHA256:
+de333eff64f89d2cc4984f86e9e33cd84981dd30c6b4ac34a02fa110a9fb743d.

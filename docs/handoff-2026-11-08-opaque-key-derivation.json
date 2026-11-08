@@ -1,5 +1,5 @@
 {
-  "schema": "rr2-opaque-key-static-return-map/1",
+  "schema": "rr2-opaque-key-static-return-map/2",
   "checkpointUtc": "2026-11-08",
   "reviewedHead": "001b14abedc1b3b97a23708049978dc888888e2f",
   "scope": "static-retained-exact-build-only",
@@ -113,14 +113,14 @@
     "pointerEqualityHitPreservesInput": true,
     "unmaterializedMiss": "unavailable; do not allocate or execute helper",
     "missing": [
-      "complete 0x1145EF0 indexing",
       "0x2504857 token/length semantics",
       "0x250487B comparison semantics",
       "upstream metadata resolution",
-      "valid service-table bounds and stable ownership",
+      "current table/allocation and per-entry pointer validity; stable ownership",
       "raw confirmation of 0x67BFB0 cache layout",
       "live freshness and identity admission"
-    ]
+    ],
+    "indexAlgorithmQualifiedStatic": true
   },
   "externalDirectCallees": [
     "0x2504857",
@@ -135,12 +135,6 @@
     "0x25EF700",
     "0x25EF6F0"
   ],
-  "partialNextHelper": {
-    "entryRva": "0x1145EF0",
-    "knownOutsideBranchRva": "0x1145F44",
-    "truncatedInstructionRva": "0x1145F1F",
-    "complete": false
-  },
   "sourceFiles": [
     {
       "path": "artifacts/rea/ghidra-v7-callsite-instructions.txt",
@@ -157,6 +151,10 @@
     {
       "path": "artifacts/rea/opaque-key-1145d20-review2/headless.log",
       "sha256": "f9136cd5edbc12ea76f4c976a7b5b7651fd0e43d1192e526c1381c57e575902c"
+    },
+    {
+      "path": "artifacts/rea/opaque-index-1145ef0-review1/headless.log",
+      "sha256": "de333eff64f89d2cc4984f86e9e33cd84981dd30c6b4ac34a02fa110a9fb743d"
     }
   ],
   "activities": {
@@ -164,5 +162,103 @@
     "liveReads": 0,
     "input": 0,
     "commits": 0
+  },
+  "priorPartialNextHelper": {
+    "entryRva": "0x1145EF0",
+    "knownOutsideBranchRva": "0x1145F44",
+    "truncatedInstructionRva": "0x1145F1F",
+    "complete": false
+  },
+  "indexWindow": {
+    "rva": "0x1145EF0",
+    "length": 768,
+    "sha256": "B762C9E0A7F65156C5B62E6F05171780EB7576D0B9D9A2202390E5AD4FB74D03",
+    "jobId": "rr2-root-ghidra-opaque-index-1145ef0-20261108-01",
+    "rawHex": "4533C04C8BC983E2FC7649448D52FF41C1EA0241FFC266660F1F840000000000410FBE01416BC82103C8410FBE41016BD12103D0410FBE41026BCA2103C8410FBE4103446BC1214983C1044403C04983EA0175CC410FB60184C0741A0F1F4000456BC0214D8D49010FBEC04403C0410FB60184C075EAB8E13F80FF41F7E0C1EA0969C201020000442BC0418BC0C3CCCC48895C2410555657415641574883EC204C8B32488DA918300000488BF1418BF8488BCD4C8BFAFF153C974A01FF154E974A01FF452C488D0C7F488D3CCE8945280FB7571233DB85D20F8488000000488B4F084C3934D97408FFC33BDA72F4EB76498B0F4885C9746E8379F001756848C7C0FFFFFFFFF0480FC141F04883F8017555498B0F4883E910E8632304000FB7CB663B4F1272118D410166894712488D0CCD00000000EB1C488B4708488D0CCD0000000048833C01007409B8FFFF000066014714488B470848C704010000000048FF0D321D290283452CFF7507C7452800000000488BCD488B5C24584883C420415F415E5F5E5D48FF2573964A01CCCCCC4889742410574883EC2033F6B9483000008BD6E8F81F0400488BF84885C0747648895C2430488D4810BB010200004C8D059B1A56018BD3660F1F840000000000488971F88931C74104000001004C8941F0488D49184883EA0175E5488D881830000048897128FF15F4954A01488D471666C7000A00488D40184883EB0175F1488B5C243048893D8D1C2902488B7424384883C4205FC34889357B1C2902488B7424384883C4205FC3CCCCCCCCCCCCCCCC40564883EC20488B355B1C29024885F6746548895C2430488D9E18300000488BCB48896C243848897C2440FF1597954A014883C308488D2DE4195601BF01020000488B4BE8488BC34883EB18488968E0E8EB2104004883EF0175E6488B7C2440BA48300000488B6C2438488BCE488B5C2430E8591F040048C705E61B2902000000004883C4205EC3CCCCCCCCCCCCCCCC48895C240848896C24104889742418574883EC20488BDA488BF9488B11498BE9498BF0488B0BFFD584C0740C488B074C"
+  },
+  "indexFunction": {
+    "entryRva": "0x1145EF0",
+    "endExclusiveRva": "0x1145F7E",
+    "retRva": "0x1145F7D",
+    "length": 142,
+    "sha256": "770fbb8ad46121104bb8b072133c572b213351b8ac81669282fb3e72a2f9faaf",
+    "complete": true,
+    "calls": [],
+    "memoryWrites": false,
+    "outsideBodyBranches": [],
+    "algorithm": {
+      "input": "RCX byte pointer; low32(RDX) prefix-length input",
+      "seed": 0,
+      "prefixBytes": "uint32(RDX) & 0xFFFFFFFC",
+      "prefix": "consume all prefix bytes, including embedded zero",
+      "suffix": "consume until first NUL, excluding terminator, independent of original RDX",
+      "update": "h = uint32(33*h + int8(byte))",
+      "return": "uint32(h) % 513",
+      "outputRange": [
+        0,
+        512
+      ],
+      "requiresExternalReadBudget": true
+    },
+    "reductionProof": {
+      "magic": "0xFF803FE1",
+      "shift": 41,
+      "divisor": 513,
+      "delta": 481,
+      "conservativeMaxErrorNumerator": "2198763715647",
+      "scale": "2199023255552"
+    },
+    "testVectors": [
+      {
+        "hex": "00",
+        "rdx": 0,
+        "h": "0x00000000",
+        "index": 0
+      },
+      {
+        "hex": "61626300",
+        "rdx": 3,
+        "h": "0x0001A9A6",
+        "index": 210
+      },
+      {
+        "hex": "6162636400",
+        "rdx": 4,
+        "h": "0x0036DECA",
+        "index": 361
+      },
+      {
+        "hex": "80FF00",
+        "rdx": 2,
+        "h": "0xFFFFEF7F",
+        "index": 360
+      },
+      {
+        "hex": "6100626300",
+        "rdx": 4,
+        "h": "0x00353DC6",
+        "index": 309
+      }
+    ],
+    "testScope": "offline arithmetic, not native execution"
+  },
+  "serviceTableStaticBounds": {
+    "entryCount": 513,
+    "entryStride": 24,
+    "totalEntryBytes": "0x3018",
+    "constructorRva": "0x1146080",
+    "proofRvas": [
+      "0x11460A9",
+      "0x11460B5",
+      "0x11460D1",
+      "0x11460D9",
+      "0x1146104"
+    ],
+    "liveAllocationValidityQualified": false
+  },
+  "indexWindowTrailingCoverage": {
+    "unrelatedTruncatedRoutineRva": "0x11461C0",
+    "outsideTargetRva": "0x11461F8",
+    "affectsIndexFunctionCompleteness": false
   }
 }
