@@ -67,16 +67,19 @@ def build_live_configuration(
     poll_interval_milliseconds: int,
     max_scan_bytes: int,
     full_scan_chunk_kib: int = 64,
+    max_scan_seconds: int = 10,
 ) -> dict[str, object]:
     """Return the exact configuration consumed by RiftReader2.Live."""
     chunk_kib = _full_scan_chunk_kib(full_scan_chunk_kib)
+    if type(max_scan_seconds) is not int or not 1 <= max_scan_seconds <= 60:
+        raise ValueError("maxScanSeconds must be an integer from 1 through 60")
     value = {
         "schemaVersion": 1,
         "processName": "rift_x64",
         "durationSeconds": duration_seconds,
         "pollIntervalMilliseconds": poll_interval_milliseconds,
         "maxScanBytes": _scan_bytes(max_scan_bytes, "maxScanBytes"),
-        "maxScanSeconds": 10,
+        "maxScanSeconds": max_scan_seconds,
         "outputPath": output_path,
         "freshnessTimeoutSeconds": 5,
         "delivery": {"endpoint": endpoint, "token": token},

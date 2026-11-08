@@ -277,7 +277,8 @@ def run_guest_script(session: GuestSession, output: Path, body: str, run_id: str
 
 def private_config(run_id: str, endpoint: str, token: str, guest_output: str,
                    duration: int, poll_interval_milliseconds: int,
-                   max_scan_bytes: int, full_scan_chunk_kib: int = 64) -> tuple[Path, Path, str]:
+                   max_scan_bytes: int, full_scan_chunk_kib: int = 64,
+                    max_scan_seconds: int = 10) -> tuple[Path, Path, str]:
     base = Path(os.environ["LOCALAPPDATA"]) / "RiftReader2" / "HybridStaging"
     staging = base / run_id
     staging.mkdir(parents=True, exist_ok=False)
@@ -290,6 +291,7 @@ def private_config(run_id: str, endpoint: str, token: str, guest_output: str,
         poll_interval_milliseconds=poll_interval_milliseconds,
         max_scan_bytes=max_scan_bytes,
         full_scan_chunk_kib=full_scan_chunk_kib,
+        max_scan_seconds=max_scan_seconds,
     )
     config.write_text(json.dumps(value, separators=(",", ":")), encoding="utf-8")
     return staging, config, sha(config)
@@ -348,7 +350,8 @@ def execute(args: argparse.Namespace) -> dict:
     try:
         staging, config, config_sha = private_config(
             run_id, endpoint, receiver_token, guest_output, args.duration_seconds,
-            args.poll_interval_milliseconds, args.max_scan_bytes, args.full_scan_chunk_kib)
+            args.poll_interval_milliseconds, args.max_scan_bytes, args.full_scan_chunk_kib,
+            args.max_scan_seconds)
         with GuestSession(cfg.vmrun, cfg.vmx, check, cache_guest_credentials=False,
                           _guest_prompt=no_prompt,
                           legacy_guest_credential_target=legacy_guest_target(args.lab)) as session:
@@ -446,6 +449,7 @@ $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$
             "gameStartUtcTicks": str(args.expected_game_start_ticks),
             "gameSha256": args.expected_game_sha256,
             "maxScanBytes": args.max_scan_bytes,
+            "maxScanSeconds": args.max_scan_seconds,
             "receiver": receiver,
             "vmIdentityStable": vm_after == vm_before,
             "inputSent": False,
@@ -496,6 +500,8 @@ def parser() -> argparse.ArgumentParser:
                         help="bounded one-run override; otherwise use the tracked per-lab setting")
     result.add_argument("--full-scan-chunk-kib", type=int, choices=(64, 256), default=64,
                          help="experimental full-memory primary chunk size; default 64, bounded 256 with 64-KiB fallback")
+    result.add_argument("--max-scan-seconds", type=int, default=10,
+                          help="bounded full-memory scan time budget; default 10, allowed 1 through 60")
     result.add_argument("--output", type=Path, required=True)
     return result
 
@@ -512,6 +518,8 @@ def main() -> int:
         fail("duration-out-of-range")
     if not 250 <= args.poll_interval_milliseconds <= 60_000:
         fail("poll-interval-out-of-range")
+    if not 1 <= args.max_scan_seconds <= 60:
+        fail("scan-seconds-out-of-range")
     try:
         args.max_scan_bytes = resolve_max_scan_bytes(
             args.lab, config_path=args.scan_limit_config, override=args.max_scan_bytes)

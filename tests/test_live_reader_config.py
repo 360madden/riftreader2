@@ -104,6 +104,21 @@ class LiveReaderConfigTests(unittest.TestCase):
         self.assertEqual(64, parser.parse_args(basic).full_scan_chunk_kib)
         self.assertEqual(256, parser.parse_args(
             basic + ["--full-scan-chunk-kib", "256"]).full_scan_chunk_kib)
+        self.assertEqual(10, parser.parse_args(basic).max_scan_seconds)
+        self.assertEqual(25, parser.parse_args(
+            basic + ["--max-scan-seconds", "25"]).max_scan_seconds)
+
+    def test_full_scan_time_budget_is_explicit_and_fail_closed(self):
+        params = dict(endpoint="http://192.168.56.1:49813/observation",
+                      token="x" * 32, output_path=r"C:\reader\latest.json",
+                      duration_seconds=900, poll_interval_milliseconds=500,
+                      max_scan_bytes=6 * 1024**3)
+        self.assertEqual(10, build_live_configuration(**params)["maxScanSeconds"])
+        self.assertEqual(25, build_live_configuration(
+            **params, max_scan_seconds=25)["maxScanSeconds"])
+        for invalid in (0, 61, True, 3.5, "25"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                build_live_configuration(**params, max_scan_seconds=invalid)
 
     def test_tracked_launcher_writes_resolved_lab1_limit(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
@@ -227,7 +242,7 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                 args = SimpleNamespace(output=root / "out", reader=reader,
                     reader_sha256=launch_live_reader.sha(reader), receiver_config=receiver,
                     lab="lab1", duration_seconds=900, poll_interval_milliseconds=500,
-                    max_scan_bytes=1000, full_scan_chunk_kib=64,
+                    max_scan_bytes=1000, full_scan_chunk_kib=64, max_scan_seconds=10,
                     expected_game_pid=1, expected_game_start_ticks=2,
                     expected_game_sha256="A" * 64)
                 def patch(name, **kwargs):
