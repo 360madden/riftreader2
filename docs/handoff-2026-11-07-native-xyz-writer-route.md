@@ -1,6 +1,6 @@
 # RR2 current-build native XYZ writer-route continuation
 
-**Timestamp:** 2026-11-07 23:41 EST (host tools ran 2026-11-08 UTC)
+**Timestamp:** 2026-11-07 23:49 EST (host tools ran 2026-11-08 UTC)
 **Project:** `C:\work\riftreader2`
 **Branch:** `codex/modular-foundation`
 **Verified host:** AMD-DESKTOP via Workbridge 0.16.4-dev
@@ -55,8 +55,14 @@ Bounded adjacent routines were also inspected:
 - `0x698EC0` writes matrix/derived fields at `+0x60..+0x80` and
   `+0xF0/+0xF4`, not primary XYZ.
 - `0x613800` and `0x698910` are actor/transform consumers.
-- `0x687320` writes actor translation at `actor+0x3BC/+0x3C0/+0x3C4`;
-  those are downstream actor coordinates, not the player position component.
+- `0x687320` writes actor translation at `actor+0x3BC/+0x3C0/+0x3C4`.
+  `0x613800` calls `0x6996C0`, reads secondary cache `component+0x88`
+  through `0x698440` and transform `+0x94` through `0x698410`, then
+  passes them to `0x687320`. That routine adds actor offsets
+  `+0x4F8/+0x4FC/+0x500` and `+0x770/+0x774/+0x778` to the secondary
+  triplet before storing actor translation. Render actor position therefore
+  consumes secondary cache, not the primary Lua-facing `+0x48` cache; it
+  remains downstream, not an independent primary-cache writer.
 - `0x612960` constructs a quaternion-derived matrix, not XYZ.
 
 The bounded call graph does not constitute an exhaustive whole-image search for
@@ -124,17 +130,17 @@ tracked package-lock changes were made.
 
 ## Current worktree caution
 
-A separate commit advanced the branch during this continuation:
+A separate commit first advanced the branch to
 `ad5903cebaa850846206819943e16e30c0338e2d`
 (`docs(rr2): pin two-lab control state, release hashes and pending native gates`,
-23:34 EST). It included the earlier two-lab readiness/launcher changes; those
-are now part of HEAD and were not staged by this continuation.
+23:34 EST). This continuation then committed and pushed its seven-file
+checkpoint as `82f3dbd` (`feat(xyz): capture exact native refresh branch predicate`)
+to `origin/codex/modular-foundation`.
 
-Current intended checkpoint files are the writer-evidence note, `docs/status.md`,
-the branch-candidate reader and sample command, their two focused test files,
-and this handoff. An unrelated untracked
-`scripts/project_current_native_energy_variants.py` remains present; do not
-stage it.
+At the latest check, all checkpoint files are committed and the branch is
+synchronized with origin. The only remaining untracked file is
+`scripts/project_current_native_energy_variants.py`; it is unrelated and was
+not staged or committed.
 
 ## Next practical work
 

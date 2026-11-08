@@ -1,6 +1,6 @@
 # Current status
 
-**23:41 EST NOVEMBER 7 — EXACT 0x6136B0 SOURCE GUARD NOW CAPTURED; 1303/1303 TESTS PASS:**
+**23:49 EST NOVEMBER 7 — EXACT 0x6136B0 GUARD + SECONDARY RENDER-POSITION CONSUMER MAPPED; 1303/1303 TESTS PASS:**
 The read-only current-build refresh-branch candidate reader now verifies the
 flag-branch source-component backlink and samples the exact `0x6136B0` operands:
 source `+0x48` context pointer, signed nested `+0x24` value, and source
@@ -11,6 +11,11 @@ than zero. Self-source owner mismatch no longer publishes a source candidate.
 The JSON contract is now v2 with lossless context hex and explicit
 `sourceGuardStatus/sourceGuardEligible`. Focused branch tests passed **42/42**;
 full .NET10 suite passed **1303/1303** (Live 923 + Core 380), Release.
+The bounded actor/render path is now more precise: `0x613800` calls
+`0x6996C0`, reads secondary cache `+0x88` via `0x698440` and transform
+`+0x94` via `0x698410`, then passes them to `0x687320`. That routine adds
+actor offsets and writes actor translation `+0x3BC/+0x3C0/+0x3C4`; this is a
+downstream consumer of secondary cache, not an independent primary XYZ writer.
 No live native read/deployment occurred. Both labs remain operationally ready,
 but the latest readiness packet reports no advertised native-read lease
 capability and Greeting Jimmy has not relinquished any live reader; live sample

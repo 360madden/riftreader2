@@ -274,6 +274,14 @@ position-component cache; `0x6996C0` owns those stores.
   `actor+0x3BC/+0x3C0/+0x3C4` and related actor/render transform fields. These
   are downstream actor coordinates, not the position component's primary
   `+0x48/+0x4C/+0x50`.
+- More precisely, `0x613800` selects the position component with selector
+  `0x2F588A0`, calls `0x6996C0`, then obtains `component+0x88` through
+  `0x698440` and `component+0x94` through `0x698410`. It passes those
+  values to `0x687320`; that routine adds actor offsets from `+0x4F8/+0x4FC/
+  +0x500` and `+0x770/+0x774/+0x778` to the secondary `+0x88` triplet
+  before storing actor translation. Thus the actor/render position path consumes
+  the secondary cache, not the primary Lua-facing `+0x48` cache. This is a
+  downstream transform path, not an independently proven cache writer.
 - `0x698EC0` writes the matrix at `component+0x60..+0x80` and derived
   `+0xF0/+0xF4`; it does not write primary XYZ.
 - `0x698910` calls `0x6996C0` and interpolates/forwards transform state into the
