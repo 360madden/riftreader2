@@ -1,11 +1,14 @@
+from contextlib import redirect_stdout
+import io
 import json
 import math
 from pathlib import Path
 import tempfile
 import unittest
 
+from scripts import navigation_anchors as anchors
 from scripts.plan_steered_waypoint import (
-    SteeringPlanError, measure_turn, next_step, signed_angle,
+    SteeringPlanError, main, measure_turn, next_step, next_step_saved_anchor, signed_angle,
 )
 
 
@@ -219,6 +222,81 @@ class SteeringPlannerTests(unittest.TestCase):
         result = next_step(current, (1.2, .1), [])
         self.assertEqual(result["decision"], "arrived")
         self.assertEqual(result["arrivalKind"], "planar-xz")
+
+
+    def saved_catalog(self, *, build="A" * 64, zone="Test Zone"):
+        return {"schemaVersion": 1, "coordinateFrame": anchors.COORDINATE_FRAME,
+                "anchors": [{
+                    "id": "SouthPier", "label": "South pier",
+                    "position": {"x": 3.0, "y": 999.0, "z": 0.03},
+                    "zoneLabel": zone,
+                    "source": {"kind": "addon-feedback-receipt",
+                               "gameBuildSha256": build,
+                               "evidenceSha256": "B" * 64,
+                               "capturedAtUtc": "2026-11-08T13:00:00Z"},
+                    "qualification": "offline-reference-only"}]}
+
+    def test_saved_named_anchor_calculates_offline_goal_without_live_runner(self):
+        current = self.write("current.json", calibration(
+            (0, 4, 0), (1, 4, 0), 1, (1, 0)))
+        catalog = self.write("catalog.json", self.saved_catalog())
+        result = next_step_saved_anchor(current, catalog, "southPIER", [])
+        self.assertEqual(result["planarGoal"], {"x": 3.0, "z": 0.03})
+        self.assertEqual(result["decision"], "forward")
+        self.assertIs(result["movementEligible"], False)
+        self.assertNotIn("runner", result)
+        self.assertNotIn("runnerArgumentFragment", result)
+        self.assertEqual(result["savedAnchor"]["position"]["y"], 999.0)
+        self.assertEqual(result["current"]["y"], 4)
+        self.assertIs(result["savedAnchor"]["sameWorldInstanceVerified"], False)
+        self.assertIs(result["savedAnchor"]["zoneLabelIsMetadataOnly"], True)
+        self.assertEqual(result["savedAnchor"]["source"]["gameBuildSha256"], "A" * 64)
+        self.assertIn("not an executable movement instruction",
+                      result["nextRequiredForMovement"])
+
+    def test_saved_named_anchor_rejects_foreign_build_and_invalid_frame(self):
+        current = self.write("current.json", calibration(
+            (0, 4, 0), (1, 4, 0), 1, (1, 0)))
+        catalog = self.write("foreign.json", self.saved_catalog(build="C" * 64))
+        with self.assertRaisesRegex(SteeringPlanError, "game build differs"):
+            next_step_saved_anchor(current, catalog, "SouthPier", [])
+        wrong = self.saved_catalog()
+        wrong["coordinateFrame"] = "unknown-world-frame"
+        path = self.write("frame.json", wrong)
+        with self.assertRaises(anchors.AnchorCatalogError):
+            next_step_saved_anchor(current, path, "SouthPier", [])
+        unqualified = self.saved_catalog()
+        unqualified["anchors"][0]["qualification"] = "verified-live"
+        path = self.write("qualification.json", unqualified)
+        with self.assertRaises(anchors.AnchorCatalogError):
+            next_step_saved_anchor(current, path, "SouthPier", [])
+
+    def test_saved_anchor_cli_requires_catalog_and_keeps_numeric_route(self):
+        current = self.write("current.json", calibration(
+            (0, 4, 0), (1, 4, 0), 1, (1, 0)))
+        catalog = self.write("catalog.json", self.saved_catalog())
+        output = self.root / "named-output.json"
+        command = ["next", "--current-w-calibration", str(current),
+                   "--anchor-id", "SOUTHPIER", "--catalog", str(catalog),
+                   "--output", str(output)]
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(command), 0)
+        saved = json.loads(output.read_text(encoding="utf-8"))
+        self.assertIs(saved["movementEligible"], False)
+        self.assertNotIn("runnerArgumentFragment", saved)
+        blocked_output = self.root / "blocked-output.json"
+        with redirect_stdout(io.StringIO()) as capture:
+            self.assertEqual(main(["next", "--current-w-calibration", str(current),
+                                   "--anchor-id", "SOUTHPIER",
+                                   "--output", str(blocked_output)]), 2)
+        self.assertIn("requires --catalog", capture.getvalue())
+        self.assertFalse(blocked_output.exists())
+        numeric = self.root / "numeric-output.json"
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(main(["next", "--current-w-calibration", str(current),
+                                   "--goal-xz", "3", "0.03", "--output", str(numeric)]), 0)
+        self.assertIn("runnerArgumentFragment",
+                      json.loads(numeric.read_text(encoding="utf-8")))
 
 
 if __name__ == "__main__":

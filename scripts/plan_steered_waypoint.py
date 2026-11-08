@@ -14,6 +14,11 @@ import json
 import math
 from pathlib import Path
 
+if __package__:
+    from . import navigation_anchors as anchors
+else:
+    import navigation_anchors as anchors
+
 
 class SteeringPlanError(ValueError):
     pass
@@ -310,6 +315,42 @@ def next_step(current_path: Path, goal_xz: tuple[float, float],
             "nextRequired": "fresh reviewed W calibration after the turn"}
 
 
+def next_step_saved_anchor(current_path: Path, catalog_path: Path, anchor_id: str,
+                           turn_paths: list[Path],
+                           after_turn_path: Path | None = None) -> dict:
+    """Calculate an offline-only step from a saved X/Z anchor; never authorize movement."""
+    resolved = anchors.resolve_anchor(anchors.load_catalog(catalog_path), anchor_id)
+    anchor = resolved["anchor"]
+    current_value, current_sha = load(current_path)
+    current = calibration(current_value)
+    current_build = current["identity"]["target"]["executableSha256"]
+    require(isinstance(current_build, str)
+            and current_build.upper() == anchor["source"]["gameBuildSha256"],
+            "saved anchor game build differs from calibration")
+    point = resolved["planarGoal"]
+    result = next_step(current_path, (point["x"], point["z"]),
+                       turn_paths, after_turn_path)
+    require(result["currentCalibrationSha256"] == current_sha
+            and result["identity"] == current["identity"],
+            "calibration changed during saved-anchor planning")
+    # Saved destinations remain offline coordinates, never executable live goals.
+    result.pop("runner", None)
+    result.pop("runnerArgumentFragment", None)
+    result["movementEligible"] = False
+    result["savedAnchor"] = {
+        "id": anchor["id"], "label": anchor["label"],
+        "position": anchor["position"], "zoneLabel": anchor["zoneLabel"],
+        "source": anchor["source"],
+        "qualification": "offline-reference-only",
+        "zoneLabelIsMetadataOnly": True,
+        "sameWorldInstanceVerified": False,
+    }
+    result["nextRequiredForMovement"] = (
+        "fresh same-session position and independently verified world/zone compatibility; "
+        "saved coordinates are not an executable movement instruction")
+    return result
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     commands = result.add_subparsers(dest="command", required=True)
@@ -320,8 +361,11 @@ def parser() -> argparse.ArgumentParser:
     measure.add_argument("--output", type=Path, required=True)
     plan = commands.add_parser("next")
     plan.add_argument("--current-w-calibration", type=Path, required=True)
-    plan.add_argument("--goal-xz", nargs=2, type=float, required=True, metavar=("X", "Z"),
+    goal = plan.add_mutually_exclusive_group(required=True)
+    goal.add_argument("--goal-xz", nargs=2, type=float, metavar=("X", "Z"),
                       help="chosen planar destination; this planner makes no Y/3D claim")
+    goal.add_argument("--anchor-id", help="offline saved XYZ anchor ID; requires --catalog")
+    plan.add_argument("--catalog", type=Path, help="offline saved-anchor catalog")
     plan.add_argument("--turn-calibration", type=Path, action="append", default=[])
     plan.add_argument("--after-turn-result", type=Path,
                       help="pin the latest turn result when the W calibration followed a turn")
@@ -329,19 +373,26 @@ def parser() -> argparse.ArgumentParser:
     return result
 
 
-def main() -> int:
-    args = parser().parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
     try:
         if args.command == "measure-turn":
             value = measure_turn(args.before_w_calibration, args.turn_result,
                                  args.after_w_calibration)
+        elif args.anchor_id is not None:
+            require(args.catalog is not None, "--anchor-id requires --catalog")
+            value = next_step_saved_anchor(
+                args.current_w_calibration, args.catalog, args.anchor_id,
+                args.turn_calibration, args.after_turn_result)
         else:
+            require(args.catalog is None, "--catalog requires --anchor-id")
             value = next_step(args.current_w_calibration, tuple(args.goal_xz),
                               args.turn_calibration, args.after_turn_result)
         save(args.output, value)
         print(json.dumps(value, sort_keys=True, separators=(",", ":")))
         return 0
-    except (OSError, json.JSONDecodeError, SteeringPlanError) as error:
+    except (OSError, json.JSONDecodeError, SteeringPlanError,
+            anchors.AnchorCatalogError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error)}))
         return 2
 
