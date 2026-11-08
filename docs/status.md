@@ -14,6 +14,13 @@ the SAME owner key `u035400012FA2D678` and cached XYZ
 sample-start gap533.3391ms. Source receipt
 `artifacts/native-current-sampler-20261105/runs/lab1/7d5b868c40664a0cb95e2c6ce0892cfb/samples.json`,
 SHA256 `FC9DC02D1692BECA28ACF9F7F7A8B492D2AEC04A23FB87CC4CFF4495A4009772`.
+A second NEW-reader Lab1 run completed **30/30** on the same sampled key
+`u035400012FA2D678`, no XYZ change, 19.3873s span, max read375.6047ms
+and maximum sample-start gap778.9411ms. Pinned guest reader was reused.
+Receipt `artifacts/native-current-sampler-20261105/runs/lab1/d2d11975e54b41bf9155a90269c6703b/samples.json`,
+SHA256 `254A4E86B80612A22957B46AE2E162FF9FA776779253115861B3AD2818B4E4AD`.
+Cadence is measured, not promised; no changed-state/passive-freshness
+qualification follows.
 Earlier old-reader Lab1 run did15/15 in6.997s, source SHA98AA5218... but
 did NOT expose unit keys. Offline track projection, XZ-planar/Y-vertical
 distance, candidate velocity, relative-target geometry and raw orientation

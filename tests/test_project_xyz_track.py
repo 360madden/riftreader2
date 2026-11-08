@@ -89,11 +89,23 @@ class ProjectTrackTests(unittest.TestCase):
             with self.subTest(row=r["observations"][1]), self.assertRaises(ValueError):
                 project(r)
 
+    def test_axis_travel_bearing_and_no_planar_movement(self):
+        for x, y, z, expected in ((1, 0, 0, 0), (0, 0, 1, 90),
+                                  (-1, 0, 0, 180), (0, 0, -1, 270),
+                                  (0, 0, 0, None), (0, 4, 0, None)):
+            r = fixture()
+            r["observations"][1].update(x=x, y=y, z=z)
+            points = project(r)["observations"]
+            self.assertIsNone(points[0]["reduction"]["coordinateAxisTravelBearingDegrees"])
+            self.assertEqual(points[1]["reduction"]["coordinateAxisTravelBearingDegrees"], expected)
+        self.assertIn("not body yaw", project(fixture())["limitations"][-1])
+
     def test_gap_and_speed_boundaries_withhold_values(self):
         for kwargs, reason in (({"gap": 1}, "sample-gap"), ({"speed": 1}, "teleport-or-speed-limit")):
             out = project(fixture(), **kwargs)["observations"][1]["reduction"]
             self.assertEqual(out["reason"], reason)
             self.assertIsNone(out["displacement"])
+            self.assertIsNone(out["coordinateAxisTravelBearingDegrees"])
 
     def test_bad_contract_identity_and_sequence(self):
         for mutate in (

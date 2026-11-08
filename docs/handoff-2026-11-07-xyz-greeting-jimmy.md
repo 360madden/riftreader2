@@ -58,6 +58,11 @@ unit `u035400012FA2D678` (decimal239816685251647096), XYZ
 Receipt `artifacts/native-current-sampler-20261105/runs/lab1/7d5b868c40664a0cb95e2c6ce0892cfb/samples.json`,
 SHA256 `FC9DC02D1692BECA28ACF9F7F7A8B492D2AEC04A23FB87CC4CFF4495A4009772`.
 602/602 .NET and45/45 focused Python tests passed; no gameplay input.
+A subsequent NEW-reader Lab1 30/30 run reused the same pinned guest binary
+and sampled the same unit `u035400012FA2D678` with no XYZ change over
+19.3873s (max read375.6047ms; max sample-start gap778.9411ms). Receipt
+`artifacts/native-current-sampler-20261105/runs/lab1/d2d11975e54b41bf9155a90269c6703b/samples.json`,
+SHA256 `254A4E86B80612A22957B46AE2E162FF9FA776779253115861B3AD2818B4E4AD`.
 The previous B8 reader and baseline receipts are retained intact. This
 establishes sampled owner-key consistency, NOT uninterrupted same-player
 presence, changed-state or passive-freshness qualification. Jimmy's retained

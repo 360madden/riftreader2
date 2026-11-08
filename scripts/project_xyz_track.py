@@ -126,6 +126,15 @@ def project(report, *, max_gap_seconds, max_speed_3d):
         motion = asdict(result)
         motion.pop("fresh")
         motion.pop("age_seconds")
+        # Coordinate-axis travel, not body/camera/compass heading. Boundaries
+        # and purely vertical/stationary changes cannot supply a planar bearing.
+        travel = None
+        if result.displacement is not None and result.planar_distance > 0:
+            dx, _, dz = result.displacement
+            travel = math.degrees(math.atan2(dz, dx)) % 360
+            if travel >= 360:
+                travel = 0.0
+        motion["coordinateAxisTravelBearingDegrees"] = travel
         points.append({"index": index, "startedAtUtc": row["startedAtUtc"],
                        "elapsedStartMilliseconds": start - _number(rows[0]["monotonicStartMilliseconds"], "first start"),
                        "xyz": dict(zip(("x", "y", "z"), xyz)), "reduction": motion})
@@ -144,7 +153,8 @@ def project(report, *, max_gap_seconds, max_speed_3d):
             "thresholds": {"maxGapSeconds": gap, "maxSpeed3dSourceUnitsPerSecond": limit},
             "limitations": ["Sampled key agreement is not proof of uninterrupted ownership, player semantics, or world continuity.",
                             "Zone transitions, source freshness and loaded module identity are unverified.",
-                            "Speed-limit boundaries are not proof of teleport."],
+                            "Speed-limit boundaries are not proof of teleport.",
+                            "Travel bearing is coordinate-axis arithmetic (+X=0, +Z=90), not body yaw, camera direction or compass heading."],
             "observations": points}
 
 
