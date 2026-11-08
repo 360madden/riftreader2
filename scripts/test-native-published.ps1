@@ -26,8 +26,16 @@ try {
     $reportPath = Join-Path $runDirectory 'capture.json'
     [IO.File]::WriteAllBytes($requestPath,
         $requestEncoding.GetBytes(($request | ConvertTo-Json -Depth 8) + [Environment]::NewLine))
-    & $captureExecutable capture-native --request $requestPath --output $reportPath > (Join-Path $runDirectory 'capture.stdout.json')
-    if ($LASTEXITCODE -ne 0) { throw 'Published native capture failed.' }
+    # The bundled reader must not depend on the repository as its working directory.
+    # Request and report paths are absolute; source/config assets remain bundle-owned.
+    Push-Location -LiteralPath $runDirectory
+    try {
+        & $captureExecutable capture-native --request $requestPath --output $reportPath > (Join-Path $runDirectory 'capture.stdout.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Published native capture failed outside repository working directory.' }
+    }
+    finally {
+        Pop-Location
+    }
     $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
     if ($report.capture.status -ne 'complete' -or $report.implementation.deploymentKind -ne 'single-file-bundle') {
         throw 'Published native report did not identify a complete bundled capture.'
