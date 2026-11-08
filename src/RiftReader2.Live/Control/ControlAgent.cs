@@ -80,6 +80,8 @@ public sealed class ControlAgent
     private CancellationTokenSource? nativeReadCancellation;
     private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
         Task<ControlNativeVitalsResponse>> nativeVitalsCapture;
+    private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+        Task<ControlNativeXyzResponse>> nativeXyzCapture;
     private string PendingPath => Path.Combine(configuration.OutputDirectory, "pending.json");
 
     public ControlAgent(ControlAgentConfiguration configuration)
@@ -88,8 +90,16 @@ public sealed class ControlAgent
     internal ControlAgent(ControlAgentConfiguration configuration,
         Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
             Task<ControlNativeVitalsResponse>> nativeVitalsCapture)
+        : this(configuration, nativeVitalsCapture, ControlNativeXyz.CaptureAsync) { }
+
+    internal ControlAgent(ControlAgentConfiguration configuration,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeVitalsResponse>> nativeVitalsCapture,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeXyzResponse>> nativeXyzCapture)
     {
         configuration.Validate();
+        this.nativeXyzCapture = nativeXyzCapture;
         this.nativeVitalsCapture = nativeVitalsCapture;
         this.configuration = configuration;
         Directory.CreateDirectory(configuration.OutputDirectory);
@@ -219,7 +229,7 @@ public sealed class ControlAgent
     internal async Task DispatchCommandAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
     {
         Task? refusal = null;
-        if (command.Operation == "native-vitals")
+        if (command.Operation is "native-vitals" or "native-xyz")
         {
             lock (stateLock)
             {
@@ -269,9 +279,18 @@ public sealed class ControlAgent
             var identity = command.Payload.Deserialize<ControlIdentityRequest>(JsonFormat.Options)
                 ?? throw new InvalidDataException("Missing expected identity.");
             token.ThrowIfCancellationRequested();
-            var result = await nativeVitalsCapture(configuration, identity, token);
-            token.ThrowIfCancellationRequested();
-            response = result with { InstanceId = instanceId };
+            if (command.Operation == "native-xyz")
+            {
+                var result = await nativeXyzCapture(configuration, identity, token);
+                token.ThrowIfCancellationRequested();
+                response = result with { InstanceId = instanceId };
+            }
+            else
+            {
+                var result = await nativeVitalsCapture(configuration, identity, token);
+                token.ThrowIfCancellationRequested();
+                response = result with { InstanceId = instanceId };
+            }
         }
         catch (Exception exception)
         {
@@ -294,6 +313,7 @@ public sealed class ControlAgent
                         targetedClickVersion = 1,
                         freshIdentityVersion = 1,
                         nativeVitalsVersion = 1,
+                        nativeXyzVersion = 1,
                         gracefulShutdownVersion = 1,
                         target = Inspect(),
                         armed = IsArmed(),

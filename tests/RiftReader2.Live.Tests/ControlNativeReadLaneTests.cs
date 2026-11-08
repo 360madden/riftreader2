@@ -30,7 +30,7 @@ public sealed class ControlNativeReadLaneTests
         });
         await fixture.Send("native-vitals", Expected);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        foreach (var operation in new[] { "action", "arm", "capture", "recover", "native-vitals", "identity" })
+        foreach (var operation in new[] { "action", "arm", "capture", "recover", "native-vitals", "native-xyz", "identity" })
         {
             await fixture.Send(operation, new { });
             using var refused = await fixture.Receive();
@@ -66,10 +66,13 @@ public sealed class ControlNativeReadLaneTests
     }
 
     [Theory]
-    [InlineData("armed")]
-    [InlineData("action")]
-    [InlineData("recovery")]
-    public async Task UnsafeAdmissionRejectsBeforeInvokingNativeCapture(string state)
+    [InlineData("armed", "native-vitals")]
+    [InlineData("action", "native-vitals")]
+    [InlineData("recovery", "native-vitals")]
+    [InlineData("armed", "native-xyz")]
+    [InlineData("action", "native-xyz")]
+    [InlineData("recovery", "native-xyz")]
+    public async Task UnsafeAdmissionRejectsBeforeInvokingNativeCapture(string state, string operation)
     {
         var calls = 0;
         await using var fixture = await Fixture.Create((_, _, _) => { calls++; return Task.FromResult(Result()); });
@@ -82,7 +85,7 @@ public sealed class ControlNativeReadLaneTests
             fixture.SetField("activeAction", new TaskCompletionSource().Task);
         else
             await File.WriteAllTextAsync(Path.Combine(fixture.Directory, "pending.json"), "pending");
-        await fixture.Send("native-vitals", Expected);
+        await fixture.Send(operation, Expected);
         using var response = await fixture.Receive();
         Assert.Contains("disarmed, idle control with no pending recovery",
             response.RootElement.GetProperty("payload").GetProperty("error").GetString());

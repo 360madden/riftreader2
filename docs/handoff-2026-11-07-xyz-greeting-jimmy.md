@@ -15,6 +15,35 @@ unbound-reference status INSUFFICIENT for API-quiet conditions. The conditional
 refresh branch may bypass the upstream provider altogether, so source
 `+0xF8` is not a universal live owner. Root has accepted both boundaries.
 
+**20:34 EST second response ACK:** Jimmy extended that same findings file
+through line94, SHA256
+`7A52026A64E4DACD39AE3FD93D833552C8C7D31FF430898A30B1FC862484EA6B`.
+Root independently verified its conditional static `0x6996C0` cache writers
+(primary `0x699855/0x699859` or `0x699991/0x699999`, with secondary
+branches), and source-selector RVA `0x2F57918`, separate from position selector
+`0x2F588A0`. The retained Lab1 roots do NOT include the source selector.
+Handle branch uses a resolved referenced entity, flag branch uses position
+owner; no current branch execution or passive source freshness is proven.
+This response remains Jimmy-owned authored evidence, preserved as a separate
+file and intended for root review/commit, not an instruction to run live input.
+
+**20:39 EST peer follow-up:** Root independently redecoded broader retained
+module snapshots for two exact-build historical game epochs and verified
+source-selector DWORD `0x2F57918=46`, SELF selector slot46 missing, direct
+component/backlink ownership and branch guards `+0x100=0/+0x108=0`.
+A deeper bounded provenance audit independently admitted **49/49** exact
+entity-pointer-selected position-component captures across **seven** historical
+process epochs, with both branch guards zero; Jimmy's original **26/26**
+single-chunk cohort remains a correct subset. Some valid reports contain two
+chunks, including health first/position second: the audit resolves the position
+by selector/component-pointer/backlink instead of assuming array order.
+Workbridge receipt `rr2-peer-guard-cohort-pointer-selected-chunk-20261108-01`
+passed exit0 with no parse/hash/provenance error. These two explicit
+`0x6996C0` cache-update groups are ineligible for
+those historical rows, but other engine writers and current live branch state
+remain unresolved. Jimmy's independent report is still evolving; do not stage
+or overwrite it until a stabilized SHA has been separately reviewed.
+
 **Next independent Jimmy lane if available (read-only):** Trace the
 branch-admitted writers of primary cached component XYZ `+0x48..+0x50`
 and secondary `+0x88..+0x90` on the exact current build, distinguish

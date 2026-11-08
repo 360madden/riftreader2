@@ -1,5 +1,48 @@
 # Current status
 
+**20:33 EST NOVEMBER 7 — XYZ MULTI-SOURCE AND FAST-TRANSPORT SOURCE CHECKPOINT:**
+The exact-current-build native location, optional zone, selected-target pair,
+raw orientation and offline reference-correlation commands/helpers are now
+implemented or registered in source. The persistent guest `native-xyz` and
+host `/api/native-xyz` routes reuse existing identity/authentication and the
+native-read/action interlock; this is a **bounded one-shot candidate route**,
+not deployed continuous telemetry. Final full Release .NET suite
+**681/681 PASS**, after one unrelated pre-existing allocation-sensitive scanner
+test failed intermittently (isolated1/1 and full retry681/681 both passed).
+Python XYZ-family discovery **197 run, 195 passed, 2 skipped**, exit0;
+focused fast-host 48/48 and guest dispatch/read-lane 32/32 passed synthetically.
+The separately SHA-pinned BE2529... reader and earlier Lab1 receipts remain
+unchanged; newly wired commands/agent endpoints have NOT been published to or
+measured in a VM. Native-xyz zone is unavailable; ≥3s response is rejected
+AFTER a blocking call, not actually canceled at3s. Guest/host clock tolerance
+is ±5s, not measured synchronization. This current route is not qualified for
+sustained sampling, locomotion feedback or restart durability.
+A separate **HOST-ONLY** .NET10 single-file candidate release now exists at
+`artifacts/native-xyz-location-pair-20261107/publish/RiftReader2.Live.exe`,
+SHA256 `73AAA4AF4BE94F5D1A7BA60F0601972E3EEA9B32202B902B6FE0C46106AB2CA7`
+(117815136 bytes), with successful `--help` smoke. It has NOT been copied to
+any guest or swapped into the running fleet; the prior BE2529... pinned reader
+remains the only newly accepted live Lab1 native XYZ binary.
+Greeting Jimmy independently extended
+`docs/xyz-jimmy-findings-2026-11-07-anchor-review-a086.md`: exact-build
+0x6996C0 static cache-writer branches require a *different* source selector
+metadata RVA `0x2F57918`. Retained Lab1 roots omit that RVA; no fresh
+branch admission, actual writer execution or API-quiet window is established.
+Do not treat conditional source+0xF8 as a universal player-world owner.
+A new bounded read-only refresh-branch candidate reader now returns explicit
+handle-branch unavailable, flag-source candidate, or guard-ineligible status,
+without invoking native getters or claiming actual writer execution; 13
+focused synthetic tests passed.
+Greeting Jimmy and independent root peer checks now show two-lab historical
+source-selector index46 with SELF slot46 absent; all known conditional
+`0x6996C0` XYZ-writer branches are guard-ineligible in a rigorously checked
+**49/49 pointer-selected position-component captures across seven historical
+game epochs** (the narrower Jimmy original single-chunk subset was26/26).
+The independent audit resolves the correct position chunk by entity selector,
+component table and pointer even in multi-chunk reports; no parse/hash/backlink
+errors or nonzero branch guards were found. These historical receipts do
+not prove current runtime guards or absence of other engine writers.
+
 **20:22 EST NOVEMBER 7 — CURRENT-BUILD XYZ TRACK WITH UNIT IDENTITY LIVE:**
 [Operator guide](reference/current-native-xyz-tracking.md) and
 [Greeting Jimmy shared coordination packet](handoff-2026-11-07-xyz-greeting-jimmy.md).

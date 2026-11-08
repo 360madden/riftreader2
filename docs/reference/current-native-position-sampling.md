@@ -23,13 +23,17 @@ the in-game chat. VM authentication uses the existing per-lab cached credentials
 
 The script verifies the exact published host executable at:
 
-`artifacts/native-current-sampler-20261105/publish/RiftReader2.Live.exe`
+`artifacts/native-xyz-unit-20261107/publish/RiftReader2.Live.exe`
 
 with pinned SHA-256
-`B8A725E6A9CE663C36CB836681ED660261B07FDA4118A0167262E92131B2373E`.
+`BE252929D846AA0BB696D003116AB9D8ACAA23E5D411D68F913A92CD08919A5E`
+(117,757,792 bytes). The previous `B8A725E6...` published executable at
+`artifacts/native-current-sampler-20261105/publish/RiftReader2.Live.exe`
+remains intact as historical evidence and a rollback artifact; it is not the
+current host pin.
 
 It reuses a **hash-checked, content-addressed** copy in the individual guest's
-`settings.guestRoot\current-native-B8A725E6A9CE663C\` directory, or copies
+`settings.guestRoot\current-native-BE252929D846AA0B\` directory, or copies
 the host binary once if absent. A mismatched existing executable refuses the
 run without overwriting the guest file. Every run gets a separate unique,
 non-overwriting guest report and host artifact directory:
@@ -62,7 +66,24 @@ observation. These metrics describe acquisition only. A true cadence flag
 **does not** establish current player position semantics, no-input provenance, movement responsiveness,
 uninterrupted 480-second Lua freshness, or restored autonomous waypoint control.
 
-Known validations:
+## Current pinned-reader observations
+
+The current reader and host validator require a lossless anchored unit key and
+matching unit ID on every sample; missing, malformed or changed sampled keys
+fail closed. Equal keys do not establish uninterrupted ownership or that the
+cached coordinates refreshed. Lab1 read-only **5/5** and **30/30** runs saw
+the same unit `u035400012FA2D678` and unchanged XYZ. The 5-sample run spanned
+2.108 seconds with maximum start gap 533.3391 ms; its receipt at
+`artifacts/native-current-sampler-20261105/runs/lab1/7d5b868c40664a0cb95e2c6ce0892cfb/samples.json`
+has SHA-256 `FC9DC02D1692BECA28ACF9F7F7A8B492D2AEC04A23FB87CC4CFF4495A4009772`.
+The 30-sample run spanned 19.3873 seconds, maximum start gap 778.9411 ms and
+maximum read 375.6047 ms; its receipt at
+`artifacts/native-current-sampler-20261105/runs/lab1/d2d11975e54b41bf9155a90269c6703b/samples.json`
+has SHA-256 `254A4E86B80612A22957B46AE2E162FF9FA776779253115861B3AD2818B4E4AD`.
+These were candidate acquisition checks, not changed-state, passive-freshness
+or full-game-restart qualification. See [tracking details](current-native-xyz-tracking.md).
+
+## Historical B8 reader validations
 
 - Eight current-build C# synthetic tests and the complete 209-test
   `RiftReader2.Live.Tests` suite passed on .NET SDK `10.0.302`.
