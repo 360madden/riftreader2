@@ -58,6 +58,36 @@ placeholders. Replace both digests with the real 64-character values:
 }
 ```
 
+## Import from a retained scoped receipt
+
+The importer creates one new offline catalog directly from a historical raw
+receiver receipt. It checks the stored reader nonce, matching scoped sequence
+and epoch, completed scan, selected `fresh-scoped` addon XYZ, finite coordinates,
+source build hash, and UTC capture time. It binds the **SHA-256 of the exact raw
+receipt bytes** to the saved anchor. A historical fresh label is not current
+player location or permission to move.
+
+From PowerShell in `C:\work\riftreader2`:
+
+```powershell
+C:\Python314\python.exe -B scripts\navigation_anchor_capture.py --receipt artifacts\receiver-migrations\lab1-strict480-observer-d\raw\initial-receipt.json --id Lab1_Old_Reference --label "Lab 1 historical reference" --output-catalog artifacts\receiver-migrations\lab1-strict480-observer-d\anchors.json
+```
+
+Omit `--output-catalog` to inspect the JSON result without creating anything.
+The output path must not exist: the importer **never overwrites or merges** a
+catalog. This retained sample is old reference evidence, not a current-game fix.
+A saved anchor can be passed via `--anchor-id` and `--catalog` to the existing
+offline `plan_steered_waypoint.py next` command using a separately measured W
+calibration from the same executable build. That planner does not emit a live
+runner command for a saved anchor. Live movement requires new position feedback,
+world compatibility, fresh session admission, and reviewed controls.
+
+Focused importer tests:
+
+```powershell
+C:\Python314\python.exe -B -m unittest discover -s tests -p test_navigation_anchor_capture.py -v
+```
+
 ## Resolve by name
 
 ```powershell
