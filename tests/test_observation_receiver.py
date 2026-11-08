@@ -37,8 +37,29 @@ class ReceiverTests(unittest.TestCase):
             self.assertEqual(receipt['observation'], observation)
             self.assertFalse(receipt['gameReady'])
             self.assertEqual(receipt['sourceAddress'], '127.0.0.1')
+            journal = receiver.journal_receipt_path(folder, observation['instanceId'], 1)
+            self.assertTrue(journal.is_file())
+            self.assertEqual(json.loads(journal.read_text()), receipt)
+            first_bytes = journal.read_bytes()
             self.assertEqual(post(config['token'], observation), 400)
-            self.assertEqual(receiver.ObservationStore(folder).last[observation['instanceId']], 1)
+            self.assertEqual(journal.read_bytes(), first_bytes)
+            next_observation = {**observation, 'sequence': 2}
+            self.assertEqual(post(config['token'], next_observation), 200)
+            self.assertEqual(json.loads(
+                receiver.journal_receipt_path(folder, observation['instanceId'], 2).read_text()
+            )['observation'], next_observation)
+            self.assertEqual(journal.read_bytes(), first_bytes)
+            self.assertEqual(receiver.ObservationStore(folder).last[observation['instanceId']], 2)
+
+    def test_journal_sequence_overflow_fails_without_advancing(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store = receiver.ObservationStore(folder)
+            with self.assertRaisesRegex(ValueError, 'invalid-journal-key'):
+                store.accept({'schemaVersion': 1, 'instanceId': 'a' * 32,
+                              'sequence': receiver.MAX_JOURNAL_SEQUENCE + 1}, '127.0.0.1')
+            self.assertEqual(store.last, {})
+            self.assertFalse((Path(folder) / 'sequence-history.json').exists())
+            self.assertFalse((Path(folder) / 'latest.json').exists())
 
     def test_config_rejects_public_wildcard_and_broad_subnet(self):
         config = {'bindAddress': '192.168.56.1', 'guestSubnet': '192.168.56.0/24', 'port': 49813, 'token': 'x' * 32}

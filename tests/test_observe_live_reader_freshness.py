@@ -145,6 +145,85 @@ class ObserverTests(unittest.TestCase):
             except observer.ObserverError:
                 return None, target
 
+    def test_journal_drains_stale_and_repeated_frames_without_skipping_delivery(self):
+        clock = SimulatedClock(step=1)
+        original = b"initial-journal-receipt"
+        initial = FakeSample(101, captured_at_utc=NOW)
+        initial.outer_sequence = 101
+        initial.raw_receipt_sha256 = hashlib.sha256(original).hexdigest()
+        journal_initial = {'observation': {'sequence': 101},
+                           'receivedMonotonicNs': 101_000_000_000}
+
+        def journal_next(_pin, sequence):
+            if sequence > 101 + clock.elapsed:
+                return None
+            at = (NOW + timedelta(seconds=sequence - 101)).isoformat()
+            envelope = {'observation': {'sequence': sequence},
+                        'receivedAtUtc': at,
+                        'receivedMonotonicNs': sequence * 1_000_000_000}
+            raw = json.dumps(envelope).encode()
+            return (None if sequence == 102 else envelope), raw, {}
+
+        def sample(_pin, receipt, _raw, _directory, _label):
+            outer = receipt['observation']['sequence']
+            result = FakeSample(outer, captured_at_utc=NOW + timedelta(seconds=outer - 101))
+            result.outer_sequence = outer
+            return result
+
+        target = Path(self.temp.name) / 'journal-evidence'
+        with patch.object(observer, '_journal_record',
+                          return_value=(journal_initial, original, {})), \
+             patch.object(observer, '_journal_next', side_effect=journal_next), \
+             patch.object(observer.feedback, '_validate_next',
+                          side_effect=lambda _, receipt: (
+                              'wait' if receipt['observation']['sequence'] == 104 else 'accept')), \
+             patch.object(observer.feedback, '_sample_from_receipt', side_effect=sample):
+            result = observer.observe(
+                self.pin, self.summary, target, clock=clock.mono,
+                now=clock.now, sleep=clock.sleep,
+                feedback_factory=lambda _p, _d: SimpleNamespace(
+                    wait_initial=lambda timeout_seconds: initial))
+        self.assertEqual(result['status'], 'passed')
+        self.assertTrue(result['journalBacked'])
+        self.assertEqual(result['sourceQualification'], 'observer-side-480s-journal')
+        self.assertEqual([e['outerSequence'] for e in result['skippedReceipts']], [102, 104])
+        self.assertEqual([e['reason'] for e in result['skippedReceipts']],
+                         ['source-not-qualified', 'selected-source-not-advanced'])
+        for skipped in result['skippedReceipts']:
+            self.assertEqual(
+                hashlib.sha256(Path(skipped['rawReceiptPath']).read_bytes()).hexdigest(),
+                skipped['rawReceiptSha256'])
+        self.assertGreaterEqual(result['observedSeconds'], 480)
+        self.assertEqual(result['maximumReceiptGapSeconds'], 1)
+        self.assertEqual(result['maximumAcceptanceGapSeconds'], 2)
+        rows = [json.loads(line) for line in (target / 'samples.jsonl').read_text().splitlines()]
+        self.assertEqual([row['sample']['outerSequence'] for row in rows[:3]], [101, 103, 105])
+        self.assertEqual(rows[-1]['elapsedSeconds'], result['observedSeconds'])
+
+    def test_journal_missing_contiguous_receipt_fails_closed(self):
+        clock = SimulatedClock(step=1)
+        original = b"initial-journal-receipt"
+        initial = FakeSample(101, captured_at_utc=NOW)
+        initial.outer_sequence = 101
+        initial.raw_receipt_sha256 = hashlib.sha256(original).hexdigest()
+        target = Path(self.temp.name) / 'missing-journal-evidence'
+        with patch.object(observer, '_journal_record', return_value=(
+                {'observation': {'sequence': 101},
+                 'receivedMonotonicNs': 101_000_000_000}, original, {})), \
+             patch.object(observer, '_journal_next',
+                          side_effect=observer.console.Blocked(
+                              'journal-contiguous-receipt-missing')):
+            with self.assertRaisesRegex(observer.console.Blocked,
+                                        'journal-contiguous-receipt-missing'):
+                observer.observe(
+                    self.pin, self.summary, target, clock=clock.mono,
+                    now=clock.now, sleep=clock.sleep,
+                    feedback_factory=lambda _p, _d: SimpleNamespace(
+                        wait_initial=lambda timeout_seconds: initial))
+        summary = json.loads((target / 'summary.json').read_text())
+        self.assertEqual(summary['status'], 'failed')
+        self.assertEqual(summary['acceptedSamples'], 1)
+
     def test_full_480_seconds_requires_advancing_observations(self):
         result, target = self.observe_fake()
         self.assertEqual(result["status"], "passed")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import ipaddress
@@ -40,6 +41,38 @@ def atomic_json(path, value):
             os.unlink(name)
 
 
+MAX_JOURNAL_SEQUENCE = 8192  # Preserve evidence, reject overflow instead of pruning an active run.
+
+
+def journal_receipt_path(root, instance, sequence):
+    """Deterministic safe name for exactly one received outer sequence."""
+    if (not isinstance(instance, str) or not 16 <= len(instance) <= 64
+            or type(sequence) is not int or not 1 <= sequence <= MAX_JOURNAL_SEQUENCE):
+        raise ValueError('invalid-journal-key')
+    bucket = hashlib.sha256(instance.encode('utf-8')).hexdigest()
+    return Path(root) / 'journal' / bucket / f'{sequence:08d}.json'
+
+
+def atomic_new_json(path, value):
+    """A complete receipt becomes visible atomically, without replacement."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.is_symlink() or path.parent.parent.is_symlink():
+        raise ValueError('journal-reparse')
+    fd, name = tempfile.mkstemp(dir=path.parent, prefix='.journal-', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(value, stream, separators=(',', ':'), allow_nan=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+        try:
+            os.link(name, path)  # Same-volume atomic no-replace on NTFS.
+        except FileExistsError as error:
+            raise ValueError('journal-duplicate-receipt') from error
+    finally:
+        if os.path.exists(name):
+            os.unlink(name)
+
+
 class ObservationStore:
     def __init__(self, root):
         self.root = Path(root)
@@ -67,6 +100,7 @@ class ObservationStore:
                     'receivedMonotonicNs': time.monotonic_ns(), 'sourceAddress': source,
                     'observation': value, 'gameReady': False,
                     'note': 'Delivery only; evaluate target, freshness and game state separately.'}
+        atomic_new_json(journal_receipt_path(self.root, instance, sequence), envelope)
         atomic_json(self.root / 'sequence-history.json', next_history)
         self.last = next_history
         atomic_json(self.root / 'latest.json', envelope)

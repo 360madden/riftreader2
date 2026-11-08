@@ -34,11 +34,13 @@ class ReplayTests(unittest.TestCase):
         self.reader = {'status': 'reader-running-postflight-verified', 'vmIdentityStable': True, 'inputSent': False, 'lab': 'lab1', 'nonce': '0123456789abcdef0123456789abcdef', 'readerPid': 1, 'readerStartUtcTicks': '2',
                        'readerSha256': 'a' * 64, 'gamePid': 3, 'gameStartUtcTicks': '4',
                        'gameSha256': 'b' * 64, 'receiver': {'pid': 5, 'processStartUtcTicks': 6}, 'expiresAtUtc': self.expiry}
-        self.summary = {'schemaVersion': 1, 'status': 'passed', 'reason': None, 'sourceQualification': 'observer-side-480s',
+        self.summary = {'schemaVersion': 1, 'status': 'passed', 'reason': None, 'sourceQualification': 'observer-side-480s-journal', 'journalBacked': True, 'skippedReceipts': [],
                         'observerSideNoInputOnly': True, 'acceptedSamples': 121, 'transientUnavailableReads': 0,
                         'durationRequiredSeconds': 480, 'expiryMarginSeconds': 45, 'maxAllowedGapSeconds': 4.5,
                         'expiresAtUtc': self.expiry, 'lab': 'lab1', 'readerNonce': '0123456789abcdef0123456789abcdef', 'readerPid': 1, 'gamePid': 3,
-                        'observedSeconds': 480, 'maximumGapSeconds': 4, 'maximumAcceptanceGapSeconds': 4, 'maximumCaptureGapSeconds': 4}
+                        'observedSeconds': 480, 'observerWallSeconds': 480, 'maximumGapSeconds': 4,
+                         'maximumAcceptanceGapSeconds': 4, 'maximumCaptureGapSeconds': 4,
+                         'maximumReceiptGapSeconds': 4}
         self.rows = []
         for i in range(121):
             at = (self.start + timedelta(seconds=i * 4)).isoformat()
@@ -157,6 +159,45 @@ class ReplayTests(unittest.TestCase):
                 obj['schemaVersion'] = 1
             self.edit_raw(1, restore)
 
+    def test_journal_skipped_delivery_is_hash_verified_and_contiguous(self):
+        for index in range(1, len(self.rows)):
+            self.rows[index]['sample']['outerSequence'] += 1
+            self.edit_raw(index, lambda raw: raw['observation'].update(
+                sequence=raw['observation']['sequence'] + 1))
+        initial = json.loads(Path(self.rows[0]['sample']['rawReceiptPath']).read_text())
+        stamped = (self.start + timedelta(seconds=2)).isoformat()
+        initial['observation']['sequence'] = 2
+        initial['observation']['capturedAtUtc'] = stamped
+        initial['observation']['fastObservation']['freshnessStatus'] = 'stale-scoped'
+        initial['receivedAtUtc'] = stamped
+        initial['receivedMonotonicNs'] = 2_000_000_000
+        path = self.run / 'raw' / 'skipped.json'
+        data = json.dumps(initial).encode()
+        path.write_bytes(data)
+        skipped = {'outerSequence': 2, 'rawReceiptPath': str(path),
+                   'rawReceiptSha256': digest(data),
+                   'receivedAtUtc': stamped, 'receivedMonotonicNs': 2_000_000_000,
+                   'reason': 'source-not-qualified'}
+        self.summary['skippedReceipts'] = [skipped]
+        self.assertEqual(self.check()['status'], 'consistent-recorded-output')
+        self.edit_raw_skip(path, skipped, lambda raw: raw['observation']['target'].update(processId=999))
+        with self.assertRaisesRegex(Invalid, 'journal-skipped-identity'):
+            self.check()
+        self.edit_raw_skip(path, skipped, lambda raw: raw['observation']['target'].update(processId=3))
+        self.assertEqual(self.check()['status'], 'consistent-recorded-output')
+        self.summary['skippedReceipts'] = []
+        path.unlink()
+        with self.assertRaisesRegex(Invalid, 'journal-contiguous-receipt-gap'):
+            self.check()
+
+    @staticmethod
+    def edit_raw_skip(path, entry, update):
+        raw = json.loads(path.read_text())
+        update(raw)
+        data = json.dumps(raw).encode()
+        path.write_bytes(data)
+        entry['rawReceiptSha256'] = digest(data)
+
     def test_middle_expired_and_backwards_receipt(self):
         at = (self.start + timedelta(seconds=900)).isoformat()
         self.edit_raw(1, lambda raw: raw.update(receivedAtUtc=at))
@@ -208,6 +249,7 @@ class RealReplayTests(unittest.TestCase):
         reader = BASE / 'lab1-sustained-reader-c' / 'summary.json'
         if not all(path.exists() for path in (run, pin, reader)):
             self.skipTest('local ignored evidence unavailable')
-        result = verify(run, pin, reader)
-        self.assertEqual(result['samples'], 515)
-        self.assertEqual(result['scopes'], {'candidate-regions': 472, 'whole-readable-private': 43})
+        # Historical latest.json polling evidence was genuine, but did not
+        # include the new complete receiver journal. It cannot be upgraded.
+        with self.assertRaisesRegex(Invalid, 'not-passed'):
+            verify(run, pin, reader)

@@ -1,6 +1,6 @@
 """Bounded no-input freshness observer for one exact RIFT live-reader epoch.
 
-This tool only reads the pinned receiver receipt and writes evidence. It never
+This tool reads the pinned live receipt and its immutable per-sequence journal. It never
 starts a reader, controls a VM, sends game input or promotes stale reader data.
 """
 from __future__ import annotations
@@ -24,6 +24,7 @@ for search in (ROOT, ROOT / "scripts"):
 from scripts import addon_command_console as console
 from scripts import build_live_source_pin as builder
 from scripts import movement_feedback as feedback
+from scripts import observation_receiver as receiver_journal
 
 
 class ObserverError(ValueError):
@@ -109,6 +110,75 @@ def _planar_distance(first, current) -> float:
                       current.xyz[2] - first.xyz[2])
 
 
+def _journal_record(pin: dict, outer_sequence: int) -> tuple[dict, bytes, dict]:
+    """Replay one immutable receiver-stamped delivery at its own receipt time.
+
+    This historical source-gate replay is exclusively for offline observation.
+    Movement control and fresh readiness must still use current-time validation.
+    """
+    console._validate_receiver_host(pin["receiver"])
+    root = Path(pin["receiptPath"]).parent
+    try:
+        path = receiver_journal.journal_receipt_path(
+            root, pin["reader"]["instanceId"], outer_sequence)
+    except ValueError as error:
+        raise ObserverError("journal-sequence-out-of-bounds") from error
+    require(not path.parent.is_symlink() and not path.parent.parent.is_symlink(),
+            "journal-reparse")
+    raw = console._read_regular(
+        path, console._live_gate.MAX_RECEIPT_BYTES, "journal-contiguous-receipt-missing")
+    envelope = console._strict_json_bytes(raw, "journal-invalid-receipt")
+    receiver_ns = envelope.get("receivedMonotonicNs")
+    require(type(receiver_ns) is int and receiver_ns > 0, "journal-invalid-receiver-clock")
+    receiver_utc = console._parse_time(envelope.get("receivedAtUtc"))
+    observation = envelope.get("observation")
+    require(isinstance(observation, dict)
+            and envelope.get("receiverInstance") == pin["receiver"]["instanceId"]
+            and envelope.get("sourceAddress") == pin["reader"]["sourceAddress"]
+            and observation.get("instanceId") == pin["reader"]["instanceId"]
+            and observation.get("nonce") == pin["reader"]["nonce"],
+            "journal-receipt-identity-mismatch")
+    require(observation.get("sequence") == outer_sequence,
+            "journal-receipt-sequence-mismatch")
+    try:
+        return feedback._validate_movement_receipt_bytes(
+            pin, raw, now_monotonic_ns=receiver_ns, now_utc=receiver_utc)
+    except console.Blocked as error:
+        if str(error) != "live-receipt-not-fresh":
+            raise
+        # A delivered heartbeat must advance the journal cursor, but cannot
+        # become a qualified navigation/feedback sample.
+        return None, raw, {}
+
+
+def _journal_next(pin: dict, outer_sequence: int) -> tuple[dict, bytes, dict] | None:
+    """Observe the live watermark, then drain each published sequence in order."""
+    console._validate_receiver_host(pin["receiver"])
+    live = console._read_regular(
+        Path(pin["receiptPath"]), console._live_gate.MAX_RECEIPT_BYTES,
+        "live-receipt-unavailable")
+    watermark = console._strict_json_bytes(live, "journal-invalid-watermark")
+    observation = watermark.get("observation")
+    require(isinstance(observation, dict)
+            and watermark.get("receiverInstance") == pin["receiver"]["instanceId"]
+            and watermark.get("sourceAddress") == pin["reader"]["sourceAddress"]
+            and observation.get("instanceId") == pin["reader"]["instanceId"]
+            and observation.get("nonce") == pin["reader"]["nonce"],
+            "journal-watermark-identity-changed")
+    delivered = observation.get("sequence")
+    receiver_ns = watermark.get("receivedMonotonicNs")
+    require(type(delivered) is int and delivered >= 1,
+            "journal-invalid-watermark-sequence")
+    require(type(receiver_ns) is int and receiver_ns > 0,
+            "journal-invalid-watermark-clock")
+    receipt_age_ns = time.monotonic_ns() - receiver_ns
+    require(0 <= receipt_age_ns < 4_500_000_000,
+            "journal-live-delivery-stale")
+    if delivered < outer_sequence:
+        return None
+    return _journal_record(pin, outer_sequence)
+
+
 def observe(pin: dict, summary: dict, output_dir: Path, *,
             duration_seconds: float = 480, expiry_margin_seconds: float = 45,
             max_gap_seconds: float = 4.5, max_planar_drift: float = .05,
@@ -126,20 +196,33 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
     evidence_dir = output_dir / "raw"
     maker = feedback_factory or (lambda value, dest: feedback.PinnedFeedback(value, dest))
     read_receipt = receipt_reader or feedback._movement_receipt
+    journal_backed = receipt_reader is None
     result = {"schemaVersion": 1, "status": "failed", "reason": "interrupted",
-              "observerSideNoInputOnly": True, "lab": pin["lab"],
+              "observerSideNoInputOnly": True, "journalBacked": journal_backed, "lab": pin["lab"],
               "readerNonce": pin["reader"]["nonce"], "readerPid": pin["reader"]["processId"],
               "gamePid": pin["gameIdentity"]["processId"], "expiresAtUtc": expiry.isoformat(),
               "durationRequiredSeconds": duration_seconds, "expiryMarginSeconds": expiry_margin_seconds,
               "maxAllowedGapSeconds": max_gap_seconds, "acceptedSamples": 0,
               "transientUnavailableReads": 0, "transientNotFreshReads": 0,
-              "unadvancedReceiptReads": 0, "receiptPollAttempts": 0}
+              "unadvancedReceiptReads": 0, "receiptPollAttempts": 0,
+               "skippedReceipts": []}
     poll_window = {"attempts": 0, "unavailable": 0, "notFresh": 0, "unadvanced": 0}
     ledger_path = output_dir / "samples.jsonl"
     try:
         initial = maker(pin, evidence_dir).wait_initial(timeout_seconds=4.5)
+        initial_receiver_ns = None
+        if journal_backed:
+            journal_initial, journal_bytes, _ = _journal_record(pin, initial.outer_sequence)
+            require(hashlib.sha256(journal_bytes).hexdigest() == initial.raw_receipt_sha256
+                    and journal_initial["observation"]["sequence"] == initial.outer_sequence,
+                    "journal-initial-receipt-mismatch")
+            initial_receiver_ns = journal_initial["receivedMonotonicNs"]
         started, last = clock(), clock()
         previous = initial
+        previous_receiver_ns = initial_receiver_ns
+        previous_delivery_ns = initial_receiver_ns
+        previous_delivered_outer = initial.outer_sequence if journal_backed else 0
+        maximum_receipt_gap = 0.0
         maximum_gap = 0.0
         maximum_capture_gap = 0.0
         with ledger_path.open("x", encoding="utf-8", newline="\n") as ledger:
@@ -153,13 +236,17 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
             record(initial, 0.0)
             while True:
                 current = clock()
-                require(current - last < max_gap_seconds, "observation-gap-exceeded")
+                if not journal_backed:
+                    require(current - last < max_gap_seconds, "observation-gap-exceeded")
                 require(expiry > now() + timedelta(seconds=expiry_margin_seconds),
                         "reader-expiry-margin-exceeded")
                 result["receiptPollAttempts"] += 1
                 poll_window["attempts"] += 1
+                advancement = "wait"
+                delivered = None
                 try:
-                    receipt, raw, _ = read_receipt(pin, initial=False)
+                    delivered = (_journal_next(pin, previous_delivered_outer + 1)
+                                 if journal_backed else read_receipt(pin, initial=False))
                 except console.Blocked as error:
                     reason = str(error)
                     if reason == "live-receipt-unavailable":
@@ -171,14 +258,50 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
                     else:
                         raise
                 else:
-                    advancement = feedback._validate_next(previous, receipt)
+                    receipt, raw, _ = delivered if delivered is not None else (None, None, None)
+                    envelope = (receipt if receipt is not None
+                                else console._strict_json_bytes(raw, "journal-invalid-receipt")
+                                if raw is not None else None)
+                    if journal_backed and envelope is not None:
+                        delivered_outer = envelope["observation"]["sequence"]
+                        require(delivered_outer == previous_delivered_outer + 1,
+                                "journal-contiguous-sequence-required")
+                        receiver_ns = envelope["receivedMonotonicNs"]
+                        receipt_gap = (receiver_ns - previous_delivery_ns) / 1e9
+                        require(0 < receipt_gap < max_gap_seconds,
+                                "journal-receipt-time-gap-exceeded")
+                        maximum_receipt_gap = max(maximum_receipt_gap, receipt_gap)
+                        previous_delivered_outer, previous_delivery_ns = delivered_outer, receiver_ns
+                    advancement = (feedback._validate_next(previous, receipt)
+                                   if receipt is not None else "wait")
                     if advancement != "accept":
                         result["unadvancedReceiptReads"] += 1
                         poll_window["unadvanced"] += 1
+                        if journal_backed and raw is not None:
+                            label = f"observer-skipped-{previous_delivered_outer:05d}"
+                            path, digest = feedback._write_receipt(evidence_dir, label, raw)
+                            result["skippedReceipts"].append({
+                                "outerSequence": previous_delivered_outer,
+                                "rawReceiptPath": str(path.resolve()),
+                                "rawReceiptSha256": digest,
+                                "receivedAtUtc": envelope["receivedAtUtc"],
+                                "receivedMonotonicNs": envelope["receivedMonotonicNs"],
+                                "reason": ("source-not-qualified" if receipt is None
+                                           else "selected-source-not-advanced")})
                     if advancement == "accept":
                         current = clock()
-                        gap = current - last
-                        require(0 <= gap < max_gap_seconds, "observation-gap-exceeded")
+                        if journal_backed:
+                            require(receipt["observation"]["sequence"] == previous_delivered_outer,
+                                    "journal-contiguous-sequence-required")
+                            receiver_ns = receipt["receivedMonotonicNs"]
+                            gap = (receiver_ns - previous_receiver_ns) / 1e9
+                            require(0 < gap < max_gap_seconds,
+                                    "journal-receipt-time-gap-exceeded")
+                            elapsed = (receiver_ns - initial_receiver_ns) / 1e9
+                        else:
+                            gap = current - last
+                            elapsed = current - started
+                            require(0 <= gap < max_gap_seconds, "observation-gap-exceeded")
                         sample = feedback._sample_from_receipt(
                             pin, receipt, raw, evidence_dir,
                             f"observer-{result['acceptedSamples']:05d}")
@@ -203,21 +326,27 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
                         maximum_gap = max(maximum_gap, gap)
                         maximum_capture_gap = max(maximum_capture_gap, capture_gap)
                         last, previous = current, sample
-                        record(sample, current - started)
+                        if journal_backed:
+                            previous_receiver_ns = receiver_ns
+                        record(sample, elapsed)
                         poll_window = {"attempts": 0, "unavailable": 0, "notFresh": 0, "unadvanced": 0}
-                        if current - started >= duration_seconds:
+                        if current - started >= duration_seconds and elapsed >= duration_seconds:
                             require(expiry > now() + timedelta(seconds=expiry_margin_seconds),
                                     "reader-expiry-margin-exceeded")
                             require(clock() - current < max_gap_seconds,
                                     "observation-processing-gap-exceeded")
                             result.update(status="passed", reason=None,
-                                          observedSeconds=current - started,
+                                          observedSeconds=elapsed if journal_backed else current - started,
+                                           observerWallSeconds=current - started,
                                           maximumGapSeconds=maximum_gap,
                                           maximumCaptureGapSeconds=maximum_capture_gap,
                                           maximumAcceptanceGapSeconds=maximum_gap,
-                                          sourceQualification="observer-side-480s")
+                                          maximumReceiptGapSeconds=maximum_receipt_gap if journal_backed else None,
+                                           sourceQualification=("observer-side-480s-journal"
+                                                                if journal_backed else "observer-side-480s"))
                             break
-                sleep(.2)
+                if not journal_backed or delivered is None:
+                    sleep(.2)
         result["ledgerSha256"] = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
     except (Exception, KeyboardInterrupt) as error:
         result["reason"] = str(error)

@@ -90,7 +90,8 @@ def verify(run, pin_path, reader_path):
             integer(obj[key], 1)
     require(reader['status'] == 'reader-running-postflight-verified' and reader['vmIdentityStable'] is True and reader['inputSent'] is False, 'reader-summary-status')
     require(summary['status'] == 'passed' and summary['reason'] is None and summary['schemaVersion'] == 1
-            and summary['sourceQualification'] == 'observer-side-480s' and summary['observerSideNoInputOnly'] is True, 'not-passed')
+            and summary['sourceQualification'] == 'observer-side-480s-journal' and summary['journalBacked'] is True
+            and summary['observerSideNoInputOnly'] is True, 'not-passed')
     require(hashlib.sha256(ledger).hexdigest() == digest(summary['ledgerSha256']), 'ledger-hash')
     require(number(summary['durationRequiredSeconds']) >= 480 and number(summary['expiryMarginSeconds']) >= 45
             and 0 < number(summary['maxAllowedGapSeconds']) <= 4.5, 'invalid-budgets')
@@ -118,6 +119,7 @@ def verify(run, pin_path, reader_path):
     rows = [parse(line) for line in ledger.splitlines()]
     require(len(rows) == summary['acceptedSamples'] and len(rows) >= 2, 'sample-count')
     require(rows[0]['elapsedSeconds'] == 0 and rows[-1]['elapsedSeconds'] == summary['observedSeconds']
+            and number(summary['observerWallSeconds']) >= summary['durationRequiredSeconds']
             and number(summary['observedSeconds']) >= summary['durationRequiredSeconds'], 'duration')
     raw_dir = (run / 'raw').absolute()
     previous = initial = None
@@ -125,6 +127,7 @@ def verify(run, pin_path, reader_path):
     max_arrival = max_capture = max_drift = 0.0
     scopes = {}
     paths = set()
+    delivery_events = []
     for index, row in enumerate(rows):
         require(type(row['index']) is int and row['index'] == index, 'index')
         elapsed = number(row['elapsedSeconds'])
@@ -149,7 +152,7 @@ def verify(run, pin_path, reader_path):
             utc_gap = (received - previous_received).total_seconds()
             # Receipt age at each acceptance is at most two seconds; its variation
             # can therefore add up to two seconds to the acceptance gap.
-            require(0 < monotonic_gap < summary['maxAllowedGapSeconds'] + 2 and utc_gap > 0, 'receipt-time-gap')
+            require(0 < monotonic_gap < summary['maxAllowedGapSeconds'] and utc_gap > 0, 'receipt-time-gap')
             require(abs(utc_gap - monotonic_gap) <= .250, 'receipt-clock-disagreement')
         require(abs((received_ns - first_ns) / 1e9 - elapsed) <= 2, 'receipt-elapsed-disagreement')
         # Compare elapsed spans, allowing a fixed guest/host clock offset. The
@@ -157,6 +160,7 @@ def verify(run, pin_path, reader_path):
         # 2.25 s transport-age bound plus recorded host-clock disagreement.
         require(abs((received_ns - first_ns) / 1e9 - (capture - first_capture).total_seconds()) <= 4.5, 'capture-span-disagreement')
         previous_ns, previous_received = received_ns, received
+        delivery_events.append((obs['sequence'], received_ns, received, path))
         target = obs['target']
         for value in (s['player'], s['readerInstance'], s['receiverInstance'], s['sourceAddress'], target['executablePath']):
             text(value)
@@ -225,6 +229,63 @@ def verify(run, pin_path, reader_path):
             require(s['outerSequence'] > old['outerSequence'] and s['addonSequence'] > old['addonSequence'] and s['addonClock'] > old['addonClock'], 'advancement')
             max_arrival, max_capture = max(max_arrival, arrival), max(max_capture, capture)
         previous = s, elapsed
+    skipped = summary.get('skippedReceipts')
+    require(isinstance(skipped, list) and len(skipped) <= 8192,
+            'journal-skipped-schema')
+    for event in skipped:
+        require(isinstance(event, dict) and set(event) == {
+            'outerSequence', 'rawReceiptPath', 'rawReceiptSha256',
+            'receivedAtUtc', 'receivedMonotonicNs', 'reason'}, 'journal-skipped-schema')
+        require(event['reason'] in ('source-not-qualified',
+                                    'selected-source-not-advanced'), 'journal-skipped-reason')
+        sequence = integer(event['outerSequence'], 1)
+        path = Path(event['rawReceiptPath']).absolute()
+        require(path.parent == raw_dir and path not in paths,
+                'journal-skipped-raw-path')
+        paths.add(path)
+        data = load_bytes(path, 4 * 1024 * 1024)
+        require(hashlib.sha256(data).hexdigest() == digest(event['rawReceiptSha256']),
+                'journal-skipped-raw-hash')
+        receipt = parse(data)
+        obs = receipt['observation']
+        received = when(receipt['receivedAtUtc'])
+        received_ns = integer(receipt['receivedMonotonicNs'], 1)
+        require(integer(receipt['schemaVersion']) == 1
+                and integer(obs['schemaVersion']) == 1
+                and integer(obs['sequence'], 1) == sequence
+                and obs['instanceId'] == r['instanceId']
+                and obs['nonce'] == r['nonce']
+                and receipt['receiverInstance'] == recv['instanceId']
+                and receipt['sourceAddress'] == r['sourceAddress']
+                and isinstance(obs.get('target'), dict)
+                and all((str(obs['target'].get(key)).lower() == str(g[key]).lower()
+                         if key in ('executablePath', 'executableSha256')
+                         else obs['target'].get(key) == g[key])
+                        for key in ('processId', 'processStartUtcTicks',
+                                    'executablePath', 'executableSha256'))
+                and received == when(event['receivedAtUtc'])
+                and received_ns == integer(event['receivedMonotonicNs'], 1),
+                'journal-skipped-identity')
+        require(expiry > received + timedelta(seconds=summary['expiryMarginSeconds']),
+                'journal-skipped-expiry')
+        delivery_events.append((sequence, received_ns, received, path))
+    delivery_events.sort(key=lambda item: item[0])
+    require(len(delivery_events) == len(rows) + len(skipped)
+            and delivery_events[0][0] == rows[0]['sample']['outerSequence']
+            and delivery_events[-1][0] == rows[-1]['sample']['outerSequence'],
+            'journal-delivery-range')
+    maximum_receipt_gap = 0.0
+    for first, second in zip(delivery_events, delivery_events[1:]):
+        gap = (second[1] - first[1]) / 1e9
+        wall_gap = (second[2] - first[2]).total_seconds()
+        require(second[0] == first[0] + 1 and 0 < gap < summary['maxAllowedGapSeconds'],
+                'journal-contiguous-receipt-gap')
+        require(wall_gap > 0 and abs(wall_gap - gap) <= .250,
+                'journal-receipt-clock-disagreement')
+        maximum_receipt_gap = max(maximum_receipt_gap, gap)
+    require(math.isclose(number(summary['maximumReceiptGapSeconds']),
+                         maximum_receipt_gap, abs_tol=1e-7),
+            'journal-receipt-gap-summary')
     require(set(raw_dir.iterdir()) == paths, 'raw-file-set')
     require(expiry > when(rows[-1]['sample']['receivedAtUtc']) + timedelta(seconds=summary['expiryMarginSeconds']), 'final-expiry')
     for key, value in [('maximumGapSeconds', max_arrival), ('maximumAcceptanceGapSeconds', max_arrival), ('maximumCaptureGapSeconds', max_capture)]:
