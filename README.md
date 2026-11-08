@@ -69,7 +69,8 @@ They feed the **Domain → Application → Infrastructure** core, composed by ei
 |:--|:--:|:--|
 | 📦 Versioned capture validation and offline analysis | 🟢 | Verified inputs, derived movement metrics, gap detection, and reproducible reports |
 | 🧩 Lua addon encoding and .NET contract decoding | 🟢 | Shared fixtures, strict framing, and typed API-reference structures |
-| 🔗 Nonce-bound live addon acquisition | 🔵 | Demonstrated in identified RIFT-Lab sessions; the newer self-contained RR2R1 installed-addon acceptance is still pending |
+| 🔗 Nonce-bound live addon acquisition | 🔵 | Lab 1 and Lab 2 have returned fresh, identity-bound addon-backed HP/XYZ observations; sustained 480-second continuity and movement eligibility remain unverified |
+| 🧬 Standalone RR2R1 typed API reference | 🟡 | Lab 1 loaded-addon validation passed **64/64 advancing RR2R1 comparisons** on November 6; the distinct Lab 2 and physical RR2R1 typed-snapshot acceptance remains pending |
 | 🛰️ Current-build native XYZ acquisition | 🔵 | Build-pinned candidate sampling was exercised in both VMware labs; fresh movement/semantic qualification is separate |
 | 🧮 Memory discovery and field catalog | 🟢 | Read-only snapshots, value/pattern/pointer searches, content-pinned review and status reporting |
 | 📡 Native catalog, player, target and buff retrieval | 🔵 | Repeatable readers have captured ability catalogs/names, player context/stats/XP, selected-target data and raw buff fields; these remain build/session-bound candidates with per-field qualification limits |
