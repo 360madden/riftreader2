@@ -341,9 +341,12 @@ def main(argv=None):
     parser.add_argument("--receipt", required=True, type=Path)
     parser.add_argument("--expected-nonce", required=True)
     parser.add_argument("--expected-receiver")
+    parser.add_argument("--scope", choices=("full", "fast"), default="full",
+                        help="full scan (default) or explicitly fast-scoped candidate snapshot")
     args = parser.parse_args(argv)
     try:
-        result = evaluate_receipt(
+        evaluator = evaluate_fast_observation if args.scope == "fast" else evaluate_receipt
+        result = evaluator(
             load_receipt(args.receipt), args.expected_nonce, args.expected_receiver
         )
     except (GateError, OSError) as error:

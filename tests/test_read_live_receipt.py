@@ -1,8 +1,12 @@
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+from io import StringIO
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "read-live-receipt.py"
@@ -273,6 +277,46 @@ class ReadLiveReceiptTests(unittest.TestCase):
         fast["publishedAtTimestamp"] = 11_600_000
         with self.assertRaisesRegex(gate.GateError, "anchor is expired"):
             self.evaluate_fast(receipt)
+
+
+class ScopeCliTests(unittest.TestCase):
+    def test_default_preserves_the_strict_full_snapshot_gate(self):
+        output = StringIO()
+        full_result = {"status": "fresh", "snapshotOnly": True, "gameReady": False}
+        with mock.patch.object(gate, "load_receipt", return_value=valid_receipt()), \
+             mock.patch.object(gate, "evaluate_receipt", return_value=full_result) as full, \
+             mock.patch.object(gate, "evaluate_fast_observation", side_effect=AssertionError("fast selected")), \
+             redirect_stdout(output):
+            result = gate.main(["--receipt", "unused.json", "--expected-nonce", NONCE])
+        self.assertEqual(0, result)
+        self.assertEqual(full_result, json.loads(output.getvalue()))
+        full.assert_called_once()
+
+    def test_explicit_fast_scope_uses_the_existing_strict_scoped_gate(self):
+        output = StringIO()
+        fast_result = {"status": "fresh-scoped", "scope": "candidate-regions",
+                       "snapshotOnly": True, "gameReady": False}
+        with mock.patch.object(gate, "load_receipt", return_value=valid_fast_receipt()), \
+             mock.patch.object(gate, "evaluate_fast_observation", return_value=fast_result) as fast, \
+             mock.patch.object(gate, "evaluate_receipt", side_effect=AssertionError("full selected")), \
+             redirect_stdout(output):
+            result = gate.main(["--receipt", "unused.json", "--expected-nonce", NONCE,
+                                "--scope", "fast"])
+        self.assertEqual(0, result)
+        self.assertEqual(fast_result, json.loads(output.getvalue()))
+        fast.assert_called_once()
+
+    def test_explicit_fast_rejection_never_falls_back_to_full(self):
+        output = StringIO()
+        with mock.patch.object(gate, "load_receipt", return_value=valid_fast_receipt()), \
+             mock.patch.object(gate, "evaluate_fast_observation",
+                               side_effect=gate.GateError("anchor is expired")), \
+             mock.patch.object(gate, "evaluate_receipt", side_effect=AssertionError("fallback")), \
+             redirect_stdout(output):
+            result = gate.main(["--receipt", "unused.json", "--expected-nonce", NONCE,
+                                "--scope", "fast"])
+        self.assertEqual(2, result)
+        self.assertEqual("not-fresh", json.loads(output.getvalue())["status"])
 
 
 if __name__ == "__main__":
