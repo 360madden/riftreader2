@@ -147,7 +147,8 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
     static void PositionBytes(Fake s, ulong address, ulong entity, float x, float y, float z)
     {
         s.Put(address + 0x10, Q(entity));
-        var raw = new byte[0x110]; Q(entity).CopyTo(raw, 0x10); Xyz(x, y, z).CopyTo(raw, 0x48);
+        var raw = new byte[0x110]; Q(M + 0x26B4FB0).CopyTo(raw, 0);
+        Q(entity).CopyTo(raw, 0x10); Xyz(x, y, z).CopyTo(raw, 0x48);
         s.Put(address, raw); s.Put(address + 0x48, Xyz(x, y, z));
     }
     static byte[] Xyz(float x, float y, float z)
@@ -167,7 +168,7 @@ public sealed class CurrentBuildPairedPositionCandidateReaderTests
         public NativeReadResult Read(ulong a, int n)
         {
             OnRead?.Invoke(a, n);
-            return data.TryGetValue(a, out var b) && b.Length == n ? new("success", b.ToArray(), null, null) : new("unavailable", [], null, null);
+            return data.TryGetValue(a, out var b) && b.Length >= n ? new("success", b.AsSpan(0, n).ToArray(), null, null) : new("unavailable", [], null, null);
         }
         public ValueTask<string?> RevalidateAsync(CancellationToken c) => ValueTask.FromResult<string?>(null);
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

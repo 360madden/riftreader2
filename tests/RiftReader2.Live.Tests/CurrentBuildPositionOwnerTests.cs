@@ -43,10 +43,16 @@ public sealed class CurrentBuildPositionOwnerTests
             var bytes = new byte[length];
             if (address == Component && length == 0x110)
             {
+                BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0), 0x140000000UL + 0x26B4FB0);
                 BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0x10), Entity);
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x48), BitConverter.SingleToInt32Bits(1.5f));
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x4c), BitConverter.SingleToInt32Bits(-2f));
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x50), BitConverter.SingleToInt32Bits(3f));
+                return new("success", bytes, null, null);
+            }
+            if (address == Component && length == 8)
+            {
+                BinaryPrimitives.WriteUInt64LittleEndian(bytes, 0x140000000UL + 0x26B4FB0);
                 return new("success", bytes, null, null);
             }
             if (address == Component + 0x48 && length == 12)

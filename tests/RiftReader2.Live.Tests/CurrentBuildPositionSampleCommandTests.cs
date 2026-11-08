@@ -78,7 +78,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
         });
         Assert.Equal(1, resolutions);
         Assert.Equal(2, verifications);
-        Assert.Equal(3, session.Calls);
+        Assert.Equal(4, session.Calls);
         Assert.Equal(ulong.MaxValue, owned.UnitKey);
         Assert.Equal(new CurrentBuildXyz(7181.80078125f, 820.8821411132812f, 3135.876220703125f), owned.Position);
     }
@@ -128,7 +128,39 @@ public sealed class CurrentBuildPositionSampleCommandTests
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
             _ => new(Key, Entity, Position, () =>
                 session.Set(Position + 0x10, Bytes64(Entity + 8)))));
-        Assert.Equal(3, session.Calls);
+        Assert.Equal(4, session.Calls);
+    }
+
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(ModuleBase + 0x26AFBA0UL)] // Known distinct health-component dispatch pointer.
+    public void OwnedReadRejectsWrongPositionClassEvenWithMatchingOwnerAndXyz(ulong vptr)
+    {
+        var session = Fixture();
+        var raw = session.Get(Position, 0x110);
+        BinaryPrimitives.WriteUInt64LittleEndian(raw.AsSpan(0, 8), vptr);
+        session.Set(Position, raw);
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(Key, Entity, Position, () => { })));
+        Assert.Equal(1, session.Calls);
+    }
+
+    [Fact]
+    public void OwnedReadRejectsPositionClassChangedDuringRecheck()
+    {
+        var session = Fixture();
+        var verified = false;
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(Key, Entity, Position, () =>
+            {
+                if (!verified)
+                {
+                    verified = true;
+                    session.Set(Position, Bytes64(ModuleBase + 0x26AFBA0));
+                }
+            })));
+        Assert.True(verified);
+        Assert.Equal(2, session.Calls);
     }
 
     [Fact]
@@ -293,6 +325,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
         session.Set(Entity, entity);
         session.Set(Components + 16, Bytes64(Position));
         var candidate = new byte[0x110];
+        BinaryPrimitives.WriteUInt64LittleEndian(candidate.AsSpan(0, 8), ModuleBase + 0x26B4FB0);
         BinaryPrimitives.WriteUInt64LittleEndian(candidate.AsSpan(0x10, 8), Entity);
         BinaryPrimitives.WriteInt32LittleEndian(candidate.AsSpan(0x48, 4),
             BitConverter.SingleToInt32Bits(7181.80078125f));
@@ -301,6 +334,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
         BinaryPrimitives.WriteInt32LittleEndian(candidate.AsSpan(0x50, 4),
             BitConverter.SingleToInt32Bits(3135.876220703125f));
         session.Set(Position, candidate);
+        session.Set(Position, candidate.AsSpan(0, 8).ToArray());
         session.Set(Position + 0x48, candidate.AsSpan(0x48, 12).ToArray());
         session.Set(Position + 0x10, candidate.AsSpan(0x10, 8).ToArray());
         return session;
@@ -337,7 +371,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             session.Set(Position, raw);
             var owned = CurrentBuildPositionCandidateReader.ReadOwned(session,
                 _ => new(Key, Entity, Position, () => { }));
-            Assert.Equal(3, session.Calls); // component + XYZ and backlink rechecks
+            Assert.Equal(4, session.Calls); // component + vptr, XYZ and backlink rechecks
             Assert.Equal($"0x{handle:X16}", owned.RefreshHandleHex);
             Assert.Equal(flag, owned.RefreshFlagRaw);
             Assert.Equal(status, owned.RefreshGuardStatus);

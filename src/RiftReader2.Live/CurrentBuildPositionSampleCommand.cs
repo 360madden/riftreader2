@@ -104,7 +104,7 @@ internal static class CurrentBuildPositionSampleCommand
             {
                 "The exact executable and process epoch are pinned; loaded game module bytes are not independently hashed.",
                 "Each sample re-resolves the current-build manager/player/component chain; absolute addresses are never persisted.",
-                "Within-sample ownership and XYZ reads are bracketed, but sequential reads are not atomic and ABA cannot be excluded.",
+                "Within-sample ownership, exact-build position dispatch pointer and XYZ reads are bracketed, but sequential reads are not atomic and ABA cannot be excluded.",
                 "Per-observation unit identity comes from the same anchored lookup; equal sampled keys do not prove uninterrupted owner continuity.",
                 "The cached XYZ component has not been independently proven to be passively refreshed player position.",
                 "Optional +0x100/+0x108 refresh guard bytes come from the same 0x110-byte component read as XYZ; they are not separately reread and do not prove native writer execution.",
@@ -177,6 +177,8 @@ internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong En
 internal static class CurrentBuildPositionCandidateReader
 {
     private const ulong PositionIndexRva = 0x2F588A0;
+    // Historical exact-build position components: 49/49 headers matched this RVA.
+    private const ulong PositionComponentVptrRva = 0x26B4FB0;
 
     internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session) =>
         ReadOwned(session).Position;
@@ -207,6 +209,9 @@ internal static class CurrentBuildPositionCandidateReader
         var entity = CurrentBuildPlayerLookup.Pointer(owner.EntityAddress);
         var component = CurrentBuildPlayerLookup.Pointer(owner.ComponentAddress, 0x110);
         var valueRaw = CurrentBuildPlayerLookup.Exact(session, component, 0x110);
+        var expectedVptr = checked(identity.ModuleBaseAddress + PositionComponentVptrRva);
+        if (BinaryPrimitives.ReadUInt64LittleEndian(valueRaw.AsSpan(0, 8)) != expectedVptr)
+            throw new InvalidDataException("Position component dispatch pointer differs from exact-build position type.");
         if (BinaryPrimitives.ReadUInt64LittleEndian(valueRaw.AsSpan(0x10, 8)) != entity)
             throw new InvalidDataException("Position component entity backlink differs.");
         var xyzBytes = valueRaw.AsSpan(0x48, 12).ToArray();
@@ -217,6 +222,8 @@ internal static class CurrentBuildPositionCandidateReader
 
         owner.VerifyUnchanged();
         if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
+        CurrentBuildPlayerLookup.RequireSame(
+            CurrentBuildPlayerLookup.Exact(session, component, 8), valueRaw.AsSpan(0, 8).ToArray());
         CurrentBuildPlayerLookup.RequireSame(
             CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 12), xyzBytes);
         CurrentBuildPlayerLookup.RequireSame(

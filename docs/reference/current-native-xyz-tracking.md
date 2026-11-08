@@ -68,6 +68,18 @@ Receipt:
   Maximum observed start gap 523.5209 ms and read duration 90.6729 ms are
   acquisition timings, not producer-freshness proof.
 
+## Exact-build position-component type guard (source only)
+
+The native reader now requires the position component's first eight bytes to
+match `moduleBase + 0x26B4FB0` for the pinned executable and rechecks those
+bytes before returning XYZ. This dispatch-pointer candidate matched **49/49**
+historical position-component chunks across seven process epochs; an independent
+health-component negative control matched a *different* pointer, `+0x26AFBA0`.
+See [the source-hashed component review](../handoff-2026-11-08-position-component-vptr-bridge-0651z.md).
+Wrong-class and mid-read header changes fail closed. This is **source and offline
+test validation only**, not evidence that a rebuilt reader is deployed to either
+lab or that cached position is passively fresh or navigation-ready.
+
 ## Reuse and limits
 
 `scripts/xyz_track_reduce.py` is a pure pairwise reducer for explicitly supplied
