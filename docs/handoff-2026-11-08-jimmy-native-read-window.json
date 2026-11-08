@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-shared-repo-jimmy-window-request",
+  "recipient": "Greeting Jimmy",
+  "deliveryAcknowledgment": "not established",
+  "observedUtc": "2026-11-08T05:08:14Z",
+  "labs": [
+    {
+      "lab": "lab1",
+      "vmPid": 31864,
+      "gamePid": 6820,
+      "gameStartUtcTicks": "639296903905448486"
+    },
+    {
+      "lab": "lab2",
+      "vmPid": 32496,
+      "gamePid": 10612,
+      "gameStartUtcTicks": "639296904548843022"
+    }
+  ],
+  "gameSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+  "status": "both connected, ready, disarmed, idle, no sampled inputs down, recovery not required; neither advertised nativeXyzVersion or nativeReadLeaseVersion",
+  "release": {
+    "sourceCommit": "8381932d7f78f2cc2ddfa42389ba8b79eb1e0b62",
+    "directory": "artifacts/host-release-8381932-20261108-unique-001",
+    "exeSha256": "B837BC396C4F0738EB73C48669C028A9539721B3B499CF01416B6AD2E54E51ED",
+    "zipSha256": "AA9BCCF1E73ECBEC7D60E2DB3DB5E5F63DD83724F0E094353FD4213040F61DF0",
+    "descriptor": {
+      "release": "agent-b837bc396c4f",
+      "sha256": "B837BC396C4F0738EB73C48669C028A9539721B3B499CF01416B6AD2E54E51ED"
+    },
+    "guestDeployed": false
+  },
+  "foreignReaderQuiescence": "unconfirmed; explicit bounded exclusive window requested",
+  "futureGates": [
+    "target-specific authorization and exclusive maintenance ownership",
+    "fresh exact identities, clean queue, idle/disarmed and foreign-reader quiescence",
+    "same-VM cached credential check before each login",
+    "verify prior release and rollback descriptor; independently stage and hash immutable guest bytes",
+    "postflight identity, release hash, clean state and both integer v1 capabilities",
+    "uncertain cleanup blocks retry; rollback separately authorized"
+  ],
+  "requestAuthorizesGuestActivity": false
+}
