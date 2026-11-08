@@ -26,7 +26,7 @@ REQUIRED_SUMMARY = {
     "receiver", "vmIdentityStable", "inputSent", "controlAgentStopped",
     "cleanup", "atUtc",
 }
-OPTIONAL_SUMMARY = {"maxScanBytes"}
+OPTIONAL_SUMMARY = {"maxScanBytes", "maxScanSeconds"}
 RECEIVER_FIELDS = {
     "pid", "processStartUtcTicks", "image", "address", "port", "configSha256",
 }
@@ -59,6 +59,11 @@ def validate_reader_summary(summary: dict) -> None:
         if isinstance(value, bool) or not isinstance(value, int) \
                 or not MIN_SCAN_BYTES <= value <= MAX_SCAN_BYTES:
             fail("reader summary maxScanBytes is invalid")
+    if "maxScanSeconds" in summary:
+        value = summary["maxScanSeconds"]
+        if isinstance(value, bool) or not isinstance(value, int) \
+                or not 1 <= value <= 60:
+            fail("reader summary maxScanSeconds is invalid")
 
 
 def build_pin(summary: dict, vm_identity: dict, receipt_path: Path, receipt: dict) -> dict:

@@ -45,7 +45,8 @@ class BuildLiveSourcePinTests(unittest.TestCase):
             receipt_path.write_text(json.dumps(self.receipt()), encoding="utf-8")
             legacy = self.summary(image)
             current = {**legacy, "maxScanBytes": 4 * 1024**3}
-            for summary in (legacy, current):
+            timed = {**current, "maxScanSeconds": 25}
+            for summary in (legacy, current, timed):
                 with self.subTest(fields=set(summary)):
                     pin = builder.build_pin(summary, {"machineName": "RIFT-LAB-2"},
                                             receipt_path, self.receipt())
@@ -59,7 +60,11 @@ class BuildLiveSourcePinTests(unittest.TestCase):
             baseline = self.summary(image)
             cases = ({**baseline, "unexpected": 1},
                      {**baseline, "maxScanBytes": True},
-                     {**baseline, "maxScanBytes": builder.MAX_SCAN_BYTES + 1})
+                     {**baseline, "maxScanBytes": builder.MAX_SCAN_BYTES + 1},
+                     {**baseline, "maxScanSeconds": True},
+                     {**baseline, "maxScanSeconds": 0},
+                     {**baseline, "maxScanSeconds": 61},
+                     {**baseline, "maxScanSeconds": "25"})
             for value in cases:
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     builder.validate_reader_summary(value)
@@ -70,7 +75,8 @@ class BuildLiveSourcePinTests(unittest.TestCase):
             image = root / "receiver.exe"; image.write_bytes(b"receiver")
             summary = root / "summary.json"
             summary.write_text(json.dumps({**self.summary(image),
-                                           "maxScanBytes": 6 * 1024**3}), encoding="utf-8")
+                                           "maxScanBytes": 6 * 1024**3,
+                                           "maxScanSeconds": 25}), encoding="utf-8")
             vm = root / "vm.json"; vm.write_text(json.dumps({"machineName": "RIFT-LAB-1"}))
             receipt = root / "latest.json"; receipt.write_text(json.dumps(self.receipt()))
             output = root / "pin.json"
