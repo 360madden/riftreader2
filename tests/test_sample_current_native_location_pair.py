@@ -94,6 +94,57 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual("null-provider", metrics["zoneStatus"])
         self.assertEqual("unavailable", metrics["worldInstanceStatus"])
 
+    def test_zone_elapsed_absent_or_all_null_is_unmeasured(self):
+        value = location()
+        for fields in ({}, dict(acquisitionElapsedMilliseconds=None,
+                               acquisitionElapsedClock=None, acquisitionElapsedKind=None)):
+            value["observation"]["zone"].update(fields)
+            metrics = self.check(value, "location-context")
+            self.assertFalse(any(key.startswith("zoneAcquisitionElapsed") for key in metrics))
+
+    def test_zone_elapsed_zero_positive_and_large_are_separate_from_wall_clock_gap(self):
+        for elapsed in (0, 0.0, 0.25, 12345.5):
+            value = location()
+            value["observation"]["zone"].update(
+                acquisitionElapsedMilliseconds=elapsed, acquisitionElapsedClock="monotonic-stopwatch",
+                acquisitionElapsedKind="zone-read-including-final-validation")
+            with self.subTest(elapsed=elapsed):
+                metrics = self.check(value, "location-context")
+                self.assertEqual(elapsed, metrics["zoneAcquisitionElapsedMilliseconds"])
+                self.assertEqual("monotonic-stopwatch", metrics["zoneAcquisitionElapsedClock"])
+                self.assertEqual("zone-read-including-final-validation", metrics["zoneAcquisitionElapsedKind"])
+                self.assertEqual(1.0, metrics["crossFieldGapMilliseconds"])
+                self.assertEqual("utc-wall-clock", metrics["crossFieldGapMeasurementClock"])
+                self.assertEqual("unqualified-sequential", metrics["crossFieldTemporalStatus"])
+
+    def test_zone_elapsed_malformed_partial_or_contradictory_is_rejected(self):
+        valid = dict(acquisitionElapsedMilliseconds=0.5, acquisitionElapsedClock="monotonic-stopwatch",
+                     acquisitionElapsedKind="zone-read-including-final-validation")
+        cases = [{**valid, "acquisitionElapsedMilliseconds": bad}
+                 for bad in (None, True, False, -1, -0.1, float("nan"), float("inf"),
+                             float("-inf"), "1", [], {}, 10**1000)]
+        for field in valid:
+            cases.append({key: value for key, value in valid.items() if key != field})
+            cases.append({field: None})
+        cases += [{**valid, "acquisitionElapsedClock": bad} for bad in
+                  (None, "", "utc-wall-clock", True, [], {})]
+        cases += [{**valid, "acquisitionElapsedKind": bad} for bad in
+                  (None, "", "atomic-snapshot", True, [], {})]
+        for fields in cases:
+            value = location()
+            value["observation"]["zone"].update(fields)
+            with self.subTest(fields=fields), self.assertRaisesRegex(ValueError, "location-pair-report-invalid"):
+                self.check(value, "location-context")
+
+    def test_zone_elapsed_does_not_relax_zone_identity_or_status(self):
+        for field, bad in (("selfKey", 456), ("status", "qualified"), ("identity", {})):
+            value = location()
+            value["observation"]["zone"].update(
+                acquisitionElapsedMilliseconds=0, acquisitionElapsedClock="monotonic-stopwatch",
+                acquisitionElapsedKind="zone-read-including-final-validation", **{field: bad})
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                self.check(value, "location-context")
+
     def test_pair_gap_disclosed_or_null_without_target(self):
         pair = self.check(paired(), "paired-position")
         self.assertEqual(1.0, pair["crossFieldGapMilliseconds"])
@@ -361,6 +412,32 @@ class WrapperTests(unittest.TestCase):
             self.assertIn("game-epoch-changed", scripts)
             self.assertNotIn("Stop-Process", scripts)
             self.assertNotIn("Start-Process", scripts)
+
+    def test_location_summary_preserves_optional_zone_elapsed_metrics(self):
+        for elapsed in (None, 0, 12.5):
+            value = location()
+            if elapsed is not None:
+                value["observation"]["zone"].update(
+                    acquisitionElapsedMilliseconds=elapsed, acquisitionElapsedClock="monotonic-stopwatch",
+                    acquisitionElapsedKind="zone-read-including-final-validation")
+            summary, _ = self.run_fake("location-context", result=value)
+            saved = json.loads((Path(summary["sourceReport"]).parent / "summary.json").read_text())
+            self.assertEqual(summary["metrics"], saved["metrics"])
+            self.assertEqual(1.0, saved["metrics"]["crossFieldGapMilliseconds"])
+            self.assertEqual("unqualified", saved["liveReadiness"])
+            if elapsed is None:
+                self.assertNotIn("zoneAcquisitionElapsedMilliseconds", saved["metrics"])
+            else:
+                self.assertEqual(elapsed, saved["metrics"]["zoneAcquisitionElapsedMilliseconds"])
+                self.assertEqual("monotonic-stopwatch", saved["metrics"]["zoneAcquisitionElapsedClock"])
+                self.assertEqual("zone-read-including-final-validation", saved["metrics"]["zoneAcquisitionElapsedKind"])
+
+    def test_malformed_zone_elapsed_does_not_publish_summary(self):
+        value = location()
+        value["observation"]["zone"]["acquisitionElapsedMilliseconds"] = 1
+        with self.assertRaises(ValueError):
+            self.run_fake("location-context", result=value)
+        self.assertFalse(list(self.last_folder.rglob("summary.json")))
 
     def test_guest_binary_is_held_open_and_reparse_checked_through_command(self):
         _, guest = self.run_fake("paired-position")

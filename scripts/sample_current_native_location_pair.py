@@ -176,8 +176,24 @@ def _validate_report(report, *, mode, pid, ticks):
         if zone_interval[0] < position_interval[1]:
             invalid()
         zone_id = zone_candidate(zone)
+        timing_fields = ("acquisitionElapsedMilliseconds", "acquisitionElapsedClock", "acquisitionElapsedKind")
+        timing = {}
+        if any(name in zone for name in timing_fields):
+            if not all(name in zone for name in timing_fields):
+                invalid()
+            elapsed, clock, kind = (zone[name] for name in timing_fields)
+            if any(value is not None for value in (elapsed, clock, kind)):
+                if (type(elapsed) not in (int, float) or not math.isfinite(elapsed) or elapsed < 0
+                        or clock != "monotonic-stopwatch" or kind != "zone-read-including-final-validation"):
+                    invalid()
+                # Independent diagnostic clock/scope: not a UTC gap, atomicity proof or admission threshold.
+                # Excludes lease/session acquisition and command-level revalidation.
+                timing = {"zoneAcquisitionElapsedMilliseconds": elapsed,
+                          "zoneAcquisitionElapsedClock": clock,
+                          "zoneAcquisitionElapsedKind": kind}
         return {"unitKey": key, "unitIdCandidate": row["unitIdCandidate"], "position": xyz,
                 "zoneIdCandidate": zone_id, "zoneStatus": zone["status"],
+                **timing,
                 "crossFieldTemporalStatus": "unqualified-sequential",
                 "crossFieldGapKind": "position-complete-to-zone-start",
                 "crossFieldGapMeasurementClock": "utc-wall-clock",
