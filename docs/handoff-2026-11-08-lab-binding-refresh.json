@@ -24,7 +24,11 @@
       "vncPort": 5962,
       "vmwarePid": 32496,
       "readerNonceExpired": "66362c2cb4c04aa4a919983ecf10f7fd",
-      "readerExpiredAtUtc": "2026-11-08T12:48:49Z",
+      "configuredExpiryAtUtc": "2026-11-08T12:48:49Z",
+      "actualTerminationAtUtc": "2026-11-08T12:28:53.613094Z",
+      "readerUptimeMilliseconds": 4345.3671,
+      "readerFailure": "Access to the path is denied.",
+      "likelyCauseUnproven": "transient atomic snapshot replacement file-sharing collision",
       "binding": "in-game confirmation Bound lab2; manual feedback only",
       "latestInspectedReceiverSequence": 4,
       "latestInspectedReceiverAtUtc": "2026-11-08T12:28:53.613094Z",
@@ -46,6 +50,7 @@
     }
   },
   "movementTested": false,
+  "atomicWriterFix": {"deployed": false, "fullLiveTestsPassed": 992, "retryBudgetMilliseconds": 1000, "rootCauseProven": false},
   "requirements": [
     "clean exact controller handoff",
     "prefer same-lab /rr2guide rebind with fresh nonce when already bound; use bind only when unbound",

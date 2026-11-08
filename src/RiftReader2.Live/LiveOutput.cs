@@ -202,21 +202,43 @@ public static class LiveOutput
         var fullPath = Path.GetFullPath(path);
         var directory = Path.GetDirectoryName(fullPath)!;
         Directory.CreateDirectory(directory);
-        var temporary = Path.Combine(directory, $".{Path.GetFileName(fullPath)}.{Environment.ProcessId}.tmp");
+        // Each publication owns its temporary file. Readers of latest.json
+        // (including VMware readiness polling) can briefly deny replacement on
+        // Windows if they opened it without FILE_SHARE_DELETE.
+        var temporary = Path.Combine(directory,
+            $".{Path.GetFileName(fullPath)}.{Environment.ProcessId}.{Guid.NewGuid():N}.tmp");
         try
         {
-            await using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 await JsonSerializer.SerializeAsync(stream, snapshot, JsonFormat.Options, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
                 stream.Flush(true);
             }
-            File.Move(temporary, fullPath, true);
+            for (var attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    File.Move(temporary, fullPath, true);
+                    break;
+                }
+                catch (Exception error) when (attempt < 10 && (
+                    error is UnauthorizedAccessException ||
+                    error is IOException io && (io.HResult & 0xFFFF) is 32 or 33))
+                {
+                    // Bound the total delay to one second. Persistent ACL denial
+                    // still terminates the reader; never publish an old snapshot.
+                    await Task.Delay(100, cancellationToken);
+                }
+            }
         }
         finally
         {
-            if (File.Exists(temporary))
-                File.Delete(temporary);
+            // A cleanup failure must not hide the original publish error. A
+            // failed move leaves the old complete snapshot in place.
+            try { File.Delete(temporary); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
         }
     }
 
