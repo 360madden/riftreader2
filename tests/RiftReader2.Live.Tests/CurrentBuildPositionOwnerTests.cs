@@ -56,6 +56,11 @@ public sealed class CurrentBuildPositionOwnerTests
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8), BitConverter.SingleToInt32Bits(3f));
                 return new("success", bytes, null, null);
             }
+            if (address == Component + 0x10 && length == 8)
+            {
+                BinaryPrimitives.WriteUInt64LittleEndian(bytes, Entity);
+                return new("success", bytes, null, null);
+            }
             return new("unavailable", [], null, "missing");
         }
         public ValueTask<string?> RevalidateAsync(CancellationToken _) => ValueTask.FromResult<string?>(null);

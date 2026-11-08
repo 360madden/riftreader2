@@ -78,7 +78,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
         });
         Assert.Equal(1, resolutions);
         Assert.Equal(1, verifications);
-        Assert.Equal(2, session.Calls);
+        Assert.Equal(3, session.Calls);
         Assert.Equal(ulong.MaxValue, owned.UnitKey);
         Assert.Equal(new CurrentBuildXyz(7181.80078125f, 820.8821411132812f, 3135.876220703125f), owned.Position);
     }
@@ -119,6 +119,16 @@ public sealed class CurrentBuildPositionSampleCommandTests
         Assert.Equal(0, session.Calls);
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
             _ => new(123, Entity, Position, () => session.Identity = session.Identity with { ProcessStartUtcTicks = 789 })));
+    }
+
+    [Fact]
+    public void OwnedReadRejectsChangedComponentBacklinkWithStableXyz()
+    {
+        var session = Fixture();
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(Key, Entity, Position, () =>
+                session.Set(Position + 0x10, Bytes64(Entity + 8)))));
+        Assert.Equal(3, session.Calls);
     }
 
     [Fact]
@@ -280,6 +290,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             BitConverter.SingleToInt32Bits(3135.876220703125f));
         session.Set(Position, candidate);
         session.Set(Position + 0x48, candidate.AsSpan(0x48, 12).ToArray());
+        session.Set(Position + 0x10, candidate.AsSpan(0x10, 8).ToArray());
         return session;
     }
 
@@ -314,7 +325,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             session.Set(Position, raw);
             var owned = CurrentBuildPositionCandidateReader.ReadOwned(session,
                 _ => new(Key, Entity, Position, () => { }));
-            Assert.Equal(2, session.Calls); // 0x110 component + existing 12-byte XYZ verification only
+            Assert.Equal(3, session.Calls); // component + XYZ and backlink rechecks
             Assert.Equal($"0x{handle:X16}", owned.RefreshHandleHex);
             Assert.Equal(flag, owned.RefreshFlagRaw);
             Assert.Equal(status, owned.RefreshGuardStatus);
@@ -332,8 +343,11 @@ public sealed class CurrentBuildPositionSampleCommandTests
         {
             var opts = new Dictionary<string, string>
             {
-                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path,
-                ["--samples"] = "1", ["--interval-ms"] = "0"
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = path,
+                ["--samples"] = "1",
+                ["--interval-ms"] = "0"
             };
             Assert.Equal(0, await CurrentBuildPositionSampleCommand.RunAsync(opts, TextWriter.Null, default,
                 (_, _, _) => Task.FromResult<IAsyncDisposable>(new TestLease(() => { })),
@@ -363,12 +377,20 @@ public sealed class CurrentBuildPositionSampleCommandTests
         var count = 0;
         try
         {
-            var options = new Dictionary<string, string> {
-                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path,
-                ["--samples"] = "30", ["--interval-ms"] = "0" };
+            var options = new Dictionary<string, string>
+            {
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = path,
+                ["--samples"] = "30",
+                ["--interval-ms"] = "0"
+            };
             var code = await CurrentBuildPositionSampleCommand.RunAsync(options, TextWriter.Null, default,
-                (_, _, _) => { held = true; return Task.FromResult<IAsyncDisposable>(new TestLease(() =>
-                    { held = false; disposedAfterSession = session.Disposed; })); },
+                (_, _, _) =>
+                {
+                    held = true; return Task.FromResult<IAsyncDisposable>(new TestLease(() =>
+                    { held = false; disposedAfterSession = session.Disposed; }));
+                },
                 (_, _, _) => { Assert.True(held); return Task.FromResult<IReadOnlyNativeMemorySession>(session); },
                 _ => { Assert.True(held); count++; return new CurrentBuildOwnedPosition(1, new(1, 2, 3)); });
             Assert.Equal(0, code); Assert.Equal(30, count);
@@ -381,8 +403,12 @@ public sealed class CurrentBuildPositionSampleCommandTests
     public async Task LeaseDenialDoesNotOpenPositionSession()
     {
         var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-lease-" + Guid.NewGuid().ToString("N") + ".json");
-        var options = new Dictionary<string, string> {
-            ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path };
+        var options = new Dictionary<string, string>
+        {
+            ["--pid"] = "123",
+            ["--start-ticks"] = "456",
+            ["--output"] = path
+        };
         var opened = false;
         await Assert.ThrowsAsync<TimeoutException>(() => CurrentBuildPositionSampleCommand.RunAsync(
             options, TextWriter.Null, default, (_, _, _) => throw new TimeoutException("busy"),

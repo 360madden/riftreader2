@@ -219,6 +219,9 @@ internal static class CurrentBuildPositionCandidateReader
         if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
         CurrentBuildPlayerLookup.RequireSame(
             CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 12), xyzBytes);
+        CurrentBuildPlayerLookup.RequireSame(
+            CurrentBuildPlayerLookup.Exact(session, checked(component + 0x10), 8),
+            valueRaw.AsSpan(0x10, 8).ToArray());
         if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
 
         var x = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(xyzBytes.AsSpan(0, 4)));
