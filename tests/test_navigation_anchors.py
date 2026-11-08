@@ -166,6 +166,24 @@ class NavigationAnchorTests(unittest.TestCase):
         with self.assertRaisesRegex(anchors.AnchorCatalogError, "nonfinite JSON"):
             anchors.load_catalog(self.path)
 
+    def test_parser_limits_fail_cleanly_without_tracebacks(self):
+        base = json.dumps(fixture())
+        numeric = base.replace('"x": 7183.560546875', '"x": ' + '9' * 5000)
+        self.assertNotEqual(numeric, base)
+        for kind, malicious in (("int-limit", numeric),
+                                ("depth-limit", '[' * 20000 + '0' + ']' * 20000)):
+            with self.subTest(kind=kind):
+                self.path.write_text(malicious, encoding="utf-8")
+                blocked = io.StringIO()
+                with redirect_stdout(blocked):
+                    self.assertEqual(anchors.main(["--catalog", str(self.path)]), 2)
+                result = json.loads(blocked.getvalue())
+                self.assertEqual(result["status"], "blocked")
+                self.assertIn(result["reason"], ("catalog JSON is invalid",
+                                                "catalog fields are invalid"))
+                if kind == "int-limit":
+                    self.assertEqual(result["reason"], "catalog JSON is invalid")
+
     def test_empty_catalog_is_valid_and_oversize_is_not(self):
         empty = fixture()
         empty["anchors"] = []

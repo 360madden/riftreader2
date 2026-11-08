@@ -124,7 +124,9 @@ def load_catalog(path: Path) -> dict:
                            parse_constant=lambda _: (_ for _ in ()).throw(
                                AnchorCatalogError("nonfinite JSON is invalid")),
                            object_pairs_hook=_unique_json_object)
-    except (UnicodeError, json.JSONDecodeError) as error:
+    except AnchorCatalogError:
+        raise
+    except (UnicodeError, ValueError, RecursionError) as error:
         raise AnchorCatalogError("catalog JSON is invalid") from error
     return validate_catalog(value)
 
