@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 1,
+  "topic": "rr2-rtti-source-windows",
+  "observedAtUtc": "2026-11-08T06:38:40.688Z",
+  "scope": "retained-ghidra-readonly-static",
+  "host": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "ghidra": {
+    "project": "artifacts/rea/RiftNativeFocusedV2",
+    "program": "rift_x64.exe",
+    "imageBase": "0x140000000",
+    "importedExecutableSha256Metadata": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshPERehash": false,
+    "readOnly": true,
+    "noAnalysis": true,
+    "maxCpu": 1
+  },
+  "script": {
+    "path": "artifacts/rea/rtti-source-windows-review2/Rr2RttiSourceWindowsExport.java",
+    "sha256": "a252db67bcfd6843fbed4b4931eaf7221e5922dbb0abe48b208afc76187d7b55",
+    "fixedWindows": 4,
+    "bytesPerWindow": 128,
+    "totalBytes": 512,
+    "maxIncomingRefsPerAnchor": 4,
+    "maxOutgoingRefsPerAnchor": 4,
+    "pointerFollowing": false
+  },
+  "job": {
+    "id": "rr2-rtti-source-windows-20261108-root-02",
+    "status": "passed",
+    "exitCode": 0,
+    "completionMarker": "RR2_RTTI_WINDOWS_COMPLETE",
+    "failedPriorTrials": [
+      "review1 compile error preserved in logs; no accepted evidence",
+      "separate invocation exited 0 but lacked completion marker; rejected"
+    ]
+  },
+  "anchors": [
+    {
+      "role": "slot0-thunk",
+      "rva": "0x5A9990",
+      "section": ".text",
+      "initialBytesHex": "E96357CB00",
+      "existingSymbol": "thunk_FUN_14125f0f8",
+      "jump": {
+        "kind": "UNCONDITIONAL_JUMP",
+        "toRva": "0x125F0F8"
+      },
+      "qualifiedActiveCall": false
+    },
+    {
+      "role": "thunk-destination",
+      "rva": "0x125F0F8",
+      "section": ".text",
+      "existingSymbol": "FUN_14125f0f8",
+      "incomingReferences": [
+        {
+          "fromRva": "0x5A9990",
+          "type": "UNCONDITIONAL_JUMP"
+        },
+        {
+          "fromVA": "0x1436BAAE4",
+          "type": "DATA"
+        }
+      ],
+      "qualifiedSemantics": false
+    },
+    {
+      "role": "singleton-image-data",
+      "rva": "0x33DBB60",
+      "section": ".data",
+      "retainedWindowBytes": 128,
+      "allZero": true,
+      "qualifiedRuntimeNull": false,
+      "qualifiedLiveOwner": false
+    },
+    {
+      "role": "component-type-descriptor-candidate",
+      "rva": "0x2774E20",
+      "section": ".rdata",
+      "ascii": "Entity::Component\\0",
+      "rawHexParts": [
+        "456E746974793A3A436F6D706F6E656E",
+        "7400"
+      ],
+      "qualifiedPlayerSpecific": false,
+      "qualifiedLiveInstance": false
+    }
+  ],
+  "interpretation": {
+    "supports": "generic-component-infrastructure-candidate",
+    "qualifiedPlayerOwner": false,
+    "qualifiedXYZSource": false,
+    "qualifiedLiveCurrentField": false
+  },
+  "caveats": [
+    "Imported executable hash is retained Ghidra metadata, not a fresh PE or live process hash.",
+    "Slot0 jump destination does not reveal slot semantics, ownership, or runtime reachability.",
+    "Zero image bytes do not establish runtime nullness or absent singleton.",
+    "The label Entity::Component is generic descriptor evidence, not a player-specific live type.",
+    "Previous failed/markerless runs are not accepted as evidence."
+  ],
+  "nextBoundedStaticStep": "Inspect fixed retained code/refs at known thunk destination RVA0x125F0F8 and descriptor RVA0x2774E20; test generic lifecycle versus position owner hypotheses without live access."
+}
