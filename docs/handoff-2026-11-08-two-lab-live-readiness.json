@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-two-lab-live-readiness",
+  "observedUtc": "2026-11-08T04:26:30Z",
+  "host": "AMD-DESKTOP",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "scope": "controllers and guest agents ready; no live native XYZ/game input",
+  "labs": [
+    {
+      "lab": "lab1",
+      "vmx": "C:\\rift modding\\VMs\\RIFT-Lab-1\\RIFT-Lab.vmx",
+      "vmPid": 31864,
+      "gamePid": 6820,
+      "controllerPort": 49811,
+      "connected": true,
+      "coordination": "ready",
+      "consoleHeld": true,
+      "consoleFaulted": false,
+      "guestDisarmedIdle": true,
+      "guestProcesses": 166,
+      "riftProcessPresent": true,
+      "credential": "configured same-lab legacy fallback used",
+      "controllerJob": "rr2-root-managed-disarmed-controller-lab1-20261108-01",
+      "guestAgentJob": "rr2-root-guest-agent-recovery-lab1-20261108-01",
+      "guestProbeJob": "rr2-root-readonly-guest-process-probe-lab1-20261108-01"
+    },
+    {
+      "lab": "lab2",
+      "vmx": "C:\\rift modding\\VMs\\RIFT-Lab-2\\RIFT-Lab.vmx",
+      "vmPid": 32496,
+      "gamePid": 10612,
+      "controllerPort": 49921,
+      "connected": true,
+      "coordination": "ready",
+      "consoleHeld": true,
+      "consoleFaulted": false,
+      "guestDisarmedIdle": true,
+      "guestProcesses": 146,
+      "riftProcessPresent": true,
+      "credential": "current VM-specific cache present",
+      "controllerJob": "rr2-root-managed-disarmed-controller-lab2-20261108-01",
+      "guestAgentJob": "rr2-root-guest-agent-recovery-lab2-20261108-01",
+      "guestProbeJob": "rr2-root-readonly-guest-process-probe-lab2-20261108-01"
+    }
+  ],
+  "unverified": [
+    "exact game executable SHA/build",
+    "installed guest agent binary/version",
+    "cross-chat native reader quiescence",
+    "source-current deployed native sampler",
+    "passive XYZ freshness/guard status",
+    "movement feedback"
+  ],
+  "notPerformed": [
+    "native memory sample",
+    "game keyboard/mouse input",
+    "reloadui",
+    "VM/game/OS restart",
+    "reader takeover"
+  ]
+}
