@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "topic": "rr2-constructor-exact-pe-e8-e9-and-rdata-candidate-scans",
+  "observedAtUtc": "2026-11-08T06:41:30.457Z",
+  "scope": "offline-retained-PE-file-raw-bytes-only",
+  "repository": "C:\\work\\riftreader2",
+  "sourcePE": {
+    "path": "artifacts/lab2-rift-exe-20261027-01-copy.exe",
+    "sizeBytes": 60493640,
+    "sha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshInstalledProcessOrModuleHash": false
+  },
+  "target": {
+    "constructorRva": "0x698170",
+    "imageBase": "0x140000000",
+    "absoluteVA": "0x140698170"
+  },
+  "scans": [
+    {
+      "name": "raw-e8-rel32-target",
+      "script": "artifacts/rea/constructor-e8-scan-review1/scan_constructor_direct_calls.py",
+      "scriptSha256": "a472cbb527d8b282b87d9b82fd37144391b930df9f6f9e6ac2cc47f79db040b2",
+      "jobId": "rr2-constructor-e8-scan-20261108-root-01",
+      "jobStatus": "passed",
+      "exitCode": 0,
+      "section": ".text",
+      "sectionRva": "0x1000",
+      "sectionRawBytes": 39772160,
+      "sectionSha256": "76E504D8F26BA7B01CB97BB9741EFB158B15F4324D8DB5EA094866D9A4884D7C",
+      "candidateCount": 0
+    },
+    {
+      "name": "raw-e9-rel32-and-exact-absolute-qword",
+      "script": "artifacts/rea/constructor-indirect-scan-review1/scan_constructor_tail_or_pointer_candidates.py",
+      "scriptSha256": "ea85f56f1fdf334cef1efd110e58527589fdfcab2f12247251a3973dfcc94380",
+      "jobId": "rr2-constructor-tail-and-pointer-20261108-root-01",
+      "jobStatus": "passed",
+      "exitCode": 0,
+      "text": {
+        "section": ".text",
+        "sectionRva": "0x1000",
+        "sectionRawBytes": 39772160,
+        "sectionSha256": "76E504D8F26BA7B01CB97BB9741EFB158B15F4324D8DB5EA094866D9A4884D7C",
+        "e9CandidateCount": 0
+      },
+      "rdata": {
+        "section": ".rdata",
+        "sectionRva": "0x25EF000",
+        "sectionRawBytes": 9855488,
+        "sectionSha256": "76B9083D6BCB051640362DE1012CB35F6CDAE7BCBDEAFCE311ED64605A10DE73",
+        "absoluteVaCandidateCount": 1,
+        "candidates": [
+          {
+            "dataRva": "0x26B5040",
+            "fileOffset": 40584256,
+            "absoluteVa": "0x140698170",
+            "rawEightBytesHex": "7081694001000000",
+            "aligned8": true,
+            "deltaFromCandidateTableRva0x26B4FB0": "+0x90",
+            "qualifiedPointerFactory": false
+          }
+        ]
+      }
+    }
+  ],
+  "limitations": [
+    "E8/E9 candidates are exact raw opcode/displacement matches only; zero results do not exclude indirect calls, inlining, other sections or other instruction encodings.",
+    "Absolute QWORD occurrence may be inert initialized data; no factory semantics, runtime dispatch, caller or player owner verified.",
+    "No live process, Ghidra, VM, controller, game input or writes involved.",
+    "Exact source PE SHA verified; no installed executable/current module rehash."
+  ],
+  "nextBoundedAction": "Read-only bounded initialized .rdata neighborhood around RVA0x26B5040 and compare with candidate table RVA0x26B4FB0. Require independent code/object evidence before qualification."
+}
