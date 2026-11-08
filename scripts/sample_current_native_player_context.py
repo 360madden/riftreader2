@@ -14,6 +14,14 @@ EVIDENCE = ROOT / 'artifacts/native-player-context-20261107/runs'
 
 QUALIFICATION = 'candidate-only; changed-state, API correspondence and restart unverified'
 
+def project_values(o):
+    """Expose useful raw candidates without unqualified pointers or uint64 JSON IDs."""
+    return {
+        'level': {'status': o['levelStatus'], 'rawCandidate': o['rawLevel']},
+        'combat': {'status': o['combatStatus'], 'rawByte': o['rawCombat'], 'candidate': o['combatCandidate']},
+        'target': {'status': o['targetStatus'], 'unitIdCandidate': o['targetUnitIdCandidate']},
+    }
+
 def validate_report(report, *, pid, ticks):
     def integer(v,low,high): return type(v) is int and low<=v<=high
     def invalid(): raise ValueError('invalid player-context report')
@@ -68,7 +76,7 @@ def run(lab):
     if len(raw)>8000000: raise ValueError('report too large')
     data=json.loads(raw.decode('utf-8-sig'))
     observation=validate_report(data,pid=pid,ticks=ticks)
-    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['targetStatus'],'levelStatus':observation['levelStatus'],'qualification':observation['qualification'],'acquisitionDurationMilliseconds':(datetime.fromisoformat(observation['completedAtUtc'].replace('Z','+00:00'))-datetime.fromisoformat(observation['startedAtUtc'].replace('Z','+00:00'))).total_seconds()*1000}
+    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['targetStatus'],'levelStatus':observation['levelStatus'],'values':project_values(observation),'qualification':observation['qualification'],'acquisitionDurationMilliseconds':(datetime.fromisoformat(observation['completedAtUtc'].replace('Z','+00:00'))-datetime.fromisoformat(observation['startedAtUtc'].replace('Z','+00:00'))).total_seconds()*1000}
     with (output/'summary.json').open('x',encoding='utf-8') as f: json.dump(summary,f,indent=2)
     return summary
 

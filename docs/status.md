@@ -1,5 +1,18 @@
 # Current status
 
+**19:21 EST NOVEMBER 7 — ON-DEMAND NATIVE PLAYER CONTEXT VERIFIED LAB1:**
+`python -B scripts/sample_current_native_player_context.py --lab lab1`
+now returns validated `values.level`, `values.combat`, and `values.target`
+directly in structured JSON, retaining raw-candidate/status semantics and
+process/build/receipt identity. Fresh Lab1 PID6820/start639296903905448486,
+game SHA1935A05C..., observed level raw41, combat false/raw0, target getter
+zero/unavailable; native acquisition7.771ms. Guest reader was hash-verified and
+reused, not redeployed. Receipt:
+`artifacts/native-player-context-20261107/runs/lab1/af0aded499db4368947aa4090836c17b/samples.json`
+SHA476EBCAC9CA63AB0CC2388C42B55A0B9C7A63BCE4014B1453CA4102B3A08BA38.
+Two focused projection tests passed; no input/reload/controller action. Values
+remain candidates, without changed-state, API or full-game restart proof.
+
 **18:53 EST — LAB1 MOUSE LIVE ACCEPTED; DISCOVERY AND RETRIEVAL FRAMEWORK:**
 [Current mouse/setup continuation](handoff-2026-11-07-lab1-mouse.md).
 Host vncdotool capture, reviewed pointer move, and reviewed Browse/Close clicks
