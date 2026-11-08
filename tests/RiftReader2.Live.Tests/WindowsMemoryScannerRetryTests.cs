@@ -161,6 +161,140 @@ public sealed class WindowsMemoryScannerRetryTests
         Assert.Equal(2, calls);
     }
 
+    [Fact]
+    public void Experimental256KiB_FallsBackToFourExact64KiBSubreadsAfterPartialCopy()
+    {
+        var segments = new List<(int Offset, int Length)>();
+        var primaryCalls = 0;
+        var cancellationChecks = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (offset, length) =>
+            {
+                segments.Add((offset, length));
+                if (length == 256 * 1024)
+                {
+                    primaryCalls++;
+                    return Chunk(false, 4096, 299);
+                }
+                return Chunk(true, (nuint)length, null);
+            },
+            (_, _) => true,
+            256 * 1024,
+            256 * 1024,
+            () => cancellationChecks++);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal((nuint)(256 * 1024), result.BytesRead);
+        Assert.Null(result.ErrorCode);
+        Assert.Equal(3, primaryCalls);
+        Assert.Equal(4, cancellationChecks);
+        Assert.Equal(new[]
+        {
+            (0, 64 * 1024), (64 * 1024, 64 * 1024),
+            (128 * 1024, 64 * 1024), (192 * 1024, 64 * 1024)
+        }, segments.Skip(3).ToArray());
+        Assert.Equal(7, segments.Count);
+    }
+
+    [Fact]
+    public void Experimental256KiB_AnyFailedSubreadFailsEntireChunk()
+    {
+        var segments = new List<(int Offset, int Length)>();
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (offset, length) =>
+            {
+                segments.Add((offset, length));
+                return length == 256 * 1024 || offset == 64 * 1024
+                    ? Chunk(false, 1024, 299)
+                    : Chunk(true, (nuint)length, null);
+            },
+            (_, _) => true,
+            256 * 1024,
+            256 * 1024);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(299, result.ErrorCode);
+        Assert.Equal(3, segments.Count(x => x.Length == 256 * 1024));
+        Assert.Equal(1, segments.Count(x => x.Offset == 0 && x.Length == 64 * 1024));
+        Assert.Equal(3, segments.Count(x => x.Offset == 64 * 1024 && x.Length == 64 * 1024));
+        Assert.DoesNotContain(segments, x => x.Offset >= 128 * 1024 && x.Length == 64 * 1024);
+    }
+
+    [Fact]
+    public void Experimental256KiB_ChangedRegionBlocksStitching()
+    {
+        var calls = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (_, _) => { calls++; return Chunk(false, 1024, 299); },
+            (_, _) => false,
+            256 * 1024,
+            256 * 1024);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(1, calls);
+        Assert.Equal((nuint)0, result.BytesRead);
+        Assert.Null(result.ErrorCode);
+    }
+
+    [Fact]
+    public void Experimental256KiB_ShortSuccessWithout299IsNotPromoted()
+    {
+        var reads = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (_, _) => { reads++; return Chunk(true, 4096, null); },
+            (_, _) => throw new InvalidOperationException("no fallback permitted"),
+            256 * 1024,
+            256 * 1024);
+        Assert.True(result.Succeeded);
+        Assert.NotEqual((nuint)(256 * 1024), result.BytesRead);
+        Assert.Equal(1, reads);
+    }
+
+    [Fact]
+    public void Default64KiB_DoesNotUseExperimentalSubreads()
+    {
+        var reads = 0;
+        var result = WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+            (_, size) => { reads++; return Chunk(false, 0, 299); },
+            (_, _) => true,
+            64 * 1024,
+            64 * 1024);
+        Assert.False(result.Succeeded);
+        Assert.Equal(3, reads);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(128)]
+    [InlineData(512)]
+    public void UnsupportedChunkSize_FailsClosed(int value)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            WindowsMemoryScanner.ReadChunkWithStableRegionFallback(
+                (_, _) => Chunk(true, 1, null),
+                (_, _) => true,
+                1,
+                value));
+        var invalid = LiveConfiguration.Defaults with { FullScanChunkKiB = value };
+        Assert.Throws<InvalidDataException>(invalid.Validate);
+    }
+
+    [Fact]
+    public void LegacyJsonWithoutOptionalChunkFieldPreserves64KiB()
+    {
+        const string original = """
+        {"schemaVersion":1,"processName":"rift_x64","durationSeconds":300,
+         "pollIntervalMilliseconds":500,"maxScanBytes":4294967296,
+         "maxScanSeconds":10,"outputPath":null,"freshnessTimeoutSeconds":5,"delivery":null}
+        """;
+        var config = System.Text.Json.JsonSerializer.Deserialize<LiveConfiguration>(
+            original, RiftReader2.Infrastructure.JsonFormat.Options);
+        Assert.NotNull(config);
+        Assert.Equal(64, config.FullScanChunkKiB);
+        config.Validate();
+        (config with { FullScanChunkKiB = 256 }).Validate();
+    }
+
     private static WindowsMemoryScanner.ScanAttemptResult Attempt(
         bool completed,
         string status,

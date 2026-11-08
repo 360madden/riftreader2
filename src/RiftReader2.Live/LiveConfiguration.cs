@@ -16,6 +16,8 @@ public sealed record LiveConfiguration(
     LiveDeliveryConfiguration? Delivery)
 {
     public const string FileName = "riftreader2-live.json";
+    // Optional experimental tuning. Existing files and default sessions stay at 64 KiB.
+    public int FullScanChunkKiB { get; init; } = 64;
 
     public static LiveConfiguration LoadBesideExecutable()
     {
@@ -69,6 +71,8 @@ public sealed record LiveConfiguration(
             throw new InvalidDataException("maxScanBytes must be from 1 through 8589934592.");
         if (MaxScanSeconds is < 1 or > 60)
             throw new InvalidDataException("maxScanSeconds must be from 1 through 60.");
+        if (FullScanChunkKiB is not (64 or 256))
+            throw new InvalidDataException("fullScanChunkKiB must be 64 or 256.");
         if (FreshnessTimeoutSeconds is < 1 or > 60)
             throw new InvalidDataException("freshnessTimeoutSeconds must be from 1 through 60.");
         if (OutputPath is { Length: > 1024 })

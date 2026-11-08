@@ -52,6 +52,12 @@ def resolve_max_scan_bytes(
     return labs.get(lab, default)
 
 
+def _full_scan_chunk_kib(value: int) -> int:
+    if type(value) is not int or value not in (64, 256):
+        raise ValueError("fullScanChunkKiB must be 64 or 256")
+    return value
+
+
 def build_live_configuration(
     *,
     endpoint: str,
@@ -60,9 +66,11 @@ def build_live_configuration(
     duration_seconds: int,
     poll_interval_milliseconds: int,
     max_scan_bytes: int,
+    full_scan_chunk_kib: int = 64,
 ) -> dict[str, object]:
     """Return the exact configuration consumed by RiftReader2.Live."""
-    return {
+    chunk_kib = _full_scan_chunk_kib(full_scan_chunk_kib)
+    value = {
         "schemaVersion": 1,
         "processName": "rift_x64",
         "durationSeconds": duration_seconds,
@@ -73,3 +81,6 @@ def build_live_configuration(
         "freshnessTimeoutSeconds": 5,
         "delivery": {"endpoint": endpoint, "token": token},
     }
+    if chunk_kib != 64:  # Legacy/default JSON remains byte-for-byte equivalent.
+        value["fullScanChunkKiB"] = chunk_kib
+    return value

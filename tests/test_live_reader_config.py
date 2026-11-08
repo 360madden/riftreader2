@@ -76,6 +76,35 @@ class LiveReaderConfigTests(unittest.TestCase):
         self.assertEqual(10, value["maxScanSeconds"])
         self.assertEqual(4 * 1024**3, DEFAULT_SCAN_BYTES)
 
+    def test_experimental_chunk_selection_is_opt_in_and_bounded(self):
+        params = dict(
+            endpoint="http://192.168.56.1:49813/observation",
+            token="x" * 32,
+            output_path=r"C:\reader\latest.json",
+            duration_seconds=900,
+            poll_interval_milliseconds=500,
+            max_scan_bytes=6 * 1024**3,
+        )
+        self.assertNotIn("fullScanChunkKiB", build_live_configuration(**params))
+        experimental = build_live_configuration(**params, full_scan_chunk_kib=256)
+        self.assertEqual(256, experimental["fullScanChunkKiB"])
+        for invalid in (0, 128, 512, True, "256"):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                build_live_configuration(**params, full_scan_chunk_kib=invalid)
+
+        parser = launch_live_reader.parser()
+        basic = [
+            "--lab", "lab1", "--expected-game-pid", "1",
+            "--expected-game-start-ticks", "2",
+            "--expected-game-sha256", "A" * 64,
+            "--reader", r"C:\reader.exe",
+            "--reader-sha256", "B" * 64,
+            "--output", r"C:\output",
+        ]
+        self.assertEqual(64, parser.parse_args(basic).full_scan_chunk_kib)
+        self.assertEqual(256, parser.parse_args(
+            basic + ["--full-scan-chunk-kib", "256"]).full_scan_chunk_kib)
+
     def test_tracked_launcher_writes_resolved_lab1_limit(self):
         with tempfile.TemporaryDirectory() as directory, mock.patch.dict(
             "os.environ", {"LOCALAPPDATA": directory}
@@ -198,7 +227,8 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                 args = SimpleNamespace(output=root / "out", reader=reader,
                     reader_sha256=launch_live_reader.sha(reader), receiver_config=receiver,
                     lab="lab1", duration_seconds=900, poll_interval_milliseconds=500,
-                    max_scan_bytes=1000, expected_game_pid=1, expected_game_start_ticks=2,
+                    max_scan_bytes=1000, full_scan_chunk_kib=64,
+                    expected_game_pid=1, expected_game_start_ticks=2,
                     expected_game_sha256="A" * 64)
                 def patch(name, **kwargs):
                     return stack.enter_context(mock.patch.object(launch_live_reader, name, **kwargs))

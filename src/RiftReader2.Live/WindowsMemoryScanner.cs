@@ -32,6 +32,7 @@ public sealed record LiveCandidateRegion(
 public static class WindowsMemoryScanner
 {
     private const int ChunkBytes = 64 * 1024;
+    private const int ExperimentalChunkBytes = 256 * 1024;
     private const int MaxRegionCount = 262_144;
     private const int MaxStableChunkPartialCopyRetries = 2;
 
@@ -41,8 +42,12 @@ public static class WindowsMemoryScanner
         long maxScanBytes,
         TimeSpan maxScanTime,
         CancellationToken cancellationToken,
-        Action? attemptStarting = null)
+        Action? attemptStarting = null,
+        int fullScanChunkKiB = 64)
     {
+        if (fullScanChunkKiB is not (64 or 256))
+            throw new ArgumentOutOfRangeException(nameof(fullScanChunkKiB));
+        var fullScanChunkBytes = checked(fullScanChunkKiB * 1024);
         var stopwatch = Stopwatch.StartNew();
         var handle = NativeMethods.OpenProcess(
             NativeMethods.ProcessAccess.VirtualMemoryRead |
@@ -63,7 +68,8 @@ public static class WindowsMemoryScanner
                     maxScanBytes,
                     maxScanTime,
                     stopwatch,
-                    cancellationToken),
+                    cancellationToken,
+                    fullScanChunkBytes),
                 () => stopwatch.Elapsed,
                 maxScanTime,
                 attemptStarting);
@@ -215,7 +221,8 @@ public static class WindowsMemoryScanner
         long maxScanBytes,
         TimeSpan maxScanTime,
         Stopwatch stopwatch,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int fullScanChunkBytes)
     {
         var regions = EnumerateReadablePrivateRegions(handle, processId, maxScanTime, stopwatch, cancellationToken);
         long plannedBytes = 0;
@@ -228,7 +235,8 @@ public static class WindowsMemoryScanner
         }
 
         var accumulator = new EnvelopeCandidateAccumulator(challenge);
-        var buffer = GC.AllocateUninitializedArray<byte>(ChunkBytes);
+        var buffer = GC.AllocateUninitializedArray<byte>(fullScanChunkBytes);
+        var subchunkBuffer = fullScanChunkBytes == ChunkBytes ? Array.Empty<byte>() : GC.AllocateUninitializedArray<byte>(ChunkBytes);
         long scannedBytes = 0;
         LiveCandidateRegion? previous = null;
         var candidateRegions = new HashSet<LiveCandidateRegion>();
@@ -251,21 +259,31 @@ public static class WindowsMemoryScanner
                         $"Scan exceeded the configured {maxScanTime.TotalSeconds:F0} second budget.", accumulator), null);
                 var count = checked((int)Math.Min(buffer.Length, region.Size - offset));
                 var address = checked(new nint(region.BaseAddress.ToInt64() + offset));
-                var readResult = ReadChunkWithStableRegionRetry(
-                    () =>
+                var readResult = ReadChunkWithStableRegionFallback(
+                    (segmentOffset, segmentBytes) =>
                     {
+                        // Every fallback segment is read into a separate 64-KiB scratch
+                        // buffer. A partial primary read is never fed to the decoder.
+                        var primary = segmentOffset == 0 && segmentBytes == count;
+                        var destination = primary ? buffer : subchunkBuffer;
+                        var segmentAddress = checked(new nint(address.ToInt64() + segmentOffset));
                         var succeeded = NativeMethods.ReadProcessMemory(
-                            handle, address, buffer, (nuint)count, out var read);
-                        return new(succeeded, read,
-                            succeeded ? null : Marshal.GetLastWin32Error());
+                            handle, segmentAddress, destination, (nuint)segmentBytes, out var read);
+                        int? error = succeeded ? null : Marshal.GetLastWin32Error();
+                        if (!primary && succeeded && read == (nuint)segmentBytes)
+                            Buffer.BlockCopy(subchunkBuffer, 0, buffer, segmentOffset, segmentBytes);
+                        return new(succeeded, read, error);
                     },
-                    () =>
+                    (segmentOffset, segmentBytes) =>
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        var segmentAddress = checked(new nint(address.ToInt64() + segmentOffset));
                         return stopwatch.Elapsed <= maxScanTime &&
-                               RegionStillCoversExactRead(handle, region, address, count);
+                               RegionStillCoversExactRead(handle, region, segmentAddress, segmentBytes);
                     },
-                    (nuint)count);
+                    count,
+                    fullScanChunkBytes,
+                    () => cancellationToken.ThrowIfCancellationRequested());
                 if (!readResult.Succeeded || readResult.BytesRead != (nuint)count)
                 {
                     var error = readResult.ErrorCode;
@@ -341,6 +359,53 @@ public static class WindowsMemoryScanner
             result = read();
         }
         return result;
+    }
+
+    internal static ChunkReadResult ReadChunkWithStableRegionFallback(
+        Func<int, int, ChunkReadResult> readSegment,
+        Func<int, int, bool> regionStillCoversSegment,
+        int requestedBytes,
+        int primaryChunkBytes,
+        Action? checkCancellation = null)
+    {
+        ArgumentNullException.ThrowIfNull(readSegment);
+        ArgumentNullException.ThrowIfNull(regionStillCoversSegment);
+        if (primaryChunkBytes is not (ChunkBytes or ExperimentalChunkBytes))
+            throw new ArgumentOutOfRangeException(nameof(primaryChunkBytes));
+        if (requestedBytes is < 1 || requestedBytes > primaryChunkBytes)
+            throw new ArgumentOutOfRangeException(nameof(requestedBytes));
+
+        var primary = ReadChunkWithStableRegionRetry(
+            () => readSegment(0, requestedBytes),
+            () => regionStillCoversSegment(0, requestedBytes),
+            (nuint)requestedBytes);
+        if ((primary.Succeeded && primary.BytesRead == (nuint)requestedBytes) ||
+            primaryChunkBytes == ChunkBytes || requestedBytes <= ChunkBytes ||
+            primary.ErrorCode != NativeMethods.ErrorPartialCopy)
+            return primary;
+
+        // The original large exact read failed. Retry only this same stable
+        // region using bounded 64-KiB exact subreads; accept no partial bytes.
+        if (!regionStillCoversSegment(0, requestedBytes))
+            return new(false, 0, null);
+        for (var offset = 0; offset < requestedBytes; offset += ChunkBytes)
+        {
+            checkCancellation?.Invoke();
+            var length = Math.Min(ChunkBytes, requestedBytes - offset);
+            if (!regionStillCoversSegment(offset, length))
+                return new(false, 0, null);
+            var segment = ReadChunkWithStableRegionRetry(
+                () => readSegment(offset, length),
+                () => regionStillCoversSegment(offset, length),
+                (nuint)length);
+            if (!segment.Succeeded || segment.BytesRead != (nuint)length)
+                return new(false, segment.BytesRead, segment.ErrorCode);
+        }
+        // Do not publish a stitched chunk when its original region drifted
+        // during the fallback or the scanner's bounded time expired.
+        return regionStillCoversSegment(0, requestedBytes)
+            ? new(true, (nuint)requestedBytes, null)
+            : new(false, 0, null);
     }
 
     private static bool RegionStillCoversExactRead(

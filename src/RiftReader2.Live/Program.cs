@@ -464,7 +464,8 @@ internal static class Program
                 configuration.MaxScanBytes,
                 TimeSpan.FromSeconds(configuration.MaxScanSeconds),
                 scopedCancellation.Token,
-                () => attemptStartedAt = timeProvider.GetTimestamp());
+                () => attemptStartedAt = timeProvider.GetTimestamp(),
+                configuration.FullScanChunkKiB);
             return new BackgroundFullScanResult(scan, attemptStartedAt, timeProvider.GetTimestamp());
         }, scopedCancellation.Token);
         return new PendingFullScan(
