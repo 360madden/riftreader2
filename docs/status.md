@@ -1,5 +1,52 @@
 # Current status
 
+**23:41 EST NOVEMBER 7 — EXACT 0x6136B0 SOURCE GUARD NOW CAPTURED; 1303/1303 TESTS PASS:**
+The read-only current-build refresh-branch candidate reader now verifies the
+flag-branch source-component backlink and samples the exact `0x6136B0` operands:
+source `+0x48` context pointer, signed nested `+0x24` value, and source
+`+0x58` provider presence. It reports candidate eligibility separately from
+writer execution; handle branch is explicitly not applicable, top-level flag
+zero is not evaluated further, and missing operands remain unavailable rather
+than zero. Self-source owner mismatch no longer publishes a source candidate.
+The JSON contract is now v2 with lossless context hex and explicit
+`sourceGuardStatus/sourceGuardEligible`. Focused branch tests passed **42/42**;
+full .NET10 suite passed **1303/1303** (Live 923 + Core 380), Release.
+No live native read/deployment occurred. Both labs remain operationally ready,
+but the latest readiness packet reports no advertised native-read lease
+capability and Greeting Jimmy has not relinquished any live reader; live sample
+remains blocked pending explicit cross-chat/foreign-reader quiescence and
+separate admission. Continue bounded offline destination-matched writer tracing.
+
+**23:28 EST NOVEMBER 7 — CURRENT-BUILD XYZ WRITER ROUTES DECOMPILED (STATIC ONLY):**
+Focused Ghidra 12.1.2 headless analysis of exact executable SHA
+`1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`
+decoded 669 instructions / 2,614 instruction bytes across eight bounded
+routines; ten related helper windows were also decompiled. The expanded
+[writer-route evidence](reference/current-native-xyz-writer-evidence.md)
+now documents both `0x6996C0` primary-cache update routes, the exact
+`0x6136B0` alternate-provider predicate, and the `0x612EE0/0x6126F0`
+conditional source-object path. Helper checks distinguish matrix/actor
+transform consumers from primary component XYZ stores. The 49/49 historical
+position-component cohort still had `+0x100=0` and `+0x108=0`, so neither
+known update branch was eligible in those captures; this is historical, not
+current runtime proof. Pseudocode exports are retained under
+`artifacts/rea/ghidra-v5-pseudocode.txt` (SHA
+`78ad0d1edb84eba9dcf309911c0117df17369f1ea0b85230608e1f248fea30b1`) and
+`artifacts/rea/ghidra-v6-pseudocode.txt` (SHA
+`2cb270ce303de75afab4e9721b80c2313988945d9ee32a53763bbacd0c42a35b`).
+A separate instruction-level V7 dump (SHA
+`ca66aca8543b4e2f0b70f7669025c0d3fe419c4a0864a7ae9832ac625e1ac530`)
+confirms the register flow through `0x6A0040 -> 0x612EE0 -> 0x6126F0` and
+the fallback `0x698460 -> 0x6996C0`; the fallback may re-enter the updater on
+a selected component, but live pointer identity/recursion depth are unknown.
+No live game/VM/process read, controller, input, addon, reload, deployment or
+restart occurred. Current branch admission, actual writer execution, other
+external writers, passive freshness, changed-state and full-game restart remain
+unqualified. Next: continue bounded destination-matched store tracing offline;
+any live branch sample requires fresh process/lease admission and cooperative
+reader quiescence. See
+[writer-route continuation handoff](handoff-2026-11-07-native-xyz-writer-route.md).
+
 **LATE NOVEMBER 7 — XYZ BRANCH RETRIEVAL + TRACKING + CONTROLLER RECOVERY (SOURCE/host-only):**
 Two milestone commits `9a62ced` (new leased `sample-current-position-refresh-branch`,
 lossless wrapper schema2, per-segment XYZ delta counts and offline raw-orientation

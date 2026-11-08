@@ -160,3 +160,196 @@ is demonstrably the SAME player position component+48/+4C/+50. No such updater
 was verified. Actor/render and universal source+F8 claims cannot fill that gap.
 Current-build changed-state, passive freshness and full-game-restart durability
 remain separate pending gates; old-build acceptance does not transfer.
+
+## Expanded exact-build decompilation — November 7, 2026, 23:23–23:25 EST
+
+This continuation used installed **Ghidra 12.1.2 headless**, importing the exact
+installed executable with `-noanalysis`, then manually decoding only eight
+bounded target windows and ten directly related helper windows. The program
+identity was rechecked in the analysis log:
+
+- Executable SHA256:
+  `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`.
+- Image base: `0x140000000`; language `x86:LE:64:default`; compiler `windows`.
+- Project: `artifacts/rea/RiftNativeFocusedV2`.
+- First successful bounded CFG run: `rr2-ghidra-focused-native-v2-noanalysis-20261108-a089-retry`.
+- Full targeted pseudocode export: `rr2-ghidra-focused-native-v5-process-20261108-a089`;
+  output `artifacts/rea/ghidra-v5-pseudocode.txt`, SHA256
+  `78ad0d1edb84eba9dcf309911c0117df17369f1ea0b85230608e1f248fea30b1`.
+- Helper pseudocode export: `rr2-ghidra-focused-native-v6-process-20261108-a089`;
+  output `artifacts/rea/ghidra-v6-pseudocode.txt`, SHA256
+  `2cb270ce303de75afab4e9721b80c2313988945d9ee32a53763bbacd0c42a35b`.
+- Reproducible script sources remain under ignored `artifacts/rea/`:
+  `Rr2FocusedNativeV5.java` SHA256
+  `2efe875c51b4f05fe3147694591973af93a3ae45c04f70cd7d2a47c127fc60d8`;
+  `Rr2FocusedNativeV6.java` SHA256
+  `4b8cc0cebf86a61c01dd00f0230c076772c31a6ff433209d7417aeef9b955989`.
+- The focused CFG decoder reconstructed 669 instructions / 2,614 instruction
+  bytes in the original eight windows; all eight explicit function-body updates
+  succeeded. Ten helper windows were subsequently decoded and decompiled.
+  These are static executable findings, not live branch execution.
+
+### 1. `0x6996C0` — both primary cache-update routes
+
+The decompiled function confirms that `param_1` is the position-component
+candidate already being inspected. It has two mutually exclusive top-level
+routes, and both write the primary cached XYZ at `+0x48/+0x4C/+0x50`:
+
+**Handle route — `QWORD(component+0x100) != 0`:**
+
+1. Lazily obtains the unit manager at global `0x1433624A8`.
+2. Calls `0x6A0040(manager, component+0x100, &resolvedEntity, 0)` to resolve
+   the handle. The returned entity, not automatically the owner/self entity,
+   is then used for the next selector.
+3. Applies source-selector metadata RVA `0x2F57918` to the returned entity's
+   selector byte/table. An absent `0xFF` selector or null component exits.
+4. Calls `0x612EE0(sourceComponent, &xyz, owner+0x10)`.
+5. If returned XYZ differs from cached `+0x48/+0x4C/+0x50`, stores the new
+   primary triplet. It also mirrors the result into `+0xD8/+0xDC/+0xE0` and
+   `+0x88/+0x8C/+0x90`; a conditional downstream callback may follow.
+
+**Alternate-provider route — `QWORD(component+0x100) == 0`:**
+
+1. Requires `BYTE(component+0x108) != 0`; otherwise it exits before resolving
+   any source component.
+2. Applies source-selector metadata RVA `0x2F57918` to the owner entity at
+   `component+0x10`, then requires a non-null selected component.
+3. Calls `0x6136B0(selectedComponent)` as a further admission predicate.
+4. Calls `0x612B50(selectedComponent, ..., component+0x48, 0)` for the primary
+   provider result, then calls it again with mode `1` for the secondary
+   `+0x88/+0x8C/+0x90` triplet.
+5. Writes the primary triplet and its `+0xD8/+0xDC/+0xE0` mirror, plus
+   secondary XYZ and matrix/auxiliary fields. `0x612960` supplies the associated
+   quaternion-derived 3x3 matrix; it is not another XYZ writer.
+
+The store groups already mapped in the prior note remain the exact instruction
+sites: primary handle stores `0x699855/0x699859`, secondary handle stores
+`0x6998A4/0x6998B2`, primary alternate stores `0x699991/0x699999`, and
+secondary alternate stores `0x6999C7/0x6999D2`.
+
+### 2. Exact cheap alternate-provider predicate — `0x6136B0`
+
+The 23-byte routine is now fully decompiled. Given the selected source component
+pointer in RCX, it returns true exactly when:
+
+- `*(int *)(*(QWORD *)(component+0x48) + 0x24) >= 0`; and
+- `QWORD(component+0x58) != 0`.
+
+Otherwise it returns false. This is a cheap passive predicate, not proof that
+the caller's alternate route is reached. It is evaluated only after the
+top-level `component+0x108` flag is nonzero and the `0x2F57918` source selector
+resolves a component.
+
+### 3. The `0x612EE0` / `0x6126F0` source distinction
+
+`0x612EE0` is a caller-output XYZ getter, not a primary cache writer:
+
+- It first calls `0x6126F0(param_1, param_3, &sourceObject)`.
+- On success, it reads source-object `+0xF8/+0x100` and adds the global actor
+  offset vector. This is a conditional source-object route, not a universal
+  player-world owner.
+- On failure, it applies position-component selector metadata RVA `0x2F588A0`
+  to the entity at `param_1+0x10`; when that component exists, it calls
+  `0x698460` and reads the component's cached `+0x48/+0x4C/+0x50`.
+
+`0x6126F0` searches the collection rooted at `param_1+0x48` for an entry whose
+`+0x18` key matches `param_2`, resolves its associated object, then uses actor
+selector metadata RVA `0x2F58490` and `0x67BFB0` to return the conditional
+source object through `param_3`. This is the exact reason `+0xF8/+0x100`
+cannot be treated as a universal player-world owner.
+
+`0x612B50` is a provider adapter: if `component+0x58` is null it copies the
+caller-provided vector; otherwise it invokes the selected component's vtable
+method at `+0x08` and returns three floats. It does not itself store the
+position-component cache; `0x6996C0` owns those stores.
+
+### 4. Bounded adjacent helpers are consumers/derived transforms, not primary XYZ writers
+
+- `0x698460` calls `0x6996C0` and returns `component+0x48`.
+- `0x6983F0`, `0x698410`, and `0x698440` each call `0x6996C0`, then return
+  `component+0x60`, `component+0x94`, and `component+0x88` respectively.
+- `0x613800` obtains actor and position components, calls `0x6996C0`, then
+  reads matrix/transform helpers and passes derived data to `0x687320`.
+- `0x687320` writes actor translation at
+  `actor+0x3BC/+0x3C0/+0x3C4` and related actor/render transform fields. These
+  are downstream actor coordinates, not the position component's primary
+  `+0x48/+0x4C/+0x50`.
+- `0x698EC0` writes the matrix at `component+0x60..+0x80` and derived
+  `+0xF0/+0xF4`; it does not write primary XYZ.
+- `0x698910` calls `0x6996C0` and interpolates/forwards transform state into the
+  actor path; it is not an independent primary XYZ cache writer.
+- `0x612960` constructs a matrix from a quaternion/provider; it is orientation
+  support, not position.
+
+These bounded results strengthen the known `0x6996C0` route map. They do NOT
+constitute an exhaustive whole-image search for every external store to the same
+component offsets.
+
+### 5. Historical admission remains negative; current runtime remains unknown
+
+The previously audited **49/49** pointer-selected historical position-component
+captures across seven process epochs had `QWORD(+0x100)=0` and
+`BYTE(+0x108)=0`. Therefore, neither top-level `0x6996C0` route was eligible
+in those captures. Separately, retained module-root snapshots from two historical
+epochs showed source-selector index `46` at `0x2F57918`, with SELF slot `46`
+absent. Those snapshots are historical and not simultaneous with every
+component capture.
+
+Consequently:
+
+- Ordinary `Inspect.Unit.Detail` can call `0x698460 -> 0x6996C0`, but a getter
+  invocation is not evidence that either update route passed its gates.
+- The historical zeros explain why these known branches did not refresh the
+  sampled component in those receipts; they do not prove the current live gates.
+- No other source-hashed store to the same player component
+  `+0x48/+0x4C/+0x50` has yet been established. A changed cache value with both
+  routes ineligible would remain unexplained until another destination-matched
+  writer is found.
+- Current-build branch admission, actual writer execution, passive freshness,
+  changed-state, full-game restart and body-heading qualification remain open.
+
+No game process was read or changed during this static Ghidra continuation; no
+VM/game input, controller, addon, reload, deployment or restart occurred.
+
+## Instruction-level callsite confirmation — November 7, 2026, 23:29 EST
+
+A second bounded Ghidra export checked the actual callsite register setup rather
+than relying on decompiler argument naming alone:
+
+- Job: `rr2-ghidra-native-callsite-dump-20261108-a089`.
+- Output: `artifacts/rea/ghidra-v7-callsite-instructions.txt`.
+- SHA256: `ca66aca8543b4e2f0b70f7669025c0d3fe419c4a0864a7ae9832ac625e1ac530`.
+
+This confirms the handle route at instruction level:
+
+1. `0x6997CC–0x6997D3` passes manager, address of component `+0x100`, and
+   output storage to `0x6A0040`.
+2. `0x6997E0–0x699802` applies selector RVA `0x2F57918` to the returned
+   entity and loads its selected component into RBX.
+3. `0x69980B–0x69981B` calls `0x612EE0` with RCX=that selected component,
+   RDX=the local XYZ output, and R8=the QWORD at
+   `*(QWORD *)(positionComponent+0x10)+0x10`.
+4. In `0x612EE0`, `0x612EEC–0x612F09` forwards incoming R8 as the second
+   argument to `0x6126F0`. A successful result is dereferenced at
+   `sourceObject+0xF8/+0x100`; this is the conditional source-object path.
+5. If `0x6126F0` fails, `0x61303B–0x61305D` resolves selector
+   `0x2F588A0` on the selected component's owner entity, places the resulting
+   component pointer in RCX, and calls `0x698460`.
+6. `0x698460` receives that selected component in RCX, calls
+   `0x6996C0` at `0x698469`, and returns the selected component's `+0x48`
+   pointer. Thus the fallback getter can re-enter `0x6996C0` on the
+   position-component selected from the resolved entity. Whether that nested
+   component is identical to the outer component in any live case is not
+   established here; do not assume either identity or recursion depth.
+
+The alternate branch is independently confirmed at `0x699923` onward:
+the top-level handle-zero branch checks `BYTE(component+0x108)`, resolves
+selector `0x2F57918`, calls `0x6136B0` at `0x69995D`, then calls
+`0x612B50` at `0x699979` and `0x6999AF`. Primary and secondary stores
+occur at the exact RVAs listed above. The instruction dump also confirms the
+`0x6136B0` two-condition predicate at `0x1406136B0–0x1406136C6`.
+
+This register-level pass validates the static argument flow and the possible
+nested fallback getter. It does not establish current live pointer identity,
+actual branch execution, a second external primary-cache writer, or passive
+freshness.

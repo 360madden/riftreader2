@@ -8,7 +8,7 @@ namespace RiftReader2.Live.Tests;
 
 public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
 {
-    const ulong Module = 0x140000000, Entity = 0x20010000, Position = 0x20020000, Source = 0x20030000;
+    const ulong Module = 0x140000000, Entity = 0x20010000, Position = 0x20020000, Source = 0x20030000, GuardContext = 0x20040000, Provider = 0x20050000;
     const ulong Selector = Module + CurrentBuildPositionRefreshBranchCandidateReader.SourceSelectorRva;
 
     [Fact] public void BothGuardsZeroAreIneligibleWithoutInvokingSource()
@@ -16,6 +16,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         var s = Fixture(0, 0, 7);
         var result = Read(s, () => throw new Exception("must not resolve"));
         Assert.Equal("guard-ineligible-candidate", result.Status);
+        Assert.Equal("not-evaluated-flag-zero", result.SourceGuardStatus);
+        Assert.Null(result.SourceGuardEligible);
         Assert.Null(result.SourceSelector);
         Assert.Null(result.SourceComponent);
     }
@@ -56,14 +58,75 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         Assert.Contains("lose precision", root.GetProperty("qualification").GetString());
     }
 
-    [Fact] public void FlagBranchReportsSelfSourceCandidateOnly()
+    [Fact] public void FlagBranchReportsExact6136B0PredicateCandidate()
     {
         var s = Fixture(0, 1, 7);
         var result = Read(s, () => Source);
-        Assert.Equal("flag-branch-self-source-present-candidate", result.Status);
+        Assert.Equal("flag-branch-guard-eligible-candidate", result.Status);
         Assert.Equal(Source, result.SourceComponent);
+        Assert.Equal("eligible-candidate", result.SourceGuardStatus);
+        Assert.True(result.SourceGuardEligible);
+        Assert.Equal(0, result.SourceGuardValue);
+        Assert.True(result.SourceProviderPresent);
+        Assert.Equal($"0x{GuardContext:X16}", result.SourceGuardContextHex);
         Assert.Contains("execution", result.Qualification);
         Assert.Contains("freshness unverified", result.Qualification);
+    }
+
+    [Fact] public void NegativeNestedPredicateValueIsIneligible()
+    {
+        var s = Fixture(0, 1, 7);
+        s.Put(GuardContext + 0x24, BitConverter.GetBytes(-1));
+        var result = Read(s, () => Source);
+        Assert.Equal("flag-branch-guard-ineligible-candidate", result.Status);
+        Assert.Equal("ineligible-negative-context", result.SourceGuardStatus);
+        Assert.False(result.SourceGuardEligible);
+        Assert.Equal(-1, result.SourceGuardValue);
+        Assert.Null(result.SourceProviderPresent);
+    }
+
+    [Fact] public void NullProviderIsIneligibleAfterNonnegativeNestedValue()
+    {
+        var s = Fixture(0, 1, 7);
+        s.Q(Source + 0x58, 0);
+        var result = Read(s, () => Source);
+        Assert.Equal("flag-branch-guard-ineligible-candidate", result.Status);
+        Assert.Equal("ineligible-null-provider", result.SourceGuardStatus);
+        Assert.False(result.SourceGuardEligible);
+        Assert.Equal(0, result.SourceGuardValue);
+        Assert.False(result.SourceProviderPresent);
+    }
+
+    [Fact] public void MissingNestedGuardOperandRemainsUnavailableNotZero()
+    {
+        var s = Fixture(0, 1, 7);
+        s.Remove(GuardContext + 0x24, 4);
+        var result = Read(s, () => Source);
+        Assert.Equal("flag-branch-guard-unavailable", result.Status);
+        Assert.Equal("unavailable-nested-value", result.SourceGuardStatus);
+        Assert.Null(result.SourceGuardEligible);
+        Assert.Null(result.SourceGuardValue);
+    }
+
+    [Fact] public void NullGuardContextRemainsUnavailableNotZero()
+    {
+        var s = Fixture(0, 1, 7);
+        s.Q(Source + 0x48, 0);
+        var result = Read(s, () => Source);
+        Assert.Equal("flag-branch-guard-unavailable", result.Status);
+        Assert.Equal("unavailable-null-context", result.SourceGuardStatus);
+        Assert.Null(result.SourceGuardEligible);
+    }
+
+    [Fact] public void SelfSourceBackownerMustMatchPlayerEntity()
+    {
+        var s = Fixture(0, 1, 7);
+        s.Q(Source + 0x10, Entity + 0x1000);
+        var result = Read(s, () => Source);
+        Assert.Equal("flag-branch-source-owner-mismatch", result.Status);
+        Assert.Equal("unavailable-source-owner-mismatch", result.SourceGuardStatus);
+        Assert.Null(result.SourceComponent);
+        Assert.Null(result.SourceGuardEligible);
     }
 
     [Theory]
@@ -102,6 +165,10 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
     [InlineData(Position + 0x100, 8)]
     [InlineData(Position + 0x108, 1)]
     [InlineData(Selector, 4)]
+    [InlineData(Source + 0x10, 8)]
+    [InlineData(Source + 0x48, 8)]
+    [InlineData(GuardContext + 0x24, 4)]
+    [InlineData(Source + 0x58, 8)]
     public void ChangedAnchorRejectsObservation(ulong address, int length)
     {
         var s = Fixture(0, 1, 7); s.Changed = (address, length);
@@ -217,6 +284,8 @@ public sealed class CurrentBuildPositionRefreshBranchCandidateReaderTests
         var s = new Fake();
         s.Q(Position + 0x10, Entity); s.Q(Position + 0x100, handle);
         s.Put(Position + 0x108, [flag]);
+        s.Q(Source + 0x10, Entity); s.Q(Source + 0x48, GuardContext); s.Q(Source + 0x58, Provider);
+        s.Put(GuardContext + 0x24, BitConverter.GetBytes(0));
         var bytes = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(bytes, selector);
         s.Put(Selector, bytes); return s;
     }

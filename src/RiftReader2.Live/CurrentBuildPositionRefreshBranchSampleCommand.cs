@@ -73,10 +73,10 @@ internal static class CurrentBuildPositionRefreshBranchSampleCommand
         static string Hex(ulong raw) => $"0x{raw:X16}";
         var report = new
         {
-            schemaVersion = 1,
-            contractVersion = "native-current-position-refresh-branch-candidate/1",
+            schemaVersion = 2,
+            contractVersion = "native-current-position-refresh-branch-candidate/2",
             status = "complete",
-            qualification = "branch-guards-only; no writer execution, independently fresh XYZ, world position or facing proven",
+            qualification = "branch-inputs-and-0x6136B0-predicate-only; no writer execution, independently fresh XYZ, world position or facing proven",
             processRevalidationStatus = "passed-before-publication",
             sourceBuildSha256 = CurrentBuildPlayerLookup.GameSha256,
             processIdentity = new
@@ -101,12 +101,18 @@ internal static class CurrentBuildPositionRefreshBranchSampleCommand
                 observation.Flag,
                 observation.SourceSelector,
                 observation.Status,
-                sourceComponentHex = observation.SourceComponent is ulong component ? Hex(component) : null
+                sourceComponentHex = observation.SourceComponent is ulong component ? Hex(component) : null,
+                sourceGuardContextHex = observation.SourceGuardContextHex,
+                observation.SourceGuardValue,
+                observation.SourceProviderPresent,
+                observation.SourceGuardStatus,
+                observation.SourceGuardEligible
             },
             limitations = new[]
             {
                 "Branch guard eligibility is not proof that native 0x6996C0 executes or writes XYZ.",
-                "A missing guard is unavailable, not zero; observed zeros mean guard-ineligible for this observation only.",
+                "The 0x6136B0 source predicate is sampled only for the flag branch; its true result is a candidate, not proof the callback executes.",
+                "Missing top-level or nested guard operands are unavailable, not zero; observed zero/negative values mean ineligible for this observation only.",
                 "Self and referenced source slots are candidates, not qualified world-position providers.",
                 "The position component holds a cache, not independently qualified passive-fresh player coordinates.",
                 "Process, unit key and raw address identities are re-resolved; sequential reads cannot exclude ABA.",
@@ -118,10 +124,12 @@ internal static class CurrentBuildPositionRefreshBranchSampleCommand
         await JsonReportWriter.WriteNewAsync(path, report, ct);
         await output.WriteLineAsync(JsonSerializer.Serialize(new
         {
-            recordType = "native-current-position-refresh-branch-candidate-summary/1",
+            recordType = "native-current-position-refresh-branch-candidate-summary/2",
             report.status,
             report.qualification,
             branchStatus = observation.Status,
+            sourceGuardStatus = observation.SourceGuardStatus,
+            sourceGuardEligible = observation.SourceGuardEligible,
             unitIdCandidate = observation.PlayerUnitIdCandidate,
             output = path
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
