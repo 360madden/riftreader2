@@ -41,8 +41,11 @@ Workbridge receipt `rr2-peer-guard-cohort-pointer-selected-chunk-20261108-01`
 passed exit0 with no parse/hash/provenance error. These two explicit
 `0x6996C0` cache-update groups are ineligible for
 those historical rows, but other engine writers and current live branch state
-remain unresolved. Jimmy's independent report is still evolving; do not stage
-or overwrite it until a stabilized SHA has been separately reviewed.
+remain unresolved. The 205-line Jimmy-authored report was reviewed and
+committed separately as `8bb18ff456ddcca5f0608718d483959275449a94`
+at SHA256 `2302F389A91C0F018B526B5C151B28C67912CA7F7B8A6DC5811CFB7D3F6EB422`.
+If the independent chat extends it later, re-review exact new bytes before
+integrating; never overwrite Jimmy's active source.
 
 **Next independent Jimmy lane if available (read-only):** Trace the
 branch-admitted writers of primary cached component XYZ `+0x48..+0x50`

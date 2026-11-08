@@ -97,3 +97,36 @@ P2 blockers for an unattended continuous tracking loop; do not claim sustained
 2 Hz production from the present offline tests. A future long-running design
 must address lifecycle, evidence retention, identity and safe cancellation before
 making a sustained-use claim.
+
+## Fleet update path — not current deployment authority
+
+The existing `scripts/guest_agent_launcher.py` supports a guarded fleet
+update using `update --managed-lab lab1|lab2 --release DESCRIPTOR --output
+NEW_DIRECTORY`. The managed-lab option selects the current
+`managed-fleet-20261029` root rather than the older `managed` installation.
+The descriptor has exactly `release` and `sha256` fields. This command
+**does not stage the executable**: a separately reviewed, unique immutable
+release must already be present under the fleet release root, with guest bytes
+independently hash-verified. Do not overwrite an existing release or descriptor.
+
+Any later update requires explicit target-specific authorization and exclusive
+maintenance ownership. Before every guest login, check the cached credentials
+for that specific VM using the approved workflow. Reacquire and pin VM, game,
+controller and guest-instance identities; verify the queue is unblocked and
+unheld, no conflicting work or pending recovery exists, and the agent is
+idle and disarmed. The managed workflow takes its maintenance lease, sends
+STOP, and requests graceful replacement. The launcher validates the new release
+before stopping the old agent, requires matching clean shutdown and no pending
+input journal, starts the new agent, and updates its descriptor only after
+readiness. Postflight must verify the new authenticated instance, process and
+release hash, advanced connection/supervisor epoch and clean state. An uncertain
+timeout or cleanup blocks further action; inspect the exact saved result and
+identities before considering another request. Never force termination or reset
+the queue to make an update pass.
+
+A prior Lab2 managed update retained the previous executable and two-field
+rollback descriptor; the same guarded update mechanism can use that saved
+descriptor for a separately authorized rollback after the applicable checks.
+See [the historical update and rollback evidence](../validation/lab2-latency-improvements-2026-11-06.md#activation-and-rollback).
+That history proves neither present readiness nor deployment of the new XYZ
+route. Standalone guest CLI sampling does not replace the control agent.

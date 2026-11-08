@@ -1,5 +1,19 @@
 # Current status
 
+**20:47 EST NOVEMBER 7 — INDEPENDENT PLAYER/TARGET RAW ZONE KEYS:**
+New current-build read-only `CurrentBuildPairedZoneKeyCandidateReader` now
+brackets separately owned 0294 `owner+0x150` raw keys for self and selected
+target around the existing guarded paired XYZ acquisition. A matching key is
+ONLY `matching-zone-key-candidate`; target-health absence preserves target XYZ
+with zone unavailable. Public zone ID, world instance, atomic same-world
+geometry and passive source freshness remain UNAVAILABLE. The bounded
+`sample-current-paired-zone-key` command is registered in source but NOT
+deployed or game-tested. Full Release .NET suite **699/699 PASS**; no gameplay
+input, controller/agent restart or VM maintenance. A separate audit found the
+standalone guest CLI does NOT share the current persistent agent's native-read
+lane; exclusive cross-process acquisition is a live acceptance prerequisite.
+No current resident agent/guest runner is claimed to honor a new lock.
+
 **20:33 EST NOVEMBER 7 — XYZ MULTI-SOURCE AND FAST-TRANSPORT SOURCE CHECKPOINT:**
 The exact-current-build native location, optional zone, selected-target pair,
 raw orientation and offline reference-correlation commands/helpers are now
