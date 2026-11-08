@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-08",
+  "host": "AMD-DESKTOP",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "pushedCommits": [
+    "872a167b8839361b77bc1c401faed9ec39435140",
+    "c72157f40605eb1baba0d5975d6446c1083239d5"
+  ],
+  "tests": {
+    "passed": 1390,
+    "failed": 0
+  },
+  "labs": {
+    "lab1": {
+      "freshScopedCount": 65,
+      "gamePid": 6820,
+      "lastFreshAtUtc": "2026-11-08T16:03:52.587643Z",
+      "addonChallengeLostAtUtc": "2026-11-08T16:03:53.445240Z",
+      "gameExitAtUtc": "2026-11-08T16:10:49.704078Z",
+      "anchor": {
+        "x": 7450.36962890625,
+        "y": 864.3099975585938,
+        "z": 2984.60986328125
+      },
+      "catalog": "artifacts/live-reliability-20261108-03/lab1-captured-xyz-reference-01.json",
+      "receiptSha256": "B8B1E937123B0C063A6FDBD6FE6DFE93AD4912338E4A3204B37AB6525F8B7394"
+    },
+    "lab2": {
+      "freshScopedCount": 707,
+      "gamePid": 10612,
+      "lastFreshAtUtc": "2026-11-08T16:10:55.5407029Z",
+      "gameExitAtUtc": "2026-11-08T16:10:56.760235Z",
+      "anchor": {
+        "x": 7182.4599609375,
+        "y": 820.5199584960938,
+        "z": 3159.669921875
+      },
+      "catalog": "artifacts/live-reliability-20261108-03/lab2-captured-xyz-reference-01.json",
+      "receiptSha256": "9DF8708B673746E734D3EEA5F39382B899821BC3D6E7B43A21F2A610637F0AD9"
+    }
+  },
+  "gameExitsSecondsApart": 7.056,
+  "qualification": "offline-reference-only",
+  "movementEligible": false,
+  "rootCauseOfSignalLoss": "unverified",
+  "controllerOwnership": "check before every input; both managed lanes were busy at checkpoint",
+  "next": [
+    "verify game processes and exclusive controller ownership",
+    "screenshot-review /rr2guide status when console becomes available",
+    "re-establish fresh nonce-bound scoped source",
+    "validate current native XYZ and world context before movement"
+  ]
+}
