@@ -64,6 +64,7 @@ public sealed record ControlIdentityResponse(
 /// <summary>Outbound-only, interactive-session input adapter. No arbitrary command execution.</summary>
 public sealed class ControlAgent
 {
+    internal const int NativeReadLeaseVersion = 1;
     private static readonly JsonSerializerOptions Wire = new(JsonFormat.Options) { WriteIndented = false };
     private readonly ControlAgentConfiguration configuration;
     private readonly string instanceId = Guid.NewGuid().ToString("N");
@@ -82,6 +83,7 @@ public sealed class ControlAgent
         Task<ControlNativeVitalsResponse>> nativeVitalsCapture;
     private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
         Task<ControlNativeXyzResponse>> nativeXyzCapture;
+    private readonly Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease;
     private string PendingPath => Path.Combine(configuration.OutputDirectory, "pending.json");
 
     public ControlAgent(ControlAgentConfiguration configuration)
@@ -97,13 +99,29 @@ public sealed class ControlAgent
             Task<ControlNativeVitalsResponse>> nativeVitalsCapture,
         Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
             Task<ControlNativeXyzResponse>> nativeXyzCapture)
+        : this(configuration, nativeVitalsCapture, nativeXyzCapture, AcquireNativeReadLeaseAsync) { }
+
+    // Injectable lease is an explicit offline test seam; production uses the shared file lease.
+    internal ControlAgent(ControlAgentConfiguration configuration,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeVitalsResponse>> nativeVitalsCapture,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeXyzResponse>> nativeXyzCapture,
+        Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease)
     {
         configuration.Validate();
+        ArgumentNullException.ThrowIfNull(nativeReadLease);
+        this.nativeReadLease = nativeReadLease;
         this.nativeXyzCapture = nativeXyzCapture;
         this.nativeVitalsCapture = nativeVitalsCapture;
         this.configuration = configuration;
         Directory.CreateDirectory(configuration.OutputDirectory);
     }
+
+    private static async Task<IAsyncDisposable> AcquireNativeReadLeaseAsync(
+        ControlIdentityRequest identity, CancellationToken token) =>
+        await NativeReadFileLease.AcquireAsync(identity.ProcessId, identity.ProcessStartUtcTicks,
+            identity.ExecutableSha256.ToUpperInvariant(), TimeSpan.FromSeconds(1), token);
 
     public static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
     {
@@ -278,6 +296,9 @@ public sealed class ControlAgent
                 throw new InvalidOperationException("Native reads require disarmed, idle control with no pending recovery.");
             var identity = command.Payload.Deserialize<ControlIdentityRequest>(JsonFormat.Options)
                 ?? throw new InvalidDataException("Missing expected identity.");
+            identity.Validate();
+            token.ThrowIfCancellationRequested();
+            await using var lease = await nativeReadLease(identity, token);
             token.ThrowIfCancellationRequested();
             if (command.Operation == "native-xyz")
             {
@@ -314,6 +335,7 @@ public sealed class ControlAgent
                         freshIdentityVersion = 1,
                         nativeVitalsVersion = 1,
                         nativeXyzVersion = 1,
+                        nativeReadLeaseVersion = NativeReadLeaseVersion,
                         gracefulShutdownVersion = 1,
                         target = Inspect(),
                         armed = IsArmed(),
@@ -425,59 +447,62 @@ public sealed class ControlAgent
                 throw new InvalidOperationException("Recovery required.");
             BoundedControlExecutor.Validate(request.Action);
             var target = reviewedTarget!;
-            var pending = new ControlPending(target, request.Action);
-            await WriteAtomicAsync(PendingPath, pending, token, false);
-            token.ThrowIfCancellationRequested();
-            if (!IsArmed() || target != Inspect())
-                throw new InvalidOperationException("Control target changed before cursor setup.");
-            if (request.Action.ClickTarget is { } click)
+            response = await ExecuteActionUnderNativeLeaseAsync(target, request.ArmToken, async () =>
             {
-                cursorPreparation = WindowsControlDesktop.PrepareTargetedClick(target, click);
-                // Allow hover to settle; the button-down path rechecks position and window.
-                await Task.Delay(50, token);
-            }
-            else if (request.Action.MouseButton is not null || request.Action.WheelNotches != 0)
-            {
-                var placement = WindowsControlDesktop.PrepareCursor(
-                    target, request.Action.DeltaX, request.Action.DeltaY);
-                cursorPreparation = placement;
-                if (placement.Repositioned)
+                var pending = new ControlPending(target, request.Action);
+                await WriteAtomicAsync(PendingPath, pending, token, false);
+                token.ThrowIfCancellationRequested();
+                if (!IsArmed() || target != Inspect())
+                    throw new InvalidOperationException("Control target changed before cursor setup.");
+                if (request.Action.ClickTarget is { } click)
                 {
-                    // Let the game consume positioning before a drag starts.
-                    // This is outside the input hold and remains cancellable.
-                    var settledAt = Stopwatch.GetTimestamp();
-                    while (Stopwatch.GetElapsedTime(settledAt).TotalMilliseconds < 50)
+                    cursorPreparation = WindowsControlDesktop.PrepareTargetedClick(target, click);
+                    // Allow hover to settle; the button-down path rechecks position and window.
+                    await Task.Delay(50, token);
+                }
+                else if (request.Action.MouseButton is not null || request.Action.WheelNotches != 0)
+                {
+                    var placement = WindowsControlDesktop.PrepareCursor(
+                        target, request.Action.DeltaX, request.Action.DeltaY);
+                    cursorPreparation = placement;
+                    if (placement.Repositioned)
                     {
-                        token.ThrowIfCancellationRequested();
-                        if (!IsArmed() || target != Inspect())
-                            throw new InvalidOperationException("Control target changed during cursor preparation.");
-                        await Task.Delay(10, token);
+                        // Let the game consume positioning before a drag starts.
+                        // This is outside the input hold and remains cancellable.
+                        var settledAt = Stopwatch.GetTimestamp();
+                        while (Stopwatch.GetElapsedTime(settledAt).TotalMilliseconds < 50)
+                        {
+                            token.ThrowIfCancellationRequested();
+                            if (!IsArmed() || target != Inspect())
+                                throw new InvalidOperationException("Control target changed during cursor preparation.");
+                            await Task.Delay(10, token);
+                        }
                     }
                 }
-            }
-            token.ThrowIfCancellationRequested();
-            var input = new BoundInput(this, target, request.Action.ClickTarget);
-            var result = await new BoundedControlExecutor(input).ExecuteAsync(request.Action, token);
-            if (result.ReleaseSucceeded)
-                File.Delete(PendingPath);
-            if (result.RequiresCallerDisarm || result.TargetLost || (!result.DeliverySucceeded && !result.Cancelled))
-                Disarm();
-            response = new
-            {
-                result,
-                target,
-                action = request.Action,
-                inputEvents = input.Events,
-                cursorPreparation,
-                cursorRestoration = "none; cursor remains under game control",
-                startedAtUtc = DateTimeOffset.UtcNow - Stopwatch.GetElapsedTime(started),
-                completedAtUtc = DateTimeOffset.UtcNow,
-                elapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
-                recoveryRequired = File.Exists(PendingPath),
-                responseEvidence = request.Action.WheelNotches != 0
-                    ? "Wheel window-message dispatch only; compare a later independent frame to establish zoom."
-                    : "Windows input insertion and release only; compare a later independent frame/API observation."
-            };
+                token.ThrowIfCancellationRequested();
+                var input = new BoundInput(this, target, request.Action.ClickTarget);
+                var result = await new BoundedControlExecutor(input).ExecuteAsync(request.Action, token);
+                if (result.ReleaseSucceeded)
+                    File.Delete(PendingPath);
+                if (result.RequiresCallerDisarm || result.TargetLost || (!result.DeliverySucceeded && !result.Cancelled))
+                    Disarm();
+                return (object)new
+                {
+                    result,
+                    target,
+                    action = request.Action,
+                    inputEvents = input.Events,
+                    cursorPreparation,
+                    cursorRestoration = "none; cursor remains under game control",
+                    startedAtUtc = DateTimeOffset.UtcNow - Stopwatch.GetElapsedTime(started),
+                    completedAtUtc = DateTimeOffset.UtcNow,
+                    elapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                    recoveryRequired = File.Exists(PendingPath),
+                    responseEvidence = request.Action.WheelNotches != 0
+                        ? "Wheel window-message dispatch only; compare a later independent frame to establish zoom."
+                        : "Windows input insertion and release only; compare a later independent frame/API observation."
+                };
+            }, token);
         }
         catch (Exception exception)
         {
@@ -486,6 +511,40 @@ public sealed class ControlAgent
         }
         // Cancellation must not erase the release outcome from disk.
         await ReplyAsync(stream, command, response, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Excludes participating native readers only during new action input and its
+    /// release/journal outcome. Not an arm-wide lock or proof of globally clean input;
+    /// failed release still requires pending recovery. STOP/key-up never wait here.
+    /// </summary>
+    internal async Task<T> ExecuteActionUnderNativeLeaseAsync<T>(DesktopTarget target,
+        string expectedArmToken, Func<Task<T>> actionBody, CancellationToken token,
+        Func<DesktopTarget>? inspectForTest = null)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(actionBody);
+        var inspect = inspectForTest ?? Inspect;
+        void RequireAdmission()
+        {
+            token.ThrowIfCancellationRequested();
+            if (!IsArmed() || expectedArmToken != armToken || reviewedTarget != target || target != inspect())
+                throw new InvalidOperationException("Control session changed or expired while awaiting native-read exclusion.");
+            if (File.Exists(PendingPath))
+                throw new InvalidOperationException("Recovery required before new action input.");
+        }
+        RequireAdmission();
+        var identity = new ControlIdentityRequest(target.MachineName, target.ProcessId,
+            target.ProcessStartUtcTicks, target.ExecutableSha256.ToUpperInvariant());
+        identity.Validate();
+        // Never hold stateLock/writeLock across this await. The existing action token
+        // cancels the wait on STOP/release; waiting never extends the 15-second arm.
+        await using var lease = await nativeReadLease(identity, token)
+            ?? throw new InvalidDataException("Action native-read exclusion returned no lease.");
+        RequireAdmission();
+        // Production body begins with PendingPath creation and retains the lease
+        // through cursor preparation, executor's release finally and journal outcome.
+        return await actionBody();
     }
 
     private async Task<object> RecoverAsync(CancellationToken token)

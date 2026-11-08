@@ -282,6 +282,49 @@ public sealed class CurrentBuildPositionSampleCommandTests
         return result;
     }
 
+    [Fact]
+    public async Task ThirtySampleRunHoldsLeaseUntilSessionDisposed()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-lease-" + Guid.NewGuid().ToString("N") + ".json");
+        var session = new FakeSession();
+        var held = false;
+        var disposedAfterSession = false;
+        var count = 0;
+        try
+        {
+            var options = new Dictionary<string, string> {
+                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path,
+                ["--samples"] = "30", ["--interval-ms"] = "0" };
+            var code = await CurrentBuildPositionSampleCommand.RunAsync(options, TextWriter.Null, default,
+                (_, _, _) => { held = true; return Task.FromResult<IAsyncDisposable>(new TestLease(() =>
+                    { held = false; disposedAfterSession = session.Disposed; })); },
+                (_, _, _) => { Assert.True(held); return Task.FromResult<IReadOnlyNativeMemorySession>(session); },
+                _ => { Assert.True(held); count++; return new CurrentBuildOwnedPosition(1, new(1, 2, 3)); });
+            Assert.Equal(0, code); Assert.Equal(30, count);
+            Assert.True(session.Disposed); Assert.True(disposedAfterSession); Assert.False(held);
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task LeaseDenialDoesNotOpenPositionSession()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-lease-" + Guid.NewGuid().ToString("N") + ".json");
+        var options = new Dictionary<string, string> {
+            ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path };
+        var opened = false;
+        await Assert.ThrowsAsync<TimeoutException>(() => CurrentBuildPositionSampleCommand.RunAsync(
+            options, TextWriter.Null, default, (_, _, _) => throw new TimeoutException("busy"),
+            (_, _, _) => { opened = true; throw new Exception("must not open"); },
+            _ => throw new Exception("must not read")));
+        Assert.False(opened); Assert.False(File.Exists(path));
+    }
+
+    private sealed class TestLease(Action dispose) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() { dispose(); return ValueTask.CompletedTask; }
+    }
+
     private sealed class FakeSession : IReadOnlyNativeMemorySession
     {
         private readonly Dictionary<(ulong Address, int Length), byte[]> entries = [];
@@ -292,6 +335,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             123, 456, @"C:\RIFT_TRANSFER\RIFT\rift_x64.exe",
             CurrentBuildPositionSampleCommand.GameSha256, ModuleBase, 64 * 1024 * 1024);
         public int Calls { get; private set; }
+        public bool Disposed { get; private set; }
 
         public void Set(ulong address, byte[] bytes) => entries[(address, bytes.Length)] = (byte[])bytes.Clone();
         public void Remove(ulong address, int length) => entries.Remove((address, length));
@@ -313,6 +357,6 @@ public sealed class CurrentBuildPositionSampleCommandTests
         }
 
         public ValueTask<string?> RevalidateAsync(CancellationToken _) => ValueTask.FromResult<string?>(null);
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
     }
 }

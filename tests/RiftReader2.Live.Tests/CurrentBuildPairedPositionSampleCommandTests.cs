@@ -128,13 +128,94 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
         Assert.Single(Directory.GetFiles(directory));
     }
 
+    [Fact] public async Task LeaseCoversOpenReadRevalidationAndAwaitedSessionDisposal()
+    {
+        var s = new Fake(); var output = new StringWriter(); var events = new List<string>();
+        var lease = new TestLease { OnDispose = () => { Assert.True(s.Disposed); events.Add("lease-dispose"); } };
+        s.OnRevalidate = () => { Assert.False(lease.Disposed); events.Add("revalidate"); };
+        s.OnDisposeAsync = async () =>
+        {
+            Assert.False(lease.Disposed); events.Add("session-dispose-start");
+            await Task.Yield(); Assert.False(lease.Disposed); events.Add("session-dispose-end");
+        };
+        await Run(Options(), s, output, opened: (_, _) => { Assert.False(lease.Disposed); events.Add("open"); },
+            read: (_, _) => { Assert.False(lease.Disposed); events.Add("read"); return Observation(s); },
+            acquireLease: (pid, ticks, sha, timeout, token) =>
+            {
+                Assert.Equal(123, pid); Assert.Equal(456, ticks); Assert.Equal(CurrentBuildPlayerLookup.GameSha256, sha);
+                Assert.Equal(TimeSpan.FromSeconds(5), timeout); Assert.False(s.Disposed);
+                events.Add("lease-acquire"); return Task.FromResult<IAsyncDisposable>(lease);
+            });
+        Assert.True(lease.Disposed);
+        Assert.Equal(new[] { "lease-acquire", "open", "read", "revalidate", "session-dispose-start", "session-dispose-end", "lease-dispose" }, events);
+    }
+
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task LeaseTimeoutOrCancellationCannotOpenOrPublish(bool cancellation)
+    {
+        var s = new Fake(); var output = new StringWriter(); var opened = false;
+        Task<int> Attempt() => Run(Options(), s, output, opened: (_, _) => opened = true,
+            acquireLease: (_, _, _, _, _) => cancellation
+                ? Task.FromCanceled<IAsyncDisposable>(new CancellationToken(true))
+                : Task.FromException<IAsyncDisposable>(new TimeoutException("lease busy")));
+        if (cancellation) await Assert.ThrowsAnyAsync<OperationCanceledException>(Attempt);
+        else await Assert.ThrowsAsync<TimeoutException>(Attempt);
+        Assert.False(opened); Assert.False(s.Disposed); Assert.False(File.Exists(PathFor()));
+        Assert.Equal("", output.ToString());
+    }
+
+    [Fact] public async Task CancellationAfterLeaseAndReadFailureBothReleaseWithoutEarlyUnlock()
+    {
+        var s = new Fake(); var output = new StringWriter(); var lease = new TestLease();
+        using var cancel = new CancellationTokenSource(); var opened = false;
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => Run(Options(), s, output, opened: (_, _) => opened = true, token: cancel.Token,
+            acquireLease: (_, _, _, _, _) => { cancel.Cancel(); return Task.FromResult<IAsyncDisposable>(lease); }));
+        Assert.True(lease.Disposed); Assert.False(opened); Assert.False(s.Disposed);
+        s = new Fake(); lease = new TestLease { OnDispose = () => Assert.True(s.Disposed) };
+        s.OnDisposeAsync = () => { Assert.False(lease.Disposed); return ValueTask.CompletedTask; };
+        await Assert.ThrowsAsync<InvalidDataException>(() => Run(Options(), s, output, read: (_, _) => throw new InvalidDataException("source changed"),
+            acquireLease: (_, _, _, _, _) => Task.FromResult<IAsyncDisposable>(lease)));
+        Assert.True(lease.Disposed); Assert.True(s.Disposed); Assert.False(File.Exists(PathFor()));
+    }
+
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task OpenOrRevalidationFailureReleasesLease(bool failedRevalidation)
+    {
+        var s = new Fake(); var lease = new TestLease(); var output = new StringWriter();
+        if (failedRevalidation) s.Failure = "process changed";
+        Task<int> Attempt() => Run(Options(), s, output,
+            opened: (_, _) => { if (!failedRevalidation) throw new IOException("open failed"); },
+            acquireLease: (_, _, _, _, _) => Task.FromResult<IAsyncDisposable>(lease));
+        if (failedRevalidation) await Assert.ThrowsAsync<InvalidDataException>(Attempt);
+        else await Assert.ThrowsAsync<IOException>(Attempt);
+        Assert.True(lease.Disposed); Assert.Equal(failedRevalidation, s.Disposed);
+        Assert.False(File.Exists(PathFor())); Assert.Equal("", output.ToString());
+    }
+
+    sealed class TestLease : IAsyncDisposable
+    {
+        public bool Disposed { get; private set; }
+        public Action? OnDispose { get; set; }
+        public ValueTask DisposeAsync() { Disposed = true; OnDispose?.Invoke(); return ValueTask.CompletedTask; }
+    }
+
+    static Task<IAsyncDisposable> AcquireTestLease(int pid, long ticks, string sha, TimeSpan timeout, CancellationToken token)
+    {
+        Assert.Equal(123, pid); Assert.Equal(456, ticks);
+        Assert.Equal(CurrentBuildPlayerLookup.GameSha256, sha);
+        Assert.Equal(TimeSpan.FromSeconds(5), timeout);
+        token.ThrowIfCancellationRequested();
+        return Task.FromResult<IAsyncDisposable>(new TestLease());
+    }
+
     static Task<int> Run(Dictionary<string, string> options, Fake s, TextWriter output,
         Action<int, long>? opened = null,
         Func<IReadOnlyNativeMemorySession, int, CurrentBuildPairedPositionObservation>? read = null,
-        CancellationToken token = default) =>
+        CancellationToken token = default,
+        Func<int, long, string, TimeSpan, CancellationToken, Task<IAsyncDisposable>>? acquireLease = null) =>
         CurrentBuildPairedPositionSampleCommand.RunAsync(options, output, token,
             (pid, ticks, _) => { opened?.Invoke(pid, ticks); return Task.FromResult<IReadOnlyNativeMemorySession>(s); },
-            read ?? ((_, _) => Observation(s)));
+            read ?? ((_, _) => Observation(s)), acquireLease ?? AcquireTestLease);
 
     static CurrentBuildPairedPositionObservation Observation(Fake s)
     {
@@ -159,6 +240,7 @@ public sealed class CurrentBuildPairedPositionSampleCommandTests : IDisposable
             token.ThrowIfCancellationRequested(); Revalidations++; OnRevalidate?.Invoke();
             return ValueTask.FromResult(Failure);
         }
-        public ValueTask DisposeAsync() { Disposed = true; return ValueTask.CompletedTask; }
+        public Func<ValueTask>? OnDisposeAsync { get; set; }
+        public async ValueTask DisposeAsync() { if (OnDisposeAsync is not null) await OnDisposeAsync(); Disposed = true; }
     }
 }

@@ -10,10 +10,21 @@ internal sealed record VariantGuardObservation(object Identity,DateTimeOffset St
 }
 internal static class CurrentBuildVariantGuardSampleCommand
 {
- internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
+ internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)=>RunAsync(options,output,ct,
+  async(pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,token),Read,
+  async(pid,ticks,sha,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,sha,TimeSpan.FromSeconds(1),token));
+ internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
+  Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> openSession,
+  Func<IReadOnlyNativeMemorySession,VariantGuardObservation> read,
+  Func<int,long,string,CancellationToken,Task<IAsyncDisposable>> acquireLease)
  {
   if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks and --output required.");
-  if(File.Exists(path))throw new IOException("Output exists.");await using var session=await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct);ct.ThrowIfCancellationRequested();var observation=Read(session);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process invalidated.");ct.ThrowIfCancellationRequested();await JsonReportWriter.WriteNewAsync(path,new{schemaVersion=1,contractVersion="native-current-variant-guards-candidate/1",status="complete",observation},ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-variant-guards-summary/1",output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
+  if(File.Exists(path))throw new IOException("Output exists.");ct.ThrowIfCancellationRequested();
+  await using var lease=await acquireLease(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct);
+  ct.ThrowIfCancellationRequested();
+  await using var session=await openSession(pid,ticks,ct);
+  if(session.Identity.ProcessId!=pid||session.Identity.ProcessStartUtcTicks!=ticks||!string.Equals(session.Identity.ExecutableSha256,CurrentBuildPlayerLookup.GameSha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Native session identity does not match requested lease epoch.");
+  ct.ThrowIfCancellationRequested();var observation=read(session);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process invalidated.");ct.ThrowIfCancellationRequested();await JsonReportWriter.WriteNewAsync(path,new{schemaVersion=1,contractVersion="native-current-variant-guards-candidate/1",status="complete",observation},ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-variant-guards-summary/1",output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
  }
  internal static VariantGuardObservation Read(IReadOnlyNativeMemorySession session)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,s=>{var l=CurrentBuildPlayerLookup.Resolve(s);return new(l.PlayerKey,l.EntityAddress,l.ResolveComponent(0x2F57850),l.VerifyUnchanged);});
  internal static VariantGuardObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyNativeMemorySession,PlayerContextOwner> resolve)

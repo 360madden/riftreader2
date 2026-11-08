@@ -1,20 +1,31 @@
 using System.Globalization;
 using System.Text.Json;
 using RiftReader2.Infrastructure;
+using RiftReader2.Application;
 namespace RiftReader2.Live;
 internal static class CurrentBuildWorldCastSampleCommand
 {
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output,CancellationToken cancellationToken)
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output,CancellationToken cancellationToken) =>
+        RunAsync(options, output, cancellationToken,
+            async (pid,ticks,ct) => await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),ct),
+            async (pid,ticks,ct) => await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct),
+            CurrentBuildWorldCastCandidateReader.Read);
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output,CancellationToken cancellationToken,
+        Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
+        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession,ulong,WorldCastObservation> read)
     {
         if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks and --output required.");
         int Parse(string key,int fallback,int min,int max) {if(!options.TryGetValue(key,out var v))return fallback; if(!int.TryParse(v,NumberStyles.None,CultureInfo.InvariantCulture,out var n)||n<min||n>max)throw new ArgumentException($"{key} must be {min}..{max}.");return n;}
         var samples=Parse("--samples",10,1,30);var interval=Parse("--interval-ms",100,0,500); if((samples-1)*interval>15000)throw new ArgumentException("Sampling delays exceed 15 seconds.");
         if(File.Exists(path))throw new IOException("Output exists; never overwrite an earlier observation.");
-        await using var session=await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,cancellationToken);
+        await using var lease=await acquire(pid,ticks,cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var session=await open(pid,ticks,cancellationToken);
         var observations=new List<WorldCastObservation>(); ulong startBucket=0;
         for(var i=0;i<samples;i++)
         {
-            cancellationToken.ThrowIfCancellationRequested(); var observation=CurrentBuildWorldCastCandidateReader.Read(session,startBucket); observations.Add(observation);
+            cancellationToken.ThrowIfCancellationRequested(); var observation=read(session,startBucket); observations.Add(observation);
             startBucket=(observation.StartBucket+(ulong)observation.BucketsExamined)%observation.BucketCount;
             if(await session.RevalidateAsync(cancellationToken) is not null)throw new InvalidDataException("Process identity invalidated; no report published.");
             if(i+1<samples)await Task.Delay(interval,cancellationToken);

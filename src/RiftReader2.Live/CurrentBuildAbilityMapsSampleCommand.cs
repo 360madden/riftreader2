@@ -16,16 +16,31 @@ internal sealed record CurrentBuildAbilityMapsReport(CurrentBuildAbilityMapsObse
 
 internal static class CurrentBuildAbilityMapsSampleCommand
 {
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken)
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
+        RunAsync(options, output, cancellationToken,
+            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
+            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+            CurrentBuildAbilityMapsCandidateReader.Read);
+
+    // Explicit offline-only seam; production always supplies the real lease.
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output,
+        CancellationToken cancellationToken,
+        Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildAbilityMapsObservation> read)
     {
         if (!options.TryGetValue("--pid", out var rawPid) || !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) || !long.TryParse(rawTicks, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
             !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--pid, --start-ticks and --output are required.");
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
-        await using var session = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
+        await using var lease = await acquireLease(pid, ticks, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        var observation = CurrentBuildAbilityMapsCandidateReader.Read(session);
+        await using var session = await open(pid, ticks, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var observation = read(session);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested();
         var report = new CurrentBuildAbilityMapsReport(observation);

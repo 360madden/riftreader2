@@ -9,10 +9,20 @@ internal sealed record CurrentShardObservation(object Identity,DateTimeOffset St
 {public string Qualification=>"current-shard name candidate; API correspondence, freshness and restart unverified";}
 internal static class CurrentBuildCurrentShardSampleCommand
 {
- internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
+ internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct) =>
+        RunAsync(options,output,ct,
+            static async (pid,ticks,token) => await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),token),
+            static async (pid,ticks,token) => await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,token),
+            Read);
+
+    // Explicit offline test seam; production always supplies the real lease.
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
+        Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquireLease,
+        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession,CurrentShardObservation> read)
  {
   if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks and --output required.");
-  if(File.Exists(path))throw new IOException("Output exists.");await using var session=await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct);ct.ThrowIfCancellationRequested();var observation=Read(session);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process invalidated.");ct.ThrowIfCancellationRequested();await JsonReportWriter.WriteNewAsync(path,new{schemaVersion=1,contractVersion="native-current-shard-name-candidate/1",status="complete",observation,limitations=new[]{"Map text is a current-shard name candidate, not independently confirmed API or UI output.","Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.","No native getter, initializer, refcount or memory write is performed."}},ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-shard-name-summary/1",output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
+  if(File.Exists(path))throw new IOException("Output exists.");await using var lease=await acquireLease(pid,ticks,ct);ct.ThrowIfCancellationRequested();await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();var observation=read(session);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process invalidated.");ct.ThrowIfCancellationRequested();await JsonReportWriter.WriteNewAsync(path,new{schemaVersion=1,contractVersion="native-current-shard-name-candidate/1",status="complete",observation,limitations=new[]{"Map text is a current-shard name candidate, not independently confirmed API or UI output.","Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.","No native getter, initializer, refcount or memory write is performed."}},ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-shard-name-summary/1",output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
  }
  internal static CurrentShardObservation Read(IReadOnlyNativeMemorySession session)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,s=>{var l=CurrentBuildPlayerLookup.Resolve(s);return new(l.PlayerKey,l.EntityAddress,l.ResolveComponent(0x2F57850),l.VerifyUnchanged);});
  internal static CurrentShardObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyNativeMemorySession,PlayerContextOwner> resolve)

@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $captureExecutable = (Resolve-Path -LiteralPath $Executable).Path
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $runDirectory = (Resolve-Path -LiteralPath $OutputDirectory).Path
+$requestEncoding = [System.Text.UTF8Encoding]::new($false)
 $currentProcess = [Diagnostics.Process]::GetCurrentProcess()
 try {
     $request = [ordered]@{
@@ -23,7 +24,8 @@ try {
     }
     $requestPath = Join-Path $runDirectory 'request.json'
     $reportPath = Join-Path $runDirectory 'capture.json'
-    $request | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $requestPath -Encoding utf8
+    [IO.File]::WriteAllBytes($requestPath,
+        $requestEncoding.GetBytes(($request | ConvertTo-Json -Depth 8) + [Environment]::NewLine))
     & $captureExecutable capture-native --request $requestPath --output $reportPath > (Join-Path $runDirectory 'capture.stdout.json')
     if ($LASTEXITCODE -ne 0) { throw 'Published native capture failed.' }
     $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json
@@ -35,15 +37,30 @@ try {
     $bytes = [Convert]::FromBase64String($report.capture.samples[0].ranges[0].bytesBase64)
     if ($bytes.Length -ne 2 -or $bytes[0] -ne 77 -or $bytes[1] -ne 90) { throw 'Published native capture did not read the PE header.' }
     $firstHash = (Get-FileHash -LiteralPath $reportPath).Hash
-    & $captureExecutable capture-native --request $requestPath --output $reportPath > (Join-Path $runDirectory 'overwrite.stdout.txt') 2> (Join-Path $runDirectory 'overwrite.stderr.txt')
+    $savedNativeErrorPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+        # This invocation is expected to exit 2; keep the explicit assertions below.
+        $ErrorActionPreference = 'Continue'
+        & $captureExecutable capture-native --request $requestPath --output $reportPath > (Join-Path $runDirectory 'overwrite.stdout.txt') 2> (Join-Path $runDirectory 'overwrite.stderr.txt')
+    }
+    finally { $ErrorActionPreference = $savedNativeErrorPreference }
     if ($LASTEXITCODE -ne 2 -or (Get-FileHash -LiteralPath $reportPath).Hash -ne $firstHash) {
         throw 'Published native capture replaced existing evidence.'
     }
     $request.target.processStartUtcTicks++
     $staleRequest = Join-Path $runDirectory 'stale.request.json'
-    $request | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $staleRequest -Encoding utf8
+    [IO.File]::WriteAllBytes($staleRequest,
+        $requestEncoding.GetBytes(($request | ConvertTo-Json -Depth 8) + [Environment]::NewLine))
     $staleOutput = Join-Path $runDirectory 'stale.json'
-    & $captureExecutable capture-native --request $staleRequest --output $staleOutput > (Join-Path $runDirectory 'stale.stdout.txt') 2> (Join-Path $runDirectory 'stale.stderr.txt')
+    $savedNativeErrorPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+        # This invocation is expected to exit 2; keep the explicit assertions below.
+        $ErrorActionPreference = 'Continue'
+        & $captureExecutable capture-native --request $staleRequest --output $staleOutput > (Join-Path $runDirectory 'stale.stdout.txt') 2> (Join-Path $runDirectory 'stale.stderr.txt')
+    }
+    finally { $ErrorActionPreference = $savedNativeErrorPreference }
     if ($LASTEXITCODE -ne 2 -or (Test-Path -LiteralPath $staleOutput)) { throw 'Published native capture accepted a stale epoch.' }
     $positionProfile = Join-Path (Split-Path -Parent $captureExecutable) 'position-candidate-profile.json'
     $trackedPositionProfile = Join-Path $PSScriptRoot '../config/position-candidate-profile.json'
@@ -51,7 +68,14 @@ try {
         (Get-FileHash -LiteralPath $positionProfile).Hash -ne (Get-FileHash -LiteralPath $trackedPositionProfile).Hash) {
         throw 'Published position panel is missing its exact default profile sidecar.'
     }
-    & $captureExecutable position-panel --output-directory $runDirectory > (Join-Path $runDirectory 'panel-existing.stdout.txt') 2> (Join-Path $runDirectory 'panel-existing.stderr.txt')
+    $savedNativeErrorPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 treats redirected native stderr as ErrorRecords.
+        # This invocation is expected to exit 2; keep the explicit assertions below.
+        $ErrorActionPreference = 'Continue'
+        & $captureExecutable position-panel --output-directory $runDirectory > (Join-Path $runDirectory 'panel-existing.stdout.txt') 2> (Join-Path $runDirectory 'panel-existing.stderr.txt')
+    }
+    finally { $ErrorActionPreference = $savedNativeErrorPreference }
     if ($LASTEXITCODE -ne 2 -or
         (Get-Content -LiteralPath (Join-Path $runDirectory 'panel-existing.stderr.txt') -Raw) -notmatch 'evidence directory already exists') {
         throw 'Published panel did not load its default profile and reject an existing evidence directory before opening a window.'

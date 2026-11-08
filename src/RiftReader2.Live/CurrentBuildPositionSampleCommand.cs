@@ -17,10 +17,26 @@ internal static class CurrentBuildPositionSampleCommand
     internal const string GameSha256 = CurrentBuildPlayerLookup.GameSha256;
     private static readonly JsonSerializerOptions LineOptions = new(JsonFormat.Options) { WriteIndented = false };
 
-    internal static async Task<int> RunAsync(
+    internal static Task<int> RunAsync(
         IReadOnlyDictionary<string, string> options, TextWriter output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) =>
+        RunAsync(options, output, cancellationToken,
+            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, GameSha256, TimeSpan.FromSeconds(1), token),
+            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, GameSha256, token),
+            CurrentBuildPositionCandidateReader.ReadOwned);
+
+    // Explicit offline-only seam: production entry always supplies the real lease.
+    internal static async Task<int> RunAsync(
+        IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken,
+        Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildOwnedPosition> read)
     {
+        ArgumentNullException.ThrowIfNull(acquireLease);
+        ArgumentNullException.ThrowIfNull(open);
+        ArgumentNullException.ThrowIfNull(read);
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) ||
@@ -34,8 +50,9 @@ internal static class CurrentBuildPositionSampleCommand
         if (File.Exists(path))
             throw new IOException("Native candidate output exists; never overwrite an earlier observation.");
 
-        await using var session = await WindowsNativeMemorySession.OpenAsync(
-            pid, ticks, GameSha256, cancellationToken);
+        await using var lease = await acquireLease(pid, ticks, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var session = await open(pid, ticks, cancellationToken);
         var readings = new List<CurrentBuildPositionObservation>(samples);
         var timer = Stopwatch.StartNew();
         for (var index = 0; index < samples; ++index)
@@ -43,7 +60,7 @@ internal static class CurrentBuildPositionSampleCommand
             cancellationToken.ThrowIfCancellationRequested();
             var begin = DateTimeOffset.UtcNow;
             var started = timer.Elapsed.TotalMilliseconds;
-            var owned = CurrentBuildPositionCandidateReader.ReadOwned(session);
+            var owned = read(session);
             var xyz = owned.Position;
             var invalidated = await session.RevalidateAsync(cancellationToken);
             if (invalidated is not null)

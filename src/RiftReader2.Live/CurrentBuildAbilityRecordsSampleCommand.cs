@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using RiftReader2.Infrastructure;
+using RiftReader2.Application;
 namespace RiftReader2.Live;
 internal sealed record CurrentBuildAbilityRecordsReport(CurrentBuildAbilityRecordsObservation Observation)
 {
@@ -11,8 +12,24 @@ internal sealed record CurrentBuildAbilityRecordsReport(CurrentBuildAbilityRecor
 }
 internal static class CurrentBuildAbilityRecordsSampleCommand
 {
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken)
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
+        RunAsync(options, output, cancellationToken,
+            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
+            static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
+            CurrentBuildAbilityRecordsCandidateReader.Read);
+
+    // Explicit offline-only seam; production always supplies the real lease.
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output,
+        CancellationToken cancellationToken,
+        Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession, IReadOnlyList<uint>, bool, bool, bool, bool, CurrentBuildAbilityRecordsObservation> read)
     {
+        ArgumentNullException.ThrowIfNull(acquireLease);
+        ArgumentNullException.ThrowIfNull(open);
+        ArgumentNullException.ThrowIfNull(read);
         if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
             !options.TryGetValue("--keys", out var k) || !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path)) throw new ArgumentException("--pid, --start-ticks, --keys and --output are required.");
@@ -24,8 +41,10 @@ internal static class CurrentBuildAbilityRecordsSampleCommand
         var includeRange = options.TryGetValue("--include-range", out var range) ? range == "true" ? true : throw new ArgumentException("--include-range must be true.") : false;
         var includeVariants = options.TryGetValue("--include-variants", out var variants) ? variants == "true" ? true : throw new ArgumentException("--include-variants must be true.") : false;
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
-        await using var session = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested(); var observation = CurrentBuildAbilityRecordsCandidateReader.Read(session, keys, includeCosts, includeTiming, includeRange, includeVariants);
+        await using var lease = await acquireLease(pid, ticks, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var session = await open(pid, ticks, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested(); var observation = read(session, keys, includeCosts, includeTiming, includeRange, includeVariants);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested(); var report = new CurrentBuildAbilityRecordsReport(observation);
         await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);

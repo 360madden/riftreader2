@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using RiftReader2.Infrastructure;
+using RiftReader2.Application;
 namespace RiftReader2.Live;
 internal sealed record CurrentBuildLocalizationReport(CurrentBuildLocalizationObservation Observation)
 {
@@ -11,7 +12,17 @@ internal sealed record CurrentBuildLocalizationReport(CurrentBuildLocalizationOb
 }
 internal static class CurrentBuildLocalizationSampleCommand
 {
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken)
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output, CancellationToken cancellationToken) =>
+        RunAsync(options, output, cancellationToken,
+            async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, ct),
+            CurrentBuildLocalizationCandidateReader.Read,
+            async (pid, ticks, sha, ct) => await NativeReadFileLease.AcquireAsync(pid, ticks, sha, TimeSpan.FromSeconds(1), ct));
+
+    // Explicit offline lifecycle seam; production always uses the shared lease.
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options, TextWriter output, CancellationToken cancellationToken,
+        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> openSession,
+        Func<IReadOnlyNativeMemorySession,IReadOnlyList<uint>,CurrentBuildLocalizationObservation> read,
+        Func<int,long,string,CancellationToken,Task<IAsyncDisposable>> acquireLease)
     {
         if (!options.TryGetValue("--pid", out var p) || !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var t) || !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
@@ -20,8 +31,15 @@ internal static class CurrentBuildLocalizationSampleCommand
         if (parts.Length is < 1 or > 128) throw new ArgumentException("Provide 1..128 distinct decimal DWORD keys.");
         foreach (var part in parts) { if (!uint.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var key) || keys.Contains(key)) throw new ArgumentException("Provide 1..128 distinct decimal DWORD keys."); keys.Add(key); }
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
-        await using var session = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested(); var observation = CurrentBuildLocalizationCandidateReader.Read(session, keys);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var lease = await acquireLease(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Reverse disposal retains exclusion until the native session is actually disposed.
+        await using var session = await openSession(pid, ticks, cancellationToken);
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
+            !string.Equals(session.Identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Localization session does not match requested epoch/build.");
+        cancellationToken.ThrowIfCancellationRequested(); var observation = read(session, keys);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested(); var report = new CurrentBuildLocalizationReport(observation);
         await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);

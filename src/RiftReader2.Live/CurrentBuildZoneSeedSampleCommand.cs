@@ -11,11 +11,21 @@ internal sealed record ZoneSeedObservation(object Identity,DateTimeOffset Starte
 }
 internal static class CurrentBuildZoneSeedSampleCommand
 {
- internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
+ internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)=>
+  RunAsync(options,output,ct,
+   static async (pid,ticks,token)=>await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),token),
+   static async (pid,ticks,token)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,token),
+   static (session,pid)=>Read(session,CurrentBuildPlayerContextCandidateReader.Read,()=>WindowsThreadTlsSnapshot.Capture(pid)));
+ // Explicit offline-only seam; production entry supplies the real lease.
+ internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
+  Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquireLease,
+  Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
+  Func<IReadOnlyNativeMemorySession,int,ZoneSeedObservation> read)
  {
+  ArgumentNullException.ThrowIfNull(acquireLease);ArgumentNullException.ThrowIfNull(open);ArgumentNullException.ThrowIfNull(read);
   if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks, --output required.");
-  if(File.Exists(path))throw new IOException("Output exists.");await using var session=await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct);ct.ThrowIfCancellationRequested();
-  var observation=Read(session,CurrentBuildPlayerContextCandidateReader.Read,()=>WindowsThreadTlsSnapshot.Capture(pid));if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process identity invalidated.");ct.ThrowIfCancellationRequested();
+  if(File.Exists(path))throw new IOException("Output exists.");await using var lease=await acquireLease(pid,ticks,ct);ct.ThrowIfCancellationRequested();await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();
+  var observation=read(session,pid);if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process identity invalidated.");ct.ThrowIfCancellationRequested();
   var report=new{schemaVersion=1,contractVersion="native-current-zone-seed-candidate/1",status="complete",observation,limitations=new[]{"Cache-only; misses do not establish a missing zone.","Sequential reads cannot exclude ABA; loaded module bytes are not independently hashed.","No getter, initialization, refcount or memory writes; zone ID or name and restart unverified."}};
   await JsonReportWriter.WriteNewAsync(path,report,ct);await output.WriteLineAsync(JsonSerializer.Serialize(new{recordType="native-current-zone-seed-summary/1",observation.Status,output=Path.GetFullPath(path)},new JsonSerializerOptions(JsonFormat.Options){WriteIndented=false}));return 0;
  }

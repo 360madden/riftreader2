@@ -13,18 +13,22 @@ internal static class CurrentBuildLocationContextSampleCommand
         RunAsync(options, output, ct,
             static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
-            CurrentBuildLocationContextCandidateReader.ReadAsync);
+            CurrentBuildLocationContextCandidateReader.ReadAsync,
+            static async (pid, ticks, sha, timeout, token) =>
+                await NativeReadFileLease.AcquireAsync(pid, ticks, sha, timeout, token));
 
     // Offline lifecycle/publication tests use this seam; runtime sources remain exact-build native readers.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
-        Func<IReadOnlyNativeMemorySession, CancellationToken, Task<CurrentBuildLocationContextObservation>> read)
+        Func<IReadOnlyNativeMemorySession, CancellationToken, Task<CurrentBuildLocationContextObservation>> read,
+        Func<int, long, string, TimeSpan, CancellationToken, Task<IAsyncDisposable>> acquireLease)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(open);
         ArgumentNullException.ThrowIfNull(read);
+        ArgumentNullException.ThrowIfNull(acquireLease);
         if (!options.TryGetValue("--pid", out var p) ||
             !int.TryParse(p, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var t) ||
@@ -33,6 +37,10 @@ internal static class CurrentBuildLocationContextSampleCommand
             throw new ArgumentException("--pid, --start-ticks and --output required.");
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
+        // Reverse await-using disposal closes the session BEFORE releasing the shared lease.
+        await using var lease = await acquireLease(pid, ticks, CurrentBuildPlayerLookup.GameSha256,
+            TimeSpan.FromSeconds(5), ct) ?? throw new InvalidDataException("Native read lease acquisition returned no handle.");
+        ct.ThrowIfCancellationRequested();
         await using var session = await open(pid, ticks, ct);
         ct.ThrowIfCancellationRequested();
         var identity = session.Identity;

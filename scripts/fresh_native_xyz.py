@@ -129,6 +129,9 @@ def query(config, expected_vm, expected_game, host_config_path, *,
                 raise Blocked("native-xyz-host-target-mismatch")
             if type(guest.get("nativeXyzVersion")) is not int or guest["nativeXyzVersion"] != 1:
                 raise Blocked("native-xyz-unsupported")
+            if (type(guest.get("nativeReadLeaseVersion")) is not int
+                    or guest["nativeReadLeaseVersion"] != 1):
+                raise Blocked("native-xyz-lease-unsupported")
             instance = guest.get("instanceId")
             if (not isinstance(instance, str) or re.fullmatch(r"[0-9a-f]{32}", instance) is None
                     or current.get("instanceId") != instance):

@@ -1,5 +1,34 @@
 # Current status
 
+**21:16 EST NOVEMBER 7 — IMMUTABLE XYZ READER HOST-ONLY RELEASE:**
+New .NET10 single-file executable published at
+`artifacts/native-xyz-lease-20261108-0213z-7b942e6a/publish/RiftReader2.Live.exe`,
+SHA256 `DCFC17E18A4F361095B5701AB31CDF566664178781E0740FCC8969D2C61957FD`
+(117966688 bytes); `--help` and synthetic host-only native-published smoke
+passed (exact bundle hash, PE header, stale epoch/no-overwrite/sidecar checks).
+Location-pair host wrapper now pins these bytes; no VM agent was replaced.
+Complete .NET solution **1267/1267 PASS**. Full Python discovery **2076 run,
+10 errors, 2 skips**: all ten share unchanged mana-screenshot reviewed owner-probe
+SHA mismatch; focused XYZ Python264 run/262 pass/2 skip remains green.
+Full format verification is blocked by already-minified ExperienceValues source
+at HEAD (also newly edited lines); no broad reformat was performed.
+
+**21:12 EST NOVEMBER 7 — XYZ NATIVE-READ COOPERATION (SOURCE ONLY):**
+A machine-local, per-game-epoch cooperative `NativeReadFileLease` now gates the
+current-build position, orientation, location-context, paired-position,
+paired-zone, selected-target, vitals and zone-seed CLI readers plus persistent
+guest native-vitals/native-xyz capture source. Exclusion is keyed by exact
+PID/start/build SHA; lease scope includes session disposal. Combined Release
+.NET tests **887/887 PASS** and selected XYZ Python tests **264 run, 262 passed,
+2 skipped**. Real OS file-share contention and abrupt child-process release were
+tested offline; a symlink-creation privilege failure left the new reparse
+rejection test conditional, NOT exercised. **Not deployed or live accepted**:
+older installed agents/readers do not cooperate. All 27 registered CurrentBuild CLI commands
+and the newly guarded agent action body now participate in source, but generic/legacy native routes still bypass this lease. Keep all shared-lab
+read/input owner coordination, exact-identity and STOP controls. Source-only
+host launcher transport/guard hardening passed focused offline tests; no new guest binary was copied.
+[Native-read handoff](handoff-2026-11-07-xyz-lease-greeting-jimmy.md).
+
 **20:47 EST NOVEMBER 7 — INDEPENDENT PLAYER/TARGET RAW ZONE KEYS:**
 New current-build read-only `CurrentBuildPairedZoneKeyCandidateReader` now
 brackets separately owned 0294 `owner+0x150` raw keys for self and selected

@@ -35,19 +35,23 @@ internal static class CurrentBuildPairedPositionSampleCommand
         RunAsync(options, output, cancellationToken,
             async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, ct),
-            CurrentBuildPairedPositionCandidateReader.Read);
+            CurrentBuildPairedPositionCandidateReader.Read,
+            static async (pid, ticks, sha, timeout, token) =>
+                await NativeReadFileLease.AcquireAsync(pid, ticks, sha, timeout, token));
 
     // Dependency injection is for offline lifecycle/publication tests only.
     internal static async Task<int> RunAsync(
         IReadOnlyDictionary<string, string> options, TextWriter output,
         CancellationToken cancellationToken,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> openSession,
-        Func<IReadOnlyNativeMemorySession, int, CurrentBuildPairedPositionObservation> readPair)
+        Func<IReadOnlyNativeMemorySession, int, CurrentBuildPairedPositionObservation> readPair,
+        Func<int, long, string, TimeSpan, CancellationToken, Task<IAsyncDisposable>> acquireLease)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(openSession);
         ArgumentNullException.ThrowIfNull(readPair);
+        ArgumentNullException.ThrowIfNull(acquireLease);
         if (options.Keys.Any(key => key is not ("--pid" or "--start-ticks" or "--output" or "--max-pair-span-ms")))
             throw new ArgumentException("Unsupported paired-position option.");
         if (!options.TryGetValue("--pid", out var p) ||
@@ -64,6 +68,10 @@ internal static class CurrentBuildPairedPositionSampleCommand
         var path = Path.GetFullPath(requestedPath);
         if (File.Exists(path) || Directory.Exists(path))
             throw new IOException("Output already exists; never overwrite evidence.");
+        cancellationToken.ThrowIfCancellationRequested();
+        // Reverse await-using disposal closes the session BEFORE releasing the shared lease.
+        await using var lease = await acquireLease(pid, ticks, CurrentBuildPlayerLookup.GameSha256,
+            TimeSpan.FromSeconds(5), cancellationToken) ?? throw new InvalidDataException("Native read lease acquisition returned no handle.");
         cancellationToken.ThrowIfCancellationRequested();
         await using var session = await openSession(pid, ticks, cancellationToken);
         var admitted = session.Identity;

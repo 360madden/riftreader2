@@ -27,10 +27,29 @@ internal sealed record CurrentBuildVitalsReport(CurrentBuildVitalsObservation Ob
 /// <summary>One exact-build passive vitals candidate capture; no game actions.</summary>
 internal static class CurrentBuildVitalsSampleCommand
 {
+    internal static Task<int> RunAsync(
+        IReadOnlyDictionary<string, string> options, TextWriter output,
+        CancellationToken cancellationToken) =>
+        RunAsync(options, output, cancellationToken,
+            async (pid, ticks, ct) => await WindowsNativeMemorySession.OpenAsync(
+                pid, ticks, CurrentBuildPositionSampleCommand.GameSha256, ct),
+            CurrentBuildVitalsCandidateReader.Read,
+            async (pid, ticks, sha, ct) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, sha, TimeSpan.FromSeconds(1), ct));
+
+    // Explicit offline lifecycle seam; production always acquires the shared lease.
     internal static async Task<int> RunAsync(
         IReadOnlyDictionary<string, string> options, TextWriter output,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> openSession,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildVitalsObservation> read,
+        Func<int, long, string, CancellationToken, Task<IAsyncDisposable>> acquireLease)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(openSession);
+        ArgumentNullException.ThrowIfNull(read);
+        ArgumentNullException.ThrowIfNull(acquireLease);
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) ||
@@ -38,10 +57,17 @@ internal static class CurrentBuildVitalsSampleCommand
             !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--pid, --start-ticks and --output are required for the current-build vitals candidate sampler.");
         RequireNewOutput(path);
-        await using var session = await WindowsNativeMemorySession.OpenAsync(
-            pid, ticks, CurrentBuildPositionSampleCommand.GameSha256, cancellationToken);
-        return await CaptureAndPublishAsync(session, path, output,
-            CurrentBuildVitalsCandidateReader.Read, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        await using var lease = await acquireLease(pid, ticks,
+            CurrentBuildPositionSampleCommand.GameSha256, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Reverse disposal order keeps the lease through all session cleanup.
+        await using var session = await openSession(pid, ticks, cancellationToken);
+        if (session.Identity.ProcessId != pid || session.Identity.ProcessStartUtcTicks != ticks ||
+            !string.Equals(session.Identity.ExecutableSha256,
+                CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Native vitals session does not match requested process epoch/build.");
+        return await CaptureAndPublishAsync(session, path, output, read, cancellationToken);
     }
 
     // The delegate lets offline tests exercise the publication boundary without

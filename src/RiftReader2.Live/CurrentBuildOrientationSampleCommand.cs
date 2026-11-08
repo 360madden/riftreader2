@@ -10,6 +10,8 @@ internal static class CurrentBuildOrientationSampleCommand
     internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct) =>
         RunAsync(options, output, ct,
+            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
+                pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
             static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
             CurrentBuildOrientationCandidateReader.Read);
@@ -17,11 +19,13 @@ internal static class CurrentBuildOrientationSampleCommand
     // Injection seam is for offline lifecycle/publication tests, not alternate runtime sources.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct,
+        Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
         Func<IReadOnlyNativeMemorySession, CurrentBuildOrientationCandidate> read)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(acquireLease);
         ArgumentNullException.ThrowIfNull(open);
         ArgumentNullException.ThrowIfNull(read);
         if (!options.TryGetValue("--pid", out var p) ||
@@ -32,6 +36,8 @@ internal static class CurrentBuildOrientationSampleCommand
             throw new ArgumentException("--pid, --start-ticks and --output required.");
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
+        await using var lease = await acquireLease(pid, ticks, ct);
+        ct.ThrowIfCancellationRequested();
         await using var session = await open(pid, ticks, ct);
         ct.ThrowIfCancellationRequested();
         var identity = session.Identity;

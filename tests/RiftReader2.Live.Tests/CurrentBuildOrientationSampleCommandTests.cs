@@ -14,6 +14,7 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         Assert.Equal(0, await f.Run(output));
         Assert.True(f.Session.Revalidated);
         Assert.True(f.Session.Disposed);
+        Assert.True(f.LeaseDisposedAfterSession);
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(f.Path));
         var root = json.RootElement;
         Assert.Equal("native-current-orientation-candidate/1", root.GetProperty("contractVersion").GetString());
@@ -23,6 +24,16 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         Assert.Equal(9, observation.GetProperty("primary").GetProperty("rawBits").GetArrayLength());
         Assert.Contains("unverified", observation.GetProperty("qualification").GetString());
         Assert.Contains("native-current-orientation-summary/1", output.ToString());
+    }
+
+    [Fact]
+    public async Task LeaseDenialPreventsSessionOpen()
+    {
+        using var f = new Fixture();
+        f.LeaseDenied = true;
+        await Assert.ThrowsAsync<TimeoutException>(() => f.Run(new StringWriter()));
+        Assert.False(f.Opened);
+        Assert.False(File.Exists(f.Path));
     }
 
     [Theory]
@@ -106,6 +117,9 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         public string Path => System.IO.Path.Combine(directory, "candidate.json");
         public Fake Session { get; } = new();
         public bool Opened { get; private set; }
+        public bool LeaseDenied { get; set; }
+        public bool LeaseHeld { get; private set; }
+        public bool LeaseDisposedAfterSession { get; private set; }
         public bool WrongObservation { get; set; }
         public Dictionary<string, string> Options { get; }
         public Fixture()
@@ -115,7 +129,22 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         }
         public Task<int> Run(TextWriter output, CancellationToken ct = default) =>
             CurrentBuildOrientationSampleCommand.RunAsync(Options, output, ct,
-                (_, _, _) => { Opened = true; return Task.FromResult<IReadOnlyNativeMemorySession>(Session); },
+                (_, _, _) =>
+                {
+                    if (LeaseDenied) throw new TimeoutException("busy");
+                    LeaseHeld = true;
+                    return Task.FromResult<IAsyncDisposable>(new TestLease(() =>
+                    {
+                        LeaseHeld = false;
+                        LeaseDisposedAfterSession = !Opened || Session.Disposed;
+                    }));
+                },
+                (_, _, _) =>
+                {
+                    Assert.True(LeaseHeld);
+                    Opened = true;
+                    return Task.FromResult<IReadOnlyNativeMemorySession>(Session);
+                },
                 s =>
                 {
                     var matrix = CurrentBuildOrientationCandidateReader.Decode(new byte[36], 0x60);
@@ -124,6 +153,11 @@ public sealed class CurrentBuildOrientationSampleCommandTests
                         ulong.MaxValue, 0, matrix, matrix with { SourceOffset = 0x94 });
                 });
         public void Dispose() => Directory.Delete(directory, true);
+    }
+
+    sealed class TestLease(Action dispose) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() { dispose(); return ValueTask.CompletedTask; }
     }
 
     sealed class Fake : IReadOnlyNativeMemorySession

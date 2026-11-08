@@ -16,16 +16,26 @@ internal sealed record CurrentBuildPlayerContextReport(CurrentBuildPlayerContext
 
 internal static class CurrentBuildPlayerContextSampleCommand
 {
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken)
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken) =>
+        RunAsync(options,output,cancellationToken,
+            async (pid,ticks,ct)=>await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),ct),
+            async (pid,ticks,ct)=>await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct),
+            CurrentBuildPlayerContextCandidateReader.Read);
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output, CancellationToken cancellationToken,
+        Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquire,
+        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> read)
     {
         if (!options.TryGetValue("--pid", out var rawPid) || !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) || !long.TryParse(rawTicks, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
             !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--pid, --start-ticks and --output are required.");
         if (File.Exists(path)) throw new IOException("Output exists; never overwrite an earlier observation.");
-        await using var session = await WindowsNativeMemorySession.OpenAsync(pid, ticks, CurrentBuildPlayerLookup.GameSha256, cancellationToken);
+        await using var lease = await acquire(pid,ticks,cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        var observation = CurrentBuildPlayerContextCandidateReader.Read(session);
+        await using var session = await open(pid,ticks,cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var observation = read(session);
         if (await session.RevalidateAsync(cancellationToken) is not null) throw new InvalidDataException("Process identity invalidated; no report published.");
         cancellationToken.ThrowIfCancellationRequested();
         var report = new CurrentBuildPlayerContextReport(observation);

@@ -25,7 +25,7 @@ class NativeXyzClientTests(unittest.TestCase):
         self.status = {
             "host": {"connected": True, "machineName": "RIFT-LAB-2",
                      "vmIdentity": dict(EXPECTED_VM), "instanceId": "a" * 32},
-            "guest": {"nativeXyzVersion": 1, "instanceId": "a" * 32}}
+            "guest": {"nativeXyzVersion": 1, "nativeReadLeaseVersion": 1, "instanceId": "a" * 32}}
         now = datetime.now(timezone.utc).isoformat()
         self.report = {
             "schemaVersion": 1, "contractVersion": "native-current-position-candidate-sample/1",
@@ -76,6 +76,20 @@ class NativeXyzClientTests(unittest.TestCase):
             self.status[section][key] = value
             client = Mock()
             with self.subTest(key=key), self.assertRaises(native.Blocked):
+                self.query(client=client)
+            client.request.assert_called_once_with("/api/status", method="GET")
+            self.status = original
+        self.assert_unpublished()
+
+    def test_missing_wrong_or_changed_lease_capability_sends_no_xyz(self):
+        for value in (None, True, False, 0, 2, "1", 1.0):
+            original = copy.deepcopy(self.status)
+            if value is None:
+                self.status["guest"].pop("nativeReadLeaseVersion")
+            else:
+                self.status["guest"]["nativeReadLeaseVersion"] = value
+            client = Mock()
+            with self.subTest(value=value), self.assertRaisesRegex(native.Blocked, "lease-unsupported"):
                 self.query(client=client)
             client.request.assert_called_once_with("/api/status", method="GET")
             self.status = original
@@ -175,19 +189,93 @@ class NativeXyzGatewayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             guard = Mock(enabled=True)
             guard.request.side_effect = lambda expected, invoke, fast: invoke()
-            session = Mock(vm_identity=EXPECTED_VM)
-            session.request.return_value = {"nativeXyzVersion": 1}
+            session = Mock(vm_identity=EXPECTED_VM, closed=False,
+                           hello={"instanceId": "a" * 32})
+            session.request.side_effect = [{"nativeReadLeaseVersion": 1, "instanceId": "a" * 32},
+                                           {"nativeXyzVersion": 1}]
             gateway = transport.host.AgentGateway(transport.config(folder), transport.host.EvidenceJournal(Path(folder)))
             gateway.vm_guard = guard
             with patch.object(gateway, "session", return_value=session):
                 gateway.command("native-xyz", {})
                 self.assertTrue(guard.request.call_args.kwargs["fast"])
-                session.request.assert_called_once_with("native-xyz", {}, access=None)
+                self.assertEqual([(("status", {}), {"access": None}),
+                                  (("native-xyz", {}), {"access": None})],
+                                 [(c.args, c.kwargs) for c in session.request.call_args_list])
                 guard.enabled = False
                 with self.assertRaisesRegex(transport.host.ControlHostError, "VM identity guard"):
                     gateway.command("native-xyz", {})
                 with self.assertRaisesRegex(transport.host.ControlHostError, "VM identity guard"):
                     gateway.command("native-vitals", {})
+
+    def test_native_lease_capability_is_checked_on_same_session_for_both_operations(self):
+        for operation in ("native-xyz", "native-vitals"):
+            for value in (None, True, False, 0, 2, "1", 1.0):
+                with self.subTest(operation=operation, value=value), tempfile.TemporaryDirectory() as folder:
+                    session = Mock(vm_identity=EXPECTED_VM, closed=False,
+                                   hello={"instanceId": "a" * 32})
+                    status = {"instanceId": "a" * 32}
+                    if value is not None:
+                        status["nativeReadLeaseVersion"] = value
+                    session.request.return_value = status
+                    gateway = transport.host.AgentGateway(transport.config(folder),
+                        transport.host.EvidenceJournal(Path(folder)))
+                    gateway.vm_guard = Mock(enabled=True)
+                    gateway.vm_guard.request.side_effect = lambda expected, invoke, fast: invoke()
+                    with patch.object(gateway, "session", return_value=session):
+                        with self.assertRaisesRegex(transport.host.ControlHostError, "nativeReadLeaseVersion"):
+                            gateway.command(operation, {})
+                    session.request.assert_called_once_with("status", {}, access=None)
+
+    def test_native_instance_or_session_change_blocks_without_reconnect(self):
+        for operation in ("native-xyz", "native-vitals"):
+            for kind in ("wrong-instance", "missing-instance", "replaced", "closed", "hello-changed"):
+                with self.subTest(operation=operation, kind=kind), tempfile.TemporaryDirectory() as folder:
+                    session = Mock(vm_identity=EXPECTED_VM, closed=False,
+                                   hello={"instanceId": "a" * 32})
+                    status = {"nativeReadLeaseVersion": 1, "instanceId": "a" * 32}
+                    if kind == "wrong-instance":
+                        status["instanceId"] = "b" * 32
+                    if kind == "missing-instance":
+                        status.pop("instanceId")
+                    def status_read(*args, **kwargs):
+                        if kind == "closed":
+                            session.closed = True
+                        if kind == "hello-changed":
+                            session.hello["instanceId"] = "b" * 32
+                        return status
+                    session.request.side_effect = status_read
+                    gateway = transport.host.AgentGateway(transport.config(folder),
+                        transport.host.EvidenceJournal(Path(folder)))
+                    gateway.vm_guard = Mock(enabled=True)
+                    gateway.vm_guard.request.side_effect = lambda expected, invoke, fast: invoke()
+                    successor = Mock()
+                    provider = Mock(side_effect=[session, successor]) if kind == "replaced" else Mock(return_value=session)
+                    with patch.object(gateway, "session", provider):
+                        with self.assertRaises(transport.host.ControlHostError):
+                            gateway.command(operation, {})
+                    session.request.assert_called_once_with("status", {}, access=None)
+                    successor.request.assert_not_called()
+
+    def test_changed_capability_is_not_cached_and_non_native_call_is_unchanged(self):
+        with tempfile.TemporaryDirectory() as folder:
+            session = Mock(vm_identity=EXPECTED_VM, closed=False,
+                           hello={"instanceId": "a" * 32})
+            session.request.side_effect = [
+                {"nativeReadLeaseVersion": 1, "instanceId": "a" * 32},
+                {"sample": "candidate"},
+                {"nativeReadLeaseVersion": 2, "instanceId": "a" * 32},
+                {"ordinary": "status"}]
+            gateway = transport.host.AgentGateway(transport.config(folder),
+                transport.host.EvidenceJournal(Path(folder)))
+            gateway.vm_guard = Mock(enabled=True)
+            gateway.vm_guard.request.side_effect = lambda expected, invoke, fast: invoke()
+            with patch.object(gateway, "session", return_value=session):
+                self.assertEqual({"sample": "candidate"}, gateway.command("native-xyz", {}))
+                with self.assertRaisesRegex(transport.host.ControlHostError, "nativeReadLeaseVersion"):
+                    gateway.command("native-vitals", {})
+                self.assertEqual({"ordinary": "status"}, gateway.command("status", {}))
+            self.assertEqual(["status", "native-xyz", "status", "status"],
+                             [c.args[0] for c in session.request.call_args_list])
 
     def test_read_only_admission_rejects_lease_without_control_authority(self):
         local, remote = socket.socketpair()

@@ -1,6 +1,6 @@
 # XYZ coordination handoff for Greeting Jimmy — November 7, 2026
 
-Recipient: the separate ChatGPT conversation with exact title **Greeting Jimmy**, historically the RR2 read-only two-lab telemetry/feedback audit worker. This is a shared-repository pickup packet, NOT proof Jimmy received it: no direct cross-chat messaging connector or reachable browser tab was available.
+Recipient: the separate ChatGPT conversation with exact title **Greeting Jimmy**, historically the RR2 read-only two-lab telemetry/feedback audit worker. **21:07 EST coordination request:** please report any currently owned lab native-read activity through a separately named, source-hashed response artifact before a future cooperative fleet maintenance window. Continue static/read-only work without initiating overlapping guest readers; this packet is a request, NOT evidence of delivery or consent from that chat. This is a shared-repository pickup packet, NOT proof Jimmy received it: no direct cross-chat messaging connector or reachable browser tab was available.
 
 ## Coordinator acknowledgment of Jimmy's independent report
 
@@ -58,7 +58,7 @@ will integrate and commit a stabilized, reviewed report.
 
 ## Ownership and assignment
 
-Authoritative checkout: `C:\work\riftreader2` on **AMD-DESKTOP**, branch `codex/modular-foundation`; NOT LEGION/Workbridge Laptop. Read current `AGENTS.md` and relevant current status before work. The active root coordinator retains integration and sole live-input/controller ownership. Existing dirty XYZ source/test work belongs to current lanes; preserve it. RRE and REA remain separate-owner read-only references.
+Authoritative checkout: `C:\work\riftreader2` on the **verified Workbridge target** (do not infer AMD-DESKTOP versus LEGION from this packet), branch `codex/modular-foundation`. Joey owns multiple PCs; inspect current host identity before guest/VM operations. Read current `AGENTS.md` and relevant current status before work. The active root coordinator retains integration and sole live-input/controller ownership. Existing dirty XYZ source/test work belongs to current lanes; preserve it. RRE and REA remain separate-owner read-only references.
 
 Jimmy: independently audit the **existing retained** addon/nonce/Lua feedback evidence and propose the smallest API-quiet causal motion test. Identify what can genuinely be acquired fresh using RR2-owned producers/readers, what is stale/unbound, exact source/build/player/session/nonce/clock requirements, and any concrete blocker. Distinguish full-scan freshness from scoped fast freshness. Inspect retained receipts and source only: **NO live guest/VM/game access, input, controller/receiver start, reload/bind, native capture, code edits, status update or commit** unless root explicitly reassigns authority. No legacy producer fallback or copying old-build profiles. This packet grants only the response artifact below.
 

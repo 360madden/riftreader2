@@ -35,7 +35,7 @@ or guess addresses.
   A different build, missing pin, changed process epoch, mismatched path, or
   ambiguous game process fails closed. Reacquire current identity after restart.
 - The host verifies an authenticated matching guest, VM guard, matching host and
-  guest agent instance ID, and guest status capability `nativeXyzVersion: 1`.
+  guest agent instance ID, and strict guest status capabilities `nativeXyzVersion: 1` and `nativeReadLeaseVersion: 1`.
   The guest opens a new read-only session, resolves the current owner, rereads
   anchors, and revalidates the OS process/build before returning. Its configured
   executable path and machine must match. Never copy credentials or weaken these
@@ -43,8 +43,10 @@ or guess addresses.
 - The host endpoint `/api/native-xyz` uses the existing authenticated control
   transport and requires the identity request. It is read-only and does not
   accept an input-control lease. The guest rejects reads while armed, an action
-  is active, or recovery is pending; the shared native-read lane excludes other
-  native reads and actions. A five-second linked guest cancellation limit applies.
+  is active, or recovery is pending; the agent's in-process native-read lane excludes its own
+  native reads and actions. The additional file lease excludes only participating
+  native readers; old installed agents, unleased CLIs and cross-process actions
+  remain outside it. A five-second linked guest cancellation limit applies.
   STOP cancels the read; a slow physical read keeps its lane until it actually
   finishes. Cancellation does not authorize a second owner or overlapping read.
 
@@ -88,10 +90,12 @@ release/cleanup evidence, and independently reviewed results.
 
 The current endpoint is a bounded one-shot operation, **not a sustained stream**.
 The guest control connection rejects its 4,097th authenticated command when its
-request-ID set exceeds 4,096, then reconnects. If each query uses both status and
-XYZ commands, this is approximately 17 minutes at two queries per second or
-34 minutes at one query per second, excluding other commands. Actual duration
-varies with command traffic and operation time. Guest, host and client also
+request-ID set exceeds 4,096, then reconnects. The client first checks
+status, the gateway checks guest status on the retained authenticated session,
+and only then does it send a native XYZ request: roughly **three guest commands**
+per sample. Excluding other traffic, this is at most about **1,365 samples**
+(~11 minutes at 2 Hz or ~23 minutes at 1 Hz) before reconnect; actual duration
+varies with other commands, failures and latency. Guest, host and client also
 create per-query evidence files, causing accumulating artifact churn. These are
 P2 blockers for an unattended continuous tracking loop; do not claim sustained
 2 Hz production from the present offline tests. A future long-running design

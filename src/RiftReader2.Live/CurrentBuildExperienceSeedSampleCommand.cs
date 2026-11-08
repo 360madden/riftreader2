@@ -78,12 +78,22 @@ internal static class CurrentBuildExperienceSeedCandidateReader
 }
 internal static class CurrentBuildExperienceSeedSampleCommand
 {
-    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct)
+    internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct) =>
+        RunAsync(options,output,ct,
+            static async (pid,ticks,token) => await NativeReadFileLease.AcquireAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,TimeSpan.FromSeconds(1),token),
+            static async (pid,ticks,token) => await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,token),
+            CurrentBuildExperienceSeedCandidateReader.Read);
+
+    // Explicit offline test seam; production always supplies the real lease.
+    internal static async Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct,
+        Func<int,long,CancellationToken,Task<IAsyncDisposable>> acquireLease,
+        Func<int,long,CancellationToken,Task<IReadOnlyNativeMemorySession>> open,
+        Func<IReadOnlyNativeMemorySession,ExperienceSeedObservation> read)
     {
         if(!options.TryGetValue("--pid",out var p)||!int.TryParse(p,NumberStyles.None,CultureInfo.InvariantCulture,out var pid)||pid<=0||!options.TryGetValue("--start-ticks",out var t)||!long.TryParse(t,NumberStyles.None,CultureInfo.InvariantCulture,out var ticks)||ticks<=0||!options.TryGetValue("--output",out var path)||string.IsNullOrWhiteSpace(path))throw new ArgumentException("--pid, --start-ticks and --output required.");
         if(File.Exists(path))throw new IOException("Output exists.");
-        await using var session=await WindowsNativeMemorySession.OpenAsync(pid,ticks,CurrentBuildPlayerLookup.GameSha256,ct);ct.ThrowIfCancellationRequested();
-        var observation=CurrentBuildExperienceSeedCandidateReader.Read(session);
+        await using var lease=await acquireLease(pid,ticks,ct);ct.ThrowIfCancellationRequested();await using var session=await open(pid,ticks,ct);ct.ThrowIfCancellationRequested();
+        var observation=read(session);
         if(await session.RevalidateAsync(ct) is not null)throw new InvalidDataException("Process identity invalidated.");ct.ThrowIfCancellationRequested();
         var report=new{schemaVersion=1,contractVersion="native-current-experience-seed-candidate/1",status="complete",observation,limitations=new[]{"Raw inputs do not establish accumulated, needed or rested experience.","Sequential reads are not atomic and cannot exclude ABA; freshness and restart unverified.","Executable SHA identifies on-disk bytes; loaded module bytes not independently hashed.","No getter, initializer, reference-count operation or memory write performed."}};
         await JsonReportWriter.WriteNewAsync(path,report,ct);

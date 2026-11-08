@@ -948,7 +948,28 @@ class AgentGateway:
         if operation in ("native-vitals", "native-xyz") and (
                 not self.vm_guard.enabled or not isinstance(session.vm_identity, dict)):
             raise ControlHostError(operation + " requires an authenticated VM identity guard")
-        invoke = lambda: session.request(operation, payload, access=access)
+        def invoke():
+            if operation in ("native-vitals", "native-xyz"):
+                # Bind capability admission to THIS authenticated transport. Never
+                # silently reacquire another session between status and dispatch.
+                instance = session.hello.get("instanceId")
+                if not isinstance(instance, str) or not UUID_HEX.fullmatch(instance):
+                    raise ControlHostError("native read authenticated instance is invalid")
+                status = session.request("status", {}, access=None)
+                if (not isinstance(status, dict)
+                        or type(status.get("nativeReadLeaseVersion")) is not int
+                        or status["nativeReadLeaseVersion"] != 1):
+                    raise ControlHostError(
+                        operation + " requires nativeReadLeaseVersion 1 from the current authenticated agent")
+                if status.get("instanceId") != instance:
+                    raise ControlHostError("native read status instance mismatch")
+                if (session.closed or session.hello.get("instanceId") != instance
+                        or self.session() is not session):
+                    raise ControlHostError("native read session changed before dispatch")
+                # This is a cooperative protocol claim, not deployed-binary
+                # attestation or proof that nonparticipating readers are excluded.
+            return session.request(operation, payload, access=access)
+
         if operation == "arm":
             result = self.vm_guard.request(session.vm_identity, invoke, fast=False)
         elif operation in ("action", "recover", "native-vitals", "native-xyz") or (self.exclusive_console and operation == "capture"):

@@ -9,7 +9,7 @@ try {
         $localLuaPython = Join-Path $repoRoot 'artifacts/tools/lua-python/Scripts/python.exe'
         $LuaPython = if (Test-Path -LiteralPath $localLuaPython) { $localLuaPython } else { 'python' }
     }
-    & $LuaPython -c 'import lupa; from lupa.lua51 import LuaRuntime; assert lupa.__version__ == "2.8"; assert LuaRuntime().eval("_VERSION") == "Lua 5.1"'
+    & $LuaPython scripts/check_lua_runtime.py
     if ($LASTEXITCODE -ne 0) { throw 'Lua 5.1 test runtime missing. Install requirements-lua-tests.txt or pass -LuaPython; see docs/workflows/development.md.' }
     $solution = 'RiftReader2.slnx'
     $allowed = @{

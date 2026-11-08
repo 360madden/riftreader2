@@ -201,8 +201,10 @@ class NativeGatewayTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             guard = Mock(enabled=True)
             guard.request.side_effect = lambda expected, invoke, fast: invoke()
-            session = Mock(vm_identity=EXPECTED_VM)
-            session.request.return_value = {"nativeVitalsVersion": 1}
+            session = Mock(vm_identity=EXPECTED_VM, closed=False,
+                           hello={"instanceId": "a" * 32})
+            session.request.side_effect = [{"nativeReadLeaseVersion": 1, "instanceId": "a" * 32},
+                                           {"nativeVitalsVersion": 1}]
             gateway = transport.host.AgentGateway(transport.config(folder), transport.host.EvidenceJournal(Path(folder)))
             gateway.vm_guard = guard
             with patch.object(gateway, "session", return_value=session):
@@ -211,7 +213,9 @@ class NativeGatewayTests(unittest.TestCase):
                 guard.request.assert_called_once()
                 self.assertEqual(guard.request.call_args.args[0], EXPECTED_VM)
                 self.assertTrue(guard.request.call_args.kwargs["fast"])
-                session.request.assert_called_once_with("native-vitals", payload, access=None)
+                self.assertEqual([(("status", {}), {"access": None}),
+                                  (("native-vitals", payload), {"access": None})],
+                                 [(c.args, c.kwargs) for c in session.request.call_args_list])
                 guard.enabled = False
                 with self.assertRaisesRegex(transport.host.ControlHostError, "VM identity guard"):
                     gateway.command("native-vitals", payload)
