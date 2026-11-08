@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-08",
+  "project": "riftreader2",
+  "host": "AMD-DESKTOP",
+  "branch": "codex/modular-foundation",
+  "baseMilestone": "e924a954e6d1c576fd1d6993d5c198103f2ba68a",
+  "gameExecutableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+  "labs": {
+    "lab1": {
+      "gamePid": 6820,
+      "gameStartTicks": "639296903905448486",
+      "vncPort": 5905,
+      "vmwarePid": 31864,
+      "readerNonceExpired": "7ece4f68298d4c1086887c2ca35e4d3b",
+      "readerExpiredAtUtc": "2026-11-08T12:47:58Z",
+      "binding": "not established for expired reader",
+      "uiReloadCompleted": true,
+      "blocker": "LuaPad startup overlay visible before reviewed open-chat"
+    },
+    "lab2": {
+      "gamePid": 10612,
+      "gameStartTicks": "639296904548843022",
+      "vncPort": 5962,
+      "vmwarePid": 32496,
+      "readerNonceExpired": "66362c2cb4c04aa4a919983ecf10f7fd",
+      "readerExpiredAtUtc": "2026-11-08T12:48:49Z",
+      "binding": "in-game confirmation Bound lab2; manual feedback only",
+      "latestInspectedReceiverSequence": 4,
+      "latestInspectedReceiverAtUtc": "2026-11-08T12:28:53.613094Z",
+      "freshFeedbackProven": false
+    }
+  },
+  "controllers": {
+    "lab1": {
+      "connected": true,
+      "ready": true,
+      "armed": false,
+      "heldKeys": 0
+    },
+    "lab2": {
+      "connected": true,
+      "ready": true,
+      "armed": false,
+      "heldKeys": 0
+    }
+  },
+  "movementTested": false,
+  "requirements": [
+    "clean exact controller handoff",
+    "reviewed panel close and native chat open",
+    "fresh nonexpired nonce bind",
+    "fresh new matching receiver frames",
+    "480s continuous observer before movement"
+  ],
+  "preserveUntracked": [
+    "scripts/project_current_native_energy_variants.py"
+  ]
+}
