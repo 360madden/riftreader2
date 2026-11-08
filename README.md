@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/rr2-hero.svg" alt="RiftReader2 — evidence-first RIFT telemetry, native discovery, and reproducible research" width="100%" />
+<img src="docs/assets/rr2-hero.svg" alt="RiftReader2 — a practical RIFT discovery and on-demand data retrieval framework" width="100%" />
 
 <br />
 
@@ -15,9 +15,9 @@
 ![Evidence](https://img.shields.io/badge/EVIDENCE-SHA--256_Pinned-1689bc?style=flat-square)
 ![Scope](https://img.shields.io/badge/SCOPE-Independent_RIFT_Tooling-f29c46?style=flat-square)
 
-**A modular toolkit for observing, validating, and understanding the RIFT game client.**
+**A practical framework for discovering RIFT data and retrieving it again on demand.**
 
-*In-game Lua references. Native Windows observations. Independent verification. Durable research.*
+*Native readers. In-game Lua references. Reusable retrieval paths. Shared research.*
 
 [🚀 Quick Start](#-quick-start) · [🧠 Architecture](#-architecture-at-a-glance) · [📊 Capability Map](#-capability-map) · [🧪 Research Tools](#-explore-the-toolkit) · [📚 Documentation](#-documentation-hub)
 
@@ -27,21 +27,27 @@
 
 ## ✨ What is RiftReader2?
 
-**RiftReader2 (RR2)** is an independently developed, hybrid telemetry and reverse-engineering research toolkit for the **RIFT MMORPG**. It brings together a versioned **in-game Lua addon**, a modular **.NET 10** codebase, read-only native observation tools, and reproducible evidence workflows.
+**RiftReader2 (RR2)** is a practical **discovery and retrieval framework** for wide-ranging data from the **RIFT MMORPG**. It brings together a versioned **in-game Lua addon**, a modular **.NET 10** codebase, read-only native readers, repeatable acquisition commands, and retained research artifacts for other tools and programs.
 
 Its central question is simple:
 
-> **What did we actually observe, how fresh is it, and how confidently can we identify it?**
+> **How do we find useful information, retrieve it again when requested, and know what the result represents?**
 
-Instead of treating a matching number in memory as proof, RR2 records *where a value came from*, the *exact game build and session*, the *timing of acquisition*, and which *meaning or restart claims remain unverified*.
+A useful finding feeds a working retrieval path: resolve the current source and owner, acquire the requested data, and return **structured values or a clear unavailable reason**. Results retain their *source*, *game build and session*, *acquisition time*, and any *meaning, freshness or restart claims that remain unverified*. Prefer small useful capabilities and actual use; refinement is optional.
 
 <table>
 <tr>
 <td width="33%" align="center"><strong>🔍 DISCOVER</strong><br /><sub>Inspect API observations, read-only memory candidates, pointer paths, and patterns.</sub></td>
-<td width="33%" align="center"><strong>🧬 VERIFY</strong><br /><sub>Compare sources, preserve identity, and distinguish evidence from interpretation.</sub></td>
-<td width="33%" align="center"><strong>📈 UNDERSTAND</strong><br /><sub>Analyze captures, explore results, and build durable game knowledge.</sub></td>
+<td width="33%" align="center"><strong>📡 RETRIEVE</strong><br /><sub>Use repeatable readers and commands to acquire requested data on demand.</sub></td>
+<td width="33%" align="center"><strong>🧬 VERIFY</strong><br /><sub>Check source, identity and freshness; keep candidates and qualified fields distinct.</sub></td>
 </tr>
 </table>
+
+### Parallel work with RRE
+
+**RR2 and RRE are parallel, complementary efforts:** similar subject matter, different approaches and separate owners. The **RRE repository is a valuable information source** for RR2, including findings, readers, captures and retrieval techniques. Reuse useful peer work rather than repeat completed discovery, preserving its source, build and capture provenance and coordinating shared lab access.
+
+Reports distinguish **what was discovered**, **what can be retrieved on demand**, and **what still needs qualification**. An imported historical capture can guide the next reader without establishing current live data. See the [native-discovery handoff](docs/handoff-2026-11-07-1700-native-discovery.md) for concrete peer comparisons and the [repository guidance](AGENTS.md) for the working policy.
 
 ## 🧠 Architecture at a glance
 
@@ -66,9 +72,11 @@ They feed the **Domain → Application → Infrastructure** core, composed by ei
 | 🔗 Nonce-bound live addon acquisition | 🔵 | Demonstrated in identified RIFT-Lab sessions; the newer self-contained RR2R1 installed-addon acceptance is still pending |
 | 🛰️ Current-build native XYZ acquisition | 🔵 | Build-pinned candidate sampling was exercised in both VMware labs; fresh movement/semantic qualification is separate |
 | 🧮 Memory discovery and field catalog | 🟢 | Read-only snapshots, value/pattern/pointer searches, content-pinned review and status reporting |
+| 📡 Native catalog, player, target and buff retrieval | 🔵 | Repeatable readers have captured ability catalogs/names, player context/stats/XP, selected-target data and raw buff fields; these remain build/session-bound candidates with per-field qualification limits |
 | 🔋 Player health, Mana/Power, casts, cooldowns | 🟡 | Native/API candidate correlation and baseline research; individual fields require changed-state and ownership evidence |
 | 🖥️ Lab controller and addon-sync workflow | 🔵 | On-demand host/guest prerequisites and compare/sync/verify tools; operational readiness is checked per run |
 | 🎮 Supervised movement/turning experiments | 🔵 | Bounded research actions with explicit control/stop checks; **not** an autonomous player |
+| 🖱️ Reviewed Lab 1 mouse operations | 🔵 | Host-only capture, pointer movement and Browse/Close clicks passed [live acceptance](docs/handoff-2026-11-07-lab1-mouse.md), with identity, ownership, screenshot review and release checks |
 | 🔄 Arbitrary game-patch survival | ⚪ | Not claimed; changed executable builds require new evidence |
 
 > [!IMPORTANT]
@@ -166,6 +174,22 @@ This is **not** a universal coordinate offset, gameplay movement command, or pro
 </details>
 
 <details>
+<summary><strong>📡 On-demand player, ability and buff candidate retrieval</strong></summary>
+
+Existing lab samplers turn discovery into repeatable acquisition commands. In a configured lab, for example:
+
+```powershell
+# Read current player-context candidates through the existing guarded workflow.
+python scripts/sample_current_native_player_context.py --lab lab1
+```
+
+Other readers cover [ability catalogs](scripts/sample_current_native_ability_catalog.py), [selected targets](scripts/sample_current_native_selected_target.py), [experience values](scripts/sample_current_native_experience_values.py), and [raw buff details](scripts/sample_current_native_buff_details.py). Each has its own arguments and prerequisites; use its `--help` and linked research notes. Fresh build/process identity and applicable ownership/freshness checks remain part of acquisition. A successful candidate read does not establish changed-state semantics or restart recovery.
+
+📖 [Player and target findings](docs/reference/native-player-context-candidates.md) · [Buff findings](docs/reference/native-buff-candidates-2026-11-07.md) · [Current discovery handoff](docs/handoff-2026-11-07-1700-native-discovery.md)
+
+</details>
+
+<details>
 <summary><strong>🟩 Addon synchronization and live-session binding</strong></summary>
 
 The source addon is distinct from the package installed in RIFT. RR2 contains tools for comparing, synchronizing, and verifying addon installations on the host and configured labs.
@@ -222,7 +246,7 @@ AUTOMATION       ███░░░░░░░  Supervised experiments only; pl
 
 *These bars are an **illustrative stage map**, not measured completion percentages.*
 
-Current priorities emphasize **reproducible current-build field discovery**, **changed-state evidence**, **session/restart identity**, and **self-contained RR2-owned telemetry**. Older RiftReader and probe work can inform research but are **not runtime requirements**.
+Current priorities emphasize **useful discovery and reliable on-demand retrieval**, **reuse of complementary RRE work**, **changed-state evidence**, **session/restart identity**, and **self-contained RR2-owned telemetry**. Build useful retrieval paths with the existing tools; refinement can follow actual use when needed. Older RiftReader and probe work can inform research but are **not runtime requirements**.
 
 📍 [Current discovery roadmap](docs/planning/discovery-roadmap-2026-11-06.md) · [Implementation roadmap](docs/planning/implementation-roadmap.md) · [Current status and validation notes](docs/status.md)
 
@@ -240,7 +264,7 @@ Current priorities emphasize **reproducible current-build field discovery**, **c
 
 ## 💡 Design principles
 
-**Evidence over inference** · **Exact build identity** · **Freshness over plausible numbers** · **Read-only native acquisition** · **Clear separation of API/native/derived data** · **Reproducible experiments** · **Small useful increments**
+**Practical on-demand retrieval** · **Reuse complementary research** · **Evidence over inference** · **Exact build identity** · **Freshness over plausible numbers** · **Read-only native acquisition** · **Clear separation of API/native/derived data** · **Small useful increments**
 
 ---
 
