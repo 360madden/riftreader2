@@ -45,6 +45,30 @@ public sealed class CurrentBuildPoseCacheHitCandidateTests
     }
 
     [Fact]
+    public void UntaggedCollisionUsesLowWordBucketButMatchesEntireKey()
+    {
+        const ulong linkedNode = 0x50000, alternativeEntry = 0x60000, alternativePose = 0x70000;
+        var sameLowWordDifferentHighWord = Key ^ (1UL << 32);
+        var m = new Memory();
+        m.Setup();
+        m.Put(Actor + 0x5b8, 32);
+        m.Put(Actor + 0x5c0, 7);
+        m.Node(Bucket, linkedNode, sameLowWordDifferentHighWord, Entry);
+        m.Node(linkedNode, 0, Key, alternativeEntry);
+        m.Put(alternativeEntry + 0x18, alternativePose);
+        m.Put(alternativePose + 0xf8, 0x0102030405060708);
+        m.Put(alternativePose + 0x100, 0x0A0B0C0D);
+
+        var hit = CurrentBuildPoseCacheHitCandidate.TryRead(m.Read, Actor, Key);
+        Assert.NotNull(hit);
+        Assert.Equal(alternativePose, hit.PoseAddress);
+        Assert.Equal(12, hit.RawPosePayload.Length);
+
+        m.Node(linkedNode, 0, sameLowWordDifferentHighWord, alternativeEntry);
+        Assert.Null(CurrentBuildPoseCacheHitCandidate.TryRead(m.Read, Actor, Key));
+    }
+
+    [Fact]
     public void CyclesAndNinthNodeFailClosed()
     {
         var m = new Memory();
