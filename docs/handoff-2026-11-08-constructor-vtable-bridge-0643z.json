@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "topic": "rr2-constructor-vtable-bridge",
+  "observedAtUtc": "2026-11-08T06:43:36.707Z",
+  "scope": "retained-ghidra-readonly-static-rdata",
+  "host": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "source": {
+    "script": "artifacts/rea/constructor-vtable-bridge-review1/Rr2ConstructorVtableBridgeExport.java",
+    "scriptSha256": "449626e90b5251f985f3be0488e9273bdabaf3be4b00cae5a8f9f25c1cd25c4c",
+    "ghidraProject": "artifacts/rea/RiftNativeFocusedV2",
+    "program": "rift_x64.exe",
+    "importedPESha256Metadata": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshPESha256Rehash": false,
+    "readOnly": true,
+    "noAnalysis": true
+  },
+  "job": {
+    "id": "rr2-constructor-vtable-bridge-20261108-root-01",
+    "status": "passed",
+    "exitCode": 0,
+    "completionMarker": "RR2_CONSTRUCTOR_VTABLE_BRIDGE_COMPLETE"
+  },
+  "window": {
+    "section": ".rdata",
+    "startRva": "0x26B4FB0",
+    "lastInclusiveRva": "0x26B50CF",
+    "rawBytes": 288,
+    "qwordCount": 36,
+    "pointerFollowing": false,
+    "anchors": [
+      {
+        "rva": "0x26B4FB0",
+        "role": "candidate-table-start",
+        "existingTypedData": false,
+        "incomingExistingRefs": 0,
+        "outgoingExistingRefs": 0
+      },
+      {
+        "rva": "0x26B5040",
+        "role": "exact-constructor-VA-byte-match",
+        "existingTypedData": false,
+        "incomingExistingRefs": 0,
+        "outgoingExistingRefs": 0
+      }
+    ]
+  },
+  "observedPattern": {
+    "consecutiveCodeAddressShapedQwords": 19,
+    "offsetStart": "+0x00",
+    "offsetLastInclusive": "+0x90",
+    "candidateMethodIndexZeroBased": 18,
+    "keySlots": [
+      {
+        "offset": "+0x00",
+        "rawVa": "0x1405A9990",
+        "note": "known static thunk"
+      },
+      {
+        "offset": "+0x90",
+        "rawVa": "0x140698170",
+        "correspondingRva": "0x698170",
+        "note": "exact constructor-address match"
+      },
+      {
+        "offset": "+0x98",
+        "rawQword": "0x4036DB6E3E99999A",
+        "note": "non-image-shaped numeric; candidate boundary"
+      },
+      {
+        "offset": "+0xA0",
+        "rawQword": "0x0000000041800000",
+        "note": "non-image-shaped numeric"
+      },
+      {
+        "offset": "+0xA8",
+        "rawVa": "0x1405A9990",
+        "note": "start new image-address-shaped run"
+      }
+    ],
+    "qualifiesVtable": false,
+    "qualifiesFactory": false,
+    "qualifiesActiveDispatch": false,
+    "qualifiesLiveOwner": false,
+    "qualifiesWorldXYZ": false
+  },
+  "previousEvidence": [
+    "docs/handoff-2026-11-08-position-slot-context-0632z.md",
+    "docs/handoff-2026-11-08-constructor-static-scans-0641z.md",
+    "docs/handoff-2026-11-08-rtti-source-windows-0638z.md"
+  ],
+  "limitations": [
+    "Only initialized retained Ghidra raw bytes and previously existing metadata were read.",
+    "Imported PE SHA guard is metadata, not fresh installed or live hash.",
+    "19 address-shaped raw qwords do not prove 19 virtual methods or a table boundary.",
+    "Exact constructor-address byte match is not proof of a factory, active call, dispatch or player-specific owner.",
+    "No live process read, guest, VM, controller, deployment or game input."
+  ],
+  "nextBoundedQuestion": "Correlate exact ctor/dtor pointer writes with RVA0x26B4FB0 and potential subtable starts, then establish actual indirect dispatch before live-owner hypotheses."
+}
