@@ -173,6 +173,19 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(json.loads(rows[1])["sample"]["outerSequence"], 1)
         summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["transientUnavailableReads"], 1)
+        self.assertEqual(summary["transientNotFreshReads"], 0)
+        self.assertGreater(summary["receiptPollAttempts"], summary["acceptedSamples"] - 1)
+
+    def test_not_fresh_receipt_is_counted_without_acceptance(self):
+        not_fresh = observer.console.Blocked("live-receipt-not-fresh")
+        result, target = self.observe_fake(step=.2, read_errors=(not_fresh,))
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["transientNotFreshReads"], 1)
+        self.assertEqual(result["transientUnavailableReads"], 0)
+        self.assertEqual(result["unadvancedReceiptReads"], 0)
+        rows = (target / "samples.jsonl").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(rows), result["acceptedSamples"])
+        self.assertEqual(json.loads(rows[1])["sample"]["outerSequence"], 1)
 
     def test_persistent_unavailable_reads_still_fail_on_exact_gap_gate(self):
         unavailable = observer.console.Blocked("live-receipt-unavailable")
@@ -219,6 +232,10 @@ class ObserverTests(unittest.TestCase):
         self.assertEqual(gap["rejectedCapturedAtUtc"], (NOW + timedelta(seconds=16)).isoformat())
         self.assertEqual(gap["previousAcceptedSampleIndex"], 2)
         self.assertEqual(gap["rejectedRawReceiptLabel"], "observer-00003")
+        self.assertEqual(gap["pollsSincePreviousAccepted"],
+                         {"attempts": 1, "unavailable": 0, "notFresh": 0, "unadvanced": 0})
+        self.assertEqual(summary["lastPollWindow"], gap["pollsSincePreviousAccepted"])
+        self.assertEqual(summary["receiptPollAttempts"], 3)
         self.assertEqual(summary["acceptedSamples"], 3)
         self.assertEqual(len((target / "samples.jsonl").read_text(encoding="utf-8").splitlines()), 3)
         self.assertNotIn("sourceQualification", summary)
@@ -287,6 +304,9 @@ class ObserverTests(unittest.TestCase):
         summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
         self.assertEqual(summary["reason"], "observation-gap-exceeded")
         self.assertEqual(summary["acceptedSamples"], 1)
+        self.assertGreater(summary["unadvancedReceiptReads"], 0)
+        self.assertEqual(summary["lastPollWindow"]["unadvanced"],
+                         summary["unadvancedReceiptReads"])
 
 
 if __name__ == "__main__":

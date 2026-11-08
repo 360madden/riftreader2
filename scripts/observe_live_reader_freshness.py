@@ -132,7 +132,9 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
               "gamePid": pin["gameIdentity"]["processId"], "expiresAtUtc": expiry.isoformat(),
               "durationRequiredSeconds": duration_seconds, "expiryMarginSeconds": expiry_margin_seconds,
               "maxAllowedGapSeconds": max_gap_seconds, "acceptedSamples": 0,
-              "transientUnavailableReads": 0}
+              "transientUnavailableReads": 0, "transientNotFreshReads": 0,
+              "unadvancedReceiptReads": 0, "receiptPollAttempts": 0}
+    poll_window = {"attempts": 0, "unavailable": 0, "notFresh": 0, "unadvanced": 0}
     ledger_path = output_dir / "samples.jsonl"
     try:
         initial = maker(pin, evidence_dir).wait_initial(timeout_seconds=4.5)
@@ -154,16 +156,26 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
                 require(current - last < max_gap_seconds, "observation-gap-exceeded")
                 require(expiry > now() + timedelta(seconds=expiry_margin_seconds),
                         "reader-expiry-margin-exceeded")
+                result["receiptPollAttempts"] += 1
+                poll_window["attempts"] += 1
                 try:
                     receipt, raw, _ = read_receipt(pin, initial=False)
                 except console.Blocked as error:
                     reason = str(error)
                     if reason == "live-receipt-unavailable":
                         result["transientUnavailableReads"] += 1
-                    elif reason != "live-receipt-not-fresh":
+                        poll_window["unavailable"] += 1
+                    elif reason == "live-receipt-not-fresh":
+                        result["transientNotFreshReads"] += 1
+                        poll_window["notFresh"] += 1
+                    else:
                         raise
                 else:
-                    if feedback._validate_next(previous, receipt) == "accept":
+                    advancement = feedback._validate_next(previous, receipt)
+                    if advancement != "accept":
+                        result["unadvancedReceiptReads"] += 1
+                        poll_window["unadvanced"] += 1
+                    if advancement == "accept":
                         current = clock()
                         gap = current - last
                         require(0 <= gap < max_gap_seconds, "observation-gap-exceeded")
@@ -185,12 +197,14 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
                                 "rejectedCapturedAtUtc": sample.captured_at_utc.isoformat(),
                                 "previousAcceptedSampleIndex": result["acceptedSamples"] - 1,
                                 "rejectedRawReceiptLabel": f"observer-{result['acceptedSamples']:05d}",
+                                "pollsSincePreviousAccepted": dict(poll_window),
                             }
                             raise ObserverError("source-capture-gap-exceeded")
                         maximum_gap = max(maximum_gap, gap)
                         maximum_capture_gap = max(maximum_capture_gap, capture_gap)
                         last, previous = current, sample
                         record(sample, current - started)
+                        poll_window = {"attempts": 0, "unavailable": 0, "notFresh": 0, "unadvanced": 0}
                         if current - started >= duration_seconds:
                             require(expiry > now() + timedelta(seconds=expiry_margin_seconds),
                                     "reader-expiry-margin-exceeded")
@@ -208,6 +222,7 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
     except (Exception, KeyboardInterrupt) as error:
         result["reason"] = str(error)
         result["status"] = "failed"
+        result["lastPollWindow"] = dict(poll_window)
         if ledger_path.exists():
             result["ledgerSha256"] = hashlib.sha256(ledger_path.read_bytes()).hexdigest()
         raise
