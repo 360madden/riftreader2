@@ -342,13 +342,17 @@ class BootstrapTests(unittest.TestCase):
                 "guest-token-0123456789", "operator-token-012345", Path(directory), bundle, 0)
             server = host.BootstrapHttpServer(("127.0.0.1", 0), cfg)
             thread = threading.Thread(target=server.serve_forever, daemon=True); thread.start()
-            self.addCleanup(server.server_close); self.addCleanup(server.shutdown)
-            connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=2)
-            connection.request("GET", "/bundle", headers={"Authorization":"Bearer guest-token-0123456789"})
-            response = connection.getresponse(); data = response.read(); connection.close()
-            self.assertEqual(response.status, 200)
-            self.assertEqual(data, b"published-agent")
-            self.assertEqual(response.getheader("X-Content-SHA256"), hashlib.sha256(data).hexdigest().upper())
+            try:
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=2)
+                connection.request("GET", "/bundle", headers={"Authorization":"Bearer guest-token-0123456789"})
+                response = connection.getresponse(); data = response.read(); connection.close()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(data, b"published-agent")
+                self.assertEqual(response.getheader("X-Content-SHA256"), hashlib.sha256(data).hexdigest().upper())
+            finally:
+                server.shutdown()
+                thread.join(timeout=2)
+                server.server_close()
 
 
 class PanelContractTests(unittest.TestCase):
