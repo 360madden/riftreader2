@@ -1,5 +1,34 @@
 # Current status
 
+**20:22 EST NOVEMBER 7 — CURRENT-BUILD XYZ TRACK WITH UNIT IDENTITY LIVE:**
+[Operator guide](reference/current-native-xyz-tracking.md) and
+[Greeting Jimmy shared coordination packet](handoff-2026-11-07-xyz-greeting-jimmy.md).
+Root's newly published .NET10 reader SHA256
+`BE252929D846AA0BB696D003116AB9D8ACAA23E5D411D68F913A92CD08919A5E`
+(117757792 bytes, immutable `artifacts/native-xyz-unit-20261107/publish/`)
+passed --help, 602/602 full Live .NET tests and 45/45 focused Python tests.
+Lab1 newly copied that reader and returned **5/5** position samples under fresh
+PID6820/start639296903905448486, build `1935A05C...`; all five sampled
+the SAME owner key `u035400012FA2D678` and cached XYZ
+`7450.3677,864.3101,2984.6113` over2.108s. Max read98.2754ms,
+sample-start gap533.3391ms. Source receipt
+`artifacts/native-current-sampler-20261105/runs/lab1/7d5b868c40664a0cb95e2c6ce0892cfb/samples.json`,
+SHA256 `FC9DC02D1692BECA28ACF9F7F7A8B492D2AEC04A23FB87CC4CFF4495A4009772`.
+Earlier old-reader Lab1 run did15/15 in6.997s, source SHA98AA5218... but
+did NOT expose unit keys. Offline track projection, XZ-planar/Y-vertical
+distance, candidate velocity, relative-target geometry and raw orientation
+descriptors now have synthetic tests; missing world/zone/clock evidence keeps
+cross-source relative output unavailable. No input/controller/reload/restart
+was used. **Native XYZ remains cached candidate data: no changed-state,
+API-quiet passive refresh, uninterrupted player continuity, body heading or
+current-build full-game restart qualification.** Greeting Jimmy independently
+wrote a reviewed shared-repo report `docs/xyz-jimmy-findings-2026-11-07-anchor-review-a086.md`:
+ordinary RR2 producer can call `Inspect.Unit.Detail` on a~0.5s game-time
+cadence, which may refresh the same cached XYZ. Merely unbinding a reference
+nonce does not establish an API-quiet interval. Root acknowledged this in the
+shared packet and assigned branch-admitted cached-XYZ writer tracing. This
+proves file-based coordination, not direct cross-chat message delivery.
+
 **19:33 EST NOVEMBER 7 — TWO-LAB BUFF GROUPING INPUT LIVE:**
 [Saturday-night discovery handoff](handoff-2026-11-07-saturday-night-discovery.md).
 The new signed state+80 raw input was observed in all52 sampled buff nodes:

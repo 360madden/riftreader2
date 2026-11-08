@@ -13,6 +13,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import sys
 import uuid
 
@@ -22,8 +23,8 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 
 GAME_SHA = "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8"
-READER_SHA = "B8A725E6A9CE663C36CB836681ED660261B07FDA4118A0167262E92131B2373E"
-READER = ROOT / "artifacts/native-current-sampler-20261105/publish/RiftReader2.Live.exe"
+READER_SHA = "BE252929D846AA0BB696D003116AB9D8ACAA23E5D411D68F913A92CD08919A5E"
+READER = ROOT / "artifacts/native-xyz-unit-20261107/publish/RiftReader2.Live.exe"
 EVIDENCE = ROOT / "artifacts/native-current-sampler-20261105/runs"
 
 
@@ -41,8 +42,37 @@ def bounded_options(lab: str, samples: int, interval_ms: int) -> None:
         raise ValueError("sampling-delay-budget-exceeded")
 
 
+def sampled_unit_identity(rows: list[dict]) -> dict:
+    """Validate optional lossless owner keys from one native sampling series."""
+    fields = ("unitKey", "unitIdCandidate", "ownerIdentityStatus")
+    seen: list[int] = []
+    missing = 0
+    for row in rows:
+        present = [field in row for field in fields]
+        if not any(present):
+            missing += 1
+            continue
+        if not all(present):
+            raise ValueError("native-candidate-unit-identity-partial")
+        raw = row["unitKey"]
+        if (not isinstance(raw, str) or len(raw) > 20
+                or re.fullmatch(r"[1-9][0-9]*", raw) is None):
+            raise ValueError("native-candidate-unit-key-invalid")
+        key = int(raw, 10)
+        if (key > (1 << 64) - 1 or row["unitIdCandidate"] != f"u{key:016X}"
+                or row["ownerIdentityStatus"] != "player-component-chain-anchored"):
+            raise ValueError("native-candidate-unit-identity-invalid")
+        seen.append(key)
+    if missing == len(rows):
+        return {"status": "unavailable-in-source-report", "unitKey": None, "unitIdCandidate": None}
+    if missing or len(set(seen)) != 1:
+        raise ValueError("native-candidate-sampled-unit-changed-or-missing")
+    return {"status": "same-key-in-sampled-rows-not-continuity-qualified",
+            "unitKey": str(seen[0]), "unitIdCandidate": f"u{seen[0]:016X}"}
+
+
 def validate_report(report: dict, *, pid: int, ticks: int,
-                    samples: int) -> dict:
+                    samples: int, require_unit_identity: bool = False) -> dict:
     if (not isinstance(report, dict) or report.get("schemaVersion") != 1
             or report.get("contractVersion") != "native-current-position-candidate-samples/1"
             or report.get("qualification") != "candidate-only-not-passive-fresh-or-player-semantic-qualified"
@@ -92,8 +122,12 @@ def validate_report(report: dict, *, pid: int, ticks: int,
         if first_start is None:
             first_start = start
         prev_start, prev_end, previous_utc = start, end, begun
+    unit = sampled_unit_identity(rows)
+    if require_unit_identity and unit["unitKey"] is None:
+        raise ValueError("native-candidate-sampled-unit-required")
     return {
         "sampleCount": samples,
+        "sampledUnit": unit,
         "firstXyz": {axis: rows[0][axis.lower()] for axis in ("X", "Y", "Z")},
         "lastXyz": {axis: rows[-1][axis.lower()] for axis in ("X", "Y", "Z")},
         "maxReadMilliseconds": max(timings),
@@ -104,6 +138,47 @@ def validate_report(report: dict, *, pid: int, ticks: int,
             any(row[axis] != rows[0][axis] for axis in ("x", "y", "z"))
             for row in rows[1:]),
         "qualification": report["qualification"]
+    }
+
+
+def project_track(report: dict, *, pid: int, ticks: int, samples: int,
+                  require_unit_identity: bool = False) -> dict:
+    """Project a validated ordered candidate track, not a fresh position feed.
+
+    Relative time is meaningful only inside this one native sampling run.
+    A newly pinned reader supplies the sampled unit key in each row; this
+    proves only matching keys at sampling instants, never uninterrupted continuity.
+    Legacy reports without unit identity remain explicitly unbound offline.
+    """
+    validate_report(report, pid=pid, ticks=ticks, samples=samples,
+                    require_unit_identity=require_unit_identity)
+    rows = report["observations"]
+    unit = sampled_unit_identity(rows)
+    origin = rows[0]["monotonicStartMilliseconds"]
+    return {
+        "schemaVersion": 1,
+        "contractVersion": "native-current-position-candidate-track/1",
+        "status": "candidate-only",
+        "qualification": report["qualification"],
+        "processIdentity": dict(report["identity"]),
+        "unitIdentityStatus": unit["status"],
+        "unitKey": unit["unitKey"],
+        "unitIdCandidate": unit["unitIdCandidate"],
+        "freshness": "unqualified",
+        "relativeTimeOrigin": "first-observation-monotonic-start",
+        "observations": [
+            {
+                "index": row["index"],
+                "startedAtUtc": row["startedAtUtc"],
+                "completedAtUtc": row["completedAtUtc"],
+                "elapsedStartMilliseconds": row["monotonicStartMilliseconds"] - origin,
+                "elapsedEndMilliseconds": row["monotonicEndMilliseconds"] - origin,
+                "x": row["x"], "y": row["y"], "z": row["z"],
+                **({field: row[field] for field in ("unitKey", "unitIdCandidate", "ownerIdentityStatus")}
+                   if unit["unitKey"] is not None else {}),
+            }
+            for row in rows
+        ],
     }
 
 
@@ -173,7 +248,8 @@ def run(lab: str, samples: int = 3, interval_ms: int = 400) -> dict:
         guest.copy_from_guest(guest_report, output / "samples.json", timeout=70)
     raw = (output / "samples.json").read_bytes()
     parsed = json.loads(raw.decode("utf-8-sig"))
-    metrics = validate_report(parsed, pid=pid, ticks=ticks, samples=samples)
+    metrics = validate_report(parsed, pid=pid, ticks=ticks, samples=samples,
+                              require_unit_identity=True)
     summary = {
         "schemaVersion": 1,
         "status": "candidate-only",
@@ -187,6 +263,8 @@ def run(lab: str, samples: int = 3, interval_ms: int = 400) -> dict:
         "sourceReportSha256": hashlib.sha256(raw).hexdigest().upper(),
         "sourceReport": str(output / "samples.json"),
         "metrics": metrics,
+        "track": project_track(parsed, pid=pid, ticks=ticks, samples=samples,
+                               require_unit_identity=True),
         "limitation": "Current-process cached XYZ candidates only; independent player-motion and passive-freshness proof pending."
     }
     with (output / "summary.json").open("x", encoding="utf-8") as stream:

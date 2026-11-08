@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
+using System.Text.Json;
 using RiftReader2.Application;
 using RiftReader2.Domain;
+using RiftReader2.Infrastructure;
 
 namespace RiftReader2.Live.Tests;
 
@@ -26,6 +28,83 @@ public sealed class CurrentBuildPositionSampleCommandTests
         Assert.Equal(820.8821411132812f, result.Y);
         Assert.Equal(3135.876220703125f, result.Z);
         Assert.True(session.Calls >= 20);
+    }
+
+    [Fact]
+    public void OwnedReadRetainsSamePlayerKeyWithoutAdditionalReads()
+    {
+        var legacySession = Fixture();
+        var legacy = CurrentBuildPositionCandidateReader.Read(legacySession);
+        var ownedSession = Fixture();
+        var owned = CurrentBuildPositionCandidateReader.ReadOwned(ownedSession);
+        Assert.Equal(Key, owned.UnitKey);
+        Assert.Equal(legacy, owned.Position);
+        Assert.Equal(legacySession.Calls, ownedSession.Calls);
+    }
+
+    [Fact]
+    public void ObservationSerializesLosslessIdentityWithoutChangingExistingFields()
+    {
+        var owned = new CurrentBuildOwnedPosition(ulong.MaxValue, new(1.5f, -2f, 3f));
+        var row = new CurrentBuildPositionObservation(1, "2026-11-08T01:00:00Z",
+            "2026-11-08T01:00:00.1Z", 0, 100, owned.Position.X, owned.Position.Y, owned.Position.Z)
+        {
+            UnitKey = owned.UnitKeyText,
+            UnitIdCandidate = owned.UnitIdCandidate,
+            OwnerIdentityStatus = "player-component-chain-anchored"
+        };
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(row, JsonFormat.Options));
+        var value = json.RootElement;
+        Assert.Equal("18446744073709551615", value.GetProperty("unitKey").GetString());
+        Assert.Equal("uFFFFFFFFFFFFFFFF", value.GetProperty("unitIdCandidate").GetString());
+        Assert.Equal("player-component-chain-anchored", value.GetProperty("ownerIdentityStatus").GetString());
+        Assert.Equal(1.5f, value.GetProperty("x").GetSingle());
+        Assert.Equal(100, value.GetProperty("monotonicEndMilliseconds").GetDouble());
+        var legacy = new CurrentBuildPositionObservation(1, row.StartedAtUtc, row.CompletedAtUtc, 0, 100, 1, 2, 3);
+        Assert.Null(legacy.UnitKey);
+        Assert.Null(legacy.UnitIdCandidate);
+        Assert.Equal("unavailable", legacy.OwnerIdentityStatus);
+    }
+
+    [Fact]
+    public void OwnedReadUsesOneResolvedSnapshotAndOneVerification()
+    {
+        var session = Fixture();
+        var resolutions = 0; var verifications = 0;
+        var owned = CurrentBuildPositionCandidateReader.ReadOwned(session, _ =>
+        {
+            resolutions++;
+            return new(ulong.MaxValue, Position, () => verifications++);
+        });
+        Assert.Equal(1, resolutions);
+        Assert.Equal(1, verifications);
+        Assert.Equal(2, session.Calls);
+        Assert.Equal(ulong.MaxValue, owned.UnitKey);
+        Assert.Equal(new CurrentBuildXyz(7181.80078125f, 820.8821411132812f, 3135.876220703125f), owned.Position);
+    }
+
+    [Fact]
+    public void OwnedReadRetainsDistinctKeysAcrossSamplesWithoutAssumingContinuity()
+    {
+        var session = Fixture();
+        var first = CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(123, Position, () => { }));
+        var second = CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(456, Position, () => { }));
+        Assert.Equal(123UL, first.UnitKey);
+        Assert.Equal(456UL, second.UnitKey);
+        Assert.Equal(first.Position, second.Position);
+    }
+
+    [Fact]
+    public void OwnedReadRejectsMissingOwnerAndChangedProcess()
+    {
+        var session = Fixture();
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(0, Position, () => { })));
+        Assert.Equal(0, session.Calls);
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(123, Position, () => session.Identity = session.Identity with { ProcessStartUtcTicks = 789 })));
     }
 
     [Fact]

@@ -43,14 +43,20 @@ internal static class CurrentBuildPositionSampleCommand
             cancellationToken.ThrowIfCancellationRequested();
             var begin = DateTimeOffset.UtcNow;
             var started = timer.Elapsed.TotalMilliseconds;
-            var xyz = CurrentBuildPositionCandidateReader.Read(session);
+            var owned = CurrentBuildPositionCandidateReader.ReadOwned(session);
+            var xyz = owned.Position;
             var invalidated = await session.RevalidateAsync(cancellationToken);
             if (invalidated is not null)
                 throw new InvalidDataException("Native candidate process identity was invalidated; no completed report was published.");
             var reading = new CurrentBuildPositionObservation(
                 index + 1, begin.ToString("O"), DateTimeOffset.UtcNow.ToString("O"),
                 started, timer.Elapsed.TotalMilliseconds,
-                xyz.X, xyz.Y, xyz.Z);
+                xyz.X, xyz.Y, xyz.Z)
+            {
+                UnitKey = owned.UnitKeyText,
+                UnitIdCandidate = owned.UnitIdCandidate,
+                OwnerIdentityStatus = "player-component-chain-anchored"
+            };
             readings.Add(reading);
             await output.WriteLineAsync(JsonSerializer.Serialize(new
             {
@@ -78,6 +84,7 @@ internal static class CurrentBuildPositionSampleCommand
                 "The exact executable and process epoch are pinned; loaded game module bytes are not independently hashed.",
                 "Each sample re-resolves the current-build manager/player/component chain; absolute addresses are never persisted.",
                 "Within-sample ownership and XYZ reads are bracketed, but sequential reads are not atomic and ABA cannot be excluded.",
+                "Per-observation unit identity comes from the same anchored lookup; equal sampled keys do not prove uninterrupted owner continuity.",
                 "The cached XYZ component has not been independently proven to be passively refreshed player position.",
                 "Separate same-unit API and changed-state evidence is required before navigation or freshness qualification.",
                 "Sampling intervals include overhead; they are not a promised polling rate."
@@ -115,9 +122,20 @@ internal sealed record CurrentBuildPositionObservation(
     double MonotonicEndMilliseconds,
     float X,
     float Y,
-    float Z);
+    float Z)
+{
+    public string? UnitKey { get; init; }
+    public string? UnitIdCandidate { get; init; }
+    public string OwnerIdentityStatus { get; init; } = "unavailable";
+}
 
 internal sealed record CurrentBuildXyz(float X, float Y, float Z);
+
+internal sealed record CurrentBuildOwnedPosition(ulong UnitKey, CurrentBuildXyz Position)
+{
+    public string UnitKeyText => UnitKey.ToString(CultureInfo.InvariantCulture);
+    public string UnitIdCandidate => $"u{UnitKey:X16}";
+}
 
 internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong ComponentAddress, Action VerifyUnchanged);
 
@@ -130,13 +148,20 @@ internal static class CurrentBuildPositionCandidateReader
     private const ulong PositionIndexRva = 0x2F588A0;
 
     internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session) =>
-        Read(session, source =>
+        ReadOwned(session).Position;
+
+    internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner) =>
+        ReadOwned(session, resolveOwner).Position;
+
+    internal static CurrentBuildOwnedPosition ReadOwned(IReadOnlyNativeMemorySession session) =>
+        ReadOwned(session, source =>
         {
             var owner = CurrentBuildPlayerLookup.Resolve(source);
             return new(owner.PlayerKey, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
         });
 
-    internal static CurrentBuildXyz Read(IReadOnlyNativeMemorySession session,
+    internal static CurrentBuildOwnedPosition ReadOwned(IReadOnlyNativeMemorySession session,
         Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner)
     {
         ArgumentNullException.ThrowIfNull(session);
@@ -163,7 +188,7 @@ internal static class CurrentBuildPositionCandidateReader
         var z = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(xyzBytes.AsSpan(8, 4)));
         if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
             throw new InvalidDataException("Native position component is nonfinite.");
-        return new(x, y, z);
+        return new(owner.UnitKey, new(x, y, z));
     }
 
     internal static ulong BucketIndex(ulong key, ulong count) =>

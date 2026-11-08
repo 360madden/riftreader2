@@ -37,7 +37,9 @@ def validate_report(report, *, pid, ticks):
     if status=='unavailable':
         if before not in ('raw-getter-zero-candidate','override-unavailable','guard-unreadable-or-invalid') or any(x is not None for x in (after,key,unit,entity,vitals,o.get('targetPosition'),o.get('targetContext'))): invalid()
     elif status=='candidate':
-        if before!='fallback-key-candidate' or after!='fallback-key-candidate' or not integer(key,1,2**64-1) or unit!=f'u{key:016X}' or not integer(entity,0x10000,0x7fffffffffff) or not isinstance(vitals,dict) or vitals.get('identity')!=identity or type(vitals.get('unitKey')) is not int or vitals['unitKey']!=key: invalid()
+        if before!='fallback-key-candidate' or after!='fallback-key-candidate' or not integer(key,1,2**64-1) or unit!=f'u{key:016X}' or not integer(entity,0x10000,0x7fffffffffff): invalid()
+        if 'targetVitals' not in o: invalid()
+        if vitals is not None and (not isinstance(vitals,dict) or vitals.get('identity')!=identity or type(vitals.get('unitKey')) is not int or vitals['unitKey']!=key): invalid()
         if not isinstance(o.get('nameSeed'),dict): invalid()
         context=o.get('targetContext')
         if not isinstance(context,dict) or context.get('qualification')!='typed owner raw inputs; target level presentation, combat semantics and freshness unverified': invalid()
@@ -68,17 +70,21 @@ def validate_report(report, *, pid, ticks):
             xyz=position.get('position')
             if not isinstance(xyz,dict) or any(type(xyz.get(k)) not in (int,float) or not math.isfinite(xyz[k]) for k in ('x','y','z')): invalid()
         else: invalid()
-        start,end=interval(vitals)
-        if start<outer_start or end>outer_end or vitals.get('qualification')!='candidate-only; semantics/passive-freshness/restart-unverified': invalid()
-        for name in ('health','energy','mana'):
-            field=vitals.get(name)
-            if not isinstance(field,dict): invalid()
-            current=field.get('current'); maximum=field.get('maximum'); reason=field.get('unavailableReason')
-            if field.get('status')=='calculated-candidate':
-                if not integer(current,-2**63,2**63-1) or not integer(maximum,-2**63,2**63-1) or reason is not None: invalid()
-            elif field.get('status')=='unavailable':
-                if current is not None or maximum is not None or not isinstance(reason,str) or not reason: invalid()
-            else: invalid()
+        if vitals is None:
+            # Explicit healthless position only; native backlinks are not fabricated here.
+            if position.get('status')!='candidate' or ctx_status!='owner-unavailable': invalid()
+        else:
+            start,end=interval(vitals)
+            if start<outer_start or end>outer_end or vitals.get('qualification')!='candidate-only; semantics/passive-freshness/restart-unverified': invalid()
+            for name in ('health','energy','mana'):
+                field=vitals.get(name)
+                if not isinstance(field,dict): invalid()
+                current=field.get('current'); maximum=field.get('maximum'); reason=field.get('unavailableReason')
+                if field.get('status')=='calculated-candidate':
+                    if not integer(current,-2**63,2**63-1) or not integer(maximum,-2**63,2**63-1) or reason is not None: invalid()
+                elif field.get('status')=='unavailable':
+                    if current is not None or maximum is not None or not isinstance(reason,str) or not reason: invalid()
+                else: invalid()
     else: invalid()
     return o
 

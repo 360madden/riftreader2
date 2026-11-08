@@ -10,19 +10,23 @@ from unittest import mock
 from scripts import sample_current_native_xyz as module
 
 
-def report(*, pid=11572, ticks=639293038821710082, samples=3):
+def report(*, pid=11572, ticks=639293038821710082, samples=3, with_unit=False):
     base = datetime(2026, 11, 5, tzinfo=timezone.utc)
     rows = []
     for index in range(samples):
         started = base + timedelta(milliseconds=index * 500)
-        rows.append({
+        row = {
             "index": index + 1,
             "startedAtUtc": started.isoformat(),
             "completedAtUtc": (started + timedelta(milliseconds=90)).isoformat(),
             "monotonicStartMilliseconds": float(index * 500),
             "monotonicEndMilliseconds": float(index * 500 + 90),
             "x": 7181.801, "y": 820.882, "z": 3135.876
-        })
+        }
+        if with_unit:
+            row.update(unitKey="123", unitIdCandidate="u000000000000007B",
+                       ownerIdentityStatus="player-component-chain-anchored")
+        rows.append(row)
     return {
         "schemaVersion": 1,
         "contractVersion": "native-current-position-candidate-samples/1",
@@ -42,7 +46,7 @@ def report(*, pid=11572, ticks=639293038821710082, samples=3):
 class FakeGuest:
     def __init__(self, *, installed=True, result=None, game_pid=11572):
         self.installed = installed
-        self.result = report() if result is None else result
+        self.result = report(with_unit=True) if result is None else result
         self.game_pid = game_pid
         self.copy_calls = 0
         self.shell_scripts = []
@@ -126,6 +130,114 @@ class CurrentNativeSampleHostTests(unittest.TestCase):
             result["qualification"]
         )
 
+    def test_track_preserves_all_rows_and_run_relative_times(self):
+        source = report()
+        for row in source["observations"]:
+            row["monotonicStartMilliseconds"] += 1234
+            row["monotonicEndMilliseconds"] += 1234
+        # Return to the starting point: first/last alone must not hide the middle.
+        source["observations"][1].update(x=-12.5, y=0, z=44.25)
+        track = module.project_track(
+            source, pid=11572, ticks=639293038821710082, samples=3)
+        self.assertEqual("native-current-position-candidate-track/1", track["contractVersion"])
+        self.assertEqual("candidate-only", track["status"])
+        self.assertEqual(source["qualification"], track["qualification"])
+        self.assertEqual("unqualified", track["freshness"])
+        self.assertEqual("unavailable-in-source-report", track["unitIdentityStatus"])
+        self.assertEqual(source["identity"], track["processIdentity"])
+        self.assertEqual([0, 500, 1000],
+                         [row["elapsedStartMilliseconds"] for row in track["observations"]])
+        self.assertEqual([90, 590, 1090],
+                         [row["elapsedEndMilliseconds"] for row in track["observations"]])
+        for original, projected in zip(source["observations"], track["observations"]):
+            for key in ("index", "startedAtUtc", "completedAtUtc", "x", "y", "z"):
+                self.assertEqual(original[key], projected[key])
+        self.assertEqual(-12.5, track["observations"][1]["x"])
+        self.assertEqual(track["observations"][0]["x"], track["observations"][2]["x"])
+
+    def test_track_single_sample_does_not_fabricate_movement_or_identity(self):
+        source = report(samples=1)
+        track = module.project_track(
+            source, pid=11572, ticks=639293038821710082, samples=1)
+        self.assertEqual(1, len(track["observations"]))
+        self.assertEqual(0, track["observations"][0]["elapsedStartMilliseconds"])
+        self.assertNotIn("unitKey", track["observations"][0])
+        self.assertNotIn("speed", track["observations"][0])
+        self.assertNotIn("distance", track["observations"][0])
+        self.assertEqual("unqualified", track["freshness"])
+
+    def test_track_does_not_mutate_source_report(self):
+        source = report()
+        original = json.loads(json.dumps(source))
+        track = module.project_track(
+            source, pid=11572, ticks=639293038821710082, samples=3)
+        track["observations"][1]["x"] = 999
+        track["processIdentity"]["processId"] = 999
+        self.assertEqual(original, source)
+
+    def test_track_reuses_identity_sequence_and_coordinate_validation(self):
+        for change in ("epoch", "sequence", "coordinate"):
+            source = report()
+            if change == "epoch":
+                source["identity"]["processStartUtcTicks"] += 1
+            elif change == "sequence":
+                source["observations"].reverse()
+            else:
+                source["observations"][1]["x"] = float("nan")
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                module.project_track(
+                    source, pid=11572, ticks=639293038821710082, samples=3)
+
+    def test_sampled_unit_key_is_lossless_but_not_continuity_proof(self):
+        source = report()
+        key = str((1 << 64) - 1)
+        for row in source["observations"]:
+            row.update(unitKey=key, unitIdCandidate="uFFFFFFFFFFFFFFFF",
+                       ownerIdentityStatus="player-component-chain-anchored")
+        summary = module.validate_report(
+            source, pid=11572, ticks=639293038821710082, samples=3)
+        self.assertEqual(key, summary["sampledUnit"]["unitKey"])
+        self.assertIn("not-continuity-qualified", summary["sampledUnit"]["status"])
+        track = module.project_track(
+            source, pid=11572, ticks=639293038821710082, samples=3)
+        self.assertEqual(key, track["unitKey"])
+        self.assertEqual("uFFFFFFFFFFFFFFFF", track["unitIdCandidate"])
+        self.assertEqual([key] * 3,
+                         [row["unitKey"] for row in track["observations"]])
+        self.assertEqual("unqualified", track["freshness"])
+        self.assertEqual(source["identity"], track["processIdentity"])
+
+    def test_rejects_partial_malformed_or_changed_sampled_unit(self):
+        for change in ("partial", "mixed", "changed", "bad-decimal", "bad-hex",
+                       "bad-status", "bool-key", "overflow", "leading-zero"):
+            source = report()
+            for row in source["observations"]:
+                row.update(unitKey="123", unitIdCandidate="u000000000000007B",
+                           ownerIdentityStatus="player-component-chain-anchored")
+            row = source["observations"][1]
+            if change == "partial":
+                row.pop("ownerIdentityStatus")
+            elif change == "mixed":
+                for field in ("unitKey", "unitIdCandidate", "ownerIdentityStatus"):
+                    row.pop(field)
+            elif change == "changed":
+                row.update(unitKey="124", unitIdCandidate="u000000000000007C")
+            elif change == "bad-decimal":
+                row["unitKey"] = "-123"
+            elif change == "bad-hex":
+                row["unitIdCandidate"] = "u000000000000007b"
+            elif change == "bad-status":
+                row["ownerIdentityStatus"] = "qualified"
+            elif change == "bool-key":
+                row["unitKey"] = True
+            elif change == "overflow":
+                row["unitKey"] = str(1 << 64)
+            elif change == "leading-zero":
+                row["unitKey"] = "0123"
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                module.validate_report(
+                    source, pid=11572, ticks=639293038821710082, samples=3)
+
     def test_single_sample_does_not_establish_cadence(self):
         result = module.validate_report(
             report(samples=1), pid=11572, ticks=639293038821710082, samples=1)
@@ -198,7 +310,14 @@ class CurrentNativeSampleHostTests(unittest.TestCase):
                 self.assertEqual(3, result["metrics"]["sampleCount"])
                 self.assertEqual(installed, result["guestReaderReused"])
                 self.assertTrue(Path(result["sourceReport"]).is_file())
-                self.assertTrue((Path(result["sourceReport"]).parent / "summary.json").is_file())
+                summary_path = Path(result["sourceReport"]).parent / "summary.json"
+                self.assertTrue(summary_path.is_file())
+                self.assertEqual(
+                    module.project_track(guest.result, pid=game_pid,
+                                         ticks=639293038821710082, samples=3),
+                    result["track"])
+                self.assertEqual(result["track"],
+                                 json.loads(summary_path.read_text(encoding="utf-8"))["track"])
         return guest
 
     def test_reuses_existing_sha_checked_guest_binary(self):

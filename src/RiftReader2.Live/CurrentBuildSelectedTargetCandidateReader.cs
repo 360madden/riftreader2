@@ -39,8 +39,9 @@ internal static class CurrentBuildSelectedTargetCandidateReader
   }
   if(entity==0)throw new InvalidDataException("Target key absent or lookup bound exceeded.");
   var selector=BinaryPrimitives.ReadInt32LittleEndian(Take(id.ModuleBaseAddress+0x2F57850,4));if(selector is <0 or >=0x60)throw new InvalidDataException("Invalid target health selector.");
-  var slot=Take(entity+0x18+(ulong)selector,1)[0];if(slot==0xFF)throw new InvalidDataException("Target health component absent.");
-  var components=Ptr(Q(entity+0x78));var health=Ptr(Q(checked(components+slot*8UL)),0x18);if(Q(health+0x10)!=entity)throw new InvalidDataException("Target health entity mismatch.");
+  var slot=Take(entity+0x18+(ulong)selector,1)[0];if(slot==0xFF&&!includePosition)throw new InvalidDataException("Target health component absent.");
+  var components=Ptr(Q(entity+0x78));ulong health=0;
+   if(slot!=0xFF){health=Ptr(Q(checked(components+slot*8UL)),0x18);if(Q(health+0x10)!=entity)throw new InvalidDataException("Target health entity mismatch.");}
   TargetNameSeed? name=null;
   if(includeNameSeed) {try{name=CurrentBuildNameSeedReader.Read(session,id,entity,Take,anchors);}catch(InvalidDataException){if(budget>2*1024*1024)throw;name=new("unavailable","name-read-or-type-failure");}}
   string? afterStatus=null;
@@ -50,7 +51,8 @@ internal static class CurrentBuildSelectedTargetCandidateReader
    var now=context(session);afterStatus=now.TargetStatus;
    if(now.Identity!=id||now.UnitKey!=before.UnitKey||now.TargetKeyCandidate!=key||session.Identity!=id)throw new InvalidDataException("Self or gated target changed during capture.");
   }
-  var observation=vitals(session,new(key,health,Verify));
+  // A position-only acquisition never invents target vitals when health is absent.
+   var observation=health==0?null:vitals(session,new(key,health,Verify));
   TargetPositionCandidate? position=null;
   if(includePosition)
   {
@@ -68,7 +70,8 @@ internal static class CurrentBuildSelectedTargetCandidateReader
    }
   }
   TargetRawContext? targetContext=null;
-  if(includeContext)
+  if(includeContext&&health==0)targetContext=new("owner-unavailable");
+   if(includeContext&&health!=0)
   {
    try
    {
