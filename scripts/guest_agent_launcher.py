@@ -12,9 +12,28 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from scripts import run_xyz_workflow as w
+from scripts.lab_codex import LabCodex
 from scripts.vmware_guest_session import GuestSession
 from scripts.nav_access_queue import QueueError
 from scripts.run_movement_session import ManagedPinnedHost, PinnedHost, write_managed_host_plan
+
+
+def maintenance_guest_session(vmrun, guard, managed_lab):
+    extra = {}
+    if managed_lab is not None:
+        w.require(managed_lab in ('lab1', 'lab2'), 'Invalid managed lab')
+        # Resolve only this lab's approved cache targets, never credential values.
+        # GuestSession rereads them on every entry and must never prompt.
+        _, _, config, lab = LabCodex()._configuration(managed_lab)
+        w.require(Path(config['vmrun']).resolve() == Path(vmrun).resolve()
+                  and lab['vmx'].resolve() == guard.native.vmx.resolve(),
+                  'Managed guest configuration mismatch')
+        extra['_guest_prompt'] = LabCodex._no_prompt
+        if lab.get('legacyGuestVmx') is not None:
+            extra['legacy_guest_credential_target'] = (
+                'RiftReader2 Guest Windows: '
+                + str(lab['legacyGuestVmx'].resolve(strict=False)))
+    return GuestSession(Path(vmrun), guard.native.vmx, guard.check, **extra)
 
 
 class ManagedMaintenanceGuard:
@@ -180,7 +199,7 @@ def run(config, output, guest_root, operation, release=None, *, managed_lab=None
     sha = w.digest((output / 'request.json').read_bytes())
     incoming = guest_root + '\\request-' + request['id'] + '.tmp'
     with maintenance_lease(guard, output) as verdict:
-        with GuestSession(Path(vmrun), guard.native.vmx, guard.check) as guest:
+        with maintenance_guest_session(vmrun, guard, managed_lab) as guest:
             w.save(output / 'stop.json', w.sanitize(guard.client.request('/api/stop', method='POST', payload={})))
             if managed_lab is not None:
                 w.save(output / 'stopped.json', w.sanitize(guard.status()))

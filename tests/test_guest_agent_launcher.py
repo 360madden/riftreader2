@@ -13,6 +13,50 @@ from scripts.prepare_guest_agent import prepare
 
 
 class GuestAgentLauncherTests(unittest.TestCase):
+
+    def test_managed_session_uses_only_configured_own_legacy_and_no_prompt(self):
+        for lab, previous in (('lab1', Path('old-lab1.vmx')), ('lab2', None)):
+            with self.subTest(lab=lab):
+                vmx = Path(lab + '.vmx')
+                guard = SimpleNamespace(native=SimpleNamespace(vmx=vmx), check=MagicMock())
+                with (patch.object(launcher.LabCodex, '_configuration', return_value=(
+                        None, None, {'vmrun': Path('vmrun.exe')},
+                        {'vmx': vmx, 'legacyGuestVmx': previous})) as config,
+                      patch.object(launcher, 'GuestSession') as session):
+                    launcher.maintenance_guest_session(Path('vmrun.exe'), guard, lab)
+                config.assert_called_once_with(lab)
+                args, kwargs = session.call_args
+                self.assertEqual(args, (Path('vmrun.exe'), vmx, guard.check))
+                self.assertIs(kwargs['_guest_prompt'], launcher.LabCodex._no_prompt)
+                with self.assertRaisesRegex(RuntimeError, 'cached-guest-credential-required'):
+                    kwargs['_guest_prompt']()
+                expected = {} if previous is None else {
+                    'legacy_guest_credential_target':
+                        'RiftReader2 Guest Windows: ' + str(previous.resolve(strict=False))}
+                self.assertEqual({k: v for k, v in kwargs.items() if k != '_guest_prompt'}, expected)
+                session.return_value.__enter__.assert_not_called()
+
+    def test_managed_session_rejects_config_mismatch_before_session(self):
+        for cfg_run, cfg_vmx in (('other-vmrun.exe', 'lab1.vmx'),
+                                  ('vmrun.exe', 'lab2.vmx')):
+            guard = SimpleNamespace(native=SimpleNamespace(vmx=Path('lab1.vmx')),
+                                    check=MagicMock())
+            with (patch.object(launcher.LabCodex, '_configuration', return_value=(
+                    None, None, {'vmrun': Path(cfg_run)},
+                    {'vmx': Path(cfg_vmx), 'legacyGuestVmx': None})),
+                  patch.object(launcher, 'GuestSession') as session):
+                with self.assertRaisesRegex(ValueError, 'configuration mismatch'):
+                    launcher.maintenance_guest_session(Path('vmrun.exe'), guard, 'lab1')
+            session.assert_not_called()
+
+    def test_legacy_session_contract_is_unchanged(self):
+        guard = SimpleNamespace(native=SimpleNamespace(vmx=Path('legacy.vmx')), check=MagicMock())
+        with (patch.object(launcher.LabCodex, '_configuration') as config,
+              patch.object(launcher, 'GuestSession') as session):
+            launcher.maintenance_guest_session(Path('vmrun.exe'), guard, None)
+        config.assert_not_called()
+        session.assert_called_once_with(Path('vmrun.exe'), guard.native.vmx, guard.check)
+
     def test_maintenance_failure_never_reports_success(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -332,6 +376,7 @@ class GuestAgentLauncherTests(unittest.TestCase):
             guard = MagicMock()
             guard.plan = {'database': 'queue.json', 'resource': 'vm:rift-lab-2'}
             guard.vmrun = Path('vmrun.exe')
+            guard.native = SimpleNamespace(vmx=Path('lab2.vmx'))
             guard.status.return_value = {'guest': {'gracefulShutdownVersion': 1}}
             guard.status_after_restart.return_value = {
                 'guest': {'gracefulShutdownVersion': 1, **(capabilities or {})}}
@@ -351,6 +396,9 @@ class GuestAgentLauncherTests(unittest.TestCase):
             guest.copy_from_guest.side_effect = copy_result
             with (patch.object(launcher, 'ManagedMaintenanceGuard', return_value=guard) as managed,
                   patch.object(launcher.w, 'read_config') as legacy,
+                  patch.object(launcher.LabCodex, '_configuration', return_value=(
+                      None, None, {'vmrun': Path('vmrun.exe')},
+                      {'vmx': Path('lab2.vmx'), 'legacyGuestVmx': None})),
                   patch.object(launcher.w, 'HostGuard') as legacy_guard,
                   patch.object(launcher.w, 'AccessQueue', return_value=queue),
                   patch.object(launcher, 'GuestSession') as session,
