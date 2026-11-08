@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-current-build-position-slot-context",
+  "observedAtUtc": "2026-11-08T06:32:25.018Z",
+  "scope": "retained-Ghidra-static-memory-and-metadata-only",
+  "host": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "importedPE": {
+    "program": "rift_x64.exe",
+    "imageBase": "0x140000000",
+    "sha256Metadata": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshRehash": false
+  },
+  "source": {
+    "script": "artifacts/rea/position-owner-slot-review2/Rr2PositionOwnerSlotContextExport.java",
+    "scriptSha256": "dee2c628ec7b9cd24bd89b476fa6434879e1264d1065a939eb2edf4a2b09d493",
+    "ghidraProject": "artifacts/rea/RiftNativeFocusedV2",
+    "readOnly": true,
+    "noAnalysis": true,
+    "maxCpu": 1,
+    "fixedAnchorsRva": [
+      "0x363E848",
+      "0x363E8B4",
+      "0x26B4FB0"
+    ],
+    "bytesPerAnchor": 128,
+    "totalBytes": 384,
+    "maxDirectReferencesPerAnchor": 8,
+    "pointerFollowing": false
+  },
+  "job": {
+    "id": "rr2-position-owner-slot-context-20261108-root-01",
+    "status": "passed",
+    "exitCode": 0,
+    "completionMarker": "RR2_POSITION_OWNER_SLOT_COMPLETE"
+  },
+  "anchors": [
+    {
+      "rva": "0x363E848",
+      "section": ".pdata",
+      "dataType": "_IMAGE_RUNTIME_FUNCTION_ENTRY",
+      "dataLengthBytes": 12,
+      "directRef": {
+        "kind": "DATA",
+        "sourceRva": "0x363E848",
+        "destRva": "0x697F20"
+      },
+      "classification": "unwind-metadata-not-code-caller"
+    },
+    {
+      "rva": "0x363E8B4",
+      "section": ".pdata",
+      "dataType": "_IMAGE_RUNTIME_FUNCTION_ENTRY",
+      "dataLengthBytes": 12,
+      "directRef": {
+        "kind": "DATA",
+        "sourceRva": "0x363E8B4",
+        "destRva": "0x6984C0"
+      },
+      "classification": "unwind-metadata-not-code-caller",
+      "reclassifiesEarlierReport": "docs/handoff-2026-11-08-position-owner-xrefs-0628z.md"
+    },
+    {
+      "rva": "0x26B4FB0",
+      "section": ".rdata",
+      "dataType": "undefined-in-retained-listing",
+      "existingDirectRefsFromAnchor": 0,
+      "slots": [
+        {
+          "offset": "+0x00",
+          "rawVA": "0x1405A9990",
+          "rva": "0x5A9990"
+        },
+        {
+          "offset": "+0x08",
+          "rawVA": "0x140697F20",
+          "rva": "0x697F20"
+        },
+        {
+          "offset": "+0x10",
+          "rawVA": "0x1406984C0",
+          "rva": "0x6984C0"
+        },
+        {
+          "offset": "+0x18",
+          "rawVA": "0x140698300",
+          "rva": "0x698300"
+        }
+      ],
+      "classification": "candidate-dispatch-table-raw-QWORDs-only"
+    }
+  ],
+  "interpretation": {
+    "candidateVirtualDispatchSupportedBy": "raw .rdata function-like QWORD layout plus previously retained ctor/dtor V8 cross-reference",
+    "qualifiedVtable": false,
+    "qualifiedActiveCall": false,
+    "qualifiedLiveOwner": false,
+    "qualifiedXYZReader": false
+  },
+  "caveats": [
+    "A DATA xref from .pdata is unwind function metadata and cannot be used as an independently discovered caller.",
+    "Raw QWORDs were decoded from retained initialized bytes; pointers were not dereferenced or traversed.",
+    "The original PE hash is imported Ghidra metadata, not a fresh live or file hash.",
+    "Zero retained direct refs cannot prove absence of unindexed indirect uses.",
+    "No guest deployment, native read, controller operation, game input, or field qualification occurred."
+  ],
+  "nextBoundedQuestion": "Correlate retained ctor/dtor V8 writes with exact candidate .rdata table address; then bound existing indirect call-site review without method-slot assumptions."
+}

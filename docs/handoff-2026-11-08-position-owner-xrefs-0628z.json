@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "topic": "rr2-current-build-position-owner-xrefs",
+  "observedAtUtc": "2026-11-08T06:28:23.176Z",
+  "scope": "retained-ghidra-static-metadata-only",
+  "host": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "ghidra": {
+    "project": "artifacts/rea/RiftNativeFocusedV2",
+    "program": "rift_x64.exe",
+    "imageBase": "0x140000000",
+    "language": "x86:LE:64:default",
+    "compiler": "windows",
+    "importedExecutableSha256Metadata": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshExecutableRehashPerformed": false,
+    "readOnly": true,
+    "noAnalysis": true,
+    "maxCpu": 1
+  },
+  "script": {
+    "path": "artifacts/rea/position-owner-xrefs-review1/Rr2PositionOwnerXrefsExport.java",
+    "sha256": "be1f0b32ae1a5fb8c349da6cb502d13e0711defebf340f23a74df05bda310002",
+    "maxReferencesPerTarget": 32,
+    "maxInstructionsPerReference": 9,
+    "maxOutputChars": 300000
+  },
+  "job": {
+    "id": "rr2-position-owner-xrefs-20261108-root-01",
+    "status": "passed",
+    "exitCode": 0,
+    "completionMarker": "RR2_POSITION_OWNER_XREFS_COMPLETE"
+  },
+  "targets": [
+    {
+      "rva": "0x6984C0",
+      "va": "0x1406984C0",
+      "role": "requested-function-entry",
+      "existingFunction": "FUN_1406984c0",
+      "referencesEmitted": 1,
+      "referencesTruncated": false,
+      "references": [
+        {
+          "sourceRva": "0x363E8B4",
+          "sourceVa": "0x14363E8B4",
+          "kind": "DATA",
+          "operandIndex": 0,
+          "sourceFunctionMetadata": "unavailable",
+          "sourceInstruction": "absent-data-or-undefined"
+        }
+      ]
+    },
+    {
+      "rva": "0x26B4FB0",
+      "va": "0x1426B4FB0",
+      "role": "candidate-table-address-unqualified",
+      "existingFunction": null,
+      "referencesEmitted": 0,
+      "referencesTruncated": false,
+      "references": []
+    }
+  ],
+  "caveats": [
+    "Reference coverage is limited to the existing retained Ghidra reference index; zero exact incoming references is not proof of no callers or use.",
+    "DATA reference is not an instruction, typed dispatch entry, function invocation, or source-owner qualification.",
+    "Imported PE SHA metadata guard is not a fresh executable rehash.",
+    "No current process native read, field validation, game input, guest deployment or controller operation was performed.",
+    "Greeting Jimmy exclusive native-read/maintenance quiescence not yet acknowledged in shared handoff."
+  ],
+  "nextBoundedAction": "Read-only exact-build inspection of initialized block and bounded nearby data/pointer layout around RVA 0x363E8B4, preserving source hash and strict caps; no live admission implied."
+}
