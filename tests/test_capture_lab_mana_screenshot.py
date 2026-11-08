@@ -13,6 +13,9 @@ from scripts import capture_lab_mana_screenshot as cap
 from tests.test_nav_control_watchdog import TARGET, VM
 
 
+_REAL_PROBE_SOURCE_GUARD = cap._require_probe_sources
+
+
 class FakeQueue:
     def __init__(self, epoch, *, wrong_grant=False):
         self.epoch = epoch
@@ -68,6 +71,12 @@ class ManaScreenshotTests(unittest.TestCase):
         original_root = cap.ROOT
         cap.ROOT = self.root
         self.addCleanup(setattr, cap, "ROOT", original_root)
+        # Synthetic receipt tests exercise review semantics independently of the
+        # intentionally historical, operationally pinned source files. Keep the
+        # real source guard tested explicitly below and enabled in production.
+        source_patch = patch.object(cap, "_require_probe_sources")
+        source_patch.start()
+        self.addCleanup(source_patch.stop)
         self.now = datetime.now(timezone.utc)
         self.identity = {
             "processId": TARGET["processId"],
@@ -223,14 +232,24 @@ class ManaScreenshotTests(unittest.TestCase):
     def test_review_rejects_changed_local_probe_source(self):
         descriptor_source = self.root / "descriptor-probe.py"
         owner_source = self.root / "owner-probe.py"
-        descriptor_source.write_bytes(cap.PROBE_SOURCES["descriptor"].read_bytes())
-        owner_source.write_bytes(cap.PROBE_SOURCES["owner"].read_bytes())
+        descriptor_bytes = cap.PROBE_SOURCES["descriptor"].read_bytes()
+        owner_bytes = cap.PROBE_SOURCES["owner"].read_bytes()
+        descriptor_source.write_bytes(descriptor_bytes)
+        owner_source.write_bytes(owner_bytes)
         sources = {"descriptor": descriptor_source, "owner": owner_source}
-        with patch.object(cap, "PROBE_SOURCES", sources):
-            cap.mana_review("lab1", self.review_path, self.now)
-            descriptor_source.write_bytes(descriptor_source.read_bytes() + b"\n# drift\n")
+        # Test the actual production hash guard with controlled bytes; do not
+        # re-pin the old Mana receipt to a newer, expanded discovery probe.
+        with (patch.object(cap, "PROBE_SOURCES", sources),
+              patch.object(cap, "OWNER_PROBE_SHA256", hashlib.sha256(owner_bytes).hexdigest().upper()),
+              patch.object(cap, "_require_probe_sources", _REAL_PROBE_SOURCE_GUARD)):
+            cap._require_probe_sources()
+            descriptor_source.write_bytes(descriptor_bytes + b"\n# drift\n")
             with self.assertRaisesRegex(cap.CaptureBlocked, "descriptor probe source changed"):
-                cap.mana_review("lab1", self.review_path, self.now)
+                cap._require_probe_sources()
+            descriptor_source.write_bytes(descriptor_bytes)
+            owner_source.write_bytes(owner_bytes + b"\n# drift\n")
+            with self.assertRaisesRegex(cap.CaptureBlocked, "owner probe source changed"):
+                cap._require_probe_sources()
 
     def test_review_requires_coherent_value_interval_and_mutable_transition(self):
         owner_path = Path(self.review["ownerReview"])
