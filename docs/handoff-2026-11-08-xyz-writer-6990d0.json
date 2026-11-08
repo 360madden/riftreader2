@@ -1,0 +1,257 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "current-build-position-writer-6990d0-offline/1",
+  "date": "2026-11-08",
+  "scope": "Retained exact-build bytes only; no Ghidra rerun, live read/input, program mutation or commit",
+  "source": {
+    "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "imageBase": "0x140000000",
+    "rawStartRva": "0x6990D0",
+    "rawEndExclusiveRva": "0x6996D0",
+    "rawLength": 1536,
+    "rawSha256": "37105C6813AD95805B83CBEC7DF4659BCDC6AD321DAB271D90A5B1FB46AAED9D",
+    "exporterPath": "C:\\work\\riftreader2\\artifacts\\rea\\position-writer-6990d0-review1\\Rr2PositionWriter6990D0RawExport.java",
+    "exporterSha256": "15c06011ed8d4de662b91c12a45a8700268e7a42660b4b925b3081f1102e7ac8",
+    "headlessLogPath": "C:\\work\\riftreader2\\artifacts\\rea\\position-writer-6990d0-review1\\headless.log",
+    "headlessLogSha256": "feedef89f42034cf673353bd2db8e321257b28cbbcd1e57558d215c14d5fe710",
+    "rootJob": "rr2-root-ghidra-writer6990d0-20261108-01",
+    "rootExitCode": 0,
+    "localRawByteLengthVerified": 1536,
+    "localRawSha256Verified": true
+  },
+  "decoder": {
+    "name": "GNU objdump",
+    "version": "GNU Binutils for Debian 2.44",
+    "mode": "binary i386:x86-64 intel; adjust-vma=0x6990d0",
+    "noBadDecodedInstructions": true,
+    "tailLimit": "0x6996CE and 0x6996CF are incomplete next-routine bytes, not a decode failure within the main body."
+  },
+  "main": {
+    "entryRva": "0x6990D0",
+    "observedRetRva": "0x699595",
+    "observedBodyEndExclusiveRva": "0x699596",
+    "instructionCount": 251,
+    "boundaryQualification": "Coherent prologue, internal direct branches, epilogue/RET and INT3 padding observed; PE unwind/exception boundary not independently checked.",
+    "allDirectNoncallBranchesInsideObservedBody": true,
+    "inputBinding": "RDI=entry RCX receiver; RSI=entry RDX pointer-to-pointer; source=*RSI. Repeated source dereferences are not an atomic snapshot.",
+    "primaryStores": [
+      {
+        "rva": "0x6992AA",
+        "receiverOffset": "0x48",
+        "sourceOffset": "0x44",
+        "register": "xmm2",
+        "provenanceRvas": [
+          "0x699209",
+          "0x699214",
+          "0x699287"
+        ]
+      },
+      {
+        "rva": "0x6992B2",
+        "receiverOffset": "0x4C",
+        "sourceOffset": "0x48",
+        "register": "xmm1",
+        "provenanceRvas": [
+          "0x699209",
+          "0x699214",
+          "0x699295"
+        ]
+      },
+      {
+        "rva": "0x6992B7",
+        "receiverOffset": "0x50",
+        "sourceOffset": "0x4C",
+        "register": "r8d",
+        "provenanceRvas": [
+          "0x699205"
+        ]
+      }
+    ],
+    "duplicateSourceStores": {
+      "receiverOffsets": [
+        "0xE4",
+        "0xE8",
+        "0xEC"
+      ],
+      "storeRvas": [
+        "0x69928D",
+        "0x69929B",
+        "0x6992A3"
+      ]
+    },
+    "secondaryCopies": [
+      {
+        "storeRva": "0x69947A",
+        "receiverDestinationOffset": "0x88",
+        "sourceReceiverOffset": "0x48",
+        "bytes": 8
+      },
+      {
+        "storeRva": "0x699486",
+        "receiverDestinationOffset": "0x90",
+        "sourceReceiverOffset": "0x50",
+        "bytes": 4
+      }
+    ],
+    "otherDirectSideEffects": [
+      "Receiver +0x20 string-like assignment/cleanup using source+0x68 via helpers; precise type/lifetime not independently qualified.",
+      "source+0x20 qword copied to receiver+0x40; source+0x28/+0x2C/+0x30 to +0xD8/+0xDC/+0xE0; source+0x34/+0x38/+0x3C to +0x54/+0x58/+0x5C.",
+      "source+0x40 dword to receiver+0xB8; orientation-like input at source+0x54 feeds helper/arithmetic and nine scalar stores receiver+0x60..+0x80.",
+      "Primary matrix bytes copied to receiver+0x94..+0xB7; +0xF0/+0xCC cleared; qword+0xC4 set to 0x000000003F800000; +0xBC/+0xC0/+0xD0 duplicate +0xB8.",
+      "Helper 0x1CE3D20 called with RCX=receiver+0xF8 and RDX=stack temporary at0x699563; actual helper stores/handle semantics not inspected."
+    ],
+    "calls": [
+      {
+        "rva": "0x69910a",
+        "instruction": "call   0x4a7320"
+      },
+      {
+        "rva": "0x699156",
+        "instruction": "call   0x24e0d50"
+      },
+      {
+        "rva": "0x699179",
+        "instruction": "call   0x25047a9"
+      },
+      {
+        "rva": "0x6991d9",
+        "instruction": "call   QWORD PTR [rip+0x1f57211]        # 0x25f03f0"
+      },
+      {
+        "rva": "0x6991e0",
+        "instruction": "call   0x24e0d50"
+      },
+      {
+        "rva": "0x6992f0",
+        "instruction": "call   0x75c480"
+      },
+      {
+        "rva": "0x699329",
+        "instruction": "call   QWORD PTR [rip+0x1f56fb1]        # 0x25f02e0"
+      },
+      {
+        "rva": "0x699343",
+        "instruction": "call   0x250489f"
+      },
+      {
+        "rva": "0x69935d",
+        "instruction": "call   0x1145990"
+      },
+      {
+        "rva": "0x6994e3",
+        "instruction": "call   0x13808e0"
+      },
+      {
+        "rva": "0x69953b",
+        "instruction": "call   0x697dc0"
+      },
+      {
+        "rva": "0x699548",
+        "instruction": "call   0x1ce3d20"
+      },
+      {
+        "rva": "0x699552",
+        "instruction": "call   0x75c7f0"
+      },
+      {
+        "rva": "0x699563",
+        "instruction": "call   0x1ce3d20"
+      },
+      {
+        "rva": "0x69956d",
+        "instruction": "call   0x75c7f0"
+      },
+      {
+        "rva": "0x699579",
+        "instruction": "call   0x24e11c0"
+      }
+    ],
+    "branchRvas": [
+      {
+        "rva": "0x69911e",
+        "instruction": "je     0x699192"
+      },
+      {
+        "rva": "0x699128",
+        "instruction": "jbe    0x69915b"
+      },
+      {
+        "rva": "0x69913c",
+        "instruction": "jb     0x699156"
+      },
+      {
+        "rva": "0x699151",
+        "instruction": "ja     0x6991ca"
+      },
+      {
+        "rva": "0x69919a",
+        "instruction": "jbe    0x6991e5"
+      },
+      {
+        "rva": "0x6991b3",
+        "instruction": "jb     0x6991e0"
+      },
+      {
+        "rva": "0x6991c8",
+        "instruction": "jbe    0x6991e0"
+      },
+      {
+        "rva": "0x699356",
+        "instruction": "jae    0x699362"
+      },
+      {
+        "rva": "0x699530",
+        "instruction": "je     0x699557"
+      }
+    ],
+    "outOfWindowControl": "No direct non-call branch exits the observed main body. Sixteen call instructions target external code/IAT slots; error path ends in INT3 at0x6991DF; callees and exceptional control flow remain unexpanded."
+  },
+  "adjacentSetter": {
+    "entryRva": "0x6995A0",
+    "retRva": "0x69960D",
+    "input": "RCX receiver; RDX address of 3 float32-sized values",
+    "primaryStoreRvas": [
+      "0x6995CC",
+      "0x6995D4"
+    ],
+    "behavior": "UCOMISS/JNE/JE compare path; copy QWORD input[0..7] into receiver+0x48 and DWORD input+8 into receiver+0x50; does not directly update secondary XYZ.",
+    "notification": "Reads owner=receiver+0x10, owner table+0x78/+0x80 and selector metadata RVA0x2F59778; selected nonnull component tail-jumps0x78C2A0 with RDX=receiver+0x48 at0x699608.",
+    "limits": [
+      "Floating unordered/NaN flags are not explicitly checked: do not paraphrase as total IEEE equality.",
+      "Owner+0x78 is dereferenced before later owner-null test, so the later test is not a safe-null guarantee.",
+      "Tail target lies outside export; notification semantics and live receiver/source identity unknown."
+    ]
+  },
+  "otherWindowEntries": [
+    {
+      "entryRva": "0x699610",
+      "retRvas": [
+        "0x69968E",
+        "0x699696"
+      ],
+      "summary": "Boolean predicate uses selector0x2F578D8, virtual tag comparisons9/10, global byte0x2F58868 and receiver+0x84; no direct primary XYZ store."
+    },
+    {
+      "entryRva": "0x6996A0",
+      "retRva": "0x6996B1",
+      "summary": "If [[RCX+0x10]+0xC0]!=1, direct branch0x6988D0 outside window; else return."
+    },
+    {
+      "entryRva": "0x6996C0",
+      "summary": "Only prologue prefix retained; incomplete at export end."
+    }
+  ],
+  "inferences": [
+    "0x6990D0 resembles bulk initialization/refresh from a serialized or structured source: string-like assignment, scalar copying and derived matrix setup. This role is inferred, not a constructor or runtime execution proof.",
+    "0x6995A0 is a smaller direct XYZ setter/notification candidate, separate from the previously analyzed0x6996C0 guarded refresh path."
+  ],
+  "qualifications": {
+    "liveWriterExecution": false,
+    "sourceOwnerSemantics": false,
+    "worldCoordinates": false,
+    "passiveFreshness": false,
+    "changedState": false,
+    "restart": false
+  },
+  "nextUsefulStep": "Reuse existing caller/provenance evidence to trace callers supplying entry RCX receiver and pointer-to-pointer RDX; no fresh full import required. Do not call these native functions or treat static stores as current player updates."
+}
