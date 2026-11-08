@@ -96,6 +96,8 @@ internal static class CurrentBuildPositionRefreshBranchSampleCommand
                 playerEntityHex = Hex(observation.PlayerEntity),
                 positionComponentHex = Hex(observation.PositionComponent),
                 referencedHandleHex = observation.ReferencedHandle is ulong handle ? Hex(handle) : null,
+                observation.ReferencedHandleDecimal,
+                observation.ReferencedEntityHex,
                 observation.Flag,
                 observation.SourceSelector,
                 observation.Status,
@@ -105,7 +107,7 @@ internal static class CurrentBuildPositionRefreshBranchSampleCommand
             {
                 "Branch guard eligibility is not proof that native 0x6996C0 executes or writes XYZ.",
                 "A missing guard is unavailable, not zero; observed zeros mean guard-ineligible for this observation only.",
-                "A self-source slot is not a qualified world-position provider; handle-branch referenced ownership is unavailable.",
+                "Self and referenced source slots are candidates, not qualified world-position providers.",
                 "The position component holds a cache, not independently qualified passive-fresh player coordinates.",
                 "Process, unit key and raw address identities are re-resolved; sequential reads cannot exclude ABA.",
                 "Large process ticks, player identity and raw pointer values are encoded as decimal/hex strings without JS precision loss.",

@@ -37,8 +37,29 @@ public sealed class CurrentBuildPositionRefreshBranchSampleCommandTests : IDispo
         Assert.Equal(0, o.GetProperty("flag").GetInt32());
         Assert.Equal(JsonValueKind.Null, o.GetProperty("sourceSelector").ValueKind);
         Assert.Equal(JsonValueKind.Null, o.GetProperty("sourceComponentHex").ValueKind);
+        Assert.Equal(JsonValueKind.Null, o.GetProperty("referencedEntityHex").ValueKind);
         Assert.Contains("native-current-position-refresh-branch-candidate-summary/1", output.ToString());
         Assert.Single(Directory.GetFiles(directory));
+    }
+
+    [Fact]
+    public async Task ReferencedSourceReportKeepsFullProvenanceLosslessly()
+    {
+        var s = new Fake();
+        await Run(s, Options(), read: session => Candidate(session.Identity) with
+        {
+            ReferencedHandle = 0x800000010000002B, ReferencedEntity = 0x21005000,
+            SourceSelector = 7, Status = "handle-branch-referenced-source-present-candidate",
+            SourceComponent = 0x20030000
+        });
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(PathForReport));
+        var o = json.RootElement.GetProperty("observation");
+        Assert.Equal("0x800000010000002B", o.GetProperty("referencedHandleHex").GetString());
+        Assert.Equal("9223372041149743147", o.GetProperty("referencedHandleDecimal").GetString());
+        Assert.Equal("0x0000000021005000", o.GetProperty("referencedEntityHex").GetString());
+        Assert.Equal("0x0000000020030000", o.GetProperty("sourceComponentHex").GetString());
+        Assert.False(o.TryGetProperty("referencedEntity", out _));
+        Assert.False(o.TryGetProperty("referencedHandle", out _));
     }
 
     [Fact]
@@ -54,6 +75,8 @@ public sealed class CurrentBuildPositionRefreshBranchSampleCommandTests : IDispo
         var o = json.RootElement.GetProperty("observation");
         Assert.Equal("unavailable", o.GetProperty("status").GetString());
         Assert.Equal(JsonValueKind.Null, o.GetProperty("referencedHandleHex").ValueKind);
+        Assert.Equal(JsonValueKind.Null, o.GetProperty("referencedHandleDecimal").ValueKind);
+        Assert.Equal(JsonValueKind.Null, o.GetProperty("referencedEntityHex").ValueKind);
         Assert.Equal(JsonValueKind.Null, o.GetProperty("flag").ValueKind);
     }
 

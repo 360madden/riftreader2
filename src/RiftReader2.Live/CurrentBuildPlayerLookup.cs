@@ -46,14 +46,24 @@ internal sealed class CurrentBuildPlayerLookup
             throw new InvalidDataException("Invalid current RIFT process/module identity.");
 
         var module = identity.ModuleBaseAddress;
-        var manager = Pointer(ReadU64(lookup.Take(checked(module + ManagerRva), 8)));
         var system = Pointer(ReadU64(lookup.Take(checked(module + PlayerSystemRva), 8)));
-        var table = Pointer(ReadU64(lookup.Take(checked(manager + 0x50), 8)));
         var key = ReadU64(lookup.Take(checked(system + 0x360), 8));
         if (key == 0)
             throw new InvalidDataException("Player unit key missing.");
         lookup.PlayerKey = key;
-        var header = lookup.Take(table, 24);
+        lookup.EntityAddress = lookup.ResolveEntity(key);
+        lookup.entityBytes = lookup.Take(lookup.EntityAddress, 128);
+        return lookup;
+    }
+
+    // The key is an inline value, not a pointer; all traversed bytes remain in
+    // this lookup's anchors even on failure, for the caller's final recheck.
+    private ulong ResolveEntity(ulong key)
+    {
+        if (key == 0) throw new InvalidDataException("Native unit key missing.");
+        var manager = Pointer(ReadU64(Take(checked(identity.ModuleBaseAddress + ManagerRva), 8)));
+        var table = Pointer(ReadU64(Take(checked(manager + 0x50), 8)));
+        var header = Take(table, 24);
         var buckets = Pointer(ReadU64(header.AsSpan(0, 8)));
         var stride = ReadU64(header.AsSpan(8, 8));
         var count = ReadU64(header.AsSpan(16, 8));
@@ -67,26 +77,34 @@ internal sealed class CurrentBuildPlayerLookup
         {
             if (!visited.Add(current))
                 throw new InvalidDataException("Native entity bucket chain is cyclic.");
-            var bytes = lookup.Take(current, 24);
+            var bytes = Take(current, 24);
             var taggedNext = ReadU64(bytes.AsSpan(0, 8));
             var candidateKey = ReadU64(bytes.AsSpan(8, 8));
             if ((index > 0 || (taggedNext & 1) == 0) && candidateKey == key)
             {
-                lookup.EntityAddress = Pointer(ReadU64(bytes.AsSpan(16, 8)), 128);
-                break;
+                return Pointer(ReadU64(bytes.AsSpan(16, 8)), 128);
             }
             var next = taggedNext & ~1UL;
             if (next == 0)
                 throw new InvalidDataException("Player key is absent from the exact native table.");
             current = Pointer(next, 24);
         }
-        if (lookup.EntityAddress == 0)
-            throw new InvalidDataException("Native lookup exceeded its eight-node bound.");
-        lookup.entityBytes = lookup.Take(lookup.EntityAddress, 128);
-        return lookup;
+        throw new InvalidDataException("Native lookup exceeded its eight-node bound.");
     }
 
-    internal ulong ResolveComponent(ulong indexRva)
+    internal (ulong ReferencedEntityAddress, ulong SourceComponentAddress) ResolveReferencedComponent(ulong key, ulong indexRva)
+    {
+        var referencedEntity = ResolveEntity(key);
+        var referencedBytes = Take(referencedEntity, 128);
+        var component = ResolveComponent(indexRva, referencedBytes);
+        if (ReadU64(Take(checked(Pointer(component, 0x18) + 0x10), 8)) != referencedEntity)
+            throw new InvalidDataException("Referenced component owner mismatch.");
+        return (referencedEntity, component);
+    }
+
+    internal ulong ResolveComponent(ulong indexRva) => ResolveComponent(indexRva, entityBytes);
+
+    private ulong ResolveComponent(ulong indexRva, byte[] ownerBytes)
     {
         if (indexRva > identity.ModuleSize - 4)
             throw new InvalidDataException("Component selector lies outside the pinned module.");
@@ -94,9 +112,9 @@ internal sealed class CurrentBuildPlayerLookup
         var index = BinaryPrimitives.ReadInt32LittleEndian(indexRaw);
         if (index is < 0 or >= 0x60)
             throw new InvalidDataException("Invalid native component selector.");
-        var componentTable = Pointer(ReadU64(entityBytes.AsSpan(0x78, 8)));
+        var componentTable = Pointer(ReadU64(ownerBytes.AsSpan(0x78, 8)));
         // The full anchored entity captures both selector slot and component table.
-        var slot = entityBytes[0x18 + index];
+        var slot = ownerBytes[0x18 + index];
         if (slot == 0xFF)
             throw new InvalidDataException("Player has no requested native component.");
         var componentSlot = Pointer(checked(componentTable + (ulong)slot * 8));

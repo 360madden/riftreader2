@@ -11,8 +11,11 @@ internal sealed record PositionRefreshBranchCandidate(
     NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
     [property: JsonIgnore] ulong PlayerKey, ulong PlayerEntity, ulong PositionComponent,
     ulong? ReferencedHandle, byte? Flag, int? SourceSelector,
-    string Status, ulong? SourceComponent)
+    string Status, ulong? SourceComponent, [property: JsonIgnore] ulong? ReferencedEntity = null)
 {
+    public string? ReferencedEntityHex => ReferencedEntity is ulong entity ? $"0x{entity:X16}" : null;
+    public string? ReferencedHandleDecimal => ReferencedHandle?.ToString(CultureInfo.InvariantCulture);
+    public string? ReferencedHandleHex => ReferencedHandle is ulong handle ? $"0x{handle:X16}" : null;
     public string PlayerKeyDecimal => PlayerKey.ToString(CultureInfo.InvariantCulture);
     public string PlayerUnitIdCandidate => $"u{PlayerKey:X16}";
     public string Qualification =>
@@ -32,14 +35,15 @@ internal static class CurrentBuildPositionRefreshBranchCandidateReader
         var position = lookup.ResolveComponent(PositionSelectorRva);
         return ReadResolved(session, session.Identity, started, lookup.PlayerKey,
             lookup.EntityAddress, position, lookup.VerifyUnchanged,
-            () => lookup.ResolveComponent(SourceSelectorRva));
+            () => lookup.ResolveComponent(SourceSelectorRva),
+            handle => lookup.ResolveReferencedComponent(handle, SourceSelectorRva));
     }
 
-    // Injected resolver is the SELF entity's component selector, never the handle
-    // branch's referenced-entity lookup. Kept separate for offline synthetic tests.
+    // Separate resolvers prevent a handle-branch miss from falling back to SELF.
     internal static PositionRefreshBranchCandidate ReadResolved(
         IReadOnlyNativeMemorySession session, NativeProcessIdentity id, DateTimeOffset started,
-        ulong key, ulong entity, ulong position, Action verifyOwner, Func<ulong> resolveSelfSource)
+        ulong key, ulong entity, ulong position, Action verifyOwner, Func<ulong> resolveSelfSource,
+        Func<ulong, (ulong ReferencedEntityAddress, ulong SourceComponentAddress)>? resolveReferencedSource = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(verifyOwner);
@@ -62,6 +66,7 @@ internal static class CurrentBuildPositionRefreshBranchCandidateReader
         byte? flag = null;
         int? selector = null;
         ulong? source = null;
+        ulong? referencedEntity = null;
         var status = "unavailable";
         try
         {
@@ -72,7 +77,24 @@ internal static class CurrentBuildPositionRefreshBranchCandidateReader
             {
                 handle = BinaryPrimitives.ReadUInt64LittleEndian(Take(checked(component + 0x100), 8));
                 if (handle != 0)
+                {
                     status = "handle-branch-referenced-entity-unavailable";
+                    if (resolveReferencedSource is not null)
+                    {
+                        selector = BinaryPrimitives.ReadInt32LittleEndian(Take(checked(id.ModuleBaseAddress + SourceSelectorRva), 4));
+                        if (selector is < 0 or >= 0x60)
+                            status = "handle-branch-selector-unavailable";
+                        else
+                        {
+                            var resolved = resolveReferencedSource(handle.Value);
+                            var resolvedEntity = CurrentBuildPlayerLookup.Pointer(resolved.ReferencedEntityAddress, 128);
+                            var resolvedSource = CurrentBuildPlayerLookup.Pointer(resolved.SourceComponentAddress);
+                            referencedEntity = resolvedEntity;
+                            source = resolvedSource;
+                            status = "handle-branch-referenced-source-present-candidate";
+                        }
+                    }
+                }
                 else
                 {
                     flag = Take(checked(component + 0x108), 1)[0];
@@ -102,6 +124,6 @@ internal static class CurrentBuildPositionRefreshBranchCandidateReader
             CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, anchor.Address, anchor.Bytes.Length), anchor.Bytes);
         verifyOwner();
         if (session.Identity != id) throw new InvalidDataException("Process identity changed during branch capture.");
-        return new(id, started, DateTimeOffset.UtcNow, key, owner, component, handle, flag, selector, status, source);
+        return new(id, started, DateTimeOffset.UtcNow, key, owner, component, handle, flag, selector, status, source, referencedEntity);
     }
 }
