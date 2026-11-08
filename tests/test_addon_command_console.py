@@ -172,6 +172,11 @@ class AddonCommandValidationTests(unittest.TestCase):
         for value in ("/reloadui", "/rr2guide status", "/rr2guide clear"):
             self.assertEqual(value, module.validate_addon_command(value))
 
+    def test_exact_reader_session_bind_command(self):
+        value = "/rr2bind " + "a" * 32
+        self.assertEqual(value, module.validate_addon_command(value, "lab1"))
+        self.assertEqual({"type": "command", "command": value}, module.validate_operation(value, None, "lab2"))
+
     def test_exact_bind_commands(self):
         for lab in ("lab1", "lab2"):
             value = f"/rr2guide bind {lab} " + "a" * 32
@@ -205,6 +210,8 @@ class AddonCommandValidationTests(unittest.TestCase):
         rejected = [
             "/say hello", "/script print(1)", "/rr2guide", "/rr2guide bind lab3 " + "a" * 32,
             "/rr2guide bind lab2 " + "A" * 32, "/reloadui ", "/reloadui\n",
+            "/rr2bind " + "a" * 31, "/rr2bind " + "A" * 32,
+            "/rr2bind " + "a" * 32 + " /say hi", "/rr2bind  " + "a" * 32,
             "/rr2guide rebind lab3 " + "a" * 32, "/rr2guide rebind lab2 " + "A" * 32,
             "/rr2guide rebind lab2 " + "a" * 31, "/rr2guide rebind  lab2 " + "a" * 32,
             "/rr2guide result lab2 " + "b" * 32
