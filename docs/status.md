@@ -1,5 +1,8 @@
 # Current status
 
+**15:26 EST NOVEMBER 8 — EXPIRED-LEASE CLEANUP ERROR PRESERVATION (OFFLINE):**
+`execute_armed_session` now retains the original expired-lease failure if a subsequent queue finish also rejects the already-expired request, while still requiring STOP/released-state verification. STOP failure takes precedence over queue finish rejection; finish rejection following an otherwise successful run remains a hard error. Three targeted regressions added; combined movement-session/review-lease tests **53/53** pass with `git diff --check` clean. This corrects diagnostics and failure cleanup only; it does not grant a lease, bypass any freshness gate, or demonstrate new live movement.
+
 **15:23 EST NOVEMBER 8 — GUARDED REVIEW-LEASE HELPER DIRECT-ENTRYPOINT FIX (NO MOVEMENT):**
 Two Lab1 150ms S-key calibration preparations stopped safely before arming: each queue lease expired while awaiting reviewed input. The heartbeat-only `scripts/hold_review_lease.py` helper initially failed direct invocation with `ModuleNotFoundError: No module named 'scripts'`; its direct-entrypoint import path is now fixed. Direct `--help` succeeds and six focused tests pass, including a new subprocess regression. The live heartbeat path has not yet been retested.
 Both aborted trial receipts report `armed=false`, `busy=false`, `desktopInputsDown=[]`, `recoveryRequired=false`; no movement pulse was sent. Next trial must start the heartbeat-only helper immediately after prepare, review the screenshot promptly, and remain inside the original absolute queue deadline. Do not extend that deadline or relax action-ready gates. The expired-lease cleanup double-traceback also remains an ergonomic follow-up.

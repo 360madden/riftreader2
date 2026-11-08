@@ -32,7 +32,7 @@ from scripts.movement_controller import (
     WaypointController, calibrate_displacement, validate_noncollinear,
     planar_distance,
 )
-from scripts.nav_access_queue import AccessQueue
+from scripts.nav_access_queue import AccessQueue, QueueError
 from scripts.nav_control_watchdog import bind_identity, resource_epoch
 from scripts.vm_console_native import listener_owner, process_identity
 
@@ -1031,12 +1031,21 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             success = True
         return {"success": True, **result_payload, "actionEvidence": actions, "samples": samples}
     finally:
+        session_failed = sys.exc_info()[0] is not None
+        stop_failed = False
         try:
             if not released:
                 _stop_and_verify(host, output); released = True
+        except BaseException:
+            stop_failed = True
+            raise
         finally:
-            lease.finish("succeeded" if success and released else "failed",
-                         [str(output.resolve()), "reviewed bounded movement session"])
+            try:
+                lease.finish("succeeded" if success and released else "failed",
+                             [str(output.resolve()), "reviewed bounded movement session"])
+            except QueueError:
+                if not (session_failed or stop_failed):
+                    raise
 
 
 class LiveHostAdapter:

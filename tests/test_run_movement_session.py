@@ -10,6 +10,7 @@ from scripts.run_movement_session import (
     validate_session_pins,
 )
 from scripts.movement_controller import MovementError
+from scripts.nav_access_queue import QueueError
 
 
 NOW = datetime(2026, 10, 29, 20, 0, tzinfo=timezone.utc)
@@ -211,6 +212,55 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(host.arms, 0)
         self.assertEqual(host.actions, [])
         self.assertEqual(host.stops, 1)
+
+    def test_expired_lease_finish_preserves_original_expiration_and_stops(self):
+        class ExpiredLease(Lease):
+            def check(self):
+                self.checks += 1
+                raise QueueError("lease expired during review")
+            def finish(self, outcome, evidence):
+                self.finishes.append((outcome, evidence))
+                raise QueueError("request is no longer running")
+
+        host, lease = Host(), ExpiredLease()
+        with self.assertRaisesRegex(QueueError, "lease expired during review"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "expired-lease", host=host, lease=lease,
+                feedback=Feedback([]), clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 0)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_expired_lease_finish_never_masks_failed_stop(self):
+        class ExpiredLease(Lease):
+            def check(self): raise QueueError("lease expired during review")
+            def finish(self, outcome, evidence):
+                raise QueueError("request is no longer running")
+
+        host = Host(stop_fails=True)
+        with self.assertRaisesRegex(MovementSessionError, "STOP did not verify release"):
+            execute_armed_session(session=session("calibration"), review=review(),
+                output=self.root / "failed-stop", host=host, lease=ExpiredLease(),
+                feedback=Feedback([]), clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.arms, 0)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
+
+    def test_finish_failure_after_success_remains_a_hard_failure(self):
+        class FinishFailedLease(Lease):
+            def finish(self, outcome, evidence):
+                raise QueueError("queue cleanup unavailable")
+
+        host = Host()
+        with self.assertRaisesRegex(QueueError, "queue cleanup unavailable"):
+            execute_armed_session(session=session("turn", keys=("d",), turn_hold_ms=100),
+                review=review(), output=self.root / "finish-failed",
+                host=host, lease=FinishFailedLease(),
+                feedback=Feedback([Sample(0, 0, 0, 1), Sample(0, 0, 0, 2)]),
+                clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(host.stops, 1)
+        self.assertEqual(len(host.actions), 1)
 
     def test_lease_is_revalidated_after_prearm_readiness_wait(self):
         host, lease = Host(), Lease(fail_check=2)
