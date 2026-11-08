@@ -59,7 +59,8 @@ def _captured_utc(value: object) -> str:
     except ValueError as error:
         raise AnchorCatalogError("capture UTC is invalid") from error
     require(when.utcoffset() == timedelta(0), "capture must use UTC")
-    return when.isoformat()
+    # Keep the original source's fractional precision (RIFT receipts may use 100 ns ticks).
+    return value
 
 
 def _unique_json_object(pairs: list[tuple[str, object]]) -> dict:

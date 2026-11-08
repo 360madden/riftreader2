@@ -54,7 +54,11 @@ class NavigationAnchorTests(unittest.TestCase):
         self.assertEqual(valid["anchors"][0]["source"]["gameBuildSha256"], "A" * 64)
         self.assertEqual(valid["anchors"][0]["source"]["evidenceSha256"], "B" * 64)
         self.assertEqual(valid["anchors"][0]["source"]["capturedAtUtc"],
-                         "2026-11-08T13:00:00+00:00")
+                         "2026-11-08T13:00:00Z")
+        exact = "2026-11-07T02:29:24.3862102+00:00"
+        catalog = fixture()
+        catalog["anchors"][0]["source"]["capturedAtUtc"] = exact
+        self.assertEqual(anchors.validate_catalog(catalog)["anchors"][0]["source"]["capturedAtUtc"], exact)
 
     def test_resolved_goal_is_xz_planar_but_never_authorizes_input(self):
         catalog = anchors.load_catalog(self.save(fixture()))
