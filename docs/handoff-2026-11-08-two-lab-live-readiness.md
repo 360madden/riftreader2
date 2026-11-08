@@ -26,11 +26,22 @@ VMware `vmrun -T ws list` found exactly both target VMX paths. No direct physica
 - Fresh cached-credential checks: Lab1 current VMX target absent, explicitly configured same-Lab1 legacy credential present; Lab2 current VMX guest-Windows + encrypted-VM targets present. Both actual guest login/process probes then **passed**. Credentials never printed, and per-session fresh checks remain mandatory.
 - Guest verification: `rr2-root-readonly-guest-process-probe-lab1-20261108-01`, `rr2-root-readonly-guest-process-probe-lab2-20261108-01`, **exit 0**, exact VMX/PID and RIFT presence.
 
+## Postflight exact identity and host release (23:29 EST)
+
+- Nonstarting authenticated status: `rr2-root-ready-status-noauto-lab1-20261108-02` and `...lab2-20261108-02`, both exit 0. Both report exact expected RIFT SHA `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`, disarmed, idle, no keys down, and `recoveryRequired=false`.
+- Lab 1 RIFT start UTC ticks: `639296903905448486`; Lab 2: `639296904548843022`. Status has matching authenticated host/guest instance, exact machine and VM epoch. **Neither agent advertises `nativeXyzVersion` or `nativeReadLeaseVersion`**, a blocked current-transport capability, not a controller failure.
+- New immutable HOST-ONLY release built and synthetic-smoke verified from commit `f78e81cfacee41ec0188e2ed9dcd8df9691a27fb`: `artifacts/host-release-f78e81c-20261108-0428z-001/publish/RiftReader2.Live.exe` (52,254,905 bytes, SHA256 `630571770E0F253235653AA2DF28F60699A5FAF63C04B77E6F175042AABDAE27`), ZIP `bundle/agent.zip` (46,809,102 bytes, SHA256 `1703528A0BE52EFDB618AA8F59B07E77325061FAF56D5E44A54C7F69F5337492`). Not staged to guests.
+- Publisher avoided modifying tracked win-x64 RID-incomplete lockfiles by building from an isolated exact git archive. Do not treat host artifact presence as guest deployment or live native XYZ acceptance.
+- The connected guest agent needs a separately admitted fleet update. Guarded `guest_agent_launcher.py update --managed-lab labN --release ...` stages no binary. It requires explicit maintenance ownership, pre-staged verified immutable bytes, queue/lease safety, STOP and clean shutdown, and postflight version, actual guest SHA/ACL/capability checks. No update was done during this milestone.
+
+- Strictly read-only queue snapshot `rr2-root-readonly-global-queue-snapshot-20261108-01` passed (SQLite `mode=ro`, `query_only=ON`): **both resources blocked=false, holder=null, pending=0** at 04:31:09Z. This establishes clean RR2 queue state, **not** quiescence of unleased foreign/legacy native readers.
+- Managed guest-updater same-lab legacy cached-credential fallback and no-prompt gates were **fixed offline** in source commit `8a66ec0`; focused 27/27 and session-regression 25/25 passed, with independent review. No live guest update attempted. This resolves the launcher source blocker, but does not establish exclusive maintenance ownership or deployed native capability.
+
 ## Next bounded live-test gates
 
 1. Revalidate both `control_client.py --config artifacts/control-fleet-live/labN/host.json --no-auto-start status` (read-only; no duplicate startup), ensure exact PID/start, disarmed, idle and no held keys.
 2. Establish cross-chat/foreign native reader quiescence or exclusive native read admission; `Greeting Jimmy` has not explicitly relinquished any live reader.
-3. Verify exact guest game executable SHA/build, deployed agent version/capability and any leases/queue owners before test. The host-only native release `artifacts/native-xyz-refresh-branch-20261108-0345z-002` is **stale and not deployed**; candidate code is undergoing final source review/commit. Do **not** run scripts pinned to old executables.
+3. Exact RIFT SHA is verified for both guests (`1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`). But both currently installed guest agents omit `nativeXyzVersion` and `nativeReadLeaseVersion` from status; check installed agent release/maintenance owner before any guarded update. Host-only current release below is **not deployed**. Do **not** run scripts pinned to old executables.
 4. Start with a bounded, exact-identity, source-current, lease-admitted, **passive** XYZ+guard sample on one lab. Distinguish cached XYZ, guard availability, source candidate from qualified fresh world coordinates. Validate stop and session release, then repeat on the other lab independently.
 5. Only if verified and separately reviewed: bounded movement test with explicit STOP / key-up and observed XYZ delta. No game input was sent in this readiness milestone.
 
