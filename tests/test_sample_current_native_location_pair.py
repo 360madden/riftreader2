@@ -69,6 +69,17 @@ class ValidationTests(unittest.TestCase):
         zone["selfKey"] = 456
         with self.assertRaises(ValueError): self.check(value, "location-context")
 
+    def test_zone_capture_must_follow_position_even_within_outer_interval(self):
+        value = location()
+        zone = value["observation"]["zone"]
+        # Equal boundaries are valid: the .NET reader captures zone after XYZ.
+        zone.update(startedAtUtc=B, completedAtUtc=D)
+        self.check(value, "location-context")
+        for earlier in (A, "2026-11-07T00:00:00.0009999Z"):
+            zone.update(startedAtUtc=earlier, completedAtUtc=D)
+            with self.subTest(startedAtUtc=earlier), self.assertRaises(ValueError):
+                self.check(value, "location-context")
+
     def test_zone_full_formula_and_signed_child_boundaries(self):
         for child, expected in ((0, "A1DBBCFC"), (1, "B2B23994"),
                                 (2147483647, "A1DBBCFC"), (2147483648, "1104BD15"),
@@ -307,6 +318,12 @@ class WrapperTests(unittest.TestCase):
             raw = Path(summary["sourceReport"]).read_bytes()
             self.assertEqual(hashlib.sha256(raw).hexdigest().upper(), summary["sourceReportSha256"])
             self.assertEqual("candidate-only", summary["status"])
+            self.assertEqual(2, summary["schemaVersion"])
+            self.assertGreater(TICKS, 2**53)
+            self.assertEqual(str(TICKS), summary["gameProcessStartUtcTicks"])
+            envelope = json.loads((Path(summary["sourceReport"]).parent / "summary.json").read_text())
+            self.assertEqual(str(TICKS), envelope["gameProcessStartUtcTicks"])
+            self.assertIs(type(envelope["gameProcessStartUtcTicks"]), str)
             self.assertEqual("unverified-not-acquired-by-wrapper", summary["cooperativeExclusionStatus"])
             self.assertEqual("unqualified", summary["liveReadiness"])
             self.assertIn("does not acquire", native.__doc__)
@@ -335,6 +352,9 @@ class WrapperTests(unittest.TestCase):
         self.assertEqual(1, len(receipts))
         receipt = json.loads(receipts[0].read_text())
         self.assertEqual("unverified", receipt["guestDrainStatus"])
+        self.assertEqual(2, receipt["schemaVersion"])
+        self.assertEqual(str(TICKS), receipt["gameProcessStartUtcTicks"])
+        self.assertIs(type(receipt["gameProcessStartUtcTicks"]), str)
         self.assertFalse(receipt["automaticRetry"])
         self.assertFalse(receipt["cooperativeExclusionReleaseAllowed"])
         self.assertIsNone(receipt["guestProcessId"])

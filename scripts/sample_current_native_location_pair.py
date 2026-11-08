@@ -6,6 +6,8 @@ that lane or exclusive capture ownership. A caller must independently establish
 cooperative exclusion before live use; never overlap agent/native readers merely
 because this wrapper performs no game input. Root did not authorize live use here.
 Candidate sources never establish navigation readiness or atomic world identity.
+Wrapper JSON schemaVersion=2 encodes gameProcessStartUtcTicks as a lossless decimal
+string; the native reader's original report contract is unchanged.
 """
 from __future__ import annotations
 import argparse
@@ -161,7 +163,7 @@ def _validate_report(report, *, mode, pid, ticks):
                 or row.get("worldInstanceStatus") != "unavailable"):
             invalid()
         own = {"startedAtUtc": row["positionStartedAtUtc"], "completedAtUtc": row["positionCompletedAtUtc"]}
-        interval(own, outer)
+        position_interval = interval(own, outer)
         xyz = position(row.get("position"))
         zone = row.get("zone")
         if (not isinstance(zone, dict) or zone.get("identity") != process
@@ -170,7 +172,9 @@ def _validate_report(report, *, mode, pid, ticks):
                 or not isinstance(zone.get("status"), str) or not zone["status"]
                 or not integer(zone.get("rawZoneKey"), 0, 2**32 - 1)):
             invalid()
-        interval(zone, outer)
+        zone_interval = interval(zone, outer)
+        if zone_interval[0] < position_interval[1]:
+            invalid()
         zone_id = zone_candidate(zone)
         return {"unitKey": key, "unitIdCandidate": row["unitIdCandidate"], "position": xyz,
                 "zoneIdCandidate": zone_id, "zoneStatus": zone["status"],
@@ -331,11 +335,11 @@ def run(lab: str, mode: str, *, expected_vm=None, expected_game=None) -> dict:
             # A vmrun timeout does not terminate or drain the guest child.
             uncertain = output / "execution-uncertain.json"
             receipt = {
-                "schemaVersion": 1, "status": "guest-execution-uncertain",
+                "schemaVersion": 2, "status": "guest-execution-uncertain",
                 "guestDrainStatus": "unverified", "automaticRetry": False,
                 "cooperativeExclusionReleaseAllowed": False,
                 "lab": lab, "mode": mode, "vmIdentity": vm,
-                "gameProcessId": pid, "gameProcessStartUtcTicks": ticks,
+                "gameProcessId": pid, "gameProcessStartUtcTicks": str(ticks),
                 "readerExecutableSha256": READER_SHA, "guestExecutable": guest_exe,
                 "guestReport": guest_report, "guestProcessId": None,
                 "requiredAction": "Retain exclusion; verify the exact guest invocation has finished before retry or release.",
@@ -356,7 +360,7 @@ def run(lab: str, mode: str, *, expected_vm=None, expected_game=None) -> dict:
     if digest(source_path) != source_sha or digest(READER) != READER_SHA:
         raise ValueError("location-pair-source-changed")
     summary = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "mode": mode,
         "sourceScriptSha256": source_sha,
         "cooperativeExclusionStatus": "unverified-not-acquired-by-wrapper",
@@ -365,7 +369,7 @@ def run(lab: str, mode: str, *, expected_vm=None, expected_game=None) -> dict:
         "lab": lab,
         "vmIdentity": vm,
         "gameProcessId": pid,
-        "gameProcessStartUtcTicks": ticks,
+        "gameProcessStartUtcTicks": str(ticks),
         "gameSha256": GAME_SHA,
         "readerExecutableSha256": READER_SHA,
         "guestReaderReused": installed,

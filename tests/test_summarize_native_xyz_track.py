@@ -27,6 +27,10 @@ class SegmentSummaryTests(unittest.TestCase):
         self.assertEqual(segment["pathPlanar"], 5)
         self.assertAlmostEqual(segment["path3d"], 41**.5)
         self.assertEqual(segment["netDisplacement"], {"x":3,"y":4,"z":4})
+        self.assertEqual(segment["zeroDeltaPairCount"], 0)
+        self.assertEqual(segment["nonzeroDeltaPairCount"], 1)
+        self.assertEqual(segment["coordinateDeltaStatus"], "candidate-nonzero-within-segment")
+        self.assertEqual(out["observedCoordinateDeltaStatus"], "candidate-nonzero-within-admitted-segments")
         self.assertEqual(out["sampledUnitKey"], "1")
         self.assertEqual(out["processIdentity"]["processStartUtcTicks"], "639296903905448486")
         self.assertEqual(out["freshness"], "unavailable-offline")
@@ -41,17 +45,42 @@ class SegmentSummaryTests(unittest.TestCase):
                 self.assertIsNone(seg["path3d"])
                 self.assertNotIn("_3d", seg)
                 self.assertEqual(seg["distanceStatus"], "unavailable-no-accepted-pair")
+                self.assertEqual(seg["coordinateDeltaStatus"], "unavailable-no-accepted-pair")
+            self.assertEqual(out["observedCoordinateDeltaStatus"], "unavailable-no-accepted-pairs")
 
     def test_stationary_is_zero_only_with_two_valid_samples(self):
         report = fixture()
         report["observations"][1].update(x=0,y=0,z=0)
         out = summarize(report)
         self.assertEqual(out["overallPath3d"], 0)
+        self.assertEqual(out["segments"][0]["zeroDeltaPairCount"], 1)
+        self.assertEqual(out["segments"][0]["nonzeroDeltaPairCount"], 0)
+        self.assertEqual(out["segments"][0]["coordinateDeltaStatus"], "candidate-equal-within-segment")
+        self.assertEqual(out["observedCoordinateDeltaStatus"], "candidate-equal-within-admitted-segments")
         report["observations"].pop()
         report["requestedSamples"] = report["completedSamples"] = 1
         out = summarize(report)
         self.assertIsNone(out["overallPath3d"])
         self.assertEqual(out["overallPathStatus"], "unavailable-boundary-or-single-sample")
+        self.assertEqual(out["observedCoordinateDeltaStatus"], "unavailable-no-accepted-pairs")
+
+    def test_round_trip_with_zero_net_retains_nonzero_candidate_deltas(self):
+        report = fixture()
+        report["requestedSamples"] = report["completedSamples"] = 3
+        report["observations"].append({
+            "index": 3, "startedAtUtc": "2026-11-08T00:00:04Z",
+            "completedAtUtc": "2026-11-08T00:00:04.100Z",
+            "monotonicStartMilliseconds": 4000, "monotonicEndMilliseconds": 4100,
+            "x": 0, "y": 0, "z": 0,
+        })
+        out = summarize(report)
+        segment = out["segments"][0]
+        self.assertEqual(segment["acceptedPairCount"], 2)
+        self.assertEqual(segment["nonzeroDeltaPairCount"], 2)
+        self.assertEqual(segment["zeroDeltaPairCount"], 0)
+        self.assertEqual(segment["net3d"], 0)
+        self.assertAlmostEqual(segment["path3d"], 2 * 41**.5)
+        self.assertEqual(out["observedCoordinateDeltaStatus"], "candidate-nonzero-within-admitted-segments")
 
     def test_invalid_and_mixed_identity_rejected(self):
         report = fixture()

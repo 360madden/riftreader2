@@ -26,6 +26,11 @@ def summarize(report, *, max_gap_seconds, max_speed_3d):
             return
         count = current["acceptedPairCount"]
         current["distanceStatus"] = "candidate" if count else "unavailable-no-accepted-pair"
+        current["coordinateDeltaStatus"] = (
+            "unavailable-no-accepted-pair" if not count else
+            "candidate-nonzero-within-segment" if current["nonzeroDeltaPairCount"] else
+            "candidate-equal-within-segment"
+        )
         planar_steps, steps_3d = current.pop("_planar"), current.pop("_3d")
         current["pathPlanar"] = math.fsum(planar_steps) if count else None
         current["path3d"] = math.fsum(steps_3d) if count else None
@@ -49,16 +54,30 @@ def summarize(report, *, max_gap_seconds, max_speed_3d):
             finish()
             current = {"firstIndex": point["index"], "lastIndex": point["index"],
                        "startReason": reduction["reason"], "startXyz": point["xyz"],
-                       "endXyz": point["xyz"], "acceptedPairCount": 0, "_planar": [], "_3d": []}
+                       "endXyz": point["xyz"], "acceptedPairCount": 0,
+                       "zeroDeltaPairCount": 0, "nonzeroDeltaPairCount": 0,
+                       "_planar": [], "_3d": []}
         elif reduction["status"] == "motion-candidate" and current is not None:
             current["lastIndex"] = point["index"]
             current["endXyz"] = point["xyz"]
             current["acceptedPairCount"] += 1
             current["_planar"].append(reduction["planar_distance"])
             current["_3d"].append(reduction["distance_3d"])
+            if reduction["distance_3d"] > 0:
+                current["nonzeroDeltaPairCount"] += 1
+            else:
+                current["zeroDeltaPairCount"] += 1
         else:
             raise ValueError("unexpected projector status; no summary")
     finish()
+    # Pair counts are evidence about admitted within-segment arithmetic only;
+    # boundaries, true motion and passive source freshness remain unknown.
+    observed_delta_status = (
+        "unavailable-no-accepted-pairs" if not any(seg["acceptedPairCount"] for seg in segments)
+        else "candidate-nonzero-within-admitted-segments"
+        if any(seg["nonzeroDeltaPairCount"] for seg in segments)
+        else "candidate-equal-within-admitted-segments"
+    )
     identity = dict(track["processIdentity"])
     # .NET UTC ticks exceed the exact integer range of JavaScript/JSON clients.
     identity["processStartUtcTicks"] = str(identity["processStartUtcTicks"])
@@ -70,7 +89,7 @@ def summarize(report, *, max_gap_seconds, max_speed_3d):
         "freshness": track["freshness"], "worldIdentity": track["worldIdentity"],
         "zoneIdentity": track["zoneIdentity"], "zoneBoundaries": track["zoneBoundaries"],
         "coordinateUnits": track["coordinateUnits"], "thresholds": track["thresholds"],
-        "segments": segments,
+        "segments": segments, "observedCoordinateDeltaStatus": observed_delta_status,
         "overallPathStatus": "available-single-segment-candidate" if len(segments) == 1
                              and segments[0]["acceptedPairCount"] else "unavailable-boundary-or-single-sample",
         "overallPath3d": segments[0]["path3d"] if len(segments) == 1 else None,
