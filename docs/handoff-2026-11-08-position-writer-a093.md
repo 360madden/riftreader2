@@ -24,11 +24,15 @@ stores in these two bodies, not side effects of unexamined callees or all writer
   RCX is saved to RSI at 0x6988E4. Caller XMM2 is moved into XMM1 before
   0x6988F5 -> 0x699DD0; XMM6 preserves that scalar, then RCX=RSI and
   XMM1=XMM6 before 0x698903 -> 0x699A50.
-  The 64-byte slice decoded 17 instructions / 62 bytes and stopped at
-  0x69890E near the end boundary. The failure cause (short window versus a
-  conflicting existing instruction) is not established. Therefore the
-  subsequent 0x6996C0 call suggested by older pseudocode is NOT confirmed
-  by this export.
+  The original 64-byte slice decoded 17 instructions / 62 bytes and stopped
+  at 0x69890E. A separate source-hashed raw-tail export now confirms:
+  0x69890B: 48 8B CE = MOV RCX,RSI;
+  0x69890E: 40 0A FB = OR DIL,BL;
+  0x698911: E8 AA 0D 00 00 = CALL 0x6996C0.
+  The relative target is 0x698911 + 5 + 0xDAA = 0x6996C0; the intervening OR
+  does not change RCX. Thus the third call uses the SAME component.
+  Its scalar argument is not asserted. This confirms static call order
+  0x699DD0 -> 0x699A50 -> 0x6996C0, not runtime invocation.
 
 ## Unexamined effects and next concrete targets
 
@@ -44,12 +48,13 @@ Next independent primary-writer candidate: **0x6990D0**, called at 0x6984E2 by
 the position-component method 0x6984C0 (retained V8 evidence). Alternatively,
 bound 0x699610/0x59F140 to resolve their direct component side effects.
 
-A tiny instruction-only follow-up **[0x69890B,0x698920)** (21 bytes) would retain
-the already-known RCX=RSI setup and cover the failed instruction at 0x69890E.
-Include raw bytes and existing instruction boundaries. Prior V6 defined a
-fragment at 0x698910, potentially conflicting with a multi-byte instruction
-starting earlier. Do not start at 0x698910 or clear existing instructions blindly.
-No follow-up job is authorized or launched by this handoff.
+The raw-tail follow-up is complete: **[0x69890B,0x698930)**, 37 bytes.
+The original A093 end-exclusive 0x698910 falls INSIDE the three-byte OR at
+0x69890E; 0x698910 is its ModRM byte, not a valid start for this flow.
+The prior V6 fragment at 0x698910 may additionally conflict with decoding.
+These bytes resolve the missing call, but do not prove which decoder condition
+caused the original DECODE_FAILED. No existing instructions were cleared by
+this review, and no broader function completeness is claimed.
 
 ## Exact provenance
 
@@ -65,6 +70,13 @@ No follow-up job is authorized or launched by this handoff.
 - Root job: rr2-root-ghidra-writer-targets-a093-20261108-01; passed/exit0;
   2026-11-08T05:02:45.191Z to 05:02:53.986Z; output not truncated.
 - Job receipt explicitly reports processing the project file read-only.
+- Raw-tail source: artifacts/rea/position-callsite-tail-review1/headless.log,
+  lines 43-57; log SHA256:
+  8675af7098b1bd9e03911f36d36a22e5f3106414d9b597cf2bc85ecd28ce4f96.
+- Raw-tail 37-byte SHA256 (not the log-file hash):
+  D2D8C532BBBE6FF8FC0364E8A0995FD2EFB9AAD2F9ED323614011F8C97CFE85D.
+- Raw-tail root job: rr2-root-ghidra-position-callsite-tail-20261108-01;
+  passed/exit0, output not truncated, read-only project; same imported executable SHA.
 
 Source ranges: 10-32 callsite; 34-393 matrix updater; 397-680 secondary updater.
 Returned completion and completeWithinWindow markers are bounded-analysis status,

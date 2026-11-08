@@ -69,16 +69,20 @@
       "classification": "callsite slice",
       "confirmedCalls": [
         "0x6988F5 -> 0x699DD0",
-        "0x698903 -> 0x699A50"
+        "0x698903 -> 0x699A50",
+        "0x698911 -> 0x6996C0"
       ],
       "sameComponentAndScalarConfirmed": true,
       "decodeFailureAt": "0x69890E",
-      "thirdCallConfirmed": false,
+      "thirdCallConfirmed": true,
       "sourceLines": [
         10,
         32
       ],
-      "decodeFailureCause": "Unknown: short window or conflicting existing instruction; raw bytes not exported"
+      "decodeFailureCause": "Original endExclusive0x698910 lies inside OR DIL,BL at0x69890E; prior fragment may also conflict. Exact decoder cause remains unverified; raw tail resolves third call.",
+      "thirdCallEvidence": "rawTailSource",
+      "thirdCallSameComponentConfirmed": true,
+      "scalarConfirmationAppliesToFirstTwoCallsOnly": true
     }
   ],
   "unexaminedDirectComponentCallees": [
@@ -91,15 +95,48 @@
   },
   "tinyCallsiteFollowup": {
     "start": "0x69890B",
-    "endExclusive": "0x698920",
-    "windowBytes": 21,
-    "purpose": "Export raw bytes and instruction boundaries around0x69890E; preserve RCX=RSI; do not clear existing instructions blindly",
-    "launched": false
+    "endExclusive": "0x698930",
+    "windowBytes": 37,
+    "purpose": "Resolve missing third call from retained Ghidra program raw bytes",
+    "launched": true,
+    "completed": true,
+    "jobId": "rr2-root-ghidra-position-callsite-tail-20261108-01",
+    "exitCode": 0
   },
   "limits": [
     "Not whole-image writer enumeration",
     "No live execution evidence",
     "Transitive callee writes unknown",
     "No passive freshness, changed-state, restart or world-axis qualification"
-  ]
+  ],
+  "rawTailSource": {
+    "path": "artifacts/rea/position-callsite-tail-review1/headless.log",
+    "sourceLines": [
+      43,
+      57
+    ],
+    "logFileSha256": "8675af7098b1bd9e03911f36d36a22e5f3106414d9b597cf2bc85ecd28ce4f96",
+    "rawBytesSha256": "D2D8C532BBBE6FF8FC0364E8A0995FD2EFB9AAD2F9ED323614011F8C97CFE85D",
+    "rawBytesLength": 37,
+    "rawHex": "488BCE400AFBE8AA0D0000F30F5CBED4000000F30F10057EFF8B02400AC70F287424300F2F",
+    "identityScope": "Same SHA-pinned retained Ghidra program; no fresh PE rehash",
+    "decodedPrefix": [
+      {
+        "rva": "0x69890B",
+        "bytes": "48 8B CE",
+        "instruction": "MOV RCX,RSI"
+      },
+      {
+        "rva": "0x69890E",
+        "bytes": "40 0A FB",
+        "instruction": "OR DIL,BL"
+      },
+      {
+        "rva": "0x698911",
+        "bytes": "E8 AA 0D 00 00",
+        "instruction": "CALL 0x6996C0",
+        "targetArithmetic": "0x698911 + 5 + 0xDAA = 0x6996C0"
+      }
+    ]
+  }
 }
