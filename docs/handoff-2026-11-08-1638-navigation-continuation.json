@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-navigation-anchor-renewal-handoff",
+  "capturedAtLocal": "2026-11-08T16:38:31-05:00",
+  "machine": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "preHandoffHead": "84c6ebaeb84e48c46f0df3a71da53416b68aab33",
+  "pushedCommits": [
+    "19b18fd",
+    "0976c61",
+    "bb5a0f5",
+    "6ec3e40",
+    "84c6eba"
+  ],
+  "priorLiveMovement": {
+    "oneDimensionalArrival": true,
+    "twoDimensionalArrival": true,
+    "finalTwoDimensionalError": 0.24501035026200033,
+    "tolerance": 0.3,
+    "reference": "docs/handoff-2026-11-08-1222-automated-movement.md"
+  },
+  "anchorRenewal": {
+    "startAgeSeconds": 2.5,
+    "maximumAnchorAgeSeconds": 10,
+    "strictMinimumRemainingMilliseconds": 6250,
+    "dotnetTestsPassed": 1391,
+    "liveReadOnlySample": {
+      "durationSeconds": 80,
+      "uniqueEnvelopes": 81,
+      "freshScoped": 58,
+      "strictActionReady": 22,
+      "strictActionReadyFraction": 0.272,
+      "artifact": "artifacts/nav-quarter-renewal-20261108-02/live-freshness-sample.json"
+    },
+    "matchedBaselineImprovementVerified": false
+  },
+  "codeFixes": {
+    "directReviewLeaseHelper": true,
+    "expiredLeaseFailurePreserved": true,
+    "focusedPythonTestsPassed": 134
+  },
+  "labs": {
+    "checkedAtLocal": "2026-11-08T16:38:31-05:00",
+    "lab1": {
+      "controllerHealthy": true,
+      "armed": false,
+      "busy": false,
+      "desktopInputsDown": [],
+      "recoveryRequired": false
+    },
+    "lab2": {
+      "controllerHealthy": true,
+      "armed": false,
+      "busy": false,
+      "desktopInputsDown": [],
+      "recoveryRequired": false
+    },
+    "queueResourcesHeld": 0
+  },
+  "lastReader": {
+    "lab": "lab1",
+    "readerPid": 2444,
+    "nonce": "c49f891d82014ea784ae26672b3a4795",
+    "scheduledExpiryUtc": "2026-11-08T20:39:57.579Z",
+    "postExpiryExitVerified": false,
+    "reusable": false
+  },
+  "lastGameIdentity": {
+    "lab": "lab1",
+    "pid": 8508,
+    "startUtcTicks": "639297512849368370",
+    "executableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshRevalidationRequired": true
+  },
+  "receiver": {
+    "lastVerifiedPid": 54912,
+    "freshRevalidationRequired": true
+  },
+  "liveInput": {
+    "laterCalibrationMovementSent": false,
+    "expiredLeaseTrials": 2,
+    "controllerMutexLastObserved": "controller-busy",
+    "mutexCurrentStateVerified": false,
+    "bypassAllowed": false
+  },
+  "fullPythonSuite": {
+    "passed": false,
+    "completed": false,
+    "timedOutSeconds": 150,
+    "verboseTimedOutSeconds": 50,
+    "missingDependency": "lupa.lua51",
+    "importFailures": [
+      "test_addon_reference",
+      "test_guidance_addon"
+    ],
+    "dependencyInstalled": false
+  },
+  "nextActions": [
+    "Verify exclusive console mutex availability; otherwise shift to nonconflicting Lab2 read-only/offline work.",
+    "Revalidate exact VM/game/reader/receiver and bind a fresh bounded reader under reviewed console procedure.",
+    "Acquire fresh source pin and reviewed capture; start lease heartbeat immediately after prepare.",
+    "Run one guarded bounded pulse only within original queue deadline; require STOP/release and final idle receipt.",
+    "Build practical anchor/route-to-coordinate chaining from established local movement results."
+  ],
+  "untrackedPreserved": [
+    "scripts/navigation_anchor_capture.py",
+    "scripts/project_current_native_energy_variants.py"
+  ],
+  "details": "docs/status.md"
+}

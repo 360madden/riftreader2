@@ -1,5 +1,7 @@
 # Current status
 
+**16:38 EST NOVEMBER 8 — NAVIGATION CONTINUATION HANDOFF:** Compact [Markdown](handoff-2026-11-08-1638-navigation-continuation.md) and [JSON](handoff-2026-11-08-1638-navigation-continuation.json) preserve the proven earlier waypoints, later failed-closed attempts, occupied console mutex, test boundary, and next action. At handoff, both managed lab controllers were disarmed/idle and the shared queue unheld; no new game input.
+
 **15:38 EST NOVEMBER 8 — PYTHON TEST-SUITE BOUNDARY:**
 The focused `tests.test_addon_command_console`, `tests.test_run_movement_session`, and `tests.test_hold_review_lease` modules passed **134/134** in the repo's Python 3.14 virtual environment. The entire `unittest discover -s tests` run did **not** complete within 150 seconds; a bounded 50-second verbose attempt confirmed many modules progressing but at least two import errors (`test_addon_reference`, `test_guidance_addon`) because `lupa.lua51` is not installed in either `.venv` or system Python 3.14. Do not interpret the whole suite as green; isolated environment/dependency repair and later complete test run remain follow-ups. No dependency installs or game input performed by these tests.
 
