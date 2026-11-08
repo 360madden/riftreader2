@@ -4,6 +4,7 @@ import base64
 import ctypes
 import hashlib
 import json
+import ntpath
 from pathlib import Path
 import tempfile
 import unittest
@@ -471,6 +472,12 @@ class WrapperTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 self.assertEqual(0, guest.direct_powershell_calls)
                 self.assertEqual(2, guest.script_copy_calls)
+                staged_paths = [args[1] for action, args, _ in guest.run_calls
+                                if action == "copyFileFromHostToGuest" and Path(args[0]).suffix == ".ps1"]
+                self.assertEqual(2, len(staged_paths))
+                self.assertEqual(r"C:\Users\Public\Documents", ntpath.dirname(staged_paths[0]))
+                self.assertTrue(ntpath.dirname(staged_paths[1]).startswith(
+                    r"C:\Users\Public\Documents\current-location-pair-"))
                 self.assertEqual(2, len([x for x in guest.run_calls if x[0] == "runProgramInGuest"]))
                 launch = guest.shell_scripts[-1]
                 self.assertGreater(len(base64.b64encode(launch.encode("utf-16-le"))),

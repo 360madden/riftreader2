@@ -316,7 +316,7 @@ def run(lab: str, mode: str, *, expected_vm=None, expected_game=None) -> dict:
             "try{$f.Write($bytes,0,$bytes.Length)}finally{$f.Dispose()}"
         )
         staged_script(guest, preflight, output / "preflight.ps1",
-                      guest_root + "\\preflight-" + token + ".ps1", timeout=80)
+                      settings["guestRoot"] + "\\preflight-location-pair-" + token + ".ps1", timeout=80)
         guest.copy_from_guest(guest_probe, output / "identity.json", timeout=50)
         with (output / "identity.json").open("rb") as stream:
             probe_raw = stream.read(8193)

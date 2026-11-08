@@ -52,6 +52,10 @@ or malformed sampled keys fail closed. Equal sampled keys do NOT establish
 uninterrupted owner continuity or passive coordinate refresh. No game input
 occurred. The previous published B8A725E6... binary remains untouched.
 
+2026-11-08 06:09–06:20 EST, after Joey confirmed the other reader stopped, **both labs passed** independent, sequential current-build native XYZ sampling (3/3 each). Lab1 PID 6820 retained `u035400012FA2D678` at `(7450.3677, 864.3101, 2984.6113)`; Lab2 PID 10612 retained `u035400012DFEB5BC` at `(7182.4570, 820.5232, 3159.6670)`. Both tracks were unchanged during the stationary window: source acquisition works, motion/passive freshness remains **unqualified**.
+
+The newer SHA-pinned `sample_current_native_location_pair.py` then completed live `location-context` and `paired-position` on **both** labs, using reader SHA `DCFC17E18A4F361095B5701AB31CDF566664178781E0740FCC8969D2C61957FD`. Lab1 reported zone candidate `z487C9102D2EA79BE` (1.5067 ms position-to-zone gap), Lab2 `z0000000CB7B53FD7` (2.0578 ms gap). Each independently returned `targetStatus=unavailable`, **not** a fabricated target coordinate. Source report SHA-256 values: Lab1 location `D8A4FCB76396EFC4FDA45C3F3C57908E9CB3477816A0C753FDD935B055F2BEAA`, Lab2 location `2DC39C9697516D2B4EAA48C46F92420024117E336D3B243574A89A18A3AECA01`. All reads were candidate-only, sequential rather than atomic; zone-to-map/world correspondence and motion remain unverified. No game input, guest-agent update, RIFT reload or VM restart occurred. A missing guest staging parent caused the first location preflight to fail before any native read; the wrapper was fixed to stage its preflight in the existing guest root, focused tests **34/34 passed**, and both live retests passed.
+
 An earlier Lab1 acquisition returned **15/15 samples** and the offline projection
 completed with zero observed coordinate deltas. This confirms acquisition and
 calculation for that run, not that the cached source was changing or fresh.
