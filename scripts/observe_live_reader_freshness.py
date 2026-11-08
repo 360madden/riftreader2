@@ -175,7 +175,18 @@ def observe(pin: dict, summary: dict, output_dir: Path, *,
                         require(sample.addon_epoch == initial.addon_epoch
                                 and sample.player == initial.player, "observation-identity-changed")
                         capture_gap = (sample.captured_at_utc - previous.captured_at_utc).total_seconds()
-                        require(0 < capture_gap < max_gap_seconds, "source-capture-gap-exceeded")
+                        if not 0 < capture_gap < max_gap_seconds:
+                            # Retain the exact rejected boundary without promoting its
+                            # already-saved raw receipt to an accepted ledger sample.
+                            result["captureGapFailure"] = {
+                                "gapSeconds": capture_gap,
+                                "limitExclusiveSeconds": max_gap_seconds,
+                                "previousCapturedAtUtc": previous.captured_at_utc.isoformat(),
+                                "rejectedCapturedAtUtc": sample.captured_at_utc.isoformat(),
+                                "previousAcceptedSampleIndex": result["acceptedSamples"] - 1,
+                                "rejectedRawReceiptLabel": f"observer-{result['acceptedSamples']:05d}",
+                            }
+                            raise ObserverError("source-capture-gap-exceeded")
                         maximum_gap = max(maximum_gap, gap)
                         maximum_capture_gap = max(maximum_capture_gap, capture_gap)
                         last, previous = current, sample

@@ -126,7 +126,7 @@ class ObserverTests(unittest.TestCase):
         def sample(_pin, receipt, _raw, _directory, _label):
             captured = clock.now()
             if capture_skip and clock.elapsed >= 8:
-                captured += timedelta(seconds=8)
+                captured += timedelta(seconds=8 if capture_skip is True else capture_skip)
             if slow_final_seconds and clock.elapsed >= 480:
                 clock.elapsed += slow_final_seconds
             return FakeSample(receipt["sequence"],
@@ -210,7 +210,42 @@ class ObserverTests(unittest.TestCase):
         result, target = self.observe_fake(capture_skip=True)
         self.assertIsNone(result)
         summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["status"], "failed")
         self.assertEqual(summary["reason"], "source-capture-gap-exceeded")
+        gap = summary["captureGapFailure"]
+        self.assertEqual(gap["gapSeconds"], 12.0)
+        self.assertEqual(gap["limitExclusiveSeconds"], 4.5)
+        self.assertEqual(gap["previousCapturedAtUtc"], (NOW + timedelta(seconds=4)).isoformat())
+        self.assertEqual(gap["rejectedCapturedAtUtc"], (NOW + timedelta(seconds=16)).isoformat())
+        self.assertEqual(gap["previousAcceptedSampleIndex"], 2)
+        self.assertEqual(gap["rejectedRawReceiptLabel"], "observer-00003")
+        self.assertEqual(summary["acceptedSamples"], 3)
+        self.assertEqual(len((target / "samples.jsonl").read_text(encoding="utf-8").splitlines()), 3)
+        self.assertNotIn("sourceQualification", summary)
+
+    def test_capture_gap_just_below_limit_is_accepted(self):
+        result, _ = self.observe_fake(capture_skip=0.499)
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["maximumCaptureGapSeconds"], 4.499)
+        self.assertNotIn("captureGapFailure", result)
+
+    def test_capture_gap_at_limit_fails_closed(self):
+        result, target = self.observe_fake(capture_skip=0.5)
+        self.assertIsNone(result)
+        summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["reason"], "source-capture-gap-exceeded")
+        self.assertEqual(summary["captureGapFailure"]["gapSeconds"], 4.5)
+        self.assertEqual(summary["acceptedSamples"], 3)
+
+    def test_capture_gap_just_above_limit_fails_closed(self):
+        result, target = self.observe_fake(capture_skip=0.501)
+        self.assertIsNone(result)
+        summary = json.loads((target / "summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(summary["reason"], "source-capture-gap-exceeded")
+        self.assertEqual(summary["captureGapFailure"]["gapSeconds"], 4.501)
+        self.assertEqual(summary["captureGapFailure"]["rejectedRawReceiptLabel"],
+                         "observer-00003")
+        self.assertEqual(summary["acceptedSamples"], 3)
 
     def test_planar_drift_fails_closed(self):
         result, target = self.observe_fake(drift=True)
