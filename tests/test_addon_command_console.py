@@ -1205,9 +1205,22 @@ class ExecuteTests(unittest.TestCase):
         operation = {"type": "deferred-result"}
         command = "/rr2guide result lab2 " + "a" * 32 + " 1 2 3 4 p 1 2 3 5 3 4 0"
         with mock.patch.object(module, "_type_text",
-                               side_effect=lambda _client, value: client.events.append(("text", value))):
+                               side_effect=lambda _client, value: client.events.append(("text", value))), \
+             mock.patch.object(module.time, "sleep"):
             module._send_operation(client, operation, command)
         self.assertEqual([("text", command), ("press", "enter")], client.events)
+
+    def test_chat_command_is_paced_before_enter(self):
+        client = self.Client()
+        command = "/rr2guide status"
+        with mock.patch.object(module.time, "sleep") as delay:
+            module._send_operation(client, {"type": "command"}, command)
+        self.assertEqual(
+            [("press", module.text_keypress(char)) for char in command]
+            + [("press", "enter")], client.events)
+        self.assertEqual(
+            [mock.call(0.075)] * len(command) + [mock.call(0.2)],
+            delay.call_args_list)
 
     def test_execute_rejects_stale_game_before_connect(self):
         # The one-tick exact-start mismatch is the important fail-closed boundary.

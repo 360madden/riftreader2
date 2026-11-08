@@ -29,7 +29,7 @@ import time
 import uuid
 
 from vm_console_native import (
-    Blocked, Config, ControlMutex, _atomic_json, _capture, _type_text,
+    Blocked, Config, ControlMutex, _atomic_json, _capture,
     collect_identity, connect, parse_tcp_listener_rows, path_key, process_identity,
     text_keypress, utc_now, validate_config, verify_identity,
 )
@@ -992,9 +992,18 @@ def _release_operation(client, command: str, operation: dict) -> bool:
     return succeeded
 
 
+def _type_text(client, command: str) -> None:
+    # The game consumes input on frames. A burst of VNC key events can drop
+    # characters or split a slash command into chat messages.
+    for character in command:
+        client.keyPress(text_keypress(character))
+        time.sleep(0.075)
+
+
 def _send_operation(client, operation: dict, command: str) -> None:
     if operation["type"] in ("command", "deferred-result"):
         _type_text(client, command)
+        time.sleep(0.2)  # Allow the final glyph to reach the focused chat field.
         client.keyPress("enter")
     elif operation["step"] == "open-chat":
         client.keyPress("enter")
