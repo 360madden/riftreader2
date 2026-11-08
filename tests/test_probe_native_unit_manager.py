@@ -10,7 +10,7 @@ from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_energy, calculate_health, checked_energy_type, checked_health_type, encoded, entity_hash, find_entity,
     actor_render_pose_candidates, health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
     RESOURCE_LAYOUTS, coherent_mana_resource_transition, require_disjoint_records,
-    require_resource_owner_anchors,
+    require_resource_owner_anchors, revalidate_health_candidate,
     sha, snapshot_bytes,
 )
 
@@ -269,6 +269,62 @@ class NativeUnitManagerTests(unittest.TestCase):
         self.assertEqual([1.0, 0.5], result["caps"])
         self.assertEqual(12.75, result["wrapperClock"])
         self.assertNotIn("currentHp", result)
+
+    @staticmethod
+    def health_revalidation_fixture():
+        component, record_address = 0x10000, 0x20000
+        wrapper, record = bytearray(56), bytes(128)
+        struct.pack_into("<Qif", wrapper, 0x28, component, 7, 100.0)
+        anchors = {component + 0x28: bytes(wrapper[0x28:0x30]),
+                   0x30000: b"ownerptr", 0x40000: b"recordpt", 0x50000: b"getterpt"}
+        final = {**anchors, record_address: record,
+                 component + 0x30: bytes(wrapper[0x30:0x38])}
+        health = {"status": "type-checked-record-candidate",
+                  "fields": NativeUnitManagerTests.health_fields(), "gameClock": 101.0}
+        return health, anchors, final, record_address, record, component, bytes(wrapper)
+
+    def test_health_revalidation_unchanged_inputs_can_calculate(self):
+        result = revalidate_health_candidate(*self.health_revalidation_fixture())
+        self.assertTrue(result["inputsStable"])
+        self.assertEqual("calculated-candidate", result["calculatedHealth"]["status"])
+
+    def test_health_revision_or_clock_change_is_mutable_not_ownership_drift(self):
+        for offset in (0, 4):
+            args = self.health_revalidation_fixture()
+            changed = bytearray(args[2][args[5] + 0x30])
+            changed[offset] ^= 1
+            args[2][args[5] + 0x30] = bytes(changed)
+            with self.subTest(offset=offset):
+                result = revalidate_health_candidate(*args)
+                self.assertFalse(result["inputsStable"])
+                self.assertEqual("changed-input-record-candidate", result["status"])
+                self.assertEqual({"status": "unavailable", "reason": "inputs-changed"},
+                                 result["calculatedHealth"])
+
+    def test_health_record_input_change_remains_unavailable(self):
+        args = self.health_revalidation_fixture()
+        changed = bytearray(args[4])
+        changed[0x48] ^= 1
+        args[2][args[3]] = bytes(changed)
+        result = revalidate_health_candidate(*args)
+        self.assertFalse(result["inputsStable"])
+        self.assertEqual("unavailable", result["calculatedHealth"]["status"])
+
+    def test_health_true_owner_record_slot_and_getter_drift_fail_closed(self):
+        for address in self.health_revalidation_fixture()[1]:
+            args = self.health_revalidation_fixture()
+            args[2][address] = b"changed!"
+            with self.subTest(address=address), self.assertRaisesRegex(
+                    ValueError, "health-ownership-anchor-changed"):
+                revalidate_health_candidate(*args)
+
+    def test_health_record_vtable_drift_fails_closed(self):
+        args = self.health_revalidation_fixture()
+        changed = bytearray(args[4])
+        changed[0] ^= 1
+        args[2][args[3]] = bytes(changed)
+        with self.assertRaisesRegex(ValueError, "health-ownership-anchor-changed"):
+            revalidate_health_candidate(*args)
 
     def test_health_fields_missing_bytes_rejected(self):
         with self.assertRaisesRegex(ValueError, "health-candidate-read-hole"):

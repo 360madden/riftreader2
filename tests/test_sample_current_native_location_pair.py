@@ -57,6 +57,131 @@ def paired(target=True):
                 "worldIdentityStatus": "unavailable", "atomicityQualified": False}}
 
 
+
+def refresh():
+    return {
+        "schemaVersion": 2, "contractVersion": "native-current-position-refresh-branch-candidate/2",
+        "status": "complete", "qualification": native.REFRESH_QUALIFICATION,
+        "processRevalidationStatus": "passed-before-publication", "sourceBuildSha256": native.GAME_SHA,
+        "processIdentity": {"processId": PID, "processStartUtcTicks": str(TICKS),
+            "executableSha256": native.GAME_SHA, "moduleBaseAddressHex": "0x0000000140000000",
+            "moduleSize": 0x4000000},
+        "observation": {"startedAtUtc": A, "completedAtUtc": D,
+            "playerKeyDecimal": "18446744073709551615", "playerUnitIdCandidate": "uFFFFFFFFFFFFFFFF",
+            "playerEntityHex": "0x0000012345678000", "positionComponentHex": "0x0000012345688000",
+            "referencedHandleHex": "0x0000000000000000", "referencedHandleDecimal": "0",
+            "referencedEntityHex": None, "flag": 1, "sourceSelector": 3,
+            "status": "flag-branch-guard-eligible-candidate", "sourceComponentHex": "0x0000012345698000",
+            "sourceGuardContextHex": "0x0000012345708000", "sourceGuardValue": 0,
+            "sourceProviderPresent": True, "sourceGuardStatus": "eligible-candidate", "sourceGuardEligible": True}}
+
+
+class RefreshValidationTests(unittest.TestCase):
+    def check(self, report):
+        return native.validate_report(report, mode="refresh-branch", pid=PID, ticks=TICKS)
+
+    def test_eligible_never_promotes_freshness_or_movement_and_keeps_lossless_values(self):
+        metrics = self.check(refresh())
+        self.assertEqual("18446744073709551615", metrics["playerKeyDecimal"])
+        self.assertEqual("0x0000012345678000", metrics["playerEntityHex"])
+        self.assertTrue(metrics["sourceGuardEligible"])
+        self.assertFalse(metrics["movementEligible"])
+        self.assertEqual("unqualified", metrics["passiveFreshness"])
+
+    def test_negative_null_provider_and_unavailable_are_distinct(self):
+        cases = [
+            dict(status="flag-branch-guard-ineligible-candidate", sourceGuardStatus="ineligible-negative-context",
+                 sourceGuardValue=-1, sourceProviderPresent=None, sourceGuardEligible=False),
+            dict(status="flag-branch-guard-ineligible-candidate", sourceGuardStatus="ineligible-null-provider",
+                 sourceProviderPresent=False, sourceGuardEligible=False),
+            dict(status="flag-branch-guard-unavailable", sourceGuardStatus="unavailable-nested-value",
+                 sourceGuardValue=None, sourceProviderPresent=None, sourceGuardEligible=None),
+            dict(status="flag-branch-guard-unavailable", sourceGuardStatus="unavailable-null-context",
+                 sourceGuardContextHex=None, sourceGuardValue=None, sourceProviderPresent=None, sourceGuardEligible=None),
+        ]
+        for changes in cases:
+            report = refresh()
+            report["observation"].update(changes)
+            self.assertIs(self.check(report)["sourceGuardEligible"], changes["sourceGuardEligible"])
+
+    def test_lossless_handle_branch_is_not_self_fallback(self):
+        report = refresh()
+        report["observation"].update(
+            referencedHandleDecimal="18446744073709551615", referencedHandleHex="0xFFFFFFFFFFFFFFFF",
+            referencedEntityHex="0x0000012345718000", flag=None,
+            status="handle-branch-referenced-source-present-candidate",
+            sourceGuardContextHex=None, sourceGuardValue=None, sourceProviderPresent=None,
+            sourceGuardStatus="not-applicable-handle-branch", sourceGuardEligible=None)
+        self.assertEqual("18446744073709551615", self.check(report)["referencedHandleDecimal"])
+        report["observation"]["referencedEntityHex"] = None
+        with self.assertRaises(ValueError): self.check(report)
+
+
+    def test_all_top_level_unavailable_stages_preserve_nulls(self):
+        empty = dict(referencedHandleHex=None, referencedHandleDecimal=None, referencedEntityHex=None,
+                     flag=None, sourceSelector=None, sourceComponentHex=None, sourceGuardContextHex=None,
+                     sourceGuardValue=None, sourceProviderPresent=None, sourceGuardEligible=None)
+        stages = [
+            ("unavailable", "not-applicable", {}),
+            ("unavailable", "not-applicable", dict(referencedHandleHex="0x0000000000000000", referencedHandleDecimal="0")),
+            ("unavailable", "not-applicable", dict(referencedHandleHex="0x0000000000000000", referencedHandleDecimal="0", flag=1)),
+            ("position-owner-mismatch", "not-applicable", {}),
+            ("guard-ineligible-candidate", "not-evaluated-flag-zero", dict(flag=0)),
+            ("flag-branch-selector-unavailable", "unavailable-invalid-selector", dict(flag=1, sourceSelector=-1)),
+            ("flag-branch-self-source-unavailable", "unavailable-source-component", dict(flag=1, sourceSelector=3)),
+            ("flag-branch-source-owner-unavailable", "unavailable-source-owner", dict(flag=1, sourceSelector=3)),
+            ("flag-branch-source-owner-mismatch", "unavailable-source-owner-mismatch", dict(flag=1, sourceSelector=3)),
+            ("handle-branch-selector-unavailable", "not-applicable-handle-branch", dict(sourceSelector=96)),
+            ("handle-branch-referenced-entity-unavailable", "not-applicable-handle-branch", {}),
+            ("handle-branch-referenced-entity-unavailable", "not-applicable-handle-branch", dict(sourceSelector=3)),
+        ]
+        for status, guard, extra in stages:
+            report = refresh()
+            row = report["observation"]
+            row.update(empty, status=status, sourceGuardStatus=guard)
+            if status.startswith("flag-") or status == "guard-ineligible-candidate":
+                row.update(referencedHandleHex="0x0000000000000000", referencedHandleDecimal="0")
+            elif status.startswith("handle-"):
+                row.update(referencedHandleHex="0xFFFFFFFFFFFFFFFF", referencedHandleDecimal="18446744073709551615")
+            row.update(extra)
+            with self.subTest(status=status, extra=extra):
+                metrics = self.check(report)
+                self.assertIsNone(metrics["sourceGuardEligible"])
+                self.assertFalse(metrics["movementEligible"])
+
+    def test_bad_epoch_build_owner_operand_and_promotions_rejected(self):
+        cases = [
+            ("processIdentity", "processStartUtcTicks", TICKS),
+            ("processIdentity", "processStartUtcTicks", str(TICKS+1)),
+            ("processIdentity", "processId", True),
+            ("processIdentity", "executableSha256", "0"*64),
+            ("processIdentity", "moduleBaseAddressHex", "0x0000000000000001"),
+            ("observation", "playerKeyDecimal", 18446744073709551615),
+            ("observation", "playerUnitIdCandidate", "u000000000000007B"),
+            ("observation", "playerEntityHex", "0x0000000000000000"),
+            ("observation", "positionComponentHex", 0x123456788000),
+            ("observation", "referencedHandleHex", "0x0000000000000001"),
+            ("observation", "sourceGuardEligible", 1),
+            ("observation", "sourceGuardValue", True),
+            ("observation", "sourceProviderPresent", None),
+            ("observation", "sourceGuardStatus", "fresh"),
+            ("observation", "flag", 0),
+            ("observation", "sourceSelector", 96),
+            ("observation", "completedAtUtc", "2026-11-06T00:00:00Z"),
+        ]
+        for section, key, bad in cases:
+            report = refresh()
+            report[section][key] = bad
+            with self.subTest(section=section, key=key, bad=bad), self.assertRaises(ValueError):
+                self.check(report)
+        for key, bad in (("schemaVersion", 1), ("status", "fresh"),
+                         ("qualification", "qualified"), ("sourceBuildSha256", "0"*64),
+                         ("processRevalidationStatus", "failed")):
+            report = refresh()
+            report[key] = bad
+            with self.subTest(key=key), self.assertRaises(ValueError): self.check(report)
+
+
 class ValidationTests(unittest.TestCase):
     def check(self, report, mode):
         return native.validate_report(report, mode=mode, pid=PID, ticks=TICKS)
@@ -367,7 +492,7 @@ class WrapperTests(unittest.TestCase):
         reader.write_bytes(b"offline-fake-reader")
         guest = StagedGuest(installed=installed, launch_error=launch_error,
                             capture_copy_error=capture_copy_error,
-                            result=(location() if mode == "location-context" else paired()) if result is None else result)
+                            result=(refresh() if mode == "refresh-branch" else location() if mode == "location-context" else paired()) if result is None else result)
         lab = FakeLab(guest)
         self.last_guest, self.last_folder = guest, folder
         source_calls = 0
@@ -376,10 +501,11 @@ class WrapperTests(unittest.TestCase):
             nonlocal source_calls, reader_calls
             if Path(path) == reader:
                 reader_calls += 1
-                return native.READER_SHA if pin_sha and (not reader_changed or reader_calls == 1) else "0"*64
+                return (native.REFRESH_READER_SHA if mode == "refresh-branch" else native.READER_SHA) if pin_sha and (not reader_changed or reader_calls == 1) else "0"*64
             source_calls += 1
             return ("A" if not source_changed or source_calls == 1 else "B")*64
-        with patch.object(native, "READER", reader), patch.object(native, "READER_LENGTH", reader.stat().st_size), \
+        with patch.object(native, "REFRESH_READER", reader), patch.object(native, "REFRESH_READER_LENGTH", reader.stat().st_size), \
+                patch.object(native, "READER", reader), patch.object(native, "READER_LENGTH", reader.stat().st_size), \
                 patch.object(native, "EVIDENCE", folder/"runs"), patch.object(native, "digest", side_effect=digest), \
                 patch.object(native, "LabCodex", return_value=lab):
             summary = native.run("lab2", mode, **kwargs)
@@ -413,6 +539,35 @@ class WrapperTests(unittest.TestCase):
             self.assertIn("game-epoch-changed", scripts)
             self.assertNotIn("Stop-Process", scripts)
             self.assertNotIn("Start-Process", scripts)
+
+    def test_refresh_uses_new_pin_and_exact_command_without_copying_host_binary(self):
+        summary, guest = self.run_fake("refresh-branch")
+        self.assertEqual(native.REFRESH_READER_SHA, summary["readerExecutableSha256"])
+        self.assertNotEqual(native.READER_SHA, summary["readerExecutableSha256"])
+        self.assertEqual(0, guest.copy_calls)
+        self.assertIn("sample-current-position-refresh-branch --pid", guest.shell_scripts[-1])
+        self.assertIn(native.REFRESH_READER_SHA, guest.shell_scripts[-1])
+        self.assertNotIn(native.READER_SHA, guest.shell_scripts[-1])
+        raw = Path(summary["sourceReport"]).read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest().upper(), summary["sourceReportSha256"])
+        self.assertEqual(str(TICKS), summary["gameProcessStartUtcTicks"])
+        self.assertEqual("unqualified", summary["liveReadiness"])
+        self.assertFalse(summary["metrics"]["movementEligible"])
+        for option in (dict(pin_sha=False), dict(reader_changed=True), dict(source_changed=True)):
+            with self.subTest(option=option), self.assertRaises(ValueError):
+                self.run_fake("refresh-branch", **option)
+        report = refresh()
+        report["observation"]["sourceGuardEligible"] = False
+        with self.assertRaises(ValueError): self.run_fake("refresh-branch", result=report)
+        self.assertFalse(list(self.last_folder.rglob("summary.json")))
+
+    def test_refresh_timeout_keeps_new_pin_and_denies_retry(self):
+        with self.assertRaisesRegex(RuntimeError, "no-drain-proof:no-retry"):
+            self.run_fake("refresh-branch", launch_error=native.SessionError("guest-command-timeout:runProgramInGuest"))
+        receipt = json.loads(next(self.last_folder.rglob("execution-uncertain.json")).read_text())
+        self.assertEqual(native.REFRESH_READER_SHA, receipt["readerExecutableSha256"])
+        self.assertFalse(receipt["cooperativeExclusionReleaseAllowed"])
+        self.assertFalse(list(self.last_folder.rglob("summary.json")))
 
     def test_location_summary_preserves_optional_zone_elapsed_metrics(self):
         for elapsed in (None, 0, 12.5):

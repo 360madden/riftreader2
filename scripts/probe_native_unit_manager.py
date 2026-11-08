@@ -160,6 +160,25 @@ def health_record_fields(record: bytes, wrapper: bytes) -> dict:
     }
 
 
+def revalidate_health_candidate(health, anchors, final, record_address, record_raw,
+                                wrapper_address, wrapper_raw):
+    """Separate immutable ownership from mutable cached health inputs."""
+    if (any(final[address] != raw for address, raw in anchors.items()) or
+            final[record_address][:8] != record_raw[:8]):
+        raise ValueError("health-ownership-anchor-changed")
+    # Revision and clock are calculation inputs, not ownership pointers. Keep
+    # the original sample unavailable if either changed; do not mix epochs.
+    health["inputsStable"] = (
+        final[record_address][0x48:0x74] == record_raw[0x48:0x74] and
+        final[wrapper_address + 0x30] == wrapper_raw[0x30:0x38])
+    if not health["inputsStable"]:
+        health["status"] = "changed-input-record-candidate"
+    health["calculatedHealth"] = (
+        calculate_health(health["fields"], health["gameClock"])
+        if health["inputsStable"] else {"status": "unavailable", "reason": "inputs-changed"})
+    return health
+
+
 def checked_health_type(base: int, record_vtable: int, descriptor_getter: int,
                         descriptor_vtable: int, type_getter: int) -> int:
     # Exact-SHA static path: 20CCC60 -> 20E0DE0 returns &355F430;
@@ -739,7 +758,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
                 }
                 health_anchors = {owner_slot: owner_raw, record_slot: slot_raw,
                                   getter_slot: getter_raw,
-                                  components["health"] + 0x28: wrapper[0x28:0x38]}
+                                  components["health"] + 0x28: wrapper[0x28:0x30]}
 
             resource = None
             resource_anchors = {}
@@ -1144,6 +1163,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             checks[components["position"] + 0x48] = 0x70
             if health is not None:
                 checks[record_address] = 128
+                checks[components["health"] + 0x30] = 8
             if resource_record_raw is not None:
                 if resource["kind"] != 3:
                     checks[resource_record_address] = 64
@@ -1193,15 +1213,9 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             transform["observedAtUtc"] = observation_times["component-values"]
             review["positionTransformCandidate"] = transform
             if health is not None:
-                if (any(final[address] != raw for address, raw in health_anchors.items()) or
-                        final[record_address][:8] != record_raw[:8]):
-                    raise ValueError("health-ownership-anchor-changed")
-                health["inputsStable"] = final[record_address][0x48:0x74] == record_raw[0x48:0x74]
-                if not health["inputsStable"]:
-                    health["status"] = "changed-input-record-candidate"
-                health["calculatedHealth"] = (calculate_health(health["fields"], health["gameClock"])
-                    if health["inputsStable"] else {"status": "unavailable", "reason": "inputs-changed"})
-                review["healthRecordCandidate"] = health
+                review["healthRecordCandidate"] = revalidate_health_candidate(
+                    health, health_anchors, final, record_address, record_raw,
+                    components["health"], values[components["health"]])
             if resource is not None:
                 require_resource_owner_anchors(
                     resource_anchors, {address: final[address] for address in resource_anchors})
