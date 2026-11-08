@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-automated-movement-handoff",
+  "capturedAtLocal": "2026-11-08T12:22:00-05:00",
+  "machine": "AMD-DESKTOP",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "pushedCommits": [
+    "4eecbfc",
+    "bc2a64f"
+  ],
+  "tests": {
+    "movement": 152,
+    "addonConsole": 80
+  },
+  "lab1": {
+    "riftPid": 8508,
+    "riftStartTicks": 639297512849368300,
+    "readerPid": 9320,
+    "readerExpiresAtUtc": "2026-11-08T17:48:01Z",
+    "sourcePin": "artifacts/fastmove-hourreader-lab1-source-pin-20261108-01.json",
+    "calibration1d": "artifacts/fastmove-lab1-calibration-run-hour-20261108-04/result.json",
+    "arrival1d": {
+      "status": "arrived",
+      "artifact": "artifacts/fastmove-lab1-waypoint-run-hour-20261108-02/result.json"
+    },
+    "calibration2d": {
+      "status": "calibrated",
+      "normalizedCross": 0.9999982393923911,
+      "artifact": "artifacts/fastmove-lab1-2d-calibration-run-20261108-02/result.json"
+    },
+    "arrival2d": {
+      "status": "arrived",
+      "actions": [
+        {
+          "key": "w",
+          "holdMs": 90
+        },
+        {
+          "key": "q",
+          "holdMs": 120
+        }
+      ],
+      "totalHoldMs": 210,
+      "goalError": 0.24501035026200033,
+      "tolerance": 0.3,
+      "settles": 1,
+      "artifact": "artifacts/fastmove-lab1-2d-waypoint-run-20261108-02/result.json"
+    },
+    "turn": {
+      "status": "turn-input-completed",
+      "key": "a",
+      "holdMs": 100,
+      "headingMeasured": false,
+      "artifact": "artifacts/fastmove-lab1-turn-run-20261108-01/result.json"
+    }
+  },
+  "labs": {
+    "lab1": "controller-ready-idle",
+    "lab2": "controller-ready-idle-no-movement-test"
+  },
+  "next": "Build practical route-to-coordinate/named-anchor chaining of bounded local 2D waypoint sessions with fresh visual review, reproven position and explicit heading calibration.",
+  "untouchedUntracked": [
+    "scripts/navigation_anchor_capture.py",
+    "scripts/project_current_native_energy_variants.py"
+  ]
+}
