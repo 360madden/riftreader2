@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -8,6 +9,11 @@ namespace RiftReader2.Live;
 internal sealed record ZoneSeedObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong SelfKey,ulong SelfEntity,ulong Health,ulong Owner,uint RawZoneKey,string Status,ushort? Selector=null,uint? TlsIndex=null,ulong? Collection=null,ulong? RecordAddress=null,ulong? RecordVtable=null,ulong? RecordGetterRva=null,ulong? RawNameRef=null,string? ChildStatus=null,uint? ChildKey=null,string? ZoneIdCandidate=null)
 {
  public string Qualification=>"zone ID candidate only; API correspondence, name, freshness and restart unverified";
+ // Diagnostic duration only; excludes lease/session acquisition and command-level revalidation.
+ // Null preserves honest absence for offline/legacy observations constructed without measurement.
+ public double? AcquisitionElapsedMilliseconds {get;init;}
+ public string? AcquisitionElapsedClock=>AcquisitionElapsedMilliseconds.HasValue?"monotonic-stopwatch":null;
+ public string? AcquisitionElapsedKind=>AcquisitionElapsedMilliseconds.HasValue?"zone-read-including-final-validation":null;
 }
 internal static class CurrentBuildZoneSeedSampleCommand
 {
@@ -31,7 +37,7 @@ internal static class CurrentBuildZoneSeedSampleCommand
  }
  internal static ZoneSeedObservation Read(IReadOnlyNativeMemorySession session,Func<IReadOnlyNativeMemorySession,CurrentBuildPlayerContextObservation> context,Func<IReadOnlyList<NativeThreadEpoch>> threads)
  {
-  var start=DateTimeOffset.UtcNow;var id=session.Identity;
+  var startedTimestamp=Stopwatch.GetTimestamp();var start=DateTimeOffset.UtcNow;var id=session.Identity;
   if(id.ProcessId<=0||id.ProcessStartUtcTicks<=0||id.ModuleSize<0x34731B8||!string.Equals(id.ExecutableSha256,CurrentBuildPlayerLookup.GameSha256,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Unsupported build or process.");
   var before=context(session);if(before.Identity!=id)throw new InvalidDataException("Self context identity mismatch.");
   var anchors=new Dictionary<(ulong,int),byte[]>();int budget=0;byte[] Take(ulong a,int n,bool save=true){budget=checked(budget+n);if(budget>2*1024*1024)throw new InvalidDataException("Zone budget exceeded.");var b=CurrentBuildPlayerLookup.Exact(session,a,n);if(save){if(anchors.TryGetValue((a,n),out var old)&&!old.AsSpan().SequenceEqual(b))throw new InvalidDataException("Zone bytes changed.");anchors[(a,n)]=b.ToArray();}return b;}
@@ -47,7 +53,7 @@ internal static class CurrentBuildZoneSeedSampleCommand
    var final=context(session);if(final.Identity!=id||final.UnitKey!=before.UnitKey||final.Entity!=entity||final.HealthComponent!=health||final.Owner!=selfOwner||session.Identity!=id)throw new InvalidDataException("Self owner or epoch changed.");
    if(epochs is not null&&!epochs.OrderBy(x=>x.Id).SequenceEqual(threads().OrderBy(x=>x.Id)))throw new InvalidDataException("Thread epoch changed.");
    if(session.Identity!=id)throw new InvalidDataException("Process identity changed.");
-   return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,entity,health,selfOwner,zoneKey,status,selector,index,collection,record,vt,getter,nameRef,childStatus,childKey,zoneId);
+   return new(id,start,DateTimeOffset.UtcNow,before.UnitKey,entity,health,selfOwner,zoneKey,status,selector,index,collection,record,vt,getter,nameRef,childStatus,childKey,zoneId){AcquisitionElapsedMilliseconds=Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds};
   }
   var provider=Q(id.ModuleBaseAddress+0x336EBF8);if(provider==0)return Finish("null-provider");Ptr(provider,0x42);
   var selector=BinaryPrimitives.ReadUInt16LittleEndian(Take(provider+0x40,2));var wrapperRaw=Q(id.ModuleBaseAddress+0x3372C18);if(wrapperRaw==0)return Finish("null-registry",selector);var wrapper=Ptr(wrapperRaw);var registryRaw=Q(wrapper);if(registryRaw==0)return Finish("null-registry",selector);var owner=Ptr(registryRaw,0x278);var index=BinaryPrimitives.ReadUInt32LittleEndian(Take(owner+0x274,4));if(index>1087)throw new InvalidDataException("Invalid TLS index.");
