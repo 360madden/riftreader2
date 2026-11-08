@@ -135,6 +135,30 @@ class MovementFeedbackTests(unittest.TestCase):
         }
         return pin, receipt
 
+    def test_immutable_journal_pin_follows_current_head_and_detects_tampering(self):
+        with tempfile.TemporaryDirectory() as folder:
+            observations = Path(folder) / "observations"
+            bucket = hashlib.sha256(self.pin["reader"]["instanceId"].encode()).hexdigest()
+            journal = observations / "journal" / bucket / "00000010.json"
+            journal.parent.mkdir(parents=True)
+            journal.write_bytes(b"bootstrap")
+            latest = observations / "latest.json"
+            latest.write_bytes(b"live-1")
+            pin = copy.deepcopy(self.pin)
+            pin["receiptPath"] = str(journal)
+            pin["receiptSha256"] = hashlib.sha256(b"bootstrap").hexdigest()
+
+            with mock.patch.object(module._console, "_validate_receiver_host"), \
+                    mock.patch.object(module, "_validate_movement_receipt_bytes",
+                                      side_effect=lambda _pin, data: ({}, data, {})):
+                self.assertEqual(b"bootstrap", module._movement_receipt(pin, initial=True)[1])
+                self.assertEqual(b"live-1", module._movement_receipt(pin, initial=False)[1])
+                latest.write_bytes(b"live-2")
+                self.assertEqual(b"live-2", module._movement_receipt(pin, initial=False)[1])
+                journal.write_bytes(b"tampered")
+                with self.assertRaisesRegex(module._console.Blocked, "live-receipt-sha256-mismatch"):
+                    module._movement_receipt(pin, initial=False)
+
     def adapter(self, folder, values, clock=None):
         clock = clock or Clock()
         reader = Reader(values)

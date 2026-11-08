@@ -498,6 +498,21 @@ def _movement_receipt(pin: dict, *, initial: bool) -> tuple[dict, bytes, dict]:
     """Validate both sources and explicitly carry the newest accepted source."""
     _console._validate_receiver_host(pin["receiver"])
     path = Path(pin["receiptPath"])
+    if not initial and path.parent.parent.name == "journal":
+        # An immutable journal receipt anchors source identity, but cannot
+        # advance. Follow this same receiver's live head only after checking
+        # that the immutable bootstrap is still byte-for-byte pinned.
+        reader = pin["reader"]
+        bucket = hashlib.sha256(reader["instanceId"].encode()).hexdigest()
+        if (path.parent.name != bucket or path.parent.parent.parent.name != "observations"
+                or path.suffix != ".json" or len(path.stem) != 8
+                or not path.stem.isdecimal()):
+            _console._fail("live-journal-path-invalid")
+        bootstrap = _console._read_regular(
+            path, _console._live_gate.MAX_RECEIPT_BYTES, "live-receipt-unavailable")
+        if hashlib.sha256(bootstrap).hexdigest() != pin["receiptSha256"].lower():
+            _console._fail("live-receipt-sha256-mismatch")
+        path = path.parent.parent.parent / "latest.json"
     data = _console._read_regular(
         path, _console._live_gate.MAX_RECEIPT_BYTES, "live-receipt-unavailable")
     if initial and hashlib.sha256(data).hexdigest() != pin["receiptSha256"].lower():
