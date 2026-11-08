@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-position-source-dynamic-typeid-offline",
+  "checkpointUtc": "2026-11-08T07:03:00Z",
+  "scope": "retained-file static, no live/process/VM actions",
+  "host": "AMD-DESKTOP",
+  "executable": {
+    "path": "artifacts/lab2-rift-exe-20261027-01-copy.exe",
+    "bytes": 60493640,
+    "sha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "freshInstalledPEHash": false
+  },
+  "surgical": {
+    "rva": "0x127303C",
+    "section": ".text",
+    "fileOffset": "0x127243C",
+    "bytes": 192,
+    "sha256": "1491B03AAAB230A8D40E59E6AB324A3BEA1E6E7CFC6C75E608EE8A8C4C9BA460",
+    "first28Hex": "4883EC28488B01FF5040488B08488B5108488BC84883C42848FFE2CC",
+    "bodyBytesThroughTailJump": 27,
+    "dispatch": [
+      {
+        "rva": "0x1273043",
+        "instruction": "call qword ptr [rax+0x40]",
+        "source": "input dispatch pointer at [entry RCX]"
+      },
+      {
+        "rva": "0x1273054",
+        "instruction": "jmp rdx",
+        "source": "RDX loaded from [[first-call RAX]+0x08]; RCX=first-call RAX"
+      }
+    ],
+    "paddingInt3Rva": "0x1273057",
+    "jobId": "rr2-xyzprov-typeid-127303c-raw-20261108-01",
+    "jobExitCode": 0,
+    "completedAtUtc": "2026-11-08T07:02:47.900Z",
+    "savedScriptSha256": null
+  },
+  "callerEvidence": {
+    "positionWrapperRva": "0x1A96CB0",
+    "rawRvaStart": "0x1A96CB0",
+    "rawRvaEndExclusive": "0x1A970B0",
+    "rawBytes": 1024,
+    "rawSha256": "F661D037C4134C05B46B2419EEC90D2BB50955D798D9640D299AD198A74664F9",
+    "expectedTypeResultHex": "0x25B",
+    "alternativeV8CallerRva": "0x69A800",
+    "alternativeTypeResultHex": "0xEDA",
+    "inputRoute": [
+      "0x6984C0 preserves entry RDX pointer-to-pointer",
+      "0x1A96CB0 wraps/refcounts/filters *RDX",
+      "0x6990D0 reads filtered source+0x44/+0x48/+0x4C",
+      "0x6990D0 copies into receiver position+0x48/+0x4C/+0x50"
+    ],
+    "sourceInputOwnerQualified": false
+  },
+  "sourceHashes": {
+    "positionProducerDoc": "D1BB664160235091A1E89334BACE383F8555042828983D8CDE6D32DFF804BFD6",
+    "v8Pseudocode": "D2EDA069932B441F59520CE51C3904B21FF84AD92E088EAC333F50E5ACDC7961",
+    "primaryWriterDoc": "046D748B99EFEB6ADE1CBB3BD70BBDA32AA94CA423814CD146EBA1C2F05DB95D"
+  },
+  "limitations": [
+    "Tail dispatched routine and exceptional path unqualified",
+    "Dynamic virtual-like dispatch does not identify concrete object schema",
+    "Type result 0x25B has no established class name or field offset",
+    "No proof actual current player source, callback invocation, changed-state, passive freshness, restart survival"
+  ],
+  "next": "Identify concrete upstream RDX source at actual 0x6984C0 dispatch/callsite, bind to self entity and exact epoch before sampling."
+}
