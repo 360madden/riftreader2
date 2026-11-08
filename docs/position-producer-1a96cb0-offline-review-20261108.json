@@ -12,10 +12,104 @@
   },
   "finding": "Copies caller pointer *RDX to *RCX; nonnull reference count +8 increments, helper 0x127303C must return AX 0x25B else decrements and clears; returns destination pointer. No demonstrated XYZ generation.",
   "functionRetRva": "0x1A96D14",
-  "nextStep": "Trace caller RDX pointer-to-pointer origin.",
+  "nextStep": "Trace callers of0x6984C0 and origin/type/lifetime of its entry RDX pointer slot; entry RCX reaches bulk writer unchanged. Do not repeat the now-established6984C0→1A96CB0→6990D0 register bridge.",
   "limitations": [
     "static bounded decode",
     "type meaning and live branch unproven",
-    "no freshness, ownership or movement qualification"
-  ]
+    "no freshness, ownership or movement qualification",
+    "Caller0x6984C0 consumes/clears *entryRDX; AL=1 normal return does not prove filtered source validity.",
+    "No explicit caller null/mismatch admission check before bulk writer; upstream caller contract remains unknown."
+  ],
+  "callerProvenance": {
+    "sourceJob": "rr2-root-ghidra-position-caller-6984c0-20261108-01",
+    "sourceExitCode": 0,
+    "rawWindow": {
+      "rvaStart": "0x6984C0",
+      "rvaEndExclusive": "0x698580",
+      "bytes": 192,
+      "sha256": "ED1C1F0DC5F4C333232E3BFA62AD5F9576853EF52432B0E53F55476C4EE21E8A",
+      "localByteLengthAndShaVerified": true
+    },
+    "exporterPath": "C:\\work\\riftreader2\\artifacts\\rea\\position-caller-6984c0-review1\\Rr2PositionCaller6984C0RawExport.java",
+    "exporterSha256": "D801B121F21C75A76E237F6D2AAF7FA4D7E7BB65F59705D148FDF36356C0BD25",
+    "headlessLogPath": "C:\\work\\riftreader2\\artifacts\\rea\\position-caller-6984c0-review1\\headless.log",
+    "headlessLogSha256": "1DC2516443E9552B0ABD5EB613E4A51D68441CBF157345E5B25965E4EAB916EE",
+    "decoder": "GNU objdump (GNU Binutils for Debian) 2.44, binary i386:x86-64, Intel syntax, adjust-vma=0x6984c0",
+    "observedBody": {
+      "entryRva": "0x6984C0",
+      "retRva": "0x698517",
+      "nextEntryRva": "0x698520",
+      "qualification": "Coherent prologue/branches/epilogue observed; independent PE unwind boundary not checked. Next routine is truncated at window end."
+    },
+    "registerSteps": [
+      {
+        "rva": "0x6984CA",
+        "instruction": "mov rbx,rcx",
+        "meaning": "save entry receiver"
+      },
+      {
+        "rva": "0x6984CD",
+        "instruction": "mov rdi,rdx",
+        "meaning": "save entry pointer-to-pointer; RDX unchanged"
+      },
+      {
+        "rva": "0x6984D0",
+        "instruction": "lea rcx,[rsp+0x38]",
+        "meaning": "wrapper destination is stack temporary; RDX still entry RDX"
+      },
+      {
+        "rva": "0x6984D5",
+        "instruction": "call 0x1A96CB0"
+      },
+      {
+        "rva": "0x6984DA",
+        "instruction": "lea rdx,[rsp+0x38]",
+        "meaning": "writer input points to filtered temporary"
+      },
+      {
+        "rva": "0x6984DF",
+        "instruction": "mov rcx,rbx",
+        "meaning": "writer receiver is entry RCX"
+      },
+      {
+        "rva": "0x6984E2",
+        "instruction": "call 0x6990D0"
+      }
+    ],
+    "cleanup": [
+      {
+        "rva": "0x6984EC",
+        "instruction": "call 0x75C7F0",
+        "argument": "RCX=&stack[0x38] temporary"
+      },
+      {
+        "rva": "0x6984F1",
+        "instruction": "mov rcx,[rdi]",
+        "meaning": "load *entryRDX"
+      },
+      {
+        "rva": "0x6984F9",
+        "instruction": "sub dword ptr [rcx+0x8],1",
+        "guard": "*entryRDX nonnull at0x6984F4/0x6984F7"
+      },
+      {
+        "rva": "0x6984FF",
+        "instruction": "call 0x1272C18",
+        "guard": "decrement result is zero"
+      },
+      {
+        "rva": "0x698504",
+        "instruction": "mov qword ptr [rdi],0",
+        "meaning": "clear caller-supplied pointer slot"
+      },
+      {
+        "rva": "0x698510",
+        "instruction": "mov al,1",
+        "meaning": "normal return value; not independently a source validity indicator"
+      }
+    ],
+    "conclusion": "0x6984C0 forwards entry RDX unchanged to type-filtering pointer-wrapper0x1A96CB0, then passes the stack wrapper to bulk writer0x6990D0 with entry receiver. It later releases and clears original caller pointer slot. This body does not generate XYZ and does not identify the upstream source owner.",
+    "nullAndMismatchLimit": "No explicit caller-side check of filtered temporary before0x6990D0. That bulk writer dereferences *RDX; do not infer a graceful null/tag-mismatch path or total callable contract.",
+    "remainingUpstreamBound": "Need callers of0x6984C0 proving their entry RCX/entry RDX and the origin/type/lifetime of *entryRDX. Existing body bounds do not establish runtime reachability, all callers or source ownership."
+  }
 }
