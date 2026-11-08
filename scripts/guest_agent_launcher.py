@@ -140,7 +140,13 @@ def maintenance_lease(guard, output):
         w.save(output / 'maintenance.json', dict(requestId=rid, outcome=outcome, operationStatus=status))
 
 
-def run(config, output, guest_root, operation, release=None, *, managed_lab=None):
+def run(config, output, guest_root, operation, release=None, *, managed_lab=None,
+        require_native_read_lease=False):
+    # Opt in only with the managed path's exact host and new guest epoch checks.
+    # Historical releases/rollback remain accepted by the default legacy contract.
+    w.require(type(require_native_read_lease) is bool, 'Native read lease requirement must be boolean')
+    w.require(not require_native_read_lease or managed_lab in ('lab1', 'lab2'),
+              'Native read lease postflight requires a managed lab')
     if guest_root is None:
         if managed_lab is None:
             guest_root = r'C:\RIFT_TRANSFER\RiftReader2Control\managed'
@@ -199,9 +205,18 @@ def run(config, output, guest_root, operation, release=None, *, managed_lab=None
                     state = (guard.status_after_restart() if managed_lab is not None
                              else guard.status())
                     w.require(state['guest'].get('gracefulShutdownVersion') == 1, 'Managed guest capability missing')
+                    if require_native_read_lease:
+                        for capability in ('gracefulShutdownVersion', 'nativeReadLeaseVersion'):
+                            version = state['guest'].get(capability)
+                            w.require(type(version) is int and version == 1,
+                                      'Managed guest capability missing or invalid: ' + capability)
                     break
-                except Exception:
+                except Exception as exc:
                     if time.monotonic() >= deadline:
+                        if require_native_read_lease:
+                            raise RuntimeError(
+                                'Native read lease postflight not verified; maintenance status uncertain; '
+                                'new release may be active; no automatic retry or rollback') from exc
                         raise
                     time.sleep(.5)
             w.save(output / 'after.json', w.sanitize(state))
@@ -214,11 +229,15 @@ if __name__ == '__main__':
     parser.add_argument('--config', type=Path, default=ROOT / 'artifacts/xyz-workflow.json')
     parser.add_argument('--managed-lab', choices=('lab1', 'lab2'),
                         help='Use this existing managed controller instead of a legacy XYZ workflow')
+    parser.add_argument('--require-native-read-lease', action='store_true',
+                        help='Require exact v1 native-read lease capability after managed restart/update; '
+                             'advertisement is not runtime qualification')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--guest-root', help='Override the installed fleet or legacy launcher directory')
     parser.add_argument('--release', type=Path, help='JSON containing exactly release and sha256; already staged in guest')
     args = parser.parse_args()
     result = run(args.config, args.output, args.guest_root, args.operation,
-                 w.load(args.release) if args.release else None, managed_lab=args.managed_lab)
+                 w.load(args.release) if args.release else None, managed_lab=args.managed_lab,
+                 require_native_read_lease=args.require_native_read_lease)
     print(json.dumps(result))
     raise SystemExit(0 if result['success'] else 2)

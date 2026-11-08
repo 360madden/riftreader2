@@ -282,14 +282,59 @@ class GuestAgentLauncherTests(unittest.TestCase):
     def test_managed_update_uses_explicit_guest_root(self):
         self.check_managed_update(r'C:\custom\managed', r'C:\custom\managed')
 
-    def check_managed_update(self, guest_root, expected_root):
+    def test_managed_native_lease_opt_in_accepts_exact_integer_one(self):
+        self.check_managed_update(None, None, require_native_read_lease=True,
+                                  capabilities={'nativeReadLeaseVersion': 1})
+        self.check_managed_update(None, None, require_native_read_lease=True,
+                                  capabilities={'nativeReadLeaseVersion': 1}, operation='restart')
+
+    def test_managed_native_lease_opt_in_rejects_missing_or_invalid_advertisement(self):
+        for capabilities in ({}, *({'nativeReadLeaseVersion': value}
+                                    for value in (None, False, True, '1', 1.0, 0, -1, 2))):
+            with self.subTest(capabilities=capabilities):
+                self.check_managed_update(None, None, require_native_read_lease=True,
+                                          capabilities=capabilities, rejection=True)
+
+    def test_native_lease_opt_in_preserves_exact_graceful_capability(self):
+        self.check_managed_update(None, None, require_native_read_lease=True,
+                                  capabilities={'nativeReadLeaseVersion': 1,
+                                                'gracefulShutdownVersion': True}, rejection=True)
+
+    def test_native_lease_opt_in_needs_managed_target_before_any_operations(self):
+        for lab, requirement in ((None, True), ('all', True), ('lab2', 1),
+                                 ('lab2', 'true'), ('lab2', None)):
+            with self.subTest(lab=lab, requirement=requirement), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / 'must-not-exist'
+                with (patch.object(launcher, 'GuestSession') as session,
+                      patch.object(launcher, 'ManagedMaintenanceGuard') as managed,
+                      patch.object(launcher.w, 'HostGuard') as legacy):
+                    with self.assertRaises(ValueError):
+                        launcher.run(None, output, None, 'restart', managed_lab=lab,
+                                     require_native_read_lease=requirement)
+                self.assertFalse(output.exists())
+                session.assert_not_called()
+                managed.assert_not_called()
+                legacy.assert_not_called()
+
+    def test_native_lease_cli_flag_is_available_without_guest_access(self):
+        result = subprocess.run([launcher.sys.executable, str(Path(launcher.__file__)), '--help'],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--require-native-read-lease', result.stdout)
+
+    def check_managed_update(self, guest_root, expected_root, *, require_native_read_lease=False,
+                             capabilities=None, rejection=False, operation='update'):
+        if expected_root is None:
+            from scripts.ensure_guest_agent import GUEST_ROOT
+            expected_root = GUEST_ROOT
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / 'managed-run'
             guard = MagicMock()
             guard.plan = {'database': 'queue.json', 'resource': 'vm:rift-lab-2'}
             guard.vmrun = Path('vmrun.exe')
             guard.status.return_value = {'guest': {'gracefulShutdownVersion': 1}}
-            guard.status_after_restart.return_value = {'guest': {'gracefulShutdownVersion': 1}}
+            guard.status_after_restart.return_value = {
+                'guest': {'gracefulShutdownVersion': 1, **(capabilities or {})}}
             guard.client.request.return_value = {'status': 'stopped'}
             queue = MagicMock()
             queue.status.return_value = {
@@ -309,10 +354,33 @@ class GuestAgentLauncherTests(unittest.TestCase):
                   patch.object(launcher.w, 'HostGuard') as legacy_guard,
                   patch.object(launcher.w, 'AccessQueue', return_value=queue),
                   patch.object(launcher, 'GuestSession') as session,
-                  patch.object(launcher.uuid, 'uuid4', return_value=SimpleNamespace(hex='a' * 32))):
+                  patch.object(launcher.uuid, 'uuid4', return_value=SimpleNamespace(hex='a' * 32)),
+                  patch.object(launcher.time, 'monotonic', side_effect=[0, 31]),
+                  patch.object(launcher.time, 'sleep') as sleep):
                 session.return_value.__enter__.return_value = guest
-                result = launcher.run(None, output, guest_root,
-                    'update', {'release': 'agent-test', 'sha256': 'A' * 64}, managed_lab='lab2')
+                def run():
+                    return launcher.run(None, output, guest_root, operation,
+                        {'release': 'agent-test', 'sha256': 'A' * 64} if operation == 'update' else None,
+                        managed_lab='lab2', require_native_read_lease=require_native_read_lease)
+                if rejection:
+                    with self.assertRaisesRegex(RuntimeError,
+                            'maintenance status uncertain; new release may be active; '
+                            'no automatic retry or rollback') as caught:
+                        run()
+                    self.assertIsInstance(caught.exception.__cause__, ValueError)
+                    self.assertIn('capability', str(caught.exception.__cause__))
+                    self.assertEqual('failed', queue.finish.call_args.args[2])
+                    self.assertEqual('failed', json.loads(
+                        (output / 'maintenance.json').read_text())['operationStatus'])
+                    self.assertFalse((output / 'after.json').exists())
+                    # Guest operation receipt is retained, not rewritten as a rollback.
+                    self.assertTrue(json.loads((output / 'result.json').read_text())['success'])
+                    guest.run.assert_called_once()
+                    guest.powershell.assert_called_once()
+                    guard.status_after_restart.assert_called_once()
+                    sleep.assert_not_called()
+                    return
+                result = run()
             self.assertTrue(result['success'])
             self.assertEqual(guest.run.call_args.args[-1], expected_root + '\\request-' + 'a' * 32 + '.tmp')
             managed.assert_called_once_with('lab2', output)

@@ -1,5 +1,22 @@
 # Current status
 
+**21:23 EST NOVEMBER 7 — OFFLINE XYZ TRACK SEGMENTS + HOST PACKAGE:**
+New `scripts/summarize_native_xyz_track.py` reuses the existing projector to
+report source-hashed contiguous candidate path and net XYZ displacement, but
+withholds totals across gaps/identity boundaries. Root + worker focused tests
+**5/5 PASS**. Replay of retained Lab1 30/30 owner-key trace found 29 zero
+sample-to-sample deltas, 0 candidate path/net displacement; that is NOT proof
+of no physical motion or advancing source freshness. A new host-only agent.zip
+(47,958,337 bytes, SHA256 `33E3BD0D42FD6F6AE3960B5CEDCA3C779F1E97F95F5673ABE47385F3DF47359D`)
+packages the immutable DCFC17... reader and matching two-field descriptor for
+the managed-fleet-20261029 root; archive CRC and payload hashes verified, **no
+VM staging, agent update or live data**. The RR2 Lua baseline producer still
+calls `Inspect.Unit.Detail` about every 0.5s regardless of reference nonce, so
+unbinding does NOT establish API-quiet native XYZ freshness. Guarded
+managed-lab launcher now offers opt-in `--require-native-read-lease`, requiring
+exact integer v1 capability after restart; **24/24** focused offline tests
+passed. It does not prove deployed binary identity or authorize maintenance.
+
 **21:16 EST NOVEMBER 7 — IMMUTABLE XYZ READER HOST-ONLY RELEASE:**
 New .NET10 single-file executable published at
 `artifacts/native-xyz-lease-20261108-0213z-7b942e6a/publish/RiftReader2.Live.exe`,
