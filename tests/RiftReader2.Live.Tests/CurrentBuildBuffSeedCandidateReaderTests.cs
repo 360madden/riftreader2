@@ -27,6 +27,59 @@ public sealed class CurrentBuildBuffSeedCandidateReaderTests
         Assert.Equal(0x5100UL, result.Nodes[0].RawObject.ClockSlot38Rva);
         Assert.Equal(0x5200UL, result.Nodes[0].RawObject.ClockSlot48Rva);
         Assert.Equal("unavailable", result.Nodes[1].RawObject.Status); Assert.Equal(0x24000000UL, result.Nodes[1].Object);
+        Assert.Null(result.Nodes[1].RawObject.StateDword80); Assert.Equal("unavailable", result.Nodes[1].RawObject.StateDword80Status);
+    }
+    [Theory]
+    [InlineData(int.MinValue)]
+    [InlineData(-1)]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(int.MaxValue)]
+    public void GroupingInputPreservesSignedRawValueWithoutChangingTiming(int value)
+    {
+        var s = TimingFixture(12345678, 0); s.D(0x20080080, unchecked((uint)value));
+        var raw = Read(s).Nodes[0].RawObject;
+        Assert.Equal(value, raw.StateDword80); Assert.Equal("raw-candidate", raw.StateDword80Status);
+        Assert.Equal(0U, raw.StateDword88); Assert.Equal("raw-candidate", raw.StateStatus);
+        var timed = ReadTiming(s).Nodes[0];
+        Assert.Equal(value, timed.RawObject.StateDword80);
+        Assert.Equal("raw-timing-candidate", timed.Timing!.Status);
+        Assert.Equal(1.234f, timed.Timing.Duration!.Value, 5);
+    }
+    [Theory]
+    [InlineData(0UL, "null")]
+    [InlineData(1UL, "unavailable")]
+    [InlineData(0x200C0000UL, "unavailable")]
+    public void MissingOrInvalidStateDoesNotBecomeZero(ulong state, string status)
+    {
+        var s = TimingFixture(12345678, 0); s.Q(Object1 + 0x20, state);
+        var raw = Read(s).Nodes[0].RawObject;
+        Assert.Equal("raw-candidate", raw.Status);
+        Assert.Null(raw.StateDword80); Assert.Equal(status, raw.StateDword80Status);
+        Assert.Null(raw.StateDword88); Assert.Equal(status, raw.StateStatus);
+    }
+    [Fact] public void UnreadableGroupingInputPreservesExistingStateAndTiming()
+    {
+        var s = TimingFixture(12345678, 0); var node = ReadTiming(s).Nodes[0];
+        Assert.Null(node.RawObject.StateDword80); Assert.Equal("unavailable", node.RawObject.StateDword80Status);
+        Assert.Equal(0U, node.RawObject.StateDword88); Assert.Equal("raw-candidate", node.RawObject.StateStatus);
+        Assert.Equal("raw-timing-candidate", node.Timing!.Status);
+    }
+    [Fact] public void ReadableGroupingInputDoesNotRequireTimingState()
+    {
+        var s = TimingFixture(12345678, 0); s.Q(Object1 + 0x20, 0x200C0000); s.D(0x200C0080, 1);
+        var node = ReadTiming(s).Nodes[0];
+        Assert.Equal(1, node.RawObject.StateDword80); Assert.Equal("raw-candidate", node.RawObject.StateDword80Status);
+        Assert.Null(node.RawObject.StateDword88); Assert.Equal("unavailable", node.RawObject.StateStatus);
+        Assert.Equal("unavailable", node.Timing!.Status);
+    }
+    [Theory]
+    [InlineData(0x20080080UL, 4)]
+    [InlineData(Object1 + 0x20, 8)]
+    public void ChangedGroupingInputOrStatePointerRejectsObservation(ulong address, int count)
+    {
+        var s = TimingFixture(12345678, 0); s.D(0x20080080, 1); s.Changed = (address, count);
+        Assert.Throws<InvalidDataException>(() => Read(s));
     }
     [Fact] public void RejectsCycleAndChangedNode()
     {

@@ -1,5 +1,16 @@
 # Current status
 
+**19:33 EST NOVEMBER 7 — TWO-LAB BUFF GROUPING INPUT LIVE:**
+[Saturday-night discovery handoff](handoff-2026-11-07-saturday-night-discovery.md).
+The new signed state+80 raw input was observed in all52 sampled buff nodes:
+Lab1 28 values+1; Lab2 21 values+1 and three0. Both guest native captures
+exited0 under fresh exact game identity, with no RIFT input/reload/controller.
+The reader was SHA-pinned; C# focused19/19 and Python buff7/7 passed.
+Legacy/new/timing source-reader selection was repaired after independent review.
+Lab1 also yielded20 stat selectors/40 raw values on demand. Buff List/stack
+grouping, live variant selection and restart/changed-state qualification remain
+open; do not infer counts from sentinel or API scratch.
+
 **19:21 EST NOVEMBER 7 — ON-DEMAND NATIVE PLAYER CONTEXT VERIFIED LAB1:**
 `python -B scripts/sample_current_native_player_context.py --lab lab1`
 now returns validated `values.level`, `values.combat`, and `values.target`

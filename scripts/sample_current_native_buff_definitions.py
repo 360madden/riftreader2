@@ -13,9 +13,22 @@ from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.probe_native_unit_manager import inspection_identity,sha
 from scripts.sample_current_native_ability_catalog import (READER as F86_READER,READER_SHA as F86_SHA,build_launch,validate_record_costs_timing,validate_dictionary)
 from scripts.sample_current_native_buff_seeds import validate_report as validate_seeds
-from scripts.sample_current_native_buff_seeds import READER as OLD_SEED_READER, READER_SHA as OLD_SEED_SHA
+from scripts.sample_current_native_buff_seeds import READER as CURRENT_SEED_READER, READER_SHA as CURRENT_SEED_SHA
 from scripts.native_localization_huffman import decode_localization_huffman
 from scripts.native_localization_record import parse_localization_record
+
+LEGACY_SEED_READER=ROOT/'artifacts/native-buff-seeds-20261107/publish/RiftReader2.Live.exe'
+LEGACY_SEED_SHA='3747822638FEC0F1035187C7142E7A7A0AC84B8D9C6100106AE1BF21A2BFD8A2'
+TIMING_SEED_SHA='EAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060'
+
+def reader_selection(source_sha):
+    if source_sha==TIMING_SEED_SHA:
+        path=ROOT/'artifacts/native-buff-loaded-field-table-20261107/publish/RiftReader2.Live.exe'
+        return path,TIMING_SEED_SHA,117565792,path,TIMING_SEED_SHA,117565792,'current-buff-loaded-field-','current-buff-loaded-field-'
+    if source_sha in (LEGACY_SEED_SHA,CURRENT_SEED_SHA):
+        seed,seed_sha,size=(CURRENT_SEED_READER,CURRENT_SEED_SHA,117741408) if source_sha==CURRENT_SEED_SHA else (LEGACY_SEED_READER,LEGACY_SEED_SHA,117544800)
+        return F86_READER,F86_SHA,117537120,seed,seed_sha,size,'current-variant-restrictions-','current-buff-seeds-'
+    raise ValueError('invalid-seed-summary')
 
 
 def run(lab,seed):
@@ -23,17 +36,9 @@ def run(lab,seed):
     catalog=Path(seed)
     if not catalog.is_absolute() or not catalog.is_file() or catalog.is_symlink() or catalog.stat().st_size>8000000: raise ValueError('invalid-catalog-path')
     raw=catalog.read_bytes(); catalog_sha=sha(raw); source=json.loads(raw.decode('utf-8-sig'))
-    timing_sha='EAEAC37834DBCEA377BD73BA1974D00432397FCFC03887E70CE152524A2CE060'
     source_reader=source.get('readerExecutableSha256')
-    if source_reader not in (OLD_SEED_SHA,timing_sha) or not isinstance(source.get('observation'),dict) or not isinstance(source.get('vmIdentity'),dict): raise ValueError('invalid-seed-summary')
-    if source_reader==timing_sha:
-        READER=SEED_READER=ROOT/'artifacts/native-buff-loaded-field-table-20261107/publish/RiftReader2.Live.exe'
-        READER_SHA=SEED_SHA=timing_sha; reader_size=seed_size=117565792
-        cache_name=seed_cache_name='current-buff-loaded-field-'
-    else:
-        READER,READER_SHA,reader_size=F86_READER,F86_SHA,117537120
-        SEED_READER,SEED_SHA,seed_size=OLD_SEED_READER,OLD_SEED_SHA,117544800
-        cache_name,seed_cache_name='current-variant-restrictions-','current-buff-seeds-'
+    if not isinstance(source.get('observation'),dict) or not isinstance(source.get('vmIdentity'),dict): raise ValueError('invalid-seed-summary')
+    READER,READER_SHA,reader_size,SEED_READER,SEED_SHA,seed_size,cache_name,seed_cache_name=reader_selection(source_reader)
     def core_nodes(observation):
         return [{k:v for k,v in node.items() if k!='timing'} for node in observation['nodes']]
 

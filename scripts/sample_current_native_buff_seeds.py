@@ -8,9 +8,9 @@ from scripts.lab_codex import LabCodex
 from scripts.inventory_passive_rift_sources import ps_literal
 from scripts.sample_current_native_xyz import digest
 GAME_SHA = '1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8'
-READER_SHA = '3747822638FEC0F1035187C7142E7A7A0AC84B8D9C6100106AE1BF21A2BFD8A2'
-READER = ROOT / 'artifacts/native-buff-seeds-20261107/publish/RiftReader2.Live.exe'
-EVIDENCE = ROOT / 'artifacts/native-buff-seeds-20261107/runs'
+READER_SHA = 'A70BD1259DAEC131898C638D3D4D540086C6195015AFA33BA262E5CA9CEE8B04'
+READER = ROOT / 'artifacts/native-buff-state80-20261107/publish/RiftReader2.Live.exe'
+EVIDENCE = ROOT / 'artifacts/native-buff-state80-20261107/runs'
 
 QUALIFICATION='raw-list-candidates; visibility, buff IDs, names, freshness and restart unverified'
 
@@ -40,6 +40,17 @@ def validate_report(report, *, pid, ticks):
         for k in numeric:
             value=raw.get(k); maximum=2**32-1 if k in ('dword08','dword3C','descriptorDword38','stateDword88') else 2**64-1
             if value is not None and not integer(value,0,maximum): invalid()
+        # Newer readers expose a signed grouping input. Older retained reports
+        # legitimately lack both fields; absence is not evidence for zero.
+        if ('stateDword80' in raw) != ('stateDword80Status' in raw): invalid()
+        if 'stateDword80' in raw:
+            value=raw['stateDword80']; status80=raw['stateDword80Status']
+            if status80 not in ('raw-candidate','null','unavailable'): invalid()
+            if status80=='raw-candidate':
+                if raw['status']!='raw-candidate' or not raw.get('qword20') or not integer(value,-2**31,2**31-1): invalid()
+            elif value is not None: invalid()
+            if raw['status']=='unavailable' and status80!='unavailable': invalid()
+            if raw['status']=='raw-candidate' and ((raw.get('qword20')==0 and status80!='null') or (raw.get('qword20')!=0 and status80=='null')): invalid()
         if raw['status']=='unavailable':
             if any(raw.get(k) is not None for k in numeric+('descriptorStatus','stateStatus','clockStatus')): invalid()
         else:
@@ -49,7 +60,7 @@ def validate_report(report, *, pid, ticks):
 
 def run(lab):
     if lab not in ('lab1','lab2'): raise ValueError('invalid lab')
-    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117544800 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
+    if not READER.is_file() or READER.is_symlink() or READER.stat().st_size != 117741408 or digest(READER) != READER_SHA: raise ValueError('reader identity mismatch')
     api=LabCodex(); _,_,config,settings=api._configuration(lab)
     vm=api.collect_identity(api._native(config,settings,api.run_root / '.doctor'))
     token=uuid.uuid4().hex; output=EVIDENCE / lab / token; output.mkdir(parents=True,exist_ok=False)

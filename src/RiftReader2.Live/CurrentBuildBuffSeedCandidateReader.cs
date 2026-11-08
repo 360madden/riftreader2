@@ -10,7 +10,12 @@ internal sealed record BuffRawObject(string Status, ulong? VtableRva = null, uin
     ulong? DescriptorVtableRva = null, string? DescriptorStatus = null,
     string? StateStatus = null, uint? StateDword88 = null, string? ClockStatus = null,
     ulong? ClockAddress = null, ulong? ClockVtableRva = null,
-    ulong? ClockSlot30Rva = null, ulong? ClockSlot38Rva = null, ulong? ClockSlot48Rva = null);
+    ulong? ClockSlot30Rva = null, ulong? ClockSlot38Rva = null, ulong? ClockSlot48Rva = null)
+{
+    // Raw signed input to the alternate grouping-key branch, not a stack count.
+    public int? StateDword80 { get; init; }
+    public string StateDword80Status { get; init; } = "unavailable";
+}
 internal sealed record BuffTimingCandidate(string Status, uint? BeginRawBits = null, float? Begin = null,
     ulong? TimerReference = null, ulong? ReferenceVtableRva = null, ulong? ReferenceGetterRva = null,
     long? DurationTicks = null, float? Duration = null, float? Remaining = null, ulong? ReferenceSlot48Rva = null, uint? DurationInputRawBits = null);
@@ -124,6 +129,16 @@ internal static class CurrentBuildBuffSeedCandidateReader
                     try { state88 = D(checked(Ptr(q20, 0x8C) + 0x88)); stateStatus = "raw-candidate"; }
                     catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { }
                 }
+                string state80Status = q20 == 0 ? "null" : "unavailable"; int? state80 = null;
+                if (q20 != 0)
+                {
+                    try
+                    {
+                        state80 = BinaryPrimitives.ReadInt32LittleEndian(Read(checked(Ptr(q20, 0x84) + 0x80), 4));
+                        state80Status = "raw-candidate";
+                    }
+                    catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { }
+                }
                 string clockStatus = "unavailable"; ulong? clock = null, clockVt = null, slot30 = null, slot38 = null, slot48 = null;
                 try
                 {
@@ -142,7 +157,8 @@ internal static class CurrentBuildBuffSeedCandidateReader
                 }
                 catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { }
                 raw = new("raw-candidate", Rva(vt), d08, q10, q20, q28, d3c, q48, descriptor38, descriptorVtableRva,
-                    descriptorStatus, stateStatus, state88, clockStatus, clock, clockVt, slot30, slot38, slot48);
+                    descriptorStatus, stateStatus, state88, clockStatus, clock, clockVt, slot30, slot38, slot48)
+                    { StateDword80 = state80, StateDword80Status = state80Status };
             }
             catch (InvalidDataException) when (budget <= 2 * 1024 * 1024) { raw = new("unavailable"); }
             BuffTimingCandidate? timing = null;
