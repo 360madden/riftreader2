@@ -63,6 +63,7 @@ internal static class Program
         FastObservationSession? fastSession = null;
         FastObservationReport? lastFastObservation = null;
         FastObservationAnchorDiagnostic? fastObservationDiagnostic = null;
+        PendingFullScan? pendingFullScan = null;
         long outerSequence = 0;
         var failed = false;
 
@@ -78,6 +79,11 @@ internal static class Program
 
                 if (discovery.Target is null)
                 {
+                    if (pendingFullScan is not null)
+                    {
+                        await CancelFullScanAsync(pendingFullScan);
+                        pendingFullScan = null;
+                    }
                     var hadAttachment = tracker is not null || attachedTarget is not null;
                     lastScan = EmptyScan("target-unavailable", discovery.Reason);
                     lastSelection = new(LiveAddonSelectionStatus.IncompleteScan, null, 0, 0, discovery.Reason);
@@ -123,6 +129,11 @@ internal static class Program
 
                 if (attachedTarget is null || !SameProcess(attachedTarget, discovery.Target))
                 {
+                    if (pendingFullScan is not null)
+                    {
+                        await CancelFullScanAsync(pendingFullScan);
+                        pendingFullScan = null;
+                    }
                     if (attachedTarget is not null)
                     {
                         nonce = NewNonce();
@@ -155,7 +166,87 @@ internal static class Program
                 };
                 LiveAddonFreshness freshnessResult;
                 TargetDiscoveryResult after;
-                if (fastSession is not null && fastSession.CanObserve(attachedTarget, scanStartedAt, out _))
+                // Start the next full refresh while the existing anchor is still valid.
+                // The sole publication loop continues bounded scoped observations.
+                if (pendingFullScan is null &&
+                    (fastSession is null ||
+                     !fastSession.CanObserve(attachedTarget, scanStartedAt, out _) ||
+                     timeProvider.GetElapsedTime(fastSession.Anchor.FullScanCompletedAtTimestamp, scanStartedAt) >=
+                         TimeSpan.FromTicks(FastObservationSession.MaximumAnchorAge.Ticks / 2)))
+                {
+                    pendingFullScan = StartFullScan(
+                        attachedTarget, nonce, configuration, fastSession, timeProvider, cancellation.Token);
+                }
+
+                if (pendingFullScan is not null && pendingFullScan.Task.IsCompleted)
+                {
+
+                    var completedScan = pendingFullScan!;
+                    pendingFullScan = null;
+                    BackgroundFullScanResult completedResult;
+                    try
+                    {
+                        if (!SameProcess(completedScan.Target, attachedTarget) ||
+                            !string.Equals(completedScan.Nonce, nonce, StringComparison.Ordinal))
+                            throw new InvalidOperationException("Background full scan identity changed before admission.");
+                        completedResult = await completedScan.Task;
+                    }
+                    finally
+                    {
+                        completedScan.Dispose();
+                    }
+                    var renewalSession = completedScan.RenewalSession;
+                    var priorFresh = completedScan.PriorFresh;
+                    lastScan = completedResult.Scan;
+                    lastFullScanStartedAt = completedResult.AttemptStartedAt;
+                    var scanCompletedAt = completedResult.CompletedAt;
+
+                    after = await TargetDiscovery.DiscoverAsync(
+                        configuration.ProcessName,
+                        nonce,
+                        cancellation.Token);
+                    lastSelection = after.Target is null || !SameProcess(attachedTarget, after.Target)
+                        ? new LiveAddonSelection(
+                            LiveAddonSelectionStatus.Conflict, null, 0, 0,
+                            after.Reason ?? "target-identity-changed-during-scan")
+                        : LiveAddonCandidateSelector.Select(lastScan.Candidates, nonce, lastScan.Completed);
+                    var fullFreshness = tracker!.Observe(
+                        after.Target?.Identity ?? attachedTarget.Identity,
+                        lastSelection,
+                        lastFullScanStartedAt,
+                        scanCompletedAt);
+                    freshnessResult = fullFreshness;
+                    if (fullFreshness.Status == LiveFreshnessStatus.Warming &&
+                        renewalSession is not null &&
+                        after.Target is not null &&
+                        renewalSession.TryBridgeCompletedFullScan(
+                            after.Target, lastScan, lastSelection,
+                            lastFullScanStartedAt, scanCompletedAt, priorFresh, out var bridged))
+                    {
+                        // The promoted last observation is this completed FULL scan.
+                        // Scoped history merely proves continuity; neither full-scan
+                        // report publishes a prior scoped frame.
+                        tracker = renewalSession.VerifiedTracker;
+                        freshnessResult = bridged!;
+                    }
+                    lastFastObservation = null;
+                    fastObservationDiagnostic = null;
+                    fastSession = after.Target is not null && SameProcess(attachedTarget, after.Target) &&
+                        FastObservationSession.TryCreate(
+                            after.Target,
+                            lastScan,
+                            lastSelection,
+                            lastFullScanStartedAt,
+                            scanCompletedAt,
+                            freshnessOptions,
+                            timeProvider,
+                            out var createdFastSession,
+                            out _,
+                            out fastObservationDiagnostic)
+                        ? createdFastSession
+                        : null;
+                }
+                else if (fastSession is not null && fastSession.CanObserve(attachedTarget, scanStartedAt, out _))
                 {
                     var scopedScan = await Task.Run(
                         () => WindowsMemoryScanner.ScanCandidateRegions(
@@ -199,69 +290,20 @@ internal static class Program
                 }
                 else
                 {
-                    // Only a still-fresh, identity-bound scoped history can be a
-                    // renewal candidate. Capture BEFORE the potentially long full scan.
-                    var renewalSession = fastSession;
-                    var priorFresh = renewalSession?.CaptureFullScanRenewal(attachedTarget);
-                    lastFullScanStartedAt = scanStartedAt;
-                    lastScan = await Task.Run(
-                        () => WindowsMemoryScanner.Scan(
-                            attachedTarget,
-                            nonce,
-                            configuration.MaxScanBytes,
-                            TimeSpan.FromSeconds(configuration.MaxScanSeconds),
-                            cancellation.Token,
-                            () => lastFullScanStartedAt = scanStartedAt = timeProvider.GetTimestamp()),
-                        cancellation.Token);
-                    var scanCompletedAt = timeProvider.GetTimestamp();
-                    after = await TargetDiscovery.DiscoverAsync(
-                        configuration.ProcessName,
-                        nonce,
-                        cancellation.Token);
-                    lastSelection = after.Target is null || !SameProcess(attachedTarget, after.Target)
-                        ? new LiveAddonSelection(
-                            LiveAddonSelectionStatus.Conflict, null, 0, 0,
-                            after.Reason ?? "target-identity-changed-during-scan")
-                        : LiveAddonCandidateSelector.Select(lastScan.Candidates, nonce, lastScan.Completed);
-                    var fullFreshness = tracker!.Observe(
-                        after.Target?.Identity ?? attachedTarget.Identity,
-                        lastSelection,
-                        scanStartedAt,
-                        scanCompletedAt);
-                    freshnessResult = fullFreshness;
-                    if (fullFreshness.Status == LiveFreshnessStatus.Warming &&
-                        renewalSession is not null &&
-                        after.Target is not null &&
-                        renewalSession.TryBridgeCompletedFullScan(
-                            after.Target, lastScan, lastSelection,
-                            scanStartedAt, scanCompletedAt, priorFresh, out var bridged))
-                    {
-                        // The promoted last observation is this completed FULL scan.
-                        // Scoped history merely proves continuity; neither full-scan
-                        // report publishes a prior scoped frame.
-                        tracker = renewalSession.VerifiedTracker;
-                        freshnessResult = bridged!;
-                    }
+                    // While the full scan is pending, publish an honest, non-scoped
+                    // heartbeat after the ten-second anchor expires. Never carry
+                    // a previous fast observation forward as if it were current.
+                    after = discovery;
+                    freshnessResult = tracker!.GetCurrent();
                     lastFastObservation = null;
                     fastObservationDiagnostic = null;
-                    fastSession = after.Target is not null && SameProcess(attachedTarget, after.Target) &&
-                        FastObservationSession.TryCreate(
-                            after.Target,
-                            lastScan,
-                            lastSelection,
-                            scanStartedAt,
-                            scanCompletedAt,
-                            freshnessOptions,
-                            timeProvider,
-                            out var createdFastSession,
-                            out _,
-                            out fastObservationDiagnostic)
-                        ? createdFastSession
-                        : null;
                 }
                 var nativePower = after.Target is not null && SameProcess(attachedTarget, after.Target)
                     ? await LivePowerReader.ReadAsync(after.Target, timeProvider, cancellation.Token)
                     : new LivePowerRead(null, null, timeProvider.GetTimestamp(), "target-identity-changed-during-scan");
+                var readerReason = pendingFullScan is not null && lastFastObservation is null
+                    ? "full-scan-in-progress"
+                    : null;
                 var sequence = ++outerSequence;
                 var beforeDelivery = CreateSnapshot(
                     instanceId,
@@ -269,7 +311,7 @@ internal static class Program
                     sequence,
                     launchedAt,
                     "running",
-                    null,
+                    readerReason,
                     attachedTarget,
                     tracker,
                     freshnessResult,
@@ -291,7 +333,7 @@ internal static class Program
                     sequence,
                     launchedAt,
                     "running",
-                    null,
+                    readerReason,
                     attachedTarget,
                     tracker,
                     tracker.GetCurrent(),
@@ -311,6 +353,11 @@ internal static class Program
 
                 if (freshnessResult.Status == LiveFreshnessStatus.Invalidated)
                 {
+                    if (pendingFullScan is not null)
+                    {
+                        await CancelFullScanAsync(pendingFullScan);
+                        pendingFullScan = null;
+                    }
                     tracker = null;
                     attachedTarget = null;
                     fastSession = null;
@@ -332,6 +379,11 @@ internal static class Program
         }
         finally
         {
+            if (pendingFullScan is not null)
+            {
+                await CancelFullScanAsync(pendingFullScan);
+                pendingFullScan = null;
+            }
             var sequence = ++outerSequence;
             var termination = CreateTerminationSnapshot(
                 instanceId,
@@ -359,6 +411,85 @@ internal static class Program
             Console.WriteLine("RiftReader2.Live stopped. Prior observations must not be treated as current.");
         }
         return failed ? 1 : 0;
+    }
+
+    // One worker reads the full address space; the main loop remains the sole
+    // owner of observation sequence numbers, freshness state and publication.
+    private sealed record BackgroundFullScanResult(LiveScanResult Scan, long AttemptStartedAt, long CompletedAt);
+
+    private sealed class PendingFullScan : IDisposable
+    {
+        internal PendingFullScan(
+            DiscoveredTarget target,
+            string nonce,
+            FastObservationSession? renewalSession,
+            LiveAddonFreshness? priorFresh,
+            CancellationTokenSource cancellation,
+            Task<BackgroundFullScanResult> task)
+        {
+            Target = target;
+            Nonce = nonce;
+            RenewalSession = renewalSession;
+            PriorFresh = priorFresh;
+            Cancellation = cancellation;
+            Task = task;
+        }
+
+        internal DiscoveredTarget Target { get; }
+        internal string Nonce { get; }
+        internal FastObservationSession? RenewalSession { get; }
+        internal LiveAddonFreshness? PriorFresh { get; }
+        internal CancellationTokenSource Cancellation { get; }
+        internal Task<BackgroundFullScanResult> Task { get; }
+        public void Dispose() => Cancellation.Dispose();
+    }
+
+    private static PendingFullScan StartFullScan(
+        DiscoveredTarget target,
+        string nonce,
+        LiveConfiguration configuration,
+        FastObservationSession? renewalSession,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken)
+    {
+        var scopedCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Capture valid scoped continuity before the full scan may outlive its anchor.
+        var priorFresh = renewalSession?.CaptureFullScanRenewal(target);
+        var task = Task.Run(() =>
+        {
+            var attemptStartedAt = timeProvider.GetTimestamp();
+            var scan = WindowsMemoryScanner.Scan(
+                target,
+                nonce,
+                configuration.MaxScanBytes,
+                TimeSpan.FromSeconds(configuration.MaxScanSeconds),
+                scopedCancellation.Token,
+                () => attemptStartedAt = timeProvider.GetTimestamp());
+            return new BackgroundFullScanResult(scan, attemptStartedAt, timeProvider.GetTimestamp());
+        }, scopedCancellation.Token);
+        return new PendingFullScan(
+            target, nonce, renewalSession, priorFresh, scopedCancellation, task);
+    }
+
+    private static async Task CancelFullScanAsync(PendingFullScan pending)
+    {
+        pending.Cancellation.Cancel();
+        try
+        {
+            // Never leak the old process/nonce reader across identity changes.
+            await pending.Task;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"Canceled background scan failed: {exception.Message}");
+        }
+        finally
+        {
+            pending.Dispose();
+        }
     }
 
     private static LiveReaderSnapshot CreateSnapshot(

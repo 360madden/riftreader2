@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "asOfUtc": "2026-11-08T14:46:26.979Z",
+  "host": "AMD-DESKTOP",
+  "project": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "change": {
+    "path": "src/RiftReader2.Live/Program.cs",
+    "sha256": "6C5B95249DB3B07B87DA272DE72E14B4A8DCF8EAE7D1FC68BDAAF66F4E23D4EC",
+    "behavior": "single background identity-pinned full scan; one sequential publisher; 10s anchor unchanged"
+  },
+  "published": {
+    "path": "artifacts/live-reliability-20261108-01/publish-async-fullscan-01/RiftReader2.Live.exe",
+    "sha256": "ADBA0EC7047AB056934D52ADFB3F70E657C5C0D251F67A92EF756F413D8646AF",
+    "bytes": 118019936
+  },
+  "tests": {
+    "live": {
+      "passed": 992,
+      "total": 992
+    },
+    "core": {
+      "passed": 380,
+      "total": 380
+    }
+  },
+  "lab1": {
+    "gamePid": 6820,
+    "readerPid": 3036,
+    "nonce": "c5977e2a618a45788360766be30b3797",
+    "ended": "2026-11-08T14:44:07.110379Z",
+    "terminalSeq": 889,
+    "scanLimitBytes": 6442450944,
+    "samples": [
+      {
+        "seconds": 60,
+        "frames": 82,
+        "maxGapSeconds": 1.026
+      },
+      {
+        "seconds": 90,
+        "frames": 126,
+        "maxGapSeconds": 1.0731,
+        "readFailed": 14,
+        "timeBudgetExceeded": 13
+      }
+    ],
+    "movementReady": false
+  },
+  "lab2": {
+    "gamePid": 10612,
+    "readerPid": 1992,
+    "nonce": "f68c28b2675a4a6a877d06011d3d0ba8",
+    "ended": "2026-11-08T14:44:17.645836Z",
+    "terminalSeq": 809,
+    "scanLimitBytes": 4294967296,
+    "samples": [
+      {
+        "seconds": 60,
+        "frames": 75,
+        "maxGapSeconds": 1.012
+      },
+      {
+        "seconds": 90,
+        "frames": 108,
+        "maxGapSeconds": 1.4406
+      }
+    ],
+    "movementReady": false
+  },
+  "safety": {
+    "gameInput": "reviewed-chat-rebind-only",
+    "movement": false,
+    "combat": false,
+    "gameReload": false,
+    "vmRestart": false,
+    "controllers": "both ready,disarmed,idle,no held inputs"
+  },
+  "pending": [
+    "receiver journal audited source+source pin migration and controlled restart",
+    "strict 480-second sequence preserving observer both labs",
+    "Lab1 full-scan reliability",
+    "native XYZ/movement admission"
+  ],
+  "experimentalChunk256Kib": "rejected-and-reverted-to-64KiB"
+}
