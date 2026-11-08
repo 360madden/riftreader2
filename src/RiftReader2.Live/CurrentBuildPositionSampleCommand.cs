@@ -168,7 +168,7 @@ internal sealed record CurrentBuildOwnedPosition(ulong UnitKey, CurrentBuildXyz 
     public string? RefreshGuardStatus { get; init; }
 }
 
-internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong ComponentAddress, Action VerifyUnchanged);
+internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong EntityAddress, ulong ComponentAddress, Action VerifyUnchanged);
 
 /// <summary>
 /// Mirrors only the source-verified manager-to-entity-to-position lookup
@@ -189,7 +189,7 @@ internal static class CurrentBuildPositionCandidateReader
         ReadOwned(session, source =>
         {
             var owner = CurrentBuildPlayerLookup.Resolve(source);
-            return new(owner.PlayerKey, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
+            return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
         });
 
     internal static CurrentBuildOwnedPosition ReadOwned(IReadOnlyNativeMemorySession session,
@@ -204,8 +204,11 @@ internal static class CurrentBuildPositionCandidateReader
         var owner = resolveOwner(session);
         ArgumentNullException.ThrowIfNull(owner.VerifyUnchanged);
         if (owner.UnitKey == 0) throw new InvalidDataException("Missing position owner.");
+        var entity = CurrentBuildPlayerLookup.Pointer(owner.EntityAddress);
         var component = CurrentBuildPlayerLookup.Pointer(owner.ComponentAddress, 0x110);
         var valueRaw = CurrentBuildPlayerLookup.Exact(session, component, 0x110);
+        if (BinaryPrimitives.ReadUInt64LittleEndian(valueRaw.AsSpan(0x10, 8)) != entity)
+            throw new InvalidDataException("Position component entity backlink differs.");
         var xyzBytes = valueRaw.AsSpan(0x48, 12).ToArray();
         // These guards are co-sampled from the EXISTING full component read;
         // no native getter or additional process read is needed.

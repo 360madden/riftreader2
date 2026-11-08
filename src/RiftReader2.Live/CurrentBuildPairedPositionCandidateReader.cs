@@ -42,7 +42,7 @@ internal static class CurrentBuildPairedPositionCandidateReader
                 var owner = CurrentBuildPlayerLookup.Resolve(source);
                 if (owner.PlayerKey != context.UnitKey || owner.EntityAddress != context.Entity)
                     throw new InvalidDataException("Self position/context owner mismatch.");
-                return new(owner.PlayerKey, owner.ResolveComponent(0x2F588A0), owner.VerifyUnchanged);
+                return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(0x2F588A0), owner.VerifyUnchanged);
             }, maxPairSpanMilliseconds, () => (DateTimeOffset.UtcNow, timer.Elapsed.TotalMilliseconds));
     }
 

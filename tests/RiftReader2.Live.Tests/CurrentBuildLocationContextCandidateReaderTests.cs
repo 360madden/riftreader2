@@ -123,7 +123,7 @@ public sealed class CurrentBuildLocationContextCandidateReaderTests
         s.D(M + 0x2F588A0, 34); s.D(M + 0x2F57850, 6);
         s.D(M + 0x2F58270, 1); s.D(M + 0x2F582E0, 2);
         s.Q(Components + 8, Health); s.Q(Components + 16, Position);
-        s.Put(Position, new byte[0x110]); s.Put(Position + 0x48, BitConverter.GetBytes(1.5f));
+        s.Put(Position, new byte[0x110]); s.Q(Position + 0x10, Entity); s.Put(Position + 0x48, BitConverter.GetBytes(1.5f));
         s.Put(Position + 0x4C, BitConverter.GetBytes(-2f)); s.Put(Position + 0x50, BitConverter.GetBytes(3f));
         s.Q(Health + 0x10, Entity); s.Q(Health + 0x40, Owner);
         s.Q(Owner, M + 0x2927448); s.Q(M + 0x2927488, M + 0x19D21E0);

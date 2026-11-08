@@ -37,7 +37,7 @@ internal static class CurrentBuildOrientationCandidateReader
         Read(session, source =>
         {
             var owner = CurrentBuildPlayerLookup.Resolve(source);
-            return new(owner.PlayerKey, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
+            return new(owner.PlayerKey, owner.EntityAddress, owner.ResolveComponent(PositionIndexRva), owner.VerifyUnchanged);
         });
 
     internal static CurrentBuildOrientationCandidate Read(IReadOnlyNativeMemorySession session,

@@ -74,7 +74,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
         var owned = CurrentBuildPositionCandidateReader.ReadOwned(session, _ =>
         {
             resolutions++;
-            return new(ulong.MaxValue, Position, () => verifications++);
+            return new(ulong.MaxValue, Entity, Position, () => verifications++);
         });
         Assert.Equal(1, resolutions);
         Assert.Equal(1, verifications);
@@ -88,12 +88,26 @@ public sealed class CurrentBuildPositionSampleCommandTests
     {
         var session = Fixture();
         var first = CurrentBuildPositionCandidateReader.ReadOwned(session,
-            _ => new(123, Position, () => { }));
+            _ => new(123, Entity, Position, () => { }));
         var second = CurrentBuildPositionCandidateReader.ReadOwned(session,
-            _ => new(456, Position, () => { }));
+            _ => new(456, Entity, Position, () => { }));
         Assert.Equal(123UL, first.UnitKey);
         Assert.Equal(456UL, second.UnitKey);
         Assert.Equal(first.Position, second.Position);
+    }
+
+    [Theory]
+    [InlineData(0UL)]
+    [InlineData(Entity + 8)]
+    public void OwnedReadRejectsZeroOrMismatchedComponentBacklink(ulong backlink)
+    {
+        var session = Fixture();
+        var raw = session.Get(Position, 0x110);
+        BinaryPrimitives.WriteUInt64LittleEndian(raw.AsSpan(0x10, 8), backlink);
+        session.Set(Position, raw);
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(Key, Entity, Position, () => { })));
+        Assert.Equal(1, session.Calls);
     }
 
     [Fact]
@@ -101,10 +115,10 @@ public sealed class CurrentBuildPositionSampleCommandTests
     {
         var session = Fixture();
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
-            _ => new(0, Position, () => { })));
+            _ => new(0, Entity, Position, () => { })));
         Assert.Equal(0, session.Calls);
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.ReadOwned(session,
-            _ => new(123, Position, () => session.Identity = session.Identity with { ProcessStartUtcTicks = 789 })));
+            _ => new(123, Entity, Position, () => session.Identity = session.Identity with { ProcessStartUtcTicks = 789 })));
     }
 
     [Fact]
@@ -257,6 +271,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
         session.Set(Entity, entity);
         session.Set(Components + 16, Bytes64(Position));
         var candidate = new byte[0x110];
+        BinaryPrimitives.WriteUInt64LittleEndian(candidate.AsSpan(0x10, 8), Entity);
         BinaryPrimitives.WriteInt32LittleEndian(candidate.AsSpan(0x48, 4),
             BitConverter.SingleToInt32Bits(7181.80078125f));
         BinaryPrimitives.WriteInt32LittleEndian(candidate.AsSpan(0x4C, 4),
@@ -298,7 +313,7 @@ public sealed class CurrentBuildPositionSampleCommandTests
             raw[0x108] = flag;
             session.Set(Position, raw);
             var owned = CurrentBuildPositionCandidateReader.ReadOwned(session,
-                _ => new(Key, Position, () => { }));
+                _ => new(Key, Entity, Position, () => { }));
             Assert.Equal(2, session.Calls); // 0x110 component + existing 12-byte XYZ verification only
             Assert.Equal($"0x{handle:X16}", owned.RefreshHandleHex);
             Assert.Equal(flag, owned.RefreshFlagRaw);

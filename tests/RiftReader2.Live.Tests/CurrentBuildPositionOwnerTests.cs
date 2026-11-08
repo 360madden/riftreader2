@@ -7,6 +7,7 @@ namespace RiftReader2.Live.Tests;
 public sealed class CurrentBuildPositionOwnerTests
 {
     private const ulong Component = 0x20060000;
+    private const ulong Entity = 0x20040000;
 
     [Fact]
     public void ReadsInjectedNonSelfOwnerAndVerifies()
@@ -14,7 +15,7 @@ public sealed class CurrentBuildPositionOwnerTests
         var session = new FakeSession();
         var verified = false;
         var xyz = CurrentBuildPositionCandidateReader.Read(session, _ =>
-            new(0x123456789ABCDEF0, Component, () => verified = true));
+            new(0x123456789ABCDEF0, Entity, Component, () => verified = true));
         Assert.True(verified);
         Assert.Equal(1.5f, xyz.X);
         Assert.Equal(-2f, xyz.Y);
@@ -26,10 +27,10 @@ public sealed class CurrentBuildPositionOwnerTests
     {
         var session = new FakeSession { ChangeXyz = true };
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.Read(session,
-            _ => new(123, Component, () => { })));
+            _ => new(123, Entity, Component, () => { })));
         session = new FakeSession();
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.Read(session,
-            _ => new(123, Component, () => throw new InvalidDataException("target changed"))));
+            _ => new(123, Entity, Component, () => throw new InvalidDataException("target changed"))));
     }
 
     private sealed class FakeSession : IReadOnlyNativeMemorySession
@@ -42,6 +43,7 @@ public sealed class CurrentBuildPositionOwnerTests
             var bytes = new byte[length];
             if (address == Component && length == 0x110)
             {
+                BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0x10), Entity);
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x48), BitConverter.SingleToInt32Bits(1.5f));
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x4c), BitConverter.SingleToInt32Bits(-2f));
                 BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(0x50), BitConverter.SingleToInt32Bits(3f));

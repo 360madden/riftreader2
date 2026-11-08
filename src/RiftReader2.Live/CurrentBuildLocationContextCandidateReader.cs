@@ -34,7 +34,7 @@ internal static class CurrentBuildLocationContextCandidateReader
         var health = lookup.ResolveComponent(0x2F57850);
         var positionStarted = DateTimeOffset.UtcNow;
         var position = CurrentBuildPositionCandidateReader.ReadOwned(session,
-            _ => new(lookup.PlayerKey, positionComponent, lookup.VerifyUnchanged));
+            _ => new(lookup.PlayerKey, lookup.EntityAddress, positionComponent, lookup.VerifyUnchanged));
         var positionCompleted = DateTimeOffset.UtcNow;
         cancellationToken.ThrowIfCancellationRequested();
 

@@ -65,7 +65,7 @@ internal static class CurrentBuildSelectedTargetCandidateReader
    {
     Ptr(pos,0x110);if(Q(pos+0x10)!=entity)throw new InvalidDataException("Target position entity mismatch.");
     var positionStart=DateTimeOffset.UtcNow;
-    var xyz=CurrentBuildPositionCandidateReader.Read(session,_=>new(key,pos,Verify));
+    var xyz=CurrentBuildPositionCandidateReader.Read(session,_=>new(key,entity,pos,Verify));
     position=new("candidate",key,pos,positionStart,DateTimeOffset.UtcNow,xyz);
    }
   }

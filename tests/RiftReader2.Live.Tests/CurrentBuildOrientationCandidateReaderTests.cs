@@ -19,7 +19,7 @@ public sealed class CurrentBuildOrientationCandidateReaderTests
         BinaryPrimitives.WriteUInt64LittleEndian(s.Raw.AsSpan(0x100), 123);
         s.Raw[0x108] = 7;
         var verified = false;
-        var o = CurrentBuildOrientationCandidateReader.Read(s, _ => new(42, Component, () => verified = true));
+        var o = CurrentBuildOrientationCandidateReader.Read(s, _ => new(42, 0x20040000, Component, () => verified = true));
         Assert.True(verified);
         Assert.Equal((ulong)123, o.RefreshHandleRaw);
         Assert.Equal((byte)7, o.RefreshFlagRaw);
@@ -55,9 +55,9 @@ public sealed class CurrentBuildOrientationCandidateReaderTests
     {
         var s = new Fake();
         Assert.Throws<InvalidDataException>(() => CurrentBuildOrientationCandidateReader.Read(s,
-            _ => new(42, Component, () => throw new InvalidDataException("owner"))));
+            _ => new(42, 0x20040000, Component, () => throw new InvalidDataException("owner"))));
         Assert.Throws<InvalidDataException>(() => CurrentBuildOrientationCandidateReader.Read(s,
-            _ => new(42, Component, () => s.Identity = s.Identity with { ProcessStartUtcTicks = 789 })));
+            _ => new(42, 0x20040000, Component, () => s.Identity = s.Identity with { ProcessStartUtcTicks = 789 })));
     }
 
     [Fact]
@@ -65,7 +65,7 @@ public sealed class CurrentBuildOrientationCandidateReaderTests
     {
         var s = new Fake();
         Assert.Throws<InvalidDataException>(() => CurrentBuildOrientationCandidateReader.Read(s,
-            _ => new(0, Component, () => { })));
+            _ => new(0, 0x20040000, Component, () => { })));
         s.Hole = true;
         Assert.Throws<InvalidDataException>(() => Read(s));
         Assert.Throws<InvalidDataException>(() => CurrentBuildOrientationCandidateReader.Decode(new byte[35], 0x60));
@@ -103,7 +103,7 @@ public sealed class CurrentBuildOrientationCandidateReaderTests
         var s = new Fake();
         BinaryPrimitives.WriteUInt64LittleEndian(s.Raw.AsSpan(0x100), ulong.MaxValue);
         var o = CurrentBuildOrientationCandidateReader.Read(s,
-            _ => new(ulong.MaxValue, Component, () => { }));
+            _ => new(ulong.MaxValue, 0x20040000, Component, () => { }));
         Assert.Equal(ulong.MaxValue, o.UnitKey);
         Assert.Equal(ulong.MaxValue, o.RefreshHandleRaw);
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(o));
@@ -115,7 +115,7 @@ public sealed class CurrentBuildOrientationCandidateReaderTests
     }
 
     static CurrentBuildOrientationCandidate Read(Fake s) =>
-        CurrentBuildOrientationCandidateReader.Read(s, _ => new(42, Component, () => { }));
+        CurrentBuildOrientationCandidateReader.Read(s, _ => new(42, 0x20040000, Component, () => { }));
 
     sealed class Fake : IReadOnlyNativeMemorySession
     {
