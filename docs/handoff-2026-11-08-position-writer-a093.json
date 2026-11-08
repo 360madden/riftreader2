@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-bounded-static-writer-handoff",
+  "dateUtc": "2026-11-08",
+  "source": {
+    "path": "artifacts/rea/ghidra-writer-targets-a093.txt",
+    "sha256": "39b7b04934aacce9abc93ea5f5331197f8d3d2dceedf3230224fa02b1a9bf2fe",
+    "bytes": 28698,
+    "lines": 685
+  },
+  "executable": {
+    "sha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "identityScope": "Ghidra imported-program metadata, no fresh PE rehash",
+    "imageBase": "0x140000000",
+    "language": "x86:LE:64:default"
+  },
+  "exporter": {
+    "path": "artifacts/rea/Rr2PositionWriterTargetsA093.java",
+    "sha256": "9d9d1e2d6032eac59ff09995f1378b758a9df392e31cb15ae81f558f59d704b5"
+  },
+  "job": {
+    "id": "rr2-root-ghidra-writer-targets-a093-20261108-01",
+    "exitCode": 0,
+    "readOnlyProjectReported": true,
+    "outputTruncated": false
+  },
+  "result": "No direct primary XYZ store in the two complete bounded bodies; unexamined callee side effects remain unknown.",
+  "functions": [
+    {
+      "rva": "0x699DD0",
+      "instructions": 154,
+      "bodyBytes": 681,
+      "completeWithinWindow": true,
+      "decompileCompleted": true,
+      "primaryRole": "read",
+      "directComponentWrites": [
+        "+0x88",
+        "+0x8C",
+        "+0x90"
+      ],
+      "classification": "secondary-cache copy/interpolation",
+      "sourceLines": [
+        397,
+        680
+      ]
+    },
+    {
+      "rva": "0x699A50",
+      "instructions": 188,
+      "bodyBytes": 887,
+      "completeWithinWindow": true,
+      "decompileCompleted": true,
+      "directComponentWrites": [
+        "+0x94..+0xB4",
+        "+0xF4"
+      ],
+      "classification": "matrix/transform updater",
+      "sourceLines": [
+        34,
+        393
+      ]
+    },
+    {
+      "rva": "0x6988D0",
+      "endExclusive": "0x698910",
+      "instructions": 17,
+      "bodyBytes": 62,
+      "completeWithinWindow": false,
+      "classification": "callsite slice",
+      "confirmedCalls": [
+        "0x6988F5 -> 0x699DD0",
+        "0x698903 -> 0x699A50"
+      ],
+      "sameComponentAndScalarConfirmed": true,
+      "decodeFailureAt": "0x69890E",
+      "thirdCallConfirmed": false,
+      "sourceLines": [
+        10,
+        32
+      ],
+      "decodeFailureCause": "Unknown: short window or conflicting existing instruction; raw bytes not exported"
+    }
+  ],
+  "unexaminedDirectComponentCallees": [
+    "0x699610",
+    "0x59F140"
+  ],
+  "nextPrimaryWriterTarget": {
+    "rva": "0x6990D0",
+    "evidence": "V8: callsite 0x6984E2 in position-component method 0x6984C0"
+  },
+  "tinyCallsiteFollowup": {
+    "start": "0x69890B",
+    "endExclusive": "0x698920",
+    "windowBytes": 21,
+    "purpose": "Export raw bytes and instruction boundaries around0x69890E; preserve RCX=RSI; do not clear existing instructions blindly",
+    "launched": false
+  },
+  "limits": [
+    "Not whole-image writer enumeration",
+    "No live execution evidence",
+    "Transitive callee writes unknown",
+    "No passive freshness, changed-state, restart or world-axis qualification"
+  ]
+}
