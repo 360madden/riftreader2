@@ -1222,10 +1222,17 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
 
 
 def add_quick_review(plan: dict) -> dict:
-    """Show a compact preview with exact pins; never approve or extend a review."""
+    """Show a SHA-pinned preview with exact pins; never approve or extend a review."""
     try:
         from quick_review_capture import preview
-        image = preview(Path(plan["screen"]), plan["screenSha256"], compact=True)
+        screen = Path(plan["screen"])
+        try:
+            image = preview(screen, plan["screenSha256"], compact=True)
+        except TypeError as error:
+            if "unexpected keyword argument 'compact'" not in str(error):
+                raise
+            # A clean checkout may not yet have compact WebP support.
+            image = preview(screen, plan["screenSha256"])
         deadline = _parse_time(plan["capturedAtUtc"]) + timedelta(seconds=MAX_REVIEW_AGE_SECONDS)
         remaining = max(0, math.ceil((deadline - datetime.now(timezone.utc)).total_seconds()))
         return {

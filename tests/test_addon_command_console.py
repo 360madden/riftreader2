@@ -62,6 +62,25 @@ class InlineQuickReviewTests(unittest.TestCase):
         self.assertGreater(review["reviewExpiresInSeconds"], 0)
         self.assertLessEqual(review["reviewExpiresInSeconds"], module.MAX_REVIEW_AGE_SECONDS - 5)
 
+    def test_preview_falls_back_to_sha_pinned_jpeg_before_compact_is_merged(self):
+        original = self.plan()
+        jpeg = {"sourceSha256": "A" * 64, "previewFormat": "jpeg",
+                "nonAuthoritative": True, "base64": "example"}
+        with mock.patch("quick_review_capture.preview", side_effect=[
+                TypeError("preview() got an unexpected keyword argument 'compact'"), jpeg]) as stub:
+            review = module.add_quick_review(original)
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["preview"], jpeg)
+        self.assertEqual(stub.call_args_list, [
+            mock.call(Path(original["screen"]), original["screenSha256"], compact=True),
+            mock.call(Path(original["screen"]), original["screenSha256"])])
+
+    def test_unrelated_preview_type_error_does_not_retry(self):
+        with mock.patch("quick_review_capture.preview", side_effect=TypeError("bad-image-shape")) as stub:
+            review = module.add_quick_review(self.plan())
+        self.assertEqual(review["status"], "unavailable")
+        self.assertEqual(stub.call_count, 1)
+
     def test_preview_error_does_not_cancel_a_successful_prepare(self):
         original = self.plan()
         with mock.patch("quick_review_capture.preview", side_effect=ValueError("preview-too-large")):
