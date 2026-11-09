@@ -45,6 +45,30 @@ For the already-implemented candidate native-vitals retrieval, explicitly add:
 This retains existing candidate labels, source/build/session identity,
 freshness checks, and cleanup. Physical native-vitals routing is not qualified.
 
+## Native position and vitals without a screenshot
+
+For an on-demand Lab 2 data read, run this from `C:\work\riftreader2` in PowerShell:
+
+```powershell
+& '.\.venv\Scripts\python.exe' scripts/read_native_telemetry.py --lab lab2 --expected-host AMD-DESKTOP
+```
+
+This reuses or recovers the managed controller and existing native readers. It
+needs neither a Lua reader/bind nor a screenshot, sends no game input, and returns
+JSON containing XYZ, health, energy and an honest unavailable mana result when
+applicable. Wrong-host requests stop before dependency startup. Both source
+reports retain their own timestamps, hashes and exact game/VM/agent identities;
+a mismatched unit key or changed postflight identity rejects the combined result.
+Unit keys are decimal strings to avoid precision loss in JSON consumers.
+
+These are **sequential candidate observations, not an atomic snapshot or qualified
+movement feedback**. Successful acquisition does not establish field semantics,
+passive freshness or restart durability. Do not replace an expired Lua movement
+source with this output. A blocked read exits 2; no target or source fallback is
+performed. On 2026-11-09, two actual Lab 2 reads completed in 5.53 and 6.22 seconds,
+with advancing acquisition timestamps and the same unit identity. These are
+sample timings, not a throughput guarantee.
+
 ## Physical screenshot
 
 Physical capture may focus RIFT. Use the foreground flag only with applicable
