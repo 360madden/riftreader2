@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-sunday-night-watchdog-handoff",
+  "capturedAtLocal": "2026-11-09T02:14:30-05:00",
+  "machine": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "preHandoffHead": "37b4a05679e7b3fd6a3e6d1ed6ce317912b641d2",
+  "pushedCommits": [
+    "083e44779fee9899c2e7db2c057167eeb8c62d14",
+    "37b4a05679e7b3fd6a3e6d1ed6ce317912b641d2"
+  ],
+  "movement": {
+    "lab": "lab2",
+    "key": "s",
+    "plannedHoldMs": 150,
+    "observedHoldMs": 1850.3,
+    "horizontalDisplacementUnits": 5.78,
+    "guardedRunnerAccepted": false,
+    "waypointArrival": false,
+    "evidence": "artifacts/sunday-night-20261108-2250/lab2-calibration-run-05/"
+  },
+  "watchdog": {
+    "implemented": true,
+    "focusedApplicationPassed": 29,
+    "focusedLivePassed": 97,
+    "nativePublishSmokePassed": true,
+    "liveTimingQualified": false,
+    "commit": "083e447"
+  },
+  "deployedLab2": {
+    "release": "agent-d7a68bc6f884",
+    "sha256": "D7A68BC6F88437BF08CE5629866A10D4D709FE41AA5484A2A61B55D252CE4D4C",
+    "bytes": 118028128,
+    "verified": true,
+    "gamePid": 10876,
+    "gameStartUtcTicks": "639297512883473394",
+    "agentInstance": "44fdcf1f522d46038bf88a90757e5b32",
+    "artifact": "artifacts/sunday-night-20261108-2250/lab2-agent-update-watchdog-01/"
+  },
+  "currentSafety": {
+    "checkedAtLocal": "2026-11-09T02:14:31-05:00",
+    "lab2": {
+      "controllerConnected": true,
+      "supervisorRunning": true,
+      "armed": false,
+      "busy": false,
+      "desktopInputsDown": [],
+      "recoveryRequired": false
+    },
+    "lab1Changed": false,
+    "queue": {
+      "lab1Blocked": false,
+      "lab1Holder": null,
+      "lab2Blocked": false,
+      "lab2Holder": null
+    }
+  },
+  "reader": {
+    "lab": "lab2",
+    "lastReaderPid": 6172,
+    "lastNonce": "4c3d2eed6b8648e1881663013336228b",
+    "scheduledExpiryUtc": "2026-11-09T06:23:28.8900734Z",
+    "expiredAtHandoff": true,
+    "exitIndependentlyVerified": false,
+    "reuseAllowed": false
+  },
+  "reviewBlocker": {
+    "reason": "obscured-screenshot",
+    "rebindExecuted": false,
+    "newReleaseMovementInputSent": false,
+    "controllerRestored": true
+  },
+  "priorLab1ArrivalsRef": "docs/handoff-2026-11-08-1222-automated-movement.md",
+  "nextActions": [
+    "Obtain usable current Lab2 screenshot; reacquire reader/game/session identities.",
+    "Review and perform justified addon rebind; establish advancing scoped XYZ source.",
+    "Run one guarded calibration with lease heartbeat, watchdog event timing and verified STOP/cleanup."
+  ],
+  "preservedUntracked": [
+    "scripts/project_current_native_energy_variants.py"
+  ],
+  "statusDoc": "docs/status.md"
+}
