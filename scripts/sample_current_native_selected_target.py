@@ -88,6 +88,42 @@ def validate_report(report, *, pid, ticks):
     else: invalid()
     return o
 
+def selected_target_values(report, *, pid, ticks):
+    """Expose usable target candidates without changing the hashed native report.
+
+    A missing target/owner is not zero health, level zero, or out of combat.
+    Decimal unit-key strings remain lossless for JavaScript JSON consumers.
+    """
+    observation = validate_report(report, pid=pid, ticks=ticks)
+    available = observation['status'] == 'candidate'
+    vitals = observation.get('targetVitals')
+    context = observation.get('targetContext') or {}
+    position = observation.get('targetPosition') or {}
+    reason = None if available else observation['beforeGuardStatus']
+    values = {
+        'status': observation['status'],
+        'selfUnitKey': str(observation['selfKey']),
+        'unitKey': str(observation['targetKey']) if available else None,
+        'unitId': observation['targetUnitId'] if available else None,
+        'startedAtUtc': observation['startedAtUtc'],
+        'completedAtUtc': observation['completedAtUtc'],
+        'numericLevelCandidate': context.get('numericLevelCandidate'),
+        'combatCandidate': context.get('combatCandidate'),
+        'positionCandidate': (dict(position['position'])
+                              if position.get('status') == 'candidate' else None),
+        'unavailableReason': reason,
+        'qualification': observation['qualification'],
+    }
+    for field in ('health', 'energy', 'mana'):
+        if vitals is None:
+            values[field] = {'status': 'unavailable', 'current': None, 'maximum': None,
+                             'unavailableReason': reason or 'target-vitals-unavailable'}
+        else:
+            values[field] = {key: vitals[field][key] for key in
+                             ('status', 'current', 'maximum', 'unavailableReason')}
+    return values
+
+
 def derive_name(observation, *, pid, ticks):
     qualifier='base name/locale1 candidate; API decoration/language unverified'
     result={'baseNameLocale1Candidate':None,'nameQualification':qualifier,'nameUnavailableReason':None}
@@ -154,7 +190,7 @@ def run(lab):
     if len(raw)>8000000: raise ValueError('report too large')
     data=json.loads(raw.decode('utf-8-sig')); observation=validate_report(data,pid=pid,ticks=ticks)
     name=derive_name(observation,pid=pid,ticks=ticks)
-    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['status'],'qualification':observation['qualification'],'targetPosition':observation.get('targetPosition'),'targetContext':observation.get('targetContext'),**name}
+    summary={'status':'candidate-only','lab':lab,'vmIdentity':vm,'gameProcessId':pid,'gameProcessStartUtcTicks':ticks,'gameSha256':GAME_SHA,'readerExecutableSha256':READER_SHA,'guestReaderReused':identity['installed'],'sourceReport':str(output/'samples.json'),'sourceReportSha256':hashlib.sha256(raw).hexdigest().upper(),'targetStatus':observation['status'],'qualification':observation['qualification'],'targetPosition':observation.get('targetPosition'),'targetContext':observation.get('targetContext'),'target':selected_target_values(data,pid=pid,ticks=ticks),**name}
     with (output/'summary.json').open('x',encoding='utf-8') as f: json.dump(summary,f,indent=2)
     return summary
 

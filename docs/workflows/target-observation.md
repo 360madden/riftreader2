@@ -79,6 +79,29 @@ performed. On 2026-11-09, two actual Lab 2 reads completed in 5.53 and 6.22 seco
 with advancing acquisition timestamps and the same unit identity. These are
 sample timings, not a throughput guarantee.
 
+## Native selected-target values
+
+From `C:\work\riftreader2` on AMD-DESKTOP:
+
+```powershell
+& '.\.venv\Scripts\python.exe' scripts/sample_current_native_selected_target.py --lab lab2
+```
+
+This existing, build-pinned VMware guest sampler now includes a `target` object
+in its JSON summary: lossless decimal unit keys, health/energy/mana values and
+statuses, numeric level/combat/position candidates, and the original acquisition
+timestamps. It reuses VM-specific cached credentials and the hash-checked native
+sampler; it does not bind a Lua reader or send game input. The original raw report
+and hash remain unchanged, and existing summary fields remain available.
+
+Unavailable fields are null, not zero or false. `raw-getter-zero-candidate` means
+this native getter path returned zero; it is not independently verified proof
+that the UI has no selected target. On 2026-11-09 the updated command completed a
+live Lab 2 read with that unavailable result. Present-target values, zero health,
+false combat and healthless-position cases were checked offline, not live-qualified.
+Target semantics, freshness, changed-state behavior and restart recovery remain
+unqualified. This is not a replacement for independent movement feedback.
+
 ## Physical screenshot
 
 Physical capture may focus RIFT. Use the foreground flag only with applicable

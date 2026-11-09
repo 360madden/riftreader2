@@ -1,5 +1,6 @@
 """Offline selected-target report compatibility and negative checks."""
 import copy
+import json
 import unittest
 from scripts import sample_current_native_selected_target as module
 
@@ -102,6 +103,101 @@ class SelectedTargetReportTests(unittest.TestCase):
         value = report(True)
         value['observation'].update(status='unavailable', beforeGuardStatus='raw-getter-zero-candidate')
         with self.assertRaises(ValueError): self.validate(value)
+
+class SelectedTargetValuesTests(unittest.TestCase):
+    def values(self, value):
+        return module.selected_target_values(value, pid=PID, ticks=TICKS)
+
+    def test_target_vitals_and_lossless_identity_are_exposed(self):
+        value = report()
+        value['observation']['targetVitals']['health'].update(
+            status='calculated-candidate', current=321, maximum=654, unavailableReason=None)
+        original = copy.deepcopy(value)
+        result = self.values(value)
+        self.assertEqual(str(KEY), result['unitKey'])
+        self.assertEqual('321', result['selfUnitKey'])
+        self.assertEqual(f'u{KEY:016X}', result['unitId'])
+        self.assertEqual(str(KEY), json.loads(json.dumps(result))['unitKey'])
+        self.assertEqual(321, result['health']['current'])
+        self.assertEqual(654, result['health']['maximum'])
+        self.assertEqual('calculated-candidate', result['health']['status'])
+        self.assertEqual(module.QUALIFICATION, result['qualification'])
+        self.assertEqual(original, value)
+
+    def test_unavailable_fields_stay_null_not_zero(self):
+        result = self.values(report())
+        for field in ('health', 'energy', 'mana'):
+            self.assertIsNone(result[field]['current'])
+            self.assertIsNone(result[field]['maximum'])
+            self.assertEqual('unavailable', result[field]['status'])
+            self.assertEqual('not-present', result[field]['unavailableReason'])
+        self.assertIsNone(result['numericLevelCandidate'])
+        self.assertIsNone(result['combatCandidate'])
+
+    def test_healthless_target_retains_position_without_fabricated_vitals(self):
+        result = self.values(report(True))
+        self.assertEqual(dict(x=1.5, y=2.0, z=3.0), result['positionCandidate'])
+        for field in ('health', 'energy', 'mana'):
+            self.assertIsNone(result[field]['current'])
+            self.assertEqual('target-vitals-unavailable', result[field]['unavailableReason'])
+
+    def test_missing_position_is_null(self):
+        value = report()
+        value['observation']['targetPosition'].update(
+            status='component-unavailable', componentAddress=None,
+            startedAtUtc=None, completedAtUtc=None, position=None)
+        self.assertIsNone(self.values(value)['positionCandidate'])
+
+    def test_unavailable_target_preserves_guard_reason(self):
+        for reason in ('raw-getter-zero-candidate', 'override-unavailable', 'guard-unreadable-or-invalid'):
+            with self.subTest(reason=reason):
+                value = report()
+                value['observation'].update(status='unavailable', beforeGuardStatus=reason,
+                    afterGuardStatus=None, targetKey=None, targetUnitId=None, targetEntity=None,
+                    targetVitals=None, targetContext=None, targetPosition=None)
+                result = self.values(value)
+                self.assertEqual('unavailable', result['status'])
+                self.assertEqual(reason, result['unavailableReason'])
+                self.assertIsNone(result['unitKey'])
+                self.assertIsNone(result['positionCandidate'])
+                self.assertIsNone(result['combatCandidate'])
+                self.assertIsNone(result['health']['current'])
+                self.assertEqual(reason, result['health']['unavailableReason'])
+
+    def test_real_zero_and_false_are_preserved(self):
+        value = report()
+        observation = value['observation']
+        observation['targetVitals']['health'].update(
+            status='calculated-candidate', current=0, maximum=100, unavailableReason=None)
+        observation['targetContext'].update(status='raw-typed-candidate', owner=0x20080000,
+            rawLevel=0, rawCombat=0, combatCandidate=False, levelStatus='numeric-getter-candidate',
+            levelBranch='owner', numericLevelCandidate=0)
+        result = self.values(value)
+        self.assertEqual(0, result['health']['current'])
+        self.assertEqual(0, result['numericLevelCandidate'])
+        self.assertIs(result['combatCandidate'], False)
+
+    def test_source_timestamps_are_not_replaced(self):
+        value = report()
+        value['observation']['completedAtUtc'] = '2026-11-08T01:00:01.1234567Z'
+        result = self.values(value)
+        self.assertEqual(START, result['startedAtUtc'])
+        self.assertEqual('2026-11-08T01:00:01.1234567Z', result['completedAtUtc'])
+
+    def test_invalid_identity_is_rejected_before_values_are_returned(self):
+        value = report()
+        value['observation']['identity']['processStartUtcTicks'] += 1
+        with self.assertRaises(ValueError):
+            self.values(value)
+
+    def test_values_do_not_share_mutable_position_or_vitals(self):
+        value = report()
+        original = copy.deepcopy(value)
+        result = self.values(value)
+        result['positionCandidate']['x'] = 999
+        result['health']['current'] = 999
+        self.assertEqual(original, value)
+
 
 if __name__ == '__main__':
     unittest.main()
