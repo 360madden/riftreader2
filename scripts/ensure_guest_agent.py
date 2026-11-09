@@ -21,7 +21,10 @@ if str(ROOT) not in sys.path:
 
 from scripts.control_client import ControlClient
 from scripts.control_host import HostConfig
-from scripts.ensure_controller import CONFIGS, _launch_lock, ensure as ensure_controller
+from scripts.ensure_controller import (
+    CONFIGS, _launch_lock, ensure as ensure_controller,
+    ensure_existing as verify_existing_controller,
+)
 from scripts.lab_codex import LabCodex
 from scripts.operation_dependencies import DependencyUnavailable
 from scripts.vmware_guest_session import POWERSHELL, SessionError
@@ -197,7 +200,18 @@ def ensure(lab: str, *, timeout_seconds: int = 45) -> dict:
 
         output = ROOT / "artifacts/guest-agent-recovery" / lab / uuid.uuid4().hex
         output.mkdir(parents=True, exist_ok=False)
-        receipt = _stage_and_request(lab, config, output)
+        try:
+            receipt = _stage_and_request(lab, config, output)
+        except SessionError:
+            # A competing operator may restore the guest during a rejected
+            # VMware recovery call. Reuse only a verified idle managed owner.
+            try:
+                existing = verify_existing_controller(lab)["status"]
+                if _check_waiting(existing) and _idle(existing):
+                    return _summary(lab, existing, "reused")
+            except (DependencyUnavailable, KeyError, TypeError, ValueError):
+                pass
+            raise
         _save(output / "request-summary.json", {
             "taskName": receipt["taskName"],
             "onDemand": receipt["noAutomaticTrigger"],

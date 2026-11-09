@@ -101,6 +101,46 @@ class GuestAgentDependencyTests(unittest.TestCase):
             self.assertEqual(agent.ensure("lab1")["state"], "reused")
             stage.assert_not_called()
 
+    def test_recovery_refusal_reuses_verified_idle_guest(self):
+        with (TemporaryDirectory() as directory,
+              patch.object(agent, "ROOT", Path(directory)),
+              patch.object(agent, "ensure_controller"),
+              patch.object(agent, "_launch_lock", side_effect=_no_lock),
+              patch.object(agent.HostConfig, "load"),
+              patch.object(agent, "ControlClient") as client,
+              patch.object(agent, "_stage_and_request") as stage,
+              patch.object(agent, "verify_existing_controller") as verify):
+            client.return_value.request.return_value = _status(connected=False)
+            stage.side_effect = agent.SessionError("operation refused")
+            verify.return_value = {"status": _status()}
+            result = agent.ensure("lab2")
+            self.assertEqual(result["state"], "reused")
+            self.assertTrue(result["guestDisarmedIdle"])
+            stage.assert_called_once()
+            verify.assert_called_once_with("lab2")
+
+    def test_recovery_refusal_preserves_error_if_not_idle_or_owned(self):
+        for current in (_status(connected=False), _status(armed=True), None):
+            with (self.subTest(current=current),
+                  TemporaryDirectory() as directory,
+                  patch.object(agent, "ROOT", Path(directory)),
+                  patch.object(agent, "ensure_controller"),
+                  patch.object(agent, "_launch_lock", side_effect=_no_lock),
+                  patch.object(agent.HostConfig, "load"),
+                  patch.object(agent, "ControlClient") as client,
+                  patch.object(agent, "_stage_and_request") as stage,
+                  patch.object(agent, "verify_existing_controller") as verify):
+                client.return_value.request.return_value = _status(connected=False)
+                stage.side_effect = agent.SessionError("operation refused")
+                if current is None:
+                    verify.side_effect = DependencyUnavailable("controller", "managed-owner-refused")
+                else:
+                    verify.return_value = {"status": current}
+                with self.assertRaisesRegex(agent.SessionError, "operation refused"):
+                    agent.ensure("lab2")
+                stage.assert_called_once()
+                verify.assert_called_once_with("lab2")
+
     def test_starting_connection_times_out_without_staging(self):
         with patch.object(agent, "ensure_controller"), \
              patch.object(agent, "_launch_lock", side_effect=_no_lock), \
