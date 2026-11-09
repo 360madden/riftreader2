@@ -22,6 +22,7 @@ from scripts.control_client import ControlClient
 from scripts.control_host import HostConfig
 from scripts.ensure_controller import CONFIGS
 from scripts.ensure_guest_agent import ensure, _idle
+from scripts.operation_dependencies import DependencyUnavailable
 from scripts.managed_controller_receipt import resolve_current_managed_controller
 from scripts.vm_console_native import Blocked, validate_config
 from scripts.sample_current_native_vitals import checked_expected_game
@@ -29,6 +30,7 @@ from scripts.fresh_native_xyz import query as query_xyz
 from scripts.fresh_native_vitals import query as query_vitals
 
 OWNER_HOST = "AMD-DESKTOP"
+NATIVE_FIELDS = ("position", "vitals")
 
 
 def require(condition, reason):
@@ -59,9 +61,10 @@ def unit_key(value):
     return text
 
 
-def validate_pair(position, vitals, game, instance, vm):
-    """Do not merge independently acquired values across owners or epochs."""
-    for row in (position, vitals):
+def validate_sources(rows, game, instance, vm):
+    """Check every requested source; never merge across owners or epochs."""
+    keys = []
+    for row in rows:
         require(isinstance(row, dict) and row.get("schemaVersion") == 1
                 and row.get("status") == "candidate-only" and row.get("lab") == "lab2"
                 and row.get("transport") == "persistent-control-agent"
@@ -73,16 +76,30 @@ def validate_pair(position, vitals, game, instance, vm):
                 and row["gameProcessStartUtcTicks"] == game["processStartUtcTicks"]
                 and row.get("gameSha256", "").upper() == game["executableSha256"].upper(),
                 "native-read-source-identity-mismatch")
-    key = unit_key(position["metrics"]["unitKey"])
-    require(unit_key(vitals["metrics"]["unitKey"]) == key, "native-read-unit-changed")
-    return key
+        keys.append(unit_key(row["metrics"]["unitKey"]))
+    require(bool(keys) and len(set(keys)) == 1, "native-read-unit-changed")
+    return keys[0]
 
 
-def read_once(lab: str, expected_host: str) -> dict:
+def validate_pair(position, vitals, game, instance, vm):
+    return validate_sources((position, vitals), game, instance, vm)
+
+
+def selected_fields(fields):
+    require(isinstance(fields, (tuple, list)) and 1 <= len(fields) <= len(NATIVE_FIELDS)
+            and all(isinstance(field, str) and field in NATIVE_FIELDS for field in fields),
+            "native-read-fields-invalid")
+    require(len(set(fields)) == len(fields), "native-read-fields-duplicated")
+    # Stable order, independent of CLI argument order. No automatic source fallback.
+    return tuple(field for field in NATIVE_FIELDS if field in fields)
+
+
+def read_once(lab: str, expected_host: str, *, fields=NATIVE_FIELDS) -> dict:
     # Reject a wrong machine/target before starting any dependency.
     require(lab == "lab2", "native-read-target-not-supported")
     require(isinstance(expected_host, str) and expected_host.casefold() == OWNER_HOST.casefold()
             and socket.gethostname().casefold() == OWNER_HOST.casefold(), "native-read-host-mismatch")
+    fields = selected_fields(fields)
     started = time.perf_counter()
     ensure(lab)
     receipt_path, receipt, _ = resolve_current_managed_controller(lab)
@@ -95,19 +112,24 @@ def read_once(lab: str, expected_host: str) -> dict:
     require(before["host"].get("vmIdentity") == vm, "native-read-vm-mismatch")
     native = validate_config(config.vmx, config.vnc_port, config.vmrun,
                              config.output_directory, require_files=True)
-    position = query_xyz(native, vm, game, CONFIGS[lab], lab=lab)
-    vitals = query_vitals(native, vm, game, CONFIGS[lab])
-    key = validate_pair(position, vitals, game, instance, vm)
+    sources = {}
+    if "position" in fields:
+        sources["position"] = query_xyz(native, vm, game, CONFIGS[lab], lab=lab)
+        validate_sources((sources["position"],), game, instance, vm)
+    if "vitals" in fields:
+        sources["vitals"] = query_vitals(native, vm, game, CONFIGS[lab])
+    key = validate_sources(sources.values(), game, instance, vm)
     after = client.request("/api/status", method="GET")
     require(target_identity(after) == (game, instance)
             and after["host"].get("vmIdentity") == vm, "native-read-postflight-changed")
     resolve_current_managed_controller(lab, expected_receipt_path=receipt_path)
     # Keep large unit keys lossless for JavaScript and other JSON consumers.
-    vitals = dict(vitals, metrics=dict(vitals["metrics"], unitKey=key))
+    sources = {field: dict(row, metrics=dict(row["metrics"], unitKey=key))
+               for field, row in sources.items()}
     return {"schemaVersion": 1, "status": "candidate-only", "targetId": lab,
             "ownerHost": OWNER_HOST, "mode": "native-read-only", "atomic": False,
             "luaReaderUsed": False, "screenshotUsed": False,
-            "unitKey": key, "position": position, "vitals": vitals,
+            "unitKey": key, **sources,
             "elapsedSeconds": round(time.perf_counter() - started, 6),
             "qualification": "acquisition-checked; field semantics, passive freshness and restart recovery unqualified"}
 
@@ -116,15 +138,20 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lab", required=True, choices=("lab2",))
     parser.add_argument("--expected-host", required=True)
+    parser.add_argument("--fields", nargs="+", choices=NATIVE_FIELDS, default=NATIVE_FIELDS,
+                        help="read only these sources; defaults to position and vitals")
     args = parser.parse_args(argv)
     try:
-        result = read_once(args.lab, args.expected_host)
+        result = read_once(args.lab, args.expected_host, fields=args.fields)
         print(json.dumps(result, allow_nan=False, separators=(",", ":")))
         return 0
     except Exception as error:
         # Never print transport configuration, credentials or arbitrary tracebacks.
-        reason = str(error) if isinstance(error, (Blocked, ValueError)) else "native-read-unavailable"
-        if re.fullmatch(r"[a-z0-9-]{1,100}", reason or "") is None:
+        if isinstance(error, DependencyUnavailable):
+            reason = error.code
+        else:
+            reason = str(error) if isinstance(error, (Blocked, ValueError)) else "native-read-unavailable"
+        if not isinstance(reason, str) or re.fullmatch(r"[a-z0-9-]{1,100}", reason) is None:
             reason = "native-read-unavailable"
         print(json.dumps({"status": "blocked", "targetId": args.lab, "reason": reason}))
         return 2

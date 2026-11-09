@@ -159,6 +159,104 @@ class NativeTelemetryCommandTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaisesRegex(ValueError, "unit-key-invalid"):
                 cli.unit_key(value)
 
+    def test_position_only_never_queries_vitals(self):
+        self.vitals_query.side_effect = AssertionError("unrequested read")
+        result = cli.read_once("lab2", "AMD-DESKTOP", fields=("position",))
+        self.assertIn("position", result)
+        self.assertNotIn("vitals", result)
+        self.assertEqual(KEY, result["position"]["metrics"]["unitKey"])
+        self.xyz_query.assert_called_once()
+        self.vitals_query.assert_not_called()
+        self.assertEqual(2, self.resolve.call_count)
+        self.assertEqual(2, self.client.request.call_count)
+
+    def test_vitals_only_never_queries_position_and_preserves_null(self):
+        self.xyz_query.side_effect = AssertionError("unrequested read")
+        original = copy.deepcopy(self.vitals)
+        result = cli.read_once("lab2", "AMD-DESKTOP", fields=("vitals",))
+        self.assertNotIn("position", result)
+        self.assertIn("vitals", result)
+        self.assertEqual(KEY, result["vitals"]["metrics"]["unitKey"])
+        self.assertIsNone(result["vitals"]["metrics"]["mana"]["current"])
+        self.assertEqual(original, self.vitals)
+        self.xyz_query.assert_not_called()
+        self.vitals_query.assert_called_once()
+        self.assertEqual(2, self.resolve.call_count)
+
+    def test_invalid_selection_stops_before_startup_or_queries(self):
+        for fields in (None, "position", (), [], ("health",), (True,), ({},),
+                       ("position", "position"), ("vitals", "position", "vitals")):
+            with self.subTest(fields=fields), self.assertRaisesRegex(ValueError, "native-read-fields-"):
+                cli.read_once("lab2", "AMD-DESKTOP", fields=fields)
+        self.ensure.assert_not_called()
+        self.xyz_query.assert_not_called()
+        self.vitals_query.assert_not_called()
+
+    def test_selection_has_canonical_order(self):
+        self.assertEqual(("position", "vitals"), cli.selected_fields(["vitals", "position"]))
+
+    def test_single_source_still_requires_its_pinned_identity(self):
+        self.vitals["gameProcessStartUtcTicks"] += 1
+        with self.assertRaisesRegex(ValueError, "source-identity-mismatch"):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("vitals",))
+        self.xyz_query.assert_not_called()
+
+    def test_single_source_still_requires_postflight_identity(self):
+        self.after["guest"]["target"]["processId"] += 1
+        with self.assertRaisesRegex(ValueError, "postflight-changed"):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("position",))
+        self.vitals_query.assert_not_called()
+
+    def test_first_source_identity_failure_prevents_second_query(self):
+        self.position["gameProcessStartUtcTicks"] += 1
+        with self.assertRaisesRegex(ValueError, "source-identity-mismatch"):
+            self.run_read()
+        self.vitals_query.assert_not_called()
+
+    def test_selected_query_failure_does_not_fall_back(self):
+        self.vitals_query.side_effect = cli.Blocked("native-vitals-response-stale")
+        with self.assertRaises(cli.Blocked):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("vitals",))
+        self.xyz_query.assert_not_called()
+
+    def test_cli_default_and_explicit_field_selections(self):
+        for args, expected in (([], cli.NATIVE_FIELDS), (["--fields", "position"], ["position"]),
+                               (["--fields", "vitals"], ["vitals"])):
+            output = io.StringIO()
+            with self.subTest(args=args), patch.object(cli, "read_once", return_value={"status":"candidate-only"}) as read, redirect_stdout(output):
+                code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP", *args])
+            self.assertEqual(0, code)
+            read.assert_called_once_with("lab2", "AMD-DESKTOP", fields=expected)
+            self.assertEqual("candidate-only", json.loads(output.getvalue())["status"])
+
+    def test_cli_duplicate_selection_is_blocked_without_dependency_start(self):
+        output = io.StringIO()
+        with redirect_stdout(output):
+            code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                             "--fields", "vitals", "vitals"])
+        self.assertEqual(2, code)
+        self.assertEqual("native-read-fields-duplicated", json.loads(output.getvalue())["reason"])
+        self.ensure.assert_not_called()
+
+    def test_cli_preserves_safe_dependency_reason_without_retry(self):
+        output = io.StringIO()
+        error = cli.DependencyUnavailable("controller", "managed-owner-refused")
+        with patch.object(cli, "read_once", side_effect=error) as read, redirect_stdout(output):
+            code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP"])
+        self.assertEqual(2, code)
+        self.assertEqual("managed-owner-refused", json.loads(output.getvalue())["reason"])
+        self.assertEqual(1, read.call_count)
+
+    def test_cli_sanitizes_malformed_dependency_codes(self):
+        for value in (None, 123, "private value with spaces", "x" * 101):
+            error = cli.DependencyUnavailable("private-name", value)
+            output = io.StringIO()
+            with self.subTest(value=value), patch.object(cli, "read_once", side_effect=error), redirect_stdout(output):
+                code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP"])
+            self.assertEqual(2, code)
+            self.assertEqual("native-read-unavailable", json.loads(output.getvalue())["reason"])
+            self.assertNotIn("private", output.getvalue())
+
     def test_cli_sanitizes_unexpected_errors(self):
         output = io.StringIO()
         with patch.object(cli, "read_once", side_effect=RuntimeError("private transport value")), redirect_stdout(output):

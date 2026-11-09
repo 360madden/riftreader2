@@ -61,6 +61,16 @@ reports retain their own timestamps, hashes and exact game/VM/agent identities;
 a mismatched unit key or changed postflight identity rejects the combined result.
 Unit keys are decimal strings to avoid precision loss in JSON consumers.
 
+Request only the needed native source with `--fields position` or
+`--fields vitals` appended to the command. Unrequested readers are not invoked,
+so a position-only request does not depend on the vitals reader, and vice versa.
+The omitted source is absent from the JSON (not a zero or an unavailable result).
+No option still reads both sources with the original output shape. Invalid or
+repeated selections stop before dependency startup; a requested source failure
+still blocks the request rather than silently falling back. Every selected
+source retains its own identity and acquisition checks, and final controller /
+game / agent identity is checked even for a single-source read.
+
 These are **sequential candidate observations, not an atomic snapshot or qualified
 movement feedback**. Successful acquisition does not establish field semantics,
 passive freshness or restart durability. Do not replace an expired Lua movement
