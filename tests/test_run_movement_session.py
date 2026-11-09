@@ -115,12 +115,13 @@ class Host:
 
 
 def session(mode, profile=None, goal=None, keys=("w", "q"), dimension="2d",
-            turn_hold_ms=None):
+            turn_hold_ms=None, calibration_hold_ms=150):
     return {"sessionId": "a" * 32, "sessionPlanSha256": "A" * 64,
             "mode": mode, "capture": {"captureId": "c" * 32, "capture": "capture.json"},
             "captureImageSha256": "B" * 64, "calibrationProfile": str(profile) if profile else None,
             "goal": goal, "allowedKeys": list(keys), "target": dict(GAME_TARGET),
-            "movementDimension": dimension, "turnHoldMs": turn_hold_ms}
+            "movementDimension": dimension, "turnHoldMs": turn_hold_ms,
+            "calibrationPulseMs": calibration_hold_ms}
 
 
 def review():
@@ -175,6 +176,11 @@ class MovementSessionTests(unittest.TestCase):
         turn = build_parser().parse_args(common + ["--mode", "turn", "--keys", "d",
                                                    "--turn-hold-ms", "100"])
         self.assertEqual(turn.keys, ["d"]); self.assertEqual(turn.turn_hold_ms, 100)
+        calibration = build_parser().parse_args(
+            common + ["--mode", "calibration", "--dimension", "1d", "--keys", "w",
+                      "--calibration-hold-ms", "100"])
+        self.assertEqual(calibration.calibration_hold_ms, 100)
+        self.assertEqual(build_parser().parse_args(common + ["--mode", "calibration"]).calibration_hold_ms, 150)
 
     def test_calibration_arms_once_and_measures_only_reviewed_w_q(self):
         host, lease = Host(), Lease()
@@ -189,6 +195,34 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(feedback.wait_timeouts, [6.0, 6.0])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_1d_forward_calibration_uses_reviewed_100ms_pulse(self):
+        host, lease = Host(), Lease()
+        feedback = Feedback([Sample(0, 0, 0, 1), Sample(.4, 0, 0, 2)])
+        result = execute_armed_session(
+            session=session("calibration", keys=("w",), dimension="1d", calibration_hold_ms=100),
+            review=review(), output=self.root / "short-calibration",
+            host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("w", 100)])
+        self.assertEqual(result["calibrations"]["w"]["calibration_hold_ms"], 100)
+        self.assertAlmostEqual(result["calibrations"]["w"]["dx_per_ms"], .004)
+        self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_invalid_calibration_holds_reject_before_arm(self):
+        for index, hold in enumerate((None, True, "100", 0, 151)):
+            host, lease = Host(), Lease()
+            with self.subTest(hold=hold), self.assertRaisesRegex(
+                    MovementSessionError, "session calibration hold is invalid"):
+                execute_armed_session(
+                    session=session("calibration", keys=("w",), dimension="1d",
+                                    calibration_hold_ms=hold),
+                    review=review(), output=self.root / f"invalid-hold-{index}",
+                    host=host, lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+            self.assertEqual(host.arms, 0)
+            self.assertEqual(host.actions, [])
+            self.assertEqual(host.stops, 1)
 
     def test_armed_run_clock_does_not_include_prearm_setup(self):
         host, lease = Host(), Lease()

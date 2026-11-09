@@ -647,9 +647,13 @@ def prepare(host_plan: Path | None, feedback_pin: Path, output: Path, mode: str,
             calibrated_displacements: float | None = None,
             turn_hold_ms: int = 100,
             after_turn_result: Path | None = None,
-            managed_lab: str | None = None) -> dict:
+            managed_lab: str | None = None, calibration_hold_ms: int = 150) -> dict:
     require(dimension in ("1d", "2d"), "movement dimension must be 1d or 2d")
     require(mode in ("calibration", "movement", "turn"), "invalid movement mode")
+    require(type(calibration_hold_ms) is int and 20 <= calibration_hold_ms <= 150,
+            "calibration hold must be an integer from 20 through 150 ms")
+    require(mode == "calibration" or calibration_hold_ms == 150,
+            "calibration hold override applies only to calibration mode")
     key_count = 1 if dimension == "1d" else 2
     if mode == "turn":
         require(isinstance(keys, (tuple, list)) and len(keys) == 1 and keys[0] in TURN_KEY,
@@ -705,7 +709,7 @@ def prepare(host_plan: Path | None, feedback_pin: Path, output: Path, mode: str,
             "capture": capture,
             "captureMetadataSha256": sha(Path(capture["capture"])),
             "captureImageSha256": sha(Path(capture["image"])),
-            "allowedKeys": list(keys), "calibrationPulseMs": 150,
+            "allowedKeys": list(keys), "calibrationPulseMs": calibration_hold_ms,
             "turnHoldMs": turn_hold_ms if mode == "turn" else None,
             "budgets": {"maxElapsedSeconds": 12,
                         "maxActions": 1 if mode == "turn" else 6,
@@ -857,6 +861,10 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
         dimension = session.get("movementDimension", "2d")
         require(dimension in ("1d", "2d"), "session movement dimension is invalid")
         profile = calibrations = start = goal = None
+        calibration_hold_ms = session.get("calibrationPulseMs", 150)
+        if mode == "calibration":
+            require(type(calibration_hold_ms) is int and 20 <= calibration_hold_ms <= 150,
+                    "session calibration hold is invalid")
         turn_keys = None; turn_hold = None
         if mode == "turn":
             turn_keys = session.get("allowedKeys")
@@ -970,14 +978,14 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 lease.check(); lease.heartbeat(); host.status(require_armed=True)
                 prior = _require_action_ready_sample(prior, ready)
                 samples[-1] = prior.to_dict()
-                action = MovementAction(key, 150, 0, 0)
+                action = MovementAction(key, calibration_hold_ms, 0, 0)
                 response = host.action(action, output / f"action-{index}.json")
                 _result, completed = _action_result(response)
                 after = _require_advancing(prior,
                     feedback.wait_after(completed, prior,
                                         timeout_seconds=ACTION_FEEDBACK_TIMEOUT_SECONDS))
                 samples.append(after.to_dict())
-                calibrations[key] = calibrate_displacement(key, _position(prior), _position(after), 150)
+                calibrations[key] = calibrate_displacement(key, _position(prior), _position(after), calibration_hold_ms)
                 actions.append({"index": index, "decision": asdict(action), "result": response,
                                 "before": prior.to_dict(), "after": after.to_dict()})
                 prior = after
@@ -1226,6 +1234,8 @@ def build_parser():
                       help="derive a 1d goal 1.5 through 2.5 measured displacements ahead")
     prep.add_argument("--turn-hold-ms", type=int, default=100,
                       help="single reviewed a/d turn pulse, from 20 through 150 ms")
+    prep.add_argument("--calibration-hold-ms", type=int, default=150,
+                      help="one reviewed w/q/s/e calibration pulse per key, from 20 through 150 ms")
     prep.add_argument("--quick-preview", action="store_true",
                       help="include one SHA-pinned JPEG preview and exact review pins in prepare output")
     prep.add_argument("--after-turn-result", type=Path,
@@ -1243,7 +1253,8 @@ def main():
         result = prepare(args.host_plan, args.feedback_pin, args.output, args.mode, goal,
                          args.calibration_profile, tuple(args.keys), args.dimension,
                          args.calibrated_displacements, args.turn_hold_ms,
-                         args.after_turn_result, args.managed_lab)
+                         args.after_turn_result, args.managed_lab,
+                         calibration_hold_ms=args.calibration_hold_ms)
         if args.quick_preview:
             result = add_quick_review(result)
     else: result = run_reviewed(args.session_plan, args.review, args.output)
