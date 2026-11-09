@@ -149,6 +149,53 @@ def signed_angle(before: tuple[float, float], after: tuple[float, float]) -> flo
     return math.atan2(cross, dot)
 
 
+def turn_hold_timing(turn: dict, requested_ms: int) -> tuple[float, str]:
+    """Prefer observed inserted-key hold over a nominal turn command duration."""
+    evidence = turn.get("actionEvidence")
+    if evidence is None:
+        return float(requested_ms), "nominal-without-action-evidence"
+    require(isinstance(evidence, list) and len(evidence) == 1
+            and isinstance(evidence[0], dict) and evidence[0].get("index") == 1,
+            "turn action evidence is invalid")
+    item = evidence[0]
+    decision, receipt = item.get("decision"), item.get("result")
+    require(isinstance(decision, dict) and decision.get("key") == turn["turnKey"]
+            and decision.get("hold_ms") == requested_ms,
+            "turn action decision differs from reported key or hold")
+    require(isinstance(receipt, dict), "turn action receipt is missing")
+    action, result, events = (receipt.get("action"), receipt.get("result"),
+                              receipt.get("inputEvents"))
+    require(isinstance(action, dict) and action.get("keys") == [turn["turnKey"]]
+            and action.get("holdMilliseconds") == requested_ms,
+            "turn action receipt differs from reported key or hold")
+    require(isinstance(result, dict) and result.get("deliverySucceeded") is True
+            and result.get("releaseSucceeded") is True
+            and result.get("cancelled") is False
+            and result.get("targetLost") is False
+            and result.get("stateUncertain") is False
+            and receipt.get("recoveryRequired") is not True,
+            "turn delivery or key release is not verified")
+    require(isinstance(events, list), "turn key timing events are missing")
+    down = [event for event in events if isinstance(event, dict)
+            and event.get("kind") == "keyDownInserted"]
+    up = [event for event in events if isinstance(event, dict)
+          and event.get("kind") == "keyUpInserted"]
+    require(len(down) == len(up) == 1
+            and down[0].get("value") == up[0].get("value") == turn["turnKey"],
+            "turn key timing events are incomplete or ambiguous")
+    start = finite(down[0].get("elapsedMilliseconds"), "turn key-down time")
+    end = finite(up[0].get("elapsedMilliseconds"), "turn key-up time")
+    require(0 <= start < end, "turn key timing events are out of order")
+    observed = end - start
+    require(observed <= 250 and abs(observed - requested_ms)
+            <= max(25.0, requested_ms * .25), "turn measured hold drifted")
+    reported = result.get("observedKeyHoldMilliseconds")
+    if reported is not None:
+        require(abs(finite(reported, "reported turn hold") - observed) <= .5,
+                "reported turn hold disagrees with inserted-key events")
+    return observed, "inserted-key-events"
+
+
 def measure_turn(before_path: Path, turn_path: Path, after_path: Path) -> dict:
     before_value, before_sha = load(before_path)
     turn, turn_sha = load(turn_path)
@@ -176,13 +223,16 @@ def measure_turn(before_path: Path, turn_path: Path, after_path: Path) -> dict:
             "after calibration did not start at the turn endpoint")
     angle = signed_angle(before["step"], after["step"])
     require(abs(angle) >= math.radians(1), "turn angle is below the measurable threshold")
-    rate = angle / hold
+    rate_hold, timing_source = turn_hold_timing(turn, hold)
+    rate = angle / rate_hold
     return {
         "schemaVersion": 1,
         "evidenceKind": "provisional-session-turn-calibration/1",
         "status": "provisional",
         "key": turn["turnKey"],
         "holdMilliseconds": hold,
+        "rateDenominatorMilliseconds": rate_hold,
+        "holdTimingSource": timing_source,
         "signedRadians": angle,
         "signedRadiansPerMillisecond": rate,
         "turnPlanarDisplacement": turn_planar,
@@ -193,7 +243,9 @@ def measure_turn(before_path: Path, turn_path: Path, after_path: Path) -> dict:
                          "afterCalibration": after_sha},
         "limitations": ["Turn angle is derived from W displacement vectors, not a facing field.",
                         "This rate is provisional for this exact reader/game session only.",
-                        "This single measurement is not permanent key semantics."],
+                        "This single measurement is not permanent key semantics."] +
+                       (["No inserted-key timing evidence; rate uses nominal hold."]
+                        if timing_source != "inserted-key-events" else []),
     }
 
 
@@ -305,7 +357,9 @@ def next_step(current_path: Path, goal_xz: tuple[float, float],
     if not candidates:
         return {**base, "decision": "blocked",
                 "reason": "no-measured-turn-direction-reduces-error"}
-    predicted_error, hold, key, selected = min(candidates)
+    predicted_error, hold, key, selected = min(
+        candidates, key=lambda option: (*option[:3], option[3]["sha256"],
+                                        option[3]["path"]))
     return {**base, "decision": "turn", "key": key, "holdMilliseconds": hold,
             "predictedAbsoluteHeadingErrorRadians": predicted_error,
             "turnMeasurement": {"path": selected["path"], "sha256": selected["sha256"]},

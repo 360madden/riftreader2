@@ -75,6 +75,59 @@ class SteeringPlannerTests(unittest.TestCase):
         self.assertAlmostEqual(result["signedRadians"], math.pi / 2)
         self.assertAlmostEqual(result["signedRadiansPerMillisecond"], math.pi / 100)
 
+    @staticmethod
+    def with_insertion_timing(value, observed_ms, *, event_key="d", report=True):
+        hold = value["holdMs"]
+        receipt = {
+            "action": {"keys": [value["turnKey"]], "holdMilliseconds": hold},
+            "result": {"deliverySucceeded": True, "releaseSucceeded": True,
+                       "cancelled": False, "targetLost": False, "stateUncertain": False},
+            "inputEvents": [
+                {"kind": "keyDownInserted", "value": event_key, "elapsedMilliseconds": 17.0},
+                {"kind": "keyUpInserted", "value": event_key,
+                 "elapsedMilliseconds": 17.0 + observed_ms}],
+        }
+        if report:
+            receipt["result"]["observedKeyHoldMilliseconds"] = observed_ms
+        value["actionEvidence"] = [{"index": 1, "decision": {
+            "key": value["turnKey"], "hold_ms": hold}, "result": receipt}]
+        return value
+
+    def test_measure_turn_uses_observed_inserted_key_duration(self):
+        before = self.write("before.json", calibration((0, 0, 0), (1, 0, 0), 1, (1, 0)))
+        turning = self.write("turn.json", self.with_insertion_timing(
+            turn((1, 0, 0), 3, "d", 100), 117.6375))
+        after = self.write("after.json", calibration((1, 0, 0), (1, 0, 1), 5, (0, 1)))
+        measured = measure_turn(before, turning, after)
+        self.assertEqual(measured["holdMilliseconds"], 100)
+        self.assertEqual(measured["holdTimingSource"], "inserted-key-events")
+        self.assertAlmostEqual(measured["rateDenominatorMilliseconds"], 117.6375)
+        self.assertAlmostEqual(measured["signedRadiansPerMillisecond"],
+                               (math.pi / 2) / 117.6375)
+        self.assertNotAlmostEqual(measured["signedRadiansPerMillisecond"], math.pi / 200)
+        self.assertNotIn("No inserted-key timing", " ".join(measured["limitations"]))
+        legacy = self.write("legacy.json", turn((1, 0, 0), 3, "d", 100))
+        fallback = measure_turn(before, legacy, after)
+        self.assertEqual(fallback["holdTimingSource"], "nominal-without-action-evidence")
+        self.assertAlmostEqual(fallback["signedRadiansPerMillisecond"], math.pi / 200)
+        self.assertIn("No inserted-key timing", " ".join(fallback["limitations"]))
+
+    def test_measure_turn_rejects_ambiguous_or_drifted_key_timing(self):
+        before = self.write("before.json", calibration((0, 0, 0), (1, 0, 0), 1, (1, 0)))
+        after = self.write("after.json", calibration((1, 0, 0), (1, 0, 1), 5, (0, 1)))
+        wrong_key = self.write("wrong-key.json", self.with_insertion_timing(
+            turn((1, 0, 0), 3, "d", 100), 117, event_key="a"))
+        with self.assertRaisesRegex(SteeringPlanError, "timing events"):
+            measure_turn(before, wrong_key, after)
+        drifted = self.write("drifted.json", self.with_insertion_timing(
+            turn((1, 0, 0), 3, "d", 100), 140))
+        with self.assertRaisesRegex(SteeringPlanError, "measured hold drifted"):
+            measure_turn(before, drifted, after)
+        missing = self.with_insertion_timing(turn((1, 0, 0), 3, "d", 100), 117)
+        del missing["actionEvidence"][0]["result"]["inputEvents"]
+        with self.assertRaisesRegex(SteeringPlanError, "timing events are missing"):
+            measure_turn(before, self.write("missing.json", missing), after)
+
     def test_measure_turn_rejects_translation_or_stale_producer(self):
         before_value = calibration((0, 0, 0), (1, 0, 0), 1, (1, 0))
         before = self.write("before.json", before_value)
@@ -177,6 +230,18 @@ class SteeringPlannerTests(unittest.TestCase):
         result = next_step(current, (1, -5), [clockwise])
         self.assertEqual(result["decision"], "blocked")
         self.assertEqual(result["reason"], "no-measured-turn-direction-reduces-error")
+
+    def test_next_turn_tie_is_deterministic_across_duplicate_measurements(self):
+        value = calibration((0, 0, 0), (1, 0, 0), 1, (1, 0))
+        current = self.write("current.json", value)
+        first = self.turn_measurement("turn-a.json", "d", .005,
+                                      value["calibrationIdentity"])
+        second = self.turn_measurement("turn-b.json", "d", .005,
+                                       value["calibrationIdentity"])
+        result = next_step(current, (1, 5), [first, second])
+        reverse = next_step(current, (1, 5), [second, first])
+        self.assertEqual(result["decision"], "turn")
+        self.assertEqual(result["turnMeasurement"], reverse["turnMeasurement"])
 
     def test_next_rejects_foreign_turn_measurement(self):
         value = calibration((0, 0, 0), (1, 0, 0), 1, (1, 0))

@@ -124,6 +124,7 @@ class TraceHost:
                 "cancelled": False,
                 "targetLost": False,
                 "stateUncertain": False,
+                "observedKeyHoldMilliseconds": action.hold_ms,
             },
             "recoveryRequired": False,
             "completedAtUtc": NOW.isoformat(),
