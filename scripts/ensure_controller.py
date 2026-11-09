@@ -128,6 +128,11 @@ def _probe(config):
     return response
 
 
+def _controller_pythonw() -> Path:
+    # Scheduled task registration must be stable across system and venv callers.
+    return Path(sys.base_prefix) / "pythonw.exe"
+
+
 def _launch(lab, config):
     if os.name != "nt":
         raise DependencyUnavailable("controller", "windows-required")
@@ -145,7 +150,7 @@ def _launch(lab, config):
         raise
     except Exception:
         raise DependencyUnavailable("controller", "vm-preflight-failed") from None
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    pythonw = _controller_pythonw()
     if not pythonw.is_file():
         raise DependencyUnavailable("controller", "pythonw-unavailable")
     helper = "rr2-controller-" + lab

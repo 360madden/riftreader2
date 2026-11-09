@@ -142,6 +142,31 @@ public sealed class BoundedControlDeadlineTests
     }
 
     [Fact]
+    public async Task HoldStartsAtSuccessfulInsertionAfterFiftyMillisecondsOfNativePreparation()
+    {
+        using var input = new BlockingInput { BlockProbe = false };
+        var clock = new ManualClock();
+        long downAt = -1;
+        long upAt = -1;
+        input.BeforeDown = () => clock.Advance(50);
+        input.OnDown = () => downAt = clock.GetTimestamp();
+        input.OnUp = () => upAt = clock.GetTimestamp();
+        var executor = new BoundedControlExecutor(input, clock, (delay, _) =>
+        {
+            clock.Advance((int)Math.Ceiling(delay.TotalMilliseconds));
+            return Task.CompletedTask;
+        });
+
+        var result = await executor.ExecuteAsync(new(["a"], 100));
+
+        Assert.True(result.DeliverySucceeded);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Equal(["down:a", "up:a"], input.Events.ToArray());
+        Assert.InRange(upAt - downAt, TimeSpan.FromMilliseconds(100).Ticks,
+            TimeSpan.FromMilliseconds(110).Ticks);
+    }
+
+    [Fact]
     public async Task HoldBudgetStartsBeforeTheFirstInsertionReturns()
     {
         using var input = new BlockingInput { BlockProbe = false };
@@ -219,7 +244,9 @@ public sealed class BoundedControlDeadlineTests
         public ManualResetEventSlim Released { get; } = new();
         public bool BlockProbe { get; init; } = true;
         public bool FailRelease { get; init; }
+        public Action? BeforeDown { get; set; }
         public Action? OnDown { get; set; }
+        public Action? OnUp { get; set; }
         public Action? OnProbeAfterDown { get; set; }
         public bool ReleaseWasThreadPool { get; private set; }
         private int pressed;
@@ -242,6 +269,7 @@ public sealed class BoundedControlDeadlineTests
         public void ButtonDown(string button) => Down("button-down:" + button);
         private void Down(string operation)
         {
+            BeforeDown?.Invoke();
             Events.Enqueue(operation);
             Volatile.Write(ref pressed, 1);
             OnDown?.Invoke();
@@ -251,6 +279,7 @@ public sealed class BoundedControlDeadlineTests
         private void Up(string operation)
         {
             Events.Enqueue(operation);
+            OnUp?.Invoke();
             ReleaseWasThreadPool = Thread.CurrentThread.IsThreadPoolThread;
             Released.Set();
             if (FailRelease)

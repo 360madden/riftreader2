@@ -51,6 +51,12 @@ class DependencyGateTests(unittest.TestCase):
 
 
 class ControllerEnsureTests(unittest.TestCase):
+    def test_task_registration_uses_base_pythonw_even_when_called_from_venv(self):
+        with patch.object(ensure_controller.sys, "base_prefix", r"C:\Python314"), \
+             patch.object(ensure_controller.sys, "executable", r"C:\work\riftreader2\.venv\Scripts\python.exe"):
+            self.assertEqual(str(ensure_controller._controller_pythonw()),
+                             r"C:\Python314\pythonw.exe")
+
     @staticmethod
     def _listening_with_rows(rows, *, code=10035):
         with patch.object(ensure_controller.socket, "socket") as factory, \

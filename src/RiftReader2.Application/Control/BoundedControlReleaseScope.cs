@@ -20,6 +20,9 @@ internal sealed class BoundedControlReleaseScope : IDisposable
     private readonly CancellationTokenRegistration registration;
     private readonly List<string> errors = [];
     private long? startedAt;
+    private long? deliveredAt;
+    // Bound input-delivery overhead without shortening a successfully inserted hold.
+    private static readonly TimeSpan MaximumInsertionSlack = TimeSpan.FromMilliseconds(100);
     private bool sealedForInput;
     private bool releaseAttempted;
     private bool disposed;
@@ -62,7 +65,17 @@ internal sealed class BoundedControlReleaseScope : IDisposable
             startedAt ??= clock.GetTimestamp();
             wake.Set();
             deliver();
-            return startedAt.Value;
+            deliveredAt ??= clock.GetTimestamp();
+            wake.Set();
+            // A stalled native send may have inserted input at an unknown time.
+            // If admission already consumed the entire requested hold budget,
+            // release immediately and refuse subsequent chord inputs.
+            if (DeadlineExpired())
+            {
+                ReleaseLocked();
+                throw new TimeoutException("The bounded hold elapsed during input delivery.");
+            }
+            return deliveredAt.Value;
         }
     }
 
@@ -103,8 +116,18 @@ internal sealed class BoundedControlReleaseScope : IDisposable
                     }
                     if (startedAt is { } start)
                     {
+                        // The first clock begins before native insertion as an
+                        // absolute failsafe. A second clock starts after the
+                        // first successful down, preserving the requested hold.
                         var remaining = TimeSpan.FromMilliseconds(action.HoldMilliseconds)
-                            - clock.GetElapsedTime(start);
+                            + MaximumInsertionSlack - clock.GetElapsedTime(start);
+                        if (deliveredAt is { } inserted)
+                        {
+                            var heldRemaining = TimeSpan.FromMilliseconds(action.HoldMilliseconds)
+                                - clock.GetElapsedTime(inserted);
+                            if (heldRemaining < remaining)
+                                remaining = heldRemaining;
+                        }
                         if (remaining <= TimeSpan.Zero)
                         {
                             ReleaseLocked();
