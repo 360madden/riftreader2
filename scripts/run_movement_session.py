@@ -822,8 +822,6 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
     try:
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
         initial = feedback.wait_initial(timeout_seconds=INITIAL_FEEDBACK_TIMEOUT_SECONDS)
-        ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
-        initial = _require_action_ready_sample(initial, ready)
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
         samples.append(initial.to_dict())
         mode = session["mode"]
