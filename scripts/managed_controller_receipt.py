@@ -102,8 +102,8 @@ def _absent(checker, pid):
         return False
 
 
-def _history_exited(generation, lab, raw, absence_checker):
-    """Accept only this generation's producer exit and a fresh absence proof."""
+def _history_exited(generation, lab, raw, absence_checker, *, require_absence=True):
+    """Validate this generation's strict producer exit; optionally prove PID absence."""
     try:
         marker = generation / "exited.json"
         if not marker.is_file() or not _nonreparse(marker) or not 0 < marker.stat().st_size <= 65536:
@@ -126,7 +126,10 @@ def _history_exited(generation, lab, raw, absence_checker):
         pid = exit_record["pid"]
         stamp = exit_record["atUtc"]
         if (exit_record["lab"] != lab or type(pid) is not int or not 0 < pid <= 0xffffffff
-                or not _valid_time(stamp) or datetime.fromisoformat(stamp.replace("Z", "+00:00")).utcoffset().total_seconds() != 0):
+                or not _valid_time(stamp)):
+            return False
+        exit_time = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        if exit_time.utcoffset().total_seconds() != 0:
             return False
         try:
             prior = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique,
@@ -146,7 +149,14 @@ def _history_exited(generation, lab, raw, absence_checker):
                         and (type(prior["processIdentity"]["pid"]) is not int
                              or prior["processIdentity"]["pid"] != pid))):
                 return False
-        return _absent(absence_checker, pid)
+            prior_stamp = prior.get("atUtc")
+            if prior_stamp is not None:
+                if not _valid_time(prior_stamp):
+                    return False
+                prior_time = datetime.fromisoformat(prior_stamp.replace("Z", "+00:00"))
+                if prior_time.utcoffset().total_seconds() != 0 or exit_time < prior_time:
+                    return False
+        return not require_absence or _absent(absence_checker, pid)
     except (OSError, ValueError, TypeError, OverflowError):
         return False
 
@@ -455,6 +465,12 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
                 and isinstance(receipt["sourceHashes"], dict)
                 and SHA.fullmatch(str(receipt["configSha256"])) is not None
                 and _valid_time(receipt["atUtc"]), "managed-receipt-fields-invalid")
+        # A strict producer-written exit receipt proves this generation ended even
+        # if Windows later reuses that PID for a process whose identity cannot be
+        # queried. Malformed histories still require an independent absence proof.
+        if (generation / "exited.json").exists() and _history_exited(
+                generation, lab, raw, absence_checker, require_absence=False):
+            continue
         try:
             actual = identity_reader(pid)
         except Exception as error:

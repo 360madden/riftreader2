@@ -367,6 +367,25 @@ class ManagedReceiptTests(unittest.TestCase):
             with self.subTest(checker=checker), self.assertRaises(managed.ManagedReceiptError):
                 self.resolve(absence_checker=checker)
 
+    def test_strict_valid_exit_receipt_skips_history_even_if_old_pid_is_uncertain(self):
+        path = self.create_receipt("b" * 32, pid=123)
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        (path.parent / "exited.json").write_text(json.dumps({
+            "lab": "lab2", "pid": 123,
+            "atUtc": datetime.now(timezone.utc).isoformat(),
+        }), encoding="utf-8")
+        self.assertEqual(self.resolve(absence_checker=lambda _: False)[0], self.original)
+        self.assertEqual(self.resolve(absence_checker=Mock(side_effect=RuntimeError("access-denied")))[0], self.original)
+        self.assertEqual(receipt["pid"], 123)
+
+    def test_exit_receipt_older_than_process_receipt_cannot_hide_history(self):
+        path = self.create_receipt("b" * 32, pid=123)
+        (path.parent / "exited.json").write_text(json.dumps({
+            "lab": "lab2", "pid": 123, "atUtc": "2020-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        with self.assertRaises(managed.ManagedReceiptError):
+            self.resolve(absence_checker=lambda _: False)
+
     def test_incomplete_or_invalid_process_identity_cannot_be_silently_skipped(self):
         invalid = ({"pid": 123}, {"pid": 123, "image": "", "startTicks": 555},
                    {"pid": 123, "image": self.identity["image"], "startTicks": True},
