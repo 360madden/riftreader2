@@ -70,6 +70,24 @@ def fail(reason: str) -> None:
     raise RuntimeError(reason)
 
 
+def validate_preflight(pre: dict) -> None:
+    """Keep an existing reader untouched and expose a precise, safe refusal."""
+    if not isinstance(pre, dict):
+        fail("guest-preflight-failed")
+    if pre.get("status") == "guest-preflight-blocked":
+        if (pre.get("reason") == "live-reader-or-unknown-command-already-running"
+                and type(pre.get("otherLiveProcessCount")) is int
+                and pre["otherLiveProcessCount"] > 0
+                and pre.get("inputSent") is False):
+            fail("live-reader-or-unknown-command-already-running")
+        fail("guest-preflight-failed")
+    if (pre.get("status") != "guest-preflight-passed"
+            or type(pre.get("otherLiveProcessCount")) is not int
+            or pre["otherLiveProcessCount"] != 0
+            or pre.get("inputSent") is not False):
+        fail("guest-preflight-failed")
+
+
 def quote(value: str) -> str:
     return "'" + value.replace("'", "''") + "'"
 
@@ -361,15 +379,17 @@ def execute(args: argparse.Namespace) -> dict:
 $conflicts=@(Get-CimInstance Win32_Process -Filter "Name='RiftReader2.Live.exe'" | Where-Object {{
     $_.CommandLine -notmatch '(?i)(^|\s)control-agent(\s|$)'
 }})
-if($conflicts.Count -ne 0){{throw 'live-reader-or-unknown-command-already-running'}}
-$dir={quote(guest_dir)}
-if(Test-Path -LiteralPath $dir){{throw 'guest-run-directory-exists'}}
-New-Item -ItemType Directory -Path $dir -ErrorAction Stop|Out-Null
-$payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$gameTicks;gameSha256=$gameSha;otherLiveProcessCount=0;inputSent=$false}}
+if($conflicts.Count -ne 0){{
+    $payload=@{{status='guest-preflight-blocked';reason='live-reader-or-unknown-command-already-running';otherLiveProcessCount=$conflicts.Count;inputSent=$false}}
+}}else{{
+    $dir={quote(guest_dir)}
+    if(Test-Path -LiteralPath $dir){{throw 'guest-run-directory-exists'}}
+    New-Item -ItemType Directory -Path $dir -ErrorAction Stop|Out-Null
+    $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$gameTicks;gameSha256=$gameSha;otherLiveProcessCount=0;inputSent=$false}}
+}}
 """
             pre = run_guest_script(session, output, preflight, run_id, "preflight")
-            if pre.get("status") != "guest-preflight-passed":
-                fail("guest-preflight-failed")
+            validate_preflight(pre)
 
             try:
                 session.run("copyFileFromHostToGuest", str(reader), guest_exe, timeout=300)

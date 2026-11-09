@@ -198,6 +198,30 @@ class LiveReaderConfigTests(unittest.TestCase):
             self.assertTrue(staging.is_dir())
 
 class LaunchFailureCleanupTests(unittest.TestCase):
+    def test_preflight_receipts_fail_closed(self):
+        valid = {"status": "guest-preflight-passed", "otherLiveProcessCount": 0,
+                 "inputSent": False}
+        launch_live_reader.validate_preflight(valid)
+        blocked = {"status": "guest-preflight-blocked",
+                   "reason": "live-reader-or-unknown-command-already-running",
+                   "otherLiveProcessCount": 1, "inputSent": False}
+        with self.assertRaisesRegex(RuntimeError, "live-reader-or-unknown-command-already-running"):
+            launch_live_reader.validate_preflight(blocked)
+        malformed = [
+            {**valid, "inputSent": True},
+            {**valid, "otherLiveProcessCount": 1},
+            {**valid, "otherLiveProcessCount": False},
+            {**blocked, "otherLiveProcessCount": 0},
+            {**blocked, "reason": "unexpected"},
+            {**blocked, "inputSent": True},
+            {},
+            None,
+            "unexpected",
+        ]
+        for value in malformed:
+            with self.subTest(value=value), self.assertRaisesRegex(RuntimeError, "guest-preflight-failed"):
+                launch_live_reader.validate_preflight(value)
+
     def test_guest_script_separates_body_without_trailing_newline(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
@@ -226,7 +250,7 @@ class LaunchFailureCleanupTests(unittest.TestCase):
         receipt = {"status": "deleted", "fileExisted": True, "deleted": True,
                    "otherReaderCountBefore": 0, "otherReaderCountAfter": 0,
                    "inputSent": False}
-        for failure in ("preflight", "reader-copy", "config-copy", "launch", "cleanup-fails",
+        for failure in ("preflight", "preflight-conflict", "reader-copy", "config-copy", "launch", "cleanup-fails",
                         "host-cleanup-fails", "vm-drift", "post-session", "receipt-pid",
                         "receipt-ticks", "receipt-build", "snapshot-mismatch", "success"):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
@@ -278,7 +302,12 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                     if label == "preflight":
                         if failure == "preflight":
                             raise RuntimeError("original-preflight")
-                        return {"status": "guest-preflight-passed"}
+                        if failure == "preflight-conflict":
+                            return {"status": "guest-preflight-blocked",
+                                    "reason": "live-reader-or-unknown-command-already-running",
+                                    "otherLiveProcessCount": 1, "inputSent": False}
+                        return {"status": "guest-preflight-passed",
+                                "otherLiveProcessCount": 0, "inputSent": False}
                     if label == "cleanup":
                         if failure == "cleanup-fails":
                             raise RuntimeError("secret-cleanup-error")
@@ -307,13 +336,16 @@ class LaunchFailureCleanupTests(unittest.TestCase):
                     self.assertEqual(launch_live_reader.execute(args)["status"],
                                      "reader-running-postflight-verified")
                 else:
-                    with self.assertRaisesRegex(RuntimeError, "original-|reader-launch-receipt-mismatch|reader-snapshot-mismatch"):
+                    with self.assertRaisesRegex(RuntimeError, "original-|reader-launch-receipt-mismatch|reader-snapshot-mismatch|live-reader-or-unknown-command-already-running"):
                         launch_live_reader.execute(args)
                     self.assertFalse((args.output / "summary.json").exists())
                 labels = [call.args[4] for call in run.call_args_list]
-                if failure in ("preflight", "reader-copy", "success"):
+                if failure in ("preflight", "preflight-conflict", "reader-copy", "success"):
                     self.assertNotIn("cleanup", labels)
                     self.assertFalse((args.output / "guest-cleanup.json").exists())
+                    if failure == "preflight-conflict":
+                        self.assertIn("status='guest-preflight-blocked'", run.call_args_list[0].args[2])
+                        session.run.assert_not_called()
                 else:
                     self.assertEqual(labels.count("cleanup"), 0 if failure in ("vm-drift", "post-session") else 1)
                     outcome = json.loads((args.output / "guest-cleanup.json").read_text())
