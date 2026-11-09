@@ -1,4 +1,5 @@
 import base64
+from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager, ExitStack
 from io import BytesIO
 import hashlib
@@ -65,6 +66,12 @@ def write_config(root: Path) -> Path:
     return path
 
 
+def fresh_capture_json(capture_id):
+    return json.dumps({"captureId":capture_id,
+                      "capturedAtUtc":datetime.now(timezone.utc).isoformat(),
+                      "reviewExpiresInSeconds":45})
+
+
 def parse(config: Path, *arguments):
     return client.build_parser().parse_args(["--config", str(config), *arguments])
 
@@ -102,6 +109,46 @@ class RequestTests(unittest.TestCase):
         response = FakeResponse(b"{}", headers={"Content-Length":str(client.MAX_RESPONSE_BYTES + 1)})
         with self.assertRaisesRegex(client.ClientError, "16 MiB"):
             client._read_response(response)
+
+
+class CaptureTimingTests(unittest.TestCase):
+    def test_window_boundaries_and_shorter_guest_limit(self):
+        now = datetime(2026, 11, 9, 16, 30, tzinfo=timezone.utc)
+        for age, window, accepted in ((0,45,True),(44.999999,45,True),(45,45,False),
+                (80,45,False),(-.000001,45,False),(29,30,True),(30,30,False)):
+            capture={"capturedAtUtc":(now-timedelta(seconds=age)).isoformat(),
+                     "reviewExpiresInSeconds":window}
+            with self.subTest(age=age,window=window):
+                if accepted: client._require_fresh_capture(capture,now=now)
+                else:
+                    with self.assertRaises(client.ClientError) as caught:
+                        client._require_fresh_capture(capture,now=now)
+                    self.assertEqual("stale-capture",caught.exception.code)
+
+    def test_missing_malformed_or_widened_window_refused(self):
+        good={"capturedAtUtc":"2026-11-09T16:30:00Z","reviewExpiresInSeconds":45}
+        now=datetime(2026,11,9,16,30,tzinfo=timezone.utc)
+        bad=[{},None,{"capturedAtUtc":good["capturedAtUtc"]}]
+        bad += [{**good,"reviewExpiresInSeconds":v} for v in (True,0,-1,46,60,45.0,"45",None)]
+        bad += [{**good,"capturedAtUtc":v} for v in (None,123,"bad","2026-11-09T16:30:00","2026-11-09T16:30:00+01:00")]
+        for capture in bad:
+            with self.subTest(capture=capture), self.assertRaisesRegex(client.ClientError,"invalid review timing"):
+                client._require_fresh_capture(capture,now=now)
+
+    def test_expired_or_missing_timing_sends_no_request_and_creates_no_arm_file(self):
+        for seconds in (None,80):
+            with self.subTest(age=seconds),tempfile.TemporaryDirectory() as directory:
+                root=Path(directory);capture=root/"capture.json";output=root/"arm.json"
+                value={"captureId":"reviewed-capture"}
+                if seconds is not None:
+                    value.update(capturedAtUtc=(datetime.now(timezone.utc)-timedelta(seconds=seconds)).isoformat(),reviewExpiresInSeconds=45)
+                capture.write_text(json.dumps(value),encoding="utf-8")
+                opener=FakeOpener();config=type("Config",(),{"ui_port":49713,"operator_token":"secret"})()
+                with self.assertRaises(client.ClientError):
+                    client._arm(client.ControlClient(config,opener),capture,"Reviewed screenshot",output,
+                                expected_capture_id="reviewed-capture")
+                self.assertEqual([],opener.calls)
+                self.assertFalse(output.exists())
 
 
 class ArtifactTests(unittest.TestCase):
@@ -145,7 +192,7 @@ class ArtifactTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); config_path = write_config(root)
             capture = root / "capture.json"
-            capture.write_text('{"captureId":"capture-one"}', encoding="utf-8")
+            capture.write_text(fresh_capture_json("capture-one"), encoding="utf-8")
             output = root / "arm.json"
             result = client.run(parse(
                 config_path, "arm", "--capture", str(capture),
@@ -178,7 +225,7 @@ class ArtifactTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             capture = root / "capture.json"
-            capture.write_text('{"captureId":"reviewed-capture"}', encoding="utf-8")
+            capture.write_text(fresh_capture_json("reviewed-capture"), encoding="utf-8")
             output = root / "arm.json"
             config = type("Config", (), {"ui_port":49713, "operator_token":"secret"})()
             opener = FakeOpener(FakeResponse({"armToken":"private-token", "expiresInSeconds":15}))
@@ -387,7 +434,7 @@ class CleanupOutputTests(unittest.TestCase):
                 config = write_config(root)
                 output = root / "result.json"
                 capture = root / "capture.json"
-                capture.write_text('{"captureId":"reviewed-capture"}', encoding="utf-8")
+                capture.write_text(fresh_capture_json("reviewed-capture"), encoding="utf-8")
                 arm = root / "arm.json"
                 arm.write_text('{"armToken":"private-arm-token"}', encoding="utf-8")
                 response = {"released": True, "armToken": "new-arm-token", "expiresInSeconds": 15}
@@ -557,7 +604,7 @@ class CleanupOutputTests(unittest.TestCase):
             root = Path(directory)
             config = write_config(root)
             capture = root / "capture.json"
-            capture.write_text('{"captureId":"reviewed-capture"}', encoding="utf-8")
+            capture.write_text(fresh_capture_json("reviewed-capture"), encoding="utf-8")
             output = root / "existing.json"
             output.write_bytes(b"existing receipt")
             opener = FakeOpener(FakeResponse({"armToken": "unused"}))

@@ -110,6 +110,29 @@ and shared desktop ownership while resolving the actual blocker.
 admission, not that VM credentials are missing. Inspect the strict receipt resolver
 for the underlying reason. Unknown exceptions remain redacted.
 
+## Compact saved-image transport
+
+When image delivery is text-only, `scripts/quick_review_capture.py --capture PATH
+--sha256 ORIGINAL_SHA --compact` emits a WebP preview capped at 4,500 bytes,
+with the original image hash and a separate preview hash. The default JPEG
+contract is unchanged. An explicit `--crop LEFT TOP RIGHT BOTTOM` returns a
+source-coordinate detail crop; its bounds are checked and reported. The command
+only reads an existing capture: it does not focus the desktop, acquire a GUI
+turn, approve an image, or change capture timestamps. A small or blurred preview
+is not sufficient evidence merely because it arrived quickly.
+
+The console's existing 60-second and movement capture's 45-second review limits
+remain unchanged. A detail crop helped complete an exact Lab 2 reader rebind on
+9 November, but full-frame movement review delivery still missed its deadline.
+`control_client._arm` now also rejects missing, invalid, future or expired capture
+timing locally before reserving an arm artifact or sending `/api/arm`; the guest
+continues to perform its own checks. A shorter advertised window is honored;
+metadata cannot widen the maximum 45-second movement review window.
+
+The AMD host's `rr2-review-chatopen-c03` desktop capture remains quarantined under
+the running Workbridge owner. Saved guest-image transport does not clear or
+reconcile that host lock. Do not delete it or replay a quarantined operation.
+
 ## Live check: 2026-11-09
 
 Lab 2 returned an original 1211×702 screenshot captured at 09:25:38 UTC:

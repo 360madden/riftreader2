@@ -20,6 +20,7 @@ import urllib.request
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 10.0
+MAX_CAPTURE_REVIEW_SECONDS = 45
 
 
 def _load_host_module():
@@ -281,6 +282,26 @@ def _capture(client: ControlClient, output: Path) -> dict:
     }
 
 
+def _require_fresh_capture(capture: dict, *, now: datetime | None = None) -> None:
+    """Reject stale review evidence before network I/O; the guest still rechecks it."""
+    try:
+        value = capture.get("capturedAtUtc")
+        seconds = capture.get("reviewExpiresInSeconds")
+        if (not isinstance(value, str) or type(seconds) is not int
+                or not 1 <= seconds <= MAX_CAPTURE_REVIEW_SECONDS):
+            raise ValueError("invalid capture timing")
+        captured = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        current = now if now is not None else datetime.now(timezone.utc)
+        if (captured.utcoffset() is None or captured.utcoffset().total_seconds() != 0
+                or current.utcoffset() is None or current.utcoffset().total_seconds() != 0):
+            raise ValueError("UTC timing required")
+        age = (current - captured).total_seconds()
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        raise ClientError("input-error", "capture artifact has invalid review timing") from None
+    if age < 0 or age >= seconds:
+        raise ClientError("stale-capture", "review capture is expired or future-dated")
+
+
 def _arm(client: ControlClient, capture_path: Path, review_note: str, output: Path,
          *, expected_capture_id: str | None = None) -> dict:
     capture = _read_json(capture_path, "capture artifact")
@@ -290,6 +311,7 @@ def _arm(client: ControlClient, capture_path: Path, review_note: str, output: Pa
     if expected_capture_id is not None and (
             not isinstance(expected_capture_id, str) or capture_id != expected_capture_id):
         raise ClientError("input-error", "capture ID differs from reviewed session")
+    _require_fresh_capture(capture)
     output, descriptor = _reserve_output(Path(output), private=True)
     try:
         response = client.request("/api/arm", method="POST", payload={
