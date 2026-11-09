@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
@@ -1206,6 +1206,12 @@ def add_quick_review(result: dict) -> dict:
         session = load(session_path)
         capture = session["capture"]
         metadata = load(Path(capture["capture"]))
+        captured_at = datetime.fromisoformat(metadata["capturedAtUtc"].replace("Z", "+00:00"))
+        require(captured_at.tzinfo is not None, "invalid-review-capture-time")
+        max_age = metadata["reviewExpiresInSeconds"]
+        require(type(max_age) is int and 0 < max_age <= 120, "invalid-review-window")
+        deadline = captured_at + timedelta(seconds=max_age)
+        remaining = max(0, math.ceil((deadline - utc_now()).total_seconds()))
         image = preview(Path(capture["image"]), session["captureImageSha256"])
         enriched["quickReview"] = {
             "status": "ready",
@@ -1214,7 +1220,9 @@ def add_quick_review(result: dict) -> dict:
             "captureId": capture["captureId"],
             "captureImageSha256": session["captureImageSha256"],
             "capturedAtUtc": metadata["capturedAtUtc"],
-            "reviewExpiresInSeconds": metadata["reviewExpiresInSeconds"],
+            "reviewMaxAgeSeconds": max_age,
+            "reviewDeadlineUtc": iso(deadline),
+            "reviewExpiresInSeconds": remaining,
             "preview": image,
         }
     except (OSError, ValueError, KeyError, TypeError, MovementSessionError) as error:

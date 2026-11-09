@@ -1,5 +1,6 @@
 """A prepared RR2 movement capture can be previewed in one command result."""
 import base64
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 from pathlib import Path
@@ -22,8 +23,9 @@ class QuickMovementReviewTests(unittest.TestCase):
         Image.new("RGB", (1211, 702), (17, 29, 43)).save(image, "BMP")
         digest = hashlib.sha256(image.read_bytes()).hexdigest().upper()
         metadata = capture_dir / "capture.json"
+        self.metadata_path = metadata
         metadata.write_text(json.dumps({
-            "capturedAtUtc": "2026-11-09T12:00:00Z",
+            "capturedAtUtc": "2000-11-09T12:00:00Z",
             "reviewExpiresInSeconds": 45,
         }), encoding="utf-8")
         self.session_path = root / "session-plan.json"
@@ -50,12 +52,27 @@ class QuickMovementReviewTests(unittest.TestCase):
         self.assertEqual(review["status"], "ready")
         self.assertEqual(review["sessionId"], "test-session")
         self.assertEqual(review["captureId"], "test-capture")
-        self.assertEqual(review["reviewExpiresInSeconds"], 45)
+        self.assertEqual(review["reviewExpiresInSeconds"], 0)
+        self.assertEqual(review["reviewDeadlineUtc"], "2000-11-09T12:00:45Z")
+        self.assertEqual(review["reviewMaxAgeSeconds"], 45)
         self.assertEqual(
             review["sessionPlanSha256"],
             hashlib.sha256(self.session_path.read_bytes()).hexdigest().upper())
         self.assertTrue(review["preview"]["nonAuthoritative"])
         self.assertLess(len(base64.b64decode(review["preview"]["base64"])), 40_001)
+
+    def test_fresh_preview_counts_down_without_resetting_capture_window(self):
+        captured = datetime.now(timezone.utc) - timedelta(seconds=5)
+        self.metadata_path.write_text(json.dumps({
+            "capturedAtUtc": captured.isoformat(),
+            "reviewExpiresInSeconds": 45,
+        }), encoding="utf-8")
+        review = add_quick_review(self.prepared)["quickReview"]
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(datetime.fromisoformat(review["reviewDeadlineUtc"].replace("Z", "+00:00")),
+                         captured + timedelta(seconds=45))
+        self.assertGreater(review["reviewExpiresInSeconds"], 0)
+        self.assertLessEqual(review["reviewExpiresInSeconds"], 40)
 
     def test_preview_failure_keeps_authoritative_preparation(self):
         self.session_path.unlink()
