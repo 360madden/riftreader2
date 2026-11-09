@@ -1046,6 +1046,33 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                     raise
 
 
+def _require_key_hold_timing(response: dict, key: str, planned_ms: int) -> float:
+    """Reject a completed input whose observed hold differs materially from its plan."""
+    action = response.get("action")
+    require(isinstance(action, dict) and action.get("keys") == [key]
+            and action.get("holdMilliseconds") == planned_ms,
+            "action receipt does not match reviewed key and hold")
+    events = response.get("inputEvents")
+    require(isinstance(events, list), "action key timing evidence is missing")
+    downs = [event for event in events if isinstance(event, dict)
+             and event.get("kind") == "keyDownInserted"]
+    ups = [event for event in events if isinstance(event, dict)
+           and event.get("kind") == "keyUpInserted"]
+    require(len(downs) == len(ups) == 1
+            and downs[0].get("value") == ups[0].get("value") == key,
+            "action key timing evidence is incomplete or ambiguous")
+    down, up = downs[0].get("elapsedMilliseconds"), ups[0].get("elapsedMilliseconds")
+    require(all(type(value) in (int, float) and math.isfinite(value)
+                for value in (down, up)) and 0 <= down < up,
+            "action key timing evidence is invalid")
+    observed_ms = up - down
+    tolerance_ms = max(25.0, planned_ms * .25)
+    require(abs(observed_ms - planned_ms) <= tolerance_ms
+            and observed_ms <= 250,
+            f"action key hold timing drifted: planned={planned_ms}ms observed={observed_ms:.1f}ms")
+    return observed_ms
+
+
 class LiveHostAdapter:
     def __init__(self, pinned: PinnedHost, client: ControlClient,
                  expected_capture_id: str | None = None):
@@ -1060,7 +1087,11 @@ class LiveHostAdapter:
             arm=Path(output).parent / "arm.private.json", keys=decision.key,
             hold_ms=decision.hold_ms, mouse_button=None, dx=0, dy=0, wheel=0,
             click_target=None, output=Path(output)))
-        return response["result"]
+        result = response["result"]
+        if result.get("result", {}).get("deliverySucceeded") is True:
+            result["observedKeyHoldMilliseconds"] = _require_key_hold_timing(
+                result, decision.key, decision.hold_ms)
+        return result
     def stop(self): return self.client.request("/api/stop", method="POST", payload={})
 
 

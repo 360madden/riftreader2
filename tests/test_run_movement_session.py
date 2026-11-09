@@ -6,7 +6,7 @@ import unittest
 
 from scripts.run_movement_session import (
     MovementSessionError, _require_feedback_target, build_parser, calibrated_relative_goal,
-    execute_armed_session, require_post_turn_calibration, sha,
+    execute_armed_session, require_post_turn_calibration, sha, _require_key_hold_timing,
     validate_session_pins,
 )
 from scripts.movement_controller import MovementError
@@ -127,6 +127,29 @@ def review():
     return {"schemaVersion": 1, "decision": "approve", "sessionId": "a" * 32,
             "sessionPlanSha256": "A" * 64, "captureId": "c" * 32,
             "captureImageSha256": "B" * 64, "note": "Reviewed bounded empty-world movement batch."}
+
+
+class KeyHoldTimingTests(unittest.TestCase):
+    def receipt(self, hold, down=366.2, up=537.2, key="s"):
+        return {"action": {"keys": [key], "holdMilliseconds": hold},
+                "inputEvents": [
+                    {"kind": "keyDownInserted", "value": key, "elapsedMilliseconds": down},
+                    {"kind": "keyUpInserted", "value": key, "elapsedMilliseconds": up}]}
+
+    def test_accepts_measured_calibration_hold(self):
+        self.assertAlmostEqual(_require_key_hold_timing(self.receipt(150), "s", 150), 171)
+
+    def test_rejects_live_oversized_vm_hold(self):
+        with self.assertRaisesRegex(MovementSessionError, "action key hold timing drifted"):
+            _require_key_hold_timing(self.receipt(126, 366.2, 654.5), "s", 126)
+
+    def test_rejects_missing_or_conflicting_events(self):
+        receipt = self.receipt(150)
+        receipt["inputEvents"].pop()
+        with self.assertRaisesRegex(MovementSessionError, "incomplete or ambiguous"):
+            _require_key_hold_timing(receipt, "s", 150)
+        with self.assertRaisesRegex(MovementSessionError, "does not match"):
+            _require_key_hold_timing(self.receipt(150), "w", 150)
 
 
 class MovementSessionTests(unittest.TestCase):
