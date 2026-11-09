@@ -10,8 +10,12 @@ import argparse
 import json
 from pathlib import Path
 
-from scripts import navigation_anchors as anchors
-from scripts import plan_steered_waypoint as steering
+if __package__:
+    from . import navigation_anchors as anchors
+    from . import plan_steered_waypoint as steering
+else:
+    import navigation_anchors as anchors
+    import plan_steered_waypoint as steering
 
 
 def plan_route(current_path: Path, catalog_path: Path, route_ids: list[str],
@@ -60,7 +64,7 @@ def plan_route(current_path: Path, catalog_path: Path, route_ids: list[str],
             "currentCalibrationSha256": current_hash,
             "routeAnchorIds": normalized,
             "declaredCompletedIds": normalized[:len(completed_ids)],
-            "withinToleranceNowIds": arrived_now,
+            "withinToleranceAtCalibrationIds": arrived_now,
             "nextIndex": next_index if next_index < len(normalized) else None,
             "nextAnchorId": normalized[next_index] if next_index < len(normalized) else None,
             "step": step,

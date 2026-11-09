@@ -2,6 +2,8 @@ from contextlib import redirect_stdout
 import io
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -44,7 +46,7 @@ class AnchorRouteTests(unittest.TestCase):
         result = plan_route(self.calibration, self._catalog(), ["start", "dock"])
         self.assertEqual(result["decision"], "forward")
         self.assertEqual(result["routeAnchorIds"], ["Start", "Dock"])
-        self.assertEqual(result["withinToleranceNowIds"], ["Start"])
+        self.assertEqual(result["withinToleranceAtCalibrationIds"], ["Start"])
         self.assertEqual(result["nextAnchorId"], "Dock")
         self.assertEqual(result["nextIndex"], 1)
         self.assertIs(result["movementEligible"], False)
@@ -55,7 +57,7 @@ class AnchorRouteTests(unittest.TestCase):
         result = plan_route(self.calibration, self._catalog(first=(3, 4, 0)),
                             ["Start", "Dock"])
         self.assertEqual(result["nextAnchorId"], "Start")
-        self.assertEqual(result["withinToleranceNowIds"], [])
+        self.assertEqual(result["withinToleranceAtCalibrationIds"], [])
         self.assertEqual(result["step"]["decision"], "forward")
 
     def test_completed_prefix_is_explicit_and_ordered(self):
@@ -72,7 +74,7 @@ class AnchorRouteTests(unittest.TestCase):
         result = plan_route(self.calibration, self._catalog(), ["Start", "Dock"],
                             ["Start", "Dock"])
         self.assertEqual(result["decision"], "within-tolerance-or-declared-complete")
-        self.assertEqual(result["withinToleranceNowIds"], [])
+        self.assertEqual(result["withinToleranceAtCalibrationIds"], [])
         self.assertEqual(result["declaredCompletedIds"], ["Start", "Dock"])
         self.assertIsNone(result["nextAnchorId"])
         self.assertFalse(result["movementEligible"])
@@ -96,6 +98,15 @@ class AnchorRouteTests(unittest.TestCase):
         with redirect_stdout(io.StringIO()) as stdout:
             self.assertEqual(main(argv), 2)
         self.assertIn("File exists", stdout.getvalue())
+
+
+    def test_direct_script_entrypoint_displays_help(self):
+        script = Path(__file__).resolve().parents[1] / "scripts" / "plan_anchor_route.py"
+        completed = subprocess.run(
+            [sys.executable, str(script), "--help"], cwd=str(script.parent.parent),
+            capture_output=True, text=True, timeout=15, check=False)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertIn("--completed-anchor", completed.stdout)
 
 
 if __name__ == "__main__":
