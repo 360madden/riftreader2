@@ -106,6 +106,16 @@ class QuickMovementReviewTests(unittest.TestCase):
         self.assertGreater(review["reviewExpiresInSeconds"], 0)
         self.assertLessEqual(review["reviewExpiresInSeconds"], 40)
 
+    def test_preview_rejects_widened_capture_window_before_display(self):
+        self.metadata_path.write_text(json.dumps({
+            "capturedAtUtc": datetime.now(timezone.utc).isoformat(),
+            "reviewExpiresInSeconds": 46,
+        }), encoding="utf-8")
+        review = add_quick_review(self.prepared)
+        self.assertEqual(review["quickReview"]["status"], "unavailable")
+        self.assertIn("invalid-review-window", review["quickReview"]["reason"])
+        self.assertEqual(review["sessionPlan"], self.prepared["sessionPlan"])
+
     def test_preview_failure_keeps_authoritative_preparation(self):
         self.session_path.unlink()
         result = add_quick_review(self.prepared)

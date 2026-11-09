@@ -25,7 +25,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from scripts.control_client import ControlClient, _action, _arm, _capture
+from scripts.control_client import ControlClient, MAX_CAPTURE_REVIEW_SECONDS, _action, _arm, _capture
 from scripts.control_host import HostConfig, VmEpochGuard
 from scripts.movement_controller import (
     Calibration, MovementAction, MovementError, MovementHalted, Position,
@@ -1209,7 +1209,8 @@ def add_quick_review(result: dict) -> dict:
         captured_at = datetime.fromisoformat(metadata["capturedAtUtc"].replace("Z", "+00:00"))
         require(captured_at.tzinfo is not None, "invalid-review-capture-time")
         max_age = metadata["reviewExpiresInSeconds"]
-        require(type(max_age) is int and 0 < max_age <= 120, "invalid-review-window")
+        require(type(max_age) is int and 0 < max_age <= MAX_CAPTURE_REVIEW_SECONDS,
+                "invalid-review-window")
         deadline = captured_at + timedelta(seconds=max_age)
         remaining = max(0, math.ceil((deadline - utc_now()).total_seconds()))
         screen, digest = Path(capture["image"]), session["captureImageSha256"]
