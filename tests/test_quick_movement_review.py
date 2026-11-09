@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from PIL import Image
 
@@ -59,7 +60,38 @@ class QuickMovementReviewTests(unittest.TestCase):
             review["sessionPlanSha256"],
             hashlib.sha256(self.session_path.read_bytes()).hexdigest().upper())
         self.assertTrue(review["preview"]["nonAuthoritative"])
-        self.assertLess(len(base64.b64decode(review["preview"]["base64"])), 40_001)
+        self.assertIn(review["preview"]["previewFormat"], ("webp", "jpeg"))
+        size_limit = 4500 if review["preview"]["previewFormat"] == "webp" else 40_000
+        self.assertLessEqual(len(base64.b64decode(review["preview"]["base64"])), size_limit)
+
+    def test_old_preview_helper_uses_hash_checked_jpeg_fallback(self):
+        jpeg = {"sourceSha256": "A" * 64, "previewFormat": "jpeg",
+                "nonAuthoritative": True}
+        with mock.patch("scripts.quick_review_capture.preview", side_effect=[
+                TypeError("preview() got an unexpected keyword argument 'compact'"), jpeg]) as stub:
+            review = add_quick_review(self.prepared)["quickReview"]
+        self.assertEqual(review["preview"], jpeg)
+        self.assertEqual(stub.call_count, 2)
+        first, second = stub.call_args_list
+        self.assertEqual(first.kwargs, {"compact": True})
+        self.assertEqual(second.kwargs, {})
+        self.assertEqual(first.args, second.args)
+
+    def test_oversize_webp_falls_back_without_dropping_review(self):
+        jpeg = {"previewFormat": "jpeg", "nonAuthoritative": True}
+        with mock.patch("scripts.quick_review_capture.preview", side_effect=[
+                ValueError("preview-too-large"), jpeg]) as stub:
+            review = add_quick_review(self.prepared)["quickReview"]
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["preview"], jpeg)
+        self.assertEqual(stub.call_count, 2)
+
+    def test_source_hash_mismatch_never_falls_back(self):
+        with mock.patch("scripts.quick_review_capture.preview",
+                        side_effect=ValueError("capture-hash-mismatch")) as stub:
+            review = add_quick_review(self.prepared)["quickReview"]
+        self.assertEqual(review["status"], "unavailable")
+        self.assertEqual(stub.call_count, 1)
 
     def test_fresh_preview_counts_down_without_resetting_capture_window(self):
         captured = datetime.now(timezone.utc) - timedelta(seconds=5)

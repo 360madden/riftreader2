@@ -1212,7 +1212,17 @@ def add_quick_review(result: dict) -> dict:
         require(type(max_age) is int and 0 < max_age <= 120, "invalid-review-window")
         deadline = captured_at + timedelta(seconds=max_age)
         remaining = max(0, math.ceil((deadline - utc_now()).total_seconds()))
-        image = preview(Path(capture["image"]), session["captureImageSha256"])
+        screen, digest = Path(capture["image"]), session["captureImageSha256"]
+        try:
+            image = preview(screen, digest, compact=True)
+        except TypeError as error:
+            if "unexpected keyword argument 'compact'" not in str(error):
+                raise
+            image = preview(screen, digest)
+        except ValueError as error:
+            if str(error) != "preview-too-large":
+                raise
+            image = preview(screen, digest)
         enriched["quickReview"] = {
             "status": "ready",
             "sessionId": session["sessionId"],
