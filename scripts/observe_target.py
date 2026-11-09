@@ -22,10 +22,10 @@ TARGETS = {
 }
 
 
-def _capture_vmware(output, native_vitals):
+def _capture_vmware(target_id, output, native_vitals):
     from scripts.inspect_lab2_tool import flow, run_inspection
-    output = output or flow.OUTPUT_BASE / ("observe-lab2-" + uuid.uuid4().hex)
-    return run_inspection(output, capture_only=not native_vitals)[0]
+    output = output or flow.OUTPUT_BASE / ("observe-" + target_id + "-" + uuid.uuid4().hex)
+    return run_inspection(output, capture_only=not native_vitals, lab=target_id)[0]
 
 
 def _capture_physical(expected_host, output, allow_foreground_change):
@@ -53,14 +53,14 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
         raise ValueError("host-mismatch")
     if not 500 <= preview_width <= 1600:
         raise ValueError("invalid-preview-width")
-    if target_id == "lab1":
-        raise ValueError("lab1-managed-capture-not-yet-qualified")
+    if target_id == "lab1" and native_vitals:
+        raise ValueError("lab1-native-vitals-not-yet-qualified")
     if workflow == "physical" and native_vitals:
         raise ValueError("physical-native-vitals-not-yet-qualified")
 
     # Lazy adapters ensure a physical request never loads guest-auth or VMware code.
     if workflow == "vmware":
-        result = _capture_vmware(output, native_vitals)
+        result = _capture_vmware(target_id, output, native_vitals)
     else:
         result = _capture_physical(owner_host, output, allow_foreground_change)
     if (not isinstance(result, dict) or result.get("targetId") != target_id

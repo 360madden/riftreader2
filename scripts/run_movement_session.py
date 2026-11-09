@@ -162,21 +162,23 @@ class PinnedHost:
 
 
 
-def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict, *, inspect_lab2=False,
+def _require_exact_managed_task(lab: str, receipt_path: Path, receipt: dict, *, inspect_lab2=False, inspect_controller=False,
                                 _inspection_task_verifier=None) -> None:
     """Verify task registration and the sole live generation at admission time."""
     from scripts.managed_controller_receipt import (
-        ManagedReceiptError, resolve_current_managed_controller, verify_lab2_inspection_task,
+        ManagedReceiptError, resolve_current_managed_controller, verify_inspection_task,
     )
     require(not inspect_lab2 or lab == "lab2", "Lab 2 inspection task required")
-    require(_inspection_task_verifier is None or inspect_lab2,
-            "prepared task verifier requires Lab 2 inspection")
+    inspect_controller = inspect_controller or inspect_lab2
+    require(not inspect_controller or lab in ("lab1", "lab2"), "inspection lab invalid")
+    require(_inspection_task_verifier is None or inspect_controller,
+            "prepared task verifier requires inspection")
     try:
         actual_path, actual_receipt, _ = resolve_current_managed_controller(
             lab, expected_receipt_path=receipt_path,
             verify_owner=(_inspection_task_verifier if _inspection_task_verifier is not None
-                          else verify_lab2_inspection_task) if inspect_lab2 else None,
-            allow_legacy=not inspect_lab2)
+                          else verify_inspection_task) if inspect_controller else None,
+            allow_legacy=not inspect_controller)
     except (ManagedReceiptError, OSError, RuntimeError) as error:
         raise MovementSessionError("managed task ownership or generation refused") from error
     require(actual_path == Path(receipt_path).resolve(strict=True)
@@ -188,9 +190,10 @@ class ManagedPinnedHost(PinnedHost):
 
     _allowed_labs = ("lab1", "lab2")
     _inspect_lab2_task = False
+    _inspect_controller_task = False
 
     def __init__(self, plan_path: Path, *, _inspection_task_verifier=None):
-        require(_inspection_task_verifier is None or self._inspect_lab2_task,
+        require(_inspection_task_verifier is None or self._inspect_controller_task or self._inspect_lab2_task,
                 "prepared task verifier requires Lab 2 inspection")
         self.plan_path = Path(plan_path).resolve(strict=True)
         self.plan = load(self.plan_path)
@@ -212,7 +215,9 @@ class ManagedPinnedHost(PinnedHost):
                 and plan["resource"] == "vm:rift-lab-" + lab[-1],
                 "managed host plan paths or resource mismatch")
         self.receipt = load(self.receipt_path)
-        task_options = {"inspect_lab2": self._inspect_lab2_task}
+        task_options = ({"inspect_lab2": True} if self._inspect_lab2_task
+                        else {"inspect_controller": True} if self._inspect_controller_task
+                        else {"inspect_lab2": False})
         if _inspection_task_verifier is not None:
             task_options["_inspection_task_verifier"] = _inspection_task_verifier
         _require_exact_managed_task(lab, self.receipt_path, self.receipt, **task_options)
@@ -291,11 +296,10 @@ class ManagedPinnedHost(PinnedHost):
         return value
 
 
-class Lab2InspectionHost(ManagedPinnedHost):
+class InspectionHost(ManagedPinnedHost):
     """Recheck the admitted VM epoch between full inventory checks in one read-only run."""
 
-    _allowed_labs = ("lab2",)
-    _inspect_lab2_task = True
+    _inspect_controller_task = True
 
     def check(self):
         self._check_managed_owner()
@@ -308,7 +312,15 @@ class Lab2InspectionHost(ManagedPinnedHost):
         super().check()
 
 
+class Lab2InspectionHost(InspectionHost):
+    """Compatibility inspection host restricted to Lab 2."""
+
+    _allowed_labs = ("lab2",)
+    _inspect_lab2_task = True
+
+
 def _discover_managed_host_plan(lab: str, output: Path, *, inspect_lab2=False,
+                                inspect_controller=False,
                                 _inspection_task_verifier=None) -> Path:
     from scripts.ensure_controller import CONFIGS, QUEUE
     require(lab in CONFIGS, "unknown managed lab")
@@ -353,7 +365,8 @@ def _discover_managed_host_plan(lab: str, output: Path, *, inspect_lab2=False,
             matches.append((receipt_path, receipt))
     require(len(matches) == 1, "managed controller task receipt missing or ambiguous")
     receipt_path, receipt = matches[0]
-    _require_exact_managed_task(lab, receipt_path, receipt, inspect_lab2=inspect_lab2,
+    task_options = {"inspect_controller": True} if inspect_controller else {"inspect_lab2": inspect_lab2}
+    _require_exact_managed_task(lab, receipt_path, receipt, **task_options,
                                 _inspection_task_verifier=_inspection_task_verifier)
     target = guest.get("target", {})
     target_pin = {key: target.get(key) for key in
@@ -382,6 +395,21 @@ def admit_managed_host(lab: str, output: Path, *, require_foreground=True) -> Ma
     admitted = ManagedPinnedHost(_discover_managed_host_plan(lab, output))
     admitted.status(require_armed=False, require_foreground=require_foreground)
     return admitted
+
+
+def admit_inspection_host_with_status(lab: str, output: Path):
+    """Admit one exact already-running controller, with two fresh strict task proofs."""
+    require(lab in ("lab1", "lab2"), "inspection lab invalid")
+    if lab == "lab2":
+        return admit_lab2_inspection_host_with_status(output)
+    from scripts.managed_controller_receipt import prepared_inspection_pair
+    with prepared_inspection_pair(lab) as (verify_first, verify_second):
+        admitted = InspectionHost(
+            _discover_managed_host_plan(lab, output, inspect_controller=True,
+                                        _inspection_task_verifier=verify_first),
+            _inspection_task_verifier=verify_second)
+        status = admitted.status(require_armed=False, require_foreground=True)
+    return admitted, status
 
 
 def admit_lab2_inspection_host_with_status(output: Path):

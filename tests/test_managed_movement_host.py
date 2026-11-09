@@ -326,16 +326,16 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         (folder / "process.json").write_text(json.dumps(self.receipt), encoding="utf-8")
 
     def generate(self, *, reject_strict=False, require_foreground=True, return_host=False,
-                 inspection=False):
+                 inspection=False, inspection_lab="lab2"):
         from scripts import managed_controller_receipt as managed
         fake_guard = SimpleNamespace(
             enabled=True, config="native-config",
             module=SimpleNamespace(collect_identity=self.inventory, verify_identity=native.verify_identity),
         )
         fake_client = SimpleNamespace(request=lambda path, method: self.status_value)
-        def admission(*args, inspect_lab2=False, _inspection_task_verifier=None):
+        def admission(*args, inspect_lab2=False, inspect_controller=False, _inspection_task_verifier=None):
             self.admission_calls.append(args)
-            self.inspection_task_checks.append(inspect_lab2)
+            self.inspection_task_checks.append(inspect_lab2 or inspect_controller)
             self.proof_events.append("second-proof" if _inspection_task_verifier is self.prepared_verifier
                                      else "first-proof")
             if reject_strict:
@@ -343,14 +343,14 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
             if _inspection_task_verifier is not None:
                 _inspection_task_verifier(args[0], args[2]["pid"])
         @contextmanager
-        def prepared():
+        def prepared(*args):
             self.proof_events.append("prepare")
             try:
                 yield self.prepared_first, self.prepared_verifier
             finally:
                 self.proof_events.append("close")
         with patch.object(runner, "ROOT", self.root), \
-             patch.dict(self.dependency.CONFIGS, {"lab2": self.config_path}, clear=True), \
+             patch.dict(self.dependency.CONFIGS, {inspection_lab: self.config_path}, clear=True), \
              patch.object(self.dependency, "QUEUE", self.queue_path), \
              patch.object(self.dependency, "ensure", return_value={"state": "reused", "status": self.status_value}) as ensure, \
              patch.object(self.dependency, "RUNTIME_FILES", tuple(self.source_hashes)), \
@@ -360,13 +360,15 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
              patch.object(runner, "process_identity", return_value=self.identity), \
              patch.object(runner, "VmEpochGuard", return_value=fake_guard), \
              patch.object(managed, "prepared_lab2_inspection_pair", side_effect=prepared), \
+             patch.object(managed, "prepared_inspection_pair", side_effect=prepared), \
              patch.object(native, "_direct_identity", self.direct_identity), \
              patch.object(runner.PinnedHost, "status", autospec=True,
                           side_effect=runner.PinnedHost.status) as status, \
              patch.object(runner, "_require_exact_managed_task",
                           side_effect=admission):
             if inspection:
-                result = runner.admit_lab2_inspection_host(self.output)
+                result = (runner.admit_lab2_inspection_host(self.output) if inspection_lab == "lab2"
+                          else runner.admit_inspection_host_with_status(inspection_lab, self.output)[0])
                 result.final_inventory_check()
             else:
                 factory = runner.admit_managed_host if return_host else runner.write_managed_host_plan
@@ -465,6 +467,31 @@ class ManagedPlanDiscoveryTests(unittest.TestCase):
         self.assertEqual(self.proof_events, ["prepare", "first-proof", "second-proof", "close"])
         self.prepared_first.assert_called_once_with("lab2", 123)
         self.prepared_verifier.assert_called_once_with("lab2", 123)
+
+    def test_lab1_inspection_keeps_both_task_proofs_and_inventory_boundaries(self):
+        self.task_dir = self.root / "artifacts/controller-tasks/lab1"
+        self.task_dir.mkdir()
+        self.receipt.update(lab="lab1", task="rr2-controller-lab1")
+        self.create_receipt("first")
+        self.status_value["host"]["coordination"]["resource"] = "vm:rift-lab-1"
+        identity = runner.bind_identity(self.status_value["host"], self.status_value["guest"])
+        self.status_value["host"]["coordination"]["supervisor"]["epoch"] = runner.resource_epoch(identity)
+        host = self.generate(inspection=True, inspection_lab="lab1")
+        self.assertIsInstance(host, runner.InspectionHost)
+        self.assertEqual(host.plan["lab"], "lab1")
+        self.assertEqual(self.inspection_task_checks, [True, True])
+        self.assertEqual(self.inventory.call_count, 2)
+        self.assertEqual(self.direct_identity.call_count, 2)
+        self.prepared_first.assert_called_once_with("lab1", 123)
+        self.prepared_verifier.assert_called_once_with("lab1", 123)
+
+    def test_generic_inspection_rejects_noncanonical_lab_before_preparation(self):
+        from scripts import managed_controller_receipt as managed
+        with patch.object(managed, "prepared_inspection_pair") as pair:
+            for lab in ("Lab1", "lab3", "physical", "lab1;exit"):
+                with self.assertRaises(runner.MovementSessionError):
+                    runner.admit_inspection_host_with_status(lab, self.output)
+            pair.assert_not_called()
 
     def test_inspection_second_task_instance_failure_denies_admission(self):
         self.prepared_verifier.side_effect = runner.MovementSessionError("task instance changed")

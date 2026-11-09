@@ -12,7 +12,7 @@ actual host against both the selected target and required `--expected-host`.
 | `lab2` | `AMD-DESKTOP` | Managed controller / guest-agent capture |
 | `physical-amd-desktop` | `AMD-DESKTOP` | Microsoft.WinAppCli host-window capture |
 | `physical-legion` | `LEGION` | Physical adapter; not live tested on LEGION |
-| `lab1` | `AMD-DESKTOP` | Refused: managed capture not yet qualified |
+| `lab1` | `AMD-DESKTOP` | Implemented managed capture; current controller recovery blocks live qualification |
 
 There is no cross-target or cross-machine fallback. A Lab 2 failure does not
 authorize a physical capture. Physical routing does not import VMware or guest
@@ -30,7 +30,11 @@ Enter in PowerShell on AMD-DESKTOP, with the repository as the working directory
 Omitting `--output` selects a unique directory under the existing artifacts
 location. To select it yourself, add `--output <fresh absolute directory>`.
 The directory must be new; do not reuse a failed run or another target's output.
-Default Lab 2 observation requests capture only, not native-vitals sampling.
+Both VM targets default to capture only, not native-vitals sampling.
+For Lab 1, use the same command with `--target lab1`; do not reuse Lab 2's output.
+Lab 1 uses joined admission/capture/verification with its own exact task, VM, game,
+queue resource and cleanup proof. Lab 1 split phases and native-vitals routing are
+not enabled. The older Lab 2 commands and native confirmation behavior remain compatible.
 
 For the already-implemented candidate native-vitals retrieval, explicitly add:
 
@@ -61,7 +65,7 @@ Fresh PID/start/build/HWND checks bracket the capture; absent RIFT reports
 
 Success is `verified-awaiting-visual-review`, not visual approval. The result
 identifies the target, workflow, backend, capture time, original image and hash.
-Lab 2 pixels are `managed-controller/guest-agent`; physical pixels are
+VM pixels are `managed-controller/guest-agent`; physical pixels are
 `Microsoft.WinAppCli-host-window`. Neither proves native VMware screenshot
 capture. Capture success does not qualify field semantics or gameplay actions.
 
@@ -78,6 +82,9 @@ earlier image or automatically retry denied/busy/quarantined operations.
 existing managed lifecycle, followed by fresh admission. Do not rewrite its
 receipt, remove its lock, or bypass runtime identity checks. Preserve cleanup
 and shared desktop ownership while resolving the actual blocker.
+`controller-managed-owner-refused` means the existing controller failed ownership
+admission, not that VM credentials are missing. Inspect the strict receipt resolver
+for the underlying reason. Unknown exceptions remain redacted.
 
 ## Live check: 2026-11-09
 
@@ -88,3 +95,21 @@ Physical AMD-DESKTOP correctly returned `not-running`; a positive image test rem
 
 Lab 1 remains on its existing controller: guest link disconnected; queue blocked/unheld without a cleanup receipt. Its runtime refresh and new-route qualification remain pending.
 Focused validation: 146 tests passed; an actual wrong-host request was refused.
+
+## Follow-up implementation and benchmark: 2026-11-09, 06:14 EST
+
+Lab 1 identity, strict two-proof task admission and target-pinned capture routing
+are now implemented and covered offline. A live Lab 1 request stopped at dependency
+admission; the read-only resolver identified `managed-runtime-changed`. Its guest
+remains disconnected, and its queue blocked/unheld without prior cleanup proof.
+No lock was removed and no controller, guest or game was forcibly restarted.
+
+Lab 2 completed 12/12 verified captures (3 warmups, 9 measured) using the same
+VM/game/controller generation. Host-process wall-time medians: legacy capture-only
+4.803 s, new capture-only 4.639 s, legacy native+UI 6.598 s. The small equal-work
+difference is not established as a backend speedup. Omitting unrequested native
+diagnostics saved about 1.96 s / 29.7% in this sample.
+See [the benchmark](../validation/observation-workflow-benchmark-2026-11-09.md).
+
+Physical AMD RIFT remained `not-running`; positive physical capture is still pending.
+Final focused Python validation: 269 passed. Helper-manager PowerShell mocks passed.

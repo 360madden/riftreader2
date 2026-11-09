@@ -20,6 +20,9 @@ from scripts.control_host import HostConfig, ControlHostError, validate_identity
 from scripts.vm_console_native import Blocked, validate_config, collect_identity, verify_identity
 
 
+LAB_MACHINES = {"lab1": "RIFT-LAB-1", "lab2": "RIFT-LAB-2"}
+
+
 def query(config, expected_vm, expected_game, host_config_path, *, client_factory=ControlClient,
           _status_supplier=None):
     """Rehash the exact expected game, bracketed by fresh VM identity checks."""
@@ -35,8 +38,8 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
         if isinstance(expected["executableSha256"], str):
             expected["executableSha256"] = expected["executableSha256"].lower()
         expected["machineName"] = host.expected_machine_name
-        if (expected_game.get("lab") != "lab2"
-                or host.expected_machine_name != "RIFT-LAB-2"):
+        if (expected_game.get("lab") not in LAB_MACHINES
+                or host.expected_machine_name != LAB_MACHINES[expected_game["lab"]]):
             raise Blocked("identity-host-lab-mismatch")
         validate_identity_payload(expected)
         verify_identity(config, expected_vm)
@@ -87,7 +90,7 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host-config", required=True, type=Path)
-    parser.add_argument("--expected-machine", required=True, choices=("RIFT-LAB-2",))
+    parser.add_argument("--expected-machine", required=True, choices=tuple(LAB_MACHINES.values()))
     parser.add_argument("--expected-game-pid", required=True, type=int)
     parser.add_argument("--expected-game-start-ticks", required=True, type=int)
     parser.add_argument("--expected-game-sha256", required=True)
@@ -103,7 +106,8 @@ def main(argv=None):
         vm = collect_identity(config)
         start = time.perf_counter()
         result = query(config, vm, {
-            "lab": "lab2", "processId": args.expected_game_pid,
+            "lab": next(lab for lab, machine in LAB_MACHINES.items()
+                        if machine == args.expected_machine), "processId": args.expected_game_pid,
             "processStartUtcTicks": args.expected_game_start_ticks,
             "executableSha256": args.expected_game_sha256.lower()}, args.host_config)
         print(json.dumps({"transport": "control-agent-fresh-bytes", "identity": result,

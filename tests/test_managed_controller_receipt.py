@@ -483,6 +483,46 @@ class PreparedInspectionTaskTests(unittest.TestCase):
              patch.object(managed.os, "read", side_effect=read):
             yield child, pending
 
+    def test_lab1_pair_is_exact_and_rejects_cross_lab_proofs(self):
+        lab1_status = dict(self.status, helperId="rr2-controller-lab1",
+                           taskName="RiftReader2 Helper rr2-controller-lab1")
+        with patch.object(self, "status", lab1_status), self.fake_helper() as (child, _):
+            with managed.prepared_inspection_pair("lab1") as (first, second):
+                first("lab1", 321)
+                second("lab1", 321)
+            self.assertEqual(child.stdin.write.call_count, 2)
+        with self.fake_helper() as (child, _):
+            with managed.prepared_inspection_pair("lab1") as (first, second):
+                with self.assertRaises(managed.ManagedReceiptError):
+                    first("lab2", 321)
+                with self.assertRaises(managed.ManagedReceiptError):
+                    second("lab1", 321)
+            child.stdin.write.assert_not_called()
+        with self.fake_helper():
+            with managed.prepared_inspection_pair("lab1") as (first, _):
+                with self.assertRaises(managed.ManagedReceiptError):
+                    first("lab1", 321)  # a valid Lab 2 result cannot prove Lab 1
+
+    def test_lab1_pair_rejects_changed_second_instance(self):
+        lab1_status = dict(self.status, helperId="rr2-controller-lab1",
+                           taskName="RiftReader2 Helper rr2-controller-lab1")
+        def mutate(frame):
+            if frame["ordinal"] == 2:
+                frame["status"]["instanceGuid"] = "1a048a33-b778-4f2f-9a90-e139cd4ce100"
+            return frame
+        with patch.object(self, "status", lab1_status), self.fake_helper(mutate):
+            with managed.prepared_inspection_pair("lab1") as (first, second):
+                first("lab1", 321)
+                with self.assertRaisesRegex(managed.ManagedReceiptError, "instance-changed"):
+                    second("lab1", 321)
+
+    def test_generic_pair_rejects_unknown_lab_without_spawning(self):
+        with patch.object(managed.subprocess, "Popen") as child:
+            with self.assertRaises(managed.ManagedReceiptError):
+                with managed.prepared_inspection_pair("lab3"):
+                    pass
+            child.assert_not_called()
+
     def test_two_separate_single_use_signals_and_no_escaped_callbacks(self):
         with self.fake_helper() as (child, _):
             with managed.prepared_lab2_inspection_pair() as (first, second):

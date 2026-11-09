@@ -183,28 +183,34 @@ def _verify_legacy_owner(lab, image, root, expected_pid):
             and status.get("runLevel") == "Limited", "managed-legacy-ownership-refused")
 
 
-def verify_lab2_inspection_task(lab: str, expected_pid: int) -> None:
-    """Query fresh Task Scheduler registration and state for the read-only Lab 2 inspection."""
-    require(lab == "lab2", "inspection-task-lab-invalid")
+def verify_inspection_task(lab: str, expected_pid: int) -> None:
+    """Query fresh exact task ownership for one allowlisted read-only lab inspection."""
+    require(lab in ("lab1", "lab2"), "inspection-task-lab-invalid")
     from scripts.controller_task_entry import POWERSHELL
     from scripts.ensure_controller import MANAGER
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
         [str(POWERSHELL), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned",
-         "-File", str(MANAGER), "-Action", "Status", "-HelperId", "rr2-controller-lab2",
-         "-InspectLab2Controller"], cwd=str(root), stdin=subprocess.DEVNULL,
+         "-File", str(MANAGER), "-Action", "Status", "-HelperId", "rr2-controller-" + lab,
+         "-InspectLab2Controller" if lab == "lab2" else "-InspectController"], cwd=str(root), stdin=subprocess.DEVNULL,
         capture_output=True, timeout=20, check=False)
-    _require_lab2_inspection_result(result.returncode, result.stdout, expected_pid)
+    _require_inspection_result(lab, result.returncode, result.stdout, expected_pid)
 
 
-def _require_lab2_inspection_result(returncode, stdout, expected_pid):
+def verify_lab2_inspection_task(lab: str, expected_pid: int) -> None:
+    require(lab == "lab2", "inspection-task-lab-invalid")
+    verify_inspection_task(lab, expected_pid)
+
+
+def _require_inspection_result(lab, returncode, stdout, expected_pid):
+    require(lab in ("lab1", "lab2"), "inspection-task-lab-invalid")
     require(returncode == 0, "inspection-task-ownership-refused")
     status = json.loads(stdout.decode("utf-8-sig"))
     from scripts.ensure_receiver import _valid_instance_guid
     require(isinstance(status, dict) and type(status.get("enginePid")) is int
             and status["enginePid"] == expected_pid and _valid_instance_guid(status.get("instanceGuid"))
-            and status.get("helperId") == "rr2-controller-lab2"
-            and status.get("taskName") == "RiftReader2 Helper rr2-controller-lab2"
+            and status.get("helperId") == "rr2-controller-" + lab
+            and status.get("taskName") == "RiftReader2 Helper rr2-controller-" + lab
             and status.get("state") == "Running" and status.get("runLevel") == "Limited"
             and status.get("atLogon") is False, "inspection-task-ownership-refused")
 
@@ -254,11 +260,14 @@ def _inspection_frame(child, deadline):
 
 
 @contextmanager
-def prepared_lab2_inspection_pair(*, _proof_count=2):
+def prepared_inspection_pair(lab: str, *, _proof_count=2):
     """One bounded interpreter; two fresh, separately triggered ownership proofs."""
     from scripts.controller_task_entry import POWERSHELL
     from scripts.ensure_controller import MANAGER
     require(_proof_count in (1, 2), "inspection-task-proof-count-invalid")
+    require(lab in ("lab1", "lab2"), "inspection-task-lab-invalid")
+    inspection_switch = "-InspectLab2Controller" if lab == "lab2" else "-InspectController"
+    inspection_lab = lab
     manager = str(MANAGER).replace("'", "''")
     command = f"""
 $ErrorActionPreference = 'Stop'
@@ -272,7 +281,7 @@ foreach ($ordinal in 1..{_proof_count}) {{
     if (!$signal.Wait({_INSPECTION_TIMEOUT * 1000})) {{ exit 1 }}
     if ($signal.Result -cnotmatch ('^' + $ordinal + ':([0-9a-f]{{32}})$')) {{ exit 1 }}
     $token = $Matches[1]
-    $raw = @(& '{manager}' -Action Status -HelperId rr2-controller-lab2 -InspectLab2Controller)
+    $raw = @(& '{manager}' -Action Status -HelperId rr2-controller-{lab} {inspection_switch})
     $status = ($raw -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop
     $frame = [ordered]@{{ordinal=$ordinal; token=$token; status=$status}}
     [Console]::Out.WriteLine(($frame | ConvertTo-Json -Depth 20 -Compress))
@@ -297,7 +306,7 @@ foreach ($ordinal in 1..{_proof_count}) {{
                 # Any failed attempt consumes the entire admission, including proof two.
                 active = False
                 require(was_active and next_ordinal == ordinal, "inspection-task-already-consumed")
-                require(lab == "lab2" and type(expected_pid) is int and expected_pid > 0,
+                require(lab == inspection_lab and type(expected_pid) is int and expected_pid > 0,
                         "inspection-task-target-invalid")
                 require(time.monotonic() < deadline, "inspection-task-expired")
                 token = secrets.token_hex(16)
@@ -311,7 +320,7 @@ foreach ($ordinal in 1..{_proof_count}) {{
                             and type(frame["ordinal"]) is int and frame["ordinal"] == ordinal
                             and frame["token"] == token, "inspection-task-frame-invalid")
                     status = frame["status"]
-                    _require_lab2_inspection_result(0, json.dumps(status).encode("utf-8"), expected_pid)
+                    _require_inspection_result(inspection_lab, 0, json.dumps(status).encode("utf-8"), expected_pid)
                     identity = (status["enginePid"], status["instanceGuid"])
                     require(prior_identity is None or identity == prior_identity,
                             "inspection-task-instance-changed")
@@ -340,6 +349,13 @@ foreach ($ordinal in 1..{_proof_count}) {{
             if child.poll() is None:
                 child.kill()
                 child.wait(timeout=5)
+
+
+@contextmanager
+def prepared_lab2_inspection_pair(*, _proof_count=2):
+    """Compatibility wrapper restricted to Lab 2."""
+    with prepared_inspection_pair("lab2", _proof_count=_proof_count) as pair:
+        yield pair
 
 
 @contextmanager

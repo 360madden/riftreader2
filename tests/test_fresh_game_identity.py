@@ -47,6 +47,63 @@ class FreshIdentityTests(unittest.TestCase):
         self.assertEqual(client.request.call_args_list[1].kwargs["payload"],
                          {**self.expected, "machineName": "RIFT-LAB-2"})
 
+    def use_lab1(self):
+        self.config.vmx = self.host.vmx = Path("lab1.vmx")
+        self.config.port = self.host.vnc_port = 5961
+        self.host.expected_machine_name = "RIFT-LAB-1"
+        self.game["lab"] = "lab1"
+        self.target["machineName"] = "RIFT-LAB-1"
+        self.status["host"]["machineName"] = "RIFT-LAB-1"
+
+    def test_lab1_fresh_hash_keeps_exact_payload_and_vm_bracket(self):
+        self.use_lab1()
+        result, client, verify = self.run_query()
+        self.assertEqual(result, self.expected)
+        self.assertEqual(verify.call_args_list, [
+            unittest.mock.call(self.config, self.vm),
+            unittest.mock.call(self.config, self.vm)])
+        self.assertEqual(client.request.call_args_list[1].kwargs["payload"],
+                         {**self.expected, "machineName": "RIFT-LAB-1"})
+
+    def test_lab_machine_mismatch_and_unknown_lab_fail_before_client(self):
+        for lab, machine in (("lab1", "RIFT-LAB-2"), ("lab2", "RIFT-LAB-1"),
+                             ("lab3", "RIFT-LAB-3"), (None, "RIFT-LAB-2"),
+                             ("LAB1", "RIFT-LAB-1")):
+            self.game["lab"] = lab
+            self.host.expected_machine_name = machine
+            client, verify = Mock(), Mock()
+            with self.subTest(lab=lab, machine=machine), \
+                    self.assertRaisesRegex(identity.Blocked, "identity-host-lab-mismatch"):
+                self.run_query(client=client, verify=verify)
+            client.request.assert_not_called()
+            verify.assert_not_called()
+
+    def test_lab1_host_config_binding_is_not_relaxed(self):
+        self.use_lab1()
+        for field, bad in (("vmx", Path("lab2.vmx")), ("vmrun", Path("other.exe")),
+                           ("vnc_port", 5962)):
+            original = getattr(self.host, field)
+            setattr(self.host, field, bad)
+            client, verify = Mock(), Mock()
+            with self.subTest(field=field), \
+                    self.assertRaisesRegex(identity.Blocked, "identity-host-vm-mismatch"):
+                self.run_query(client=client, verify=verify)
+            client.request.assert_not_called()
+            verify.assert_not_called()
+            setattr(self.host, field, original)
+
+    def test_lab1_retains_exact_identity_freshness_and_vm_rejection(self):
+        self.use_lab1()
+        self.test_wrong_or_stale_host_vm_refused_before_identity_post()
+        self.test_stale_and_malformed_receipts_fail_closed()
+        self.test_vm_drift_before_or_after_is_rejected()
+        for field, bad in (("machineName", "RIFT-LAB-2"), ("processId", 13),
+                           ("processStartUtcTicks", 1235), ("executableSha256", "cd" * 32)):
+            response = copy.deepcopy(self.response)
+            response["target"][field] = bad
+            with self.subTest(field=field), self.assertRaisesRegex(identity.Blocked, "game-identity-drift"):
+                self.run_query(response)
+
     def test_supplied_status_is_freshly_called_inside_vm_bracket(self):
         events = []
         client = Mock()
@@ -147,6 +204,43 @@ class FreshIdentityTests(unittest.TestCase):
                     {**valid, "executableSha256": "bad"}, {**valid, "nonce": "extra"}):
             with self.subTest(bad=bad), self.assertRaises(host.ControlHostError):
                 host.validate_identity_payload(bad)
+
+
+class IdentityCliTests(unittest.TestCase):
+    def test_each_machine_derives_its_canonical_lab(self):
+        for lab, machine in (("lab1", "RIFT-LAB-1"), ("lab2", "RIFT-LAB-2")):
+            config = SimpleNamespace(vmx=Path(lab + ".vmx"), vmrun=Path("vmrun.exe"),
+                                     vnc_port=5961, expected_machine_name=machine,
+                                     output_directory=Path("output"))
+            with self.subTest(lab=lab), \
+                    patch.object(identity.HostConfig, "load", return_value=config), \
+                    patch.object(identity, "validate_config", return_value="config") as validate, \
+                    patch.object(identity, "collect_identity", return_value={"epoch": 1}), \
+                    patch.object(identity, "query", return_value={}) as query, \
+                    patch("builtins.print"):
+                result = identity.main([
+                    "--host-config", "host.json", "--expected-machine", machine,
+                    "--expected-game-pid", "12", "--expected-game-start-ticks", "1234",
+                    "--expected-game-sha256", "AB" * 32])
+            self.assertEqual(result, 0)
+            validate.assert_called_once_with(config.vmx, config.vnc_port, config.vmrun,
+                                             config.output_directory, require_files=True)
+            self.assertEqual(query.call_args.args, ("config", {"epoch": 1}, {
+                "lab": lab, "processId": 12, "processStartUtcTicks": 1234,
+                "executableSha256": "ab" * 32}, Path("host.json")))
+
+    def test_machine_config_mismatch_fails_before_vm_collection(self):
+        config = SimpleNamespace(expected_machine_name="RIFT-LAB-2")
+        with patch.object(identity.HostConfig, "load", return_value=config), \
+                patch.object(identity, "collect_identity") as collect, \
+                patch.object(identity, "query") as query, patch("builtins.print"):
+            result = identity.main([
+                "--host-config", "host.json", "--expected-machine", "RIFT-LAB-1",
+                "--expected-game-pid", "12", "--expected-game-start-ticks", "1234",
+                "--expected-game-sha256", "ab" * 32])
+        self.assertEqual(result, 2)
+        collect.assert_not_called()
+        query.assert_not_called()
 
 
 class IdentityGatewayTests(unittest.TestCase):

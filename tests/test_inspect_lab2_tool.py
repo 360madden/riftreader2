@@ -35,7 +35,8 @@ class DeliveryTests(unittest.TestCase):
                     "target": {"pid": 1}, "captureId": "c", "capturedAtUtc": "t"}
         metadata_raw = json.dumps(metadata).encode()
         self.receipt["metadataSha256"] = hashlib.sha256(metadata_raw).hexdigest().upper()
-        state_raw = json.dumps({"epoch": "e", "target": {"pid": 1}}).encode()
+        state_raw = json.dumps({"lab": "lab2", "resource": tool.flow.RESOURCE,
+                                "epoch": "e", "target": {"pid": 1}}).encode()
         (self.root / "state.json").write_bytes(state_raw)
         (self.root / "state.sha256.json").write_text(json.dumps({"sha256": hashlib.sha256(state_raw).hexdigest().upper()}), encoding="utf-8")
         for path, obj in ((self.root / "report.json", report), (self.root / "capture-receipt.json", self.receipt),

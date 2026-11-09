@@ -1,4 +1,4 @@
-"""Lab 2 only: pinned, queue-leased screenshot inspection; never sends game input.
+"""Pinned, queue-leased Lab 1/2 screenshot inspection; never sends game input.
 
 Use preflight/capture/verify across process boundaries, or run for the same checks
 in one process. A failed run is retained; choose a new output root to retry.
@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 import hashlib
 import json
@@ -27,8 +28,9 @@ from scripts.ensure_guest_agent import ensure as ensure_guest_agent, _check_wait
 from scripts.fresh_game_identity import query
 from scripts.vm_console_native import Blocked, validate_config
 from scripts.run_movement_session import ManagedPinnedHost, write_managed_host_plan, admit_lab2_inspection_host_with_status, load, sanitized
-from scripts.run_movement_session import MovementSessionError
+from scripts.run_movement_session import MovementSessionError, admit_inspection_host_with_status
 from scripts.managed_controller_receipt import ManagedReceiptError
+from scripts.operation_dependencies import DependencyUnavailable
 from scripts.control_host import HostConfig
 from scripts.nav_access_queue import AccessQueue
 from scripts.capture_lab_hp_screenshot import ready_epoch, idle_queue, await_release
@@ -38,6 +40,28 @@ from scripts.launch_live_reader import LABS
 RESOURCE = "vm:rift-lab-2"
 OWNER = "lab2-inspection"
 OUTPUT_BASE = ROOT / "artifacts/e2e-latency-20261106"
+
+
+@dataclass(frozen=True)
+class LabBinding:
+    lab: str
+    resource: str
+    owner: str
+    workflow: str
+    ui_port: int
+
+
+def lab_binding(lab):
+    if lab not in ("lab1", "lab2"):
+        raise InspectionBlocked("unknown inspection lab")
+    return LabBinding(lab, "vm:rift-lab-" + lab[-1], lab + "-inspection",
+                      lab + "-inspection/1", 49811 if lab == "lab1" else 49921)
+
+
+def state_binding(state):
+    binding = lab_binding(state.get("lab"))
+    require(state.get("resource") == binding.resource, "state lab/resource mismatch")
+    return binding
 
 
 class InspectionBlocked(RuntimeError):
@@ -108,15 +132,16 @@ def output_root(path):
     return path.resolve()
 
 
-def assert_owned(root):
+def assert_owned(root, *, lab="lab2"):
+    binding = lab_binding(lab)
     require(output_root(root) == root, "noncanonical run root")
     marker = load(root / "workflow-owner.json")
-    require(marker == {"workflow": "lab2-inspection/1", "output": str(root)},
+    require(marker == {"workflow": binding.workflow, "output": str(root)},
             "workflow output ownership missing")
 
 
 def expected_game(state):
-    return {"lab": "lab2", **{key: state["target"][key] for key in
+    return {"lab": state_binding(state).lab, **{key: state["target"][key] for key in
             ("processId", "processStartUtcTicks", "executableSha256")}}
 
 
@@ -128,33 +153,36 @@ def fresh(host, state, *, _check_status=False):
         def supplied_status(identity_config):
             require(identity_config == host.config, "identity host configuration changed")
             return check_status(host, state)
-        return query(native, state["vmIdentity"], expected_game(state), CONFIGS["lab2"],
+        return query(native, state["vmIdentity"], expected_game(state), CONFIGS[state_binding(state).lab],
                      _status_supplier=supplied_status)
-    return query(native, state["vmIdentity"], expected_game(state), CONFIGS["lab2"])
+    return query(native, state["vmIdentity"], expected_game(state), CONFIGS[state_binding(state).lab])
 
 
 def check_status(host, state):
+    binding = state_binding(state)
     value = host.status(require_armed=False)
     require(value["guest"]["target"] == state["target"], "full target or geometry changed")
-    require(ready_epoch(value, expected_game(state), RESOURCE) == state["epoch"],
+    require(ready_epoch(value, expected_game(state), binding.resource) == state["epoch"],
             "pinned epoch changed")
     return value
 
 
-def reopen(root, *, _admitted=None):
-    assert_owned(root)
+def reopen(root, *, _admitted=None, lab="lab2"):
+    binding = lab_binding(lab)
+    assert_owned(root, lab=lab)
     state = load(root / "state.json")
     receipt = load(root / "state.sha256.json")
     require(digest(root / "state.json") == receipt.get("sha256"), "state hash changed")
-    require(state.get("lab") == "lab2" and state.get("resource") == RESOURCE,
-            "only Lab 2 is allowed")
+    require(state.get("lab") == lab and state.get("resource") == binding.resource,
+            f"Lab {lab[-1]} target binding changed")
+    require(lab == "lab2" or _admitted is not None, "Lab 1 requires joined inspection")
     require(state.get("output") == str(root), "run root changed")
     plan_path = root / "managed-host-plan.json"
     require(digest(plan_path) == state.get("planSha256"), "managed plan hash changed")
     plan = load(plan_path)
-    require(plan.get("lab") == "lab2" and plan.get("resource") == RESOURCE
-            and Path(plan["configPath"]).resolve() == CONFIGS["lab2"].resolve()
-            and Path(plan["database"]).resolve() == QUEUE.resolve(), "noncanonical Lab 2 plan")
+    require(plan.get("lab") == lab and plan.get("resource") == binding.resource
+            and Path(plan["configPath"]).resolve() == CONFIGS[lab].resolve()
+            and Path(plan["database"]).resolve() == QUEUE.resolve(), "noncanonical inspection plan")
     if _admitted is None:
         return state, ManagedPinnedHost(plan_path)
     require(_admitted.get("root") == root
@@ -163,7 +191,7 @@ def reopen(root, *, _admitted=None):
             "in-process admission root, plan or state changed")
     host = _admitted["host"]
     require(host.plan_path == plan_path and host.plan == plan
-            and host.config == HostConfig.load(CONFIGS["lab2"])
+            and host.config == HostConfig.load(CONFIGS[lab])
             and host.plan.get("vmIdentity") == state["vmIdentity"]
             and host.target == {key: state["target"][key] for key in
                  ("processId", "processStartUtcTicks", "executableSha256", "windowHandle")},
@@ -181,43 +209,48 @@ def require_persistent_capabilities(status):
         require(type(value) is int and value == 1, code)
 
 
-def ensure_inspection_dependency():
+def ensure_inspection_dependency(lab="lab2"):
     # This observation grants no authority; managed admission still performs
     # its full independent proofs immediately afterwards.
-    config = HostConfig.load(CONFIGS["lab2"])
-    lab = LABS["lab2"]
-    require(config.expected_machine_name == lab["machine"] and config.vmx is not None
-            and config.vmx.resolve() == lab["vmx"].resolve()
-            and config.vnc_port == lab["port"] and config.ui_port == 49921,
-            "noncanonical Lab 2 controller configuration")
+    binding = lab_binding(lab)
+    config = HostConfig.load(CONFIGS[lab])
+    expected = LABS[lab]
+    require(config.expected_machine_name == expected["machine"] and config.vmx is not None
+            and config.vmx.resolve() == expected["vmx"].resolve()
+            and config.vnc_port == expected["port"] and config.ui_port == binding.ui_port,
+            "noncanonical inspection controller configuration")
     status = _probe(config)
     if status is not None:
         _check_waiting(status)
         host = status["host"]
-        require(host["coordination"].get("resource") == RESOURCE,
-                "controller resource differs from Lab 2")
+        require(host["coordination"].get("resource") == binding.resource,
+                "controller resource differs from selected lab")
         if host.get("connected") is True:
-            require(host.get("machineName") == lab["machine"], "controller guest differs from Lab 2")
+            require(host.get("machineName") == expected["machine"], "controller guest differs from selected lab")
         else:
             require(not status.get("guest"), "disconnected controller has guest state")
         if _idle(status):
             return
-    ensure_guest_agent("lab2")
+    ensure_guest_agent(lab)
 
 
-def preflight(root, timing, *, _admitted=None, _native=None):
+def preflight(root, timing, *, _admitted=None, _native=None, lab="lab2"):
+    binding = lab_binding(lab)
+    require(lab == "lab2" or _admitted is not None, "Lab 1 requires joined inspection")
+    require(lab == "lab2" or _native is None, "lab1-native-vitals-not-yet-qualified")
     root.mkdir(parents=True, exist_ok=False)
-    publish(root / "workflow-owner.json", {"workflow": "lab2-inspection/1", "output": str(root)})
+    publish(root / "workflow-owner.json", {"workflow": binding.workflow, "output": str(root)})
     with timing.stage("dependency-ensure"):
         if _admitted is None:
-            ensure_guest_agent("lab2")
+            ensure_guest_agent(lab)
         else:
-            ensure_inspection_dependency()
+            ensure_inspection_dependency(lab)
     with timing.stage("managed-plan-admission"):
         if _admitted is None:
-            path = write_managed_host_plan("lab2", root)
+            path = write_managed_host_plan(lab, root)
         else:
-            host, status = admit_lab2_inspection_host_with_status(root)
+            host, status = (admit_lab2_inspection_host_with_status(root) if lab == "lab2"
+                            else admit_inspection_host_with_status(lab, root))
             _admitted.update(host=host, root=root)
             path = host.plan_path
     with timing.stage("managed-host-admission"):
@@ -226,10 +259,10 @@ def preflight(root, timing, *, _admitted=None, _native=None):
             status = host.status(require_armed=False)
         if _native is not None and _native.get("mode") == "persistent":
             require_persistent_capabilities(status)
-    state = {"version": 1, "lab": "lab2", "resource": RESOURCE, "output": str(root),
+    state = {"version": 1, "lab": lab, "resource": binding.resource, "output": str(root),
              "createdAtUtc": utc().isoformat(), "planSha256": digest(path),
              "vmIdentity": host.plan["vmIdentity"], "target": status["guest"]["target"]}
-    state["epoch"] = ready_epoch(status, expected_game(state), RESOURCE)
+    state["epoch"] = ready_epoch(status, expected_game(state), binding.resource)
     if _native is not None:
         state["nativeRequest"] = dict(_native)
         if _native.get("mode") == "persistent":
@@ -250,6 +283,8 @@ def preflight(root, timing, *, _admitted=None, _native=None):
 
 def native_options(args):
     values = (args.native_reader, args.native_reader_sha256, args.guest_reader)
+    require(args.lab == "lab2" or not args.native_vitals and all(value is None for value in values),
+            "lab1-native-vitals-not-yet-qualified")
     if args.native_vitals:
         require(args.phase == "run", "native acquisition is supported only by run")
         require(all(value is None for value in values), "persistent native vitals and reader options are mutually exclusive")
@@ -269,6 +304,7 @@ def native_options(args):
 
 
 def validate_native(summary, state, before, after):
+    require(state_binding(state).lab == "lab2", "lab1-native-vitals-not-yet-qualified")
     request = state["nativeRequest"]
     require(summary.get("status") == "candidate-only" and summary.get("lab") == "lab2"
             and summary.get("vmIdentity") == state["vmIdentity"]
@@ -348,7 +384,7 @@ def persistent_native(host, state):
     config = host.config
     native = validate_config(config.vmx, config.vnc_port, config.vmrun,
                              config.output_directory, require_files=True)
-    return query_vitals(native, state["vmIdentity"], expected_game(state), CONFIGS["lab2"])
+    return query_vitals(native, state["vmIdentity"], expected_game(state), CONFIGS[state_binding(state).lab])
 
 
 def validate_capture(root, state, before, after):
@@ -374,13 +410,14 @@ def validate_capture(root, state, before, after):
     return metadata
 
 
-def capture(root, timing, *, _admitted=None):
-    assert_owned(root)
+def capture(root, timing, *, _admitted=None, lab="lab2"):
+    binding = lab_binding(lab)
+    assert_owned(root, lab=lab)
     require(not (root / "capture-receipt.json").exists()
             and not (root / "capture").exists()
             and not (root / "capture-attempt.json").exists(), "capture phase already attempted")
     with timing.stage("capture-admission"):
-        state, host = reopen(root, _admitted=_admitted)
+        state, host = reopen(root, _admitted=_admitted, lab=lab)
         if _admitted is None:
             check_status(host, state)
             fresh(host, state)
@@ -388,19 +425,19 @@ def capture(root, timing, *, _admitted=None):
             fresh(host, state, _check_status=True)
     publish(root / "capture-attempt.json", {"startedAtUtc": utc().isoformat()})
     queue = AccessQueue(QUEUE)
-    request_id = "lab2-inspect-" + uuid.uuid4().hex
+    request_id = lab + "-inspect-" + uuid.uuid4().hex
     grant = None
     with timing.stage("queue-acquire"):
         with queue.dispatch_fence():
-            idle_queue(queue, RESOURCE, state["epoch"])
-            queue.submit(request_id, OWNER, "C", {RESOURCE: state["epoch"]},
+            idle_queue(queue, binding.resource, state["epoch"])
+            queue.submit(request_id, binding.owner, "C", {binding.resource: state["epoch"]},
                          estimated_ms=2000, ttl_ms=30000, max_ms=120000)
             try:
                 grant = queue.dispatch(request_id=request_id)
                 require(isinstance(grant, dict) and grant.get("request_id") == request_id,
                         "own queue grant unavailable")
             except BaseException:
-                queue.cancel(request_id, OWNER)
+                queue.cancel(request_id, binding.owner)
                 raise
     token = grant.get("token")
     success = False
@@ -409,7 +446,7 @@ def capture(root, timing, *, _admitted=None):
     try:
         require(isinstance(token, str) and len(token) == 64
                 and all(c in "0123456789abcdef" for c in token), "invalid issued grant")
-        require(grant.get("lease", {}).get(RESOURCE, {}).get("epoch") == state["epoch"],
+        require(grant.get("lease", {}).get(binding.resource, {}).get("epoch") == state["epoch"],
                 "grant epoch changed")
         with timing.stage("capture-before-status"):
             check_status(host, state)
@@ -436,16 +473,16 @@ def capture(root, timing, *, _admitted=None):
                 finished = True
             except BaseException as exc:
                 error = error or exc
-                queue.cancel(request_id, OWNER)
+                queue.cancel(request_id, binding.owner)
             if _admitted is None:
-                terminal = await_release(queue, request_id, RESOURCE, state["epoch"])
+                terminal = await_release(queue, request_id, binding.resource, state["epoch"])
             else:
-                terminal = await_release(queue, request_id, RESOURCE, state["epoch"], poll_seconds=0.025)
+                terminal = await_release(queue, request_id, binding.resource, state["epoch"], poll_seconds=0.025)
             if finished:
                 require(terminal == ("succeeded" if success else "failed"),
                         "unexpected cleanup terminal outcome")
-            released = idle_queue(queue, RESOURCE, state["epoch"])
-            generation = grant.get("lease", {}).get(RESOURCE, {}).get("generation")
+            released = idle_queue(queue, binding.resource, state["epoch"])
+            generation = grant.get("lease", {}).get(binding.resource, {}).get("generation")
             require(type(generation) is int and released.get("generation") == generation + 1
                     and isinstance(released.get("cleanup_receipt"), str)
                     and bool(released["cleanup_receipt"]), "exact watchdog cleanup proof missing")
@@ -453,7 +490,7 @@ def capture(root, timing, *, _admitted=None):
         raise error
     with timing.stage("released-status"):
         check_status(host, state)
-        idle_queue(queue, RESOURCE, state["epoch"])
+        idle_queue(queue, binding.resource, state["epoch"])
     result = {"status": "captured-and-released", "requestId": request_id,
               "beforeUtc": before.isoformat(), "afterUtc": after.isoformat(),
               "metadataSha256": digest(root / "capture" / "capture.json"),
@@ -464,13 +501,14 @@ def capture(root, timing, *, _admitted=None):
     return result
 
 
-def verify(root, timing, *, _admitted=None):
+def verify(root, timing, *, _admitted=None, lab="lab2"):
+    binding = lab_binding(lab)
     require(not (root / "report.json").exists(), "verification already exists")
     with timing.stage("verify-admission-and-fresh-identity"):
-        state, host = reopen(root, _admitted=_admitted)
+        state, host = reopen(root, _admitted=_admitted, lab=lab)
         fresh(host, state)
         status = check_status(host, state)
-        idle_queue(AccessQueue(QUEUE), RESOURCE, state["epoch"])
+        idle_queue(AccessQueue(QUEUE), binding.resource, state["epoch"])
     with timing.stage("independent-artifact-verification"):
         receipt = load(root / "capture-receipt.json")
         require(receipt.get("status") == "captured-and-released"
@@ -499,7 +537,7 @@ def verify(root, timing, *, _admitted=None):
                       "qualification": "candidate-only; semantics/passive-freshness/restart-unverified; UI review required"}
     if _admitted is not None:
         final_inventory(_admitted, timing)
-    report = {"status": "verified-awaiting-visual-review", "lab": "lab2", "epoch": state["epoch"],
+    report = {"status": "verified-awaiting-visual-review", "lab": lab, "epoch": state["epoch"],
               "target": state["target"], "image": str(root / "capture" / "image.bmp"),
               "captureId": metadata["captureId"], "capturedAtUtc": metadata["capturedAtUtc"],
               "finalStatus": status, "qualification": "read-only screenshot; visual review required"}
@@ -523,6 +561,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=("preflight", "capture", "verify", "run"))
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--lab", choices=("lab1", "lab2"), default="lab2")
     parser.add_argument("--verbose", action="store_true", help="include full result and timing rows on stdout")
     parser.add_argument("--native-reader", type=Path)
     parser.add_argument("--native-reader-sha256")
@@ -534,8 +573,10 @@ def main(argv=None):
     root = None
     admitted = {} if args.phase == "run" else None
     try:
+        require(args.lab == "lab2" or args.phase == "run", "Lab 1 requires joined inspection")
         root = output_root(args.output)
         native = native_options(args)
+        lab_options = {"lab": args.lab} if args.lab != "lab2" else {}
         with timer.stage("phase-total"):
             result = None
             try:
@@ -544,7 +585,7 @@ def main(argv=None):
                         result = preflight(root, timer, _admitted=admitted, _native=native)
                         capture_native(root, timer, _admitted=admitted)
                     else:
-                        result = globals()[phase](root, timer, _admitted=admitted)
+                        result = globals()[phase](root, timer, _admitted=admitted, **lab_options)
             finally:
                 if admitted is not None and "host" in admitted and "finalInventory" not in admitted:
                     original_failure = sys.exc_info()[0] is not None
@@ -574,15 +615,19 @@ def main(argv=None):
         safe_runtime = (isinstance(exc, MovementSessionError)
                         and isinstance(exc.__cause__, ManagedReceiptError)
                         and str(exc.__cause__) == "managed-runtime-changed")
+        safe_dependency = (isinstance(exc, DependencyUnavailable)
+                           and exc.name == "controller" and exc.code in {
+                               "managed-owner-refused", "supervision-blocked",
+                               "existing-endpoint-unhealthy", "listener-state-uncertain"})
         failure = {"status": "blocked", "phase": args.phase, "errorType": type(exc).__name__,
-                   "reason": "managed-runtime-changed" if safe_runtime else str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
+                   "reason": "managed-runtime-changed" if safe_runtime else "controller-" + exc.code if safe_dependency else str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
                    "startUtc": before, "endUtc": utc().isoformat(),
                    "elapsedSeconds": time.perf_counter()-started, "stages": timer.rows}
         if admitted is not None and "finalInventoryFailure" in admitted:
             failure["finalInventoryFailure"] = admitted["finalInventoryFailure"]
         if root is not None and root.is_dir():
             try:
-                assert_owned(root)
+                assert_owned(root, lab=args.lab)
                 publish(root / (args.phase + "-failure.json"), failure)
             except (OSError, ValueError, RuntimeError):
                 pass

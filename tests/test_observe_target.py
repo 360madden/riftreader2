@@ -38,14 +38,14 @@ class TargetRoutingTests(unittest.TestCase):
         with patch.object(tool, "_capture_vmware", return_value=self.result()) as vm, patch.object(
                 tool, "_capture_physical") as physical:
             result = tool.observe("lab2", "amd-desktop", Path("fresh"))
-        vm.assert_called_once_with(Path("fresh"), False)
+        vm.assert_called_once_with("lab2", Path("fresh"), False)
         physical.assert_not_called()
         self.assertEqual(result["ownerHost"], "AMD-DESKTOP")
 
     def test_native_read_is_explicit(self):
         with patch.object(tool, "_capture_vmware", return_value=self.result()) as vm:
             tool.observe("lab2", "AMD-DESKTOP", native_vitals=True)
-        vm.assert_called_once_with(None, True)
+        vm.assert_called_once_with("lab2", None, True)
 
     def test_physical_does_not_touch_vmware(self):
         with patch.object(tool, "_capture_vmware") as vm, patch.object(tool, "_capture_physical",
@@ -61,7 +61,7 @@ class TargetRoutingTests(unittest.TestCase):
         physical.assert_called_once_with("LEGION", None, False)
 
     def test_unqualified_requests_fail_without_fallback(self):
-        for target, opts in (("lab1", {}), ("physical-amd-desktop", {"native_vitals": True})):
+        for target, opts in (("lab1", {"native_vitals": True}), ("physical-amd-desktop", {"native_vitals": True})):
             with self.subTest(target=target), patch.object(tool, "_capture_vmware") as vm, patch.object(
                     tool, "_capture_physical") as physical:
                 with self.assertRaisesRegex(ValueError, "not-yet-qualified"):

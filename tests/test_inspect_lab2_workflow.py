@@ -494,6 +494,23 @@ class InspectionTests(unittest.TestCase):
                 self.assertEqual(value["reason"], expected or "operation refused; inspect retained stage timings")
                 self.assertNotIn("private", error.getvalue())
 
+    def test_cli_reports_only_allowlisted_typed_dependency_reasons(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        cases = (
+            (flow.DependencyUnavailable("controller", "managed-owner-refused"), "controller-managed-owner-refused"),
+            (flow.DependencyUnavailable("controller", "private-detail"), None),
+            (flow.DependencyUnavailable("other-private-name", "managed-owner-refused"), None),
+            (RuntimeError("controller: managed-owner-refused"), None),
+        )
+        for failure, expected in cases:
+            with self.subTest(failure=type(failure).__name__), patch.object(
+                    flow, "preflight", side_effect=failure), redirect_stderr(StringIO()) as error:
+                self.assertEqual(flow.main(["run", "--output", str(self.root)]), 2)
+                result = json.loads(error.getvalue())
+                self.assertEqual(result["reason"], expected or "operation refused; inspect retained stage timings")
+                self.assertNotIn("private", error.getvalue())
+
     def test_final_inventory_failure_prevents_report(self):
         self.artifact()
         flow.publish(self.root / "capture-receipt.json", {

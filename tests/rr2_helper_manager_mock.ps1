@@ -306,12 +306,12 @@ try {
     $global:mockScheduler | Add-Member ScriptMethod GetFolder { param($path) if ($path -cne '\') { throw 'foreign folder' }; $this.Folder }
     $global:mockScheduler.Folder | Add-Member ScriptMethod GetTask {
         param($name)
-        if ($name -ceq 'Workbridge Helper rr2-controller-lab2') {
+        if ($name -ceq ('Workbridge Helper ' + $global:inspectionHelperId)) {
             if ($global:mockDenied) { throw [UnauthorizedAccessException]::new('denied') }
             if ($global:mockLegacy) { return [pscustomobject]@{Name=$name} }
             throw [IO.FileNotFoundException]::new('absent')
         }
-        if ($name -cne 'RiftReader2 Helper rr2-controller-lab2') { throw 'foreign task' }
+        if ($name -cne ('RiftReader2 Helper ' + $global:inspectionHelperId)) { throw 'foreign task' }
         if ($global:currentNull) { return $null }
         if ($global:currentDenied) { throw [UnauthorizedAccessException]::new('denied') }
         if ($global:currentMissing) { throw [IO.FileNotFoundException]::new('absent') }
@@ -322,9 +322,12 @@ try {
         if ($global:changeOnSecondRead -and $global:mockReads -eq 2) { $global:inspectionTask.State = 3 }
         return $global:inspectionTask
     }
-    $inspect = { & $manager -Action Status -HelperId $id -InspectLab2Controller }
+    $global:inspectionHelperId=$id
+    $inspect = { & $manager -Action Status -HelperId $id -InspectController }
     $fast = { & $manager -Action Status -HelperId $id }
     $global:inspectionTask = New-InspectionTask $registered
+    $aliasProof = & $manager -Action Status -HelperId $id -InspectLab2Controller | ConvertFrom-Json
+    if ($aliasProof.helperId -cne $id) { throw 'Lab2 alias proof missing' }
     $normalProof = & $fast | ConvertFrom-Json
     if ($normalProof.enginePid -ne 123 -or !$normalProof.instanceGuid -or !$normalProof.note) { throw 'Normal COM proof missing' }
     $global:inspectionTask.LastTaskResult = -2147024891
@@ -385,6 +388,23 @@ try {
     Must-Fail { & $manager -Action Register -HelperId $id -InspectLab2Controller }
     Must-Fail { & $manager -Action Status -HelperId 'rr2-controller-lab1' -InspectLab2Controller }
     Must-Fail { & $manager -Action Status -HelperId 'rr2-receiver-lab2' -InspectLab2Controller }
+    Must-Fail { & $manager -Action Start -HelperId $id -InspectController }
+    Must-Fail { & $manager -Action Status -HelperId 'rr2-receiver-lab1' -InspectController }
+    $id='rr2-controller-lab1'
+    $global:inspectionHelperId=$id
+    $global:mockTasks=@()
+    & $manager -Action Register -HelperId $id -Executable (Join-Path $root 'pythonw.exe') -Argument @((Join-Path $scripts 'controller_task_entry.py'),'--lab','lab1') -WorkingDirectory $root | Out-Null
+    $registered=$global:mockTasks[0]
+    $registered.State='Running'
+    $global:inspectionTask=New-InspectionTask $registered
+    $global:mockReads=0
+    $lab1Proof=& $inspect | ConvertFrom-Json
+    if ($lab1Proof.helperId -cne $id -or $lab1Proof.enginePid -ne 123 -or $global:mockReads -ne 2) { throw 'Exact Lab1 proof missing' }
+    $global:mockLegacy=$true; Must-Fail $inspect; $global:mockLegacy=$false
+    $global:mockDenied=$true; Must-Fail $inspect; $global:mockDenied=$false
+    $global:inspectionTask.Definition.Actions.First.Arguments='wrong'
+    Must-Fail $inspect
+    Must-Fail { & $manager -Action Status -HelperId $id -InspectLab2Controller }
     'RR2 helper manager mocked tests passed.'
 } finally {
     Remove-Item -LiteralPath $root -Recurse -Force

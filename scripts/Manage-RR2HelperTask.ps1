@@ -5,7 +5,8 @@ param(
     [string]$Executable,
     [string[]]$Argument = @(),
     [string]$WorkingDirectory,
-    [switch]$InspectLab2Controller
+    [switch]$InspectLab2Controller,
+    [switch]$InspectController
 )
 $ErrorActionPreference = 'Stop'
 # Import this Windows PowerShell interpreter's inbox modules by absolute path.
@@ -15,6 +16,10 @@ foreach ($module in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Manag
 if ($InspectLab2Controller -and ($Action -cne 'Status' -or $HelperId -cne 'rr2-controller-lab2')) {
     throw 'Lab 2 inspection requires exact controller Status.'
 }
+if ($InspectController -and ($Action -cne 'Status' -or $HelperId -cnotin @('rr2-controller-lab1','rr2-controller-lab2'))) {
+    throw 'Inspection requires exact allowlisted controller Status.'
+}
+$InspectController = $InspectController -or $InspectLab2Controller
 function Assert-LocalPath([string]$Path) {
     if (![IO.Path]::IsPathRooted($Path)) { throw 'An absolute path is required.' }
     $full = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -149,7 +154,7 @@ if ($transitionDescription -and (!$config -or $config.description -cne $transiti
     throw 'TASK_OWNERSHIP: registration changed during status retry.'
 }
 if ($config) { Assert-HelperContract $config.executable $config.arguments $config.workingDirectory }
-if ($InspectLab2Controller -or ($Action -eq 'Status' -and $config)) {
+if ($InspectController -or ($Action -eq 'Status' -and $config)) {
     if (!$config) { throw 'Unknown helper registration.' }
     $scheduler = New-Object -ComObject Schedule.Service
     $scheduler.Connect()
@@ -159,14 +164,14 @@ if ($InspectLab2Controller -or ($Action -eq 'Status' -and $config)) {
     $absent = $false
     try { $current = $folder.GetTask($taskName) }
     catch {
-        if ($_.Exception.GetBaseException().HResult -ne -2147024894 -or $InspectLab2Controller) { throw }
+        if ($_.Exception.GetBaseException().HResult -ne -2147024894 -or $InspectController) { throw }
         $absent = $true; $current = $null
     }
     if (!$absent -and $null -eq $current) { throw 'TASK_OWNERSHIP: task query returned no object.' }
     $initialState = if ($current) { $current.State } else { $null }
-    if (!$absent -and ($null -eq $initialState -or $initialState -notin @(1,2,3,4)) -and !$InspectLab2Controller) { throw 'TASK_OWNERSHIP: unrecognized task state.' }
-    $retryEligible = !$InspectLab2Controller -and !$absent -and $initialState -in @(1,2,3)
-    if ($InspectLab2Controller -or (!$absent -and $initialState -eq 4)) {
+    if (!$absent -and ($null -eq $initialState -or $initialState -notin @(1,2,3,4)) -and !$InspectController) { throw 'TASK_OWNERSHIP: unrecognized task state.' }
+    $retryEligible = !$InspectController -and !$absent -and $initialState -in @(1,2,3)
+    if ($InspectController -or (!$absent -and $initialState -eq 4)) {
     # Refresh both names twice; only ERROR_FILE_NOT_FOUND proves legacy absence.
     $priorInstance = $null
     foreach ($observation in 1..2) {
@@ -201,9 +206,9 @@ if ($InspectLab2Controller -or ($Action -eq 'Status' -and $config)) {
     $lastTaskResult = $current.LastTaskResult
     if ($null -eq $lastTaskResult) { throw 'TASK_OWNERSHIP: task result unavailable.' }
     $output = [ordered]@{helperId=$HelperId; taskName=$taskName; state='Running'; runLevel='Limited';
-        atLogon=$config.atLogon; lastTaskResult=$(if ($InspectLab2Controller) { $lastTaskResult } else { [long]$lastTaskResult -band 0xffffffffL }); registration=$configPath;
+        atLogon=$config.atLogon; lastTaskResult=$(if ($InspectController) { $lastTaskResult } else { [long]$lastTaskResult -band 0xffffffffL }); registration=$configPath;
         enginePid=$instance.enginePid; instanceGuid=$instance.instanceGuid}
-    if (!$InspectLab2Controller) { $output.note = 'Task state is not application health. Inspect the helper heartbeat/output; no elevation is granted.' }
+    if (!$InspectController) { $output.note = 'Task state is not application health. Inspect the helper heartbeat/output; no elevation is granted.' }
     $output | ConvertTo-Json
     return
     }

@@ -1,4 +1,4 @@
-"""Deliver a verified Lab 2 screenshot, optionally with native candidate vitals."""
+"""Deliver a verified Lab 1/2 screenshot; native candidate vitals remain Lab 2 only."""
 from __future__ import annotations
 
 import argparse
@@ -31,10 +31,13 @@ def safe_bytes(path, limit):
     return data
 
 
-def delivery(root, console, *, require_native=True):
+def delivery(root, console, *, require_native=True, lab="lab2"):
+    binding = flow.lab_binding(lab)
+    if lab != "lab2" and require_native:
+        raise ValueError("lab1-native-vitals-not-yet-qualified")
     root = flow.output_root(root)
     safe_bytes(root / "workflow-owner.json", 1024 * 1024)
-    flow.assert_owned(root)
+    flow.assert_owned(root, lab=lab)
     if (console.get("phase") != "run" or console.get("status") != "verified-awaiting-visual-review"
             or Path(console.get("output", "")).resolve() != root):
         raise ValueError("workflow result mismatch")
@@ -53,7 +56,8 @@ def delivery(root, console, *, require_native=True):
             or not isinstance(report.get("capturedAtUtc"), str) or not report["capturedAtUtc"]
             or not isinstance(report.get("target"), dict) or not report["target"]):
         raise ValueError("required report binding missing")
-    if (hashlib.sha256(state_bytes).hexdigest().upper() != state_hash.get("sha256")
+    if (state.get("lab") != lab or state.get("resource") != binding.resource
+            or hashlib.sha256(state_bytes).hexdigest().upper() != state_hash.get("sha256")
             or state.get("epoch") != report.get("epoch") or receipt.get("epoch") != report.get("epoch")
             or metadata.get("target") != report.get("target") or state.get("target") != report.get("target")
             or metadata.get("captureId") != report.get("captureId")
@@ -61,7 +65,7 @@ def delivery(root, console, *, require_native=True):
             or hashlib.sha256(metadata_bytes).hexdigest().upper() != receipt.get("metadataSha256")):
         raise ValueError("artifact binding mismatch")
     image = root / "capture" / "image.bmp"
-    if (report.get("status") != "verified-awaiting-visual-review" or report.get("lab") != "lab2"
+    if (report.get("status") != "verified-awaiting-visual-review" or report.get("lab") != lab
             or report.get("finalInventory", {}).get("status") != "passed"
             or Path(report.get("image", "")) != image or Path(console.get("image", "")) != image
             or Path(console.get("report", "")) != report_path):
@@ -82,7 +86,7 @@ def delivery(root, console, *, require_native=True):
         target["processStartUtcTicks"] = str(target["processStartUtcTicks"])
     result = {"status": report["status"], "image": str(image), "imageSha256": actual,
               "report": str(report_path), "workflowSeconds": console["elapsedSeconds"],
-              "targetId": "lab2", "workflow": "vmware",
+              "targetId": lab, "workflow": "vmware",
               "captureBackend": "managed-controller/guest-agent",
               "captureId": report["captureId"], "capturedAtUtc": report["capturedAtUtc"],
               "target": target, "cleanupVerified": True,
@@ -112,9 +116,14 @@ class WorkflowBlocked(ValueError):
         super().__init__(self.details.get("reason", "guarded workflow failed"))
 
 
-def run_inspection(root, *, capture_only=False):
+def run_inspection(root, *, capture_only=False, lab="lab2"):
+    flow.lab_binding(lab)
+    if lab != "lab2" and not capture_only:
+        raise ValueError("lab1-native-vitals-not-yet-qualified")
     stdout, stderr = io.StringIO(), io.StringIO()
     command = ["run"] + ([] if capture_only else ["--native-vitals"]) + ["--output", str(root)]
+    if lab != "lab2":
+        command.extend(["--lab", lab])
     with redirect_stdout(stdout), redirect_stderr(stderr):
         code = flow.main(command)
     if code != 0:
@@ -126,7 +135,8 @@ def run_inspection(root, *, capture_only=False):
             failure = {}
         raise WorkflowBlocked(failure)
     console = json.loads(stdout.getvalue())
-    result = (delivery(root, console, require_native=False) if capture_only
+    options = {"lab": lab} if lab != "lab2" else {}
+    result = (delivery(root, console, require_native=False, **options) if capture_only
               else delivery(root, console))
     return result, console
 
