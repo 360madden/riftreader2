@@ -108,6 +108,14 @@ public sealed class BoundedControlExecutor
                 await delayAsync(interval, cancellationToken).ConfigureAwait(false);
                 if (timeProvider.GetElapsedTime(beforeDelay) <= TimeSpan.Zero)
                     throw new InvalidOperationException("The bounded hold delay completed without monotonic time advancing.");
+                if (timeProvider.GetElapsedTime(holdStartedAt.Value) >= holdDuration)
+                {
+                    // Avoid a potentially slow identity probe while input remains down.
+                    ReleasePressedControls();
+                    // One release attempt, as in the existing finalizer; an error
+                    // still marks the action uncertain and requires caller disarm.
+                    releaseRequired = false;
+                }
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed during the bounded hold.");
             }
@@ -131,15 +139,7 @@ public sealed class BoundedControlExecutor
         finally
         {
             if (releaseRequired)
-            {
-                if (action.MouseButton is not null)
-                    TryRelease(() => input.ButtonUp(action.MouseButton), $"mouse button '{action.MouseButton}'");
-                for (var index = action.Keys.Length - 1; index >= 0; index--)
-                {
-                    var key = action.Keys[index];
-                    TryRelease(() => input.KeyUp(key), $"key '{key}'");
-                }
-            }
+                ReleasePressedControls();
         }
 
         return BuildResult();
@@ -170,6 +170,17 @@ public sealed class BoundedControlExecutor
             {
                 releaseErrors.Add(
                     $"Failed to release {control}: {exception.GetType().Name}: {exception.Message}");
+            }
+        }
+
+        void ReleasePressedControls()
+        {
+            if (action.MouseButton is not null)
+                TryRelease(() => input.ButtonUp(action.MouseButton), $"mouse button '{action.MouseButton}'");
+            for (var index = action.Keys.Length - 1; index >= 0; index--)
+            {
+                var key = action.Keys[index];
+                TryRelease(() => input.KeyUp(key), $"key '{key}'");
             }
         }
 

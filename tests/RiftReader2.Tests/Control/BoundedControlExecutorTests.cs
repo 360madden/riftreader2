@@ -341,6 +341,34 @@ public sealed class BoundedControlExecutorTests
         Assert.Equal(["Wheel:-3"], input.ControlOperations);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ReleasesBeforeSlowFinalTargetIdentityCheck()
+    {
+        var input = new RecordingInput();
+        var clock = new ManualTimeProvider();
+        TimeSpan? keyUpAt = null;
+        var delayedFinalChecks = 0;
+        input.OperationRecorded = operation =>
+        {
+            if (operation == "KeyUp:w")
+                keyUpAt = clock.GetElapsedTime(0);
+            if (operation == "IsTargetCurrent" &&
+                clock.GetElapsedTime(0) >= TimeSpan.FromMilliseconds(20))
+            {
+                delayedFinalChecks++;
+                clock.Advance(TimeSpan.FromMilliseconds(160));
+            }
+        };
+
+        var result = await Executor(input, clock).ExecuteAsync(new(["w"], 20));
+
+        Assert.True(result.DeliverySucceeded);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Equal(TimeSpan.FromMilliseconds(20), keyUpAt);
+        Assert.Equal(1, delayedFinalChecks);
+        Assert.Equal(["KeyDown:w", "KeyUp:w"], input.ControlOperations);
+    }
+
     private static BoundedControlExecutor Executor(
         RecordingInput input,
         ManualTimeProvider? clock = null,
