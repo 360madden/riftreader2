@@ -652,17 +652,31 @@ public sealed class ControlAgent
         }
         public void KeyDown(string key)
         {
+            var checkStarted = Stopwatch.GetTimestamp();
             RequireTarget();
+            var checkMilliseconds = Stopwatch.GetElapsedTime(checkStarted).TotalMilliseconds;
             Volatile.Write(ref inputStarted, 1);
+            var sendStarted = Stopwatch.GetTimestamp();
             WindowsControlDesktop.SendKeys(key, true);
+            var sendMilliseconds = Stopwatch.GetElapsedTime(sendStarted).TotalMilliseconds;
             Record("keyDownInserted", key);
+            Record("keyDownTiming", new
+            {
+                targetCheckMilliseconds = checkMilliseconds,
+                sendInputMilliseconds = sendMilliseconds
+            });
         }
         public void KeyUp(string key)
         {
             try
             {
+                // Distinguish delayed release scheduling from a slow native SendInput.
+                Record("keyUpAttempt", key);
+                var sendStarted = Stopwatch.GetTimestamp();
                 WindowsControlDesktop.SendKeys(key, false);
+                var sendMilliseconds = Stopwatch.GetElapsedTime(sendStarted).TotalMilliseconds;
                 Record("keyUpInserted", key);
+                Record("keyUpTiming", new { sendInputMilliseconds = sendMilliseconds });
             }
             catch
             {
