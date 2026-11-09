@@ -22,6 +22,71 @@ module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
 
+class InlineQuickReviewTests(unittest.TestCase):
+    def plan(self):
+        return {
+            "captureId": "c" * 32,
+            "screen": str(ROOT / "artifacts" / "review-screen.png"),
+            "screenSha256": "A" * 64,
+            "planSha256": "b" * 64,
+            "capturedAtUtc": "2026-11-09T16:00:00Z",
+        }
+
+    def test_compact_preview_preserves_exact_source_and_review_pins(self):
+        original = self.plan()
+        image = {"sourceSha256": "A" * 64, "previewFormat": "webp",
+                 "nonAuthoritative": True, "base64": "example"}
+        with mock.patch("quick_review_capture.preview", return_value=image) as stub:
+            review = module.add_quick_review(original)
+        stub.assert_called_once_with(Path(original["screen"]), "A" * 64, compact=True)
+        self.assertEqual(review, {
+            "status": "ready", "captureId": original["captureId"],
+            "screenSha256": original["screenSha256"],
+            "planSha256": original["planSha256"],
+            "capturedAtUtc": original["capturedAtUtc"],
+            "reviewExpiresInSeconds": module.MAX_REVIEW_AGE_SECONDS,
+            "preview": image,
+        })
+        self.assertEqual(original, self.plan())
+
+    def test_preview_error_does_not_cancel_a_successful_prepare(self):
+        original = self.plan()
+        with mock.patch("quick_review_capture.preview", side_effect=ValueError("preview-too-large")):
+            review = module.add_quick_review(original)
+        self.assertEqual(review, {"status": "unavailable", "reason": "preview-too-large"})
+        self.assertEqual(original, self.plan())
+
+    def test_prepare_preview_is_opt_in(self):
+        common = ["--vmx", "lab.vmx", "--port", "5900", "--vmrun", "vmrun.exe",
+                  "--output", "review", "prepare", "--lab", "lab2",
+                  "--expected-game-pid", "10876", "--expected-game-start-ticks", "100",
+                  "--expected-game-sha256", "a" * 64, "--ui-step", "open-chat"]
+        self.assertFalse(module.build_parser().parse_args(common).quick_preview)
+        self.assertTrue(module.build_parser().parse_args(common + ["--quick-preview"]).quick_preview)
+
+    def test_prepare_cli_returns_inline_review_only_when_requested(self):
+        import io
+        from contextlib import redirect_stdout
+        common = ["--vmx", "lab.vmx", "--port", "5900", "--vmrun", "vmrun.exe",
+                  "--output", "review", "prepare", "--lab", "lab2",
+                  "--expected-game-pid", "10876", "--expected-game-start-ticks", "100",
+                  "--expected-game-sha256", "a" * 64, "--ui-step", "open-chat"]
+        config = mock.Mock(output=Path("review"))
+        for requested in (False, True):
+            args = common + (["--quick-preview"] if requested else [])
+            out = io.StringIO()
+            with mock.patch.object(module, "validate_config", return_value=config), \
+                    mock.patch.object(module, "prepare", return_value=self.plan()), \
+                    mock.patch.object(module, "add_quick_review",
+                                      return_value={"status": "ready"}) as review, \
+                    redirect_stdout(out):
+                self.assertEqual(module.main(args), 0)
+            response = json.loads(out.getvalue())
+            self.assertEqual(response["status"], "prepared")
+            self.assertEqual("quickReview" in response, requested)
+            self.assertEqual(review.call_count, int(requested))
+
+
 class RegularReadTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

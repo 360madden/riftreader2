@@ -1221,6 +1221,25 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
     return report
 
 
+def add_quick_review(plan: dict) -> dict:
+    """Show a compact preview with exact pins; never approve or extend a review."""
+    try:
+        from quick_review_capture import preview
+        image = preview(Path(plan["screen"]), plan["screenSha256"], compact=True)
+        return {
+            "status": "ready",
+            "captureId": plan["captureId"],
+            "screenSha256": plan["screenSha256"],
+            "planSha256": plan["planSha256"],
+            "capturedAtUtc": plan["capturedAtUtc"],
+            "reviewExpiresInSeconds": MAX_REVIEW_AGE_SECONDS,
+            "preview": image,
+        }
+    except (OSError, ValueError, KeyError, TypeError, ImportError) as error:
+        # Preparation is still usable through its original image and plan.
+        return {"status": "unavailable", "reason": str(error)[:160]}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--vmx", required=True, type=Path)
@@ -1242,6 +1261,8 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--hide-y", type=int)
     prepare_parser.add_argument("--fast-source-pin", type=Path)
     prepare_parser.add_argument("--guidance-report", type=Path)
+    prepare_parser.add_argument("--quick-preview", action="store_true",
+                                help="inline compact SHA-pinned preview; review gate unchanged")
     execute_parser = commands.add_parser("execute")
     execute_parser.add_argument("--plan", required=True, type=Path)
     execute_parser.add_argument("--review", required=True, type=Path)
@@ -1261,8 +1282,11 @@ def main(argv=None) -> int:
                              args.fast_source_pin, args.guidance_report,
                              args.hide_frame, args.hide_x, args.hide_y,
                              args.deferred_result_intent)
-            print(json.dumps({"status": "prepared", "captureId": result["captureId"],
-                              "screen": result["screen"], "plan": str(config.output / "plan.json")}))
+            response = {"status": "prepared", "captureId": result["captureId"],
+                        "screen": result["screen"], "plan": str(config.output / "plan.json")}
+            if args.quick_preview:
+                response["quickReview"] = add_quick_review(result)
+            print(json.dumps(response))
         else:
             result = execute(config, args.plan, args.review)
             print(json.dumps({"status": result["status"], "output": str(config.output)}))
