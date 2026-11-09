@@ -64,7 +64,7 @@ class Feedback:
         self.initial_timeouts.append(timeout_seconds)
         self.current = next(self.samples)
         return self.current
-    def wait_action_ready(self, timeout_seconds=10.0):
+    def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
         self.ready_timeouts.append(timeout_seconds)
         if self.on_ready is not None: self.on_ready(len(self.ready_timeouts))
         return self.current
@@ -205,7 +205,7 @@ class MovementSessionTests(unittest.TestCase):
             session=session("calibration", keys=("w",), dimension="1d", calibration_hold_ms=100),
             review=review(), output=self.root / "short-calibration",
             host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
-        self.assertEqual(feedback.ready_timeouts, [10.0, 1.5])
+        self.assertEqual(feedback.ready_timeouts, [20.0, 1.5])
         self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("w", 100)])
         self.assertEqual(result["calibrations"]["w"]["calibration_hold_ms"], 118)
         self.assertAlmostEqual(result["calibrations"]["w"]["dx_per_ms"], .4 / 118)
@@ -264,7 +264,7 @@ class MovementSessionTests(unittest.TestCase):
 
     def test_in_arm_readiness_failure_stops_without_input_or_rearm(self):
         class ExpiringFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 if len(self.ready_timeouts) == 0:
                     self.ready_timeouts.append(timeout_seconds)
                     raise MovementSessionError("movement-feedback-anchor-budget-timeout")
@@ -284,7 +284,7 @@ class MovementSessionTests(unittest.TestCase):
 
     def test_unready_source_arms_but_never_sends_input_and_releases(self):
         class UnreadyFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 self.ready_timeouts.append(timeout_seconds)
                 raise MovementSessionError("movement-feedback-anchor-budget-timeout")
 
@@ -383,7 +383,7 @@ class MovementSessionTests(unittest.TestCase):
 
     def test_first_action_ready_position_drift_stops_without_input(self):
         class DriftFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 self.ready_timeouts.append(timeout_seconds)
                 return Sample(.051, 0, 0, 2)
 
@@ -399,7 +399,7 @@ class MovementSessionTests(unittest.TestCase):
 
     def test_in_arm_ready_position_drift_stops_without_input(self):
         class DriftFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 self.ready_timeouts.append(timeout_seconds)
                 return Sample(.051, 0, 0, 2)
 
@@ -415,7 +415,7 @@ class MovementSessionTests(unittest.TestCase):
 
     def test_allowed_ready_drift_becomes_exact_calibration_baseline(self):
         class SettlingFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 self.ready_timeouts.append(timeout_seconds)
                 if len(self.ready_timeouts) == 1:
                     self.current = Sample(.04, 0, 0, 2)
@@ -439,8 +439,9 @@ class MovementSessionTests(unittest.TestCase):
         observations = []
 
         class TimedFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
-                observations.append((timeout_seconds, host.arms))
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
+                observations.append((timeout_seconds, host.arms,
+                                     kwargs.get("minimum_fast_anchor_remaining_milliseconds")))
                 return super().wait_action_ready(timeout_seconds)
 
         feedback = TimedFeedback([Sample(0, 0, 0, 1), Sample(.35, 0, 0, 2)])
@@ -450,7 +451,7 @@ class MovementSessionTests(unittest.TestCase):
             review=review(), output=self.root / "prewarmed-forward",
             host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
         self.assertTrue(result["success"])
-        self.assertEqual(observations, [(10.0, 0), (1.5, 1)])
+        self.assertEqual(observations, [(20.0, 0, 6250.0), (1.5, 1, None)])
         self.assertEqual(len(host.actions), 1)
         self.assertEqual(host.stops, 1)
 
@@ -458,7 +459,7 @@ class MovementSessionTests(unittest.TestCase):
         host, lease = Host(), Lease()
 
         class GapFeedback(Feedback):
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 if self.ready_timeouts:
                     self.ready_timeouts.append(timeout_seconds)
                     raise MovementSessionError("post-arm-source-not-fresh")
@@ -470,7 +471,7 @@ class MovementSessionTests(unittest.TestCase):
                 session=session("calibration", keys=("w",), dimension="1d"),
                 review=review(), output=self.root / "no-post-arm-source",
                 host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
-        self.assertEqual(feedback.ready_timeouts, [10.0, 1.5])
+        self.assertEqual(feedback.ready_timeouts, [20.0, 1.5])
         self.assertEqual(host.arms, 1)
         self.assertEqual(host.actions, [])
         self.assertEqual(host.stops, 1)
@@ -494,7 +495,7 @@ class MovementSessionTests(unittest.TestCase):
             def __init__(self, samples, host):
                 super().__init__(samples)
                 self.host = host
-            def wait_action_ready(self, timeout_seconds=10.0):
+            def wait_action_ready(self, timeout_seconds=10.0, **kwargs):
                 self.ready_timeouts.append(timeout_seconds)
                 events.append(f"ready-{len(self.ready_timeouts)}")
                 if len(self.ready_timeouts) == 1 and self.host.armed_status_calls:

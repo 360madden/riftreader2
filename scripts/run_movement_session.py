@@ -44,6 +44,8 @@ ALL_KEY = SAFE_KEY | TURN_KEY
 INITIAL_FEEDBACK_TIMEOUT_SECONDS = 4.5
 ACTION_FEEDBACK_TIMEOUT_SECONDS = 6.0
 ACTION_READY_TIMEOUT_SECONDS = 10.0
+PREARM_ACTION_READY_TIMEOUT_SECONDS = 20.0
+PREARM_FAST_ANCHOR_REMAINING_MILLISECONDS = 6_250.0
 
 
 class MovementSessionError(RuntimeError):
@@ -934,7 +936,9 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
         short_calibration = mode == "calibration" and dimension == "1d"
         if short_calibration:
             prearm_ready = feedback.wait_action_ready(
-                timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+                timeout_seconds=PREARM_ACTION_READY_TIMEOUT_SECONDS,
+                minimum_fast_anchor_remaining_milliseconds=
+                    PREARM_FAST_ANCHOR_REMAINING_MILLISECONDS)
             initial = _require_action_ready_sample(initial, prearm_ready)
             samples[-1] = initial.to_dict()
             lease.check(); lease.heartbeat(); host.status(require_armed=False)

@@ -27,7 +27,8 @@ import addon_command_console as _console
 
 _LABEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
 _MAX_INITIAL_WAIT_SECONDS = 4.5
-_MAX_ACTION_READY_WAIT_SECONDS = 10.0
+_DEFAULT_ACTION_READY_WAIT_SECONDS = 10.0
+_MAX_ACTION_READY_WAIT_SECONDS = 20.0
 # Preserve the complete six-second post-action evidence window plus the
 # worst-case reviewed 150 ms hold and a small dispatch margin.
 _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS = 6_250.0
@@ -144,13 +145,22 @@ class PinnedFeedback:
 
     def wait_action_ready(
         self,
-        timeout_seconds: float = _MAX_ACTION_READY_WAIT_SECONDS,
+        timeout_seconds: float = _DEFAULT_ACTION_READY_WAIT_SECONDS,
+        *,
+        minimum_fast_anchor_remaining_milliseconds: float =
+            _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS,
     ) -> MovementSample:
         """Wait until the selected source can cover one action and its feedback."""
         if (isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float))
                 or not math.isfinite(float(timeout_seconds))
                 or not 0 < float(timeout_seconds) <= _MAX_ACTION_READY_WAIT_SECONDS):
             _console._fail("movement-feedback-invalid-timeout")
+        if (isinstance(minimum_fast_anchor_remaining_milliseconds, bool)
+                or not isinstance(minimum_fast_anchor_remaining_milliseconds, (int, float))
+                or not math.isfinite(float(minimum_fast_anchor_remaining_milliseconds))
+                or not _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS
+                    <= float(minimum_fast_anchor_remaining_milliseconds) <= 10_000.0):
+            _console._fail("movement-feedback-anchor-reserve-invalid")
         deadline = self._monotonic() + float(timeout_seconds)
         while True:
             try:
@@ -181,7 +191,7 @@ class PinnedFeedback:
                             or not 0 <= float(anchor_age) <= float(anchor_max)):
                         _console._fail("movement-feedback-anchor-budget-invalid")
                     ready = float(anchor_max) - float(anchor_age) \
-                        >= _MIN_FAST_ACTION_ANCHOR_REMAINING_MILLISECONDS
+                        >= float(minimum_fast_anchor_remaining_milliseconds)
                 else:
                     _console._fail("movement-feedback-source-unavailable")
                 if ready and self._last_action_ready is not None:
