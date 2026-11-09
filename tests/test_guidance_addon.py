@@ -423,13 +423,15 @@ class GuidanceAddonTests(unittest.TestCase):
         self.assertEqual(7, guidance.Result.sequence)
         self.assertEqual(0.5, guidance.Result.sourceToReceiptSeconds)
 
-    def load_main(self):
+    def load_main(self, pre_main=""):
         lua = LuaRuntime(unpack_returned_tuples=True)
         private = lua.table()
         for name in ("wire.lua", "producer.lua", "reference.lua", "live.lua", "guidance.lua"):
             lua.execute((PACKAGE / name).read_text(encoding="utf-8"),
                         lua.table(identifier="RiftReader2"), private)
         lua.execute(MAIN_STUB)
+        if pre_main:
+            lua.execute(pre_main)
         lua.execute(MAIN.read_text(encoding="utf-8"),
                     lua.table(identifier="RiftReader2"), private)
         lua.globals().TEST_HANDLERS["RiftReader2 startup"]()
@@ -597,6 +599,65 @@ class GuidanceAddonTests(unittest.TestCase):
             self.assertNotIn(forbidden, guidance)
         self.assertNotIn("EventMacroSet", main)
         self.assertNotIn("Command.Message", main)
+
+    def test_main_reports_slash_registration_failure_instead_of_silencing_it(self):
+        cases = (("return nil", "invalid-list-nil"),
+                 ("return false", "invalid-list-boolean"),
+                 ("return 'invalid'", "invalid-list-string"),
+                 ("error('registration rejected')", "register-error"))
+        for failed_name, healthy_name in (("rr2guide", "rr2bind"), ("rr2bind", "rr2guide")):
+            for behavior, expected in cases:
+                with self.subTest(command=failed_name, behavior=behavior):
+                    lua, private = self.load_main(f"""
+                        local original = Command.Slash.Register
+                        Command.Slash.Register = function(name)
+                            if name == '{failed_name}' then {behavior} end
+                            return original(name)
+                        end
+                    """)
+                    globals_ = lua.globals()
+                    status = globals_.RiftReader2_Guidance.slashCommands
+                    self.assertEqual(expected, status[failed_name])
+                    self.assertEqual("registered", status[healthy_name])
+                    messages = [str(globals_.TEST_PRINT[index])
+                                for index in range(1, len(globals_.TEST_PRINT) + 1)]
+                    self.assertTrue(any(f"slash registration failed for /{failed_name} ({expected})"
+                                        in message for message in messages))
+                    self.assertFalse(any(f"slash command ready /{failed_name}" in message
+                                         for message in messages))
+                    self.assertIsNone(private.GuidanceInstance.Nonce)
+                    self.assertIsNone(globals_.RiftReader2_LiveFrame)
+                    self.assertIsNotNone(globals_.RiftReader2_Frame)
+
+    def test_main_reports_insert_failure_and_preserves_other_command(self):
+        lua, private = self.load_main(r"""
+            local original = table.insert
+            table.insert = function(destination, value)
+                if destination == TEST_SLASH.rr2guide then error('insert rejected') end
+                return original(destination, value)
+            end
+        """)
+        globals_ = lua.globals()
+        self.assertEqual("insert-error", globals_.RiftReader2_Guidance.slashCommands.rr2guide)
+        self.assertEqual("registered", globals_.RiftReader2_Guidance.slashCommands.rr2bind)
+        self.assertEqual(0, len(globals_.TEST_SLASH.rr2guide))
+        self.assertEqual(1, len(globals_.TEST_SLASH.rr2bind))
+        messages = [str(globals_.TEST_PRINT[index])
+                    for index in range(1, len(globals_.TEST_PRINT) + 1)]
+        self.assertTrue(any("slash registration failed for /rr2guide (insert-error)"
+                            in message for message in messages))
+        self.assertFalse(any("slash command ready /rr2guide" in message for message in messages))
+        self.assertIsNone(private.GuidanceInstance.Nonce)
+
+    def test_main_reports_registered_handlers_and_keeps_them_callable(self):
+        lua, private = self.load_main()
+        globals_ = lua.globals()
+        for name in ("rr2bind", "rr2guide"):
+            self.assertEqual("registered", globals_.RiftReader2_Guidance.slashCommands[name])
+            self.assertEqual(1, len(globals_.TEST_SLASH[name]))
+        self.slash(lua, "rr2guide", f"bind lab2 {NONCE}")
+        self.assertEqual(NONCE, private.GuidanceInstance.Nonce)
+        self.assertEqual("lab2", private.GuidanceInstance.Lab)
 
 
 if __name__ == "__main__":

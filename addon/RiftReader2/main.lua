@@ -79,10 +79,13 @@ local function clock()
     return ok and value or nil
 end
 
+local slashRegistration = { rr2bind = "pending", rr2guide = "pending" }
+
 local function displayGuidance()
     local text = guidance:Text(producer and producer.Observation, clock())
     RiftReader2_Guidance = { protocol = "RR2G1", state = guidance.State, lab = guidance.Lab,
-        session = guidance.Nonce, result = guidance.Result, reason = guidance.Reason }
+        session = guidance.Nonce, result = guidance.Result, reason = guidance.Reason,
+        slashCommands = slashRegistration }
     -- Create lazily: a baseline-only addon load need not add a visible panel.
     if guidance.Nonce and not panel then
         local ok, frame = pcall(function()
@@ -127,100 +130,110 @@ local function update()
 end
 
 -- Legacy slash events pass only the argument string (unlike modern event handles).
-pcall(function()
-    table.insert(Command.Slash.Register("rr2bind"), {
-        function(args)
-            local accepted, reason = live:Bind(args)
-            if accepted then
-                print("RiftReader2 reader bound; waiting for advancing observations.")
-            else
-                print("RiftReader2: " .. reason)
-            end
-        end,
-        "RiftReader2",
-        "Bind a live reader for this addon load"
-    })
-end)
+-- Report registration failures rather than swallowing them in a bare pcall.
+-- A successful registration alone does not prove that typed input reached this handler.
+local function registerSlash(name, handler, description)
+    local ok, commands = pcall(function()
+        return Command.Slash.Register(name)
+    end)
+    if not ok or type(commands) ~= "table" then
+        slashRegistration[name] = not ok and "register-error" or ("invalid-list-" .. type(commands))
+        print("RiftReader2: slash registration failed for /" .. name .. " (" .. slashRegistration[name] .. ").")
+        return false
+    end
+    local inserted = pcall(table.insert, commands, { handler, "RiftReader2", description })
+    if not inserted then
+        slashRegistration[name] = "insert-error"
+        print("RiftReader2: slash registration failed for /" .. name .. " (insert-error).")
+        return false
+    end
+    slashRegistration[name] = "registered"
+    print("RiftReader2: slash command ready /" .. name)
+    return true
+end
 
-pcall(function()
-    table.insert(Command.Slash.Register("rr2guide"), {
-        function(args)
-            if type(args) ~= "string" or #args > 512 then print("RiftReader2: malformed guidance command."); return end
-            if rebindFailedClosed and args ~= "status" then
-                print("RiftReader2: Reader rebind failed closed; reload the UI before using guidance commands.")
-                displayGuidance()
-                return
+registerSlash("rr2bind", function(args)
+    local accepted, reason = live:Bind(args)
+    if accepted then
+        print("RiftReader2 reader bound; waiting for advancing observations.")
+    else
+        print("RiftReader2: " .. reason)
+    end
+end, "Bind a live reader for this addon load")
+
+registerSlash("rr2guide", function(args)
+    if type(args) ~= "string" or #args > 512 then print("RiftReader2: malformed guidance command."); return end
+    if rebindFailedClosed and args ~= "status" then
+        print("RiftReader2: Reader rebind failed closed; reload the UI before using guidance commands.")
+        displayGuidance()
+        return
+    end
+    local lab, nonce = string.match(args, "^bind (lab[12]) ([0-9a-f]+)$")
+    local rebindLab, rebindNonce = string.match(args, "^rebind (lab[12]) ([0-9a-f]+)$")
+    local accepted, reason
+    if lab then
+        -- Validate both bindings before changing the guidance identity.
+        accepted, reason = live:CanBind(nonce)
+        if accepted then accepted, reason = guidance:Bind(lab, nonce) end
+        if accepted then
+            local liveAccepted, liveReason = live:Bind(nonce)
+            accepted = liveAccepted
+            if not accepted then
+                reason = liveReason
+                guidance:Invalidate(reason)
             end
-            local lab, nonce = string.match(args, "^bind (lab[12]) ([0-9a-f]+)$")
-            local rebindLab, rebindNonce = string.match(args, "^rebind (lab[12]) ([0-9a-f]+)$")
-            local accepted, reason
-            if lab then
-                -- Validate both bindings before changing the guidance identity.
-                accepted, reason = live:CanBind(nonce)
-                if accepted then accepted, reason = guidance:Bind(lab, nonce) end
-                if accepted then
-                    local liveAccepted, liveReason = live:Bind(nonce)
-                    accepted = liveAccepted
-                    if not accepted then
-                        reason = liveReason
-                        guidance:Invalidate(reason)
-                    end
+        end
+    elseif rebindLab then
+        -- Prevalidate both sides. An unexpected split mutation below
+        -- latches publication off until the next UI reload.
+        accepted, reason = live:CanRebind(rebindNonce)
+        if accepted then accepted, reason = guidance:CanRebind(rebindLab, rebindNonce) end
+        if accepted then
+            local priorSequence = producer and producer.Sequence
+            if type(priorSequence) ~= "number" then
+                accepted, reason = false, "Observation producer unavailable; reload the UI before rebinding."
+            end
+        end
+        if accepted then
+            local mutationSucceeded, liveAccepted, liveReason, guidanceAccepted, guidanceReason = pcall(function()
+                local changedLive, changedLiveReason = live:Rebind(rebindNonce)
+                if not changedLive then
+                    return changedLive, changedLiveReason, false, nil
                 end
-            elseif rebindLab then
-                -- Prevalidate both sides. An unexpected split mutation below
-                -- latches publication off until the next UI reload.
-                accepted, reason = live:CanRebind(rebindNonce)
-                if accepted then accepted, reason = guidance:CanRebind(rebindLab, rebindNonce) end
-                if accepted then
-                    local priorSequence = producer and producer.Sequence
-                    if type(priorSequence) ~= "number" then
-                        accepted, reason = false, "Observation producer unavailable; reload the UI before rebinding."
-                    end
-                end
-                if accepted then
-                    local mutationSucceeded, liveAccepted, liveReason, guidanceAccepted, guidanceReason = pcall(function()
-                        local changedLive, changedLiveReason = live:Rebind(rebindNonce)
-                        if not changedLive then
-                            return changedLive, changedLiveReason, false, nil
-                        end
-                        local changedGuidance, changedGuidanceReason = guidance:Rebind(rebindLab, rebindNonce)
-                        return changedLive, changedLiveReason, changedGuidance, changedGuidanceReason
-                    end)
-                    accepted = mutationSucceeded and liveAccepted and guidanceAccepted
-                    reason = accepted and guidanceReason or liveReason or guidanceReason
-                    if accepted then
-                        -- Do not leave the old nonce globally visible until the
-                        -- next producer update.
-                        clearLiveFrames()
-                        clearReferenceFrames()
-                        rebindAfterSequence = producer.Sequence
-                    else
-                        rebindFailedClosed = true
-                        clearLiveFrames()
-                        clearReferenceFrames()
-                        pcall(function()
-                            guidance:Invalidate("Reader rebind failed closed; reload the UI before attaching another reader.")
-                        end)
-                        reason = "Reader rebind failed closed; reload the UI before attaching another reader."
-                    end
-                end
-            elseif args == "status" then
-                reason = guidance:Text(producer and producer.Observation, clock())
-            elseif args == "clear" then
-                guidance:Invalidate("Cancelled by operator; waiting for a new result.")
-                reason = guidance.Reason
-            elseif string.match(args, "^result ") then
-                accepted, reason = guidance:Receive(args, producer and producer.Observation, clock())
+                local changedGuidance, changedGuidanceReason = guidance:Rebind(rebindLab, rebindNonce)
+                return changedLive, changedLiveReason, changedGuidance, changedGuidanceReason
+            end)
+            accepted = mutationSucceeded and liveAccepted and guidanceAccepted
+            reason = accepted and guidanceReason or liveReason or guidanceReason
+            if accepted then
+                -- Do not leave the old nonce globally visible until the
+                -- next producer update.
+                clearLiveFrames()
+                clearReferenceFrames()
+                rebindAfterSequence = producer.Sequence
             else
-                reason = "Use /rr2guide bind lab1|lab2 NONCE, rebind lab1|lab2 NEW_NONCE, result ..., status, or clear. Results expire after 10s from source; movement invalidates them."
+                rebindFailedClosed = true
+                clearLiveFrames()
+                clearReferenceFrames()
+                pcall(function()
+                    guidance:Invalidate("Reader rebind failed closed; reload the UI before attaching another reader.")
+                end)
+                reason = "Reader rebind failed closed; reload the UI before attaching another reader."
             end
-            print("RiftReader2: " .. tostring(reason))
-            displayGuidance()
-        end,
-        "RiftReader2",
-        "Bounded manual external guidance; no game actions"
-    })
-end)
+        end
+    elseif args == "status" then
+        reason = guidance:Text(producer and producer.Observation, clock())
+    elseif args == "clear" then
+        guidance:Invalidate("Cancelled by operator; waiting for a new result.")
+        reason = guidance.Reason
+    elseif string.match(args, "^result ") then
+        accepted, reason = guidance:Receive(args, producer and producer.Observation, clock())
+    else
+        reason = "Use /rr2guide bind lab1|lab2 NONCE, rebind lab1|lab2 NEW_NONCE, result ..., status, or clear. Results expire after 10s from source; movement invalidates them."
+    end
+    print("RiftReader2: " .. tostring(reason))
+    displayGuidance()
+end, "Bounded manual external guidance; no game actions")
 
 local function attach(event, label)
     if event == nil then
