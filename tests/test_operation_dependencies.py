@@ -182,6 +182,44 @@ class ControllerEnsureTests(unittest.TestCase):
             with self.assertRaisesRegex(DependencyUnavailable, "managed-owner-refused"):
                 ensure_controller._verify_existing_owner("lab1", config)
 
+    def test_typed_owner_lifecycle_errors_are_preserved_without_recovery(self):
+        from scripts.managed_controller_receipt import ManagedReceiptError
+        reasons = ("managed-live-generation-absent", "managed-live-generation-not-unique",
+                   "managed-live-generation-exiting", "managed-process-identity-uncertain")
+        for operation in (ensure_controller.ensure, ensure_controller.ensure_existing):
+            for reason in reasons:
+                with self.subTest(operation=operation.__name__, reason=reason), \
+                     patch.object(ensure_controller.HostConfig, "load"), \
+                     patch.object(ensure_controller, "_probe", return_value={"host": {}}), \
+                     patch("scripts.managed_controller_receipt.resolve_current_managed_controller",
+                           side_effect=ManagedReceiptError(reason)) as resolve, \
+                     patch("scripts.vm_console_native.listener_owner") as listener, \
+                     patch.object(ensure_controller, "_launch") as launch, \
+                     patch.object(ensure_controller, "_launch_lock") as lock:
+                    with self.assertRaises(DependencyUnavailable) as caught:
+                        operation("lab2")
+                    self.assertEqual(caught.exception.name, "controller")
+                    self.assertEqual(caught.exception.code, reason)
+                    resolve.assert_called_once_with("lab2")
+                    listener.assert_not_called()
+                    launch.assert_not_called()
+                    lock.assert_not_called()
+
+    def test_untyped_or_unknown_owner_errors_remain_redacted(self):
+        from scripts.managed_controller_receipt import ManagedReceiptError
+        for error in (RuntimeError("managed-live-generation-exiting"),
+                      ValueError("managed-live-generation-absent"),
+                      ManagedReceiptError("private-details"),
+                      ManagedReceiptError("managed-live-generation-exiting private details")):
+            with self.subTest(error=repr(error)), patch(
+                    "scripts.managed_controller_receipt.resolve_current_managed_controller",
+                    side_effect=error), patch("scripts.vm_console_native.listener_owner") as listener:
+                with self.assertRaises(DependencyUnavailable) as caught:
+                    ensure_controller._verify_existing_owner("lab2", Mock(ui_port=1234))
+                self.assertEqual(caught.exception.code, "managed-owner-refused")
+                self.assertNotIn("private", str(caught.exception))
+                listener.assert_not_called()
+
     def test_unowned_healthy_listener_is_never_replaced(self):
         with patch.object(ensure_controller.HostConfig, "load"), \
              patch.object(ensure_controller, "_probe", return_value={"host": {}}), \

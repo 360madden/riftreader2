@@ -140,8 +140,21 @@ existing managed lifecycle, followed by fresh admission. Do not rewrite its
 receipt, remove its lock, or bypass runtime identity checks. Preserve cleanup
 and shared desktop ownership while resolving the actual blocker.
 `controller-managed-owner-refused` means the existing controller failed ownership
-admission, not that VM credentials are missing. Inspect the strict receipt resolver
-for the underlying reason. Unknown exceptions remain redacted.
+admission, not that VM credentials are missing. Known typed lifecycle reasons are
+now retained by the controller dependency and native read command; inspection
+output prefixes them with `controller-`:
+
+- `managed-live-generation-absent`: no recorded controller matches a live process.
+- `managed-live-generation-not-unique`: multiple matching generation records;
+  this does not by itself prove multiple distinct processes.
+- `managed-live-generation-exiting`: a matching live generation has a stop,
+  failure or exit marker. Inspect that exact generation, not another target.
+- `managed-process-identity-uncertain`: process identity/absence is not proved.
+
+These are diagnostic distinctions, not retry or restart permission. Existing
+refusals still block the operation without starting a replacement. Unknown and
+untyped errors remain redacted. In particular, a planned console handoff can
+produce stopping then absent states; do not mistake those for duplicate owners.
 
 ## Compact saved-image transport
 

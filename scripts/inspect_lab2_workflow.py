@@ -618,6 +618,8 @@ def main(argv=None):
         safe_dependency = (isinstance(exc, DependencyUnavailable)
                            and exc.name == "controller" and exc.code in {
                                "managed-owner-refused", "supervision-blocked",
+                               "managed-live-generation-absent", "managed-live-generation-not-unique",
+                               "managed-live-generation-exiting", "managed-process-identity-uncertain",
                                "existing-endpoint-unhealthy", "listener-state-uncertain"})
         failure = {"status": "blocked", "phase": args.phase, "errorType": type(exc).__name__,
                    "reason": "managed-runtime-changed" if safe_runtime else "controller-" + exc.code if safe_dependency else str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",

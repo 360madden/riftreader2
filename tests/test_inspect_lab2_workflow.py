@@ -499,6 +499,11 @@ class InspectionTests(unittest.TestCase):
         from io import StringIO
         cases = (
             (flow.DependencyUnavailable("controller", "managed-owner-refused"), "controller-managed-owner-refused"),
+            (flow.DependencyUnavailable("controller", "managed-live-generation-absent"), "controller-managed-live-generation-absent"),
+            (flow.DependencyUnavailable("controller", "managed-live-generation-not-unique"), "controller-managed-live-generation-not-unique"),
+            (flow.DependencyUnavailable("controller", "managed-live-generation-exiting"), "controller-managed-live-generation-exiting"),
+            (flow.DependencyUnavailable("controller", "managed-process-identity-uncertain"), "controller-managed-process-identity-uncertain"),
+            (flow.DependencyUnavailable("controller", "managed-live-generation-exiting private"), None),
             (flow.DependencyUnavailable("controller", "private-detail"), None),
             (flow.DependencyUnavailable("other-private-name", "managed-owner-refused"), None),
             (RuntimeError("controller: managed-owner-refused"), None),

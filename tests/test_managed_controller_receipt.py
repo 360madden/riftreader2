@@ -103,7 +103,7 @@ class ManagedReceiptTests(unittest.TestCase):
     def test_reused_pid_with_new_start_is_not_the_original_generation(self):
         self.live[321] = dict(self.identity, startTicks=556)
         with self.assertRaisesRegex(managed.ManagedReceiptError,
-                                    "managed-live-generation-not-unique"):
+                                    "managed-live-generation-absent"):
             self.resolve()
         self.assertEqual(self.verified, [])
 
@@ -205,8 +205,31 @@ class ManagedReceiptTests(unittest.TestCase):
     def test_missing_process_is_skipped_not_promoted(self):
         self.live.clear()
         with self.assertRaisesRegex(managed.ManagedReceiptError,
-                                    "managed-live-generation-not-unique"):
+                                    "managed-live-generation-absent"):
             self.resolve()
+        self.assertEqual(self.verified, [])
+
+    def test_empty_inventory_reports_absence_not_duplicate_owners(self):
+        self.original.unlink()
+        with self.assertRaisesRegex(managed.ManagedReceiptError,
+                                    "managed-live-generation-absent"):
+            self.resolve()
+        self.assertEqual(self.verified, [])
+
+    def test_requested_shutdown_is_not_absence_or_duplicate_ownership(self):
+        marker = self.original.parent / "stop.request"
+        marker.write_text("reviewed-console-handoff", encoding="utf-8")
+        with self.assertRaisesRegex(managed.ManagedReceiptError,
+                                    "managed-live-generation-exiting"):
+            self.resolve()
+        self.assertEqual(marker.read_text(encoding="utf-8"), "reviewed-console-handoff")
+        self.assertEqual(self.verified, [])
+
+    def test_proven_dead_stopped_history_does_not_block_current_owner(self):
+        history = self.create_receipt("b" * 32, pid=654)
+        (history.parent / "stop.request").write_text("old-handoff", encoding="utf-8")
+        self.assertEqual(self.resolve()[0], self.original)
+        self.assertTrue((history.parent / "stop.request").exists())
 
     def test_dead_malformed_history_with_strict_exit_preserves_live_successor(self):
         for content in (b"", b"{", b"not json", b"[]", b'"old"',

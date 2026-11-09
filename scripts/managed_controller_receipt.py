@@ -472,6 +472,9 @@ def resolve_current_managed_controller(lab: str, *, root=None, configs=None,
                 "managed-live-generation-exiting")
         live.append((receipt_path.resolve(strict=True), receipt))
 
+    # Zero admitted generations is not evidence of competing owners. Keep both
+    # states blocked, but let callers distinguish a missing owner from ambiguity.
+    require(bool(live), "managed-live-generation-absent")
     require(len(live) == 1, "managed-live-generation-not-unique")
     path, receipt = live[0]
     if expected_receipt_path is not None:

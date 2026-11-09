@@ -184,12 +184,24 @@ def _launch(lab, config):
 
 def _verify_existing_owner(lab, config):
     """Bind the authenticated listener to one exact managed generation."""
-    from scripts.managed_controller_receipt import resolve_current_managed_controller
+    from scripts.managed_controller_receipt import (
+        ManagedReceiptError, resolve_current_managed_controller,
+    )
     from scripts.vm_console_native import listener_owner
     try:
         _, receipt, _ = resolve_current_managed_controller(lab)
         if listener_owner(config.ui_port) != receipt["pid"]:
             raise ValueError("listener PID differs")
+    except ManagedReceiptError as error:
+        # Preserve only fixed lifecycle diagnostics, never arbitrary exception
+        # text. This does not retry, replace a controller, or relax admission.
+        reason = str(error)
+        if reason not in {
+            "managed-live-generation-absent", "managed-live-generation-not-unique",
+            "managed-live-generation-exiting", "managed-process-identity-uncertain",
+        }:
+            reason = "managed-owner-refused"
+        raise DependencyUnavailable("controller", reason) from None
     except Exception:
         raise DependencyUnavailable("controller", "managed-owner-refused") from None
 
