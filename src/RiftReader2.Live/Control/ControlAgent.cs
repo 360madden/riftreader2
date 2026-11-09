@@ -480,7 +480,7 @@ public sealed class ControlAgent
                     }
                 }
                 token.ThrowIfCancellationRequested();
-                var input = new BoundInput(this, target, request.Action.ClickTarget);
+                using var input = new BoundInput(this, target, request.Action);
                 var result = await new BoundedControlExecutor(input).ExecuteAsync(request.Action, token);
                 if (result.ReleaseSucceeded)
                     File.Delete(PendingPath);
@@ -615,9 +615,20 @@ public sealed class ControlAgent
         value == "left" ? MouseButton.Left : value == "right" ? MouseButton.Right
             : throw new InvalidDataException("Invalid mouse button.");
 
-    private sealed class BoundInput(ControlAgent owner, DesktopTarget target, ClickTarget? clickTarget = null) : IControlInput
+    internal static bool CanInspectFullInputIdentity(
+        int inputStarted, int remainingReleases, int releaseFailed) =>
+        releaseFailed == 0 && (inputStarted == 0 || remainingReleases == 0);
+
+    private sealed class BoundInput(ControlAgent owner, DesktopTarget target, ControlAction action)
+        : IControlInput, IDisposable
     {
+        private readonly WindowsControlDesktop.PinnedInputTarget pinned = WindowsControlDesktop.PinInputTarget(target);
         private readonly long started = Stopwatch.GetTimestamp();
+        private int inputStarted;
+        private readonly ClickTarget? clickTarget = action.ClickTarget;
+        private int remainingReleases = action.Keys.Length + (action.MouseButton is null ? 0 : 1);
+        private int releaseFailed;
+        public void Dispose() => pinned.Dispose();
         public List<object> Events { get; } = [];
         private void Record(string kind, object value) => Events.Add(new
         {
@@ -626,44 +637,72 @@ public sealed class ControlAgent
             timestampUtc = DateTimeOffset.UtcNow,
             elapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds
         });
-        public bool IsTargetCurrent() => owner.IsArmed() && owner.Inspect() == target;
+        // Full identity work is outside the injection gate and outside the held interval.
+        public bool IsTargetCurrent() => owner.IsArmed()
+            // Read the release count before the failure flag: the last decrement publishes
+            // any preceding failure. Uncertain release must never resume expensive inspection.
+            && (CanInspectFullInputIdentity(Volatile.Read(ref inputStarted),
+                Volatile.Read(ref remainingReleases), Volatile.Read(ref releaseFailed))
+                ? owner.Inspect() == target
+                : pinned.IsCurrent());
         private void RequireTarget()
         {
-            if (!IsTargetCurrent())
+            if (!owner.IsArmed() || !pinned.IsCurrent())
                 throw new InvalidOperationException("Target changed immediately before input.");
         }
         public void KeyDown(string key)
         {
             RequireTarget();
+            Volatile.Write(ref inputStarted, 1);
             WindowsControlDesktop.SendKeys(key, true);
             Record("keyDownInserted", key);
         }
         public void KeyUp(string key)
         {
-            WindowsControlDesktop.SendKeys(key, false);
-            Record("keyUpInserted", key);
+            try
+            {
+                WindowsControlDesktop.SendKeys(key, false);
+                Record("keyUpInserted", key);
+            }
+            catch
+            {
+                Volatile.Write(ref releaseFailed, 1);
+                throw;
+            }
+            finally { Interlocked.Decrement(ref remainingReleases); }
         }
         public void ButtonDown(string button)
         {
             RequireTarget();
             if (clickTarget is not null)
             {
-                WindowsControlDesktop.RequireTargetedClickWindow(target);
+                // RequireTarget already verifies pinned identity, foreground and reviewed geometry.
                 var position = WindowsControlDesktop.GetCursorPosition();
                 WindowsControlDesktop.ValidateTargetedClickPosition(target, clickTarget, position);
                 Record("targetedClickPositionVerified", position);
             }
+            Volatile.Write(ref inputStarted, 1);
             WindowsControlDesktop.SendMouseButton(ParseButton(button), true);
             Record("buttonDownInserted", button);
         }
         public void ButtonUp(string button)
         {
-            WindowsControlDesktop.SendMouseButton(ParseButton(button), false);
-            Record("buttonUpInserted", button);
+            try
+            {
+                WindowsControlDesktop.SendMouseButton(ParseButton(button), false);
+                Record("buttonUpInserted", button);
+            }
+            catch
+            {
+                Volatile.Write(ref releaseFailed, 1);
+                throw;
+            }
+            finally { Interlocked.Decrement(ref remainingReleases); }
         }
         public void MoveRelative(int dx, int dy)
         {
             RequireTarget();
+            Volatile.Write(ref inputStarted, 1);
             WindowsControlDesktop.MoveRelative(dx, dy);
             Record("relativeMoveInserted", new { dx, dy });
         }

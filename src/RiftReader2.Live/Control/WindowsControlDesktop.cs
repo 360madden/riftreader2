@@ -187,6 +187,51 @@ public static class WindowsControlDesktop
         }
     }
 
+    // Pin the admitted process object before input; PID recycling cannot rebind this handle.
+    internal static PinnedInputTarget PinInputTarget(DesktopTarget target)
+    {
+        EnsureWindows();
+        var process = Process.GetProcessById(target.ProcessId);
+        try
+        {
+            _ = process.Handle;
+            var window = ParseWindowHandle(target.WindowHandle);
+            RevalidateTarget(target, window);
+            RevalidateProcess(process, target.ProcessId, target.ProcessStartUtcTicks, target.ExecutablePath);
+            var pinned = new PinnedInputTarget(target, process, window);
+            if (!pinned.IsCurrent())
+                throw new InvalidOperationException("The bound input target changed before admission.");
+            return pinned;
+        }
+        catch
+        {
+            process.Dispose();
+            throw;
+        }
+    }
+
+    internal sealed class PinnedInputTarget(
+        DesktopTarget target, Process process, IntPtr window) : IDisposable
+    {
+        // Only constant-time OS/window queries here: no process enumeration, file/hash
+        // reads, MainModule access, or replacement-window discovery while input is held.
+        internal bool IsCurrent()
+        {
+            if (NativeMethods.WaitForSingleObject(process.SafeHandle, 0) != 0x00000102
+                || !NativeMethods.IsWindow(window) || !NativeMethods.IsWindowVisible(window)
+                || NativeMethods.IsIconic(window) || !IsTargetForeground(window))
+                return false;
+            _ = NativeMethods.GetWindowThreadProcessId(window, out var pid);
+            if (pid != target.ProcessId)
+                return false;
+            var geometry = GetClientGeometry(window);
+            return geometry.X == target.ClientX && geometry.Y == target.ClientY
+                && geometry.Width == target.ClientWidth && geometry.Height == target.ClientHeight;
+        }
+
+        public void Dispose() => process.Dispose();
+    }
+
     public static byte[] CaptureBmp(DesktopTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -911,6 +956,10 @@ public static class WindowsControlDesktop
 
     private static class NativeMethods
     {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        internal static extern uint WaitForSingleObject(
+            Microsoft.Win32.SafeHandles.SafeProcessHandle handle, uint milliseconds);
+
         internal delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
 
         [DllImport("user32.dll", SetLastError = true)]

@@ -46,6 +46,9 @@ public sealed class BoundedControlExecutor
         long? holdStartedAt = null;
         string? deliveryError = null;
         List<string> releaseErrors = [];
+        var releaseScope = action.HoldMilliseconds > 0
+            ? new BoundedControlReleaseScope(input, action, timeProvider, cancellationToken)
+            : null;
 
         try
         {
@@ -60,8 +63,7 @@ public sealed class BoundedControlExecutor
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed before all keys were pressed.");
                 ThrowIfHoldBudgetExpired("all keys were pressed");
-                input.KeyDown(key);
-                holdStartedAt ??= timeProvider.GetTimestamp();
+                holdStartedAt = releaseScope!.Deliver(() => input.KeyDown(key));
             }
 
             if (action.MouseButton is not null)
@@ -69,8 +71,7 @@ public sealed class BoundedControlExecutor
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed before the mouse button was pressed.");
                 ThrowIfHoldBudgetExpired("the mouse button was pressed");
-                input.ButtonDown(action.MouseButton);
-                holdStartedAt ??= timeProvider.GetTimestamp();
+                holdStartedAt = releaseScope!.Deliver(() => input.ButtonDown(action.MouseButton));
             }
 
             if (action.DeltaX != 0 || action.DeltaY != 0)
@@ -78,8 +79,7 @@ public sealed class BoundedControlExecutor
                 if (!CheckTarget())
                     throw new TargetChangedException("The selected target changed before relative mouse movement.");
                 ThrowIfHoldBudgetExpired("relative mouse movement was delivered");
-                input.MoveRelative(action.DeltaX, action.DeltaY);
-                holdStartedAt ??= timeProvider.GetTimestamp();
+                holdStartedAt = releaseScope!.Deliver(() => input.MoveRelative(action.DeltaX, action.DeltaY));
             }
 
             if (action.WheelNotches != 0)
@@ -140,6 +140,11 @@ public sealed class BoundedControlExecutor
         {
             if (releaseRequired)
                 ReleasePressedControls();
+            if (releaseScope is not null)
+            {
+                releaseScope.Dispose();
+                releaseErrors.AddRange(releaseScope.ReleaseErrors);
+            }
         }
 
         return BuildResult();
@@ -147,7 +152,9 @@ public sealed class BoundedControlExecutor
         bool CheckTarget()
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return input.IsTargetCurrent();
+            var current = input.IsTargetCurrent();
+            cancellationToken.ThrowIfCancellationRequested();
+            return current;
         }
 
         void ThrowIfHoldBudgetExpired(string pendingWork)
@@ -160,29 +167,7 @@ public sealed class BoundedControlExecutor
             }
         }
 
-        void TryRelease(Action release, string control)
-        {
-            try
-            {
-                release();
-            }
-            catch (Exception exception)
-            {
-                releaseErrors.Add(
-                    $"Failed to release {control}: {exception.GetType().Name}: {exception.Message}");
-            }
-        }
-
-        void ReleasePressedControls()
-        {
-            if (action.MouseButton is not null)
-                TryRelease(() => input.ButtonUp(action.MouseButton), $"mouse button '{action.MouseButton}'");
-            for (var index = action.Keys.Length - 1; index >= 0; index--)
-            {
-                var key = action.Keys[index];
-                TryRelease(() => input.KeyUp(key), $"key '{key}'");
-            }
-        }
+        void ReleasePressedControls() => releaseScope?.Release();
 
         ControlExecutionResult BuildResult()
         {
