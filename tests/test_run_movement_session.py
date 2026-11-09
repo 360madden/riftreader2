@@ -205,6 +205,7 @@ class MovementSessionTests(unittest.TestCase):
             session=session("calibration", keys=("w",), dimension="1d", calibration_hold_ms=100),
             review=review(), output=self.root / "short-calibration",
             host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(feedback.ready_timeouts, [10.0, 1.5])
         self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("w", 100)])
         self.assertEqual(result["calibrations"]["w"]["calibration_hold_ms"], 118)
         self.assertAlmostEqual(result["calibrations"]["w"]["dx_per_ms"], .4 / 118)
@@ -417,7 +418,8 @@ class MovementSessionTests(unittest.TestCase):
             def wait_action_ready(self, timeout_seconds=10.0):
                 self.ready_timeouts.append(timeout_seconds)
                 if len(self.ready_timeouts) == 1:
-                    return Sample(.04, 0, 0, 2)
+                    self.current = Sample(.04, 0, 0, 2)
+                    return self.current
                 return self.current
 
         host, lease = Host(), Lease()
@@ -431,6 +433,47 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(.54, result["samples"][-1]["xyz"]["x"])
         self.assertAlmostEqual(.5 / 150,
             result["calibrations"]["w"]["dx_per_ms"], places=12)
+
+    def test_1d_prewarm_precedes_arm_and_post_arm_check_is_bounded(self):
+        host, lease = Host(), Lease()
+        observations = []
+
+        class TimedFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                observations.append((timeout_seconds, host.arms))
+                return super().wait_action_ready(timeout_seconds)
+
+        feedback = TimedFeedback([Sample(0, 0, 0, 1), Sample(.35, 0, 0, 2)])
+        result = execute_armed_session(
+            session=session("calibration", keys=("w",), dimension="1d",
+                            calibration_hold_ms=100),
+            review=review(), output=self.root / "prewarmed-forward",
+            host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertTrue(result["success"])
+        self.assertEqual(observations, [(10.0, 0), (1.5, 1)])
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(host.stops, 1)
+
+    def test_1d_post_arm_freshness_gap_releases_without_input(self):
+        host, lease = Host(), Lease()
+
+        class GapFeedback(Feedback):
+            def wait_action_ready(self, timeout_seconds=10.0):
+                if self.ready_timeouts:
+                    self.ready_timeouts.append(timeout_seconds)
+                    raise MovementSessionError("post-arm-source-not-fresh")
+                return super().wait_action_ready(timeout_seconds)
+
+        feedback = GapFeedback([Sample(0, 0, 0, 1)])
+        with self.assertRaisesRegex(MovementSessionError, "post-arm-source-not-fresh"):
+            execute_armed_session(
+                session=session("calibration", keys=("w",), dimension="1d"),
+                review=review(), output=self.root / "no-post-arm-source",
+                host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
+        self.assertEqual(feedback.ready_timeouts, [10.0, 1.5])
+        self.assertEqual(host.arms, 1)
+        self.assertEqual(host.actions, [])
+        self.assertEqual(host.stops, 1)
 
     def test_readiness_precedes_slow_armed_status_then_status_precedes_input(self):
         events = []

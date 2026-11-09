@@ -928,6 +928,16 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 require(distance - best_after_pulse >= .03,
                         "no bounded 1d pulse makes useful progress")
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
+        # A fast-scoped reader can spend several seconds waiting for a fresh
+        # anchor. Do that while disarmed for the one-pulse 1d calibration, then
+        # preserve a short independent post-arm check before any input.
+        short_calibration = mode == "calibration" and dimension == "1d"
+        if short_calibration:
+            prearm_ready = feedback.wait_action_ready(
+                timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+            initial = _require_action_ready_sample(initial, prearm_ready)
+            samples[-1] = initial.to_dict()
+            lease.check(); lease.heartbeat(); host.status(require_armed=False)
         host.arm(session["capture"]["capture"], review["note"], output / "arm.private.json")
         started = clock()
         if mode == "turn":
@@ -973,7 +983,9 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             for index, key in enumerate(calibration_keys, 1):
                 require(clock() - started <= 12, "elapsed budget")
                 lease.check(); lease.heartbeat()
-                ready = feedback.wait_action_ready(timeout_seconds=ACTION_READY_TIMEOUT_SECONDS)
+                ready = feedback.wait_action_ready(timeout_seconds=(
+                    1.5 if short_calibration and index == 1
+                    else ACTION_READY_TIMEOUT_SECONDS))
                 require(clock() - started <= 12, "elapsed budget")
                 lease.check(); lease.heartbeat(); host.status(require_armed=True)
                 prior = _require_action_ready_sample(prior, ready)
