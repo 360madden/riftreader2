@@ -81,6 +81,9 @@ def plan_route(current_path: Path, catalog_path: Path, route_ids: list[str],
     for index in range(len(completed_ids), len(normalized)):
         step = steering.next_step_saved_anchor(
             current_path, catalog_path, normalized[index], turn_paths, after_turn_path)
+        steering.require(step["currentCalibrationSha256"] == current_hash
+                         and step["identity"] == current["identity"],
+                         "calibration changed during route planning")
         if step["decision"] == "arrived":
             arrived_now.append(normalized[index])
             continue

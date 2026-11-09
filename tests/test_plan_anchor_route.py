@@ -6,8 +6,10 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts import navigation_anchors as anchors
+from scripts import plan_anchor_route as route
 from scripts.plan_anchor_route import main, plan_route
 from scripts.plan_steered_waypoint import SteeringPlanError
 from tests.test_plan_steered_waypoint import calibration
@@ -83,6 +85,30 @@ class AnchorRouteTests(unittest.TestCase):
         with self.assertRaisesRegex(SteeringPlanError, "game build differs"):
             plan_route(self.calibration, self._catalog(second_build="C" * 64),
                        ["Start", "Dock"])
+
+    def test_changed_calibration_is_rejected_before_accepting_arrived_step(self):
+        catalog = self._catalog(first=(10, 4, 0), second=(12, 4, 0))
+        original = calibration((0, 4, 0), (1, 4, 0), 1, (1, 0))
+        for changed, nonce, digest in (("hash", "nonce", "E" * 64),
+                                       ("identity", "other", "D" * 64)):
+            with self.subTest(changed=changed):
+                replacement = calibration((9, 4, 0), (10, 4, 0), 101,
+                                          (1, 0), nonce=nonce)
+                calls = []
+
+                def read_snapshot(path):
+                    calls.append(path)
+                    if len(calls) == 1:
+                        return original, "D" * 64
+                    return replacement, digest
+
+                # The later snapshot would report arrival at Start. It must not
+                # advance the route pinned to the original calibration at x=1.
+                with patch.object(route.steering, "load", side_effect=read_snapshot):
+                    with self.assertRaisesRegex(SteeringPlanError,
+                                                "calibration changed during route planning"):
+                        plan_route(self.calibration, catalog, ["Start", "Dock"])
+                self.assertEqual(len(calls), 3)
 
     def test_cli_writes_one_new_output_and_no_live_runner(self):
         catalog = self._catalog()
