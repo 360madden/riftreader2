@@ -457,6 +457,29 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
 
+    def test_first_anchor_wait_does_not_consume_movement_action_budget(self):
+        profile = self.root / "profile.json"
+        profile.write_text(json.dumps(profile_document()), encoding="utf-8")
+        elapsed = [0.0]
+
+        class SlowFirstAnchorFeedback(Feedback):
+            def wait_after(self, completed, prior, timeout_seconds=6.0):
+                result = super().wait_after(completed, prior, timeout_seconds)
+                elapsed[0] = 12.3
+                return result
+
+        host, lease = Host(), Lease()
+        feedback = SlowFirstAnchorFeedback([Sample(0, 0, 0, 1),
+                                            Sample(.8, 0, 0, 2), Sample(.81, 0, 0, 3)])
+        feedback.on_ready = lambda _n: elapsed.__setitem__(0, 9.0)
+        result = execute_armed_session(session=session("movement", profile,
+                    {"x": 1, "y": 0, "z": 0}), review=review(),
+                    output=self.root / "late-initial-anchor", host=host, lease=lease,
+                    feedback=feedback, clock=lambda: elapsed[0], now=lambda: NOW)
+        self.assertEqual(result["status"], "arrived")
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(host.stops, 1)
+
     def test_retained_lab1_short_final_geometry_selects_bounded_96ms_pulse(self):
         profile = self.root / "lab1-short-profile.json"
         document = {"schemaVersion": 1,

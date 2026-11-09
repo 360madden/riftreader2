@@ -982,6 +982,11 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 lease.check(); lease.heartbeat(); host.status(require_armed=True)
                 prior = _require_action_ready_sample(prior, ready)
                 samples[-1] = prior.to_dict()
+                if controller.action_count == 0:
+                    # Initial anchor acquisition is no-input waiting; the action
+                    # budget begins at the first actual movement decision.
+                    started = clock()
+                    elapsed = 0.0
                 decision = controller.decide(_position(prior), elapsed)
                 if decision is None:
                     require(controller.feedback_iterations >= 1,
