@@ -87,7 +87,10 @@ class ReferenceTests(unittest.TestCase):
 
 class ReferenceMainTests(unittest.TestCase):
     def setUp(self):
-        from tests.test_guidance_addon import MAIN_STUB
+        if __package__:
+            from tests.test_guidance_addon import MAIN_STUB
+        else:
+            from test_guidance_addon import MAIN_STUB
         self.lua = LuaRuntime(unpack_returned_tuples=True)
         self.lua.execute(MAIN_STUB)
         self.private = self.lua.table()
