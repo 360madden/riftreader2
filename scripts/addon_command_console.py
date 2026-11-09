@@ -1226,16 +1226,19 @@ def add_quick_review(plan: dict) -> dict:
     try:
         from quick_review_capture import preview
         image = preview(Path(plan["screen"]), plan["screenSha256"], compact=True)
+        deadline = _parse_time(plan["capturedAtUtc"]) + timedelta(seconds=MAX_REVIEW_AGE_SECONDS)
+        remaining = max(0, math.ceil((deadline - datetime.now(timezone.utc)).total_seconds()))
         return {
             "status": "ready",
             "captureId": plan["captureId"],
             "screenSha256": plan["screenSha256"],
             "planSha256": plan["planSha256"],
             "capturedAtUtc": plan["capturedAtUtc"],
-            "reviewExpiresInSeconds": MAX_REVIEW_AGE_SECONDS,
+            "reviewDeadlineUtc": deadline.isoformat().replace("+00:00", "Z"),
+            "reviewExpiresInSeconds": remaining,
             "preview": image,
         }
-    except (OSError, ValueError, KeyError, TypeError, ImportError) as error:
+    except (Blocked, OSError, ValueError, KeyError, TypeError, ImportError) as error:
         # Preparation is still usable through its original image and plan.
         return {"status": "unavailable", "reason": str(error)[:160]}
 

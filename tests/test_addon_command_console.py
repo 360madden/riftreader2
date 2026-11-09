@@ -29,7 +29,7 @@ class InlineQuickReviewTests(unittest.TestCase):
             "screen": str(ROOT / "artifacts" / "review-screen.png"),
             "screenSha256": "A" * 64,
             "planSha256": "b" * 64,
-            "capturedAtUtc": "2026-11-09T16:00:00Z",
+            "capturedAtUtc": "2000-11-09T16:00:00Z",
         }
 
     def test_compact_preview_preserves_exact_source_and_review_pins(self):
@@ -44,10 +44,23 @@ class InlineQuickReviewTests(unittest.TestCase):
             "screenSha256": original["screenSha256"],
             "planSha256": original["planSha256"],
             "capturedAtUtc": original["capturedAtUtc"],
-            "reviewExpiresInSeconds": module.MAX_REVIEW_AGE_SECONDS,
+            "reviewDeadlineUtc": "2000-11-09T16:01:00Z",
+            "reviewExpiresInSeconds": 0,
             "preview": image,
         })
         self.assertEqual(original, self.plan())
+
+    def test_preview_counts_down_from_capture_instead_of_resetting_review_age(self):
+        original = self.plan()
+        captured = datetime.now(timezone.utc) - timedelta(seconds=5)
+        original["capturedAtUtc"] = captured.isoformat()
+        with mock.patch("quick_review_capture.preview", return_value={"nonAuthoritative": True}):
+            review = module.add_quick_review(original)
+        self.assertEqual(review["status"], "ready")
+        deadline = datetime.fromisoformat(review["reviewDeadlineUtc"].replace("Z", "+00:00"))
+        self.assertEqual(deadline, captured + timedelta(seconds=module.MAX_REVIEW_AGE_SECONDS))
+        self.assertGreater(review["reviewExpiresInSeconds"], 0)
+        self.assertLessEqual(review["reviewExpiresInSeconds"], module.MAX_REVIEW_AGE_SECONDS - 5)
 
     def test_preview_error_does_not_cancel_a_successful_prepare(self):
         original = self.plan()
