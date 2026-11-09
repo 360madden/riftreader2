@@ -401,6 +401,7 @@ class ControlMutex:
         ]
         self.api.CreateMutexW.restype = wintypes.HANDLE
         self.api.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        self.api.WaitForSingleObject.restype = wintypes.DWORD
         self.api.ReleaseMutex.argtypes = [wintypes.HANDLE]
         self.handle = self.api.CreateMutexW(None, False, self.name)
         if not self.handle:
@@ -409,7 +410,11 @@ class ControlMutex:
         if outcome not in (0, 0x80):
             self.api.CloseHandle(self.handle)
             self.handle = None
-            raise Blocked("controller-busy")
+            if outcome == 0x102:
+                raise Blocked("controller-busy")
+            if outcome == 0xFFFFFFFF:
+                raise Blocked("controller-lock-wait-failed")
+            raise Blocked("controller-lock-wait-unexpected")
         self.owner_thread = threading.current_thread()
         self.abandoned = outcome == 0x80
         return self

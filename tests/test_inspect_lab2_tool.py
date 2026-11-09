@@ -51,6 +51,49 @@ class DeliveryTests(unittest.TestCase):
         self.assertEqual(result["nativeVitals"]["metrics"]["health"], 10)
         self.assertEqual(result["nativeVitals"]["qualification"], "candidate-only; semantics/passive-freshness/restart-unverified; UI review required")
 
+    def test_process_start_ticks_are_exact_decimal_text_in_delivery(self):
+        ticks = 639297512883473401
+        for name in ("report.json", "state.json", "capture/capture.json"):
+            path = self.root / name
+            data = json.loads(path.read_text())
+            data["target"]["processStartUtcTicks"] = ticks
+            path.write_text(json.dumps(data), encoding="utf-8")
+        state_sha = hashlib.sha256((self.root / "state.json").read_bytes()).hexdigest().upper()
+        (self.root / "state.sha256.json").write_text(json.dumps({"sha256": state_sha}), encoding="utf-8")
+        self.receipt["metadataSha256"] = hashlib.sha256((self.root / "capture/capture.json").read_bytes()).hexdigest().upper()
+        (self.root / "capture-receipt.json").write_text(json.dumps(self.receipt), encoding="utf-8")
+        result = tool.delivery(self.root, self.console)
+        self.assertEqual(result["target"]["processStartUtcTicks"], str(ticks))
+        self.assertEqual(json.loads((self.root / "report.json").read_text())["target"]["processStartUtcTicks"], ticks)
+
+    def test_capture_only_delivery_does_not_require_native_vitals(self):
+        path = self.root / "report.json"
+        report = json.loads(path.read_text())
+        del report["nativeVitals"]
+        path.write_text(json.dumps(report), encoding="utf-8")
+        result = tool.delivery(self.root, self.console, require_native=False)
+        self.assertNotIn("nativeVitals", result)
+        self.assertEqual(result["targetId"], "lab2")
+        self.assertEqual(result["captureBackend"], "managed-controller/guest-agent")
+        self.assertEqual(result["capturedAtUtc"], "t")
+        self.assertTrue(result["cleanupVerified"])
+        with self.assertRaisesRegex(ValueError, "native candidate result missing"):
+            tool.delivery(self.root, self.console)
+
+    def test_capture_only_refuses_native_artifact_mixup(self):
+        with self.assertRaisesRegex(ValueError, "capture-only artifacts"):
+            tool.delivery(self.root, self.console, require_native=False)
+
+    def test_capture_only_keeps_cleanup_guard(self):
+        path = self.root / "report.json"
+        report = json.loads(path.read_text())
+        del report["nativeVitals"]
+        path.write_text(json.dumps(report), encoding="utf-8")
+        self.receipt["watchdogCleanup"]["stopVerified"] = False
+        (self.root / "capture-receipt.json").write_text(json.dumps(self.receipt), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "cleanup proof"):
+            tool.delivery(self.root, self.console, require_native=False)
+
     def test_wrong_root_refused(self):
         self.console["image"] = str(self.root.parent / "image.bmp")
         with self.assertRaisesRegex(ValueError, "path mismatch"):
@@ -106,6 +149,52 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(tool.main(["--output", str(self.root)]), 2)
         self.assertEqual(out.getvalue(), "")
         self.assertNotIn("image", json.loads(err.getvalue()))
+
+
+class CaptureOnlyTests(unittest.TestCase):
+    def test_capture_only_omits_native_read_and_delivers_once(self):
+        calls = []
+        def workflow(args):
+            calls.append(args)
+            print('{"phase":"run"}')
+            return 0
+        out = io.StringIO()
+        with patch.object(tool.flow, "main", side_effect=workflow), patch.object(
+                tool, "delivery", return_value={"status": "verified-awaiting-visual-review"}) as deliver, redirect_stdout(out):
+            self.assertEqual(tool.main(["--output", "fresh", "--capture-only"]), 0)
+        self.assertEqual(calls, [["run", "--output", "fresh"]])
+        deliver.assert_called_once_with(Path("fresh"), {"phase": "run"}, require_native=False)
+
+    def test_capture_only_rejects_native_modes_before_any_work(self):
+        for extra in (["--confirm-output", "second"], ["--reviewed-output", "old"],
+                      ["--reviewed-image-sha256", "A" * 64], ["--focus", "energy"]):
+            with self.subTest(extra=extra), patch.object(tool.flow, "main") as workflow, redirect_stderr(io.StringIO()):
+                self.assertEqual(tool.main(["--output", "fresh", "--capture-only"] + extra), 2)
+                workflow.assert_not_called()
+
+    def test_guarded_failure_preserves_reason_without_publishing_artifacts(self):
+        def workflow(_):
+            print(json.dumps({"status": "blocked", "phase": "run",
+                              "errorType": "InspectionBlocked", "reason": "active request prevents capture",
+                              "image": "must-not-publish"}), file=tool.sys.stderr)
+            return 2
+        out, err = io.StringIO(), io.StringIO()
+        with patch.object(tool.flow, "main", workflow), redirect_stdout(out), redirect_stderr(err):
+            self.assertEqual(tool.main(["--output", "fresh", "--capture-only"]), 2)
+        self.assertEqual(out.getvalue(), "")
+        result = json.loads(err.getvalue())
+        self.assertEqual(result["reason"], "active request prevents capture")
+        self.assertEqual(result["workflowFailure"]["errorType"], "InspectionBlocked")
+        self.assertNotIn("image", result["workflowFailure"])
+        self.assertNotIn("must-not-publish", err.getvalue())
+
+    def test_non_object_failure_is_generic(self):
+        def workflow(_):
+            print('["not a structured failure"]', file=tool.sys.stderr)
+            return 2
+        with patch.object(tool.flow, "main", workflow):
+            with self.assertRaisesRegex(tool.WorkflowBlocked, "guarded workflow failed"):
+                tool.run_inspection(Path("fresh"), capture_only=True)
 
 
 class ConfirmationTests(unittest.TestCase):

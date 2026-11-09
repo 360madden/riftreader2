@@ -475,6 +475,25 @@ class InspectionTests(unittest.TestCase):
                 self.assertEqual(value["reason"], expected)
                 self.assertNotIn("credential", error.getvalue())
 
+    def test_cli_exposes_only_typed_exact_managed_runtime_cause(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        for outer, cause, expected in (
+                (flow.MovementSessionError, flow.ManagedReceiptError("managed-runtime-changed"), "managed-runtime-changed"),
+                (flow.MovementSessionError, RuntimeError("managed-runtime-changed"), None),
+                (RuntimeError, flow.ManagedReceiptError("managed-runtime-changed"), None),
+                (flow.MovementSessionError, flow.ManagedReceiptError("managed-runtime-changed private details"), None),
+                (flow.MovementSessionError, flow.ManagedReceiptError("other-private-reason"), None),
+                (flow.MovementSessionError, None, None)):
+            failure = outer("private outer managed-runtime-changed")
+            failure.__cause__ = cause
+            with self.subTest(outer=outer, cause=cause), patch.object(flow, "preflight", side_effect=failure), \
+                 patch.object(flow, "native_options", return_value=None), redirect_stderr(StringIO()) as error:
+                self.assertEqual(flow.main(["run", "--output", str(self.root)]), 2)
+                value = json.loads(error.getvalue())
+                self.assertEqual(value["reason"], expected or "operation refused; inspect retained stage timings")
+                self.assertNotIn("private", error.getvalue())
+
     def test_final_inventory_failure_prevents_report(self):
         self.artifact()
         flow.publish(self.root / "capture-receipt.json", {

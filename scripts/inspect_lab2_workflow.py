@@ -27,6 +27,8 @@ from scripts.ensure_guest_agent import ensure as ensure_guest_agent, _check_wait
 from scripts.fresh_game_identity import query
 from scripts.vm_console_native import Blocked, validate_config
 from scripts.run_movement_session import ManagedPinnedHost, write_managed_host_plan, admit_lab2_inspection_host_with_status, load, sanitized
+from scripts.run_movement_session import MovementSessionError
+from scripts.managed_controller_receipt import ManagedReceiptError
 from scripts.control_host import HostConfig
 from scripts.nav_access_queue import AccessQueue
 from scripts.capture_lab_hp_screenshot import ready_epoch, idle_queue, await_release
@@ -569,8 +571,11 @@ def main(argv=None):
     except Exception as exc:
         safe_capability = isinstance(exc, Blocked) and str(exc) in {
             "fresh-identity-unsupported", "native-vitals-unsupported"}
+        safe_runtime = (isinstance(exc, MovementSessionError)
+                        and isinstance(exc.__cause__, ManagedReceiptError)
+                        and str(exc.__cause__) == "managed-runtime-changed")
         failure = {"status": "blocked", "phase": args.phase, "errorType": type(exc).__name__,
-                   "reason": str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
+                   "reason": "managed-runtime-changed" if safe_runtime else str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
                    "startUtc": before, "endUtc": utc().isoformat(),
                    "elapsedSeconds": time.perf_counter()-started, "stages": timer.rows}
         if admitted is not None and "finalInventoryFailure" in admitted:

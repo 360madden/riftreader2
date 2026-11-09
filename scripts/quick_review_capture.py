@@ -1,6 +1,6 @@
 """Display an exact RR2 capture quickly without moving or modifying its source.
 
-The JPEG is a non-authoritative visual preview. The original BMP, metadata,
+The JPEG is a non-authoritative visual preview. The original BMP/PNG, metadata,
 review age, and SHA-256 remain the sole movement admission evidence.
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ def preview(capture: Path, expected_sha256: str, width: int = 840) -> dict:
 
     try:
         with Image.open(BytesIO(raw)) as image:
-            if (image.format != "BMP" or not 1 <= image.width <= 8192
+            if (image.format not in ("BMP", "PNG") or not 1 <= image.width <= 8192
                     or not 1 <= image.height <= 8192):
                 raise ValueError("capture-image-invalid")
             original_size = (image.width, image.height)

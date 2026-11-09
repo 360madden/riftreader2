@@ -146,6 +146,13 @@ versioned contracts and all authority, exact-identity, freshness and control
 protections. The root retains sole live-input ownership per lab and coordinates
 shared-host heavy work; workers gain no independent game-input authority.
 
+For a screenshot-only request, use `scripts/observe_target.py` with explicit
+`--target` and `--expected-host` on that target's owning Windows host; see the
+[target observation workflow](docs/workflows/target-observation.md). The default
+is capture-only, with no target fallback. Physical capture also requires explicit
+foreground-change authority. Keep the Lab 2 native/UI and confirmation behavior
+below when those diagnostics are requested.
+
 For Lab 2 read-only native/UI diagnostics, prefer the bounded
 `scripts/inspect_lab2_tool.py --output <fresh absolute directory>` delivery entry
 point. In ChatGPT/Codex, run it and load its returned image within ONE

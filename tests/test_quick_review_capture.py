@@ -30,6 +30,24 @@ class QuickReviewCaptureTests(unittest.TestCase):
         self.assertEqual(data[:2], b"\xff\xd8")
         self.assertEqual(result["previewFormat"], "jpeg")
 
+    def test_png_preview_is_hash_pinned_and_preserves_original(self):
+        path = self.path.with_suffix(".png")
+        Image.new("RGB", (720, 480), (24, 48, 96)).save(path, "PNG")
+        original = path.read_bytes()
+        digest = hashlib.sha256(original).hexdigest().upper()
+        result = preview(path, digest)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(result["sourceSha256"], digest)
+        self.assertEqual(result["sourceDimensions"], [720, 480])
+        self.assertTrue(result["nonAuthoritative"])
+
+    def test_other_image_formats_are_not_silently_accepted(self):
+        path = self.path.with_suffix(".jpg")
+        Image.new("RGB", (720, 480)).save(path, "JPEG")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        with self.assertRaisesRegex(ValueError, "capture-image-invalid"):
+            preview(path, digest)
+
     def test_mutated_capture_refused(self):
         self.path.write_bytes(self.source + b"x")
         with self.assertRaisesRegex(ValueError, "capture-hash-mismatch"):

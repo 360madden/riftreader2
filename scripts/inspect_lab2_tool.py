@@ -1,4 +1,4 @@
-"""Deliver the verified Lab 2 native/UI inspection in one tool handoff."""
+"""Deliver a verified Lab 2 screenshot, optionally with native candidate vitals."""
 from __future__ import annotations
 
 import argparse
@@ -31,7 +31,7 @@ def safe_bytes(path, limit):
     return data
 
 
-def delivery(root, console):
+def delivery(root, console, *, require_native=True):
     root = flow.output_root(root)
     safe_bytes(root / "workflow-owner.json", 1024 * 1024)
     flow.assert_owned(root)
@@ -77,6 +77,20 @@ def delivery(root, console):
     if (receipt.get("imageSha256") != actual or metadata.get("savedImage", {}).get("sha256") != actual
             or metadata.get("artifact", {}).get("sha256") != actual):
         raise ValueError("image hash mismatch")
+    target = dict(report["target"])
+    if type(target.get("processStartUtcTicks")) is int:
+        target["processStartUtcTicks"] = str(target["processStartUtcTicks"])
+    result = {"status": report["status"], "image": str(image), "imageSha256": actual,
+              "report": str(report_path), "workflowSeconds": console["elapsedSeconds"],
+              "targetId": "lab2", "workflow": "vmware",
+              "captureBackend": "managed-controller/guest-agent",
+              "captureId": report["captureId"], "capturedAtUtc": report["capturedAtUtc"],
+              "target": target, "cleanupVerified": True,
+              "foregroundMayChange": False}
+    if not require_native:
+        if "nativeRequest" in state or "nativeVitals" in report:
+            raise ValueError("capture-only artifacts include native telemetry")
+        return result
     native = report.get("nativeVitals")
     if (not isinstance(native, dict) or native.get("mode") != "persistent"
             or native.get("qualification") != "candidate-only; semantics/passive-freshness/restart-unverified; UI review required"):
@@ -86,9 +100,35 @@ def delivery(root, console):
     if type(metrics.get("unitKey")) is int:
         metrics["unitKey"] = str(metrics["unitKey"])
     native["metrics"] = metrics
-    return {"status": report["status"], "image": str(image), "imageSha256": actual,
-            "report": str(report_path), "workflowSeconds": console["elapsedSeconds"],
-            "nativeVitals": native}
+    result["nativeVitals"] = native
+    return result
+
+
+class WorkflowBlocked(ValueError):
+    """Retain only the guarded workflow's already-sanitized failure fields."""
+    def __init__(self, failure):
+        self.details = {key: failure[key] for key in ("phase", "errorType", "reason")
+                        if isinstance(failure.get(key), str) and len(failure[key]) <= 512}
+        super().__init__(self.details.get("reason", "guarded workflow failed"))
+
+
+def run_inspection(root, *, capture_only=False):
+    stdout, stderr = io.StringIO(), io.StringIO()
+    command = ["run"] + ([] if capture_only else ["--native-vitals"]) + ["--output", str(root)]
+    with redirect_stdout(stdout), redirect_stderr(stderr):
+        code = flow.main(command)
+    if code != 0:
+        try:
+            failure = json.loads(stderr.getvalue())
+            if not isinstance(failure, dict) or failure.get("status") != "blocked":
+                failure = {}
+        except (TypeError, ValueError):
+            failure = {}
+        raise WorkflowBlocked(failure)
+    console = json.loads(stdout.getvalue())
+    result = (delivery(root, console, require_native=False) if capture_only
+              else delivery(root, console))
+    return result, console
 
 
 def confirmation_evidence(root):
@@ -166,6 +206,8 @@ def reviewed_snapshot(root, evidence):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--capture-only", action="store_true",
+                        help="capture through the managed controller without a native-vitals read")
     parser.add_argument("--confirm-output", type=Path)
     parser.add_argument("--reviewed-output", type=Path)
     parser.add_argument("--reviewed-image-sha256")
@@ -174,6 +216,8 @@ def main(argv=None):
     current = args.output
     try:
         reviewed_args = (args.reviewed_output, args.reviewed_image_sha256, args.focus)
+        if args.capture_only and (args.confirm_output is not None or any(x is not None for x in reviewed_args)):
+            raise ValueError("capture-only cannot confirm or review native telemetry")
         if any(x is not None for x in reviewed_args) and (any(x is None for x in reviewed_args) or args.confirm_output is not None):
             raise ValueError("reviewed continuation requires output, SHA and focus without confirmation")
         reviewed = args.reviewed_output is not None
@@ -194,13 +238,7 @@ def main(argv=None):
                     or os.path.lexists(args.confirm_output)):
                 raise ValueError("confirmation requires two distinct fresh output roots")
         def run(root):
-            stdout, stderr = io.StringIO(), io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                code = flow.main(["run", "--native-vitals", "--output", str(root)])
-            if code != 0:
-                raise ValueError("guarded workflow failed")
-            console = json.loads(stdout.getvalue())
-            return delivery(root, console), console
+            return run_inspection(root, capture_only=args.capture_only)
         result, first_console = run(args.output)
         if reviewed:
             if reviewed_delivery(first) != prior or reviewed_snapshot(first, initial) != snapshot:
@@ -232,7 +270,10 @@ def main(argv=None):
         print(json.dumps(result, allow_nan=False))
         return 0
     except Exception as exc:
-        print(json.dumps({"status": "blocked", "reason": str(exc), "output": str(current)}), file=sys.stderr)
+        failure = {"status": "blocked", "reason": str(exc), "output": str(current)}
+        if isinstance(exc, WorkflowBlocked):
+            failure["workflowFailure"] = exc.details
+        print(json.dumps(failure), file=sys.stderr)
         return 2
 
 

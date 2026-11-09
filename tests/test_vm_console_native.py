@@ -5,7 +5,7 @@ import socket
 import struct
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 SCRIPT = Path(__file__).parents[1] / "scripts" / "vm_console_native.py"
@@ -194,6 +194,63 @@ class PathConfigTests(unittest.TestCase):
         self.assertEqual(args.port, 5905)
         self.assertEqual(args.command, "bootstrap")
         self.assertEqual(args.actions, Path("actions.json"))
+
+
+class ControlMutexWaitTests(unittest.TestCase):
+    def api(self, outcome):
+        api = Mock()
+        api.CreateMutexW.return_value = 123
+        api.WaitForSingleObject.return_value = outcome
+        api.ReleaseMutex.return_value = True
+        return api
+
+    def assert_acquired(self, outcome, *, abandoned):
+        api = self.api(outcome)
+        mutex = console.ControlMutex(Path("mock-only.vmx"))
+        with patch.object(console, "_kernel32", return_value=api):
+            with mutex as acquired:
+                self.assertIs(acquired, mutex)
+                self.assertEqual(mutex.handle, 123)
+                self.assertIs(mutex.owner_thread, console.threading.current_thread())
+                self.assertEqual(mutex.abandoned, abandoned)
+                api.CloseHandle.assert_not_called()
+                api.ReleaseMutex.assert_not_called()
+            api.WaitForSingleObject.assert_called_once_with(123, 0)
+            self.assertIs(api.WaitForSingleObject.restype, console.wintypes.DWORD)
+            api.ReleaseMutex.assert_called_once_with(123)
+            api.CloseHandle.assert_called_once_with(123)
+            self.assertIsNone(mutex.handle)
+
+    def assert_blocked(self, outcome, reason):
+        api = self.api(outcome)
+        mutex = console.ControlMutex(Path("mock-only.vmx"))
+        with patch.object(console, "_kernel32", return_value=api):
+            with self.assertRaises(console.Blocked) as raised:
+                with mutex:
+                    self.fail("Unacquired mutex must not admit the body")
+        self.assertEqual(str(raised.exception), reason)
+        api.WaitForSingleObject.assert_called_once_with(123, 0)
+        self.assertIs(api.WaitForSingleObject.restype, console.wintypes.DWORD)
+        api.CloseHandle.assert_called_once_with(123)
+        api.ReleaseMutex.assert_not_called()
+        self.assertIsNone(mutex.handle)
+        self.assertIsNone(mutex.owner_thread)
+        self.assertFalse(mutex.abandoned)
+
+    def test_acquired_wait_admits_owner(self):
+        self.assert_acquired(0, abandoned=False)
+
+    def test_abandoned_wait_admits_owner_and_marks_abandoned(self):
+        self.assert_acquired(0x80, abandoned=True)
+
+    def test_timeout_remains_controller_busy(self):
+        self.assert_blocked(0x102, "controller-busy")
+
+    def test_wait_failed_has_distinct_nonsecret_reason(self):
+        self.assert_blocked(0xFFFFFFFF, "controller-lock-wait-failed")
+
+    def test_unexpected_wait_fails_closed_with_distinct_reason(self):
+        self.assert_blocked(0x40, "controller-lock-wait-unexpected")
 
 
 class VncConnectionCleanupTests(unittest.TestCase):
