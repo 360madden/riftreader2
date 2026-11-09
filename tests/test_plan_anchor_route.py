@@ -126,6 +126,79 @@ class AnchorRouteTests(unittest.TestCase):
         self.assertIn("File exists", stdout.getvalue())
 
 
+    def _recorded_arrival(self, *, goal=(1, 4, 0), final=(1, 4, 0),
+                          first_sequence=4, nonce="nonce", released=True):
+        from tests.test_plan_steered_waypoint import sample
+        return {"success": True, "mode": "movement", "status": "arrived",
+                "settles": 1, "arrivalObservations": 2, "feedbackIterations": 1,
+                "goal": dict(zip(("x", "y", "z"), goal)),
+                "actionEvidence": [{"index": 1, "result": {"result": {
+                    "deliverySucceeded": True, "releaseSucceeded": released,
+                    "cancelled": False, "targetLost": False, "stateUncertain": False},
+                    "recoveryRequired": False}}],
+                "samples": [sample(goal[0] - .4, goal[1], goal[2], first_sequence,
+                                   nonce=nonce),
+                            sample(*final, first_sequence + 1, nonce=nonce),
+                            sample(*final, first_sequence + 2, nonce=nonce)]}
+
+    def test_recorded_arrival_advances_only_valid_same_source_route_prefix(self):
+        current = self._write("after-arrival-calibration.json",
+                              calibration((1, 4, 0), (2, 4, 0), 10, (1, 0)))
+        catalog = self._catalog()
+        arrival = self._write("arrival.json", self._recorded_arrival())
+        result = plan_route(current, catalog, ["Start", "Dock"],
+                            arrival_result_paths=[arrival])
+        self.assertEqual(result["recordedArrivalIds"], ["Start"])
+        self.assertEqual(result["nextAnchorId"], "Dock")
+        self.assertEqual(result["declaredCompletedIds"], [])
+        self.assertEqual(result["recordedArrivalResults"][0]["finalPlanarError"], 0)
+        self.assertEqual(len(result["recordedArrivalResults"][0]["resultSha256"]), 64)
+        self.assertFalse(result["movementEligible"])
+        self.assertNotIn("runnerArgumentFragment", result["step"])
+
+        with self.assertRaisesRegex(SteeringPlanError, "choose declared checkpoints"):
+            plan_route(current, catalog, ["Start", "Dock"], ["Start"],
+                       arrival_result_paths=[arrival])
+
+    def test_recorded_arrival_rejects_bad_goal_release_source_and_sequence(self):
+        current = self._write("after-arrival-calibration.json",
+                              calibration((1, 4, 0), (2, 4, 0), 10, (1, 0)))
+        catalog = self._catalog()
+        cases = (
+            ("wrong-goal", self._recorded_arrival(goal=(10, 4, 0)),
+             "does not match route anchor"),
+            ("release-failed", self._recorded_arrival(released=False),
+             "not cleanly released"),
+            ("foreign-reader", self._recorded_arrival(nonce="another"),
+             "another source identity"),
+            ("not-arrived", {**self._recorded_arrival(), "status": "failed"},
+             "not a completed released movement"),
+            ("no-settle", {**self._recorded_arrival(), "settles": 0},
+             "not a completed released movement"),
+            ("late-replay", self._recorded_arrival(first_sequence=15),
+             "did not advance"),
+        )
+        for name, evidence, expected in cases:
+            with self.subTest(name=name):
+                path = self._write(name + ".json", evidence)
+                with self.assertRaisesRegex(SteeringPlanError, expected):
+                    plan_route(current, catalog, ["Start", "Dock"],
+                               arrival_result_paths=[path])
+
+    def test_cli_accepts_ordered_saved_arrival_but_not_as_live_authority(self):
+        current = self._write("after-arrival-calibration.json",
+                              calibration((1, 4, 0), (2, 4, 0), 10, (1, 0)))
+        catalog = self._catalog()
+        arrival = self._write("arrival.json", self._recorded_arrival())
+        argv = ["--catalog", str(catalog), "--current-w-calibration", str(current),
+                "--anchor", "Start", "--anchor", "Dock",
+                "--arrival-result", str(arrival)]
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(main(argv), 0)
+        report = json.loads(output.getvalue())
+        self.assertEqual(report["recordedArrivalIds"], ["Start"])
+        self.assertIs(report["movementEligible"], False)
+
     def test_direct_script_entrypoint_displays_help(self):
         script = Path(__file__).resolve().parents[1] / "scripts" / "plan_anchor_route.py"
         completed = subprocess.run(
