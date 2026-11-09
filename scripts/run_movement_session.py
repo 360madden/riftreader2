@@ -981,11 +981,19 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                 action = MovementAction(key, calibration_hold_ms, 0, 0)
                 response = host.action(action, output / f"action-{index}.json")
                 _result, completed = _action_result(response)
+                observed = _result.get("observedKeyHoldMilliseconds")
+                require(type(observed) in (int, float) and math.isfinite(float(observed))
+                        and abs(float(observed) - calibration_hold_ms)
+                        <= max(25.0, calibration_hold_ms * .25),
+                        "calibration measured hold is missing or drifted")
+                measured_hold_ms = round(float(observed))
+                require(20 <= measured_hold_ms <= 150,
+                        "calibration measured hold exceeds supported bounds")
                 after = _require_advancing(prior,
                     feedback.wait_after(completed, prior,
                                         timeout_seconds=ACTION_FEEDBACK_TIMEOUT_SECONDS))
                 samples.append(after.to_dict())
-                calibrations[key] = calibrate_displacement(key, _position(prior), _position(after), calibration_hold_ms)
+                calibrations[key] = calibrate_displacement(key, _position(prior), _position(after), measured_hold_ms)
                 actions.append({"index": index, "decision": asdict(action), "result": response,
                                 "before": prior.to_dict(), "after": after.to_dict()})
                 prior = after

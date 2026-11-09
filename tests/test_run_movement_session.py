@@ -91,9 +91,10 @@ class Lease:
 
 
 class Host:
-    def __init__(self, ambiguous=False, arm_expired=False, stop_fails=False):
+    def __init__(self, ambiguous=False, arm_expired=False, stop_fails=False, measured_hold_ms=None):
         self.ambiguous = ambiguous; self.arm_expired = arm_expired
         self.stop_fails = stop_fails
+        self.measured_hold_ms = measured_hold_ms
         self.arms = 0; self.actions = []; self.stops = 0
     def status(self, require_armed=None, **_kwargs):
         if require_armed and self.arm_expired: raise RuntimeError("arm expired")
@@ -106,6 +107,7 @@ class Host:
         return {"result": {"deliverySucceeded": True,
                             "releaseSucceeded": not self.ambiguous,
                             "cancelled": False, "targetLost": False,
+                            "observedKeyHoldMilliseconds": (action.hold_ms if self.measured_hold_ms is None else self.measured_hold_ms),
                             "stateUncertain": self.ambiguous},
                 "recoveryRequired": self.ambiguous,
                 "completedAtUtc": NOW.isoformat()}
@@ -197,17 +199,42 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(lease.finishes[0][0], "succeeded")
 
     def test_1d_forward_calibration_uses_reviewed_100ms_pulse(self):
-        host, lease = Host(), Lease()
+        host, lease = Host(measured_hold_ms=117.6375), Lease()
         feedback = Feedback([Sample(0, 0, 0, 1), Sample(.4, 0, 0, 2)])
         result = execute_armed_session(
             session=session("calibration", keys=("w",), dimension="1d", calibration_hold_ms=100),
             review=review(), output=self.root / "short-calibration",
             host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
         self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("w", 100)])
-        self.assertEqual(result["calibrations"]["w"]["calibration_hold_ms"], 100)
-        self.assertAlmostEqual(result["calibrations"]["w"]["dx_per_ms"], .004)
+        self.assertEqual(result["calibrations"]["w"]["calibration_hold_ms"], 118)
+        self.assertAlmostEqual(result["calibrations"]["w"]["dx_per_ms"], .4 / 118)
+        self.assertEqual(result["actionEvidence"][0]["result"]["result"]["observedKeyHoldMilliseconds"], 117.6375)
         self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_missing_or_unusable_measured_hold_stops_without_calibration(self):
+        class MissingTimingHost(Host):
+            def action(self, action, output):
+                receipt = super().action(action, output)
+                receipt["result"].pop("observedKeyHoldMilliseconds")
+                return receipt
+
+        cases = (("missing", MissingTimingHost()),
+                 ("nonfinite", Host(measured_hold_ms=float("nan"))),
+                 ("over-bound", Host(measured_hold_ms=172)))
+        for name, host in cases:
+            lease = Lease()
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    MovementSessionError, "calibration measured hold"):
+                execute_armed_session(
+                    session=session("calibration", keys=("w",), dimension="1d",
+                                    calibration_hold_ms=150),
+                    review=review(), output=self.root / f"bad-measured-hold-{name}",
+                    host=host, lease=lease, feedback=Feedback([Sample(0, 0, 0, 1)]),
+                    clock=lambda: 1.0, now=lambda: NOW)
+            self.assertEqual(len(host.actions), 1)
+            self.assertEqual(host.stops, 1)
+            self.assertEqual(lease.finishes[0][0], "failed")
 
     def test_invalid_calibration_holds_reject_before_arm(self):
         for index, hold in enumerate((None, True, "100", 0, 151)):
