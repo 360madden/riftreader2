@@ -1177,6 +1177,38 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
     return sanitized(result)
 
 
+def add_quick_review(result: dict) -> dict:
+    """Attach a non-authoritative image and exact review pins to one prepared session.
+
+    The successful preparation and queue lease remain intact if optional image
+    delivery fails. Native arming still rechecks the original capture and age.
+    """
+    enriched = dict(result)
+    try:
+        from scripts.quick_review_capture import preview
+        session_path = Path(result["sessionPlan"])
+        session = load(session_path)
+        capture = session["capture"]
+        metadata = load(Path(capture["capture"]))
+        image = preview(Path(capture["image"]), session["captureImageSha256"])
+        enriched["quickReview"] = {
+            "status": "ready",
+            "sessionId": session["sessionId"],
+            "sessionPlanSha256": sha(session_path),
+            "captureId": capture["captureId"],
+            "captureImageSha256": session["captureImageSha256"],
+            "capturedAtUtc": metadata["capturedAtUtc"],
+            "reviewExpiresInSeconds": metadata["reviewExpiresInSeconds"],
+            "preview": image,
+        }
+    except (OSError, ValueError, KeyError, TypeError, MovementSessionError) as error:
+        enriched["quickReview"] = {
+            "status": "unavailable",
+            "reason": str(error)[:160],
+        }
+    return enriched
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__); sub = parser.add_subparsers(dest="command", required=True)
     prep = sub.add_parser("prepare")
@@ -1194,6 +1226,8 @@ def build_parser():
                       help="derive a 1d goal 1.5 through 2.5 measured displacements ahead")
     prep.add_argument("--turn-hold-ms", type=int, default=100,
                       help="single reviewed a/d turn pulse, from 20 through 150 ms")
+    prep.add_argument("--quick-preview", action="store_true",
+                      help="include one SHA-pinned JPEG preview and exact review pins in prepare output")
     prep.add_argument("--after-turn-result", type=Path,
                       help="explicitly require calibration to start after this exact turn result; "
                            "turns outside this chain are not detected")
@@ -1210,6 +1244,8 @@ def main():
                          args.calibration_profile, tuple(args.keys), args.dimension,
                          args.calibrated_displacements, args.turn_hold_ms,
                          args.after_turn_result, args.managed_lab)
+        if args.quick_preview:
+            result = add_quick_review(result)
     else: result = run_reviewed(args.session_plan, args.review, args.output)
     print(json.dumps(sanitized(result), sort_keys=True)); return 0
 
