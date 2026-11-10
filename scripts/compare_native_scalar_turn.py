@@ -14,6 +14,7 @@ import re
 
 from scripts.fresh_native_smoothed_scalar import validate_report, QUALIFICATION
 from scripts.fresh_native_xyz import REPORT_MAX_BYTES
+from scripts.project_xyz_track import _pairs
 from scripts.vm_console_native import Blocked
 
 
@@ -38,7 +39,7 @@ def _load(path):
         raise Blocked("scalar-turn-summary-name-invalid")
     if summary_path.stat().st_size > REPORT_MAX_BYTES:
         raise Blocked("scalar-turn-summary-too-large")
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"), object_pairs_hook=_pairs)
     if (not isinstance(summary, dict) or summary.get("schemaVersion") != 1
             or summary.get("status") != "candidate-only"
             or summary.get("lab") not in ("lab1", "lab2")
@@ -61,7 +62,7 @@ def _load(path):
     raw = source.read_bytes()
     if hashlib.sha256(raw).hexdigest().upper() != summary["sourceReportSha256"].upper():
         raise Blocked("scalar-turn-source-hash-mismatch")
-    report = json.loads(raw)
+    report = json.loads(raw, object_pairs_hook=_pairs)
     metrics = validate_report(report, pid=summary["gameProcessId"],
                               ticks=summary["gameProcessStartUtcTicks"])
     if (summary.get("metrics") != metrics

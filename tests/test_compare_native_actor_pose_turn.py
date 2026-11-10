@@ -159,6 +159,28 @@ class NativePoseTurnCompareTests(unittest.TestCase):
         with self.assertRaisesRegex(pose.Blocked, "summary-source-mismatch"):
             turns.compare(self.before, self.after)
 
+    def test_duplicate_json_keys_rejected_in_summary_and_hashed_source(self):
+        # Duplicate metadata is ambiguous even if the last parsed value fits.
+        original = self.after.read_text(encoding="utf-8")
+        self.assertIn('"lab": "lab2"', original)
+        self.after.write_text(
+            original.replace('"lab": "lab2"', '"lab": "lab1", "lab": "lab2"', 1),
+            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            turns.compare(self.before, self.after)
+
+        self.after.write_text(original, encoding="utf-8")
+        source = self.after.parent / "samples.json"
+        payload = source.read_text(encoding="utf-8")
+        self.assertIn('"actorFlags":0', payload)
+        source.write_text(
+            payload.replace('"actorFlags":0', '"actorFlags":1,"actorFlags":0', 1),
+            encoding="utf-8")
+        self.change_summary(self.after, lambda row: row.__setitem__(
+            "sourceReportSha256", hashlib.sha256(source.read_bytes()).hexdigest().upper()))
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            turns.compare(self.before, self.after)
+
     def test_cli_json_and_generic_missing_file_failure(self):
         stream = io.StringIO()
         with redirect_stdout(stream):

@@ -150,6 +150,28 @@ class ScalarTurnCompareTests(unittest.TestCase):
         with self.assertRaisesRegex(scalar.Blocked, "capture-order-invalid"):
             turns.compare(self.before, self.after)
 
+    def test_duplicate_json_keys_rejected_in_summary_and_hashed_source(self):
+        original = self.after.read_text(encoding="utf-8")
+        self.assertIn('"lab": "lab2"', original)
+        self.after.write_text(
+            original.replace('"lab": "lab2"', '"lab": "lab1", "lab": "lab2"', 1),
+            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            turns.compare(self.before, self.after)
+
+        self.after.write_text(original, encoding="utf-8")
+        source = self.after.parent / "samples.json"
+        payload = source.read_text(encoding="utf-8")
+        self.assertIn('"currentCandidate":0.75', payload)
+        source.write_text(
+            payload.replace('"currentCandidate":0.75',
+                            '"currentCandidate":999,"currentCandidate":0.75', 1),
+            encoding="utf-8")
+        self.mutate_summary(self.after, lambda row: row.__setitem__(
+            "sourceReportSha256", hashlib.sha256(source.read_bytes()).hexdigest().upper()))
+        with self.assertRaisesRegex(ValueError, "duplicate JSON key"):
+            turns.compare(self.before, self.after)
+
     def test_cli_outputs_json_only_and_failure_is_sanitized(self):
         output = io.StringIO()
         with redirect_stdout(output):
