@@ -330,6 +330,54 @@ class NativeTelemetryCommandTests(unittest.TestCase):
             read.assert_called_once_with("lab2", "AMD-DESKTOP", fields=expected)
             self.assertEqual("candidate-only", json.loads(output.getvalue())["status"])
 
+    def test_cli_one_command_pose_turn_comparison_uses_new_saved_capture(self):
+        before = Path("previous/summary.json")
+        after = Path("fresh/summary.json")
+        row = {"status": "candidate-only", "actor-pose": {"summaryPath": str(after)}}
+        expected = {"status": "candidate-only", "matrices": {
+            "actorMatrix": {"deltaDegreesCandidate": 2.0}}}
+        output = io.StringIO()
+        with patch.object(cli, "read_once", return_value=row) as read, \
+                patch.object(cli, "compare_pose_turn", return_value=expected) as compare, \
+                redirect_stdout(output):
+            code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                             "--fields", "actor-pose", "--compare-pose-before", str(before)])
+        self.assertEqual(0, code)
+        read.assert_called_once_with("lab2", "AMD-DESKTOP", fields=["actor-pose"])
+        compare.assert_called_once_with(before, after)
+        result = json.loads(output.getvalue())
+        self.assertEqual(expected, result["poseTurnComparison"])
+        self.assertEqual(2.0, result["poseTurnComparison"]["matrices"]["actorMatrix"][
+            "deltaDegreesCandidate"])
+        self.assertFalse(self.ensure.called)  # The mocked read did not start a controller.
+
+    def test_cli_pose_compare_requires_selected_pose_before_starting(self):
+        output = io.StringIO()
+        with patch.object(cli, "read_once") as read, \
+                patch.object(cli, "compare_pose_turn") as compare, \
+                redirect_stdout(output):
+            code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                             "--compare-pose-before", "previous/summary.json"])
+        self.assertEqual(2, code)
+        self.assertEqual("native-read-pose-compare-requires-pose",
+                         json.loads(output.getvalue())["reason"])
+        read.assert_not_called()
+        compare.assert_not_called()
+        self.ensure.assert_not_called()
+
+    def test_cli_pose_compare_identity_failure_is_blocked(self):
+        output = io.StringIO()
+        row = {"status": "candidate-only", "actor-pose": {"summaryPath": "fresh/summary.json"}}
+        with patch.object(cli, "read_once", return_value=row), \
+                patch.object(cli, "compare_pose_turn", side_effect=cli.Blocked(
+                    "pose-turn-process-or-controller-changed")), redirect_stdout(output):
+            code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                             "--fields", "actor-pose",
+                             "--compare-pose-before", "previous/summary.json"])
+        self.assertEqual(2, code)
+        self.assertEqual("pose-turn-process-or-controller-changed",
+                         json.loads(output.getvalue())["reason"])
+
     def test_cli_duplicate_selection_is_blocked_without_dependency_start(self):
         output = io.StringIO()
         with redirect_stdout(output):

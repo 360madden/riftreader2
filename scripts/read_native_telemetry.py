@@ -29,6 +29,7 @@ from scripts.sample_current_native_vitals import checked_expected_game
 from scripts.fresh_native_xyz import query as query_xyz
 from scripts.fresh_native_vitals import query as query_vitals
 from scripts.fresh_native_actor_pose import query as query_actor_pose
+from scripts.compare_native_actor_pose_turn import compare as compare_pose_turn
 from scripts.fresh_native_smoothed_scalar import query as query_smoothed_scalar
 
 OWNER_HOST = "AMD-DESKTOP"
@@ -153,9 +154,20 @@ def main(argv=None) -> int:
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--fields", nargs="+", choices=NATIVE_FIELDS, default=DEFAULT_FIELDS,
                         help="read only these sources; defaults to position and vitals")
+    parser.add_argument("--compare-pose-before", type=Path,
+                        help="compare the new actor-pose capture to a saved before summary.json")
     args = parser.parse_args(argv)
     try:
+        if args.compare_pose_before is not None:
+            require("actor-pose" in selected_fields(args.fields),
+                    "native-read-pose-compare-requires-pose")
         result = read_once(args.lab, args.expected_host, fields=args.fields)
+        if args.compare_pose_before is not None:
+            pose = result.get("actor-pose")
+            require(isinstance(pose, dict) and isinstance(pose.get("summaryPath"), str),
+                    "native-read-pose-summary-missing")
+            result["poseTurnComparison"] = compare_pose_turn(
+                args.compare_pose_before, Path(pose["summaryPath"]))
         print(json.dumps(result, allow_nan=False, separators=(",", ":")))
         return 0
     except Exception as error:
