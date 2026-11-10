@@ -96,6 +96,8 @@ class FacingSignatureTests(unittest.TestCase):
         result = facing.assess(self.sequence())
         self.assertEqual(result["status"], "candidate-only")
         self.assertEqual(len(result["readoutSha256"]), 5)
+        self.assertTrue(all(row["stationaryCandidate"] for row in
+                            result["stationaryControlPhases"].values()))
         actor = result["matrixCandidates"]["actorMatrix"]
         self.assertEqual(actor["status"], "provisional-behavior-consistent")
         self.assertTrue(actor["cameraInvariantCandidate"])
@@ -126,6 +128,39 @@ class FacingSignatureTests(unittest.TestCase):
                          "inconclusive")
         self.assertIsNone(stopped["matrixCandidates"]["actorMatrix"][
             "singleForwardOffsetFitDegreesCandidate"])
+
+    def test_translation_during_any_control_prevents_false_facing_consistency(self):
+        # Keep A/D matrix deltas and the W course plausible while translating
+        # during a nominal camera-only, A, or D phase. Old code promoted all
+        # three to behavior-consistent despite nonstationary turn controls.
+        for moved_phase in (1, 2, 3):
+            with self.subTest(phase=facing.PHASES[moved_phase]):
+                paths = []
+                for i, angle in enumerate((30, 30, 0, 30, 30)):
+                    x = .25 if i >= moved_phase else 0.0
+                    z = 0.0
+                    if i == 4:
+                        x += math.cos(math.radians(30))
+                        z += math.sin(math.radians(30))
+                    paths.append(self.capture(i, angle, x=x, z=z))
+                result = facing.assess(paths)
+                self.assertFalse(result["stationaryControlPhases"][
+                    facing.PHASES[moved_phase]]["stationaryCandidate"])
+                self.assertEqual(result["matrixCandidates"]["actorMatrix"]["status"],
+                                 "inconclusive")
+
+    def test_unavailable_control_xyz_prevents_false_facing_consistency(self):
+        paths = self.sequence()
+        raw = json.loads(paths[1].read_text(encoding="utf-8"))
+        raw["position"]["metrics"]["ownerIdentityStatus"] = "unanchored"
+        paths[1].write_text(json.dumps(raw), encoding="utf-8")
+        result = facing.assess(paths)
+        self.assertIsNone(result["stationaryControlPhases"]["camera-only"][
+            "horizontalXZDistanceCandidate"])
+        self.assertFalse(result["stationaryControlPhases"]["camera-only"][
+            "stationaryCandidate"])
+        self.assertEqual(result["matrixCandidates"]["actorMatrix"]["status"],
+                         "inconclusive")
 
     def test_identity_and_order_fail_closed(self):
         paths = self.sequence()

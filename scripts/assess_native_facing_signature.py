@@ -77,6 +77,21 @@ def assess(paths: list[Path]) -> dict:
     moved = (type(distance) in (int, float) and math.isfinite(distance)
              and distance >= .05 and type(course) in (int, float)
              and math.isfinite(course))
+    # A camera-only control and stationary A/D turns cannot establish body yaw
+    # when these same phase windows also contain unaccounted X/Z translation.
+    # Keep these as native coordinate candidates, never proof of input delivery.
+    stationary_controls = {}
+    for phase_name, phase_compare in zip(PHASES[1:4], (camera, left, right)):
+        position = phase_compare["position"]
+        xz = position.get("horizontalXZDistanceCandidate")
+        finite = type(xz) in (int, float) and math.isfinite(xz)
+        stationary_controls[phase_name] = {
+            "horizontalXZDistanceCandidate": float(xz) if finite else None,
+            "stationaryCandidate": (position.get("status") == "same-owner-displacement-candidate"
+                                    and finite and 0 <= xz < .05),
+        }
+    controls_stationary = all(row["stationaryCandidate"]
+                              for row in stationary_controls.values())
     results = {}
     for name in MATRICES:
         rows = [phase["actor-pose"]["matrices"][name]
@@ -95,7 +110,8 @@ def assess(paths: list[Path]) -> dict:
         sign = (1 if turn_left <= -1 and turn_right >= 1 else
                 -1 if turn_left >= 1 and turn_right <= -1 else None)
         forward_stable = abs(change[3]) <= 2.5
-        consistent = camera_invariant and sign is not None and moved and forward_stable
+        consistent = (camera_invariant and sign is not None and moved
+                      and forward_stable and controls_stationary)
         # One W bearing can fit any angular offset. Do not call this fit a
         # verification of absolute body heading until another heading is tested.
         offset = (wrap180(float(course) - sign * float(
@@ -129,6 +145,7 @@ def assess(paths: list[Path]) -> dict:
         },
         "phases": list(PHASES),
         "readoutSha256": dict(zip(PHASES, (sha for _, sha in saved))),
+        "stationaryControlPhases": stationary_controls,
         "matrixCandidates": results,
         "bodyFacingQualified": False,
         "qualification": ("Source identities and phase ordering checked; phase/action labels "
