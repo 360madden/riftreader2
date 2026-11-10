@@ -34,6 +34,28 @@ class QuickReviewCaptureTests(unittest.TestCase):
         self.assertEqual(data[:2], b"\xff\xd8")
         self.assertEqual(result["previewFormat"], "jpeg")
 
+    def test_opt_in_resolution_first_retries_quality_before_shrinking_pixels(self):
+        attempts = []
+
+        def fake_save(image, stream, **kwargs):
+            quality = kwargs["quality"]
+            attempts.append((image.size, quality))
+            size = {58: 45_000, 35: 42_000, 20: 36_000}[quality]
+            stream.write(b"\xff\xd8" + b"x" * (size - 2))
+
+        with patch.object(Image.Image, "save", fake_save):
+            result = preview(self.path, self.digest, width=1000, preserve_resolution=True)
+        self.assertEqual([((1000, 580), 58), ((1000, 580), 35),
+                          ((1000, 580), 20)], attempts)
+        self.assertEqual([1000, 580], result["previewDimensions"])
+        self.assertEqual(20, result["previewQuality"])
+        data = base64.b64decode(result["base64"], validate=True)
+        self.assertLessEqual(len(data), 40_000)
+        self.assertEqual(hashlib.sha256(data).hexdigest().upper(), result["previewSha256"])
+        self.assertEqual(self.source, self.path.read_bytes())
+        self.assertTrue(result["nonAuthoritative"])
+        self.assertNotIn("previewQuality", preview(self.path, self.digest))
+
     def test_png_preview_is_hash_pinned_and_preserves_original(self):
         path = self.path.with_suffix(".png")
         Image.new("RGB", (720, 480), (24, 48, 96)).save(path, "PNG")
@@ -162,6 +184,27 @@ class QuickReviewCaptureTests(unittest.TestCase):
                          "--pair", "--compact", "--crop", "0", "0", "100", "100"])
         self.assertEqual(2, code)
         self.assertEqual("invalid-preview-mode", json.loads(blocked.getvalue())["reason"])
+
+    def test_preserve_resolution_cli_is_opt_in_and_not_a_pair_or_compact_mode(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            code = main(["--capture", str(self.path), "--sha256", self.digest,
+                         "--width", "1000", "--preserve-resolution"])
+        self.assertEqual(0, code)
+        result = json.loads(output.getvalue())
+        self.assertEqual([1000, 580], result["previewDimensions"])
+        self.assertEqual(58, result["previewQuality"])
+        self.assertTrue(result["nonAuthoritative"])
+        self.assertEqual(self.source, self.path.read_bytes())
+        for args in (["--compact", "--preserve-resolution"],
+                     ["--pair", "--preserve-resolution", "--crop", "0", "0", "100", "100"]):
+            blocked = StringIO()
+            with redirect_stdout(blocked):
+                code = main(["--capture", str(self.path), "--sha256", self.digest, *args])
+            self.assertEqual(2, code)
+            self.assertEqual("invalid-preview-mode", json.loads(blocked.getvalue())["reason"])
+        with self.assertRaisesRegex(ValueError, "invalid-preview-mode"):
+            preview(self.path, self.digest, preserve_resolution="yes")
 
     def test_compact_rejects_hash_drift_and_unsupported_source(self):
         with self.assertRaisesRegex(ValueError, 'capture-hash-mismatch'):

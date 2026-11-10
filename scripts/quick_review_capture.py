@@ -25,12 +25,12 @@ HASH = re.compile(r"[0-9A-Fa-f]{64}\Z")
 
 def preview(capture: Path, expected_sha256: str, width: int = 840, *,
             compact: bool = False, crop: tuple[int, int, int, int] | None = None,
-            jpeg_byte_limit: int = MAX_JPEG_BYTES) -> dict:
+            jpeg_byte_limit: int = MAX_JPEG_BYTES, preserve_resolution: bool = False) -> dict:
     if not isinstance(expected_sha256, str) or not HASH.fullmatch(expected_sha256):
         raise ValueError("invalid-capture-hash")
     if not 500 <= width <= 1600:
         raise ValueError("invalid-preview-width")
-    if type(compact) is not bool:
+    if type(compact) is not bool or type(preserve_resolution) is not bool or (compact and preserve_resolution):
         raise ValueError("invalid-preview-mode")
     if type(jpeg_byte_limit) is not int or not 0 < jpeg_byte_limit <= MAX_JPEG_BYTES:
         raise ValueError("invalid-preview-budget")
@@ -86,7 +86,14 @@ def preview(capture: Path, expected_sha256: str, width: int = 840, *,
             scaled = source.copy()
             scaled.thumbnail((target, target), Image.Resampling.LANCZOS)
             stream = BytesIO()
-            scaled.save(stream, format="JPEG", quality=58, optimize=True)
+            quality = 58
+            scaled.save(stream, format="JPEG", quality=quality, optimize=True)
+            if preserve_resolution and stream.tell() > jpeg_byte_limit:
+                for quality in (35, 20):
+                    stream = BytesIO()
+                    scaled.save(stream, format="JPEG", quality=quality, optimize=True)
+                    if stream.tell() <= jpeg_byte_limit:
+                        break
             data = stream.getvalue()
             if len(data) <= jpeg_byte_limit:
                 result = {
@@ -98,6 +105,8 @@ def preview(capture: Path, expected_sha256: str, width: int = 840, *,
                     "nonAuthoritative": True,
                     "base64": base64.b64encode(data).decode("ascii"),
                 }
+                if preserve_resolution:
+                    result["previewQuality"] = quality
                 if crop is not None:
                     result["sourceCrop"] = list(box)
                 return result
@@ -125,6 +134,8 @@ def main(argv=None) -> int:
     parser.add_argument("--width", type=int, default=840)
     parser.add_argument("--compact", action="store_true",
                         help="explicit bounded WebP file preview; does not extend review age")
+    parser.add_argument("--preserve-resolution", action="store_true",
+                        help="opt-in JPEG quality fallback before reducing image dimensions")
     parser.add_argument("--pair", action="store_true",
                         help="one response with compact full frame and readable JPEG detail crop")
     parser.add_argument("--crop", nargs=4, type=int, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
@@ -132,12 +143,13 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.pair:
-            if args.compact:
+            if args.compact or args.preserve_resolution:
                 raise ValueError("invalid-preview-mode")
             result = review_pair(args.capture, args.sha256, args.crop, args.width)
         else:
             result = preview(args.capture, args.sha256, args.width,
-                             compact=args.compact, crop=args.crop)
+                             compact=args.compact, crop=args.crop,
+                             preserve_resolution=args.preserve_resolution)
     except ValueError as error:
         print(json.dumps({"status": "blocked", "reason": str(error)}), flush=True)
         return 2
