@@ -207,6 +207,9 @@ bytes have yet been sampled. Next: exact-epoch bounded read with
 rechecked ownership, controlled A/D before/after and independent
 visual/camera negative control, then full game restart.
 
+**Actor/model matrix writer trace (2026-11-10, exact current EXE SHA, offline only):**
+RVA `0x6869D0` is a direct 36-byte setter: `movups xmm0,[rdx]` / `movups [rcx+0x3EC],xmm0`, then the next 16 bytes to `rcx+0x3FC` and final 4 bytes to `rcx+0x40C`, followed by a tail jump at `0x6869EE` to the known compositor `0x688F20`. Thus **RDX supplies the candidate 3×3 matrix**, while RCX owns the recipient object; the source provider and object-to-player association are not established. Another observed store at `0x6754D2..0x6754F4` copies 36 bytes from constants at module `+0x2F88110/+0x2F88120/+0x2F88130` into `rbx+0x3EC..+0x40C`, alongside nearby object initialization. A bounded direct E8/E9 search for calls to `0x6869D0` in RVA `0x600000..0x700000` found no candidates; this **does not exclude calls elsewhere or indirect/vtable dispatch**. Next static discriminator: locate a pointer/vtable reference to the setter and trace the caller-supplied RDX matrix. Neither path proves live body yaw, update cadence, or even that slot-17 always represents the controllable player.
+
 **Actor/world transform refinement, exact SHA offline:** Accessors
 `0x698410` and `0x698440` provide the secondary position matrix
 `position+0x94` (nine float32) and XYZ `position+0x88`,
