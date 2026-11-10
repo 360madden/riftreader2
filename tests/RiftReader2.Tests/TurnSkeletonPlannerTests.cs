@@ -8,6 +8,10 @@ public sealed class TurnSkeletonPlannerTests
         new("current-build-position-matrix-primary", 6228, 639298670575905950,
             "u035400012DFEB5BC", angle, DateTimeOffset.UtcNow, cached);
 
+    private static readonly RiftReader2.Domain.ControlExecutionResult Released =
+        new(true, true, false, false, false, false,
+            TimeSpan.FromMilliseconds(115), false, null);
+
     [Fact]
     public void ProbeReturnsExactlyOneBoundedAWithoutExecutingIt()
     {
@@ -79,5 +83,57 @@ public sealed class TurnSkeletonPlannerTests
             Facing(), 120, new(100, true, 125, 75)));
         Assert.Throws<ArgumentOutOfRangeException>(() => TurnSkeletonPlanner.PlanNext(
             Facing(), 120, new(100, true), -1));
+    }
+
+    [Fact]
+    public void AProbeCalibratesWrappedAngleOnlyAfterConfirmedRelease()
+    {
+        var before = Facing(358) with { ObservedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-2) };
+        var after = before with { CandidateDegrees = 3, ObservedAtUtc = before.ObservedAtUtc.AddSeconds(1) };
+        var result = TurnSkeletonPlanner.AnalyzeAProbe(
+            before, after, TurnSkeletonPlanner.ProbeA(), Released, true);
+        Assert.Equal("candidate-rate-observed", result.Status);
+        Assert.Equal(5, result.SignedCandidateDeltaDegrees, 8);
+        Assert.Equal(50, result.Calibration!.CandidateDegreesPerSecond, 8);
+        Assert.True(result.Calibration.AIncreasesCandidateDegrees);
+        Assert.Equal("candidate-matrix-calibration-only", result.Qualification);
+        var next = TurnSkeletonPlanner.PlanNext(after, 13, result.Calibration);
+        Assert.Equal("a", Assert.Single(next.Action!.Keys));
+        Assert.Equal(125, next.Action.HoldMilliseconds);
+    }
+
+    [Fact]
+    public void ProbeDetectsNegativeDirectionAndNoMeasurableChange()
+    {
+        var before = Facing(10) with { ObservedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-2) };
+        var after = before with { CandidateDegrees = 5, ObservedAtUtc = before.ObservedAtUtc.AddSeconds(1) };
+        var negative = TurnSkeletonPlanner.AnalyzeAProbe(before, after,
+            TurnSkeletonPlanner.ProbeA(), Released, true);
+        Assert.False(negative.Calibration!.AIncreasesCandidateDegrees);
+        var unchanged = TurnSkeletonPlanner.AnalyzeAProbe(before,
+            after with { CandidateDegrees = 10.1 }, TurnSkeletonPlanner.ProbeA(), Released, true);
+        Assert.Equal("no-measurable-candidate-turn", unchanged.Status);
+        Assert.Null(unchanged.Calibration);
+    }
+
+    [Fact]
+    public void ProbeNeverCalibratesContaminatedUnreleasedOrStaleSamples()
+    {
+        var before = Facing() with { ObservedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-2) };
+        var after = before with { CandidateDegrees = 95, ObservedAtUtc = before.ObservedAtUtc.AddSeconds(1) };
+        var probe = TurnSkeletonPlanner.ProbeA();
+        Assert.Equal("contaminated-input-window",
+            TurnSkeletonPlanner.AnalyzeAProbe(before, after, probe, Released, false).Status);
+        Assert.Equal("input-or-release-unconfirmed",
+            TurnSkeletonPlanner.AnalyzeAProbe(before, after, probe,
+                Released with { ReleaseSucceeded = false }, true).Status);
+        Assert.Equal("nonfresh-observation",
+            TurnSkeletonPlanner.AnalyzeAProbe(before, after with { IsCached = true },
+                probe, Released, true).Status);
+        Assert.Equal("different-source-or-epoch",
+            TurnSkeletonPlanner.AnalyzeAProbe(before, after with { GameProcessId = 1234 },
+                probe, Released, true).Status);
+        Assert.Throws<ArgumentException>(() => TurnSkeletonPlanner.AnalyzeAProbe(
+            before, after, new(["d"], 100), Released, true));
     }
 }
