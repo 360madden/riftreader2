@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 import hashlib
 import io
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -75,6 +76,39 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertIsNone(result["vitalsEndpointDeltasCandidate"]["mana"]["deltaCurrentCandidate"])
         self.assertIn("NOT independent movement proof", result["qualification"])
         self.assertEqual(originals, prior)
+
+    def test_translating_course_and_change_are_coordinate_relative(self):
+        result = tool.summarize(reads(("position",)))
+        first, second = result["segments"]
+        self.assertAlmostEqual(first["travelCourseDegreesCandidate"], 53.1301023542)
+        self.assertIsNone(first["travelCourseChangeDegreesCandidate"])
+        self.assertAlmostEqual(second["travelCourseDegreesCandidate"], 126.8698976458)
+        self.assertAlmostEqual(second["travelCourseChangeDegreesCandidate"], 73.7397952916)
+        self.assertIn("NOT player-facing yaw", result["qualification"])
+        self.assertIn("NOT independent movement proof", result["qualification"])
+
+    def test_course_change_wraps_through_zero_without_false_large_turn(self):
+        items = reads(("position",))
+        dz = math.tan(math.radians(10))
+        items[1][0]["position"]["metrics"].update({"x": 1, "z": -dz})
+        items[2][0]["position"]["metrics"].update({"x": 2, "z": 0})
+        result = tool.summarize(items)
+        self.assertAlmostEqual(result["segments"][0]["travelCourseDegreesCandidate"], 350)
+        self.assertAlmostEqual(result["segments"][1]["travelCourseDegreesCandidate"], 10)
+        self.assertAlmostEqual(result["segments"][1]["travelCourseChangeDegreesCandidate"], 20)
+
+    def test_stationary_and_missing_segments_never_claim_travel_course(self):
+        items = reads(("position",))
+        items[1][0]["position"]["metrics"].update({"x": 0, "z": 0})
+        result = tool.summarize(items)
+        self.assertIsNone(result["segments"][0]["travelCourseDegreesCandidate"])
+        self.assertIsNone(result["segments"][1]["travelCourseChangeDegreesCandidate"])
+        self.assertEqual(result["segments"][0]["horizontalXZDistanceCandidate"], 0)
+        items = reads(("position",))
+        items[1][0]["position"]["metrics"]["ownerIdentityStatus"] = "unqualified"
+        result = tool.summarize(items)
+        self.assertIsNone(result["segments"][0]["travelCourseDegreesCandidate"])
+        self.assertIsNone(result["segments"][1]["travelCourseChangeDegreesCandidate"])
 
     def test_vitals_only_preserves_unavailable_position(self):
         result = tool.summarize(reads(("vitals",)))

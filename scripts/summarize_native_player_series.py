@@ -5,7 +5,8 @@ Usage:
 
 Each adjacent pair must belong to the same game, VM, agent and player, contain
 the same selected fields, and advance its original report timestamps. Derived
-XYZ travel and resource deltas are candidates, not independent movement proof.
+XYZ travel, coordinate-relative travel course and resource deltas are candidates,
+not independent movement or character-facing/turn proof.
 This tool never contacts RIFT, VMware, control agents or the network.
 """
 from __future__ import annotations
@@ -47,12 +48,22 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
 
     segments = []
     lengths = []
+    previous_course = None
     for index, result in enumerate(pairs, start=1):
         position = result["comparison"].get("position")
         length = (position.get("horizontalXZDistanceCandidate")
                   if position is not None else None)
         if length is not None:
             lengths.append(length)
+        # Travel direction is measured in the XZ coordinate plane: 0 degrees
+        # points along +X and 90 along +Z. It is NOT the player's facing/yaw.
+        delta = position.get("deltaCandidate") if position is not None else None
+        course = (math.degrees(math.atan2(delta["z"], delta["x"])) % 360
+                  if delta is not None and length is not None and length > 0
+                  else None)
+        course_change = ((course - previous_course + 180) % 360 - 180
+                         if course is not None and previous_course is not None
+                         else None)
         segments.append({
             "index": index,
             "beforeSourceSha256": result["beforeSourceSha256"],
@@ -60,7 +71,10 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
             "sourceProvenance": result["sourceProvenance"],
             "positionStatus": position["status"] if position is not None else "not-selected",
             "horizontalXZDistanceCandidate": length,
+            "travelCourseDegreesCandidate": course,
+            "travelCourseChangeDegreesCandidate": course_change,
         })
+        previous_course = course
 
     position_summary = None
     if "position" in fields:
@@ -100,8 +114,9 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
         "vitalsEndpointDeltasCandidate": endpoints["comparison"].get("vitals"),
         "qualification": (
             "same VM/game/agent/player and strictly advancing retained source reports; "
-            "candidate arithmetic only, NOT independent movement proof, passive "
-            "freshness, qualified field semantics, or restart recovery"
+            "candidate arithmetic only; travel course is +X toward +Z, NOT "
+            "player-facing yaw; NOT independent movement proof or turn proof, "
+            "passive freshness, qualified field semantics, or restart recovery"
         ),
     }
 
