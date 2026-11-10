@@ -116,20 +116,27 @@ def _position(first, second):
             value = metrics.get(axis)
             if type(value) not in (int, float) or not math.isfinite(value):
                 return {"status": "unavailable-xyz", "deltaCandidate": None,
-                        "horizontalXZDistanceCandidate": None, "distance3dCandidate": None}
+                        "horizontalXZDistanceCandidate": None, "distance3dCandidate": None,
+                        "xzTravelAngleDegreesCandidate": None}
             point[axis] = float(value)
         xyz.append(point)
     if ma.get("ownerIdentityStatus") != anchor or mb.get("ownerIdentityStatus") != anchor:
         return {"status": "unavailable-owner-anchor", "deltaCandidate": None,
-                "horizontalXZDistanceCandidate": None, "distance3dCandidate": None}
+                "horizontalXZDistanceCandidate": None, "distance3dCandidate": None,
+                        "xzTravelAngleDegreesCandidate": None}
     delta = {a: xyz[1][a] - xyz[0][a] for a in ("x", "y", "z")}
     horizontal = math.hypot(delta["x"], delta["z"])
     distance = math.hypot(horizontal, delta["y"])
     if not all(math.isfinite(v) for v in (*delta.values(), horizontal, distance)):
         return {"status": "unavailable-overflow", "deltaCandidate": None,
-                "horizontalXZDistanceCandidate": None, "distance3dCandidate": None}
+                "horizontalXZDistanceCandidate": None, "distance3dCandidate": None,
+                        "xzTravelAngleDegreesCandidate": None}
+    # Direction of displacement only: +X = 0 degrees, +Z = 90 degrees.
+    # It is not actor facing, camera orientation, or proof of movement input.
+    travel_angle = math.degrees(math.atan2(delta["z"], delta["x"])) if horizontal > 0 else None
     return {"status": "same-owner-displacement-candidate", "deltaCandidate": delta,
-            "horizontalXZDistanceCandidate": horizontal, "distance3dCandidate": distance}
+            "horizontalXZDistanceCandidate": horizontal, "distance3dCandidate": distance,
+            "xzTravelAngleDegreesCandidate": travel_angle}
 
 
 def _vitals(first, second):

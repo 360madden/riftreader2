@@ -81,10 +81,29 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
         self.assertEqual(position["deltaCandidate"], {"x": 3.0, "y": 4.0, "z": 12.0})
         self.assertAlmostEqual(position["distance3dCandidate"], 13.0)
         self.assertAlmostEqual(position["horizontalXZDistanceCandidate"], (153) ** .5)
+        self.assertAlmostEqual(position["xzTravelAngleDegreesCandidate"], 75.96375653207352)
         self.assertEqual(result["comparison"]["vitals"]["health"]["deltaCurrentCandidate"], -15)
         self.assertIsNone(result["comparison"]["vitals"]["mana"]["deltaCurrentCandidate"])
         self.assertIn("NOT movement proof", result["qualification"])
         self.assertEqual((first, second), original)
+
+    def test_xz_travel_vector_angle_is_not_actor_facing(self):
+        for dx, dz, expected in ((2, 0, 0), (0, 2, 90),
+                                 (-2, 0, 180), (0, -2, -90),
+                                 (2, 2, 45), (0, 0, None)):
+            before, after = pair(("position",))
+            current = before["position"]["metrics"]
+            after["position"]["metrics"]["x"] = current["x"] + dx
+            after["position"]["metrics"]["z"] = current["z"] + dz
+            after["position"]["metrics"]["y"] = current["y"]
+            candidate = tool.compare(before, after, "C" * 64, "D" * 64)["comparison"]["position"]
+            angle = candidate["xzTravelAngleDegreesCandidate"]
+            with self.subTest(dx=dx, dz=dz):
+                if expected is None:
+                    self.assertIsNone(angle)
+                else:
+                    self.assertAlmostEqual(expected, angle)
+                self.assertEqual("same-owner-displacement-candidate", candidate["status"])
 
     def test_selective_position_and_vitals_only(self):
         for fields, key in ((("position",), "position"), (("vitals",), "vitals")):
@@ -156,8 +175,9 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
                          "unavailable-overflow")
         first, second = pair()
         second["position"]["metrics"]["x"] = None
-        self.assertEqual(compare(first, second)["comparison"]["position"]["status"],
-                         "unavailable-xyz")
+        unavailable = compare(first, second)["comparison"]["position"]
+        self.assertEqual(unavailable["status"], "unavailable-xyz")
+        self.assertIsNone(unavailable["xzTravelAngleDegreesCandidate"])
         first, second = pair()
         second["position"]["metrics"]["ownerIdentityStatus"] = "unknown"
         self.assertEqual(compare(first, second)["comparison"]["position"]["status"],
