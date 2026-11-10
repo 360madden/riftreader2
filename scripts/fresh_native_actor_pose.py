@@ -239,7 +239,8 @@ def query(config, expected_vm, expected_game, host_config_path, *,
                    "observedAtUtc": response["observedAtUtc"],
                    "sourceReport": str(sample),
                    "sourceReportSha256": hashlib.sha256(raw).hexdigest().upper(),
-                   "metrics": metrics, "responseSeconds": elapsed,
+                   "metrics": dict(metrics, unitKey=metrics["playerKeyDecimal"]),
+                   "responseSeconds": elapsed,
                    "wallSecondsBeforeSummaryWrite": time.perf_counter() - started}
         with (folder / "summary.json").open("x", encoding="utf-8") as output:
             json.dump(summary, output, indent=2, allow_nan=False)

@@ -74,6 +74,8 @@ class ActorPoseClientTests(unittest.TestCase):
         summary, client = self.query()
         self.assertEqual("candidate-only", summary["status"])
         self.assertFalse(summary["metrics"]["actorHeadingQualified"])
+        self.assertEqual("123", summary["metrics"]["unitKey"])
+        self.assertEqual("123", summary["metrics"]["playerKeyDecimal"])
         self.assertEqual("4194304", summary["metrics"]["actorComponentDecimal"])
         self.assertEqual("3145728", summary["metrics"]["positionComponentDecimal"])
         self.assertEqual("normal-render-matrix-candidate", summary["metrics"]["renderStatus"])

@@ -40,7 +40,10 @@ def sample(kind):
     row["metrics"] = ({"unitKey": KEY, "x": 1.5, "y": 2.5, "z": 3.5,
                        "freshness": "unqualified"} if kind == "position" else
                       {"unitKey": int(KEY), "health": {"current": 100, "maximum": 100},
-                       "mana": {"current": None, "status": "unavailable"}})
+                       "mana": {"current": None, "status": "unavailable"}} if kind == "vitals" else
+                       {"unitKey": KEY, "playerKeyDecimal": KEY,
+                        "actorAngleDegreesCandidate": 45.0,
+                        "actorHeadingQualified": False})
     return row
 
 
@@ -49,7 +52,7 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         stack = ExitStack()
         self.addCleanup(stack.close)
         self.before, self.after = status(), status()
-        self.position, self.vitals = sample("position"), sample("vitals")
+        self.position, self.vitals, self.pose = sample("position"), sample("vitals"), sample("actor-pose")
         self.host = SimpleNamespace(expected_machine_name="RIFT-LAB-2", vmx=Path("lab2.vmx"),
                                     vnc_port=5962, vmrun=Path("vmrun.exe"), output_directory=Path("output"))
         self.client = Mock()
@@ -63,6 +66,7 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         stack.enter_context(patch.object(cli, "validate_config", return_value="native-config"))
         self.xyz_query = stack.enter_context(patch.object(cli, "query_xyz", return_value=self.position))
         self.vitals_query = stack.enter_context(patch.object(cli, "query_vitals", return_value=self.vitals))
+        self.pose_query = stack.enter_context(patch.object(cli, "query_actor_pose", return_value=self.pose))
 
     def run_read(self):
         return cli.read_once("lab2", "AMD-DESKTOP")
@@ -87,6 +91,7 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.assertTrue(all(call.kwargs == {"method": "GET"}
                             for call in self.client.request.call_args_list))
         self.xyz_query.assert_called_once_with("native-config", VM, GAME, cli.CONFIGS["lab2"], lab="lab2")
+        self.pose_query.assert_not_called()
 
     def test_wrong_machine_rejected_before_dependency_start(self):
         self.hostname.return_value = "LEGION"
@@ -183,6 +188,43 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.vitals_query.assert_called_once()
         self.assertEqual(2, self.resolve.call_count)
 
+    def test_pose_only_is_read_only_with_lossless_owner_key(self):
+        result = cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose",))
+        self.assertNotIn("position", result)
+        self.assertNotIn("vitals", result)
+        self.assertEqual(KEY, result["unitKey"])
+        self.assertEqual(KEY, result["actor-pose"]["metrics"]["playerKeyDecimal"])
+        self.assertFalse(result["actor-pose"]["metrics"]["actorHeadingQualified"])
+        self.pose_query.assert_called_once_with("native-config", VM, GAME, cli.CONFIGS["lab2"], lab="lab2")
+        self.xyz_query.assert_not_called()
+        self.vitals_query.assert_not_called()
+
+    def test_pose_and_position_mismatch_cannot_publish(self):
+        self.pose["metrics"]["unitKey"] = "999"
+        with self.assertRaisesRegex(ValueError, "unit-changed"):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("position", "actor-pose"))
+
+    def test_pose_process_epoch_mismatch_cannot_publish(self):
+        self.pose["gameProcessStartUtcTicks"] += 1
+        with self.assertRaisesRegex(ValueError, "source-identity-mismatch"):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose",))
+
+    def test_pose_failure_does_not_fall_back(self):
+        self.pose_query.side_effect = cli.Blocked("native-actor-pose-unavailable")
+        with self.assertRaises(cli.Blocked):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose",))
+        self.xyz_query.assert_not_called()
+        self.vitals_query.assert_not_called()
+
+    def test_all_sources_can_be_requested_explicitly(self):
+        result = cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose", "vitals", "position"))
+        self.assertEqual(KEY, result["unitKey"])
+        self.assertEqual({"position", "vitals", "actor-pose"},
+                         set(result) & set(cli.NATIVE_FIELDS))
+        self.xyz_query.assert_called_once()
+        self.vitals_query.assert_called_once()
+        self.pose_query.assert_called_once()
+
     def test_invalid_selection_stops_before_startup_or_queries(self):
         for fields in (None, "position", (), [], ("health",), (True,), ({},),
                        ("position", "position"), ("vitals", "position", "vitals")):
@@ -194,6 +236,8 @@ class NativeTelemetryCommandTests(unittest.TestCase):
 
     def test_selection_has_canonical_order(self):
         self.assertEqual(("position", "vitals"), cli.selected_fields(["vitals", "position"]))
+        self.assertEqual(("position", "vitals", "actor-pose"),
+                         cli.selected_fields(["actor-pose", "vitals", "position"]))
 
     def test_single_source_still_requires_its_pinned_identity(self):
         self.vitals["gameProcessStartUtcTicks"] += 1
@@ -220,8 +264,9 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.xyz_query.assert_not_called()
 
     def test_cli_default_and_explicit_field_selections(self):
-        for args, expected in (([], cli.NATIVE_FIELDS), (["--fields", "position"], ["position"]),
-                               (["--fields", "vitals"], ["vitals"])):
+        for args, expected in (([], cli.DEFAULT_FIELDS), (["--fields", "position"], ["position"]),
+                               (["--fields", "vitals"], ["vitals"]),
+                                (["--fields", "actor-pose"], ["actor-pose"])):
             output = io.StringIO()
             with self.subTest(args=args), patch.object(cli, "read_once", return_value={"status":"candidate-only"}) as read, redirect_stdout(output):
                 code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP", *args])

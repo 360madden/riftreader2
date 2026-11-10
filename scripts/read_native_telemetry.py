@@ -1,8 +1,8 @@
-"""Read Lab 2 native position and vitals once, without Lua binding or game input.
+"""Read Lab 2 native position, vitals and optional actor pose without game input.
 
-Reuses the managed controller and existing bounded, identity-checked native
-queries. The two reads are sequential, NOT an atomic snapshot or qualified
-movement feedback. Each source keeps its own timestamp and hashed raw report.
+Reuses the managed controller and bounded, identity-checked native queries.
+Selected reads are sequential, NOT atomic or qualified movement feedback.
+Each source keeps its own timestamp and hashed raw report.
 """
 from __future__ import annotations
 
@@ -28,9 +28,11 @@ from scripts.vm_console_native import Blocked, validate_config
 from scripts.sample_current_native_vitals import checked_expected_game
 from scripts.fresh_native_xyz import query as query_xyz
 from scripts.fresh_native_vitals import query as query_vitals
+from scripts.fresh_native_actor_pose import query as query_actor_pose
 
 OWNER_HOST = "AMD-DESKTOP"
-NATIVE_FIELDS = ("position", "vitals")
+NATIVE_FIELDS = ("position", "vitals", "actor-pose")
+DEFAULT_FIELDS = ("position", "vitals")
 
 
 def require(condition, reason):
@@ -94,7 +96,7 @@ def selected_fields(fields):
     return tuple(field for field in NATIVE_FIELDS if field in fields)
 
 
-def read_once(lab: str, expected_host: str, *, fields=NATIVE_FIELDS) -> dict:
+def read_once(lab: str, expected_host: str, *, fields=DEFAULT_FIELDS) -> dict:
     # Reject a wrong machine/target before starting any dependency.
     require(lab == "lab2", "native-read-target-not-supported")
     require(isinstance(expected_host, str) and expected_host.casefold() == OWNER_HOST.casefold()
@@ -118,6 +120,8 @@ def read_once(lab: str, expected_host: str, *, fields=NATIVE_FIELDS) -> dict:
         validate_sources((sources["position"],), game, instance, vm)
     if "vitals" in fields:
         sources["vitals"] = query_vitals(native, vm, game, CONFIGS[lab])
+    if "actor-pose" in fields:
+        sources["actor-pose"] = query_actor_pose(native, vm, game, CONFIGS[lab], lab=lab)
     key = validate_sources(sources.values(), game, instance, vm)
     after = client.request("/api/status", method="GET")
     require(target_identity(after) == (game, instance)
@@ -138,7 +142,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lab", required=True, choices=("lab2",))
     parser.add_argument("--expected-host", required=True)
-    parser.add_argument("--fields", nargs="+", choices=NATIVE_FIELDS, default=NATIVE_FIELDS,
+    parser.add_argument("--fields", nargs="+", choices=NATIVE_FIELDS, default=DEFAULT_FIELDS,
                         help="read only these sources; defaults to position and vitals")
     args = parser.parse_args(argv)
     try:
