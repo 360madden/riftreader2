@@ -34,6 +34,12 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         Assert.Equal("structural-y-planar-matrix-candidate", result.RenderMatrix!.Status);
         Assert.Contains("candidate-only", result.Qualification);
         Assert.Equal("4660", result.PlayerKeyDecimal);
+        var report = System.Text.Json.JsonSerializer.SerializeToElement(result);
+        Assert.Equal("2097152", report.GetProperty("PlayerEntityDecimal").GetString());
+        Assert.Equal("4194304", report.GetProperty("ActorComponentDecimal").GetString());
+        Assert.Equal("3145728", report.GetProperty("PositionComponentDecimal").GetString());
+        Assert.False(report.TryGetProperty("ActorComponent", out _));
+        Assert.False(report.TryGetProperty("PositionComponent", out _));
         Assert.True(source.ReadCount(Renderer + 0xA0, 0x30) >= 2);
     }
 

@@ -9,14 +9,19 @@ namespace RiftReader2.Live;
 /// <summary>Read-only current-build actor/model matrix candidate, not qualified body facing.</summary>
 internal sealed record CurrentBuildActorPoseCandidate(
     NativeProcessIdentity Identity, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
-    [property: JsonIgnore] ulong PlayerKey, ulong PlayerEntity,
-    ulong ActorComponent, ulong PositionComponent, uint ActorFlags,
+    [property: JsonIgnore] ulong PlayerKey,
+    [property: JsonIgnore] ulong PlayerEntity,
+    [property: JsonIgnore] ulong ActorComponent,
+    [property: JsonIgnore] ulong PositionComponent, uint ActorFlags,
     CurrentBuildMatrixDescriptorCandidate ActorMatrix,
     CurrentBuildMatrixDescriptorCandidate ModelMatrix,
     CurrentBuildMatrixDescriptorCandidate? RenderMatrix,
     string RenderStatus, double? RenderCompositionMaxAbsDelta)
 {
     public string PlayerKeyDecimal => PlayerKey.ToString(CultureInfo.InvariantCulture);
+    public string PlayerEntityDecimal => PlayerEntity.ToString(CultureInfo.InvariantCulture);
+    public string ActorComponentDecimal => ActorComponent.ToString(CultureInfo.InvariantCulture);
+    public string PositionComponentDecimal => PositionComponent.ToString(CultureInfo.InvariantCulture);
     public bool NormalRenderBranch => (ActorFlags & 1) == 0;
     public bool ActorHeadingQualified => false;
     public string Qualification =>
