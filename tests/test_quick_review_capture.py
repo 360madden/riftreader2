@@ -1,7 +1,9 @@
 """Quick screenshot transport stays read-only and source-hash pinned."""
 import base64
+from contextlib import redirect_stdout
 import hashlib
-from io import BytesIO
+from io import BytesIO, StringIO
+import json
 from unittest.mock import patch
 import tempfile
 from pathlib import Path
@@ -9,7 +11,7 @@ import unittest
 
 from PIL import Image
 
-from scripts.quick_review_capture import preview
+from scripts.quick_review_capture import MAX_PAIR_JPEG_BYTES, main, preview, review_pair
 
 
 class QuickReviewCaptureTests(unittest.TestCase):
@@ -91,11 +93,75 @@ class QuickReviewCaptureTests(unittest.TestCase):
             with self.subTest(crop=crop), self.assertRaisesRegex(ValueError, 'invalid-preview-crop'):
                 preview(self.path, self.digest, compact=True, crop=crop)
 
-    def test_crop_requires_explicit_compact_mode(self):
-        with self.assertRaisesRegex(ValueError, 'invalid-preview-mode'):
-            preview(self.path, self.digest, crop=(0, 0, 100, 100))
+    def test_jpeg_crop_keeps_readable_source_detail_and_original_hash(self):
+        box = (200, 210, 1000, 290)
+        result = preview(self.path, self.digest, width=1000, crop=box)
+        self.assertEqual("jpeg", result["previewFormat"])
+        self.assertEqual([800, 80], result["previewDimensions"])
+        self.assertEqual(list(box), result["sourceCrop"])
+        self.assertEqual([1211, 702], result["sourceDimensions"])
+        data = base64.b64decode(result["base64"], validate=True)
+        self.assertEqual(self.digest, result["sourceSha256"])
+        self.assertEqual(hashlib.sha256(data).hexdigest().upper(), result["previewSha256"])
+        self.assertEqual(self.source, self.path.read_bytes())
+        self.assertTrue(result["nonAuthoritative"])
+        self.assertNotIn("reviewedAtUtc", result)
+
+    def test_pair_returns_full_frame_and_readable_detail_from_same_source(self):
+        box = (200, 210, 1000, 290)
+        result = review_pair(self.path, self.digest, box, width=1000)
+        full, detail = result["fullFrame"], result["detail"]
+        self.assertTrue(result["nonAuthoritative"])
+        self.assertEqual(self.digest, result["sourceSha256"])
+        self.assertEqual(self.digest, full["sourceSha256"])
+        self.assertEqual(self.digest, detail["sourceSha256"])
+        self.assertEqual([0, 0, 1211, 702], full["sourceCrop"])
+        self.assertEqual(list(box), detail["sourceCrop"])
+        self.assertEqual("webp", full["previewFormat"])
+        self.assertEqual("jpeg", detail["previewFormat"])
+        self.assertLessEqual(len(base64.b64decode(detail["base64"])), MAX_PAIR_JPEG_BYTES)
+        self.assertGreater(detail["previewDimensions"][0],
+                           full["previewDimensions"][0])
+        self.assertEqual(self.source, self.path.read_bytes())
+        for preview_result in (full, detail):
+            data = base64.b64decode(preview_result["base64"], validate=True)
+            self.assertEqual(hashlib.sha256(data).hexdigest().upper(),
+                             preview_result["previewSha256"])
+            self.assertNotIn("reviewedAtUtc", preview_result)
+            self.assertNotIn("decision", preview_result)
+
+    def test_pair_requires_explicit_valid_crop_and_matching_hash(self):
+        with self.assertRaisesRegex(ValueError, 'review-pair-requires-crop'):
+            review_pair(self.path, self.digest, None)
+        with self.assertRaisesRegex(ValueError, 'invalid-preview-crop'):
+            review_pair(self.path, self.digest, (0, 0, 1212, 100))
+        with self.assertRaisesRegex(ValueError, 'capture-hash-mismatch'):
+            review_pair(self.path, "0" * 64, (0, 0, 100, 100))
         with self.assertRaisesRegex(ValueError, 'invalid-preview-mode'):
             preview(self.path, self.digest, compact=1)
+        for limit in (True, -1, 40001):
+            with self.subTest(limit=limit), self.assertRaisesRegex(
+                    ValueError, 'invalid-preview-budget'):
+                preview(self.path, self.digest, jpeg_byte_limit=limit)
+
+    def test_pair_cli_is_one_json_response_without_review_authorization(self):
+        output = StringIO()
+        with redirect_stdout(output):
+            code = main(["--capture", str(self.path), "--sha256", self.digest,
+                         "--pair", "--crop", "200", "210", "1000", "290",
+                         "--width", "1000"])
+        self.assertEqual(0, code)
+        result = json.loads(output.getvalue())
+        self.assertEqual([800, 80], result["detail"]["previewDimensions"])
+        self.assertEqual("webp", result["fullFrame"]["previewFormat"])
+        self.assertNotIn("reviewedAtUtc", output.getvalue())
+        self.assertNotIn("decision", output.getvalue())
+        blocked = StringIO()
+        with redirect_stdout(blocked):
+            code = main(["--capture", str(self.path), "--sha256", self.digest,
+                         "--pair", "--compact", "--crop", "0", "0", "100", "100"])
+        self.assertEqual(2, code)
+        self.assertEqual("invalid-preview-mode", json.loads(blocked.getvalue())["reason"])
 
     def test_compact_rejects_hash_drift_and_unsupported_source(self):
         with self.assertRaisesRegex(ValueError, 'capture-hash-mismatch'):
