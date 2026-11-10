@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-11-10T04:33:00-05:00",
+  "machine": "AMD-DESKTOP",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "game": "offline-reported-not-rechecked",
+  "commits": [
+    "234a306",
+    "98f76bd",
+    "a127428",
+    "75344c4"
+  ],
+  "tests": {
+    "scope": "TurnSkeletonPlannerTests and TurnProbeCliTests",
+    "passed": 16,
+    "failed": 0
+  },
+  "capability": "offline-csharp-a-turn-candidate-calibration-cli",
+  "inputSent": false,
+  "blockers": [
+    "game-offline-reported",
+    "managed-runtime-changed-previous-stage",
+    "actor-heading-unqualified"
+  ],
+  "next": "fresh-before-action-after-with-release-and-visual-evidence",
+  "preserveUntracked": [
+    "scripts/project_current_native_energy_variants.py",
+    "scripts/rank_native_anchor_candidates.py",
+    "tests/test_rank_native_anchor_candidates.py"
+  ]
+}
