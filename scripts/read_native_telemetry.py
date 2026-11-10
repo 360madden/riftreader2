@@ -156,8 +156,13 @@ def main(argv=None) -> int:
                         help="read only these sources; defaults to position and vitals")
     parser.add_argument("--compare-pose-before", type=Path,
                         help="compare the new actor-pose capture to a saved before summary.json")
+    parser.add_argument("--output-json", type=Path,
+                        help="save the complete native readout as new JSON (never overwrite)")
     args = parser.parse_args(argv)
     try:
+        if args.output_json is not None:
+            require(args.output_json.parent.is_dir() and not args.output_json.exists()
+                    and not args.output_json.is_symlink(), "native-read-output-unavailable")
         if args.compare_pose_before is not None:
             require("actor-pose" in selected_fields(args.fields),
                     "native-read-pose-compare-requires-pose")
@@ -168,7 +173,14 @@ def main(argv=None) -> int:
                     "native-read-pose-summary-missing")
             result["poseTurnComparison"] = compare_pose_turn(
                 args.compare_pose_before, Path(pose["summaryPath"]))
-        print(json.dumps(result, allow_nan=False, separators=(",", ":")))
+        serialized = json.dumps(result, allow_nan=False, separators=(",", ":"))
+        if args.output_json is not None:
+            try:
+                with args.output_json.open("x", encoding="utf-8", newline="\n") as saved:
+                    saved.write(serialized + "\n")
+            except OSError:
+                raise ValueError("native-read-output-unavailable") from None
+        print(serialized)
         return 0
     except Exception as error:
         # Never print transport configuration, credentials or arbitrary tracebacks.

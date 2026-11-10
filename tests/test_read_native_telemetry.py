@@ -378,6 +378,53 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.assertEqual("pose-turn-process-or-controller-changed",
                          json.loads(output.getvalue())["reason"])
 
+    def test_cli_saves_complete_readout_without_shell_redirection(self):
+        from tempfile import TemporaryDirectory
+        row = {"schemaVersion": 1, "status": "candidate-only",
+               "unitKey": KEY, "position": {"metrics": {"x": 1.25, "z": 2.5}}}
+        with TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "before.json"
+            output = io.StringIO()
+            with patch.object(cli, "read_once", return_value=row) as read, redirect_stdout(output):
+                code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                                 "--fields", "position", "--output-json", str(destination)])
+            self.assertEqual(0, code)
+            self.assertTrue(destination.is_file())
+            self.assertEqual(row, json.loads(destination.read_text(encoding="utf-8")))
+            self.assertEqual(row, json.loads(output.getvalue()))
+            self.assertTrue(destination.read_bytes().endswith(b"\n"))
+            read.assert_called_once_with("lab2", "AMD-DESKTOP", fields=["position"])
+            self.ensure.assert_not_called()
+
+    def test_cli_existing_output_is_preserved_before_native_startup(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "existing.json"
+            destination.write_text('{"mine":true}', encoding="utf-8")
+            output = io.StringIO()
+            with patch.object(cli, "read_once") as read, redirect_stdout(output):
+                code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                                 "--output-json", str(destination)])
+            self.assertEqual(2, code)
+            self.assertEqual("native-read-output-unavailable",
+                             json.loads(output.getvalue())["reason"])
+            self.assertEqual('{"mine":true}', destination.read_text(encoding="utf-8"))
+            read.assert_not_called()
+            self.ensure.assert_not_called()
+
+    def test_cli_failed_read_never_creates_output(self):
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "unused.json"
+            output = io.StringIO()
+            with patch.object(cli, "read_once", side_effect=cli.Blocked("native-read-stale")), \
+                    redirect_stdout(output):
+                code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                                 "--output-json", str(destination)])
+            self.assertEqual(2, code)
+            self.assertFalse(destination.exists())
+            self.assertEqual("native-read-stale", json.loads(output.getvalue())["reason"])
+
     def test_cli_duplicate_selection_is_blocked_without_dependency_start(self):
         output = io.StringIO()
         with redirect_stdout(output):
