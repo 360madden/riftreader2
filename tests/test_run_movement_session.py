@@ -143,6 +143,19 @@ class KeyHoldTimingTests(unittest.TestCase):
     def test_accepts_measured_calibration_hold(self):
         self.assertAlmostEqual(_require_key_hold_timing(self.receipt(150), "s", 150), 171)
 
+    def test_real_receipt_key_events_must_fit_action_duration(self):
+        receipt = self.receipt(100, down=45.0, up=152.0)
+        receipt["elapsedMilliseconds"] = 170.0
+        self.assertAlmostEqual(_require_key_hold_timing(receipt, "s", 100), 107.0)
+        receipt["elapsedMilliseconds"] = 140.0
+        with self.assertRaisesRegex(MovementSessionError, "exceed receipt duration"):
+            _require_key_hold_timing(receipt, "s", 100)
+        for invalid in ("170", float("nan"), -1):
+            receipt["elapsedMilliseconds"] = invalid
+            with self.subTest(elapsed=invalid), self.assertRaisesRegex(
+                    MovementSessionError, "exceed receipt duration"):
+                _require_key_hold_timing(receipt, "s", 100)
+
     def test_rejects_live_oversized_vm_hold(self):
         with self.assertRaisesRegex(MovementSessionError, "action key hold timing drifted"):
             _require_key_hold_timing(self.receipt(126, 366.2, 654.5), "s", 126)

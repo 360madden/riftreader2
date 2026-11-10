@@ -1155,6 +1155,13 @@ def _require_key_hold_timing(response: dict, key: str, planned_ms: int) -> float
     require(all(type(value) in (int, float) and math.isfinite(value)
                 for value in (down, up)) and 0 <= down < up,
             "action key timing evidence is invalid")
+    elapsed = response.get("elapsedMilliseconds")
+    if elapsed is not None:
+        # In live receipts these events use the action's elapsed clock; a key-up
+        # later than completion must never become a valid movement calibration.
+        require(type(elapsed) in (int, float) and math.isfinite(elapsed)
+                and elapsed >= 0 and up <= elapsed + 5,
+                "action key events exceed receipt duration")
     observed_ms = up - down
     tolerance_ms = max(25.0, planned_ms * .25)
     require(abs(observed_ms - planned_ms) <= tolerance_ms
