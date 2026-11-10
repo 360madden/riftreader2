@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "createdLocal": "2026-11-10T05:48:00-05:00",
+  "machine": "AMD-DESKTOP",
+  "project": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "latestCommit": "fa03256af1b05a0d5f9af52263e9ca43a1f3310c",
+  "commits": [
+    "18c7bf52cca83d40270ff9274c33a7c2b3448f2b",
+    "fa03256af1b05a0d5f9af52263e9ca43a1f3310c"
+  ],
+  "gameExecutableSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+  "offline": true,
+  "liveInputsPerformed": false,
+  "controllerStatus": "identity-and-release-uncertain; no live input",
+  "pillow": {
+    "python": "C:\\Python314\\python.exe",
+    "pathFirst": true,
+    "version": "13.0.0"
+  },
+  "matrixRvas": {
+    "setter": "0x6869D0",
+    "caller": "0x5DD412",
+    "builder": "0x11439D0",
+    "precompute": "0x826A70",
+    "render": "0x688F20",
+    "initializer": "0x6754D2"
+  },
+  "nativeHeadingQualified": false,
+  "transformInput": {
+    "enclosingFunction": "0x5DD160..0x5DD446",
+    "incomingObjectField": "+0x88",
+    "targetField": "+0x90",
+    "candidateSmoothing": true,
+    "actorVsCameraQualified": false
+  },
+  "next": [
+    "trace RBX and +0x88 scalar owner offline",
+    "when gate safe, one short A hold and release with before/after pose and screenshot",
+    "analyze candidate turn and visual delta; preserve hybrid Lua/.NET C#"
+  ],
+  "untrackedPeerFiles": [
+    "scripts/project_current_native_energy_variants.py",
+    "scripts/rank_native_anchor_candidates.py",
+    "tests/test_rank_native_anchor_candidates.py"
+  ]
+}
