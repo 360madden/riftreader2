@@ -197,6 +197,15 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
                 or str(identity.get("executableSha256", "")).casefold()
                     != str(target.get("executableSha256", "")).casefold()):
             raise ValueError("report-identity-or-status-mismatch")
+        if kind == "position":
+            expected_count = 3 if samples is None else samples
+            rows = report.get("observations")
+            if (type(report.get("requestedSamples")) is not int or
+                    report["requestedSamples"] != expected_count or
+                    type(report.get("completedSamples")) is not int or
+                    report["completedSamples"] != expected_count or
+                    not isinstance(rows, list) or len(rows) != expected_count):
+                raise ValueError("incomplete-native-position-burst")
         if (kind == "vitals" and samples is not None and samples > 1
                 and report.get("completedSamples") != samples):
             raise ValueError("incomplete-native-vitals-burst")

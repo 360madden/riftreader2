@@ -45,10 +45,11 @@ Before every native launch, the reader also checks the **current physical PC's**
 hostname against the selection owner and selected process host. A cached selection
 from the other PC (or a malformed target) is blocked before launching the reader.
 The tool checks native receipt type and returned process/build epoch before
-reporting success. A position burst also rejects missing, mixed or invalid player
-keys and nonfinite XYZ; a character switch cannot silently produce one mixed-owner
-summary. The results remain **native candidates**, not passive-freshness,
-changed-state or restart-qualified values. Vitals without `--samples` keeps
+reporting success. A position burst checks that the requested, completed, and
+actual observation counts agree, and rejects missing, mixed or invalid player
+keys and nonfinite XYZ; a truncated run or character switch cannot silently
+produce a completed movement-observation summary. The results remain **native
+candidates**, not passive-freshness, changed-state or restart-qualified values. Vitals without `--samples` keeps
 its original single-observation contract; with 2-30 samples it emits a separate
 `native-current-vitals-candidate-burst/1` report containing the samples and the
 last observation, refusing mixed player keys. An AMD-DESKTOP physical 10-sample

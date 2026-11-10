@@ -273,7 +273,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 self.assertEqual(command[-4:], ["--samples", "2", "--interval-ms", "0"])
                 self.assertGreaterEqual(kwargs["timeout"], 30)
                 destination.write_text(json.dumps({"status": "complete",
-                    "identity": REPORT_IDENTITY, "observations": [{"unitKey": "239816685251645959",
+                    "identity": REPORT_IDENTITY, "requestedSamples": 2, "completedSamples": 2,
+                    "observations": [{"unitKey": "239816685251645959",
                     "x": 1.0, "y": 2.0, "z": 3.0, "completedAtUtc": "earlier"},
                     {"unitKey": "239816685251645959", "x": 1.5,
                      "y": 2.5, "z": 3.5, "completedAtUtc": "now"}]}), encoding="utf-8")
@@ -292,6 +293,37 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["x"], 1.5)
         self.assertEqual(result["nativeValues"]["sampleCount"], 2)
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
+
+    def test_position_burst_rejects_truncated_or_false_sample_counts(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        valid = {"unitKey": "239816685251645959", "x": 1.0, "y": 2.0, "z": 3.0}
+        for requested, completed, rows in (
+            (2, 1, [valid]),
+            (1, 2, [valid, valid]),
+            (2, 2, [valid]),
+            (True, 2, [valid, valid]),
+        ):
+            with self.subTest(requested=requested, completed=completed, size=len(rows)), \
+                 tempfile.TemporaryDirectory() as temporary:
+                executable = Path(temporary) / "RiftReader2.Live.exe"
+                executable.write_bytes(b"MZ")
+                destination = Path(temporary) / "position.json"
+
+                def fake_run(command, **kwargs):
+                    destination.write_text(json.dumps({
+                        "status": "complete", "identity": REPORT_IDENTITY,
+                        "requestedSamples": requested, "completedSamples": completed,
+                        "observations": rows}), encoding="utf-8")
+                    return subprocess.CompletedProcess(command, 0, json.dumps({
+                        "recordType": "native-current-position-candidate-summary/1",
+                        "status": "complete", "output": str(destination)}), "")
+
+                with patch.object(physical, "NATIVE_EXE", executable), \
+                     patch.object(physical.subprocess, "run", side_effect=fake_run):
+                    result = physical.read_native(selected, "position", destination,
+                                                  samples=2, interval_ms=0)
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["reason"], "invalid-native-reader-report")
 
     def test_position_burst_rejects_mixed_or_invalid_player_samples(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
