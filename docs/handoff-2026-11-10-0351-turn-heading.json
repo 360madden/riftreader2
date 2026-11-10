@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-turn-heading-handoff",
+  "capturedAtLocal": "2026-11-10T03:52:39-05:00",
+  "machine": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "commits": [
+    "f45edfaec709b6db52f314530002acb1bf36d35f",
+    "8562d6c3805d1e024065cd396a6048a7ff5d5d43"
+  ],
+  "live": {
+    "lab": "lab2",
+    "gamePidAtObservation": 6228,
+    "gameStartUtcTicks": "639298670575905950",
+    "gameSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+    "unitKey": "u035400012DFEB5BC",
+    "xyzAtObservation": [
+      6981.9404296875,
+      845.1422119140625,
+      3280.792724609375
+    ],
+    "matrixCandidateDegrees": {
+      "primary": 87.997707527,
+      "secondary": 87.997980806
+    },
+    "bodyYawQualified": false,
+    "turnInputSentThisContinuation": false,
+    "typingContaminatedPriorAttempt": true,
+    "baselineScreenshotSha256": "B877B535E95F235184B5AEE6733BD3A1242BCC5576723FFCCA1F991164C477AF"
+  },
+  "python": {
+    "version": "3.14.6",
+    "executable": "C:\\Python314\\python.exe",
+    "pillowVersion": "13.0.0",
+    "installScope": "user-site",
+    "pathModified": false,
+    "previewWorkflowPassed": true
+  },
+  "tests": {
+    "historicalYawPythonPassed": 59,
+    "orientationCsharpPassed": 24,
+    "controlHostPythonPassed": 17,
+    "orientationClientPythonCombinedPassed": 21
+  },
+  "release": {
+    "executable": "artifacts/native-orientation-release-20261110/publish/RiftReader2.Live.exe",
+    "sizeBytes": 118036320,
+    "sha256": "10F5A282735D3733FEA40D7090BB7A1CD20A6B0114A8C1AC4E1EEEA53CF5B97B",
+    "staged": false,
+    "activated": false,
+    "blockedBy": "managed-owner-refused",
+    "stopPoint": "managed-controller preflight, before guest copy"
+  },
+  "next": [
+    "Read-only controller ownership diagnosis, never bypass guard",
+    "Stage/activate only with existing managed maintenance lease and fresh idle identity",
+    "Reload host Python route via documented lifecycle; verify live nativeOrientationVersion=1",
+    "Acquire fresh pre/post native orientation samples, screenshots, and guarded timed A pulse when keyboard quiet",
+    "Keep Lua addon and C# hybrid until memory replacements prove useful field by field"
+  ]
+}
