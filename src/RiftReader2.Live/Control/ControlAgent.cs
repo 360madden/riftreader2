@@ -13,7 +13,8 @@ namespace RiftReader2.Live.Control;
 public sealed record ControlAgentConfiguration(
     int SchemaVersion, string HostAddress, int Port, string Token,
     string ExpectedMachineName, string ProcessName, string ExecutablePath,
-    string ExecutableSha256, string OutputDirectory)
+    string ExecutableSha256, string OutputDirectory,
+    int? BoundProcessId = null, long? BoundProcessStartUtcTicks = null)
 {
     public void Validate()
     {
@@ -24,7 +25,11 @@ public sealed record ControlAgentConfiguration(
             || !string.Equals(ExpectedMachineName, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
             || ProcessName != "rift_x64" || !Path.IsPathFullyQualified(ExecutablePath)
             || !Path.IsPathFullyQualified(OutputDirectory)
-            || ExecutableSha256.Length != 64 || !ExecutableSha256.All(Uri.IsHexDigit))
+            || ExecutableSha256.Length != 64 || !ExecutableSha256.All(Uri.IsHexDigit)
+            || BoundProcessId.HasValue != BoundProcessStartUtcTicks.HasValue
+            || BoundProcessId is < 1
+            || BoundProcessStartUtcTicks is < 1
+            || BoundProcessStartUtcTicks > DateTime.MaxValue.Ticks)
             throw new InvalidDataException("Invalid control-agent configuration or machine binding.");
     }
 
@@ -177,8 +182,12 @@ public sealed class ControlAgent
         }
     }
 
-    private DesktopTarget Inspect() => WindowsControlDesktop.Inspect(
-        configuration.ProcessName, configuration.ExecutablePath, configuration.ExecutableSha256);
+    private DesktopTarget Inspect() => configuration.BoundProcessId is int pid
+        && configuration.BoundProcessStartUtcTicks is long startTicks
+        ? WindowsControlDesktop.InspectPinned(configuration.ProcessName,
+            configuration.ExecutablePath, configuration.ExecutableSha256, pid, startTicks)
+        : WindowsControlDesktop.Inspect(configuration.ProcessName,
+            configuration.ExecutablePath, configuration.ExecutableSha256);
 
     private async Task RunConnectionLoopAsync(CancellationToken cancellationToken)
     {

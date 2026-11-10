@@ -149,6 +149,37 @@ public sealed class ControlFreshIdentityTests
     }
 
     [Fact]
+    public void PhysicalControlAgentOptionalBindingRequiresBothPidAndEpoch()
+    {
+        var config = new ControlAgentConfiguration(1, "192.168.1.1", 12345,
+            new string('T', 32), Environment.MachineName, "rift_x64",
+            Target.ExecutablePath, Target.ExecutableSha256, Path.GetTempPath());
+        config.Validate(); // Backward-compatible unpinned lab/single-process configuration.
+        var legacyJson = JsonSerializer.Serialize(new
+        {
+            config.SchemaVersion, config.HostAddress, config.Port, config.Token,
+            config.ExpectedMachineName, config.ProcessName, config.ExecutablePath,
+            config.ExecutableSha256, config.OutputDirectory
+        }, JsonFormat.Options);
+        var legacy = JsonSerializer.Deserialize<ControlAgentConfiguration>(legacyJson, JsonFormat.Options)!;
+        legacy.Validate();
+        Assert.Null(legacy.BoundProcessId);
+        Assert.Null(legacy.BoundProcessStartUtcTicks);
+        (config with { BoundProcessId = 123, BoundProcessStartUtcTicks = 456 }).Validate();
+        foreach (var invalid in new[]
+        {
+            config with { BoundProcessId = 123 },
+            config with { BoundProcessStartUtcTicks = 456 },
+            config with { BoundProcessId = 0, BoundProcessStartUtcTicks = 456 },
+            config with { BoundProcessId = 123, BoundProcessStartUtcTicks = 0 },
+            config with { BoundProcessId = 123, BoundProcessStartUtcTicks = long.MaxValue }
+        })
+            Assert.Throws<InvalidDataException>(() => invalid.Validate());
+        Assert.Throws<InvalidDataException>(() => WindowsControlDesktop.InspectPinned(
+            "rift_x64", Target.ExecutablePath, Target.ExecutableSha256, 0, 456));
+    }
+
+    [Fact]
     public void WrongMachineOrConfiguredBuildIsRejectedBeforeProcessInspection()
     {
         var wrongMachine = Expected with { MachineName = "not-this-guest" };

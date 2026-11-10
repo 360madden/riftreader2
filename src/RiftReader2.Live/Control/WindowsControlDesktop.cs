@@ -99,6 +99,20 @@ public static class WindowsControlDesktop
         string expectedExecutableSha256)
         => InspectCore(expectedProcessName, expectedExecutablePath, expectedExecutableSha256, null);
 
+    internal static DesktopTarget InspectPinned(
+        string expectedProcessName,
+        string expectedExecutablePath,
+        string expectedExecutableSha256,
+        int processId,
+        long processStartUtcTicks)
+    {
+        if (processId <= 0 || processStartUtcTicks <= 0
+            || processStartUtcTicks > DateTime.MaxValue.Ticks)
+            throw new InvalidDataException("A valid exact process PID and start epoch are required.");
+        return InspectCore(expectedProcessName, expectedExecutablePath,
+            expectedExecutableSha256, null, processId, processStartUtcTicks);
+    }
+
     internal static DesktopTarget InspectFreshIdentity(
         string expectedProcessName,
         string expectedExecutablePath,
@@ -117,7 +131,9 @@ public static class WindowsControlDesktop
         string expectedProcessName,
         string expectedExecutablePath,
         string expectedExecutableSha256,
-        ControlIdentityRequest? freshIdentity)
+        ControlIdentityRequest? freshIdentity,
+        int? boundProcessId = null,
+        long? boundProcessStartUtcTicks = null)
     {
         EnsureWindows();
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedProcessName);
@@ -131,7 +147,8 @@ public static class WindowsControlDesktop
         try
         {
             var selectedIndex = SelectProcessIndex(
-                processes.Select(process => process.Id).ToArray(), freshIdentity?.ProcessId, processName);
+                processes.Select(process => process.Id).ToArray(),
+                freshIdentity?.ProcessId ?? boundProcessId, processName);
             var process = processes[selectedIndex];
             process.Refresh();
             if (process.HasExited)
@@ -139,6 +156,8 @@ public static class WindowsControlDesktop
 
             var processId = process.Id;
             var startTicks = process.StartTime.ToUniversalTime().Ticks;
+            if (boundProcessStartUtcTicks is long expectedStart && startTicks != expectedStart)
+                throw new InvalidOperationException("The bound process start epoch changed.");
             var actualPath = process.MainModule?.FileName;
             if (string.IsNullOrWhiteSpace(actualPath))
                 throw new InvalidOperationException("The process executable path is unavailable.");

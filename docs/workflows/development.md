@@ -30,7 +30,12 @@ pair). That capture requires explicit desktop-ownership/focus authorization:
 assumed.
 
 Use local .NET 10 `RiftReader2.Live` for native reads and the host-local control
-agent only after its exact process/config prerequisites are met. Screenshots
+agent only after its exact process/config prerequisites are met. For a
+physical multibox control agent, set **both** optional config fields
+`boundProcessId` and `boundProcessStartUtcTicks` to the same freshly verified
+local RIFT process. Missing or mismatched bindings fail closed; leaving both
+absent retains the original exactly-one-process rule. This is an offline-tested
+binding path, **not yet live-qualified for physical input**. Screenshots
 are not telemetry qualification; the `--native-vitals` physical route currently
 remains blocked until independently tested. Any physical input additionally
 needs exclusive foreground ownership, action-specific review, STOP and release.
