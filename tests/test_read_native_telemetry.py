@@ -35,8 +35,8 @@ def sample(kind):
            "activeAgentInstanceId": INSTANCE, "gameProcessId": GAME["processId"],
            "gameProcessStartUtcTicks": GAME["processStartUtcTicks"], "gameSha256": GAME_SHA,
            "observedAtUtc": "2026-11-09T15:50:00.0000001Z",
-           "sourceReport": (str(Path.cwd() / "artifacts" / "scalar-test" / "samples.json")
-                            if kind == "smoothed-scalar" else kind + ".json"),
+           "sourceReport": (str(Path.cwd() / "artifacts" / (kind + "-test") / "samples.json")
+                            if kind in ("smoothed-scalar", "actor-pose") else kind + ".json"),
            "sourceReportSha256": "B" * 64,
            "limitation": "candidate-only"}
     row["metrics"] = ({"unitKey": KEY, "x": 1.5, "y": 2.5, "z": 3.5,
@@ -201,6 +201,10 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.assertEqual(KEY, result["unitKey"])
         self.assertEqual(KEY, result["actor-pose"]["metrics"]["playerKeyDecimal"])
         self.assertFalse(result["actor-pose"]["metrics"]["actorHeadingQualified"])
+        source = Path(result["actor-pose"]["sourceReport"])
+        self.assertEqual(str(source.with_name("summary.json")),
+                         result["actor-pose"]["summaryPath"])
+        self.assertNotIn("summaryPath", self.pose)
         self.pose_query.assert_called_once_with("native-config", VM, GAME, cli.CONFIGS["lab2"], lab="lab2")
         self.xyz_query.assert_not_called()
         self.vitals_query.assert_not_called()
@@ -214,6 +218,14 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.pose["gameProcessStartUtcTicks"] += 1
         with self.assertRaisesRegex(ValueError, "source-identity-mismatch"):
             cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose",))
+
+    def test_pose_summary_requires_absolute_samples_sibling(self):
+        for source in ("relative/samples.json", str(Path.cwd() / "wrong.json")):
+            with self.subTest(source=source):
+                self.client.request.side_effect = [self.before, self.after]
+                self.pose["sourceReport"] = source
+                with self.assertRaisesRegex(ValueError, "pose-source-invalid"):
+                    cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose",))
 
     def test_pose_failure_does_not_fall_back(self):
         self.pose_query.side_effect = cli.Blocked("native-actor-pose-unavailable")
