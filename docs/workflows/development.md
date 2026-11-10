@@ -40,8 +40,20 @@ first if `native-reader-not-built` is returned. Native `vitals` and `position`
 receipts include compact `nativeValues` (HP/resources or last XYZ sample) for
 programmatic use; the full raw candidate report is retained at `nativeOutput`.
 The tool checks native receipt type and returned process/build epoch before
-reporting success. The results remain **native candidates**, not passive-freshness,
+reporting success. A position burst also rejects missing, mixed or invalid player
+keys and nonfinite XYZ; a character switch cannot silently produce one mixed-owner
+summary. The results remain **native candidates**, not passive-freshness,
 changed-state or restart-qualified values.
+
+The lower-level .NET `inspect-native` command also works with physical multibox
+when **both** `--pid` and `--start-ticks` are supplied from a fresh local
+selection. With neither option, inspection still requires exactly one RIFT
+process; supplying only one option or a wrong start epoch is rejected before
+any report is published:
+
+```powershell
+dotnet run --no-build --no-restore --project src/RiftReader2.Live -- inspect-native --output artifacts/my-new-native-inspection.json --pid CURRENT_PID --start-ticks CURRENT_START_TICKS
+```
 
 For reviewed visual observation, use `scripts/observe_target.py --target
 physical-amd-desktop --expected-host AMD-DESKTOP` (or the matching LEGION

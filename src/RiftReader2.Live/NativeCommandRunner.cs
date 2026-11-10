@@ -1,10 +1,12 @@
 using System.Diagnostics;
 using System.ComponentModel;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using RiftReader2.Application;
 using RiftReader2.Domain;
 using RiftReader2.Infrastructure;
+using RiftReader2.Live.Control;
 
 namespace RiftReader2.Live;
 
@@ -24,13 +26,13 @@ public static class NativeCommandRunner
                 throw new NotSupportedException("Native commands require 64-bit Windows.");
             if (args.Length == 0 || args[0] is "help" or "--help" or "-h")
             {
-                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nscout-copy-casting-reference-native --request PATH --output NEW_DIRECTORY\nscout-values-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nsample-position --profile PATH --output PATH [--samples N] [--interval-ms N]\nsample-current-position --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N] (exact build only)\nsample-current-position-refresh-branch --pid N --start-ticks N --output PATH (cached XYZ refresh guards; candidate only)\nsample-current-orientation --pid N --start-ticks N --output PATH (raw matrix candidate only)\nsample-current-location-context --pid N --start-ticks N --output PATH (position and optional zone candidates)\nsample-current-paired-position --pid N --start-ticks N --output PATH [--max-pair-span-ms N] (self/selected target candidates)\nsample-current-paired-zone-key --pid N --start-ticks N --output PATH [--max-acquisition-ms N] (raw per-unit key candidates; world unavailable)\nsample-current-vitals --pid N --start-ticks N --output PATH (candidate only)\nsample-current-ability-maps --pid N --start-ticks N --output PATH (candidate only)\nsample-current-ability-records --pid N --start-ticks N --keys CSV --output PATH [--include-costs true] [--include-timing true] [--include-range true] [--include-variants true] (candidate only)\nsample-current-world-casts --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N] (candidate only)\nsample-current-localization-dictionary --pid N --start-ticks N --keys CSV --output PATH (candidate only)\nsample-current-localization --pid N --start-ticks N --keys CSV --output PATH (candidate only)\nsample-current-player-context --pid N --start-ticks N --output PATH (candidate only)\nsample-current-selected-target --pid N --start-ticks N --output PATH [--include-name-seed true] [--include-position true] [--include-context true] (candidate only)\nsample-current-target-template-name --pid N --start-ticks N --output PATH (candidate only)\nsample-current-variant-guards --pid N --start-ticks N --output PATH (candidate only)\nsample-current-experience-values --pid N --start-ticks N --output PATH (candidate only)\nsample-current-experience-seed --pid N --start-ticks N --output PATH (raw candidate only)\nsample-current-cooldown-modifiers --pid N --start-ticks N --output PATH (candidate only)\nsample-current-buff-seeds --pid N --start-ticks N --output PATH [--include-timing true] (candidate only)\nsample-current-buff-visibility --pid N --start-ticks N --output PATH (candidate only)\nsample-current-buff-details --pid N --start-ticks N --output PATH (candidate only)\nsample-current-zone-seed --pid N --start-ticks N --output PATH (candidate only)\nsample-current-player-name --pid N --start-ticks N --output PATH (candidate only)\nsample-current-player-race --pid N --start-ticks N --output PATH (candidate only)\nsample-current-player-decoration --pid N --start-ticks N --output PATH (candidate only)\nsample-current-shard --pid N --start-ticks N --output PATH (candidate only)\nsample-current-stats --pid N --start-ticks N --output PATH (candidate only)\nsample-power --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N]\nExisting outputs are never replaced.");
+                await output.WriteLineAsync("RiftReader2.Live native tools\ninspect-native --output PATH [--pid N --start-ticks N]\ncapture-native --request PATH --output PATH\nmap-native --request PATH --output PATH\nscout-typed-native --request PATH --output PATH\nscout-copy-typed-native --request PATH --output NEW_DIRECTORY\nscout-copy-casting-reference-native --request PATH --output NEW_DIRECTORY\nscout-values-native --request PATH --output NEW_DIRECTORY\nsnapshot-native --request PATH --output PATH\nfollow-pointer --request PATH --output PATH\nsample-position --profile PATH --output PATH [--samples N] [--interval-ms N]\nsample-current-position --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N] (exact build only)\nsample-current-position-refresh-branch --pid N --start-ticks N --output PATH (cached XYZ refresh guards; candidate only)\nsample-current-orientation --pid N --start-ticks N --output PATH (raw matrix candidate only)\nsample-current-location-context --pid N --start-ticks N --output PATH (position and optional zone candidates)\nsample-current-paired-position --pid N --start-ticks N --output PATH [--max-pair-span-ms N] (self/selected target candidates)\nsample-current-paired-zone-key --pid N --start-ticks N --output PATH [--max-acquisition-ms N] (raw per-unit key candidates; world unavailable)\nsample-current-vitals --pid N --start-ticks N --output PATH (candidate only)\nsample-current-ability-maps --pid N --start-ticks N --output PATH (candidate only)\nsample-current-ability-records --pid N --start-ticks N --keys CSV --output PATH [--include-costs true] [--include-timing true] [--include-range true] [--include-variants true] (candidate only)\nsample-current-world-casts --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N] (candidate only)\nsample-current-localization-dictionary --pid N --start-ticks N --keys CSV --output PATH (candidate only)\nsample-current-localization --pid N --start-ticks N --keys CSV --output PATH (candidate only)\nsample-current-player-context --pid N --start-ticks N --output PATH (candidate only)\nsample-current-selected-target --pid N --start-ticks N --output PATH [--include-name-seed true] [--include-position true] [--include-context true] (candidate only)\nsample-current-target-template-name --pid N --start-ticks N --output PATH (candidate only)\nsample-current-variant-guards --pid N --start-ticks N --output PATH (candidate only)\nsample-current-experience-values --pid N --start-ticks N --output PATH (candidate only)\nsample-current-experience-seed --pid N --start-ticks N --output PATH (raw candidate only)\nsample-current-cooldown-modifiers --pid N --start-ticks N --output PATH (candidate only)\nsample-current-buff-seeds --pid N --start-ticks N --output PATH [--include-timing true] (candidate only)\nsample-current-buff-visibility --pid N --start-ticks N --output PATH (candidate only)\nsample-current-buff-details --pid N --start-ticks N --output PATH (candidate only)\nsample-current-zone-seed --pid N --start-ticks N --output PATH (candidate only)\nsample-current-player-name --pid N --start-ticks N --output PATH (candidate only)\nsample-current-player-race --pid N --start-ticks N --output PATH (candidate only)\nsample-current-player-decoration --pid N --start-ticks N --output PATH (candidate only)\nsample-current-shard --pid N --start-ticks N --output PATH (candidate only)\nsample-current-stats --pid N --start-ticks N --output PATH (candidate only)\nsample-power --pid N --start-ticks N --output PATH [--samples N] [--interval-ms N]\nExisting outputs are never replaced.");
                 await output.WriteLineAsync("position-panel [--profile PATH] [--output-directory NEW_DIRECTORY]\nStart / Read / Stop window; defaults to the profile beside this executable and a new local evidence session.");
                 return 0;
             }
 
             if (args[0] == "inspect-native")
-                return await InspectAsync(ParseOptions(args[1..], "--output"), output, cancellationToken);
+                return await InspectAsync(ParseOptions(args[1..], "--output", "--pid", "--start-ticks"), output, cancellationToken);
             if (args[0] == "capture-native")
                 return await CaptureAsync(ParseOptions(args[1..], "--request", "--output"), output, cancellationToken);
             if (args[0] == "map-native")
@@ -137,12 +139,22 @@ public static class NativeCommandRunner
     {
         if (!options.TryGetValue("--output", out var outputPath))
             throw new ArgumentException("--output is required.");
+        var binding = ParseInspectProcessBinding(options);
         var processes = Process.GetProcessesByName("rift_x64");
         try
         {
-            if (processes.Length != 1)
-                throw new InvalidDataException($"Expected exactly one rift_x64 process; found {processes.Length}.");
-            await using var session = await WindowsNativeMemorySession.OpenAsync(processes[0].Id, null, null, cancellationToken);
+            int selected;
+            try
+            {
+                selected = WindowsControlDesktop.SelectProcessIndex(
+                    processes.Select(process => process.Id).ToArray(), binding.ProcessId, "rift_x64");
+            }
+            catch (InvalidOperationException error)
+            {
+                throw new InvalidDataException(error.Message, error);
+            }
+            await using var session = await WindowsNativeMemorySession.OpenAsync(
+                processes[selected].Id, binding.StartTicks, null, cancellationToken);
             var identity = session.Identity;
             var identityFailure = await session.RevalidateAsync(cancellationToken);
             if (identityFailure is not null)
@@ -239,6 +251,22 @@ public static class NativeCommandRunner
         await JsonReportWriter.WriteNewAsync(outputPath, report, cancellationToken);
         await output.WriteLineAsync(JsonSerializer.Serialize(report, JsonFormat.Options));
         return capture.Status == "complete" ? 0 : 3;
+    }
+
+    internal static (int? ProcessId, long? StartTicks) ParseInspectProcessBinding(
+        IReadOnlyDictionary<string, string> options)
+    {
+        var hasPid = options.TryGetValue("--pid", out var pidText);
+        var hasTicks = options.TryGetValue("--start-ticks", out var ticksText);
+        if (hasPid != hasTicks)
+            throw new ArgumentException("inspect-native requires --pid and --start-ticks together.");
+        if (!hasPid)
+            return (null, null);
+        if (!int.TryParse(pidText, NumberStyles.None, CultureInfo.InvariantCulture, out var pid)
+            || pid <= 0 || !long.TryParse(ticksText, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
+            || ticks <= 0)
+            throw new ArgumentException("inspect-native requires positive decimal PID and start ticks.");
+        return (pid, ticks);
     }
 
     internal static Dictionary<string, string> ParseOptions(string[] args, params string[] allowed)
