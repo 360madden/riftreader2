@@ -1,4 +1,4 @@
-"""Compare two retained Lab2 native player readouts; strictly offline, candidate-only.
+"""Compare two retained same-lab native player readouts; strictly offline, candidate-only.
 
 Reads saved read_native_telemetry.py output (position/vitals/actor-pose/scalar).
 Does not contact VMware, controllers, game, desktop, or the network. Values are
@@ -73,9 +73,9 @@ def load(path: Path):
     return data, hashlib.sha256(raw).hexdigest().upper()
 
 
-def _source(row, field, unit):
+def _source(row, field, unit, lab):
     _need(type(row) is dict and row.get("schemaVersion") == 1
-          and row.get("status") == "candidate-only" and row.get("lab") == "lab2"
+          and row.get("status") == "candidate-only" and row.get("lab") == lab
           and row.get("transport") == "persistent-control-agent", "source-invalid")
     _need(type(row.get("vmIdentity")) is dict
           and type(row.get("gameProcessId")) is int and row["gameProcessId"] > 0
@@ -100,19 +100,21 @@ def _source(row, field, unit):
 def _check_readout(readout):
     _need(type(readout) is dict and readout.get("schemaVersion") == 1
           and readout.get("status") == "candidate-only"
-          and readout.get("targetId") == "lab2"
+          and readout.get("targetId") in ("lab1", "lab2")
           and readout.get("ownerHost") == "AMD-DESKTOP"
           and readout.get("mode") == "native-read-only"
           and readout.get("atomic") is False
           and readout.get("luaReaderUsed") is False
           and readout.get("screenshotUsed") is False, "readout-invalid")
+    lab = readout["targetId"]
     unit = _key(readout.get("unitKey"))
     fields = tuple(field for field in FIELDS if field in readout)
     _need(bool(fields), "no-fields")
-    identities = [_source(readout[field], field, unit) for field in fields]
+    _need(lab != "lab1" or "vitals" not in fields, "lab1-vitals-not-supported")
+    identities = [_source(readout[field], field, unit, lab) for field in fields]
     _need(all(identity == identities[0] for identity in identities),
           "mixed-source-identity")
-    return unit, fields, identities[0]
+    return unit, fields, identities[0], lab
 
 
 def _position(first, second):
@@ -171,8 +173,9 @@ def _vitals(first, second):
 
 def compare(before: dict, after: dict, before_sha: str, after_sha: str) -> dict:
     _need(_sha(before_sha) != _sha(after_sha), "identical-source")
-    unit_a, fields_a, identity_a = _check_readout(before)
-    unit_b, fields_b, identity_b = _check_readout(after)
+    unit_a, fields_a, identity_a, lab_a = _check_readout(before)
+    unit_b, fields_b, identity_b, lab_b = _check_readout(after)
+    _need(lab_a == lab_b, "target-changed")
     _need(fields_a == fields_b, "field-selection-mismatch")
     _need(unit_a == unit_b, "unit-changed")
     _need(identity_a == identity_b, "process-vm-or-agent-changed")
@@ -208,7 +211,7 @@ def compare(before: dict, after: dict, before_sha: str, after_sha: str) -> dict:
         except (Blocked, OSError, ValueError, TypeError, KeyError):
             raise ValueError("native-player-compare-pose-source-invalid") from None
         _need(pose["status"] == "candidate-only"
-              and pose["lab"] == "lab2"
+              and pose["lab"] == lab_a
               and pose["vmIdentity"] == identity_a[0]
               and pose["gameProcessId"] == identity_a[1]
               and pose["gameProcessStartUtcTicks"] == identity_a[2]
@@ -236,7 +239,7 @@ def compare(before: dict, after: dict, before_sha: str, after_sha: str) -> dict:
         except (Blocked, OSError, ValueError, TypeError, KeyError):
             raise ValueError("native-player-compare-scalar-source-invalid") from None
         _need(scalar["status"] == "candidate-only"
-              and scalar["lab"] == "lab2"
+              and scalar["lab"] == lab_a
               and scalar["vmIdentity"] == identity_a[0]
               and scalar["gameProcessId"] == identity_a[1]
               and scalar["gameProcessStartUtcTicks"] == identity_a[2]
@@ -251,7 +254,7 @@ def compare(before: dict, after: dict, before_sha: str, after_sha: str) -> dict:
     return {
         "schemaVersion": 1, "status": "candidate-only",
         "mode": "offline-retained-native-readouts",
-        "targetId": "lab2", "unitKey": unit_a,
+        "targetId": lab_a, "unitKey": unit_a,
         "fieldsCompared": list(fields_a),
         "beforeSourceSha256": before_sha.upper(),
         "afterSourceSha256": after_sha.upper(),

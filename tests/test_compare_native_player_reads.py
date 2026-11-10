@@ -86,6 +86,52 @@ def compare(a=None, b=None):
 
 
 class CompareNativePlayerReadsTests(unittest.TestCase):
+    def lab1_pair(self, fields=("position",)):
+        before, after = pair(fields)
+        for readout in (before, after):
+            readout["targetId"] = "lab1"
+            for field in fields:
+                readout[field]["lab"] = "lab1"
+        return before, after
+
+    def test_lab1_position_before_after_is_comparable(self):
+        first, second = self.lab1_pair()
+        result = compare(first, second)
+        self.assertEqual(result["targetId"], "lab1")
+        self.assertEqual(result["fieldsCompared"], ["position"])
+        self.assertEqual(result["comparison"]["position"]["deltaCandidate"],
+                         {"x": 3.0, "y": 4.0, "z": 12.0})
+        self.assertEqual(result["status"], "candidate-only")
+
+    def test_lab1_pose_scalar_join_require_matching_lab(self):
+        first, second = self.lab1_pair(("position", "actor-pose", "smoothed-scalar"))
+        pose, scalar = self.pose_result(), self.scalar_result()
+        pose["lab"] = scalar["lab"] = "lab1"
+        with patch.object(tool, "compare_pose_turn", return_value=pose), \
+             patch.object(tool, "compare_scalar_turn", return_value=scalar):
+            result = compare(first, second)
+        self.assertIs(result["comparison"]["actor-pose"], pose)
+        self.assertIs(result["comparison"]["smoothed-scalar"], scalar)
+        self.assertEqual(result["targetId"], "lab1")
+        pose["lab"] = "lab2"
+        with patch.object(tool, "compare_pose_turn", return_value=pose), \
+             self.assertRaisesRegex(ValueError, "pose-identity-mismatch"):
+            compare(first, second)
+
+    def test_mixed_lab_readouts_and_lab1_vitals_are_rejected(self):
+        first, second = self.lab1_pair()
+        second["targetId"] = "lab2"
+        second["position"]["lab"] = "lab2"
+        with self.assertRaisesRegex(ValueError, "target-changed"):
+            compare(first, second)
+        first, second = self.lab1_pair()
+        first["position"]["lab"] = "lab2"
+        with self.assertRaisesRegex(ValueError, "source-invalid"):
+            compare(first, second)
+        first, second = self.lab1_pair(("position", "vitals"))
+        with self.assertRaisesRegex(ValueError, "lab1-vitals-not-supported"):
+            compare(first, second)
+
     def test_combined_candidate_xyz_and_vitals(self):
         first, second = pair()
         original = copy.deepcopy((first, second))

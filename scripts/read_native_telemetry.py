@@ -181,9 +181,9 @@ def main(argv=None) -> int:
                     and not args.output_json.is_symlink(), "native-read-output-unavailable")
         baseline = None
         if args.compare_readout_before is not None:
-            require(args.lab == "lab2", "native-read-lab1-comparison-not-supported")
             require(args.output_json is not None, "native-read-comparison-output-required")
             baseline, baseline_sha = load_readout(args.compare_readout_before)
+            require(baseline.get("targetId") == args.lab, "native-read-baseline-target-mismatch")
             require(tuple(field for field in NATIVE_FIELDS if field in baseline)
                     == selected, "native-read-baseline-fields-mismatch")
         if args.compare_pose_before is not None:

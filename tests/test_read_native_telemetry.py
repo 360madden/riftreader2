@@ -387,10 +387,10 @@ class NativeTelemetryCommandTests(unittest.TestCase):
             read.assert_called_once_with("lab1", "AMD-DESKTOP", fields=expected)
             self.assertEqual(json.loads(output.getvalue())["targetId"], "lab1")
 
-    def test_cli_lab1_denies_vitals_and_readout_comparison_before_startup(self):
+    def test_cli_lab1_denies_vitals_and_missing_comparison_output_before_startup(self):
         for args, reason in ((["--fields", "vitals"], "native-read-lab1-vitals-not-supported"),
                              (["--compare-readout-before", "missing.json"],
-                              "native-read-lab1-comparison-not-supported")):
+                              "native-read-comparison-output-required")):
             output = io.StringIO()
             with self.subTest(args=args), patch.object(cli, "read_once") as read, redirect_stdout(output):
                 code = cli.main(["--lab", "lab1", "--expected-host", "AMD-DESKTOP", *args])
@@ -398,6 +398,53 @@ class NativeTelemetryCommandTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())["reason"], reason)
             read.assert_not_called()
         self.ensure.assert_not_called()
+
+    def test_cli_lab1_saved_pair_compares_position_without_other_lab(self):
+        from tempfile import TemporaryDirectory
+        from tests.test_compare_native_player_reads import pair
+        import hashlib
+        before, after = pair(("position",))
+        for readout in (before, after):
+            readout["targetId"] = "lab1"
+            readout["position"]["lab"] = "lab1"
+        with TemporaryDirectory() as temporary:
+            previous = Path(temporary) / "lab1-before.json"
+            current = Path(temporary) / "lab1-after.json"
+            previous.write_text(json.dumps(before, separators=(",", ":")) + "\n",
+                                encoding="utf-8")
+            output = io.StringIO()
+            with patch.object(cli, "read_once", return_value=after) as read, redirect_stdout(output):
+                code = cli.main(["--lab", "lab1", "--expected-host", "AMD-DESKTOP",
+                                 "--fields", "position", "--output-json", str(current),
+                                 "--compare-readout-before", str(previous)])
+            self.assertEqual(code, 0)
+            read.assert_called_once_with("lab1", "AMD-DESKTOP", fields=["position"])
+            self.assertEqual(after, json.loads(current.read_text(encoding="utf-8")))
+            comparison = json.loads(output.getvalue())["readoutComparison"]
+            self.assertEqual(comparison["targetId"], "lab1")
+            self.assertEqual(comparison["fieldsCompared"], ["position"])
+            self.assertAlmostEqual(comparison["comparison"]["position"][
+                "xzTravelAngleDegreesCandidate"], 75.96375653207352)
+            self.assertEqual(comparison["afterSourceSha256"],
+                             hashlib.sha256(current.read_bytes()).hexdigest().upper())
+
+    def test_cli_lab1_rejects_lab2_baseline_before_read(self):
+        from tempfile import TemporaryDirectory
+        from tests.test_compare_native_player_reads import readout
+        with TemporaryDirectory() as temporary:
+            old = Path(temporary) / "lab2.json"
+            new = Path(temporary) / "lab1.json"
+            old.write_text(json.dumps(readout(("position",))), encoding="utf-8")
+            output = io.StringIO()
+            with patch.object(cli, "read_once") as read, redirect_stdout(output):
+                code = cli.main(["--lab", "lab1", "--expected-host", "AMD-DESKTOP",
+                                 "--output-json", str(new),
+                                 "--compare-readout-before", str(old)])
+            self.assertEqual(code, 2)
+            self.assertEqual(json.loads(output.getvalue())["reason"],
+                             "native-read-baseline-target-mismatch")
+            read.assert_not_called()
+            self.assertFalse(new.exists())
 
     def test_cli_one_command_pose_turn_comparison_uses_new_saved_capture(self):
         before = Path("previous/summary.json")
