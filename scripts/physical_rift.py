@@ -30,7 +30,8 @@ def select_physical(expected_host=None, physical_pid=None):
                 raise ValueError("host-mismatch")
         if physical_pid is not None and (type(physical_pid) is not int or not 1 <= physical_pid <= 4294967295):
             raise ValueError("invalid-physical-pid")
-        identity = observe_physical._identity(physical_pid)
+        # Selection needs a verified process, not an interactive game window.
+        identity = observe_physical._identity(physical_pid, require_window=False)
         if identity.get("hostName", "").casefold() != actual.casefold():
             raise ValueError("identity-host-mismatch")
         if physical_pid is not None and identity.get("processId") != physical_pid:

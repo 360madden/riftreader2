@@ -26,7 +26,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["targetId"], "physical-amd-desktop")
         self.assertEqual(result["ownerHost"], "AMD-DESKTOP")
         self.assertEqual(result["target"], IDENTITY)
-        reader.assert_called_once_with(None)
+        reader.assert_called_once_with(None, require_window=False)
 
     def test_legion_auto_selects_its_own_process(self):
         legion = {**IDENTITY, "hostName": "LEGION"}
@@ -36,14 +36,30 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["status"], "ready")
         self.assertEqual(result["targetId"], "physical-legion")
         self.assertEqual(result["ownerHost"], "LEGION")
-        reader.assert_called_once_with(None)
+        reader.assert_called_once_with(None, require_window=False)
 
     def test_explicit_pid_stays_bound_to_local_process(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(physical.observe_physical, "_identity", return_value=IDENTITY) as reader:
             result = physical.select_physical(physical_pid=123)
         self.assertEqual(result["status"], "ready")
-        reader.assert_called_once_with(123)
+        reader.assert_called_once_with(123, require_window=False)
+
+    def test_windowless_identity_is_usable_for_read_only_selection(self):
+        # A valid process epoch must not require screenshot eligibility.
+        identity = {**IDENTITY, "executablePath": r"C:\Games\RIFT\rift_x64.exe",
+                    "hwnd": 0}
+        with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(physical.observe_physical, "_run",
+                          return_value=(0, json.dumps(identity))):
+            result = physical.select_physical(expected_host="AMD-DESKTOP",
+                                              physical_pid=123)
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(result["target"]["processId"], 123)
+        self.assertEqual(result["target"]["processStartUtcTicks"],
+                         "638000000000000001")
+        self.assertEqual(result["target"]["executableSha256"], "a" * 64)
+        self.assertEqual(result["target"]["hwnd"], 0)
 
     def test_wrong_expected_host_blocks_before_process_probe(self):
         with patch.object(physical.socket, "gethostname", return_value="LEGION"), \

@@ -68,6 +68,15 @@ class PhysicalTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "^not-running$"):
                 physical._identity(999)
 
+    def test_screenshot_identity_still_requires_visible_window(self):
+        invisible = {**IDENTITY, "hwnd": 0}
+        with patch.object(physical, "_run", return_value=(0, json.dumps(invisible))):
+            with self.assertRaisesRegex(ValueError, "no-window-or-invalid-identity"):
+                physical._identity(123)
+        with patch.object(physical, "_run", return_value=(0, json.dumps(invisible))):
+            value = physical._identity(123, require_window=False)
+        self.assertEqual(value["hwnd"], 0)
+
     def test_no_pid_still_rejects_multibox_ambiguity(self):
         with patch.object(physical, "_run", return_value=(0, '{"status":"ambiguous-process"}')) as run:
             with self.assertRaisesRegex(ValueError, "^ambiguous-process$"):

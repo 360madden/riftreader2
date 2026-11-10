@@ -58,7 +58,7 @@ def _run(args, timeout=120):
                 proc.wait(timeout=10)
 
 
-def _identity(physical_pid=None):
+def _identity(physical_pid=None, *, require_window=True):
     _require(physical_pid is None or
              (type(physical_pid) is int and 1 <= physical_pid <= 4294967295),
              "invalid-physical-pid")
@@ -87,7 +87,9 @@ def _identity(physical_pid=None):
              isinstance(value.get("executableSha256"), str) and
              re.fullmatch("[a-f0-9]{64}", value["executableSha256"]) and
              isinstance(value.get("executablePath"), str) and bool(value["executablePath"]) and
-             type(value.get("hwnd")) is int and value["hwnd"] > 0, "no-window-or-invalid-identity")
+             type(value.get("hwnd")) is int and
+             (value["hwnd"] > 0 if require_window else value["hwnd"] >= 0),
+             "no-window-or-invalid-identity")
     return value
 
 
