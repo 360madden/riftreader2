@@ -1209,7 +1209,7 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
     return sanitized(result)
 
 
-def add_quick_review(result: dict) -> dict:
+def add_quick_review(result: dict, *, detail_crop: tuple[int, int, int, int] | None = None) -> dict:
     """Attach a non-authoritative image and exact review pins to one prepared session.
 
     The successful preparation and queue lease remain intact if optional image
@@ -1217,7 +1217,7 @@ def add_quick_review(result: dict) -> dict:
     """
     enriched = dict(result)
     try:
-        from scripts.quick_review_capture import preview
+        from scripts.quick_review_capture import preview, review_pair
         session_path = Path(result["sessionPlan"])
         session = load(session_path)
         capture = session["capture"]
@@ -1230,16 +1230,21 @@ def add_quick_review(result: dict) -> dict:
         deadline = captured_at + timedelta(seconds=max_age)
         remaining = max(0, math.ceil((deadline - utc_now()).total_seconds()))
         screen, digest = Path(capture["image"]), session["captureImageSha256"]
-        try:
-            image = preview(screen, digest, compact=True)
-        except TypeError as error:
-            if "unexpected keyword argument 'compact'" not in str(error):
-                raise
-            image = preview(screen, digest)
-        except ValueError as error:
-            if str(error) != "preview-too-large":
-                raise
-            image = preview(screen, digest)
+        detail = None
+        if detail_crop is not None:
+            paired = review_pair(screen, digest, detail_crop)
+            image, detail = paired["fullFrame"], paired["detail"]
+        else:
+            try:
+                image = preview(screen, digest, compact=True)
+            except TypeError as error:
+                if "unexpected keyword argument 'compact'" not in str(error):
+                    raise
+                image = preview(screen, digest)
+            except ValueError as error:
+                if str(error) != "preview-too-large":
+                    raise
+                image = preview(screen, digest)
         enriched["quickReview"] = {
             "status": "ready",
             "sessionId": session["sessionId"],
@@ -1252,6 +1257,8 @@ def add_quick_review(result: dict) -> dict:
             "reviewExpiresInSeconds": remaining,
             "preview": image,
         }
+        if detail is not None:
+            enriched["quickReview"]["detailPreview"] = detail
     except (OSError, ValueError, KeyError, TypeError, MovementSessionError) as error:
         enriched["quickReview"] = {
             "status": "unavailable",
@@ -1280,7 +1287,10 @@ def build_parser():
     prep.add_argument("--calibration-hold-ms", type=int, default=150,
                       help="one reviewed w/q/s/e calibration pulse per key, from 20 through 150 ms")
     prep.add_argument("--quick-preview", action="store_true",
-                      help="include one SHA-pinned JPEG preview and exact review pins in prepare output")
+                      help="include a SHA-pinned compact full-frame preview and exact review pins")
+    prep.add_argument("--review-detail-crop", nargs=4, type=int,
+                      metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
+                      help="with --quick-preview, include one source-pinned readable detail crop")
     prep.add_argument("--after-turn-result", type=Path,
                       help="explicitly require calibration to start after this exact turn result; "
                            "turns outside this chain are not detected")
@@ -1292,6 +1302,8 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
     if args.command == "prepare":
+        if args.review_detail_crop is not None and not args.quick_preview:
+            raise MovementSessionError("--review-detail-crop requires --quick-preview")
         goal = Position(*args.goal) if args.goal else None
         result = prepare(args.host_plan, args.feedback_pin, args.output, args.mode, goal,
                          args.calibration_profile, tuple(args.keys), args.dimension,
@@ -1299,7 +1311,8 @@ def main():
                          args.after_turn_result, args.managed_lab,
                          calibration_hold_ms=args.calibration_hold_ms)
         if args.quick_preview:
-            result = add_quick_review(result)
+            result = add_quick_review(result, detail_crop=(
+                tuple(args.review_detail_crop) if args.review_detail_crop is not None else None))
     else: result = run_reviewed(args.session_plan, args.review, args.output)
     print(json.dumps(sanitized(result), sort_keys=True)); return 0
 

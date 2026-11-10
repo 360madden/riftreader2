@@ -1,7 +1,9 @@
 """A prepared RR2 movement capture can be previewed in one command result."""
 import base64
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 import hashlib
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -122,6 +124,72 @@ class QuickMovementReviewTests(unittest.TestCase):
         self.assertEqual(result["quickReview"]["status"], "unavailable")
         self.assertEqual(result["sessionPlan"], self.prepared["sessionPlan"])
         self.assertNotIn("quickReview", self.prepared)
+
+    def test_paired_preview_is_one_pinned_review_with_readable_detail(self):
+        crop = (100, 50, 1100, 150)
+        result = add_quick_review(self.prepared, detail_crop=crop)
+        review = result["quickReview"]
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["captureId"], "test-capture")
+        self.assertEqual(review["reviewMaxAgeSeconds"], 45)
+        self.assertEqual(review["reviewExpiresInSeconds"], 0)
+        full, detail = review["preview"], review["detailPreview"]
+        self.assertEqual(full["sourceSha256"], self.prepared_capture_sha())
+        self.assertEqual(detail["sourceSha256"], full["sourceSha256"])
+        self.assertEqual(full["previewFormat"], "webp")
+        self.assertEqual(detail["previewFormat"], "jpeg")
+        self.assertEqual(detail["sourceCrop"], list(crop))
+        self.assertLessEqual(len(base64.b64decode(detail["base64"])), 40000)
+        for item in (full, detail):
+            data = base64.b64decode(item["base64"])
+            self.assertEqual(hashlib.sha256(data).hexdigest().upper(),
+                             item["previewSha256"])
+            self.assertTrue(item["nonAuthoritative"])
+            self.assertNotIn("decision", item)
+
+    def prepared_capture_sha(self):
+        return json.loads(self.session_path.read_text())["captureImageSha256"]
+
+    def test_invalid_detail_crop_keeps_prepared_session_without_fallback(self):
+        review = add_quick_review(self.prepared, detail_crop=(-1, 50, 200, 100))
+        self.assertEqual(review["quickReview"]["status"], "unavailable")
+        self.assertIn("invalid-preview-crop", review["quickReview"]["reason"])
+        self.assertEqual(review["sessionPlan"], str(self.session_path))
+
+    def test_prepare_requires_quick_preview_when_detail_crop_requested(self):
+        from scripts.run_movement_session import main, MovementSessionError
+        args = ["run_movement_session.py", "prepare", "--managed-lab", "lab2",
+                "--feedback-pin", "pin.json", "--output", "session",
+                "--mode", "turn", "--keys", "a",
+                "--review-detail-crop", "100", "50", "1100", "150"]
+        with mock.patch("sys.argv", args), mock.patch(
+                "scripts.run_movement_session.prepare") as prepare:
+            with self.assertRaisesRegex(MovementSessionError, "requires --quick-preview"):
+                main()
+            prepare.assert_not_called()
+        parsed = build_parser().parse_args(args[1:] + ["--quick-preview"])
+        self.assertEqual(parsed.review_detail_crop, [100, 50, 1100, 150])
+        self.assertTrue(parsed.quick_preview)
+
+    def test_prepare_cli_includes_paired_review_in_same_result(self):
+        from scripts.run_movement_session import main
+        args = ["run_movement_session.py", "prepare", "--managed-lab", "lab2",
+                "--feedback-pin", "pin.json", "--output", "session",
+                "--mode", "turn", "--keys", "a", "--quick-preview",
+                "--review-detail-crop", "100", "50", "1100", "150"]
+        output = io.StringIO()
+        with mock.patch("sys.argv", args), mock.patch(
+                "scripts.run_movement_session.prepare", return_value=self.prepared
+                ) as prepare, redirect_stdout(output):
+            self.assertEqual(main(), 0)
+        prepare.assert_called_once()
+        result = json.loads(output.getvalue())
+        self.assertEqual(result["quickReview"]["status"], "ready")
+        self.assertEqual(result["quickReview"]["preview"]["previewFormat"], "webp")
+        self.assertEqual(result["quickReview"]["detailPreview"]["previewFormat"], "jpeg")
+        self.assertEqual(result["quickReview"]["detailPreview"]["sourceCrop"],
+                         [100, 50, 1100, 150])
+        self.assertEqual(result["quickReview"]["reviewExpiresInSeconds"], 0)
 
     def test_opt_in_only_for_prepare(self):
         args = build_parser().parse_args([
