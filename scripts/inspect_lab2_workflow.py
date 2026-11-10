@@ -612,6 +612,8 @@ def main(argv=None):
     except Exception as exc:
         safe_capability = isinstance(exc, Blocked) and str(exc) in {
             "fresh-identity-unsupported", "native-vitals-unsupported"}
+        safe_foreground = (isinstance(exc, MovementSessionError)
+                           and str(exc) == "RIFT is not foreground")
         safe_runtime = (isinstance(exc, MovementSessionError)
                         and isinstance(exc.__cause__, ManagedReceiptError)
                         and str(exc.__cause__) == "managed-runtime-changed")
@@ -622,7 +624,7 @@ def main(argv=None):
                                "managed-live-generation-exiting", "managed-process-identity-uncertain",
                                "existing-endpoint-unhealthy", "listener-state-uncertain"})
         failure = {"status": "blocked", "phase": args.phase, "errorType": type(exc).__name__,
-                   "reason": "managed-runtime-changed" if safe_runtime else "controller-" + exc.code if safe_dependency else str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
+                   "reason": "rift-not-foreground" if safe_foreground else "managed-runtime-changed" if safe_runtime else "controller-" + exc.code if safe_dependency else str(exc) if isinstance(exc, InspectionBlocked) or safe_capability else "operation refused; inspect retained stage timings",
                    "startUtc": before, "endUtc": utc().isoformat(),
                    "elapsedSeconds": time.perf_counter()-started, "stages": timer.rows}
         if admitted is not None and "finalInventoryFailure" in admitted:

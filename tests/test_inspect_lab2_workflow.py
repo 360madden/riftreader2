@@ -475,6 +475,26 @@ class InspectionTests(unittest.TestCase):
                 self.assertEqual(value["reason"], expected)
                 self.assertNotIn("credential", error.getvalue())
 
+    def test_cli_exposes_only_exact_nonforeground_blocker(self):
+        from contextlib import redirect_stderr
+        from io import StringIO
+        cases = (
+            (flow.MovementSessionError("RIFT is not foreground"), "rift-not-foreground"),
+            (flow.MovementSessionError("RIFT is not foreground: private detail"), None),
+            (RuntimeError("RIFT is not foreground"), None),
+            (flow.MovementSessionError("other private foreground failure"), None),
+        )
+        for failure, reason in cases:
+            with self.subTest(failure=str(failure)), patch.object(
+                    flow, "preflight", side_effect=failure), patch.object(
+                    flow, "native_options", return_value=None), redirect_stderr(
+                    StringIO()) as error:
+                self.assertEqual(flow.main(["run", "--output", str(self.root)]), 2)
+                result = json.loads(error.getvalue())
+            self.assertEqual(result["reason"],
+                             reason or "operation refused; inspect retained stage timings")
+            self.assertNotIn("private", error.getvalue())
+
     def test_cli_exposes_only_typed_exact_managed_runtime_cause(self):
         from contextlib import redirect_stderr
         from io import StringIO
