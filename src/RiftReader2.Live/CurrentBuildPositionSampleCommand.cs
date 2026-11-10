@@ -55,6 +55,7 @@ internal static class CurrentBuildPositionSampleCommand
         cancellationToken.ThrowIfCancellationRequested();
         await using var session = await open(pid, ticks, cancellationToken);
         var readings = new List<CurrentBuildPositionObservation>(samples);
+        ulong? burstPlayerKey = null;
         var timer = Stopwatch.StartNew();
         for (var index = 0; index < samples; ++index)
         {
@@ -66,6 +67,9 @@ internal static class CurrentBuildPositionSampleCommand
             var invalidated = await session.RevalidateAsync(cancellationToken);
             if (invalidated is not null)
                 throw new InvalidDataException("Native candidate process identity was invalidated; no completed report was published.");
+            if (burstPlayerKey is ulong pinnedKey && pinnedKey != owned.UnitKey)
+                throw new InvalidDataException("Native position owner changed during sampling; no completed report was published.");
+            burstPlayerKey = owned.UnitKey;
             var reading = new CurrentBuildPositionObservation(
                 index + 1, begin.ToString("O"), DateTimeOffset.UtcNow.ToString("O"),
                 started, timer.Elapsed.TotalMilliseconds,

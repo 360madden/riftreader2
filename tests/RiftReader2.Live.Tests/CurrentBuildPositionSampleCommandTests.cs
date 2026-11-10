@@ -414,6 +414,37 @@ public sealed class CurrentBuildPositionSampleCommandTests
     }
 
     [Fact]
+    public async Task CharacterSwitchBetweenSamplesRefusesCompletedPositionReport()
+    {
+        var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-owner-" + Guid.NewGuid().ToString("N") + ".json");
+        var session = new FakeSession();
+        using var lines = new StringWriter();
+        var count = 0;
+        try
+        {
+            var options = new Dictionary<string, string>
+            {
+                ["--pid"] = "123",
+                ["--start-ticks"] = "456",
+                ["--output"] = path,
+                ["--samples"] = "2",
+                ["--interval-ms"] = "0"
+            };
+            var error = await Assert.ThrowsAsync<InvalidDataException>(() =>
+                CurrentBuildPositionSampleCommand.RunAsync(options, lines, default,
+                    (_, _, _) => Task.FromResult<IAsyncDisposable>(new TestLease(() => { })),
+                    (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session),
+                    _ => new CurrentBuildOwnedPosition((ulong)++count, new(1, 2, 3))));
+            Assert.Contains("owner changed", error.Message);
+            Assert.Equal(2, count);
+            Assert.True(session.Disposed);
+            Assert.False(File.Exists(path));
+            Assert.DoesNotContain("native-current-position-candidate-summary/1", lines.ToString());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
     public async Task ThirtySampleRunHoldsLeaseUntilSessionDisposed()
     {
         var path = Path.Combine(Path.GetTempPath(), "rr2-xyz-lease-" + Guid.NewGuid().ToString("N") + ".json");
