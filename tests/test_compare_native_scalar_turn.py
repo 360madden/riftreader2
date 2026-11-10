@@ -80,6 +80,9 @@ class ScalarTurnCompareTests(unittest.TestCase):
     def test_candidate_delta_distinguishes_changed_float_bits_from_numeric_delta(self):
         result = turns.compare(self.before, self.after)
         self.assertEqual("candidate-only", result["status"])
+        self.assertEqual(VM, result["vmIdentity"])
+        self.assertEqual(INSTANCE, result["activeAgentInstanceId"])
+        self.assertEqual(GAME_SHA, result["gameSha256"])
         self.assertFalse(result["headingQualified"])
         self.assertEqual(2, result["changedFieldCount"])
         self.assertAlmostEqual(0.25, result["fields"]["currentCandidate"]["deltaCandidate"])

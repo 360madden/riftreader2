@@ -29,16 +29,19 @@ def source(field, *, at="2026-11-09T17:00:00Z", report_sha="A" * 64):
                         "freshness": "unqualified"})
     elif field == "actor-pose":
         metrics.update({"actorAngleDegreesCandidate": 45.0, "actorHeadingQualified": False})
+    elif field == "smoothed-scalar":
+        metrics.update({"currentCandidate": 0.5, "headingQualified": False})
     else:
         def metric(value):
             return {"status": "calculated-candidate", "current": value, "maximum": 100}
         metrics.update({"health": metric(100), "energy": metric(90),
                         "mana": {"status": "unavailable", "current": None, "maximum": None}})
-    pose_paths = ({"sourceReport": str(Path.cwd() / "artifacts" / "pose-test" / "samples.json"),
-                   "summaryPath": str(Path.cwd() / "artifacts" / "pose-test" / "summary.json")}
-                  if field == "actor-pose" else {})
+    detail = Path.cwd() / "artifacts" / (field + "-test")
+    detail_paths = ({"sourceReport": str(detail / "samples.json"),
+                     "summaryPath": str(detail / "summary.json")}
+                    if field in ("actor-pose", "smoothed-scalar") else {})
     return {
-        **pose_paths,
+        **detail_paths,
         "schemaVersion": 1, "status": "candidate-only", "lab": "lab2",
         "transport": "persistent-control-agent",
         "vmIdentity": copy.deepcopy(VM), "gameProcessId": 10876,
@@ -68,10 +71,11 @@ def pair(fields=("position", "vitals")):
     if "vitals" in fields:
         after["vitals"]["metrics"]["health"]["current"] = 85
         after["vitals"]["metrics"]["energy"]["current"] = 80
-    if "actor-pose" in fields:
-        folder = Path.cwd() / "artifacts" / "pose-test-after"
-        after["actor-pose"].update(sourceReport=str(folder / "samples.json"),
-                                   summaryPath=str(folder / "summary.json"))
+    for field in ("actor-pose", "smoothed-scalar"):
+        if field in fields:
+            folder = Path.cwd() / "artifacts" / (field + "-test-after")
+            after[field].update(sourceReport=str(folder / "samples.json"),
+                                summaryPath=str(folder / "summary.json"))
     return before, after
 
 
@@ -216,6 +220,56 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
                 75.96375653207352,
                 result["comparison"]["position"]["xzTravelAngleDegreesCandidate"])
             self.assertFalse(result["comparison"]["actor-pose"]["actorHeadingQualified"])
+
+    def scalar_result(self):
+        return {"status": "candidate-only", "lab": "lab2", "vmIdentity": copy.deepcopy(VM),
+                "gameProcessId": 10876, "gameProcessStartUtcTicks": 639297512883473394,
+                "gameSha256": SHA, "activeAgentInstanceId": AGENT,
+                "playerKeyDecimal": UNIT, "beforeSourceSha256": "A" * 64,
+                "afterSourceSha256": "B" * 64, "changedFieldCount": 1,
+                "fields": {"currentCandidate": {"deltaCandidate": 0.25}},
+                "headingQualified": False}
+
+    def test_position_pose_and_scalar_join_same_readouts(self):
+        first, second = pair(("position", "actor-pose", "smoothed-scalar"))
+        scalar = self.scalar_result()
+        with patch.object(tool, "compare_pose_turn", return_value=self.pose_result()), \
+                patch.object(tool, "compare_scalar_turn", return_value=scalar) as joined:
+            result = compare(first, second)
+        self.assertEqual(["position", "actor-pose", "smoothed-scalar"],
+                         result["fieldsCompared"])
+        self.assertAlmostEqual(75.96375653207352,
+                               result["comparison"]["position"]["xzTravelAngleDegreesCandidate"])
+        self.assertEqual(2.0, result["comparison"]["actor-pose"]["matrices"][
+            "actorMatrix"]["deltaDegreesCandidate"])
+        self.assertIs(scalar, result["comparison"]["smoothed-scalar"])
+        self.assertFalse(scalar["headingQualified"])
+        joined.assert_called_once_with(Path(first["smoothed-scalar"]["summaryPath"]),
+                                       Path(second["smoothed-scalar"]["summaryPath"]))
+
+    def test_scalar_join_refuses_wrong_source_and_identity(self):
+        first, second = pair(("position", "smoothed-scalar"))
+        first["smoothed-scalar"]["summaryPath"] = "relative/summary.json"
+        with patch.object(tool, "compare_scalar_turn") as joined, \
+                self.assertRaisesRegex(ValueError, "scalar-source-path-invalid"):
+            compare(first, second)
+        joined.assert_not_called()
+        for field, replacement, reason in (
+                ("beforeSourceSha256", "F" * 64, "scalar-source-hash-mismatch"),
+                ("gameSha256", "F" * 64, "scalar-identity-mismatch"),
+                ("activeAgentInstanceId", "b" * 32, "scalar-identity-mismatch")):
+            first, second = pair(("position", "smoothed-scalar"))
+            scalar = self.scalar_result()
+            scalar[field] = replacement
+            with self.subTest(field=field), patch.object(
+                    tool, "compare_scalar_turn", return_value=scalar), self.assertRaisesRegex(
+                        ValueError, reason):
+                compare(first, second)
+        first, second = pair(("position", "smoothed-scalar"))
+        with patch.object(tool, "compare_scalar_turn",
+                          side_effect=tool.Blocked("scalar-turn-source-hash-mismatch")), \
+                self.assertRaisesRegex(ValueError, "scalar-source-invalid"):
+            compare(first, second)
 
     def test_selective_position_and_vitals_only(self):
         for fields, key in ((("position",), "position"), (("vitals",), "vitals")):

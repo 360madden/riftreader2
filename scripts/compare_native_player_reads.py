@@ -1,6 +1,6 @@
 """Compare two retained Lab2 native player readouts; strictly offline, candidate-only.
 
-Reads saved read_native_telemetry.py output (position/vitals/actor-pose).
+Reads saved read_native_telemetry.py output (position/vitals/actor-pose/scalar).
 Does not contact VMware, controllers, game, desktop, or the network. Values are
 not independent movement proof or evidence of passive field freshness.
 """
@@ -20,12 +20,13 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.compare_native_actor_pose_turn import compare as compare_pose_turn
+from scripts.compare_native_scalar_turn import compare as compare_scalar_turn
 from scripts.vm_console_native import Blocked
 
 MAX_BYTES = 8_000_000
 SHA = re.compile(r"[0-9A-Fa-f]{64}\Z")
 KEY = re.compile(r"[1-9][0-9]{0,19}\Z")
-FIELDS = ("position", "vitals", "actor-pose")
+FIELDS = ("position", "vitals", "actor-pose", "smoothed-scalar")
 RESOURCES = ("health", "energy", "mana")
 
 
@@ -219,6 +220,34 @@ def compare(before: dict, after: dict, before_sha: str, after_sha: str) -> dict:
               and pose["afterSourceSha256"] == source_info["actor-pose"]["afterReportSha256"],
               "pose-source-hash-mismatch")
         comparison["actor-pose"] = pose
+    if "smoothed-scalar" in fields_a:
+        paths = []
+        for row in (before["smoothed-scalar"], after["smoothed-scalar"]):
+            summary = row.get("summaryPath")
+            source = row.get("sourceReport")
+            _need(isinstance(summary, str) and isinstance(source, str),
+                  "scalar-source-path-invalid")
+            summary, source = Path(summary), Path(source)
+            _need(summary.is_absolute() and summary.name == "summary.json"
+                  and source == summary.with_name("samples.json"), "scalar-source-path-invalid")
+            paths.append(summary)
+        try:
+            scalar = compare_scalar_turn(*paths)
+        except (Blocked, OSError, ValueError, TypeError, KeyError):
+            raise ValueError("native-player-compare-scalar-source-invalid") from None
+        _need(scalar["status"] == "candidate-only"
+              and scalar["lab"] == "lab2"
+              and scalar["vmIdentity"] == identity_a[0]
+              and scalar["gameProcessId"] == identity_a[1]
+              and scalar["gameProcessStartUtcTicks"] == identity_a[2]
+              and scalar["gameSha256"].upper() == identity_a[3]
+              and scalar["activeAgentInstanceId"] == identity_a[4]
+              and scalar["playerKeyDecimal"] == unit_a,
+              "scalar-identity-mismatch")
+        _need(scalar["beforeSourceSha256"] == source_info["smoothed-scalar"]["beforeReportSha256"]
+              and scalar["afterSourceSha256"] == source_info["smoothed-scalar"]["afterReportSha256"],
+              "scalar-source-hash-mismatch")
+        comparison["smoothed-scalar"] = scalar
     return {
         "schemaVersion": 1, "status": "candidate-only",
         "mode": "offline-retained-native-readouts",
