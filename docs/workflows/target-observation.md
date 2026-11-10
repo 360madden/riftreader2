@@ -79,6 +79,23 @@ performed. On 2026-11-09, two actual Lab 2 reads completed in 5.53 and 6.22 seco
 with advancing acquisition timestamps and the same unit identity. These are
 sample timings, not a throughput guarantee.
 
+## Lab 1 native position and pose candidates
+
+The same on-demand command now accepts `--lab lab1`. It defaults to the native
+position source; optionally request the existing Lab 1 actor-pose and smoothed
+scalar readers, without starting Lab 2 or reading Lua:
+
+```powershell
+& '.\.venv\Scripts\python.exe' scripts/read_native_telemetry.py --lab lab1 --expected-host AMD-DESKTOP --fields position actor-pose smoothed-scalar
+```
+
+Each requested report must match the current Lab 1 game, VM, controller and
+player, with a clean read-only postflight. Lab 1 native vitals are not supported
+by this combined command; `--fields vitals` blocks before dependency startup.
+`--compare-pose-before` supports a saved, same-Lab-1 pose summary; the joined
+`--compare-readout-before` command remains Lab-2-only. These are unqualified
+native candidates until verified with live changed-state evidence.
+
 ## Native selected-target values
 
 From `C:\work\riftreader2` on AMD-DESKTOP:

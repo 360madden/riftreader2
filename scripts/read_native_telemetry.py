@@ -1,4 +1,4 @@
-"""Read Lab 2 native position, vitals, pose and optional scalar without game input.
+"""Read native player candidates from a selected RIFT lab without game input.
 
 Reuses the managed controller and bounded, identity-checked native queries.
 Selected reads are sequential, NOT atomic or qualified movement feedback.
@@ -37,6 +37,7 @@ from scripts.fresh_native_smoothed_scalar import query as query_smoothed_scalar
 OWNER_HOST = "AMD-DESKTOP"
 NATIVE_FIELDS = ("position", "vitals", "actor-pose", "smoothed-scalar")
 DEFAULT_FIELDS = ("position", "vitals")
+_UNSPECIFIED = object()
 
 
 def require(condition, reason):
@@ -44,17 +45,18 @@ def require(condition, reason):
         raise ValueError(reason)
 
 
-def target_identity(status):
+def target_identity(status, lab="lab2"):
     require(isinstance(status, dict) and _idle(status), "native-read-controller-not-idle")
     host, guest = status["host"], status["guest"]
-    require(host.get("machineName") == "RIFT-LAB-2", "native-read-guest-mismatch")
+    expected_guest = "RIFT-LAB-" + lab[-1]
+    require(host.get("machineName") == expected_guest, "native-read-guest-mismatch")
     instance = guest.get("instanceId")
     require(isinstance(instance, str) and re.fullmatch(r"[0-9a-f]{32}", instance)
             and host.get("instanceId") == instance, "native-read-agent-mismatch")
     target = guest.get("target")
-    require(isinstance(target, dict) and target.get("machineName") == "RIFT-LAB-2",
+    require(isinstance(target, dict) and target.get("machineName") == expected_guest,
             "native-read-target-unavailable")
-    game = checked_expected_game("lab2", {key: target.get(key) for key in
+    game = checked_expected_game(lab, {key: target.get(key) for key in
         ("processId", "processStartUtcTicks", "executableSha256")})
     return game, instance
 
@@ -67,12 +69,12 @@ def unit_key(value):
     return text
 
 
-def validate_sources(rows, game, instance, vm):
+def validate_sources(rows, game, instance, vm, lab="lab2"):
     """Check every requested source; never merge across owners or epochs."""
     keys = []
     for row in rows:
         require(isinstance(row, dict) and row.get("schemaVersion") == 1
-                and row.get("status") == "candidate-only" and row.get("lab") == "lab2"
+                and row.get("status") == "candidate-only" and row.get("lab") == lab
                 and row.get("transport") == "persistent-control-agent"
                 and row.get("vmIdentity") == vm
                 and row.get("activeAgentInstanceId") == instance
@@ -87,8 +89,8 @@ def validate_sources(rows, game, instance, vm):
     return keys[0]
 
 
-def validate_pair(position, vitals, game, instance, vm):
-    return validate_sources((position, vitals), game, instance, vm)
+def validate_pair(position, vitals, game, instance, vm, lab="lab2"):
+    return validate_sources((position, vitals), game, instance, vm, lab)
 
 
 def selected_fields(fields):
@@ -100,20 +102,25 @@ def selected_fields(fields):
     return tuple(field for field in NATIVE_FIELDS if field in fields)
 
 
-def read_once(lab: str, expected_host: str, *, fields=DEFAULT_FIELDS) -> dict:
+def read_once(lab: str, expected_host: str, *, fields=_UNSPECIFIED) -> dict:
     # Reject a wrong machine/target before starting any dependency.
-    require(lab == "lab2", "native-read-target-not-supported")
+    require(lab in ("lab1", "lab2"), "native-read-target-not-supported")
     require(isinstance(expected_host, str) and expected_host.casefold() == OWNER_HOST.casefold()
             and socket.gethostname().casefold() == OWNER_HOST.casefold(), "native-read-host-mismatch")
+    if fields is _UNSPECIFIED:
+        fields = ("position",) if lab == "lab1" else DEFAULT_FIELDS
     fields = selected_fields(fields)
+    require(lab != "lab1" or "vitals" not in fields,
+            "native-read-lab1-vitals-not-supported")
     started = time.perf_counter()
     ensure(lab)
     receipt_path, receipt, _ = resolve_current_managed_controller(lab)
     config = HostConfig.load(CONFIGS[lab])
-    require(config.expected_machine_name == "RIFT-LAB-2", "native-read-config-lab-mismatch")
+    require(config.expected_machine_name == "RIFT-LAB-" + lab[-1],
+            "native-read-config-lab-mismatch")
     client = ControlClient(config)
     before = client.request("/api/status", method="GET")
-    game, instance = target_identity(before)
+    game, instance = target_identity(before, lab)
     vm = receipt["vmIdentity"]
     require(before["host"].get("vmIdentity") == vm, "native-read-vm-mismatch")
     native = validate_config(config.vmx, config.vnc_port, config.vmrun,
@@ -121,16 +128,16 @@ def read_once(lab: str, expected_host: str, *, fields=DEFAULT_FIELDS) -> dict:
     sources = {}
     if "position" in fields:
         sources["position"] = query_xyz(native, vm, game, CONFIGS[lab], lab=lab)
-        validate_sources((sources["position"],), game, instance, vm)
+        validate_sources((sources["position"],), game, instance, vm, lab)
     if "vitals" in fields:
         sources["vitals"] = query_vitals(native, vm, game, CONFIGS[lab])
     if "actor-pose" in fields:
         sources["actor-pose"] = query_actor_pose(native, vm, game, CONFIGS[lab], lab=lab)
     if "smoothed-scalar" in fields:
         sources["smoothed-scalar"] = query_smoothed_scalar(native, vm, game, CONFIGS[lab], lab=lab)
-    key = validate_sources(sources.values(), game, instance, vm)
+    key = validate_sources(sources.values(), game, instance, vm, lab)
     after = client.request("/api/status", method="GET")
-    require(target_identity(after) == (game, instance)
+    require(target_identity(after, lab) == (game, instance)
             and after["host"].get("vmIdentity") == vm, "native-read-postflight-changed")
     resolve_current_managed_controller(lab, expected_receipt_path=receipt_path)
     # Keep large unit keys lossless for JavaScript and other JSON consumers.
@@ -152,10 +159,10 @@ def read_once(lab: str, expected_host: str, *, fields=DEFAULT_FIELDS) -> dict:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--lab", required=True, choices=("lab2",))
+    parser.add_argument("--lab", required=True, choices=("lab1", "lab2"))
     parser.add_argument("--expected-host", required=True)
-    parser.add_argument("--fields", nargs="+", choices=NATIVE_FIELDS, default=DEFAULT_FIELDS,
-                        help="read only these sources; defaults to position and vitals")
+    parser.add_argument("--fields", nargs="+", choices=NATIVE_FIELDS,
+                        help="choose sources; default Lab 1: position, Lab 2: position/vitals")
     parser.add_argument("--compare-pose-before", type=Path,
                         help="compare the new actor-pose capture to a saved before summary.json")
     parser.add_argument("--output-json", type=Path,
@@ -164,19 +171,25 @@ def main(argv=None) -> int:
                         help="compare a new saved readout with a previously saved baseline")
     args = parser.parse_args(argv)
     try:
+        fields = args.fields if args.fields is not None else (
+            ("position",) if args.lab == "lab1" else DEFAULT_FIELDS)
+        selected = selected_fields(fields)
+        require(args.lab != "lab1" or "vitals" not in selected,
+                "native-read-lab1-vitals-not-supported")
         if args.output_json is not None:
             require(args.output_json.parent.is_dir() and not args.output_json.exists()
                     and not args.output_json.is_symlink(), "native-read-output-unavailable")
         baseline = None
         if args.compare_readout_before is not None:
+            require(args.lab == "lab2", "native-read-lab1-comparison-not-supported")
             require(args.output_json is not None, "native-read-comparison-output-required")
             baseline, baseline_sha = load_readout(args.compare_readout_before)
             require(tuple(field for field in NATIVE_FIELDS if field in baseline)
-                    == selected_fields(args.fields), "native-read-baseline-fields-mismatch")
+                    == selected, "native-read-baseline-fields-mismatch")
         if args.compare_pose_before is not None:
-            require("actor-pose" in selected_fields(args.fields),
+            require("actor-pose" in selected,
                     "native-read-pose-compare-requires-pose")
-        result = read_once(args.lab, args.expected_host, fields=args.fields)
+        result = read_once(args.lab, args.expected_host, fields=fields)
         if args.compare_pose_before is not None:
             pose = result.get("actor-pose")
             require(isinstance(pose, dict) and isinstance(pose.get("summaryPath"), str),
