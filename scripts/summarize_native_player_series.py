@@ -101,15 +101,32 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
             except (OverflowError, ValueError):
                 total = None
         net = endpoints["comparison"]["position"]
+        provenance = endpoints["sourceProvenance"]["position"]
+        duration = (
+            comparison._utc(provenance["afterObservedAtUtc"])
+            - comparison._utc(provenance["beforeObservedAtUtc"])
+        ).total_seconds()
+        # This is observation-window elapsed time, not time spent moving.
+        path_rate = total / duration if total is not None and duration > 0 else None
+        net_distance = net["horizontalXZDistanceCandidate"]
+        net_rate = (net_distance / duration if total is not None
+                    and net_distance is not None and duration > 0 else None)
+        if path_rate is not None and not math.isfinite(path_rate):
+            path_rate = None
+        if net_rate is not None and not math.isfinite(net_rate):
+            net_rate = None
         position_summary = {
             "status": ("complete-candidate" if total is not None
                        else "incomplete-segment-candidates"),
             "validSegmentCount": len(lengths),
             "segmentCount": len(pairs),
             "cumulativeHorizontalXZDistanceCandidate": total,
-            "netHorizontalXZDistanceCandidate": net["horizontalXZDistanceCandidate"],
+            "netHorizontalXZDistanceCandidate": net_distance,
             "netDeltaCandidate": net["deltaCandidate"],
             "maximumSegmentXZDistanceCandidate": max(lengths) if lengths else None,
+            "positionObservationDurationSeconds": duration,
+            "observedAveragePathXZUnitsPerSecondCandidate": path_rate,
+            "observedAverageNetXZUnitsPerSecondCandidate": net_rate,
         }
 
     return {
@@ -127,8 +144,9 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
         "vitalsEndpointDeltasCandidate": endpoints["comparison"].get("vitals"),
         "qualification": (
             "same VM/game/agent/player and strictly advancing retained source reports; "
-            "candidate arithmetic only; observed distance/time is NOT controlled "
-            "movement speed or proof of continuous motion; travel course "
+            "candidate arithmetic only; observed distance/time, including "
+            "whole-window averages, is NOT controlled movement speed or proof "
+            "of continuous motion; travel course "
             "is +X toward +Z, NOT "
             "player-facing yaw; NOT independent movement proof or turn proof, "
             "passive freshness, qualified field semantics, or restart recovery"

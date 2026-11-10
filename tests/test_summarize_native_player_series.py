@@ -70,6 +70,9 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertEqual(pos["cumulativeHorizontalXZDistanceCandidate"], 10)
         self.assertEqual(pos["netHorizontalXZDistanceCandidate"], 8)
         self.assertEqual(pos["netDeltaCandidate"], {"x": 0.0, "y": 0.0, "z": 8.0})
+        self.assertEqual(pos["positionObservationDurationSeconds"], 2)
+        self.assertEqual(pos["observedAveragePathXZUnitsPerSecondCandidate"], 5)
+        self.assertEqual(pos["observedAverageNetXZUnitsPerSecondCandidate"], 4)
         self.assertEqual([s["horizontalXZDistanceCandidate"] for s in result["segments"]], [5, 5])
         self.assertEqual(result["vitalsEndpointDeltasCandidate"]["health"]["deltaCurrentCandidate"], -20)
         self.assertEqual(result["vitalsEndpointDeltasCandidate"]["energy"]["deltaCurrentCandidate"], 0)
@@ -88,6 +91,25 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertAlmostEqual(second["positionObservationIntervalSeconds"], 1.5)
         self.assertAlmostEqual(second["observedAverageXZUnitsPerSecondCandidate"], 5 / 1.5)
         self.assertIn("NOT controlled movement speed", result["qualification"])
+
+    def test_window_rates_use_position_clock_not_vitals_clock(self):
+        items = reads()
+        items[2][0]["position"]["observedAtUtc"] = "2026-11-09T17:00:04Z"
+        result = tool.summarize(items)
+        pos = result["positionSummary"]
+        self.assertEqual(pos["positionObservationDurationSeconds"], 4)
+        self.assertEqual(pos["observedAveragePathXZUnitsPerSecondCandidate"], 2.5)
+        self.assertEqual(pos["observedAverageNetXZUnitsPerSecondCandidate"], 2)
+
+    def test_stationary_window_rates_zero_not_unavailable(self):
+        items = reads(("position",))
+        for index in (1, 2):
+            items[index][0]["position"]["metrics"].update({"x": 0, "z": 0})
+        pos = tool.summarize(items)["positionSummary"]
+        self.assertEqual(pos["status"], "complete-candidate")
+        self.assertEqual(pos["positionObservationDurationSeconds"], 2)
+        self.assertEqual(pos["observedAveragePathXZUnitsPerSecondCandidate"], 0)
+        self.assertEqual(pos["observedAverageNetXZUnitsPerSecondCandidate"], 0)
 
     def test_unavailable_and_stationary_position_rate(self):
         stationary = reads(("position",))
@@ -111,6 +133,9 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertEqual(result["positionSummary"]["status"], "complete-candidate")
         self.assertEqual(result["segments"][0]["positionObservationIntervalSeconds"], 1e-6)
         self.assertIsNone(result["segments"][0]["observedAverageXZUnitsPerSecondCandidate"])
+        self.assertEqual(result["positionSummary"]["positionObservationDurationSeconds"], 1e-6)
+        self.assertIsNone(result["positionSummary"]["observedAveragePathXZUnitsPerSecondCandidate"])
+        self.assertIsNone(result["positionSummary"]["observedAverageNetXZUnitsPerSecondCandidate"])
 
     def test_translating_course_and_change_are_coordinate_relative(self):
         result = tool.summarize(reads(("position",)))
@@ -158,6 +183,9 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertEqual(result["positionSummary"]["status"], "incomplete-segment-candidates")
         self.assertIsNone(result["positionSummary"]["cumulativeHorizontalXZDistanceCandidate"])
         self.assertEqual(result["positionSummary"]["validSegmentCount"], 0)
+        self.assertEqual(result["positionSummary"]["positionObservationDurationSeconds"], 2)
+        self.assertIsNone(result["positionSummary"]["observedAveragePathXZUnitsPerSecondCandidate"])
+        self.assertIsNone(result["positionSummary"]["observedAverageNetXZUnitsPerSecondCandidate"])
         # Both endpoints remain same-owner, so net endpoint displacement is valid.
         self.assertEqual(result["positionSummary"]["netHorizontalXZDistanceCandidate"], 8)
 
