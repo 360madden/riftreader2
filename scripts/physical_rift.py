@@ -70,7 +70,20 @@ def _native_values(kind, report):
         observation = report.get("observation")
         if not isinstance(observation, dict) or type(observation.get("unitKey")) is not int:
             raise ValueError("invalid-native-vitals-report")
+        if not 0 < observation["unitKey"] < 2**64:
+            raise ValueError("invalid-native-vitals-report")
         result = {"unitKey": str(observation["unitKey"])}
+        observations = report.get("observations")
+        if observations is not None:
+            if (not isinstance(observations, list) or not observations or
+                    report.get("requestedSamples") != len(observations) or
+                    report.get("completedSamples") != len(observations) or
+                    observations[-1] != observation or
+                    any(not isinstance(row, dict) or row.get("unitKey") != observation["unitKey"]
+                        or row.get("identity") != report.get("identity") for row in observations)):
+                raise ValueError("invalid-native-vitals-report")
+            result["sampleCount"] = len(observations)
+            result["sampledAtUtc"] = observation.get("completedAtUtc")
         for resource in ("health", "energy", "mana"):
             entry = observation.get(resource)
             if not isinstance(entry, dict) or not isinstance(entry.get("status"), str):
@@ -109,8 +122,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
         return selection
     if kind not in NATIVE_READS:
         return dict(selection, status="blocked", reason="unknown-native-read")
-    if kind != "position" and (samples is not None or interval_ms is not None):
-        return dict(selection, status="blocked", reason="sampling-options-require-position")
+    if kind not in ("position", "vitals") and (samples is not None or interval_ms is not None):
+        return dict(selection, status="blocked", reason="sampling-options-require-position-or-vitals")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
         return dict(selection, status="blocked", reason="invalid-position-sampling")
@@ -136,9 +149,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
     if interval_ms is not None:
         command.extend(("--interval-ms", str(interval_ms)))
     # Long, explicitly requested intervals must not hit the wrapper's timeout.
-    timeout = (30 + ((samples if samples is not None else 3) - 1)
+    timeout = (30 + ((samples if samples is not None else
+                      (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind == "position" else 30)
+               if kind in ("position", "vitals") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -172,6 +186,9 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
                 or str(identity.get("executableSha256", "")).casefold()
                     != str(target.get("executableSha256", "")).casefold()):
             raise ValueError("report-identity-or-status-mismatch")
+        if (kind == "vitals" and samples is not None and samples > 1
+                and report.get("completedSamples") != samples):
+            raise ValueError("incomplete-native-vitals-burst")
         values = _native_values(kind, report)
     except (OSError, ValueError, TypeError, AttributeError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")
@@ -191,16 +208,16 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
-                        help="position only: 1-30 native samples (default: 3)")
+                        help="position/vitals: 1-30 samples (default: 3 for position, 1 for vitals)")
     parser.add_argument("--interval-ms", type=int,
-                        help="position only: 0-2000ms between reads (default: 500)")
+                        help="position/vitals: 0-2000ms between reads (default: 500)")
     args = parser.parse_args(argv)
     if args.read_native is not None and args.expected_host is None:
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "native-read-requires-expected-host"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native != "position":
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals"):
         result = {"status": "blocked", "workflow": "physical",
-                  "reason": "sampling-options-require-position"}
+                  "reason": "sampling-options-require-position-or-vitals"}
     else:
         result = select_physical(args.expected_host, args.physical_pid)
     if args.output is not None and args.read_native is None:

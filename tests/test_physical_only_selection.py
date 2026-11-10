@@ -146,6 +146,64 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
         self.assertIn("candidate-only", result["qualification"])
 
+    def test_vitals_burst_reports_last_hp_from_stable_player(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "vitals-burst.json"
+            rows = [{
+                "identity": REPORT_IDENTITY, "unitKey": 239816685251645959,
+                "health": {"status": "calculated-candidate", "current": 100 + i, "maximum": 150},
+                "energy": {"status": "unavailable"},
+                "mana": {"status": "unavailable"},
+                "completedAtUtc": str(i)} for i in range(3)]
+
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[-4:], ["--samples", "3", "--interval-ms", "0"])
+                destination.write_text(json.dumps({
+                    "status": "complete", "identity": REPORT_IDENTITY,
+                    "requestedSamples": 3, "completedSamples": 3,
+                    "observation": rows[-1], "observations": rows}), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0,
+                    json.dumps({"recordType": "native-current-vitals-candidate-summary/2",
+                                "status": "complete", "output": str(destination)}), "")
+
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "vitals", destination,
+                                              samples=3, interval_ms=0)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeValues"]["sampleCount"], 3)
+        self.assertEqual(result["nativeValues"]["health"]["current"], 102)
+        self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
+
+    def test_vitals_burst_rejects_mixed_player_samples(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "vitals-mixed.json"
+            original = {"identity": REPORT_IDENTITY, "unitKey": 123,
+                        "health": {"status": "calculated-candidate", "current": 100, "maximum": 150},
+                        "energy": {"status": "unavailable"}, "mana": {"status": "unavailable"}}
+            different = {**original, "unitKey": 124}
+            def fake_run(command, **kwargs):
+                destination.write_text(json.dumps({
+                    "status": "complete", "identity": REPORT_IDENTITY,
+                    "requestedSamples": 2, "completedSamples": 2,
+                    "observation": different, "observations": [original, different]}),
+                    encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0,
+                    json.dumps({"recordType": "native-current-vitals-candidate-summary/2",
+                                "status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "vitals", destination,
+                                              samples=2, interval_ms=0)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "invalid-native-reader-report")
+
     def test_native_read_fails_closed_before_launch(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
@@ -286,7 +344,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with patch.object(physical.subprocess, "run") as runner:
             for kind, samples, interval, expected in (
-                ("vitals", 3, None, "sampling-options-require-position"),
+                ("orientation", 3, None, "sampling-options-require-position-or-vitals"),
                 ("position", 0, None, "invalid-position-sampling"),
                 ("position", 31, None, "invalid-position-sampling"),
                 ("position", None, 2001, "invalid-position-sampling"),

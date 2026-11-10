@@ -88,6 +88,79 @@ public sealed class CurrentBuildVitalsSampleCommandTests
             new StringWriter(), default));
     }
 
+    [Fact]
+    public async Task BurstCapturesSeveralVitalsWithOneSessionAndPreservesSingleShotProjection()
+    {
+        var path = NewPath();
+        var session = new FakeSession();
+        using var output = new StringWriter();
+        var count = 0;
+        try
+        {
+            Assert.Equal(0, await CurrentBuildVitalsSampleCommand.CaptureBurstAndPublishAsync(
+                session, path, output, source =>
+                {
+                    var value = 700 + 10 * count++;
+                    return Observation(source) with { Health = new("calculated-candidate", null, value, 1000) };
+                }, 3, 0, default));
+            Assert.Equal(3, count);
+            using var json = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+            var root = json.RootElement;
+            Assert.Equal("native-current-vitals-candidate-burst/1", root.GetProperty("contractVersion").GetString());
+            Assert.Equal(3, root.GetProperty("completedSamples").GetInt32());
+            Assert.Equal(3, root.GetProperty("observations").GetArrayLength());
+            Assert.Equal(700, root.GetProperty("observations")[0].GetProperty("health").GetProperty("current").GetInt64());
+            Assert.Equal(720, root.GetProperty("observation").GetProperty("health").GetProperty("current").GetInt64());
+            Assert.Contains("native-current-vitals-candidate-summary/2", output.ToString());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task BurstRejectsPlayerChangeWithoutPublishing()
+    {
+        var path = NewPath();
+        var session = new FakeSession();
+        using var output = new StringWriter();
+        var count = 0;
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            CurrentBuildVitalsSampleCommand.CaptureBurstAndPublishAsync(
+                session, path, output,
+                source => Observation(source) with { UnitKey = (ulong)++count },
+                2, 0, default));
+        Assert.Equal(2, count);
+        Assert.False(File.Exists(path));
+        Assert.DoesNotContain("summary", output.ToString());
+    }
+
+    [Fact]
+    public async Task OneShotRejectsObservationFromAnotherProcess()
+    {
+        var path = NewPath();
+        var session = new FakeSession();
+        using var output = new StringWriter();
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            CurrentBuildVitalsSampleCommand.CaptureAndPublishAsync(
+                session, path, output, source => Observation(source) with
+                {
+                    Identity = source.Identity with { ProcessId = source.Identity.ProcessId + 1 }
+                }, default));
+        Assert.False(File.Exists(path));
+        Assert.Equal("", output.ToString());
+    }
+
+    [Theory]
+    [InlineData("--samples", "0")]
+    [InlineData("--samples", "31")]
+    [InlineData("--interval-ms", "2001")]
+    public async Task InvalidBurstScheduleFailsBeforeOpeningProcess(string option, string value)
+    {
+        await Assert.ThrowsAsync<ArgumentException>(() => CurrentBuildVitalsSampleCommand.RunAsync(
+            new Dictionary<string, string> {
+                ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = NewPath(), [option] = value },
+            new StringWriter(), default));
+    }
+
     private static string NewPath() => Path.Combine(Path.GetTempPath(), $"rr2-vitals-{Guid.NewGuid():N}.json");
     private static CurrentBuildVitalsObservation Observation(IReadOnlyNativeMemorySession session) =>
         new(session.Identity, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, 123,

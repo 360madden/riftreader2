@@ -30,6 +30,8 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 # Also: position, orientation, player-context, selected-target, stats.
 # For a short read-only movement-observation burst:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native position --samples 10 --interval-ms 0
+# For repeated HP/resource observations under one native session:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals --samples 10 --interval-ms 0
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 
@@ -43,7 +45,13 @@ The tool checks native receipt type and returned process/build epoch before
 reporting success. A position burst also rejects missing, mixed or invalid player
 keys and nonfinite XYZ; a character switch cannot silently produce one mixed-owner
 summary. The results remain **native candidates**, not passive-freshness,
-changed-state or restart-qualified values.
+changed-state or restart-qualified values. Vitals without `--samples` keeps
+its original single-observation contract; with 2-30 samples it emits a separate
+`native-current-vitals-candidate-burst/1` report containing the samples and the
+last observation, refusing mixed player keys. An AMD-DESKTOP physical 10-sample
+zero-delay run on November 10 measured **363.1 ms** for native capture (36.3 ms
+per observation; roughly 2.2 s including launch), with unchanged candidate HP
+18,208/18,208. These timings are observations, not guaranteed polling rates.
 
 The lower-level .NET `inspect-native` command also works with physical multibox
 when **both** `--pid` and `--start-ticks` are supplied from a fresh local

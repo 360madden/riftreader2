@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using RiftReader2.Application;
@@ -56,6 +57,8 @@ internal static class CurrentBuildVitalsSampleCommand
             !long.TryParse(rawTicks, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
             !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--pid, --start-ticks and --output are required for the current-build vitals candidate sampler.");
+        var samples = BoundedInt(options, "--samples", 1, 1, 30);
+        var interval = BoundedInt(options, "--interval-ms", 500, 0, 2000);
         RequireNewOutput(path);
         cancellationToken.ThrowIfCancellationRequested();
         await using var lease = await acquireLease(pid, ticks,
@@ -67,7 +70,9 @@ internal static class CurrentBuildVitalsSampleCommand
             !string.Equals(session.Identity.ExecutableSha256,
                 CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Native vitals session does not match requested process epoch/build.");
-        return await CaptureAndPublishAsync(session, path, output, read, cancellationToken);
+        return samples == 1
+            ? await CaptureAndPublishAsync(session, path, output, read, cancellationToken)
+            : await CaptureBurstAndPublishAsync(session, path, output, read, samples, interval, cancellationToken);
     }
 
     // The delegate lets offline tests exercise the publication boundary without
@@ -94,6 +99,68 @@ internal static class CurrentBuildVitalsSampleCommand
         return 0;
     }
 
+    // A multi-sample physical read reuses the same lease and process session.
+    // Preserve the single-sample report schema above for all existing callers.
+    internal static async Task<int> CaptureBurstAndPublishAsync(
+        IReadOnlyNativeMemorySession session, string path, TextWriter output,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildVitalsObservation> read,
+        int samples, int intervalMilliseconds, CancellationToken cancellationToken)
+    {
+        if (samples is < 2 or > 30 || intervalMilliseconds is < 0 or > 2000)
+            throw new ArgumentException("Vitals bursts require 2..30 samples and 0..2000ms intervals.");
+        RequireNewOutput(path);
+        var observations = new List<CurrentBuildVitalsObservation>(samples);
+        ulong? playerKey = null;
+        var elapsed = Stopwatch.StartNew();
+        for (var index = 0; index < samples; ++index)
+        {
+            var observation = (await CaptureAsync(session, read, cancellationToken)).Observation;
+            if (observation.UnitKey == 0 || (playerKey is ulong original && original != observation.UnitKey))
+                throw new InvalidDataException("Native vitals player changed during sampling; no report was published.");
+            playerKey = observation.UnitKey;
+            observations.Add(observation);
+            if (index + 1 < samples && intervalMilliseconds != 0)
+                await Task.Delay(intervalMilliseconds, cancellationToken);
+        }
+
+        var last = observations[^1];
+        var report = new
+        {
+            schemaVersion = 1,
+            contractVersion = "native-current-vitals-candidate-burst/1",
+            status = "complete",
+            sourceBuildSha256 = CurrentBuildPositionSampleCommand.GameSha256,
+            session.Identity,
+            source = last.Source,
+            qualification = last.Qualification,
+            requestedSamples = samples,
+            completedSamples = observations.Count,
+            captureElapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds,
+            observation = last, // Same compact projection as the original one-shot receipt.
+            observations,
+            limitations = new[]
+            {
+                "The exact process epoch/build and shared read lease are pinned for the entire burst.",
+                "All observed player keys match; this does not prove continuous owner identity between samples.",
+                "Each read revalidates the process and source inputs independently; sequential fields are not atomic.",
+                "No changed-state semantics, passive freshness or game-restart qualification is implied."
+            }
+        };
+        await JsonReportWriter.WriteNewAsync(path, report, cancellationToken);
+        await output.WriteLineAsync(JsonSerializer.Serialize(new
+        {
+            recordType = "native-current-vitals-candidate-summary/2",
+            report.status,
+            report.qualification,
+            report.completedSamples,
+            healthStatus = last.Health.Status,
+            manaStatus = last.Mana.Status,
+            energyStatus = last.Energy.Status,
+            output = Path.GetFullPath(path)
+        }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
+        return 0;
+    }
+
     // Shared no-file acquisition boundary for the CLI and authenticated channel.
     internal static async Task<CurrentBuildVitalsReport> CaptureAsync(
         IReadOnlyNativeMemorySession session,
@@ -101,12 +168,28 @@ internal static class CurrentBuildVitalsSampleCommand
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        var openedIdentity = session.Identity;
         var observation = read(session);
         var invalidated = await session.RevalidateAsync(cancellationToken);
         if (invalidated is not null)
             throw new InvalidDataException("Native vitals candidate process identity was invalidated; no report was published.");
+        if (session.Identity != openedIdentity)
+            throw new InvalidOperationException("Native vitals session identity changed during revalidation; no report was published.");
+        if (observation.Identity != openedIdentity || observation.UnitKey == 0)
+            throw new InvalidDataException("Native vitals player/process identity changed; no report was published.");
         cancellationToken.ThrowIfCancellationRequested();
         return new CurrentBuildVitalsReport(observation);
+    }
+
+    private static int BoundedInt(IReadOnlyDictionary<string, string> options, string name,
+        int defaultValue, int minimum, int maximum)
+    {
+        if (!options.TryGetValue(name, out var raw))
+            return defaultValue;
+        if (!int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var value) ||
+            value < minimum || value > maximum)
+            throw new ArgumentException($"{name} must be in {minimum}..{maximum}.");
+        return value;
     }
 
     private static void RequireNewOutput(string path)
