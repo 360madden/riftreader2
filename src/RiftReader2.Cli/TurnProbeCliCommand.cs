@@ -213,9 +213,9 @@ internal static class TurnProbeCliCommand
     private static (ControlAction, ControlExecutionResult, double, DateTimeOffset, DateTimeOffset)
         ReadAction(JsonElement root)
     {
-        var action = root.GetProperty("action");
-        var keys = action.GetProperty("keys").EnumerateArray().Select(x => x.GetString() ?? "").ToArray();
-        var hold = action.GetProperty("holdMilliseconds").GetInt32();
+        // Preserve every recorded control field so the planner can refuse mixed input.
+        var action = root.GetProperty("action").Deserialize<ControlAction>(JsonFormat.Options)
+            ?? throw new InvalidDataException("Missing turn action.");
         var result = root.GetProperty("result");
         bool Flag(string field) => result.GetProperty(field).GetBoolean();
         var execution = new ControlExecutionResult(
@@ -242,6 +242,6 @@ internal static class TurnProbeCliCommand
         // Reject internally impossible receipts before deriving a calibration rate.
         if (completed <= started || up > (completed - started).TotalMilliseconds + 5)
             throw new InvalidDataException("Key events exceed action receipt duration.");
-        return (new ControlAction(keys, hold), execution, up - down, started, completed);
+        return (action, execution, up - down, started, completed);
     }
 }

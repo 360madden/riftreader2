@@ -196,6 +196,25 @@ public sealed class TurnProbeCliTests : IDisposable
             [.. Args(paths), "--target-degrees", "NaN"], TextWriter.Null, TextWriter.Null));
     }
 
+    [Theory]
+    [InlineData("\"deltaX\":10")]
+    [InlineData("\"mouseButton\":\"left\"")]
+    [InlineData("\"wheelNotches\":1")]
+    public async Task RefusesMixedInputInTurnReceipt(string extraAction)
+    {
+        var paths = await EvidenceAsync();
+        var original = await File.ReadAllTextAsync(paths.Receipt);
+        var contaminated = original.Replace("\"holdMilliseconds\":100",
+            "\"holdMilliseconds\":100," + extraAction, StringComparison.Ordinal);
+        Assert.NotEqual(original, contaminated);
+        await File.WriteAllTextAsync(paths.Receipt, contaminated);
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        Assert.Equal(2, await CliRunner.RunAsync(Args(paths), output, error));
+        Assert.Empty(output.ToString());
+        Assert.Contains("keyboard-only A probe", error.ToString());
+    }
+
     [Fact]
     public async Task RejectsInputEventsOutsideTheActionReceiptWindow()
     {
