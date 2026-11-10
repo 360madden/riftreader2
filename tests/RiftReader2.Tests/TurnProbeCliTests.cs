@@ -229,6 +229,29 @@ public sealed class TurnProbeCliTests : IDisposable
         Assert.Contains("action receipt duration", error.ToString());
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RejectsNonadjacentBeforeOrAfterCapture(bool staleBefore)
+    {
+        var paths = await EvidenceAsync();
+        var path = staleBefore ? paths.Before : paths.After;
+        var original = await File.ReadAllTextAsync(path);
+        var changed = staleBefore
+            ? original.Replace("2026-11-10T09:00:00Z", "2026-11-10T08:58:00Z", StringComparison.Ordinal)
+                .Replace("2026-11-10T09:00:00.100Z", "2026-11-10T08:58:00.100Z", StringComparison.Ordinal)
+            : original.Replace("2026-11-10T09:00:00.700Z", "2026-11-10T09:01:00.700Z", StringComparison.Ordinal)
+                .Replace("2026-11-10T09:00:00.800Z", "2026-11-10T09:01:00.800Z", StringComparison.Ordinal);
+        Assert.NotEqual(original, changed);
+        await File.WriteAllTextAsync(path, changed);
+
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        Assert.Equal(2, await CliRunner.RunAsync(Args(paths), output, error));
+        Assert.Empty(output.ToString());
+        Assert.Contains("not adjacent", error.ToString());
+    }
+
     [Fact]
     public async Task RefusesTurnReceiptFromAnotherGameProcessOrBuild()
     {

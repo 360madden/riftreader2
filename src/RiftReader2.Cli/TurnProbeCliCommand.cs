@@ -59,6 +59,11 @@ internal static class TurnProbeCliCommand
             || before.Completed >= actionStart || actionStart > actionEnd
             || actionEnd >= after.Started)
             throw new InvalidDataException("Before/action/after capture windows must be ordered without overlap.");
+        // A matrix captured minutes before or after the input can move for unrelated
+        // reasons. This bounds offline evidence adjacency, not native source freshness.
+        if (actionStart - before.Completed > TimeSpan.FromSeconds(60)
+            || after.Started - actionEnd > TimeSpan.FromSeconds(30))
+            throw new InvalidDataException("Turn sample capture windows are not adjacent to the action.");
 
         var analysis = TurnSkeletonPlanner.AnalyzeAProbe(
             before.Facing, after.Facing, action, execution, observedHold,
