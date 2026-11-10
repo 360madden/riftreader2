@@ -17,6 +17,11 @@ IDENTITY = {
     "processStartUtcTicks": "638000000000000001",
     "executableSha256": "a" * 64,
 }
+REPORT_IDENTITY = {
+    "processId": IDENTITY["processId"],
+    "processStartUtcTicks": int(IDENTITY["processStartUtcTicks"]),
+    "executableSha256": IDENTITY["executableSha256"],
+}
 
 
 class PhysicalOnlySelectionTests(unittest.TestCase):
@@ -123,14 +128,22 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                                                  "--start-ticks", IDENTITY["processStartUtcTicks"]])
                 self.assertEqual(command[-2:], ["--output", str(destination)])
                 self.assertFalse(kwargs.get("shell", False))
-                destination.write_text("{}", encoding="utf-8")
+                destination.write_text(json.dumps({"status": "complete", "observation": {
+                    "identity": REPORT_IDENTITY, "unitKey": 239816685251645959,
+                    "health": {"status": "calculated-candidate", "current": 100, "maximum": 150},
+                    "energy": {"status": "unavailable", "current": None, "maximum": None},
+                    "mana": {"status": "unavailable", "current": None, "maximum": None}}}),
+                    encoding="utf-8")
                 return subprocess.CompletedProcess(command, 0,
-                                                   json.dumps({"status": "complete", "output": str(destination)}), "")
+                                                   json.dumps({"status": "complete", "output": str(destination),
+                                                               "recordType": "native-current-vitals-candidate-summary/2"}), "")
             with patch.object(physical, "NATIVE_EXE", executable), \
                  patch.object(physical.subprocess, "run", side_effect=fake_run):
                 result = physical.read_native(selected, "vitals", destination)
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["nativeRead"], "vitals")
+        self.assertEqual(result["nativeValues"]["health"]["current"], 100)
+        self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
         self.assertIn("candidate-only", result["qualification"])
 
     def test_native_read_fails_closed_before_launch(self):
@@ -172,7 +185,9 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             executable.write_bytes(b"MZ")
             destination = Path(temporary) / "position.json"
             def fake_run(command, **kwargs):
-                destination.write_text("{}", encoding="utf-8")
+                destination.write_text(json.dumps({"status": "complete",
+                    "identity": REPORT_IDENTITY, "observations": [{"unitKey": "239816685251645959",
+                    "x": 1.5, "y": 2.5, "z": 3.5, "completedAtUtc": "now"}]}), encoding="utf-8")
                 samples = [json.dumps({"recordType": "native-current-position-candidate/1",
                                        "observation": {"x": 1}})]
                 samples.append(json.dumps({"recordType": "native-current-position-candidate-summary/1",
@@ -184,6 +199,48 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["nativeSummary"]["recordType"],
                          "native-current-position-candidate-summary/1")
+        self.assertEqual(result["nativeValues"]["x"], 1.5)
+        self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
+
+    def test_native_report_rejects_wrong_type_or_process_epoch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "candidate.json"
+            def wrong_type(command, **kwargs):
+                destination.write_text(json.dumps({"status": "complete", "identity": REPORT_IDENTITY}),
+                                       encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0,
+                    json.dumps({"recordType": "native-current-stats-summary/1",
+                                "status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=wrong_type):
+                result = physical.read_native(selected, "position", destination)
+            self.assertEqual(result["reason"], "invalid-native-reader-receipt")
+            destination.unlink()
+            def wrong_epoch(command, **kwargs):
+                destination.write_text(json.dumps({"status": "complete", "observation": {
+                    "identity": {**REPORT_IDENTITY, "processStartUtcTicks": 1},
+                    "unitKey": 123, "health": {"status": "unavailable"},
+                    "energy": {"status": "unavailable"}, "mana": {"status": "unavailable"}}}),
+                    encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0,
+                    json.dumps({"recordType": "native-current-vitals-candidate-summary/2",
+                                "status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=wrong_epoch):
+                result = physical.read_native(selected, "vitals", destination)
+            self.assertEqual(result["reason"], "invalid-native-reader-report")
+
+    def test_native_read_requires_explicit_host_before_process_probe(self):
+        with patch.object(physical, "select_physical") as selector, \
+             redirect_stdout(io.StringIO()) as output:
+            code = physical.main(["--read-native", "vitals"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["reason"],
+                         "native-read-requires-expected-host")
+        selector.assert_not_called()
 
     def test_native_read_cli_keeps_json_receipt(self):
         with patch.object(physical, "select_physical", return_value={"status": "ready"}), \

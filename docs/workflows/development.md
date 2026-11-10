@@ -34,8 +34,12 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 It rechecks local process/build identity, passes exact PID/start epoch to the .NET
 reader and writes a new unique JSON artifact; no game input, screenshot, guest,
 or foreground change. Build `src/RiftReader2.Live` with the pinned .NET 10 SDK
-first if `native-reader-not-built` is returned. The results remain **native
-candidates**, not passive-freshness, changed-state or restart-qualified values.
+first if `native-reader-not-built` is returned. Native `vitals` and `position`
+receipts include compact `nativeValues` (HP/resources or last XYZ sample) for
+programmatic use; the full raw candidate report is retained at `nativeOutput`.
+The tool checks native receipt type and returned process/build epoch before
+reporting success. The results remain **native candidates**, not passive-freshness,
+changed-state or restart-qualified values.
 
 For reviewed visual observation, use `scripts/observe_target.py --target
 physical-amd-desktop --expected-host AMD-DESKTOP` (or the matching LEGION

@@ -24,6 +24,14 @@ NATIVE_READS = {
     "selected-target": "sample-current-selected-target",
     "stats": "sample-current-stats",
 }
+NATIVE_RECEIPTS = {
+    "position": "native-current-position-candidate-summary/1",
+    "vitals": "native-current-vitals-candidate-summary/2",
+    "orientation": "native-current-orientation-summary/1",
+    "player-context": "native-current-player-context-candidate-summary/1",
+    "selected-target": "native-current-selected-target-candidate-summary/1",
+    "stats": "native-current-stats-summary/1",
+}
 NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
 
@@ -53,6 +61,35 @@ def select_physical(expected_host=None, physical_pid=None):
     except (ValueError, OSError, KeyError, TypeError) as exc:
         return {"status": "blocked", "workflow": "physical", "targetId": target_id,
                 "ownerHost": actual, "reason": str(exc)}
+
+
+def _native_values(kind, report):
+    """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "vitals":
+        observation = report.get("observation")
+        if not isinstance(observation, dict) or type(observation.get("unitKey")) is not int:
+            raise ValueError("invalid-native-vitals-report")
+        result = {"unitKey": str(observation["unitKey"])}
+        for resource in ("health", "energy", "mana"):
+            entry = observation.get(resource)
+            if not isinstance(entry, dict) or not isinstance(entry.get("status"), str):
+                raise ValueError("invalid-native-vitals-report")
+            result[resource] = {name: entry.get(name) for name in
+                                ("status", "current", "maximum", "unavailableReason")}
+        return result
+    if kind == "position":
+        observations = report.get("observations")
+        if not isinstance(observations, list) or not observations:
+            raise ValueError("invalid-native-position-report")
+        last = observations[-1]
+        if not isinstance(last, dict) or any(type(last.get(axis)) not in (float, int)
+                                               for axis in ("x", "y", "z")):
+            raise ValueError("invalid-native-position-report")
+        return {"sampleCount": len(observations), "unitKey": str(last.get("unitKey")),
+                "x": last["x"], "y": last["y"], "z": last["z"],
+                "sampledAtUtc": last.get("completedAtUtc"),
+                "refreshGuardStatus": last.get("refreshGuardStatus")}
+    return None
 
 
 def read_native(selection, kind, output=None):
@@ -95,12 +132,27 @@ def read_native(selection, kind, output=None):
     except (ValueError, TypeError):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     if (not isinstance(summary, dict) or not path.is_file()
+            or summary.get("recordType") != NATIVE_RECEIPTS[kind]
             or not isinstance(summary.get("output"), str)
             or Path(summary["output"]).resolve() != path.resolve()
-            or summary.get("status") not in (None, "complete")):
+            or summary.get("status") != (None if kind == "stats" else "complete")):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+        observation = report.get("observation")
+        identity = report.get("identity") or (observation.get("identity")
+                                                if isinstance(observation, dict) else None)
+        if (report.get("status") != "complete" or not isinstance(identity, dict)
+                or identity.get("processId") != pid
+                or str(identity.get("processStartUtcTicks")) != ticks
+                or str(identity.get("executableSha256", "")).casefold()
+                    != str(target.get("executableSha256", "")).casefold()):
+            raise ValueError("report-identity-or-status-mismatch")
+        values = _native_values(kind, report)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return dict(selection, status="blocked", reason="invalid-native-reader-report")
     return dict(selection, status="complete", nativeRead=kind,
-                nativeOutput=str(path), nativeSummary=summary,
+                nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
                 qualification="candidate-only; changed-state/freshness/restart-unverified")
 
 
@@ -115,7 +167,11 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     args = parser.parse_args(argv)
-    result = select_physical(args.expected_host, args.physical_pid)
+    if args.read_native is not None and args.expected_host is None:
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "native-read-requires-expected-host"}
+    else:
+        result = select_physical(args.expected_host, args.physical_pid)
     if args.output is not None and args.read_native is None:
         result = dict(result, status="blocked", reason="output-requires-native-read")
     elif args.read_native:
