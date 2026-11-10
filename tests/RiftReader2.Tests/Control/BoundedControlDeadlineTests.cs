@@ -167,6 +167,45 @@ public sealed class BoundedControlDeadlineTests
     }
 
     [Fact]
+    public async Task SingleKeySlowInsertionUsesBoundedSlackInsteadOfRejectingValidTurn()
+    {
+        using var input = new BlockingInput { BlockProbe = false };
+        var clock = new ManualClock();
+        long downAt = -1, upAt = -1;
+        input.BeforeDown = () => clock.Advance(120); // Native delivery consumed >100 ms.
+        input.OnDown = () => downAt = clock.GetTimestamp();
+        input.OnUp = () => upAt = clock.GetTimestamp();
+        var executor = new BoundedControlExecutor(input, clock, (delay, _) =>
+        {
+            clock.Advance((int)Math.Ceiling(delay.TotalMilliseconds));
+            return Task.CompletedTask;
+        });
+
+        var result = await executor.ExecuteAsync(new(["a"], 100));
+
+        Assert.True(result.DeliverySucceeded);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Equal(["down:a", "up:a"], input.Events.ToArray());
+        // The insertion clock targets 100 ms; the independent 200 ms absolute
+        // watchdog may cap it to 80 ms after a 120 ms slow native delivery.
+        Assert.InRange(upAt - downAt, TimeSpan.FromMilliseconds(75).Ticks,
+            TimeSpan.FromMilliseconds(110).Ticks);
+    }
+
+    [Fact]
+    public async Task SingleKeyInsertionBeyondAbsoluteSlackFailsAndReleases()
+    {
+        using var input = new BlockingInput { BlockProbe = false };
+        var clock = new ManualClock();
+        input.OnDown = () => clock.Advance(210);
+        var result = await new BoundedControlExecutor(input, clock)
+            .ExecuteAsync(new(["a"], 100));
+        Assert.False(result.DeliverySucceeded);
+        Assert.True(result.ReleaseSucceeded);
+        Assert.Equal(["down:a", "up:a"], input.Events.ToArray());
+    }
+
+    [Fact]
     public async Task HoldBudgetStartsBeforeTheFirstInsertionReturns()
     {
         using var input = new BlockingInput { BlockProbe = false };

@@ -56,7 +56,12 @@ internal sealed class BoundedControlReleaseScope : IDisposable
         lock (gate)
         {
             cancellation.ThrowIfCancellationRequested();
-            if (sealedForInput || DeadlineExpired())
+            // A second chord operation must not consume an already-expired
+            // original hold budget, even when the first input had slow delivery.
+            if (sealedForInput || DeadlineExpired()
+                || (deliveredAt is not null && startedAt is { } originalStart
+                    && clock.GetElapsedTime(originalStart)
+                        >= TimeSpan.FromMilliseconds(action.HoldMilliseconds)))
             {
                 ReleaseLocked();
                 throw new TimeoutException("The bounded hold elapsed before further input could be delivered.");
@@ -68,9 +73,15 @@ internal sealed class BoundedControlReleaseScope : IDisposable
             deliveredAt ??= clock.GetTimestamp();
             wake.Set();
             // A stalled native send may have inserted input at an unknown time.
-            // If admission already consumed the entire requested hold budget,
-            // release immediately and refuse subsequent chord inputs.
-            if (DeadlineExpired())
+            // A single key may use bounded insertion slack while the watchdog
+            // still caps absolute time. Chords must not start a second input if
+            // the first send consumed the nominal action hold budget.
+            if (DeadlineExpired()
+                || (action.Keys.Length + (action.MouseButton is null ? 0 : 1)
+                    + (action.DeltaX != 0 || action.DeltaY != 0 ? 1 : 0) > 1
+                    && startedAt is { } insertionStart
+                    && clock.GetElapsedTime(insertionStart)
+                        >= TimeSpan.FromMilliseconds(action.HoldMilliseconds)))
             {
                 ReleaseLocked();
                 throw new TimeoutException("The bounded hold elapsed during input delivery.");
@@ -92,7 +103,10 @@ internal sealed class BoundedControlReleaseScope : IDisposable
     }
 
     private bool DeadlineExpired() => startedAt is { } start
-        && clock.GetElapsedTime(start) >= TimeSpan.FromMilliseconds(action.HoldMilliseconds);
+        && (clock.GetElapsedTime(start) >=
+                TimeSpan.FromMilliseconds(action.HoldMilliseconds) + MaximumInsertionSlack
+            || (deliveredAt is { } inserted && clock.GetElapsedTime(inserted)
+                >= TimeSpan.FromMilliseconds(action.HoldMilliseconds)));
 
     private void WatchDeadline()
     {
