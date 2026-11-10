@@ -9,6 +9,7 @@ import argparse
 from datetime import datetime
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -100,6 +101,40 @@ def compare_reports(before: dict, after: dict, *, pid: int, ticks: int,
             "deltaMaximumCandidate": a["maximum"] - b["maximum"] if comparable else None,
             "changedCurrentCandidate": a["current"] != b["current"] if comparable else None,
         }
+    # Position is a cached target candidate, not a movement/freshness proof.
+    before_position = (before["observation"].get("targetPosition")
+                       if first_present else None)
+    after_position = (after["observation"].get("targetPosition")
+                      if second_present else None)
+    delta = None
+    horizontal = distance = None
+    if not same_target:
+        position_status = "unavailable-target-changed-or-missing"
+    elif first["positionCandidate"] is None or second["positionCandidate"] is None:
+        position_status = "unavailable-position"
+    elif before_position["componentAddress"] != after_position["componentAddress"]:
+        position_status = "unavailable-component-changed"
+    else:
+        before_xyz, after_xyz = first["positionCandidate"], second["positionCandidate"]
+        candidate = {axis: after_xyz[axis] - before_xyz[axis] for axis in ("x", "y", "z")}
+        candidate_horizontal = math.hypot(candidate["x"], candidate["z"])
+        candidate_distance = math.hypot(candidate_horizontal, candidate["y"])
+        if all(math.isfinite(value) for value in (*candidate.values(), candidate_horizontal,
+                                                  candidate_distance)):
+            delta = candidate
+            horizontal, distance = candidate_horizontal, candidate_distance
+            position_status = "same-component-delta-candidate"
+        else:
+            position_status = "unavailable-arithmetic-overflow"
+    position = {
+        "status": position_status,
+        "beforeCandidate": first["positionCandidate"],
+        "afterCandidate": second["positionCandidate"],
+        "deltaCandidate": delta,
+        "horizontalXZDistanceCandidate": horizontal,
+        "distance3dCandidate": distance,
+        "qualification": "cached target position arithmetic only; movement/freshness unverified",
+    }
     return {
         "schemaVersion": 1,
         "status": "candidate-comparison",
@@ -113,6 +148,7 @@ def compare_reports(before: dict, after: dict, *, pid: int, ticks: int,
         "beforeTarget": first,
         "afterTarget": second,
         "resources": resources,
+        "position": position,
         "qualification": ("source-hashed offline candidate comparison; target/resource "
                           "semantics, passive freshness and restart recovery unqualified"),
     }

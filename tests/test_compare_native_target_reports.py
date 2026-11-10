@@ -89,6 +89,57 @@ class NativeTargetComparisonTests(unittest.TestCase):
         self.assertEqual(original, (first, second))
         self.assertIn("unqualified", result["qualification"])
 
+    def test_same_target_position_delta_is_candidate_not_motion(self):
+        first, second = pair()
+        second["observation"]["targetPosition"]["position"] = {
+            "x": 4.5, "y": 6.0, "z": 15.0,
+        }
+        result = compare(first, second)
+        position = result["position"]
+        self.assertEqual("same-component-delta-candidate", position["status"])
+        self.assertEqual({"x": 3.0, "y": 4.0, "z": 12.0},
+                         position["deltaCandidate"])
+        self.assertAlmostEqual(13.0, position["distance3dCandidate"])
+        self.assertAlmostEqual((3.0 ** 2 + 12.0 ** 2) ** 0.5,
+                               position["horizontalXZDistanceCandidate"])
+        self.assertIn("movement/freshness unverified", position["qualification"])
+
+    def test_target_or_component_change_withholds_position_delta(self):
+        first, second = pair()
+        second["observation"]["targetPosition"]["componentAddress"] += 0x110
+        changed = compare(first, second)["position"]
+        self.assertEqual("unavailable-component-changed", changed["status"])
+        self.assertIsNone(changed["deltaCandidate"])
+        self.assertIsNone(changed["distance3dCandidate"])
+
+        first, second = pair()
+        target = TARGET + 1
+        ob = second["observation"]
+        ob.update(targetKey=target, targetUnitId=f"u{target:016X}")
+        ob["targetVitals"]["unitKey"] = target
+        ob["targetPosition"]["unitKey"] = target
+        changed = compare(first, second)["position"]
+        self.assertEqual("unavailable-target-changed-or-missing", changed["status"])
+        self.assertIsNone(changed["deltaCandidate"])
+
+        first, second = pair()
+        ob = second["observation"]["targetPosition"]
+        ob.update(status="component-unavailable", componentAddress=None,
+                  startedAtUtc=None, completedAtUtc=None, position=None)
+        missing = compare(first, second)["position"]
+        self.assertEqual("unavailable-position", missing["status"])
+        self.assertIsNone(missing["horizontalXZDistanceCandidate"])
+
+    def test_extreme_finite_position_does_not_emit_infinite_delta(self):
+        first, second = pair()
+        first["observation"]["targetPosition"]["position"]["x"] = 1e308
+        second["observation"]["targetPosition"]["position"]["x"] = -1e308
+        value = compare(first, second)
+        self.assertEqual("unavailable-arithmetic-overflow",
+                         value["position"]["status"])
+        self.assertIsNone(value["position"]["deltaCandidate"])
+        json.dumps(value, allow_nan=False)
+
     def test_changed_target_never_compares_resources(self):
         first, second = pair()
         other = TARGET + 1
