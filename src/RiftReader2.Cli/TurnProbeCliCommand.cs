@@ -39,6 +39,12 @@ internal static class TurnProbeCliCommand
             before = ReadSample(beforeJson.RootElement, matrix);
             after = ReadSample(afterJson.RootElement, matrix);
             (action, execution, observedHold, actionStart, actionEnd) = ReadAction(receiptJson.RootElement);
+            var receiptTarget = receiptJson.RootElement.GetProperty("target");
+            if (receiptTarget.GetProperty("processId").GetInt32() != before.Facing.GameProcessId
+                || receiptTarget.GetProperty("processStartUtcTicks").GetInt64() != before.Facing.GameStartUtcTicks
+                || !string.Equals(receiptTarget.GetProperty("executableSha256").GetString(),
+                    before.GameSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Turn receipt target does not match sample process/build identity.");
         }
         catch (Exception ex) when (ex is KeyNotFoundException or InvalidOperationException or
             FormatException or OverflowException)
@@ -196,8 +202,12 @@ internal static class TurnProbeCliCommand
         var up = ups[0].GetProperty("elapsedMilliseconds").GetDouble();
         if (!double.IsFinite(down) || !double.IsFinite(up) || down < 0 || up <= down)
             throw new InvalidDataException("Invalid key down/up event timing.");
-        return (new ControlAction(keys, hold), execution, up - down,
-            root.GetProperty("startedAtUtc").GetDateTimeOffset(),
-            root.GetProperty("completedAtUtc").GetDateTimeOffset());
+        var started = root.GetProperty("startedAtUtc").GetDateTimeOffset();
+        var completed = root.GetProperty("completedAtUtc").GetDateTimeOffset();
+        // Input-event elapsed times share the receipt's monotonic action clock.
+        // Reject internally impossible receipts before deriving a calibration rate.
+        if (completed <= started || up > (completed - started).TotalMilliseconds + 5)
+            throw new InvalidDataException("Key events exceed action receipt duration.");
+        return (new ControlAction(keys, hold), execution, up - down, started, completed);
     }
 }

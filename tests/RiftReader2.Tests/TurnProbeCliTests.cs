@@ -54,6 +54,12 @@ public sealed class TurnProbeCliTests : IDisposable
         var receipt = new
         {
             action = new { keys = new[] { "a" }, holdMilliseconds = 100 },
+            target = new
+            {
+                processId = 1234,
+                processStartUtcTicks = 639298670575905950L,
+                executableSha256 = new string('A', 64)
+            },
             result = new
             {
                 deliverySucceeded = true,
@@ -135,6 +141,42 @@ public sealed class TurnProbeCliTests : IDisposable
 
         Assert.Equal(2, await CliRunner.RunAsync(
             [.. Args(paths), "--target-degrees", "NaN"], TextWriter.Null, TextWriter.Null));
+    }
+
+    [Fact]
+    public async Task RejectsInputEventsOutsideTheActionReceiptWindow()
+    {
+        var paths = await EvidenceAsync();
+        var receipt = await File.ReadAllTextAsync(paths.Receipt);
+        var impossible = receipt.Replace("\"completedAtUtc\":\"2026-11-10T09:00:00.600Z\"",
+            "\"completedAtUtc\":\"2026-11-10T09:00:00.250Z\"", StringComparison.Ordinal);
+        Assert.NotEqual(receipt, impossible);
+        await File.WriteAllTextAsync(paths.Receipt, impossible);
+        using var error = new StringWriter();
+        Assert.Equal(2, await CliRunner.RunAsync(Args(paths), TextWriter.Null, error));
+        Assert.Contains("action receipt duration", error.ToString());
+    }
+
+    [Fact]
+    public async Task RefusesTurnReceiptFromAnotherGameProcessOrBuild()
+    {
+        var paths = await EvidenceAsync();
+        var original = await File.ReadAllTextAsync(paths.Receipt);
+        foreach (var (expected, replacement) in new[]
+        {
+            ("\"processId\":1234", "\"processId\":1235"),
+            ("\"processStartUtcTicks\":639298670575905950", "\"processStartUtcTicks\":639298670575905951"),
+            ("\"executableSha256\":\"" + new string('A', 64) + "\"",
+                "\"executableSha256\":\"" + new string('B', 64) + "\"")
+        })
+        {
+            var changed = original.Replace(expected, replacement, StringComparison.Ordinal);
+            Assert.NotEqual(original, changed);
+            await File.WriteAllTextAsync(paths.Receipt, changed);
+            using var error = new StringWriter();
+            Assert.Equal(2, await CliRunner.RunAsync(Args(paths), TextWriter.Null, error));
+            Assert.Contains("receipt target", error.ToString());
+        }
     }
 
     [Fact]
