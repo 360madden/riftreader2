@@ -9,6 +9,15 @@ public sealed class TurnProbeCliTests : IDisposable
 
     public TurnProbeCliTests() => Directory.CreateDirectory(directory);
 
+    [Fact]
+    public async Task HelpListsActorAndModelMatrixModes()
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        Assert.Equal(0, await CliRunner.RunAsync(["--help"], output, error));
+        Assert.Contains("--matrix primary|secondary|actor|model", output.ToString());
+    }
+
     private async Task<(string Before, string After, string Receipt)> EvidenceAsync(
         double afterDegrees = 16, ulong afterComponent = 0x12345678, double observedHold = 120)
     {

@@ -16,7 +16,7 @@ public static class CliRunner
             {
                 await output.WriteLineAsync("""
                     RiftReader2 0.1 — offline evidence tools
-                    analyze-turn-probe --before PATH --after PATH --receipt PATH --matrix primary|secondary --uncontaminated true|false [--target-degrees NUMBER] [--output PATH]
+                    analyze-turn-probe --before PATH --after PATH --receipt PATH --matrix primary|secondary|actor|model --uncontaminated true|false [--target-degrees NUMBER] [--output PATH]
                     analyze --manifest PATH [--config PATH] [--output PATH]
                     validate-capture --manifest PATH [--config PATH]
                     decode-addon --frame PATH [--output PATH]
@@ -36,7 +36,7 @@ public static class CliRunner
                     wall replay uses the exact source path pinned in its evidence manifest.
                     Without --config, built-in schema-1 defaults apply. No environment overrides.
                     Analysis emits derived motion with provenance. An existing output is never replaced.
-                    Addon decoding verifies the contract only; source binding and freshness remain unverified.
+                    Turn matrix angles are unqualified heading candidates. Addon decoding verifies the contract only; source binding and freshness remain unverified.
                     Field qualification evaluates recorded assessments at an explicit build/session/time.
                     Exit 0 for qualification means a valid report; inspect its claim statuses before use.
                     Exit codes: 0 success, 2 invalid input/IO failure, 130 canceled.
