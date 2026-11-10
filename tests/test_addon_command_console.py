@@ -65,6 +65,25 @@ class InlineQuickReviewTests(unittest.TestCase):
         self.assertEqual(review["screenSha256"], image["sourceSha256"])
         self.assertEqual(original, self.plan())
 
+    def test_detail_crop_returns_shared_source_pinned_full_frame_and_detail(self):
+        original = self.plan()
+        crop = (0, 0, 400, 250)
+        full = {"sourceSha256": original["screenSha256"], "previewFormat": "webp"}
+        detail = {"sourceSha256": original["screenSha256"], "previewFormat": "jpeg",
+                  "sourceCrop": list(crop)}
+        with mock.patch("quick_review_capture.review_pair", return_value={
+                "fullFrame": full, "detail": detail}) as stub:
+            review = module.add_quick_review(original, detail_crop=crop)
+        stub.assert_called_once_with(Path(original["screen"]), original["screenSha256"], crop)
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["preview"], full)
+        self.assertEqual(review["detailPreview"], detail)
+        self.assertEqual(review["reviewDeadlineUtc"], "2000-11-09T16:01:00Z")
+        self.assertEqual(review["screenSha256"], full["sourceSha256"])
+        blocked = module.add_quick_review(original, preserve_resolution=True, detail_crop=crop)
+        self.assertEqual(blocked, {"status": "unavailable",
+                                   "reason": "invalid-review-preview-mode"})
+
     def test_preview_counts_down_from_capture_instead_of_resetting_review_age(self):
         original = self.plan()
         captured = datetime.now(timezone.utc) - timedelta(seconds=5)
@@ -111,6 +130,34 @@ class InlineQuickReviewTests(unittest.TestCase):
         self.assertFalse(module.build_parser().parse_args(common).quick_preview)
         self.assertTrue(module.build_parser().parse_args(common + ["--quick-preview"]).quick_preview)
 
+    def test_detail_crop_cli_rejects_invalid_modes_before_host_work(self):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        common = ["--vmx", "lab.vmx", "--port", "5900", "--vmrun", "vmrun.exe",
+                  "--output", "review", "prepare", "--lab", "lab2",
+                  "--expected-game-pid", "10876", "--expected-game-start-ticks", "100",
+                  "--expected-game-sha256", "a" * 64, "--ui-step", "open-chat"]
+        crop = ["--review-detail-crop", "0", "0", "400", "250"]
+        for options, reason in ((crop, "review-detail-crop-requires-quick-preview"),
+                                (["--quick-preview", "--review-preserve-resolution"] + crop,
+                                 "review-detail-crop-conflicts-with-high-resolution")):
+            with self.subTest(options=options), mock.patch.object(
+                    module, "validate_config") as config, mock.patch.object(
+                    module, "prepare") as prepare, redirect_stderr(io.StringIO()) as errors:
+                self.assertEqual(module.main(common + options), 2)
+                self.assertIn(reason, errors.getvalue())
+                config.assert_not_called()
+                prepare.assert_not_called()
+        with mock.patch.object(module, "validate_config", return_value=mock.Mock(
+                output=Path("review"))), mock.patch.object(
+                module, "prepare", return_value=self.plan()), mock.patch.object(
+                module, "add_quick_review", return_value={"status": "ready"}) as review, \
+                redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(module.main(common + ["--quick-preview"] + crop), 0)
+        review.assert_called_once_with(self.plan(), preserve_resolution=False,
+                                       detail_crop=(0, 0, 400, 250))
+        self.assertEqual(json.loads(output.getvalue())["quickReview"]["status"], "ready")
+
     def test_high_resolution_prepare_requires_quick_preview_before_host_work(self):
         import io
         from contextlib import redirect_stderr, redirect_stdout
@@ -133,7 +180,8 @@ class InlineQuickReviewTests(unittest.TestCase):
                 module, "add_quick_review", return_value={"status": "ready"}) as review, \
                 redirect_stdout(io.StringIO()) as output:
             self.assertEqual(module.main(common + ["--quick-preview", flag]), 0)
-        review.assert_called_once_with(self.plan(), preserve_resolution=True)
+        review.assert_called_once_with(self.plan(), preserve_resolution=True,
+                                       detail_crop=None)
         self.assertEqual(json.loads(output.getvalue())["quickReview"]["status"], "ready")
 
     def test_prepare_cli_returns_inline_review_only_when_requested(self):

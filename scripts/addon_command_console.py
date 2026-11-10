@@ -1222,25 +1222,33 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
     return report
 
 
-def add_quick_review(plan: dict, *, preserve_resolution: bool = False) -> dict:
+def add_quick_review(plan: dict, *, preserve_resolution: bool = False,
+                     detail_crop: tuple[int, int, int, int] | None = None) -> dict:
     """Show a SHA-pinned preview with exact pins; never approve or extend a review."""
     try:
-        from quick_review_capture import preview
+        from quick_review_capture import preview, review_pair
         screen = Path(plan["screen"])
-        try:
-            if preserve_resolution:
-                image = preview(screen, plan["screenSha256"], width=1000,
-                                preserve_resolution=True)
-            else:
-                image = preview(screen, plan["screenSha256"], compact=True)
-        except TypeError as error:
-            if "unexpected keyword argument 'compact'" not in str(error):
-                raise
-            # A clean checkout may not yet have compact WebP support.
-            image = preview(screen, plan["screenSha256"])
+        detail = None
+        if detail_crop is not None and preserve_resolution:
+            raise Blocked("invalid-review-preview-mode")
+        if detail_crop is not None:
+            paired = review_pair(screen, plan["screenSha256"], detail_crop)
+            image, detail = paired["fullFrame"], paired["detail"]
+        else:
+            try:
+                if preserve_resolution:
+                    image = preview(screen, plan["screenSha256"], width=1000,
+                                    preserve_resolution=True)
+                else:
+                    image = preview(screen, plan["screenSha256"], compact=True)
+            except TypeError as error:
+                if "unexpected keyword argument 'compact'" not in str(error):
+                    raise
+                # A clean checkout may not yet have compact WebP support.
+                image = preview(screen, plan["screenSha256"])
         deadline = _parse_time(plan["capturedAtUtc"]) + timedelta(seconds=MAX_REVIEW_AGE_SECONDS)
         remaining = max(0, math.ceil((deadline - datetime.now(timezone.utc)).total_seconds()))
-        return {
+        result = {
             "status": "ready",
             "captureId": plan["captureId"],
             "screenSha256": plan["screenSha256"],
@@ -1250,6 +1258,9 @@ def add_quick_review(plan: dict, *, preserve_resolution: bool = False) -> dict:
             "reviewExpiresInSeconds": remaining,
             "preview": image,
         }
+        if detail is not None:
+            result["detailPreview"] = detail
+        return result
     except (Blocked, OSError, ValueError, KeyError, TypeError, ImportError) as error:
         # Preparation is still usable through its original image and plan.
         return {"status": "unavailable", "reason": str(error)[:160]}
@@ -1280,6 +1291,9 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="inline SHA-pinned preview; review gate unchanged")
     prepare_parser.add_argument("--review-preserve-resolution", action="store_true",
                                 help="opt-in larger full-frame JPEG with unchanged review gate")
+    prepare_parser.add_argument("--review-detail-crop", nargs=4, type=int,
+                                metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
+                                help="with --quick-preview, include a source-pinned detail crop")
     execute_parser = commands.add_parser("execute")
     execute_parser.add_argument("--plan", required=True, type=Path)
     execute_parser.add_argument("--review", required=True, type=Path)
@@ -1289,8 +1303,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.action == "prepare" and args.review_preserve_resolution and not args.quick_preview:
-            raise Blocked("review-preserve-resolution-requires-quick-preview")
+        if args.action == "prepare":
+            if args.review_preserve_resolution and not args.quick_preview:
+                raise Blocked("review-preserve-resolution-requires-quick-preview")
+            if args.review_detail_crop is not None and not args.quick_preview:
+                raise Blocked("review-detail-crop-requires-quick-preview")
+            if args.review_detail_crop is not None and args.review_preserve_resolution:
+                raise Blocked("review-detail-crop-conflicts-with-high-resolution")
         config = validate_config(args.vmx, args.port, args.vmrun, args.output,
                                  require_files=True)
         if args.action == "prepare":
@@ -1305,7 +1324,9 @@ def main(argv=None) -> int:
                         "screen": result["screen"], "plan": str(config.output / "plan.json")}
             if args.quick_preview:
                 response["quickReview"] = add_quick_review(
-                    result, preserve_resolution=args.review_preserve_resolution)
+                    result, preserve_resolution=args.review_preserve_resolution,
+                    detail_crop=(tuple(args.review_detail_crop)
+                                 if args.review_detail_crop is not None else None))
             print(json.dumps(response))
         else:
             result = execute(config, args.plan, args.review)
