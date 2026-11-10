@@ -130,11 +130,9 @@ public static class WindowsControlDesktop
         var processes = Process.GetProcessesByName(processName);
         try
         {
-            if (processes.Length != 1)
-                throw new InvalidOperationException(
-                    $"Expected exactly one '{processName}' process, but found {processes.Length}.");
-
-            var process = processes[0];
+            var selectedIndex = SelectProcessIndex(
+                processes.Select(process => process.Id).ToArray(), freshIdentity?.ProcessId, processName);
+            var process = processes[selectedIndex];
             process.Refresh();
             if (process.HasExited)
                 throw new InvalidOperationException($"The '{processName}' process exited during inspection.");
@@ -185,6 +183,33 @@ public static class WindowsControlDesktop
             foreach (var process in processes)
                 process.Dispose();
         }
+    }
+
+    // A pinned request may select one of several same-name physical instances;
+    // unpinned discovery still refuses ambiguity. The caller subsequently validates
+    // the selected process start, executable path/hash, and window identity.
+    internal static int SelectProcessIndex(IReadOnlyList<int> processIds, int? expectedPid, string processName)
+    {
+        if (expectedPid is null)
+        {
+            if (processIds.Count != 1)
+                throw new InvalidOperationException(
+                    $"Expected exactly one '{processName}' process, but found {processIds.Count}.");
+            return 0;
+        }
+
+        var index = -1;
+        for (var i = 0; i < processIds.Count; i++)
+        {
+            if (processIds[i] != expectedPid.Value)
+                continue;
+            if (index >= 0)
+                throw new InvalidOperationException("The expected process PID is not unique.");
+            index = i;
+        }
+        if (index < 0)
+            throw new InvalidOperationException("The expected process PID is not running.");
+        return index;
     }
 
     // Pin the admitted process object before input; PID recycling cannot rebind this handle.

@@ -128,6 +128,27 @@ public sealed class ControlFreshIdentityTests
     }
 
     [Fact]
+    public void UnpinnedPhysicalDiscoveryRejectsMultipleOrMissingRiftProcesses()
+    {
+        Assert.Equal(0, WindowsControlDesktop.SelectProcessIndex([101], null, "rift_x64"));
+        Assert.Throws<InvalidOperationException>(() =>
+            WindowsControlDesktop.SelectProcessIndex([], null, "rift_x64"));
+        Assert.Throws<InvalidOperationException>(() =>
+            WindowsControlDesktop.SelectProcessIndex([101, 202], null, "rift_x64"));
+    }
+
+    [Fact]
+    public void FreshPinnedPhysicalIdentitySelectsOnlyExactPidEvenDuringMultibox()
+    {
+        Assert.Equal(1, WindowsControlDesktop.SelectProcessIndex([101, 202, 303], 202, "rift_x64"));
+        Assert.Equal(0, WindowsControlDesktop.SelectProcessIndex([101], 101, "rift_x64"));
+        Assert.Throws<InvalidOperationException>(() =>
+            WindowsControlDesktop.SelectProcessIndex([101, 202], 404, "rift_x64"));
+        Assert.Throws<InvalidOperationException>(() =>
+            WindowsControlDesktop.SelectProcessIndex([202, 202], 202, "rift_x64"));
+    }
+
+    [Fact]
     public void WrongMachineOrConfiguredBuildIsRejectedBeforeProcessInspection()
     {
         var wrongMachine = Expected with { MachineName = "not-this-guest" };
