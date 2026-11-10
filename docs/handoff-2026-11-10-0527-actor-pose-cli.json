@@ -1,0 +1,44 @@
+{
+  "kind": "rr2-actor-pose-cli-handoff",
+  "dateLocal": "2026-11-10T05:27:00-05:00",
+  "machine": "AMD-DESKTOP",
+  "repository": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "head": "52320d0f807acc984ff737d856c953e85d31388b",
+  "pushed": true,
+  "commits": [
+    "9088e624f60d507c573a21cb7aa65aa55d61a546",
+    "ad92cf4c581a5814be4eb1fc55af51ca3c582d32",
+    "baabb70b834c89be278baed6441578ea8c80098d",
+    "8063fb6dd855cc9b6f871ec18b0200c894c9a666",
+    "7ff03b962f6230995fa7a61f615bc7b88c5d7b39",
+    "6a8ef1a53f293ff8f8f2104439d1df6e1f1b593b",
+    "52320d0f807acc984ff737d856c953e85d31388b"
+  ],
+  "tests": {
+    "pythonPoseAndCli": 38,
+    "dotnetCli": 414
+  },
+  "live": {
+    "game": "offline-user-reported",
+    "controller": "managed-runtime-changed",
+    "controllerPid": 14220,
+    "navQueue": "blocked-no-cleanup-receipt",
+    "lastWatchdog": "session-identity-changed",
+    "emergencyStopVerified": false,
+    "inputsSent": false
+  },
+  "next": [
+    "restore authenticated Lab2 guest and clean ownership/queue through normal STOP/release receipts",
+    "capture raw before actor pose and screenshot",
+    "run one uncontaminated bounded A pulse with confirmed release",
+    "capture raw after actor pose and screenshot",
+    "analyze via C# --matrix actor or model"
+  ],
+  "actorHeadingQualified": false,
+  "untrackedPreserved": [
+    "scripts/project_current_native_energy_variants.py",
+    "scripts/rank_native_anchor_candidates.py",
+    "tests/test_rank_native_anchor_candidates.py"
+  ]
+}
