@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 import socket
 import subprocess
@@ -81,11 +82,21 @@ def _native_values(kind, report):
         observations = report.get("observations")
         if not isinstance(observations, list) or not observations:
             raise ValueError("invalid-native-position-report")
+        unit_keys = set()
+        for sample in observations:
+            if not isinstance(sample, dict):
+                raise ValueError("invalid-native-position-report")
+            key = sample.get("unitKey")
+            if (not isinstance(key, str) or not key.isdecimal() or
+                    not 0 < int(key) < 2**64 or str(int(key)) != key or
+                    any(type(sample.get(axis)) not in (float, int) or
+                        not math.isfinite(sample[axis]) for axis in ("x", "y", "z"))):
+                raise ValueError("invalid-native-position-report")
+            unit_keys.add(key)
+        if len(unit_keys) != 1:
+            raise ValueError("native-position-owner-changed")
         last = observations[-1]
-        if not isinstance(last, dict) or any(type(last.get(axis)) not in (float, int)
-                                               for axis in ("x", "y", "z")):
-            raise ValueError("invalid-native-position-report")
-        return {"sampleCount": len(observations), "unitKey": str(last.get("unitKey")),
+        return {"sampleCount": len(observations), "unitKey": last["unitKey"],
                 "x": last["x"], "y": last["y"], "z": last["z"],
                 "sampledAtUtc": last.get("completedAtUtc"),
                 "refreshGuardStatus": last.get("refreshGuardStatus")}

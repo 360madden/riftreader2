@@ -208,6 +208,49 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["sampleCount"], 2)
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
 
+    def test_position_burst_rejects_mixed_or_invalid_player_samples(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        valid = {"unitKey": "239816685251645959", "x": 1.0, "y": 2.0, "z": 3.0}
+        invalid_cases = (
+            [valid, {**valid, "unitKey": "239816685251645960"}],
+            [valid, {**valid, "unitKey": None}],
+            [valid, {**valid, "unitKey": 239816685251645959}],
+            [valid, {**valid, "unitKey": "18446744073709551616"}],
+            [valid, {**valid, "x": float("nan")}],
+            [valid, {**valid, "y": float("inf")}],
+            [valid, {**valid, "z": True}],
+            [valid, None],
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "position.json"
+
+            for samples in invalid_cases:
+                with self.subTest(samples=samples):
+                    def fake_run(command, **kwargs):
+                        destination.write_text(json.dumps({
+                            "status": "complete", "identity": REPORT_IDENTITY,
+                            "observations": samples}), encoding="utf-8")
+                        return subprocess.CompletedProcess(command, 0, json.dumps({
+                            "recordType": "native-current-position-candidate-summary/1",
+                            "status": "complete", "output": str(destination)}), "")
+
+                    with patch.object(physical, "NATIVE_EXE", executable), \
+                         patch.object(physical.subprocess, "run", side_effect=fake_run):
+                        result = physical.read_native(selected, "position", destination,
+                                                      samples=2, interval_ms=0)
+                    self.assertEqual(result["status"], "blocked")
+                    self.assertEqual(result["reason"], "invalid-native-reader-report")
+                    destination.unlink()
+
+    def test_position_burst_preserves_max_uint64_unit_key(self):
+        self.assertEqual(physical._native_values("position", {"observations": [{
+            "unitKey": "18446744073709551615", "x": 0.5, "y": 1.5, "z": 2.5}]}),
+            {"sampleCount": 1, "unitKey": "18446744073709551615",
+             "x": 0.5, "y": 1.5, "z": 2.5, "sampledAtUtc": None,
+             "refreshGuardStatus": None})
+
     def test_native_report_rejects_wrong_type_or_process_epoch(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
