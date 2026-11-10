@@ -185,9 +185,13 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             executable.write_bytes(b"MZ")
             destination = Path(temporary) / "position.json"
             def fake_run(command, **kwargs):
+                self.assertEqual(command[-4:], ["--samples", "2", "--interval-ms", "0"])
+                self.assertGreaterEqual(kwargs["timeout"], 30)
                 destination.write_text(json.dumps({"status": "complete",
                     "identity": REPORT_IDENTITY, "observations": [{"unitKey": "239816685251645959",
-                    "x": 1.5, "y": 2.5, "z": 3.5, "completedAtUtc": "now"}]}), encoding="utf-8")
+                    "x": 1.0, "y": 2.0, "z": 3.0, "completedAtUtc": "earlier"},
+                    {"unitKey": "239816685251645959", "x": 1.5,
+                     "y": 2.5, "z": 3.5, "completedAtUtc": "now"}]}), encoding="utf-8")
                 samples = [json.dumps({"recordType": "native-current-position-candidate/1",
                                        "observation": {"x": 1}})]
                 samples.append(json.dumps({"recordType": "native-current-position-candidate-summary/1",
@@ -195,11 +199,13 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, "\n".join(samples) + "\n", "")
             with patch.object(physical, "NATIVE_EXE", executable), \
                  patch.object(physical.subprocess, "run", side_effect=fake_run):
-                result = physical.read_native(selected, "position", destination)
+                result = physical.read_native(selected, "position", destination,
+                                              samples=2, interval_ms=0)
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["nativeSummary"]["recordType"],
                          "native-current-position-candidate-summary/1")
         self.assertEqual(result["nativeValues"]["x"], 1.5)
+        self.assertEqual(result["nativeValues"]["sampleCount"], 2)
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
 
     def test_native_report_rejects_wrong_type_or_process_epoch(self):
@@ -233,6 +239,22 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 result = physical.read_native(selected, "vitals", destination)
             self.assertEqual(result["reason"], "invalid-native-reader-report")
 
+    def test_position_burst_options_are_bounded_without_launch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with patch.object(physical.subprocess, "run") as runner:
+            for kind, samples, interval, expected in (
+                ("vitals", 3, None, "sampling-options-require-position"),
+                ("position", 0, None, "invalid-position-sampling"),
+                ("position", 31, None, "invalid-position-sampling"),
+                ("position", None, 2001, "invalid-position-sampling"),
+                ("position", True, None, "invalid-position-sampling"),
+            ):
+                with self.subTest(kind=kind, samples=samples, interval=interval):
+                    result = physical.read_native(selected, kind,
+                                                  samples=samples, interval_ms=interval)
+                    self.assertEqual(result["reason"], expected)
+            runner.assert_not_called()
+
     def test_native_read_requires_explicit_host_before_process_probe(self):
         with patch.object(physical, "select_physical") as selector, \
              redirect_stdout(io.StringIO()) as output:
@@ -249,7 +271,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             code = physical.main(["--expected-host", "AMD-DESKTOP", "--read-native", "stats"])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output.getvalue())["nativeRead"], "stats")
-        reader.assert_called_once_with({"status": "ready"}, "stats", None)
+        reader.assert_called_once_with({"status": "ready"}, "stats", None,
+                                       samples=None, interval_ms=None)
 
     def test_cli_default_is_current_physical_host_and_json(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \

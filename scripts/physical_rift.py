@@ -92,12 +92,17 @@ def _native_values(kind, report):
     return None
 
 
-def read_native(selection, kind, output=None):
+def read_native(selection, kind, output=None, *, samples=None, interval_ms=None):
     """Read a candidate from the exact selected LOCAL physical process, without input."""
     if selection.get("status") != "ready":
         return selection
     if kind not in NATIVE_READS:
         return dict(selection, status="blocked", reason="unknown-native-read")
+    if kind != "position" and (samples is not None or interval_ms is not None):
+        return dict(selection, status="blocked", reason="sampling-options-require-position")
+    if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
+            or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
+        return dict(selection, status="blocked", reason="invalid-position-sampling")
     target = selection.get("target", {})
     pid, ticks = target.get("processId"), target.get("processStartUtcTicks")
     if (type(pid) is not int or pid <= 0 or not isinstance(ticks, str)
@@ -115,9 +120,17 @@ def read_native(selection, kind, output=None):
         return dict(selection, status="blocked", reason="native-output-exists")
     command = [str(NATIVE_EXE), NATIVE_READS[kind], "--pid", str(pid),
                "--start-ticks", ticks, "--output", str(path)]
+    if samples is not None:
+        command.extend(("--samples", str(samples)))
+    if interval_ms is not None:
+        command.extend(("--interval-ms", str(interval_ms)))
+    # Long, explicitly requested intervals must not hit the wrapper's timeout.
+    timeout = (30 + ((samples if samples is not None else 3) - 1)
+               * (interval_ms if interval_ms is not None else 500) / 1000
+               if kind == "position" else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
-                                   text=True, timeout=30, check=False)
+                                   text=True, timeout=timeout, check=False)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return dict(selection, status="blocked", reason="native-reader-launch-failed",
                     errorType=type(exc).__name__)
@@ -166,16 +179,24 @@ def main(argv=None):
                         help="read one candidate from the pinned physical process; no input")
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
+    parser.add_argument("--samples", type=int,
+                        help="position only: 1-30 native samples (default: 3)")
+    parser.add_argument("--interval-ms", type=int,
+                        help="position only: 0-2000ms between reads (default: 500)")
     args = parser.parse_args(argv)
     if args.read_native is not None and args.expected_host is None:
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "native-read-requires-expected-host"}
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native != "position":
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "sampling-options-require-position"}
     else:
         result = select_physical(args.expected_host, args.physical_pid)
     if args.output is not None and args.read_native is None:
         result = dict(result, status="blocked", reason="output-requires-native-read")
     elif args.read_native:
-        result = read_native(result, args.read_native, args.output)
+        result = read_native(result, args.read_native, args.output,
+                             samples=args.samples, interval_ms=args.interval_ms)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] in ("ready", "complete") else 2
 

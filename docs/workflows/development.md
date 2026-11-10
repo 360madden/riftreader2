@@ -28,6 +28,8 @@ Native read-only telemetry now has a **single physical-only command** on the ver
 ```powershell
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 # Also: position, orientation, player-context, selected-target, stats.
+# For a short read-only movement-observation burst:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native position --samples 10 --interval-ms 0
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 
