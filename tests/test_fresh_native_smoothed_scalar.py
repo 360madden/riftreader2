@@ -124,6 +124,12 @@ class SmoothedScalarClientTests(unittest.TestCase):
             self.query()
         self.assert_unpublished()
 
+    def test_oversized_integer_is_a_blocked_candidate_not_an_uncaught_exception(self):
+        self.report["currentCandidate"] = 10 ** 400
+        with self.assertRaisesRegex(scalar.Blocked, "value-invalid"):
+            self.query()
+        self.assert_unpublished()
+
     def test_stale_sample_does_not_publish(self):
         past = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
         self.report.update(startedAtUtc=past, completedAtUtc=past)

@@ -72,9 +72,11 @@ def validate_report(report, *, pid, ticks):
     values = []
     for field, bit in zip(VALUES, raw):
         value = report[field]
-        if type(value) not in (float, int) or not math.isfinite(value):
+        if type(value) not in (float, int):
             raise Blocked("native-smoothed-scalar-value-invalid")
         try:
+            if not math.isfinite(value):
+                raise Blocked("native-smoothed-scalar-value-invalid")
             encoded = struct.unpack("<I", struct.pack("<f", value))[0]
         except (ValueError, OverflowError, struct.error):
             raise Blocked("native-smoothed-scalar-value-invalid") from None
