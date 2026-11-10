@@ -8,7 +8,7 @@ import unittest
 
 from scripts.probe_native_unit_manager import (
     BUILD_SHA, calculate_energy, calculate_health, checked_energy_type, checked_health_type, encoded, entity_hash, find_entity,
-    actor_render_pose_candidates, health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
+    actor_render_pose_candidates, historical_body_yaw_candidate, health_record_fields, inspection_identity, pointer, position_transform_candidates, resource_record_fields,
     RESOURCE_LAYOUTS, coherent_mana_resource_transition, require_disjoint_records,
     require_resource_owner_anchors, revalidate_health_candidate,
     sha, snapshot_bytes,
@@ -252,6 +252,31 @@ class NativeUnitManagerTests(unittest.TestCase):
         self.assertGreater(result["positionToActorMatrixMaxAbsDelta"], 0.1)
         self.assertGreater(result["renderComparison"]["matrixMaxAbsDelta"], 0.1)
         self.assertNotIn("facingDegrees", result)
+
+    def test_historical_yaw_scaffold_matches_v1_conversion_with_xyz_crosscheck(self):
+        window = bytearray(0x2C)
+        struct.pack_into("<f", window, 4, math.pi / 2)
+        struct.pack_into("<3f", window, 0x20, 11.0, 22.0, 33.0)
+        result = historical_body_yaw_candidate(window, (11.02, 22.0, 33.0))
+        self.assertEqual("cached-player-linked-candidate", result["status"])
+        self.assertTrue(result["selfXyzCorrelated"])
+        self.assertAlmostEqual(0.0, result["facingDegreesCandidate"], places=4)
+        self.assertIn("unverified", result["qualification"])
+        self.assertAlmostEqual(0.02, result["cachedXyzDifference"], places=4)
+
+    def test_historical_yaw_scaffold_exposes_uncorrelated_but_finite_candidate(self):
+        window = bytearray(0x2C)
+        struct.pack_into("<f", window, 4, 0.0)
+        struct.pack_into("<3f", window, 0x20, 1.0, 2.0, 3.0)
+        result = historical_body_yaw_candidate(window, (100.0, 2.0, 3.0))
+        self.assertEqual("legacy-owner-uncorrelated", result["status"])
+        self.assertFalse(result["selfXyzCorrelated"])
+        self.assertAlmostEqual(90.0, result["facingDegreesCandidate"])
+        struct.pack_into("<f", window, 4, float("nan"))
+        self.assertEqual("unavailable",
+                         historical_body_yaw_candidate(window, (1.0, 2.0, 3.0))["status"])
+        with self.assertRaisesRegex(ValueError, "historical-yaw-window-invalid"):
+            historical_body_yaw_candidate(window[:-1], (1.0, 2.0, 3.0))
 
     def test_health_fields_preserve_raw_inputs_without_claiming_hp(self):
         record = bytearray(128)

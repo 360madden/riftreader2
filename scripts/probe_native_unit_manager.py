@@ -24,6 +24,8 @@ MANAGER_RVA = 0x33624A8
 PLAYER_SYSTEM_RVA = 0x33623E0
 POSITION_INDEX_RVA = 0x2F588A0
 HEALTH_INDEX_RVA = 0x2F57850
+# Legacy V1 yaw root is a candidate only on the current, different game build.
+HISTORICAL_YAW_ROOT_RVA = 0x32E0200
 MAX_USER = 0x7FFFFFFFFFFF
 
 
@@ -328,6 +330,29 @@ def actor_render_pose_candidates(position_pose: bytes, actor_pose: bytes,
             "renderComparison": comparison}
 
 
+def historical_body_yaw_candidate(owner_window: bytes, reference_xyz: tuple[float, float, float]) -> dict:
+    """Decode saved V1 yaw/XYZ bytes as best-effort current-build scaffolding.
+
+    owner_window begins at historical owner+0x300. Cached XYZ agreement is
+    supporting evidence, not proof of live facing or current-build ownership.
+    """
+    if len(owner_window) != 0x2C or len(reference_xyz) != 3:
+        raise ValueError("historical-yaw-window-invalid")
+    radians = struct.unpack_from("<f", owner_window, 4)[0]
+    xyz = struct.unpack_from("<3f", owner_window, 0x20)
+    if not all(math.isfinite(value) for value in (radians, *xyz, *reference_xyz)):
+        return {"status": "unavailable", "reason": "nonfinite-historical-yaw-or-position"}
+    difference = math.dist(xyz, reference_xyz)
+    correlated = difference <= 0.10
+    return {"status": ("cached-player-linked-candidate" if correlated
+                       else "legacy-owner-uncorrelated"),
+            "qualification": "historical-build-only; current-body-yaw/freshness-unverified",
+            "rawRadiansCandidate": radians,
+            "facingDegreesCandidate": ((90.0 - math.degrees(radians) + 180.0) % 360.0) - 180.0,
+            "ownerCachedXyz": dict(zip(("x", "y", "z"), xyz)),
+            "referenceCachedXyz": dict(zip(("x", "y", "z"), reference_xyz)),
+            "cachedXyzDifference": difference, "selfXyzCorrelated": correlated}
+
 RESOURCE_LAYOUTS = {
     3: {"name": "mana", "resolverType": "0x072A", "base": 0x1C,
         "maximum": 0x24, "rate": 0x18, "revision": 0x20,
@@ -504,7 +529,7 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
         cooldown_collections: bool = False, cooldown_cache: bool = False,
         ability_seeds: bool = False, ability_keys: tuple[int, ...] = (),
         player_ability_maps: bool = False, ability_localization: bool = False,
-        ability_dictionary: bool = False) -> dict:
+        ability_dictionary: bool = False, historical_yaw: bool = False) -> dict:
     if lab not in ("lab1", "lab2"):
         raise ValueError("unknown-lab")
     if (len(ability_keys) > 8 or len(set(ability_keys)) != len(ability_keys) or
@@ -718,6 +743,23 @@ def run(lab: str, *, health_record: bool = False, resource_record: bool = False,
             if not all(math.isfinite(value) for value in xyz):
                 raise ValueError("nonfinite-position-candidate")
 
+
+            if historical_yaw:
+                try:
+                    legacy_root = take("historical-yaw-root",
+                                       [(HISTORICAL_YAW_ROOT_RVA, 8)], relative=True)
+                    legacy_owner = pointer(struct.unpack(
+                        "<Q", legacy_root[base + HISTORICAL_YAW_ROOT_RVA])[0], 0x32C)
+                    legacy_window = take("historical-yaw-owner",
+                                         [(legacy_owner + 0x300, 0x2C)])[legacy_owner + 0x300]
+                    candidate = historical_body_yaw_candidate(legacy_window, xyz)
+                    candidate["ownerAddress"] = f"0x{legacy_owner:X}"
+                    candidate["observedAtUtc"] = observation_times["historical-yaw-owner"]
+                except (ValueError, SessionError):
+                    candidate = {"status": "unavailable",
+                                 "reason": "historical-root-or-owner-read-unavailable"}
+                candidate["sourceRootRva"] = f"0x{HISTORICAL_YAW_ROOT_RVA:X}"
+                review["historicalYawCandidate"] = candidate
 
             health = None
             health_anchors = {}
@@ -1328,6 +1370,8 @@ def main() -> None:
                         help="Follow the default-provider localization route for typed ability name keys.")
     parser.add_argument("--ability-dictionary", action="store_true",
                         help="Explore cached localization-key matches independently of an uninitialized API provider.")
+    parser.add_argument("--historical-yaw-candidate", action="store_true",
+                        help="Best-effort old V1 body-yaw root read; cached candidate on current build only.")
     args = parser.parse_args()
     labs = ("lab1", "lab2") if args.lab == "all" else (args.lab,)
     for lab in labs:
@@ -1341,7 +1385,8 @@ def main() -> None:
                              ability_keys=tuple(args.ability_key),
                              player_ability_maps=args.player_ability_maps,
                              ability_localization=args.ability_localization,
-                             ability_dictionary=args.ability_dictionary), indent=2), flush=True)
+                             ability_dictionary=args.ability_dictionary,
+                             historical_yaw=args.historical_yaw_candidate), indent=2), flush=True)
 
 
 if __name__ == "__main__":
