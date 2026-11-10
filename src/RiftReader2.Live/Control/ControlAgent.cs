@@ -85,6 +85,8 @@ public sealed class ControlAgent
         Task<ControlNativeXyzResponse>> nativeXyzCapture;
     private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
         Task<ControlNativeOrientationResponse>> nativeOrientationCapture;
+    private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+        Task<ControlNativeActorPoseResponse>> nativeActorPoseCapture = ControlNativeActorPose.CaptureAsync;
     private readonly Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease;
     private string PendingPath => Path.Combine(configuration.OutputDirectory, "pending.json");
 
@@ -262,7 +264,7 @@ public sealed class ControlAgent
     internal async Task DispatchCommandAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
     {
         Task? refusal = null;
-        if (command.Operation is "native-vitals" or "native-xyz" or "native-orientation")
+        if (command.Operation is "native-vitals" or "native-xyz" or "native-orientation" or "native-actor-pose")
         {
             lock (stateLock)
             {
@@ -327,6 +329,12 @@ public sealed class ControlAgent
                 token.ThrowIfCancellationRequested();
                 response = result with { InstanceId = instanceId };
             }
+            else if (command.Operation == "native-actor-pose")
+            {
+                var result = await nativeActorPoseCapture(configuration, identity, token);
+                token.ThrowIfCancellationRequested();
+                response = result with { InstanceId = instanceId };
+            }
             else
             {
                 var result = await nativeVitalsCapture(configuration, identity, token);
@@ -357,6 +365,7 @@ public sealed class ControlAgent
                         nativeVitalsVersion = 1,
                         nativeXyzVersion = 1,
                         nativeOrientationVersion = 1,
+                        nativeActorPoseVersion = 1,
                         nativeReadLeaseVersion = NativeReadLeaseVersion,
                         gracefulShutdownVersion = 1,
                         target = Inspect(),
