@@ -425,6 +425,59 @@ class NativeTelemetryCommandTests(unittest.TestCase):
             self.assertFalse(destination.exists())
             self.assertEqual("native-read-stale", json.loads(output.getvalue())["reason"])
 
+    def test_cli_second_capture_saves_readout_and_compares_real_baseline(self):
+        from tempfile import TemporaryDirectory
+        from tests.test_compare_native_player_reads import pair
+        import hashlib
+        baseline, fresh = pair(("position",))
+        with TemporaryDirectory() as temporary:
+            previous = Path(temporary) / "before.json"
+            current = Path(temporary) / "after.json"
+            previous.write_text(json.dumps(baseline, separators=(",", ":")) + "\n",
+                                encoding="utf-8")
+            output = io.StringIO()
+            with patch.object(cli, "read_once", return_value=fresh) as read, redirect_stdout(output):
+                code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                                 "--fields", "position", "--output-json", str(current),
+                                 "--compare-readout-before", str(previous)])
+            self.assertEqual(0, code)
+            read.assert_called_once_with("lab2", "AMD-DESKTOP", fields=["position"])
+            persisted = json.loads(current.read_text(encoding="utf-8"))
+            self.assertEqual(fresh, persisted)
+            self.assertNotIn("readoutComparison", persisted)
+            response = json.loads(output.getvalue())
+            comparison = response["readoutComparison"]
+            self.assertAlmostEqual(75.96375653207352, comparison["comparison"][
+                "position"]["xzTravelAngleDegreesCandidate"])
+            self.assertEqual(hashlib.sha256(current.read_bytes()).hexdigest().upper(),
+                             comparison["afterSourceSha256"])
+            self.assertEqual(hashlib.sha256(previous.read_bytes()).hexdigest().upper(),
+                             comparison["beforeSourceSha256"])
+            self.assertFalse(self.ensure.called)
+
+    def test_cli_baseline_requires_output_and_matching_fields_before_start(self):
+        from tempfile import TemporaryDirectory
+        from tests.test_compare_native_player_reads import pair
+        previous, _ = pair(("position",))
+        with TemporaryDirectory() as temporary:
+            baseline = Path(temporary) / "before.json"
+            output_file = Path(temporary) / "after.json"
+            baseline.write_text(json.dumps(previous), encoding="utf-8")
+            for extra, expected in (
+                    ([], "native-read-comparison-output-required"),
+                    (["--output-json", str(output_file)], "native-read-baseline-fields-mismatch")):
+                output = io.StringIO()
+                with self.subTest(extra=extra), patch.object(cli, "read_once") as read, \
+                        redirect_stdout(output):
+                    code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP",
+                                     "--fields", "vitals", "--compare-readout-before",
+                                     str(baseline), *extra])
+                self.assertEqual(2, code)
+                self.assertEqual(expected, json.loads(output.getvalue())["reason"])
+                read.assert_not_called()
+                self.ensure.assert_not_called()
+            self.assertFalse(output_file.exists())
+
     def test_cli_duplicate_selection_is_blocked_without_dependency_start(self):
         output = io.StringIO()
         with redirect_stdout(output):

@@ -7,6 +7,7 @@ Each source keeps its own timestamp and hashed raw report.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -30,6 +31,7 @@ from scripts.fresh_native_xyz import query as query_xyz
 from scripts.fresh_native_vitals import query as query_vitals
 from scripts.fresh_native_actor_pose import query as query_actor_pose
 from scripts.compare_native_actor_pose_turn import compare as compare_pose_turn
+from scripts.compare_native_player_reads import compare as compare_readouts, load as load_readout
 from scripts.fresh_native_smoothed_scalar import query as query_smoothed_scalar
 
 OWNER_HOST = "AMD-DESKTOP"
@@ -158,11 +160,19 @@ def main(argv=None) -> int:
                         help="compare the new actor-pose capture to a saved before summary.json")
     parser.add_argument("--output-json", type=Path,
                         help="save the complete native readout as new JSON (never overwrite)")
+    parser.add_argument("--compare-readout-before", type=Path,
+                        help="compare a new saved readout with a previously saved baseline")
     args = parser.parse_args(argv)
     try:
         if args.output_json is not None:
             require(args.output_json.parent.is_dir() and not args.output_json.exists()
                     and not args.output_json.is_symlink(), "native-read-output-unavailable")
+        baseline = None
+        if args.compare_readout_before is not None:
+            require(args.output_json is not None, "native-read-comparison-output-required")
+            baseline, baseline_sha = load_readout(args.compare_readout_before)
+            require(tuple(field for field in NATIVE_FIELDS if field in baseline)
+                    == selected_fields(args.fields), "native-read-baseline-fields-mismatch")
         if args.compare_pose_before is not None:
             require("actor-pose" in selected_fields(args.fields),
                     "native-read-pose-compare-requires-pose")
@@ -174,13 +184,19 @@ def main(argv=None) -> int:
             result["poseTurnComparison"] = compare_pose_turn(
                 args.compare_pose_before, Path(pose["summaryPath"]))
         serialized = json.dumps(result, allow_nan=False, separators=(",", ":"))
+        displayed = result
+        if baseline is not None:
+            after_sha = hashlib.sha256((serialized + "\n").encode("utf-8")).hexdigest().upper()
+            displayed = dict(result, readoutComparison=compare_readouts(
+                baseline, result, baseline_sha, after_sha))
         if args.output_json is not None:
             try:
                 with args.output_json.open("x", encoding="utf-8", newline="\n") as saved:
                     saved.write(serialized + "\n")
             except OSError:
                 raise ValueError("native-read-output-unavailable") from None
-        print(serialized)
+        print(json.dumps(displayed, allow_nan=False, separators=(",", ":"))
+              if baseline is not None else serialized)
         return 0
     except Exception as error:
         # Never print transport configuration, credentials or arbitrary tracebacks.
