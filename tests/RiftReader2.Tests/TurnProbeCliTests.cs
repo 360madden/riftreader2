@@ -13,28 +13,37 @@ public sealed class TurnProbeCliTests : IDisposable
         double afterDegrees = 16, ulong afterComponent = 0x12345678, double observedHold = 120)
     {
         const string qualification = "matrix-descriptor-candidate-only; body-facing/axis/sign/passive-freshness/restart-unverified";
-        object Sample(double angle, ulong component, string start, string end) => new
+        object Sample(double angle, ulong component, string start, string end)
         {
-            identity = new
+            var radians = angle * Math.PI / 180;
+            var cosine = (float)Math.Cos(radians);
+            var sine = (float)Math.Sin(radians);
+            float[] cells = [cosine, 0, -sine, 0, 1, 0, sine, 0, cosine];
+            return new
             {
-                processId = 1234,
-                processStartUtcTicks = 639298670575905950L,
-                executableSha256 = new string('A', 64),
-                moduleBaseAddress = 0x140000000UL,
-                moduleSize = 50_000_000L
-            },
-            startedAtUtc = start,
-            completedAtUtc = end,
-            unitKey = "123456",
-            componentAddress = component,
-            qualification,
-            primary = new
-            {
-                status = "structural-y-planar-matrix-candidate",
-                sourceOffset = 0x60,
-                planarAngleDegreesCandidate = angle
-            }
-        };
+                identity = new
+                {
+                    processId = 1234,
+                    processStartUtcTicks = 639298670575905950L,
+                    executableSha256 = new string('A', 64),
+                    moduleBaseAddress = 0x140000000UL,
+                    moduleSize = 50_000_000L
+                },
+                startedAtUtc = start,
+                completedAtUtc = end,
+                unitKey = "123456",
+                componentAddress = component,
+                qualification,
+                primary = new
+                {
+                    status = "structural-y-planar-matrix-candidate",
+                    sourceOffset = 0x60,
+                    planarAngleDegreesCandidate = angle,
+                    rawBits = cells.Select(BitConverter.SingleToUInt32Bits).ToArray(),
+                    rowMajorF32 = cells
+                }
+            };
+        }
         var beforePath = Path.Combine(directory, "before.json");
         var afterPath = Path.Combine(directory, "after.json");
         var receiptPath = Path.Combine(directory, "action.json");
@@ -111,6 +120,20 @@ public sealed class TurnProbeCliTests : IDisposable
         using var error = new StringWriter();
         Assert.Equal(2, await CliRunner.RunAsync(Args(paths), TextWriter.Null, error));
         Assert.Contains("candidate-component", error.ToString());
+    }
+
+    [Fact]
+    public async Task RejectsStoredAngleThatContradictsRawMatrixBits()
+    {
+        var paths = await EvidenceAsync();
+        var raw = await File.ReadAllTextAsync(paths.After);
+        var tampered = raw.Replace("\"planarAngleDegreesCandidate\":16",
+            "\"planarAngleDegreesCandidate\":17", StringComparison.Ordinal);
+        Assert.NotEqual(raw, tampered);
+        await File.WriteAllTextAsync(paths.After, tampered);
+        using var error = new StringWriter();
+        Assert.Equal(2, await CliRunner.RunAsync(Args(paths), TextWriter.Null, error));
+        Assert.Contains("raw matrix", error.ToString());
     }
 
     public void Dispose()

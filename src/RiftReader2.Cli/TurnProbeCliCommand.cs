@@ -117,9 +117,7 @@ internal static class TurnProbeCliCommand
         if (entry.GetProperty("status").GetString() != "structural-y-planar-matrix-candidate"
             || entry.GetProperty("sourceOffset").GetInt32() != (matrix == "primary" ? 0x60 : 0x94))
             throw new InvalidDataException("Requested orientation matrix is not a structural candidate.");
-        var angle = entry.GetProperty("planarAngleDegreesCandidate").GetDouble();
-        if (!double.IsFinite(angle) || angle is < -180 or > 180)
-            throw new InvalidDataException("Invalid candidate matrix angle.");
+        var angle = VerifiedMatrixAngle(entry);
         var started = root.GetProperty("startedAtUtc").GetDateTimeOffset();
         var completed = root.GetProperty("completedAtUtc").GetDateTimeOffset();
         var facing = new TurnSkeletonFacing("native-owned-" + matrix, pid, ticks,
@@ -127,6 +125,30 @@ internal static class TurnProbeCliCommand
         return new(facing, started, completed, sha.ToUpperInvariant(),
             id.GetProperty("moduleBaseAddress").GetUInt64(),
             id.GetProperty("moduleSize").GetInt64(), component);
+    }
+
+    private static double VerifiedMatrixAngle(JsonElement matrix)
+    {
+        var bits = matrix.GetProperty("rawBits").EnumerateArray()
+            .Select(item => item.GetUInt32()).ToArray();
+        var rows = matrix.GetProperty("rowMajorF32").EnumerateArray()
+            .Select(item => item.GetDouble()).ToArray();
+        if (bits.Length != 9 || rows.Length != 9)
+            throw new InvalidDataException("Orientation matrix must contain nine raw and decoded cells.");
+        for (var index = 0; index < 9; index++)
+        {
+            if (!double.IsFinite(rows[index])
+                || BitConverter.SingleToUInt32Bits((float)rows[index]) != bits[index])
+                throw new InvalidDataException("Matrix raw bits disagree with decoded float cells.");
+        }
+        var angle = matrix.GetProperty("planarAngleDegreesCandidate").GetDouble();
+        var computed = Math.Atan2(
+            BitConverter.UInt32BitsToSingle(bits[6]),
+            BitConverter.UInt32BitsToSingle(bits[0])) * 180 / Math.PI;
+        if (!double.IsFinite(angle) || !double.IsFinite(computed)
+            || angle is < -180 or > 180 || Math.Abs(angle - computed) > 0.001)
+            throw new InvalidDataException("Stored candidate angle disagrees with raw matrix.");
+        return angle;
     }
 
     private static (ControlAction, ControlExecutionResult, double, DateTimeOffset, DateTimeOffset)
