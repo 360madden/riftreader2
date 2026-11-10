@@ -90,14 +90,17 @@ scalar readers, without starting Lab 2 or reading Lua:
 ```
 
 Each requested report must match the current Lab 1 game, VM, controller and
-player, with a clean read-only postflight. Lab 1 native vitals are not supported
-by this combined command; `--fields vitals` blocks before dependency startup.
+player, with a clean read-only postflight. Explicit `--fields vitals` also
+requests Lab 1's native HP/resource candidates through its own authenticated
+agent, with the same fresh-build and capability checks as Lab 2. It blocks if
+the Lab 1 agent lacks native-vitals support; no Lab 2 fallback occurs. The
+omitted-fields default stays position-only on Lab 1.
 `--compare-pose-before` supports a saved, same-Lab-1 pose summary. Both labs
 can also save before/after native readouts with `--output-json` and join their
 candidate changes using `--compare-readout-before`; cross-lab comparisons are
-rejected. Lab 1 readouts can contain position, actor-pose and smoothed-scalar,
-not vitals. These are unqualified native candidates until verified with live
-changed-state evidence.
+rejected. These are unqualified native candidates until verified with live
+changed-state evidence. Lab 1 native vitals are implemented but not yet
+qualified against the running Lab 1 agent and live RIFT.
 
 ## Native selected-target values
 

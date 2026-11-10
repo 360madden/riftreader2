@@ -118,7 +118,7 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
              self.assertRaisesRegex(ValueError, "pose-identity-mismatch"):
             compare(first, second)
 
-    def test_mixed_lab_readouts_and_lab1_vitals_are_rejected(self):
+    def test_mixed_lab_readouts_are_rejected(self):
         first, second = self.lab1_pair()
         second["targetId"] = "lab2"
         second["position"]["lab"] = "lab2"
@@ -128,9 +128,13 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
         first["position"]["lab"] = "lab2"
         with self.assertRaisesRegex(ValueError, "source-invalid"):
             compare(first, second)
+    def test_lab1_vitals_and_xyz_compare_without_lab2_assumptions(self):
         first, second = self.lab1_pair(("position", "vitals"))
-        with self.assertRaisesRegex(ValueError, "lab1-vitals-not-supported"):
-            compare(first, second)
+        result = compare(first, second)
+        self.assertEqual(result["targetId"], "lab1")
+        self.assertEqual(result["comparison"]["position"]["deltaCandidate"]["z"], 12.0)
+        self.assertEqual(result["comparison"]["vitals"]["health"]["deltaCurrentCandidate"], -15)
+
 
     def test_combined_candidate_xyz_and_vitals(self):
         first, second = pair()

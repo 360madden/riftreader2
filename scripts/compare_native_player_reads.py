@@ -110,7 +110,6 @@ def _check_readout(readout):
     unit = _key(readout.get("unitKey"))
     fields = tuple(field for field in FIELDS if field in readout)
     _need(bool(fields), "no-fields")
-    _need(lab != "lab1" or "vitals" not in fields, "lab1-vitals-not-supported")
     identities = [_source(readout[field], field, unit, lab) for field in fields]
     _need(all(identity == identities[0] for identity in identities),
           "mixed-source-identity")

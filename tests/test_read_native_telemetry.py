@@ -121,7 +121,7 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         for observed in (self.before, self.after):
             observed["host"]["machineName"] = "RIFT-LAB-1"
             observed["guest"]["target"]["machineName"] = "RIFT-LAB-1"
-        for source in (self.position, self.pose, self.scalar):
+        for source in (self.position, self.vitals, self.pose, self.scalar):
             source["lab"] = "lab1"
 
     def test_lab1_defaults_to_position_only_without_vitals(self):
@@ -148,12 +148,20 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.scalar_query.assert_called_once_with("native-config", VM, GAME, cli.CONFIGS["lab1"], lab="lab1")
         self.vitals_query.assert_not_called()
 
-    def test_lab1_vitals_refused_before_controller_or_sources(self):
-        with self.assertRaisesRegex(ValueError, "lab1-vitals-not-supported"):
+    def test_lab1_vitals_selected_and_bound_to_lab1(self):
+        self._lab1()
+        result = cli.read_once("lab1", "AMD-DESKTOP", fields=("position", "vitals"))
+        self.assertEqual(result["targetId"], "lab1")
+        self.assertEqual(result["unitKey"], KEY)
+        self.assertEqual(result["vitals"]["lab"], "lab1")
+        self.vitals_query.assert_called_once_with(
+            "native-config", VM, GAME, cli.CONFIGS["lab1"], lab="lab1")
+
+    def test_lab1_vitals_from_lab2_cannot_publish(self):
+        self._lab1()
+        self.vitals["lab"] = "lab2"
+        with self.assertRaisesRegex(ValueError, "source-identity-mismatch"):
             cli.read_once("lab1", "AMD-DESKTOP", fields=("position", "vitals"))
-        self.ensure.assert_not_called()
-        self.xyz_query.assert_not_called()
-        self.vitals_query.assert_not_called()
 
     def test_lab1_source_from_lab2_is_not_mixed(self):
         self._lab1()
@@ -378,7 +386,8 @@ class NativeTelemetryCommandTests(unittest.TestCase):
 
     def test_cli_lab1_defaults_to_position_and_allows_selected_pose(self):
         for args, expected in (([], ("position",)),
-                               (["--fields", "position", "actor-pose"], ["position", "actor-pose"])):
+                               (["--fields", "position", "actor-pose"], ["position", "actor-pose"]),
+                               (["--fields", "vitals"], ["vitals"])):
             output = io.StringIO()
             with self.subTest(args=args), patch.object(cli, "read_once", return_value={
                     "status": "candidate-only", "targetId": "lab1"}) as read, redirect_stdout(output):
@@ -387,10 +396,9 @@ class NativeTelemetryCommandTests(unittest.TestCase):
             read.assert_called_once_with("lab1", "AMD-DESKTOP", fields=expected)
             self.assertEqual(json.loads(output.getvalue())["targetId"], "lab1")
 
-    def test_cli_lab1_denies_vitals_and_missing_comparison_output_before_startup(self):
-        for args, reason in ((["--fields", "vitals"], "native-read-lab1-vitals-not-supported"),
-                             (["--compare-readout-before", "missing.json"],
-                              "native-read-comparison-output-required")):
+    def test_cli_lab1_missing_comparison_output_blocks_before_startup(self):
+        for args, reason in ((["--compare-readout-before", "missing.json"],
+                              "native-read-comparison-output-required"),):
             output = io.StringIO()
             with self.subTest(args=args), patch.object(cli, "read_once") as read, redirect_stdout(output):
                 code = cli.main(["--lab", "lab1", "--expected-host", "AMD-DESKTOP", *args])

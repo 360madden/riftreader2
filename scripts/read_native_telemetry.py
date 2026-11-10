@@ -110,8 +110,6 @@ def read_once(lab: str, expected_host: str, *, fields=_UNSPECIFIED) -> dict:
     if fields is _UNSPECIFIED:
         fields = ("position",) if lab == "lab1" else DEFAULT_FIELDS
     fields = selected_fields(fields)
-    require(lab != "lab1" or "vitals" not in fields,
-            "native-read-lab1-vitals-not-supported")
     started = time.perf_counter()
     ensure(lab)
     receipt_path, receipt, _ = resolve_current_managed_controller(lab)
@@ -130,7 +128,7 @@ def read_once(lab: str, expected_host: str, *, fields=_UNSPECIFIED) -> dict:
         sources["position"] = query_xyz(native, vm, game, CONFIGS[lab], lab=lab)
         validate_sources((sources["position"],), game, instance, vm, lab)
     if "vitals" in fields:
-        sources["vitals"] = query_vitals(native, vm, game, CONFIGS[lab])
+        sources["vitals"] = query_vitals(native, vm, game, CONFIGS[lab], lab=lab)
     if "actor-pose" in fields:
         sources["actor-pose"] = query_actor_pose(native, vm, game, CONFIGS[lab], lab=lab)
     if "smoothed-scalar" in fields:
@@ -174,8 +172,6 @@ def main(argv=None) -> int:
         fields = args.fields if args.fields is not None else (
             ("position",) if args.lab == "lab1" else DEFAULT_FIELDS)
         selected = selected_fields(fields)
-        require(args.lab != "lab1" or "vitals" not in selected,
-                "native-read-lab1-vitals-not-supported")
         if args.output_json is not None:
             require(args.output_json.parent.is_dir() and not args.output_json.exists()
                     and not args.output_json.is_symlink(), "native-read-output-unavailable")

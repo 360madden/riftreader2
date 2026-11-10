@@ -28,15 +28,15 @@ class NativeVitalsClientTests(unittest.TestCase):
         self.response = {"nativeVitalsVersion": 1, "instanceId": "a" * 32,
                          "hashMode": "fresh-bytes", "observedAtUtc": now, "report": value}
 
-    def query(self, *, client=None, verifier=None):
+    def query(self, *, client=None, verifier=None, lab="lab2"):
         client = client or Mock()
         client.request.side_effect = [self.status, self.response]
         verifier = verifier or Mock()
         with patch.object(native.HostConfig, "load", return_value=self.host), \
                 patch.object(native, "verify_identity", verifier), \
                 patch.object(native.vitals, "EVIDENCE", self.evidence):
-            result = native.query(self.config, EXPECTED_VM, {"lab": "lab2", **EXPECTED_GAME}, Path("host.json"),
-                                  client_factory=lambda _: client)
+            result = native.query(self.config, EXPECTED_VM, {"lab": lab, **EXPECTED_GAME}, Path("host.json"),
+                                  lab=lab, client_factory=lambda _: client)
         return result, client, verifier
 
     def test_exact_response_persisted_with_candidate_contract_and_vm_brackets(self):
@@ -54,6 +54,25 @@ class NativeVitalsClientTests(unittest.TestCase):
         self.assertEqual(client.request.call_args_list[1].kwargs["payload"],
                          {**EXPECTED_GAME, "executableSha256": EXPECTED_GAME["executableSha256"].lower(),
                           "machineName": "RIFT-LAB-2"})
+
+    def test_lab1_uses_own_host_and_evidence_path_without_lab2_fallback(self):
+        self.host.expected_machine_name = "RIFT-LAB-1"
+        self.status["host"]["machineName"] = "RIFT-LAB-1"
+        result, client, verifier = self.query(lab="lab1")
+        self.assertEqual(result["lab"], "lab1")
+        self.assertEqual(Path(result["sourceReport"]).parent.parent, self.evidence / "lab1")
+        self.assertEqual(client.request.call_args_list[1].kwargs["payload"]["machineName"],
+                         "RIFT-LAB-1")
+        self.assertEqual(verifier.call_count, 2)
+        self.host.expected_machine_name = "RIFT-LAB-2"
+        with self.assertRaisesRegex(native.Blocked, "host-lab-mismatch"):
+            self.query(lab="lab1")
+
+    def test_unsupported_lab_blocks_without_native_command(self):
+        client = Mock()
+        with self.assertRaisesRegex(native.Blocked, "lab-not-supported"):
+            self.query(lab="lab3", client=client)
+        client.request.assert_not_called()
 
     def test_status_identity_or_capability_mismatch_sends_no_native_command(self):
         for field, value in (("vmIdentity", {**EXPECTED_VM, "pid": 1}), ("machineName", "RIFT-LAB-1"),

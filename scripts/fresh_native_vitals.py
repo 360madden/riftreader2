@@ -1,4 +1,4 @@
-"""Pinned Lab2 candidate vitals through the existing authenticated control agent."""
+"""Pinned lab candidate vitals through the existing authenticated control agent."""
 from __future__ import annotations
 
 from datetime import datetime, timezone, timedelta
@@ -53,12 +53,15 @@ def validate_response_time(report, observed_at_utc, before, after):
         raise Blocked("native-vitals-unavailable") from None
 
 
-def query(config, expected_vm, expected_game, host_config_path, *, client_factory=ControlClient):
+def query(config, expected_vm, expected_game, host_config_path, *, lab="lab2",
+          client_factory=ControlClient):
     """Collect one bounded candidate report; never acquire input authority or fall back."""
     started = time.perf_counter()
     try:
+        if lab not in ("lab1", "lab2"):
+            raise Blocked("native-vitals-lab-not-supported")
         vm = vitals.checked_expected_vm(expected_vm)
-        expected = vitals.checked_expected_game("lab2", expected_game)
+        expected = vitals.checked_expected_game(lab, expected_game)
         if vm is None or expected is None:
             raise Blocked("native-vitals-pins-required")
         host = HostConfig.load(Path(host_config_path))
@@ -67,7 +70,7 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
                 or host.vmrun.resolve() != config.vmrun.resolve()
                 or host.vnc_port != config.port):
             raise Blocked("native-vitals-host-vm-mismatch")
-        if host.expected_machine_name != "RIFT-LAB-2":
+        if host.expected_machine_name != "RIFT-LAB-" + lab[-1]:
             raise Blocked("native-vitals-host-lab-mismatch")
         payload = {**expected, "machineName": host.expected_machine_name}
         payload["executableSha256"] = payload["executableSha256"].lower()
@@ -107,13 +110,13 @@ def query(config, expected_vm, expected_game, host_config_path, *, client_factor
         finally:
             verify_identity(config, vm)
         # Publish only after the final VM check. Each response owns a new report.
-        output = vitals.EVIDENCE / "lab2" / uuid.uuid4().hex
+        output = vitals.EVIDENCE / lab / uuid.uuid4().hex
         output.mkdir(parents=True, exist_ok=False)
         source = output / "samples.json"
         with source.open("xb") as stream:
             stream.write(raw)
         summary = {
-            "schemaVersion": 1, "status": "candidate-only", "lab": "lab2", "vmIdentity": vm,
+            "schemaVersion": 1, "status": "candidate-only", "lab": lab, "vmIdentity": vm,
             "gameProcessId": expected["processId"], "gameProcessStartUtcTicks": expected["processStartUtcTicks"],
             "gameSha256": expected["executableSha256"], "transport": "persistent-control-agent",
             "activeAgentInstanceId": response["instanceId"], "observedAtUtc": response["observedAtUtc"],
