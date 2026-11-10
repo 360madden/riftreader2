@@ -96,6 +96,86 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest().upper()
 
 
+def guest_reader_cache_path(lab: str, digest: str) -> str:
+    """A stable, per-lab guest cache keyed by the exact reader bytes."""
+    if lab not in LABS or SHA256.fullmatch(digest) is None:
+        fail("invalid-reader-cache-identity")
+    return (rf"C:\Users\mrkoo\AppData\Local\RiftReader2\Hybrid\ReaderCache"
+            + rf"\{lab}\{digest}\RiftReader2.Live.exe")
+
+
+def guest_reader_cache_probe(cache: str, digest: str) -> str:
+    """Run inside the exact game-identity preflight, never trust existence alone."""
+    return (
+        f"$cache={quote(cache)};$expected={quote(digest)};$cacheHit=$false;"
+        "if(Test-Path -LiteralPath $cache){"
+        "if(-not (Test-Path -LiteralPath $cache -PathType Leaf)){throw 'reader-cache-not-file'};"
+        "if((Get-FileHash -LiteralPath $cache -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'reader-cache-hash-mismatch'};"
+        "$cacheHit=$true}"
+    )
+
+
+def guest_reader_cache_copy(cache: str, guest_exe: str, digest: str) -> str:
+    return (
+        f"$cache={quote(cache)};$dest={quote(guest_exe)};$expected={quote(digest)};"
+        "if(-not (Test-Path -LiteralPath $cache -PathType Leaf)){throw 'reader-cache-disappeared'};"
+        "if((Get-FileHash -LiteralPath $cache -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'reader-cache-hash-drift'};"
+        "Copy-Item -LiteralPath $cache -Destination $dest -ErrorAction Stop;"
+        "if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'guest-reader-copy-hash-mismatch'}"
+    )
+
+
+def guest_reader_cache_publish(guest_exe: str, cache: str, digest: str, run_id: str) -> str:
+    """Copy a verified guest executable to a unique temp path, then publish."""
+    if re.fullmatch(r"lab[12]-[0-9a-f]{32}", run_id) is None:
+        fail("invalid-reader-cache-run-id")
+    return (
+        f"$src={quote(guest_exe)};$cache={quote(cache)};$expected={quote(digest)};"
+        f"$temp=$cache+{quote('.stage-' + run_id)};"
+        "if((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'guest-reader-copy-hash-mismatch'};"
+        "$dir=Split-Path -Parent $cache;"
+        "New-Item -ItemType Directory -Path $dir -Force -ErrorAction Stop|Out-Null;"
+        "if(Test-Path -LiteralPath $cache){"
+        "if((Get-FileHash -LiteralPath $cache -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'reader-cache-hash-mismatch'}"
+        "}else{"
+        "if(Test-Path -LiteralPath $temp){throw 'reader-cache-staging-exists'};"
+        "Copy-Item -LiteralPath $src -Destination $temp -ErrorAction Stop;"
+        "if((Get-FileHash -LiteralPath $temp -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'reader-cache-staging-hash-mismatch'};"
+        "Move-Item -LiteralPath $temp -Destination $cache -ErrorAction Stop"
+        "};"
+        "if((Get-FileHash -LiteralPath $cache -Algorithm SHA256).Hash -ne $expected)"
+        "{throw 'reader-cache-publish-hash-mismatch'}"
+    )
+
+
+def stage_reader(session: GuestSession, reader: Path, guest_exe: str, digest: str,
+                 *, cache_path: str | None = None, cache_hit: bool = False,
+                 run_id: str | None = None) -> str:
+    """Never transfer on a verified hit; never execute without guest hash checks."""
+    if type(cache_hit) is not bool or (cache_hit and cache_path is None):
+        fail("invalid-reader-cache-state")
+    if (cache_path is not None and not cache_hit
+            and (run_id is None or re.fullmatch(r"lab[12]-[0-9a-f]{32}", run_id) is None)):
+        fail("invalid-reader-cache-run-id")
+    if cache_path is not None and cache_hit:
+        session.powershell(guest_reader_cache_copy(cache_path, guest_exe, digest), timeout=120)
+        return "verified-guest-cache"
+    session.run("copyFileFromHostToGuest", str(reader), guest_exe, timeout=300)
+    if cache_path is not None:
+        if run_id is None:
+            fail("reader-cache-run-id-required")
+        session.powershell(
+            guest_reader_cache_publish(guest_exe, cache_path, digest, run_id), timeout=120)
+        return "host-transfer-cache-populated"
+    return "host-transfer"
+
+
 def write_new(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("x", encoding="utf-8", newline="\n") as stream:
@@ -362,6 +442,10 @@ def execute(args: argparse.Namespace) -> dict:
     guest_output = guest_dir + r"\latest.json"
     guest_stdout = guest_dir + r"\reader.stdout.txt"
     guest_stderr = guest_dir + r"\reader.stderr.txt"
+    cache_path = (guest_reader_cache_path(args.lab, args.reader_sha256)
+                  if getattr(args, "reuse_guest_reader", False) else None)
+    cache_probe = (guest_reader_cache_probe(cache_path, args.reader_sha256)
+                   if cache_path is not None else "$cacheHit=$false;")
     staging = None
     config_copy_attempted = False
     cleanup_handled = False
@@ -385,14 +469,20 @@ if($conflicts.Count -ne 0){{
     $dir={quote(guest_dir)}
     if(Test-Path -LiteralPath $dir){{throw 'guest-run-directory-exists'}}
     New-Item -ItemType Directory -Path $dir -ErrorAction Stop|Out-Null
-    $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$gameTicks;gameSha256=$gameSha;otherLiveProcessCount=0;inputSent=$false}}
+    {cache_probe}
+    $payload=@{{status='guest-preflight-passed';gamePid=$game.Id;gameStartUtcTicks=$gameTicks;gameSha256=$gameSha;otherLiveProcessCount=0;inputSent=$false;readerCacheHit=$cacheHit}}
 }}
 """
             pre = run_guest_script(session, output, preflight, run_id, "preflight")
             validate_preflight(pre)
+            if cache_path is not None and type(pre.get("readerCacheHit")) is not bool:
+                fail("guest-reader-cache-preflight-invalid")
 
             try:
-                session.run("copyFileFromHostToGuest", str(reader), guest_exe, timeout=300)
+                reader_staging = stage_reader(
+                    session, reader, guest_exe, args.reader_sha256,
+                    cache_path=cache_path, cache_hit=pre.get("readerCacheHit") is True,
+                    run_id=run_id)
                 config_copy_attempted = True
                 session.run("copyFileFromHostToGuest", str(config), guest_config, timeout=90)
                 clean_private(staging)
@@ -461,6 +551,7 @@ if($conflicts.Count -ne 0){{
             "readerPid": ready["readerPid"],
             "readerStartUtcTicks": ready["readerStartUtcTicks"],
             "readerSha256": ready["readerSha256"],
+            "readerStaging": reader_staging,
             "nonce": ready["nonce"],
             "expiresAtUtc": ready["expiresAtUtc"],
             "guestDirectory": guest_dir,
@@ -510,6 +601,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--reader", type=Path, required=True,
                         help="host path to the published RiftReader2.Live.exe")
     result.add_argument("--reader-sha256", type=str.upper, required=True)
+    result.add_argument("--reuse-guest-reader", action="store_true",
+                        help="reuse exact-hash-verified guest-local reader cache; no transfer on a verified hit")
     result.add_argument("--receiver-config", type=Path, default=None,
                         help="private host receiver JSON; its token is never emitted")
     result.add_argument("--duration-seconds", type=int, default=900)
