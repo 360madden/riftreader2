@@ -41,6 +41,9 @@ or foreground change. Build `src/RiftReader2.Live` with the pinned .NET 10 SDK
 first if `native-reader-not-built` is returned. Native `vitals` and `position`
 receipts include compact `nativeValues` (HP/resources or last XYZ sample) for
 programmatic use; the full raw candidate report is retained at `nativeOutput`.
+Before every native launch, the reader also checks the **current physical PC's**
+hostname against the selection owner and selected process host. A cached selection
+from the other PC (or a malformed target) is blocked before launching the reader.
 The tool checks native receipt type and returned process/build epoch before
 reporting success. A position burst also rejects missing, mixed or invalid player
 keys and nonfinite XYZ; a character switch cannot silently produce one mixed-owner

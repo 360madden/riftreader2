@@ -120,6 +120,13 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
     """Read a candidate from the exact selected LOCAL physical process, without input."""
     if selection.get("status") != "ready":
         return selection
+    # A cached selection is never authority to read a different physical PC.
+    actual_host = socket.gethostname()
+    owner_host = selection.get("ownerHost")
+    if (actual_host.upper() not in SUPPORTED_HOSTS or
+            not isinstance(owner_host, str) or
+            owner_host.casefold() != actual_host.casefold()):
+        return dict(selection, status="blocked", reason="host-mismatch")
     if kind not in NATIVE_READS:
         return dict(selection, status="blocked", reason="unknown-native-read")
     if kind not in ("position", "vitals") and (samples is not None or interval_ms is not None):
@@ -127,11 +134,15 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
         return dict(selection, status="blocked", reason="invalid-position-sampling")
-    target = selection.get("target", {})
+    target = selection.get("target")
+    if not isinstance(target, dict):
+        return dict(selection, status="blocked", reason="invalid-local-process-identity")
     pid, ticks = target.get("processId"), target.get("processStartUtcTicks")
+    target_host = target.get("hostName")
     if (type(pid) is not int or pid <= 0 or not isinstance(ticks, str)
             or not ticks.isdecimal() or int(ticks) <= 0
-            or target.get("hostName", "").casefold() != selection["ownerHost"].casefold()):
+            or not isinstance(target_host, str)
+            or target_host.casefold() != actual_host.casefold()):
         return dict(selection, status="blocked", reason="invalid-local-process-identity")
     if not NATIVE_EXE.is_file():
         return dict(selection, status="blocked", reason="native-reader-not-built",

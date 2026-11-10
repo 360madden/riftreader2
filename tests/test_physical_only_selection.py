@@ -25,6 +25,12 @@ REPORT_IDENTITY = {
 
 
 class PhysicalOnlySelectionTests(unittest.TestCase):
+    def setUp(self):
+        # Offline synthetic selections target AMD-DESKTOP on every test runner.
+        hostname = patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP")
+        hostname.start()
+        self.addCleanup(hostname.stop)
+
     def test_amd_desktop_auto_selects_local_process(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(physical.observe_physical, "_identity", return_value=IDENTITY) as reader:
@@ -203,6 +209,27 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                                               samples=2, interval_ms=0)
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(result["reason"], "invalid-native-reader-report")
+
+    def test_native_read_rechecks_actual_pc_before_using_cached_selection(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with patch.object(physical.subprocess, "run") as reader:
+            for current_host in ("LEGION", "OTHER-PC"):
+                with self.subTest(current_host=current_host), \
+                     patch.object(physical.socket, "gethostname", return_value=current_host):
+                    result = physical.read_native(selected, "vitals")
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["reason"], "host-mismatch")
+            reader.assert_not_called()
+
+    def test_native_read_rejects_malformed_cached_target_without_launch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with patch.object(physical.subprocess, "run") as reader:
+            for invalid_target in (None, [], {**IDENTITY, "hostName": 123}):
+                with self.subTest(target=invalid_target):
+                    result = physical.read_native({**selected, "target": invalid_target}, "vitals")
+                    self.assertEqual(result["status"], "blocked")
+                    self.assertEqual(result["reason"], "invalid-local-process-identity")
+            reader.assert_not_called()
 
     def test_native_read_fails_closed_before_launch(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
