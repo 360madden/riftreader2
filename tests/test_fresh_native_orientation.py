@@ -32,7 +32,7 @@ class OrientationClientTests(unittest.TestCase):
             "identity": {**EXPECTED_GAME, "executablePath": r"C:\RIFT\rift_x64.exe",
                          "moduleBaseAddress": 0x140000000, "moduleSize": 0x4000000},
             "startedAtUtc": now, "completedAtUtc": now,
-            "unitKey": "123", "refreshHandleRaw": "0x0000000000000000", "refreshFlagRaw": 0,
+            "unitKey": "123", "componentAddress": 0x20040000, "refreshHandleRaw": "0x0000000000000000", "refreshFlagRaw": 0,
             "primary": row, "secondary": {**row, "sourceOffset": 0x94},
             "qualification": native.QUALIFICATION}
         self.response = {"nativeOrientationVersion": 1, "instanceId": "a" * 32,
@@ -55,10 +55,25 @@ class OrientationClientTests(unittest.TestCase):
         result, client = self.run_query()
         self.assertEqual("candidate-only", result["status"])
         self.assertEqual(self.report["unitKey"], result["metrics"]["unitKey"])
+        self.assertEqual(self.report["componentAddress"], result["metrics"]["componentAddress"])
         self.assertAlmostEqual(85.943669, result["metrics"]["candidateAnglesDegrees"]["primary"])
         self.assertEqual(self.report, json.loads(Path(result["sourceReport"]).read_text(encoding="utf-8")))
         self.assertEqual("/api/native-orientation", client.request.call_args_list[1].args[0])
         self.assertEqual("persistent-control-agent", result["transport"])
+
+    def test_component_owner_address_must_be_present_and_valid(self):
+        original = copy.deepcopy(self.report)
+        for variant in ("missing", 0, -1, True, "0x20040000", 2**64):
+            self.report = copy.deepcopy(original)
+            self.response["report"] = self.report
+            if variant == "missing":
+                del self.report["componentAddress"]
+            else:
+                self.report["componentAddress"] = variant
+            with self.subTest(variant=variant), self.assertRaises(native.Blocked):
+                self.run_query()
+        self.assert_no_publication()
+        self.report = original
 
     def test_missing_capability_blocks_before_post(self):
         original = copy.deepcopy(self.status)

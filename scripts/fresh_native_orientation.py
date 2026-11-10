@@ -25,7 +25,7 @@ QUALIFICATION = "matrix-descriptor-candidate-only; body-facing/axis/sign/passive
 
 
 def validate_report(report, *, pid, ticks):
-    expected = {"identity", "startedAtUtc", "completedAtUtc", "unitKey",
+    expected = {"identity", "startedAtUtc", "completedAtUtc", "unitKey", "componentAddress",
                 "refreshHandleRaw", "refreshFlagRaw", "primary", "secondary", "qualification"}
     if not isinstance(report, dict) or set(report) != expected or report["qualification"] != QUALIFICATION:
         raise Blocked("native-orientation-contract-invalid")
@@ -43,6 +43,9 @@ def validate_report(report, *, pid, ticks):
             or type(identity["moduleSize"]) is not int
             or not 0x2F588A4 <= identity["moduleSize"] <= 0x7FFFFFFF):
         raise Blocked("native-orientation-game-identity-mismatch")
+    component = report["componentAddress"]
+    if type(component) is not int or not 0 < component <= 2**64 - 1:
+        raise Blocked("native-orientation-component-invalid")
     unit = report["unitKey"]
     if (not isinstance(unit, str) or re.fullmatch(r"[1-9][0-9]{0,19}", unit) is None
             or int(unit) > 2**64 - 1
@@ -79,7 +82,7 @@ def validate_report(report, *, pid, ticks):
         if matrix["status"] != "structural-y-planar-matrix-candidate" and angle is not None:
             raise Blocked("native-orientation-angle-unqualified")
         angles[label] = angle
-    return {"unitKey": unit, "candidateAnglesDegrees": angles,
+    return {"unitKey": unit, "componentAddress": component, "candidateAnglesDegrees": angles,
             "qualification": QUALIFICATION, "observedMatrixSource": "current-build-owned-position"}
 
 
