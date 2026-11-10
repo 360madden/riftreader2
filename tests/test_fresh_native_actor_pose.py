@@ -130,6 +130,18 @@ class ActorPoseClientTests(unittest.TestCase):
             self.query()
         self.report = copy.deepcopy(original)
         self.response["report"] = self.report
+        self.report["actorMatrix"]["planarAngleRadiansCandidate"] = 1.0
+        with self.assertRaisesRegex(pose.Blocked, "angle-invalid"):
+            self.query()
+        self.report = copy.deepcopy(original)
+        self.response["report"] = self.report
+        self.report["actorMatrix"]["status"] = "unqualified-matrix-shape"
+        self.report["actorMatrix"]["planarAngleDegreesCandidate"] = None
+        self.report["actorMatrix"]["planarAngleRadiansCandidate"] = 1.0
+        with self.assertRaisesRegex(pose.Blocked, "angle-unqualified"):
+            self.query()
+        self.report = copy.deepcopy(original)
+        self.response["report"] = self.report
         self.report["renderCompositionMaxAbsDelta"] = 0.2
         with self.assertRaisesRegex(pose.Blocked, "composition-invalid"):
             self.query()

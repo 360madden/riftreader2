@@ -70,14 +70,18 @@ def _matrix(matrix, offset):
         if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
             raise Blocked("native-actor-pose-matrix-values-invalid")
     angle = matrix["planarAngleDegreesCandidate"]
+    radians = matrix["planarAngleRadiansCandidate"]
     if (matrix["status"] != "structural-y-planar-matrix-candidate"
-            and angle is not None):
+            and (angle is not None or radians is not None)):
         raise Blocked("native-actor-pose-angle-unqualified")
     if angle is not None and not -180 <= angle <= 180:
         raise Blocked("native-actor-pose-angle-invalid")
     if matrix["status"] == "structural-y-planar-matrix-candidate":
-        computed = math.degrees(math.atan2(values[6], values[0]))
-        if angle is None or abs(angle - computed) > 0.001:
+        computed_radians = math.atan2(values[6], values[0])
+        computed_degrees = math.degrees(computed_radians)
+        if (angle is None or radians is None
+                or abs(angle - computed_degrees) > 0.001
+                or abs(radians - computed_radians) > 0.00002):
             raise Blocked("native-actor-pose-angle-invalid")
     return values
 
