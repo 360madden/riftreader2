@@ -3,9 +3,10 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.run_movement_session import (
-    MovementSessionError, _require_feedback_target, build_parser, calibrated_relative_goal,
+    LiveHostAdapter, MovementSessionError, _require_feedback_target, build_parser, calibrated_relative_goal,
     execute_armed_session, require_post_turn_calibration, sha, _require_key_hold_timing,
     validate_session_pins,
 )
@@ -119,7 +120,7 @@ class Host:
 def session(mode, profile=None, goal=None, keys=("w", "q"), dimension="2d",
             turn_hold_ms=None, calibration_hold_ms=150):
     return {"sessionId": "a" * 32, "sessionPlanSha256": "A" * 64,
-            "mode": mode, "capture": {"captureId": "c" * 32, "capture": "capture.json"},
+            "mode": mode, "capture": {"captureId": "c" * 32, "capture": "capture.json", "image": "screen.bmp"},
             "captureImageSha256": "B" * 64, "calibrationProfile": str(profile) if profile else None,
             "goal": goal, "allowedKeys": list(keys), "target": dict(GAME_TARGET),
             "movementDimension": dimension, "turnHoldMs": turn_hold_ms,
@@ -853,6 +854,84 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("d", 100)])
         self.assertEqual(feedback.wait_timeouts, [6.0])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_post_stop_capture_pins_exact_game_target(self):
+        target = {**GAME_TARGET, "windowHandle": 333}
+        class Pinned:
+            def __init__(self): self.target = target; self.checks = 0
+            def status(self, *, require_armed):
+                self.checks += 1
+                self.assert_disarmed = require_armed is False
+                return {"guest": {"target": self.target}}
+        pinned = Pinned()
+        adapter = LiveHostAdapter(pinned, client=None)
+        image = self.root / "after.bmp"; image.write_bytes(b"BMtest-frame")
+        metadata = self.root / "after.json"
+        metadata.write_text(json.dumps({"target": target, "capturedAtUtc": NOW.isoformat()}),
+                            encoding="utf-8")
+        captured = {"capture": str(metadata), "image": str(image)}
+        with patch("scripts.run_movement_session._capture", return_value=captured) as take:
+            value = adapter.capture_after_stop(self.root / "after-capture")
+            take.assert_called_once()
+        self.assertEqual(value["imageSha256"], sha(image))
+        self.assertEqual(pinned.checks, 2)
+        self.assertTrue(pinned.assert_disarmed)
+        metadata.write_text(json.dumps({"target": {**target, "processId": 999},
+                                        "capturedAtUtc": NOW.isoformat()}), encoding="utf-8")
+        with patch("scripts.run_movement_session._capture", return_value=captured):
+            with self.assertRaisesRegex(MovementSessionError, "target changed"):
+                adapter.capture_after_stop(self.root / "wrong-target")
+
+    def test_turn_captures_after_verified_stop_before_lease_finish(self):
+        host, lease = Host(), Lease()
+        observed = []
+        def after_capture(path):
+            observed.append((host.stops, len(lease.finishes), Path(path).name))
+            return {"image": str(path / "image.bmp"), "imageSha256": "F" * 64}
+        result = execute_armed_session(
+            session=session("turn", keys=("a",), turn_hold_ms=100), review=review(),
+            output=self.root / "turn-with-after-frame", host=host, lease=lease,
+            feedback=Feedback([Sample(0, 0, 0, 1), Sample(0, 0, 0, 2)]),
+            clock=lambda: 1.0, now=lambda: NOW, post_turn_capture=after_capture)
+        self.assertEqual(observed, [(1, 0, "after-capture")])
+        self.assertEqual(result["afterTurnCapture"]["status"], "captured")
+        self.assertEqual(result["afterTurnCapture"]["imageSha256"], "F" * 64)
+        self.assertEqual(result["beforeTurnCapture"]["imageSha256"], "B" * 64)
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_turn_does_not_capture_if_stop_is_unverified(self):
+        host, lease = Host(stop_fails=True), Lease()
+        called = []
+        with self.assertRaisesRegex(MovementSessionError, "STOP"):
+            execute_armed_session(
+                session=session("turn", keys=("a",), turn_hold_ms=100),
+                review=review(), output=self.root / "turn-stop-failed",
+                host=host, lease=lease,
+                feedback=Feedback([Sample(0, 0, 0, 1), Sample(0, 0, 0, 2)]),
+                clock=lambda: 1.0, now=lambda: NOW,
+                post_turn_capture=lambda path: called.append(path))
+        self.assertEqual(called, [])
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(lease.finishes[0][0], "failed")
+
+    def test_failed_after_turn_capture_does_not_replay_action(self):
+        host, lease = Host(), Lease()
+        def failed_capture(_path):
+            self.assertEqual(host.stops, 1)
+            self.assertEqual(lease.finishes, [])
+            raise RuntimeError("after-frame capture unavailable")
+        result = execute_armed_session(
+            session=session("turn", keys=("a",), turn_hold_ms=100), review=review(),
+            output=self.root / "turn-no-after-frame", host=host, lease=lease,
+            feedback=Feedback([Sample(0, 0, 0, 1), Sample(0, 0, 0, 2)]),
+            clock=lambda: 1.0, now=lambda: NOW, post_turn_capture=failed_capture)
+        self.assertTrue(result["success"])
+        self.assertEqual(result["afterTurnCapture"]["status"], "unavailable")
+        self.assertIn("after-frame", result["afterTurnCapture"]["reason"])
+        self.assertEqual(len(host.actions), 1)
+        self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
 
     def test_turn_requires_valid_measured_hold_and_stops_on_failure(self):

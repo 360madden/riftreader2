@@ -3,8 +3,8 @@
 
 `prepare` acquires one navigation lease and captures the frame that a human
 reviews. `run-reviewed` consumes that exact review, arms exactly once, and runs
-at most six finite actions.  It never recaptures, rearms, retries ambiguous
-input, or invokes recovery.
+at most six finite actions. It never rearms, retries ambiguous input, or
+invokes recovery. A reviewed turn may capture one after-frame only after STOP.
 """
 
 from __future__ import annotations
@@ -842,7 +842,7 @@ def _require_action_ready_sample(prior, ready):
 
 def execute_armed_session(*, session: dict, review: dict, output: Path, host, lease,
                           feedback, clock=time.monotonic, now=utc_now,
-                          controller_factory=WaypointController) -> dict:
+                          controller_factory=WaypointController, post_turn_capture=None) -> dict:
     """Offline-testable orchestration seam; dependencies perform all external I/O."""
     output = Path(output); output.mkdir(parents=True, exist_ok=False)
     require(review.get("schemaVersion") == 1 and review.get("decision") == "approve"
@@ -852,7 +852,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             and review.get("captureImageSha256") == session["captureImageSha256"]
             and isinstance(review.get("note"), str) and 12 <= len(review["note"].strip()) <= 400,
             "review does not approve the exact session and capture")
-    actions = []; samples = []; success = False; released = False
+    actions = []; samples = []; success = False; released = False; final_result = None
     try:
         lease.check(); lease.heartbeat(); host.status(require_armed=False)
         initial = feedback.wait_initial(timeout_seconds=INITIAL_FEEDBACK_TIMEOUT_SECONDS)
@@ -974,6 +974,8 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             result_payload = {"mode": mode, "status": "turn-input-completed",
                               "turnKey": turn_keys[0], "holdMs": turn_hold,
                               "observedKeyHoldMilliseconds": float(observed),
+                              "beforeTurnCapture": {"image": session["capture"]["image"],
+                                                    "imageSha256": session["captureImageSha256"]},
                               "planarDisplacement": planar,
                               "verticalDisplacement": vertical,
                               "headingClaimed": False,
@@ -1098,13 +1100,27 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                               "feedbackIterations": controller.feedback_iterations,
                               "settles": settles, "arrivalObservations": 2}
             success = True
-        return {"success": True, **result_payload, "actionEvidence": actions, "samples": samples}
+        final_result = {"success": True, **result_payload, "actionEvidence": actions, "samples": samples}
+        return final_result
     finally:
         session_failed = sys.exc_info()[0] is not None
         stop_failed = False
         try:
             if not released:
                 _stop_and_verify(host, output); released = True
+            # Capture only after verified STOP, before releasing this lease.
+            # Unavailable visual evidence does not replay or undo a valid turn.
+            if (success and released and session.get("mode") == "turn"
+                    and post_turn_capture is not None and final_result is not None):
+                try:
+                    lease.check(); lease.heartbeat(); host.status(require_armed=False)
+                    capture = post_turn_capture(output / "after-capture")
+                    require(isinstance(capture, dict) and capture.get("image")
+                            and capture.get("imageSha256"), "after-turn capture was incomplete")
+                    final_result["afterTurnCapture"] = {"status": "captured", **capture}
+                except Exception as error:
+                    final_result["afterTurnCapture"] = {
+                        "status": "unavailable", "reason": str(error)[:160]}
         except BaseException:
             stop_failed = True
             raise
@@ -1164,6 +1180,18 @@ class LiveHostAdapter:
                 result, decision.key, decision.hold_ms)
         return result
     def stop(self): return self.client.request("/api/stop", method="POST", payload={})
+    def capture_after_stop(self, output):
+        self.pinned.status(require_armed=False)
+        capture = _capture(self.client, Path(output))
+        metadata = load(Path(capture["capture"]))
+        expected = self.pinned.target
+        actual = metadata.get("target")
+        require(isinstance(actual, dict) and isinstance(expected, dict)
+                and all(actual.get(key) == value for key, value in expected.items()),
+                "after-turn screenshot target changed")
+        self.pinned.status(require_armed=False)
+        return {**capture, "imageSha256": sha(Path(capture["image"])),
+                "capturedAtUtc": metadata["capturedAtUtc"]}
 
 
 def validate_session_pins(session: dict):
@@ -1209,8 +1237,10 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
     client = ControlClient(pinned.config, access=grant)
     from scripts.movement_feedback import PinnedFeedback
     feedback = PinnedFeedback(load(Path(session["feedbackPin"])), Path(output).resolve() / "feedback")
+    host = LiveHostAdapter(pinned, client, expected_capture_id=session["capture"]["captureId"])
     result = execute_armed_session(session=session, review=review, output=Path(output),
-             host=LiveHostAdapter(pinned, client, expected_capture_id=session["capture"]["captureId"]), lease=queue, feedback=feedback)
+             host=host, lease=queue, feedback=feedback,
+              post_turn_capture=host.capture_after_stop if session["mode"] == "turn" else None)
     save(Path(output) / "result.json", sanitized(result))
     return sanitized(result)
 
