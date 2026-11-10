@@ -1179,7 +1179,9 @@ class LiveHostAdapter:
             click_target=None, output=Path(output)))
         result = response["result"]
         if result.get("result", {}).get("deliverySucceeded") is True:
-            result["observedKeyHoldMilliseconds"] = _require_key_hold_timing(
+            # The runner's _action_result reads the INNER result. Keep the
+            # measured hold alongside delivery/release instead of on its parent.
+            result["result"]["observedKeyHoldMilliseconds"] = _require_key_hold_timing(
                 result, decision.key, decision.hold_ms)
         return result
     def stop(self): return self.client.request("/api/stop", method="POST", payload={})

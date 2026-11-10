@@ -10,7 +10,7 @@ from scripts.run_movement_session import (
     execute_armed_session, require_post_turn_calibration, sha, _require_key_hold_timing,
     validate_session_pins,
 )
-from scripts.movement_controller import MovementError
+from scripts.movement_controller import MovementAction, MovementError
 from scripts.nav_access_queue import QueueError
 
 
@@ -155,6 +155,24 @@ class KeyHoldTimingTests(unittest.TestCase):
         with self.assertRaisesRegex(MovementSessionError, "does not match"):
             _require_key_hold_timing(self.receipt(150), "w", 150)
 
+
+    def test_live_host_adapter_places_actual_hold_inside_action_result(self):
+        receipt = {
+            "action": {"keys": ["w"], "holdMilliseconds": 100},
+            "result": {"deliverySucceeded": True, "releaseSucceeded": True,
+                       "cancelled": False, "targetLost": False, "stateUncertain": False},
+            "recoveryRequired": False,
+            "completedAtUtc": NOW.isoformat(),
+            "inputEvents": [
+                {"kind": "keyDownInserted", "value": "w", "elapsedMilliseconds": 75.4093},
+                {"kind": "keyUpInserted", "value": "w", "elapsedMilliseconds": 188.4930},
+            ],
+        }
+        host = LiveHostAdapter(None, None)
+        with patch("scripts.run_movement_session._action", return_value={"result": receipt}):
+            actual = host.action(MovementAction("w", 100, 0, 0), Path("unused/action-1.json"))
+        self.assertAlmostEqual(actual["result"]["observedKeyHoldMilliseconds"], 113.0837)
+        self.assertNotIn("observedKeyHoldMilliseconds", actual)
 
 class MovementSessionTests(unittest.TestCase):
     def setUp(self):
