@@ -185,7 +185,8 @@ class ControllerEnsureTests(unittest.TestCase):
     def test_typed_owner_lifecycle_errors_are_preserved_without_recovery(self):
         from scripts.managed_controller_receipt import ManagedReceiptError
         reasons = ("managed-live-generation-absent", "managed-live-generation-not-unique",
-                   "managed-live-generation-exiting", "managed-process-identity-uncertain")
+                   "managed-live-generation-exiting", "managed-process-identity-uncertain",
+                   "managed-runtime-changed")
         for operation in (ensure_controller.ensure, ensure_controller.ensure_existing):
             for reason in reasons:
                 with self.subTest(operation=operation.__name__, reason=reason), \

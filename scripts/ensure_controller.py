@@ -199,6 +199,7 @@ def _verify_existing_owner(lab, config):
         if reason not in {
             "managed-live-generation-absent", "managed-live-generation-not-unique",
             "managed-live-generation-exiting", "managed-process-identity-uncertain",
+            "managed-runtime-changed",
         }:
             reason = "managed-owner-refused"
         raise DependencyUnavailable("controller", reason) from None
