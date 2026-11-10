@@ -96,6 +96,9 @@ class NativePoseTurnCompareTests(unittest.TestCase):
     def test_wraparound_is_small_candidate_and_model_did_not_change(self):
         result = turns.compare(self.before, self.after)
         self.assertEqual("candidate-only", result["status"])
+        self.assertEqual(VM, result["vmIdentity"])
+        self.assertEqual(INSTANCE, result["activeAgentInstanceId"])
+        self.assertEqual(EXPECTED_GAME["executableSha256"], result["gameSha256"])
         self.assertFalse(result["actorHeadingQualified"])
         self.assertEqual(2, result["changedMatrixCount"])
         self.assertEqual(3, result["timeBetweenCaptureEndsSeconds"])

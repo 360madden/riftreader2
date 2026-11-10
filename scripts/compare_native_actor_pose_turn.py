@@ -114,6 +114,9 @@ def compare(before_path, after_path):
         }
     return {
         "schemaVersion": 1, "status": "candidate-only", "lab": before["lab"],
+        "vmIdentity": before["vmIdentity"],
+        "activeAgentInstanceId": before["activeAgentInstanceId"],
+        "gameSha256": before["gameSha256"],
         "gameProcessId": before["gameProcessId"],
         "gameProcessStartUtcTicks": before["gameProcessStartUtcTicks"],
         "playerKeyDecimal": a["playerKeyDecimal"],

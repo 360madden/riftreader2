@@ -11,6 +11,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from scripts import compare_native_player_reads as tool
 
@@ -26,12 +27,18 @@ def source(field, *, at="2026-11-09T17:00:00Z", report_sha="A" * 64):
         metrics.update({"x": 10.0, "y": 20.0, "z": 30.0,
                         "ownerIdentityStatus": "player-component-chain-anchored",
                         "freshness": "unqualified"})
+    elif field == "actor-pose":
+        metrics.update({"actorAngleDegreesCandidate": 45.0, "actorHeadingQualified": False})
     else:
         def metric(value):
             return {"status": "calculated-candidate", "current": value, "maximum": 100}
         metrics.update({"health": metric(100), "energy": metric(90),
                         "mana": {"status": "unavailable", "current": None, "maximum": None}})
+    pose_paths = ({"sourceReport": str(Path.cwd() / "artifacts" / "pose-test" / "samples.json"),
+                   "summaryPath": str(Path.cwd() / "artifacts" / "pose-test" / "summary.json")}
+                  if field == "actor-pose" else {})
     return {
+        **pose_paths,
         "schemaVersion": 1, "status": "candidate-only", "lab": "lab2",
         "transport": "persistent-control-agent",
         "vmIdentity": copy.deepcopy(VM), "gameProcessId": 10876,
@@ -61,6 +68,10 @@ def pair(fields=("position", "vitals")):
     if "vitals" in fields:
         after["vitals"]["metrics"]["health"]["current"] = 85
         after["vitals"]["metrics"]["energy"]["current"] = 80
+    if "actor-pose" in fields:
+        folder = Path.cwd() / "artifacts" / "pose-test-after"
+        after["actor-pose"].update(sourceReport=str(folder / "samples.json"),
+                                   summaryPath=str(folder / "summary.json"))
     return before, after
 
 
@@ -104,6 +115,107 @@ class CompareNativePlayerReadsTests(unittest.TestCase):
                 else:
                     self.assertAlmostEqual(expected, angle)
                 self.assertEqual("same-owner-displacement-candidate", candidate["status"])
+
+    def pose_result(self):
+        return {"status": "candidate-only", "lab": "lab2", "vmIdentity": copy.deepcopy(VM),
+                "gameProcessId": 10876, "gameProcessStartUtcTicks": 639297512883473394,
+                "gameSha256": SHA,
+                "activeAgentInstanceId": AGENT, "playerKeyDecimal": UNIT,
+                "beforeSourceSha256": "A" * 64, "afterSourceSha256": "B" * 64,
+                "matrices": {"actorMatrix": {"deltaDegreesCandidate": 2.0}},
+                "actorHeadingQualified": False}
+
+    def test_pose_and_displacement_join_saved_candidates(self):
+        first, second = pair(("position", "actor-pose"))
+        pose = self.pose_result()
+        with patch.object(tool, "compare_pose_turn", return_value=pose) as joined:
+            result = compare(first, second)
+        self.assertEqual(["position", "actor-pose"], result["fieldsCompared"])
+        self.assertAlmostEqual(75.96375653207352,
+                               result["comparison"]["position"]["xzTravelAngleDegreesCandidate"])
+        self.assertIs(result["comparison"]["actor-pose"], pose)
+        self.assertFalse(result["comparison"]["actor-pose"]["actorHeadingQualified"])
+        joined.assert_called_once_with(Path(first["actor-pose"]["summaryPath"]),
+                                       Path(second["actor-pose"]["summaryPath"]))
+
+    def test_pose_join_rejects_source_identity_and_path_mismatch(self):
+        first, second = pair(("position", "actor-pose"))
+        first["actor-pose"]["sourceReport"] = str(Path.cwd() / "wrong.json")
+        with patch.object(tool, "compare_pose_turn") as joined, self.assertRaisesRegex(
+                ValueError, "pose-source-path-invalid"):
+            compare(first, second)
+        joined.assert_not_called()
+        for field, replacement, reason in (
+                ("beforeSourceSha256", "F" * 64, "pose-source-hash-mismatch"),
+                ("activeAgentInstanceId", "b" * 32, "pose-identity-mismatch"),
+                ("gameSha256", "F" * 64, "pose-identity-mismatch")):
+            first, second = pair(("position", "actor-pose"))
+            pose = self.pose_result()
+            pose[field] = replacement
+            with self.subTest(field=field), patch.object(
+                    tool, "compare_pose_turn", return_value=pose), self.assertRaisesRegex(
+                        ValueError, reason):
+                compare(first, second)
+        first, second = pair(("position", "actor-pose"))
+        with patch.object(tool, "compare_pose_turn",
+                          side_effect=tool.Blocked("pose-turn-source-hash-mismatch")), \
+                self.assertRaisesRegex(ValueError, "pose-source-invalid"):
+            compare(first, second)
+
+    def test_real_saved_pose_reports_join_position_displacement(self):
+        from scripts import fresh_native_actor_pose as pose_client
+        from tests.test_compare_native_actor_pose_turn import (
+            report as actor_report, stamp as actor_stamp, VM as actor_vm)
+        from tests.test_sample_current_native_vitals import EXPECTED_GAME
+
+        with TemporaryDirectory() as temporary:
+            before, after = pair(("position", "actor-pose"))
+            for index, (readout, actor, observed) in enumerate((
+                    (before, actor_report(179), 2),
+                    (after, actor_report(-179, start=3, end=4), 5))):
+                folder = Path(temporary) / str(index)
+                folder.mkdir()
+                source = folder / "samples.json"
+                raw = (json.dumps(actor, sort_keys=True, separators=(",", ":")) + "\n").encode()
+                source.write_bytes(raw)
+                source_hash = hashlib.sha256(raw).hexdigest().upper()
+                metrics = pose_client.validate_report(
+                    actor, pid=EXPECTED_GAME["processId"],
+                    ticks=EXPECTED_GAME["processStartUtcTicks"])
+                summary = {"schemaVersion": 1, "status": "candidate-only", "lab": "lab2",
+                           "transport": "persistent-control-agent",
+                           "vmIdentity": copy.deepcopy(actor_vm),
+                           "gameProcessId": EXPECTED_GAME["processId"],
+                           "gameProcessStartUtcTicks": EXPECTED_GAME["processStartUtcTicks"],
+                           "gameSha256": EXPECTED_GAME["executableSha256"],
+                           "activeAgentInstanceId": AGENT,
+                           "observedAtUtc": actor_stamp(observed),
+                           "sourceReport": str(source),
+                           "sourceReportSha256": source_hash,
+                           "metrics": dict(metrics, unitKey="123")}
+                summary_path = folder / "summary.json"
+                summary_path.write_text(json.dumps(summary), encoding="utf-8")
+                readout["unitKey"] = "123"
+                for field in ("position", "actor-pose"):
+                    row = readout[field]
+                    row.update(vmIdentity=copy.deepcopy(actor_vm),
+                               gameProcessId=EXPECTED_GAME["processId"],
+                               gameProcessStartUtcTicks=EXPECTED_GAME["processStartUtcTicks"],
+                               gameSha256=EXPECTED_GAME["executableSha256"],
+                               observedAtUtc=actor_stamp(observed))
+                    row["metrics"]["unitKey"] = "123"
+                readout["actor-pose"].update(
+                    sourceReport=str(source), summaryPath=str(summary_path),
+                    sourceReportSha256=source_hash)
+            result = compare(before, after)
+            self.assertEqual(["position", "actor-pose"], result["fieldsCompared"])
+            self.assertAlmostEqual(
+                2., result["comparison"]["actor-pose"]["matrices"][
+                    "actorMatrix"]["deltaDegreesCandidate"])
+            self.assertAlmostEqual(
+                75.96375653207352,
+                result["comparison"]["position"]["xzTravelAngleDegreesCandidate"])
+            self.assertFalse(result["comparison"]["actor-pose"]["actorHeadingQualified"])
 
     def test_selective_position_and_vitals_only(self):
         for fields, key in ((("position",), "position"), (("vitals",), "vitals")):

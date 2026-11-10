@@ -1,6 +1,6 @@
 """Compare two retained Lab2 native player readouts; strictly offline, candidate-only.
 
-Reads the JSON output of read_native_telemetry.py (--fields position/vitals).
+Reads saved read_native_telemetry.py output (position/vitals/actor-pose).
 Does not contact VMware, controllers, game, desktop, or the network. Values are
 not independent movement proof or evidence of passive field freshness.
 """
@@ -13,11 +13,19 @@ import json
 import math
 from pathlib import Path
 import re
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.compare_native_actor_pose_turn import compare as compare_pose_turn
+from scripts.vm_console_native import Blocked
 
 MAX_BYTES = 8_000_000
 SHA = re.compile(r"[0-9A-Fa-f]{64}\Z")
 KEY = re.compile(r"[1-9][0-9]{0,19}\Z")
-FIELDS = ("position", "vitals")
+FIELDS = ("position", "vitals", "actor-pose")
 RESOURCES = ("health", "energy", "mana")
 
 
@@ -183,6 +191,34 @@ def compare(before: dict, after: dict, before_sha: str, after_sha: str) -> dict:
         comparison["position"] = _position(before["position"], after["position"])
     if "vitals" in fields_a:
         comparison["vitals"] = _vitals(before["vitals"], after["vitals"])
+    if "actor-pose" in fields_a:
+        paths = []
+        for row in (before["actor-pose"], after["actor-pose"]):
+            summary = row.get("summaryPath")
+            source = row.get("sourceReport")
+            _need(isinstance(summary, str) and isinstance(source, str),
+                  "pose-source-path-invalid")
+            summary, source = Path(summary), Path(source)
+            _need(summary.is_absolute() and summary.name == "summary.json"
+                  and source == summary.with_name("samples.json"), "pose-source-path-invalid")
+            paths.append(summary)
+        try:
+            pose = compare_pose_turn(*paths)
+        except (Blocked, OSError, ValueError, TypeError, KeyError):
+            raise ValueError("native-player-compare-pose-source-invalid") from None
+        _need(pose["status"] == "candidate-only"
+              and pose["lab"] == "lab2"
+              and pose["vmIdentity"] == identity_a[0]
+              and pose["gameProcessId"] == identity_a[1]
+              and pose["gameProcessStartUtcTicks"] == identity_a[2]
+              and pose["gameSha256"].upper() == identity_a[3]
+              and pose["activeAgentInstanceId"] == identity_a[4]
+              and pose["playerKeyDecimal"] == unit_a,
+              "pose-identity-mismatch")
+        _need(pose["beforeSourceSha256"] == source_info["actor-pose"]["beforeReportSha256"]
+              and pose["afterSourceSha256"] == source_info["actor-pose"]["afterReportSha256"],
+              "pose-source-hash-mismatch")
+        comparison["actor-pose"] = pose
     return {
         "schemaVersion": 1, "status": "candidate-only",
         "mode": "offline-retained-native-readouts",
