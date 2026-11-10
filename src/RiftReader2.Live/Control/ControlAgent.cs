@@ -83,6 +83,8 @@ public sealed class ControlAgent
         Task<ControlNativeVitalsResponse>> nativeVitalsCapture;
     private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
         Task<ControlNativeXyzResponse>> nativeXyzCapture;
+    private readonly Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+        Task<ControlNativeOrientationResponse>> nativeOrientationCapture;
     private readonly Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease;
     private string PendingPath => Path.Combine(configuration.OutputDirectory, "pending.json");
 
@@ -99,7 +101,8 @@ public sealed class ControlAgent
             Task<ControlNativeVitalsResponse>> nativeVitalsCapture,
         Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
             Task<ControlNativeXyzResponse>> nativeXyzCapture)
-        : this(configuration, nativeVitalsCapture, nativeXyzCapture, AcquireNativeReadLeaseAsync) { }
+        : this(configuration, nativeVitalsCapture, nativeXyzCapture,
+            ControlNativeOrientation.CaptureAsync, AcquireNativeReadLeaseAsync) { }
 
     // Injectable lease is an explicit offline test seam; production uses the shared file lease.
     internal ControlAgent(ControlAgentConfiguration configuration,
@@ -108,11 +111,23 @@ public sealed class ControlAgent
         Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
             Task<ControlNativeXyzResponse>> nativeXyzCapture,
         Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease)
+        : this(configuration, nativeVitalsCapture, nativeXyzCapture,
+            ControlNativeOrientation.CaptureAsync, nativeReadLease) { }
+
+    internal ControlAgent(ControlAgentConfiguration configuration,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeVitalsResponse>> nativeVitalsCapture,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeXyzResponse>> nativeXyzCapture,
+        Func<ControlAgentConfiguration, ControlIdentityRequest, CancellationToken,
+            Task<ControlNativeOrientationResponse>> nativeOrientationCapture,
+        Func<ControlIdentityRequest, CancellationToken, Task<IAsyncDisposable>> nativeReadLease)
     {
         configuration.Validate();
         ArgumentNullException.ThrowIfNull(nativeReadLease);
         this.nativeReadLease = nativeReadLease;
         this.nativeXyzCapture = nativeXyzCapture;
+        this.nativeOrientationCapture = nativeOrientationCapture;
         this.nativeVitalsCapture = nativeVitalsCapture;
         this.configuration = configuration;
         Directory.CreateDirectory(configuration.OutputDirectory);
@@ -247,7 +262,7 @@ public sealed class ControlAgent
     internal async Task DispatchCommandAsync(NetworkStream stream, ControlCommand command, CancellationToken token)
     {
         Task? refusal = null;
-        if (command.Operation is "native-vitals" or "native-xyz")
+        if (command.Operation is "native-vitals" or "native-xyz" or "native-orientation")
         {
             lock (stateLock)
             {
@@ -306,6 +321,12 @@ public sealed class ControlAgent
                 token.ThrowIfCancellationRequested();
                 response = result with { InstanceId = instanceId };
             }
+            else if (command.Operation == "native-orientation")
+            {
+                var result = await nativeOrientationCapture(configuration, identity, token);
+                token.ThrowIfCancellationRequested();
+                response = result with { InstanceId = instanceId };
+            }
             else
             {
                 var result = await nativeVitalsCapture(configuration, identity, token);
@@ -335,6 +356,7 @@ public sealed class ControlAgent
                         freshIdentityVersion = 1,
                         nativeVitalsVersion = 1,
                         nativeXyzVersion = 1,
+                        nativeOrientationVersion = 1,
                         nativeReadLeaseVersion = NativeReadLeaseVersion,
                         gracefulShutdownVersion = 1,
                         target = Inspect(),

@@ -16,11 +16,19 @@
 | Priority | Implement and try | Accept only with |
 | --- | --- | --- |
 | **M0: facing baseline** | Try the historical V1 owner-yaw root on the current exact build with `probe_native_unit_manager.py --lab lab2 --historical-yaw-candidate`; read raw angle and cached owner XYZ, cross-check against RR2's current self position. If unavailable, sample current-build position matrices/slot17 render candidate instead. | Explicit current PID/start/build/unit, numeric finite candidate or honest unavailable reason, and captured **pre-turn** facing/matrix value. This is scaffolding, not claimed qualified body yaw. |
+| **M0.5: faster C# read path** | Expose current-build player-owned matrix candidate through guest `ControlAgent` `native-orientation` and authenticated host `/api/native-orientation` with the existing native read lease. | Offline C# + host tests pass; guest deploy and fresh live request still required. This is an unqualified matrix candidate, not a proven body yaw. |
 | **M1: pulse** | Recover single managed Lab2 controller, get fresh game PID/start/SHA and foreground screenshot, advancing addon/reader telemetry, then perform **one** reviewed `A` pulse of 100 ms. | Raw down/up timestamps separated **75–125 ms**, successful delivery, release, disarm, zero held keys and no recovery required. Expired guards mean pre-input blocked, not game rejection. |
 | **M2: paired evidence** | Capture post-release facing from the **same source and epoch** plus before/after screenshots at a fixed camera. Record source hashes, capture times and shortest signed candidate-angle delta. | Correct sequence, same process/build/owner, visible view delta if any, and explicit distinction between candidate yaw, camera, and XYZ. A valid pre-turn baseline is mandatory for turn-angle calculation. |
 | **M3: improve source** | If V1 root is absent or uncorrelated, use current actor slot17/world 3×3 and render matrix; validate direction with controlled A/D then camera-only negative control when ready. | Candidate changes with A and D in opposite directions and stays stable in no-input settle; promote only when enough evidence, never invent missing facing. |
 | **M4: angular calibration** | Repeat brief A/D pulses using consistent before/after candidate facing, shortest signed angular differences, actual measured hold. | Useful provisional angle/rate with candidate label; independently qualify actor/body mapping later. |
 | **M5: obstacle exit** | Once body facing and open path are confirmed, calibrate short `W` progress and guide out of the railing area. | Independently newer XYZ after release and a stable no-input settle; do not loop blindly into the barrier. |
+
+## Current execution notes (2026-11-10)
+
+- Historical yaw candidate probe, 59 Python tests, and baseline-first roadmap committed in `f45edfa`. Lab2 current-build matrices yielded two ~87.998° provisional values; historical V1 root remains unavailable on the new game build.
+- Before-turn Lab2 screenshot was captured at 08:31:30Z with SHA256 `B877B535E95F235184B5AEE6733BD3A1242BCC5576723FFCCA1F991164C477AF`; optional preview initially failed because system Python lacked Pillow. Installed Pillow 13.0.0 for `C:\\Python314\\python.exe` (user-level site-packages), verified interpreter/PATH and retried the preview workflow successfully. No input was sent in this workflow.
+- Joey reports typing during an A-turn attempt. Treat that attempt as **contaminated/inconclusive**, never as game-input rejection or successful player turning; use a new quiet/exclusively controlled window and fresh baseline before the next action.
+- New C# `native-orientation` and Python host route pass targeted offline tests. **Not yet deployed** to the live Lab2 guest; current running guest cannot be assumed to advertise this capability. Preserve running control services and coordinate a bounded deployment before using the endpoint in a live turn.
 
 ## Immediate timing diagnostic
 

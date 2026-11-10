@@ -177,11 +177,15 @@ class NativeXyzHttpTests(unittest.TestCase):
     def test_route_auth_and_strict_no_lease_identity(self):
         payload = {**EXPECTED_GAME, "executableSha256": EXPECTED_GAME["executableSha256"].lower(),
                    "machineName": "RIFT-LAB-2"}
-        self.assertEqual(401, self.request("POST", "/api/native-xyz", payload, token="wrong")[0])
-        self.assertEqual(409, self.request("POST", "/api/native-xyz", {**payload, "lease": "extra"})[0])
-        self.assertEqual([], self.gateway.calls)
-        self.assertEqual(200, self.request("POST", "/api/native-xyz", payload)[0])
-        self.assertEqual([("native-xyz", payload)], self.gateway.calls)
+        for operation in ("native-xyz", "native-orientation"):
+            with self.subTest(operation=operation):
+                route = "/api/" + operation
+                self.assertEqual(401, self.request("POST", route, payload, token="wrong")[0])
+                self.assertEqual(409, self.request("POST", route, {**payload, "lease": "extra"})[0])
+                before = len(self.gateway.calls)
+                self.assertEqual(200, self.request("POST", route, payload)[0])
+                self.assertEqual(before + 1, len(self.gateway.calls))
+                self.assertEqual((operation, payload), self.gateway.calls[-1])
 
 
 class NativeXyzGatewayTests(unittest.TestCase):
@@ -208,7 +212,7 @@ class NativeXyzGatewayTests(unittest.TestCase):
                     gateway.command("native-vitals", {})
 
     def test_native_lease_capability_is_checked_on_same_session_for_both_operations(self):
-        for operation in ("native-xyz", "native-vitals"):
+        for operation in ("native-xyz", "native-vitals", "native-orientation"):
             for value in (None, True, False, 0, 2, "1", 1.0):
                 with self.subTest(operation=operation, value=value), tempfile.TemporaryDirectory() as folder:
                     session = Mock(vm_identity=EXPECTED_VM, closed=False,
@@ -227,7 +231,7 @@ class NativeXyzGatewayTests(unittest.TestCase):
                     session.request.assert_called_once_with("status", {}, access=None)
 
     def test_native_instance_or_session_change_blocks_without_reconnect(self):
-        for operation in ("native-xyz", "native-vitals"):
+        for operation in ("native-xyz", "native-vitals", "native-orientation"):
             for kind in ("wrong-instance", "missing-instance", "replaced", "closed", "hello-changed"):
                 with self.subTest(operation=operation, kind=kind), tempfile.TemporaryDirectory() as folder:
                     session = Mock(vm_identity=EXPECTED_VM, closed=False,

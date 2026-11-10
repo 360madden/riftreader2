@@ -595,7 +595,7 @@ class AgentSession:
     @contextmanager
     def _admission(self, operation, access):
         # Fresh identity reads grant no input authority and need no queue lease.
-        if operation in ("identity", "native-vitals", "native-xyz"):
+        if operation in ("identity", "native-vitals", "native-xyz", "native-orientation"):
             if access is not None:
                 raise ControlHostError("read-only requests do not accept a control lease")
             yield None
@@ -697,11 +697,11 @@ class AgentSession:
         if self.closed:
             raise ControlHostError("guest control connection is closed")
         if operation not in (
-                "status", "identity", "native-vitals", "native-xyz", "capture", "arm", "action", "release", "stop", "recover"):
+                "status", "identity", "native-vitals", "native-xyz", "native-orientation", "capture", "arm", "action", "release", "stop", "recover"):
             raise ControlHostError("unsupported guest operation")
         if not isinstance(payload, dict):
             raise ControlHostError("command payload must be an object")
-        if operation in ("identity", "native-vitals", "native-xyz"):
+        if operation in ("identity", "native-vitals", "native-xyz", "native-orientation"):
             validate_identity_payload(payload)
             if payload["machineName"] != self.hello["machineName"]:
                 raise ControlHostError("identity machine does not match authenticated guest")
@@ -945,11 +945,11 @@ class AgentGateway:
 
     def command(self, operation: str, payload: dict | None = None, *, access=None) -> dict:
         session = self.session()
-        if operation in ("native-vitals", "native-xyz") and (
+        if operation in ("native-vitals", "native-xyz", "native-orientation") and (
                 not self.vm_guard.enabled or not isinstance(session.vm_identity, dict)):
             raise ControlHostError(operation + " requires an authenticated VM identity guard")
         def invoke():
-            if operation in ("native-vitals", "native-xyz"):
+            if operation in ("native-vitals", "native-xyz", "native-orientation"):
                 # Bind capability admission to THIS authenticated transport. Never
                 # silently reacquire another session between status and dispatch.
                 instance = session.hello.get("instanceId")
@@ -972,7 +972,7 @@ class AgentGateway:
 
         if operation == "arm":
             result = self.vm_guard.request(session.vm_identity, invoke, fast=False)
-        elif operation in ("action", "recover", "native-vitals", "native-xyz") or (self.exclusive_console and operation == "capture"):
+        elif operation in ("action", "recover", "native-vitals", "native-xyz", "native-orientation") or (self.exclusive_console and operation == "capture"):
             result = self.vm_guard.request(session.vm_identity, invoke, fast=True)
         else:
             result = invoke()
@@ -1206,6 +1206,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             "/api/identity": "identity",
             "/api/native-vitals": "native-vitals",
             "/api/native-xyz": "native-xyz",
+            "/api/native-orientation": "native-orientation",
         }
         operation = routes.get(self.path)
         if operation is None:
@@ -1218,7 +1219,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             access_kwargs = {"access": access} if access is not None else {}
             if operation in ("capture", "release", "stop", "recover") and payload != {}:
                 raise ControlHostError(f"{operation} request body must be an empty object")
-            if operation in ("identity", "native-vitals", "native-xyz"):
+            if operation in ("identity", "native-vitals", "native-xyz", "native-orientation"):
                 result = self.server.gateway.command(operation, validate_identity_payload(payload))
             elif operation == "capture":
                 result = self.server.gateway.capture(**access_kwargs)

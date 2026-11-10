@@ -30,7 +30,7 @@ public sealed class ControlNativeReadLaneTests
         });
         await fixture.Send("native-vitals", Expected);
         await started.Task.WaitAsync(TimeSpan.FromSeconds(3));
-        foreach (var operation in new[] { "action", "arm", "capture", "recover", "native-vitals", "native-xyz", "identity" })
+        foreach (var operation in new[] { "action", "arm", "capture", "recover", "native-vitals", "native-xyz", "native-orientation", "identity" })
         {
             await fixture.Send(operation, new { });
             using var refused = await fixture.Receive();
@@ -72,6 +72,9 @@ public sealed class ControlNativeReadLaneTests
     [InlineData("armed", "native-xyz")]
     [InlineData("action", "native-xyz")]
     [InlineData("recovery", "native-xyz")]
+    [InlineData("armed", "native-orientation")]
+    [InlineData("action", "native-orientation")]
+    [InlineData("recovery", "native-orientation")]
     public async Task UnsafeAdmissionRejectsBeforeInvokingNativeCapture(string state, string operation)
     {
         var calls = 0;
