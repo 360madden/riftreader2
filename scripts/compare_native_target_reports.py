@@ -75,10 +75,17 @@ def compare_reports(before: dict, after: dict, *, pid: int, ticks: int,
 
     first_present = first["status"] == "candidate"
     second_present = second["status"] == "candidate"
-    same_target = (first_present and second_present
-                   and first["unitKey"] == second["unitKey"])
+    same_target_key = (first_present and second_present
+                       and first["unitKey"] == second["unitKey"])
+    # A stable key alone cannot establish the same native target entity after
+    # object replacement/reuse. Do not publish resource or position deltas.
+    same_target = (same_target_key
+                   and before["observation"]["targetEntity"]
+                   == after["observation"]["targetEntity"])
     if same_target:
         continuity = "same-target-candidate"
+    elif same_target_key:
+        continuity = "target-entity-changed-candidate"
     elif first_present and second_present:
         continuity = "different-target-candidate"
     elif not first_present and second_present:
@@ -109,7 +116,8 @@ def compare_reports(before: dict, after: dict, *, pid: int, ticks: int,
     delta = None
     horizontal = distance = None
     if not same_target:
-        position_status = "unavailable-target-changed-or-missing"
+        position_status = ("unavailable-target-entity-changed" if same_target_key
+                           else "unavailable-target-changed-or-missing")
     elif first["positionCandidate"] is None or second["positionCandidate"] is None:
         position_status = "unavailable-position"
     elif before_position["componentAddress"] != after_position["componentAddress"]:

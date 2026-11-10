@@ -104,6 +104,18 @@ class NativeTargetComparisonTests(unittest.TestCase):
                                position["horizontalXZDistanceCandidate"])
         self.assertIn("movement/freshness unverified", position["qualification"])
 
+    def test_reused_unit_key_different_entity_withholds_all_deltas(self):
+        first, second = pair()
+        # Same key alone cannot prove owner continuity after target entity replacement.
+        second["observation"]["targetEntity"] += 0x1000
+        second["observation"]["targetPosition"]["position"]["x"] = 99.5
+        result = compare(first, second)
+        self.assertEqual("target-entity-changed-candidate", result["targetContinuity"])
+        self.assertIsNone(result["resources"]["health"]["deltaCurrentCandidate"])
+        self.assertIsNone(result["resources"]["energy"]["deltaCurrentCandidate"])
+        self.assertEqual("unavailable-target-entity-changed", result["position"]["status"])
+        self.assertIsNone(result["position"]["deltaCandidate"])
+
     def test_target_or_component_change_withholds_position_delta(self):
         first, second = pair()
         second["observation"]["targetPosition"]["componentAddress"] += 0x110
