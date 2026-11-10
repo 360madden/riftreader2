@@ -64,16 +64,36 @@ def _matrix(matrix, offset):
         raise Blocked("native-actor-pose-matrix-values-invalid") from None
     if bits != matrix["rawBits"]:
         raise Blocked("native-actor-pose-matrix-raw-mismatch")
-    for field in ("orthonormalError", "determinant", "yPlanarError",
-                  "planarAngleRadiansCandidate", "planarAngleDegreesCandidate"):
+    for field in ("orthonormalError", "determinant", "yPlanarError"):
+        value = matrix[field]
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise Blocked("native-actor-pose-matrix-diagnostics-invalid")
+    for field in ("planarAngleRadiansCandidate", "planarAngleDegreesCandidate"):
         value = matrix[field]
         if value is not None and (type(value) not in (int, float) or not math.isfinite(value)):
             raise Blocked("native-actor-pose-matrix-values-invalid")
+    orthonormal_error = max(
+        abs(sum(values[3 * row + col] * values[3 * other + col]
+                for col in range(3)) - (1 if row == other else 0))
+        for row in range(3) for other in range(3))
+    determinant = (values[0] * (values[4] * values[8] - values[5] * values[7])
+                   - values[1] * (values[3] * values[8] - values[5] * values[6])
+                   + values[2] * (values[3] * values[7] - values[4] * values[6]))
+    planar_error = max(abs(values[index]) for index in (1, 3, 5, 7))
+    planar_error = max(planar_error, abs(values[4] - 1),
+                       abs(values[8] - values[0]), abs(values[2] + values[6]))
+    for field, expected in (("orthonormalError", orthonormal_error),
+                            ("determinant", determinant), ("yPlanarError", planar_error)):
+        if not math.isclose(matrix[field], expected, rel_tol=1e-10, abs_tol=1e-8):
+            raise Blocked("native-actor-pose-matrix-diagnostics-invalid")
+    structural = max(orthonormal_error, abs(determinant - 1), planar_error) < 0.01
     angle = matrix["planarAngleDegreesCandidate"]
     radians = matrix["planarAngleRadiansCandidate"]
     if (matrix["status"] != "structural-y-planar-matrix-candidate"
             and (angle is not None or radians is not None)):
         raise Blocked("native-actor-pose-angle-unqualified")
+    if (matrix["status"] == "structural-y-planar-matrix-candidate") != structural:
+        raise Blocked("native-actor-pose-matrix-status-invalid")
     if angle is not None and not -180 <= angle <= 180:
         raise Blocked("native-actor-pose-angle-invalid")
     if matrix["status"] == "structural-y-planar-matrix-candidate":

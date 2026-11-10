@@ -152,6 +152,43 @@ class ActorPoseClientTests(unittest.TestCase):
             self.query()
         self.assert_not_published()
 
+    def test_matrix_diagnostics_and_structural_label_match_raw_values(self):
+        original = copy.deepcopy(self.report)
+        for field, corrupt in (("orthonormalError", 0.1),
+                               ("determinant", 0.95),
+                               ("yPlanarError", 0.5),
+                               ("orthonormalError", None)):
+            self.report = copy.deepcopy(original)
+            self.response["report"] = self.report
+            self.report["actorMatrix"][field] = corrupt
+            with self.subTest(field=field, value=corrupt), self.assertRaisesRegex(
+                    pose.Blocked, "matrix-diagnostics-invalid"):
+                self.query()
+
+        self.report = copy.deepcopy(original)
+        self.response["report"] = self.report
+        self.report["actorMatrix"].update(
+            status="unqualified-matrix-shape",
+            planarAngleRadiansCandidate=None, planarAngleDegreesCandidate=None)
+        with self.assertRaisesRegex(pose.Blocked, "matrix-status-invalid"):
+            self.query()
+
+        # A genuinely non-orthonormal matrix is admitted only as unqualified.
+        self.report = copy.deepcopy(original)
+        self.response["report"] = self.report
+        actor = self.report["actorMatrix"]
+        actor["rowMajorF32"] = [2., *actor["rowMajorF32"][1:]]
+        actor["rawBits"][0] = struct.unpack("<I", struct.pack("<f", 2.))[0]
+        actor.update(status="unqualified-matrix-shape", orthonormalError=3.,
+                     determinant=2., yPlanarError=1.,
+                     planarAngleRadiansCandidate=None, planarAngleDegreesCandidate=None)
+        self.report.update(actorFlags=1, normalRenderBranch=False, renderMatrix=None,
+                           renderStatus="alternate-reference-branch-not-followed",
+                           renderCompositionMaxAbsDelta=None)
+        summary, _ = self.query()
+        self.assertIsNone(summary["metrics"]["actorAngleDegreesCandidate"])
+        self.assertFalse(summary["metrics"]["actorHeadingQualified"])
+
     def test_alternate_branch_is_candidate_without_render(self):
         self.report.update(actorFlags=1, normalRenderBranch=False, renderMatrix=None,
                            renderStatus="alternate-reference-branch-not-followed",
