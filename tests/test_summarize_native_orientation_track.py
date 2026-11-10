@@ -70,6 +70,28 @@ class OrientationTrackTests(unittest.TestCase):
         self.assertEqual(value["sampledUnitKey"], "18446744073709551615")
         self.assertEqual(len(value["sources"][0]["sha256"]), 64)
 
+    def test_direct_guest_samples_and_mixed_cli_reports_are_comparable(self):
+        a, b = self.pair(170, -170)
+        raw = json.loads(a.read_text(encoding="utf-8"))["observation"]
+        raw["identity"]["executablePath"] = r"C:\RIFT\rift_x64.exe"
+        raw["identity"].pop("processName")
+        a.write_text(json.dumps(raw), encoding="utf-8")
+        mixed = s.compare((a, b))
+        self.assertEqual("direct-guest-control-observation", mixed["sources"][0]["sourceKind"])
+        self.assertEqual("wrapped-cli-observation", mixed["sources"][1]["sourceKind"])
+        self.assertAlmostEqual(20, mixed["pairs"][0]["primary"]["candidateMatrixAngleDeltaDegrees"], places=4)
+        second = json.loads(b.read_text(encoding="utf-8"))["observation"]
+        second["identity"]["executablePath"] = r"C:\RIFT\rift_x64.exe"
+        second["identity"].pop("processName")
+        b.write_text(json.dumps(second), encoding="utf-8")
+        direct = s.compare((a, b))
+        self.assertEqual(["direct-guest-control-observation"] * 2,
+                         [x["sourceKind"] for x in direct["sources"]])
+        raw["unexpected"] = "untrusted"
+        a.write_text(json.dumps(raw), encoding="utf-8")
+        with self.assertRaises(ValueError):
+            s.compare((a, b))
+
     def test_matrix_angle_wrap_and_branch_input_change(self):
         a, b = self.pair(170, -170)
         obj = json.loads(b.read_text(encoding="utf-8"))

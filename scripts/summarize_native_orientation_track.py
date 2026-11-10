@@ -69,11 +69,19 @@ def _read(path):
     if len(raw) > MAX_BYTES_PER_FILE:
         raise ValueError("orientation report exceeds size limit")
     value = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_pairs)
-    if (not isinstance(value, dict) or type(value.get("schemaVersion")) is not int
-            or value["schemaVersion"] != 1 or value.get("contractVersion") != CONTRACT
-            or value.get("status") != "complete"):
+    if not isinstance(value, dict):
         raise ValueError("invalid orientation report contract")
-    ob = value.get("observation")
+    direct_fields = {"identity", "startedAtUtc", "completedAtUtc", "unitKey",
+                     "componentAddress", "refreshHandleRaw", "refreshFlagRaw",
+                     "primary", "secondary", "qualification"}
+    if set(value) == direct_fields:
+        # Authenticated guest reads retain observations directly in samples.json.
+        ob, source_kind = value, "direct-guest-control-observation"
+    else:
+        if (type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1
+                or value.get("contractVersion") != CONTRACT or value.get("status") != "complete"):
+            raise ValueError("invalid orientation report contract")
+        ob, source_kind = value.get("observation"), "wrapped-cli-observation"
     if not isinstance(ob, dict) or ob.get("qualification") != QUALIFICATION:
         raise ValueError("missing candidate qualification")
     identity = ob.get("identity")
@@ -106,7 +114,7 @@ def _read(path):
             "primary": _matrix(ob.get("primary"), 0x60),
             "secondary": _matrix(ob.get("secondary"), 0x94),
             "sourceSha256": hashlib.sha256(raw).hexdigest().upper(),
-            "sourceBytes": len(raw)}
+            "sourceBytes": len(raw), "sourceKind": source_kind}
 
 
 def compare(paths, *, max_gap_seconds=5.0):
@@ -157,7 +165,7 @@ def compare(paths, *, max_gap_seconds=5.0):
             "sourceBuildSha256": GAME_SHA, "processIdentity": identity,
             "sampledUnitKey": first["unitKey"], "sourceCount": len(samples),
             "sources": [{"index": i, "sha256": s["sourceSha256"], "bytes": s["sourceBytes"],
-                         "startedAtUtc": s["started"].isoformat()} for i, s in enumerate(samples, 1)],
+                         "sourceKind": s["sourceKind"], "startedAtUtc": s["started"].isoformat()} for i, s in enumerate(samples, 1)],
             "acceptedPairCount": len(admitted),
             "primaryRawChangedPairs": sum(p["primary"]["rawBitsEqual"] is False for p in admitted),
             "secondaryRawChangedPairs": sum(p["secondary"]["rawBitsEqual"] is False for p in admitted),
