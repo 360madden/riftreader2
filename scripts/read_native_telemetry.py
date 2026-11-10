@@ -133,6 +133,11 @@ def read_once(lab: str, expected_host: str, *, fields=DEFAULT_FIELDS) -> dict:
     # Keep large unit keys lossless for JavaScript and other JSON consumers.
     sources = {field: dict(row, metrics=dict(row["metrics"], unitKey=key))
                for field, row in sources.items()}
+    if "smoothed-scalar" in sources:
+        source = Path(sources["smoothed-scalar"]["sourceReport"])
+        require(source.is_absolute() and source.name == "samples.json",
+                "native-read-scalar-source-invalid")
+        sources["smoothed-scalar"]["summaryPath"] = str(source.with_name("summary.json"))
     return {"schemaVersion": 1, "status": "candidate-only", "targetId": lab,
             "ownerHost": OWNER_HOST, "mode": "native-read-only", "atomic": False,
             "luaReaderUsed": False, "screenshotUsed": False,

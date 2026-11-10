@@ -35,7 +35,9 @@ def sample(kind):
            "activeAgentInstanceId": INSTANCE, "gameProcessId": GAME["processId"],
            "gameProcessStartUtcTicks": GAME["processStartUtcTicks"], "gameSha256": GAME_SHA,
            "observedAtUtc": "2026-11-09T15:50:00.0000001Z",
-           "sourceReport": kind + ".json", "sourceReportSha256": "B" * 64,
+           "sourceReport": (str(Path.cwd() / "artifacts" / "scalar-test" / "samples.json")
+                            if kind == "smoothed-scalar" else kind + ".json"),
+           "sourceReportSha256": "B" * 64,
            "limitation": "candidate-only"}
     row["metrics"] = ({"unitKey": KEY, "x": 1.5, "y": 2.5, "z": 3.5,
                        "freshness": "unqualified"} if kind == "position" else
@@ -225,10 +227,22 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.assertEqual(KEY, result["unitKey"])
         self.assertEqual(2.5, result["smoothed-scalar"]["metrics"]["targetCandidate"])
         self.assertFalse(result["smoothed-scalar"]["metrics"]["headingQualified"])
+        source = Path(result["smoothed-scalar"]["sourceReport"])
+        self.assertEqual(str(source.with_name("summary.json")),
+                         result["smoothed-scalar"]["summaryPath"])
+        self.assertNotIn("summaryPath", self.scalar)  # Do not mutate saved source.
         self.scalar_query.assert_called_once_with("native-config", VM, GAME, cli.CONFIGS["lab2"], lab="lab2")
         self.xyz_query.assert_not_called()
         self.vitals_query.assert_not_called()
         self.pose_query.assert_not_called()
+
+    def test_scalar_summary_requires_real_absolute_samples_sibling(self):
+        for source in ("relative/samples.json", str(Path.cwd() / "other.json")):
+            with self.subTest(source=source):
+                self.client.request.side_effect = [self.before, self.after]
+                self.scalar["sourceReport"] = source
+                with self.assertRaisesRegex(ValueError, "scalar-source-invalid"):
+                    cli.read_once("lab2", "AMD-DESKTOP", fields=("smoothed-scalar",))
 
     def test_scalar_cannot_merge_wrong_owner_or_epoch(self):
         self.scalar["metrics"]["unitKey"] = "999"
