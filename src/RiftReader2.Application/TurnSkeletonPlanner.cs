@@ -92,7 +92,8 @@ public static class TurnSkeletonPlanner
     public static TurnSkeletonProbeAnalysis AnalyzeAProbe(
         TurnSkeletonFacing before, TurnSkeletonFacing after,
         ControlAction action, ControlExecutionResult execution,
-        bool uncontaminatedInputWindow, double minimumChangeDegrees = 0.5)
+        double observedKeyHoldMilliseconds, bool uncontaminatedInputWindow,
+        double minimumChangeDegrees = 0.5)
     {
         ValidateFacing(before);
         ValidateFacing(after);
@@ -106,6 +107,12 @@ public static class TurnSkeletonPlanner
             || action.WheelNotches != 0 || action.ClickTarget is not null)
             throw new ArgumentException("Expected one bounded, keyboard-only A probe.", nameof(action));
         BoundedControlExecutor.Validate(action);
+        // Observed key-down/up timing, not executor wall time or nominal hold.
+        if (!double.IsFinite(observedKeyHoldMilliseconds)
+            || observedKeyHoldMilliseconds <= 0 || observedKeyHoldMilliseconds > 250
+            || Math.Abs(observedKeyHoldMilliseconds - action.HoldMilliseconds)
+                > Math.Max(25, action.HoldMilliseconds * 0.25))
+            return new("observed-key-hold-invalid", 0, null);
         if (before.GameProcessId != after.GameProcessId
             || before.GameStartUtcTicks != after.GameStartUtcTicks
             || !string.Equals(before.UnitKey, after.UnitKey, StringComparison.Ordinal)
@@ -125,7 +132,7 @@ public static class TurnSkeletonPlanner
             return new("no-measurable-candidate-turn", delta, null);
         if (Math.Abs(delta) == 180)
             return new("ambiguous-half-turn", delta, null);
-        var rate = Math.Abs(delta) * 1000 / action.HoldMilliseconds;
+        var rate = Math.Abs(delta) * 1000 / observedKeyHoldMilliseconds;
         if (rate is < 0.1 or > 10000)
             return new("candidate-rate-out-of-bounds", delta, null);
         return new("candidate-rate-observed", delta,

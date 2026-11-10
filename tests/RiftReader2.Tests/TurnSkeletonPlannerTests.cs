@@ -91,12 +91,15 @@ public sealed class TurnSkeletonPlannerTests
         var before = Facing(358) with { ObservedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-2) };
         var after = before with { CandidateDegrees = 3, ObservedAtUtc = before.ObservedAtUtc.AddSeconds(1) };
         var result = TurnSkeletonPlanner.AnalyzeAProbe(
-            before, after, TurnSkeletonPlanner.ProbeA(), Released, true);
+            before, after, TurnSkeletonPlanner.ProbeA(), Released, 100, true);
         Assert.Equal("candidate-rate-observed", result.Status);
         Assert.Equal(5, result.SignedCandidateDeltaDegrees, 8);
         Assert.Equal(50, result.Calibration!.CandidateDegreesPerSecond, 8);
         Assert.True(result.Calibration.AIncreasesCandidateDegrees);
         Assert.Equal("candidate-matrix-calibration-only", result.Qualification);
+        var slower = TurnSkeletonPlanner.AnalyzeAProbe(before, after,
+            TurnSkeletonPlanner.ProbeA(), Released, 120, true);
+        Assert.Equal(5000.0 / 120, slower.Calibration!.CandidateDegreesPerSecond, 8);
         var next = TurnSkeletonPlanner.PlanNext(after, 13, result.Calibration);
         Assert.Equal("a", Assert.Single(next.Action!.Keys));
         Assert.Equal(125, next.Action.HoldMilliseconds);
@@ -108,10 +111,10 @@ public sealed class TurnSkeletonPlannerTests
         var before = Facing(10) with { ObservedAtUtc = DateTimeOffset.UtcNow.AddSeconds(-2) };
         var after = before with { CandidateDegrees = 5, ObservedAtUtc = before.ObservedAtUtc.AddSeconds(1) };
         var negative = TurnSkeletonPlanner.AnalyzeAProbe(before, after,
-            TurnSkeletonPlanner.ProbeA(), Released, true);
+            TurnSkeletonPlanner.ProbeA(), Released, 100, true);
         Assert.False(negative.Calibration!.AIncreasesCandidateDegrees);
         var unchanged = TurnSkeletonPlanner.AnalyzeAProbe(before,
-            after with { CandidateDegrees = 10.1 }, TurnSkeletonPlanner.ProbeA(), Released, true);
+            after with { CandidateDegrees = 10.1 }, TurnSkeletonPlanner.ProbeA(), Released, 100, true);
         Assert.Equal("no-measurable-candidate-turn", unchanged.Status);
         Assert.Null(unchanged.Calibration);
     }
@@ -123,17 +126,19 @@ public sealed class TurnSkeletonPlannerTests
         var after = before with { CandidateDegrees = 95, ObservedAtUtc = before.ObservedAtUtc.AddSeconds(1) };
         var probe = TurnSkeletonPlanner.ProbeA();
         Assert.Equal("contaminated-input-window",
-            TurnSkeletonPlanner.AnalyzeAProbe(before, after, probe, Released, false).Status);
+            TurnSkeletonPlanner.AnalyzeAProbe(before, after, probe, Released, 100, false).Status);
         Assert.Equal("input-or-release-unconfirmed",
             TurnSkeletonPlanner.AnalyzeAProbe(before, after, probe,
-                Released with { ReleaseSucceeded = false }, true).Status);
+                Released with { ReleaseSucceeded = false }, 100, true).Status);
         Assert.Equal("nonfresh-observation",
             TurnSkeletonPlanner.AnalyzeAProbe(before, after with { IsCached = true },
-                probe, Released, true).Status);
+                probe, Released, 100, true).Status);
         Assert.Equal("different-source-or-epoch",
             TurnSkeletonPlanner.AnalyzeAProbe(before, after with { GameProcessId = 1234 },
-                probe, Released, true).Status);
+                probe, Released, 100, true).Status);
+        Assert.Equal("observed-key-hold-invalid",
+            TurnSkeletonPlanner.AnalyzeAProbe(before, after, probe, Released, 200, true).Status);
         Assert.Throws<ArgumentException>(() => TurnSkeletonPlanner.AnalyzeAProbe(
-            before, after, new(["d"], 100), Released, true));
+            before, after, new(["d"], 100), Released, 100, true));
     }
 }
