@@ -23,6 +23,20 @@ python scripts/physical_rift.py --expected-host LEGION
 # With multiple physical RIFT instances, append --physical-pid <actual-PID>.
 ```
 
+Native read-only telemetry now has a **single physical-only command** on the verified host:
+
+```powershell
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
+# Also: position, orientation, player-context, selected-target, stats.
+# Add --physical-pid PID if more than one local RIFT instance is running.
+```
+
+It rechecks local process/build identity, passes exact PID/start epoch to the .NET
+reader and writes a new unique JSON artifact; no game input, screenshot, guest,
+or foreground change. Build `src/RiftReader2.Live` with the pinned .NET 10 SDK
+first if `native-reader-not-built` is returned. The results remain **native
+candidates**, not passive-freshness, changed-state or restart-qualified values.
+
 For reviewed visual observation, use `scripts/observe_target.py --target
 physical-amd-desktop --expected-host AMD-DESKTOP` (or the matching LEGION
 pair). That capture requires explicit desktop-ownership/focus authorization:

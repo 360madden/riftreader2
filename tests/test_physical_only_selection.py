@@ -1,6 +1,9 @@
 """Offline physical-only selection tests; no game input or VMware dependencies."""
 import io
 import json
+from pathlib import Path
+import subprocess
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -107,6 +110,89 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 result = physical.select_physical(**kwargs)
             self.assertEqual(result["status"], "blocked")
             self.assertEqual(result["reason"], reason)
+
+    def test_native_vitals_reads_only_selected_local_pid_and_epoch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "candidate.json"
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[0], str(executable))
+                self.assertEqual(command[1:6], ["sample-current-vitals", "--pid", "123",
+                                                 "--start-ticks", IDENTITY["processStartUtcTicks"]])
+                self.assertEqual(command[-2:], ["--output", str(destination)])
+                self.assertFalse(kwargs.get("shell", False))
+                destination.write_text("{}", encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0,
+                                                   json.dumps({"status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "vitals", destination)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeRead"], "vitals")
+        self.assertIn("candidate-only", result["qualification"])
+
+    def test_native_read_fails_closed_before_launch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "existing.json"
+            destination.write_text("original", encoding="utf-8")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run") as runner:
+                result = physical.read_native(selected, "vitals", destination)
+                self.assertEqual(result["reason"], "native-output-exists")
+                result = physical.read_native({**selected, "target": {**IDENTITY,
+                                              "hostName": "LEGION"}}, "vitals")
+                self.assertEqual(result["reason"], "invalid-local-process-identity")
+                result = physical.read_native({**selected, "status": "blocked"}, "vitals")
+                self.assertEqual(result["status"], "blocked")
+                runner.assert_not_called()
+            self.assertEqual(destination.read_text(encoding="utf-8"), "original")
+
+    def test_native_reader_failure_never_promotes_candidate(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", return_value=subprocess.CompletedProcess(
+                     [], 2, "", "wrong-build")):
+                result = physical.read_native(selected, "position", Path(temporary) / "new.json")
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "native-reader-failed")
+        self.assertEqual(result["exitCode"], 2)
+
+    def test_position_stream_uses_final_summary_not_first_sample(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "position.json"
+            def fake_run(command, **kwargs):
+                destination.write_text("{}", encoding="utf-8")
+                samples = [json.dumps({"recordType": "native-current-position-candidate/1",
+                                       "observation": {"x": 1}})]
+                samples.append(json.dumps({"recordType": "native-current-position-candidate-summary/1",
+                                           "status": "complete", "output": str(destination)}))
+                return subprocess.CompletedProcess(command, 0, "\n".join(samples) + "\n", "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "position", destination)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeSummary"]["recordType"],
+                         "native-current-position-candidate-summary/1")
+
+    def test_native_read_cli_keeps_json_receipt(self):
+        with patch.object(physical, "select_physical", return_value={"status": "ready"}), \
+             patch.object(physical, "read_native", return_value={"status": "complete", "nativeRead": "stats"}) as reader, \
+             redirect_stdout(io.StringIO()) as output:
+            code = physical.main(["--expected-host", "AMD-DESKTOP", "--read-native", "stats"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(output.getvalue())["nativeRead"], "stats")
+        reader.assert_called_once_with({"status": "ready"}, "stats", None)
 
     def test_cli_default_is_current_physical_host_and_json(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
