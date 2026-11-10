@@ -1,5 +1,19 @@
 # RiftReader2 repository instructions
 
+## Strict one-machine session boundary (Joey, 2026-11-10)
+
+At the beginning of every RR2 session, verify the **actual computer identity**
+with a machine-local command before working. The verified computer is the ONLY
+machine this session may inspect, develop on, deploy to, or control. An
+AMD-DESKTOP session must never access LEGION; a LEGION session must never
+access AMD-DESKTOP. This also applies to subagents, Workbridge connectors,
+repository sync, SDK installation, testing, and deployment. A statement that
+RR2 supports both hosts is **not** authorization to operate both hosts in one
+session. Switching or performing any cross-host work requires Joey's fresh,
+**explicit request**. If the local target is unavailable, report the blocker or
+do host-local offline work; never hop to another machine. In all status reports,
+show the actual verified active machine.
+
 ## Active RIFT target: physical Windows hosts only (Joey, 2026-11-10)
 
 For new RR2 live discovery, observation, telemetry, and supervised input work, use

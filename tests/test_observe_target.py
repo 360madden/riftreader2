@@ -19,11 +19,31 @@ class TargetRoutingTests(unittest.TestCase):
         return {"status": "verified-awaiting-visual-review", "targetId": target,
                 "workflow": workflow, "image": "image.bmp", "imageSha256": "A" * 64}
 
+    def test_retired_vm_targets_are_denied_by_default_without_adapter_calls(self):
+        for target in ("lab1", "lab2"):
+            with self.subTest(target=target), \
+                 patch.object(tool, "_capture_vmware") as vm, \
+                 patch.object(tool, "_capture_host_preview") as host:
+                with self.assertRaisesRegex(ValueError, "vmware-retired-use-physical-rift"):
+                    tool.observe(target, "AMD-DESKTOP")
+                vm.assert_not_called()
+                host.assert_not_called()
+
+    def test_vm_cli_requires_explicit_archival_flag(self):
+        output = io.StringIO()
+        with patch.object(tool, "_capture_vmware") as vm, \
+             patch.object(tool, "_capture_host_preview") as host, redirect_stdout(output):
+            code = tool.main(["--target", "lab2", "--expected-host", "AMD-DESKTOP"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.getvalue())["reason"], "vmware-retired-use-physical-rift")
+        vm.assert_not_called()
+        host.assert_not_called()
+
     def test_wrong_machine_blocks_before_either_adapter(self):
         with patch.object(tool.socket, "gethostname", return_value="LEGION"), patch.object(
                 tool, "_capture_vmware") as vm, patch.object(tool, "_capture_physical") as physical:
             with self.assertRaisesRegex(ValueError, "host-mismatch"):
-                tool.observe("lab2", "AMD-DESKTOP")
+                tool.observe("lab2", "AMD-DESKTOP", historical_vm=True)
             vm.assert_not_called()
             physical.assert_not_called()
 
@@ -37,14 +57,14 @@ class TargetRoutingTests(unittest.TestCase):
     def test_lab2_defaults_to_capture_only_once(self):
         with patch.object(tool, "_capture_vmware", return_value=self.result()) as vm, patch.object(
                 tool, "_capture_physical") as physical:
-            result = tool.observe("lab2", "amd-desktop", Path("fresh"))
+            result = tool.observe("lab2", "amd-desktop", Path("fresh"), historical_vm=True)
         vm.assert_called_once_with("lab2", Path("fresh"), False)
         physical.assert_not_called()
         self.assertEqual(result["ownerHost"], "AMD-DESKTOP")
 
     def test_native_read_is_explicit(self):
         with patch.object(tool, "_capture_vmware", return_value=self.result()) as vm:
-            tool.observe("lab2", "AMD-DESKTOP", native_vitals=True)
+            tool.observe("lab2", "AMD-DESKTOP", native_vitals=True, historical_vm=True)
         vm.assert_called_once_with("lab2", None, True)
 
     def test_physical_does_not_touch_vmware(self):
@@ -67,7 +87,7 @@ class TargetRoutingTests(unittest.TestCase):
         with patch.object(tool, "_capture_vmware") as vm, \
              patch.object(tool, "_capture_physical") as physical:
             with self.assertRaisesRegex(ValueError, "physical-pid-incompatible-target"):
-                tool.observe("lab2", "AMD-DESKTOP", physical_pid=123)
+                tool.observe("lab2", "AMD-DESKTOP", physical_pid=123, historical_vm=True)
             for pid in (True, 0, -1, 4294967296, "123"):
                 with self.subTest(pid=pid), self.assertRaisesRegex(ValueError, "invalid-physical-pid"):
                     tool.observe("physical-amd-desktop", "AMD-DESKTOP", physical_pid=pid)
@@ -96,20 +116,20 @@ class TargetRoutingTests(unittest.TestCase):
             with self.subTest(target=target), patch.object(tool, "_capture_vmware") as vm, patch.object(
                     tool, "_capture_physical") as physical:
                 with self.assertRaisesRegex(ValueError, "not-yet-qualified"):
-                    tool.observe(target, "AMD-DESKTOP", **opts)
+                    tool.observe(target, "AMD-DESKTOP", historical_vm=(target == "lab1"), **opts)
                 vm.assert_not_called()
                 physical.assert_not_called()
 
     def test_invalid_preview_width_does_not_capture(self):
         with patch.object(tool, "_capture_vmware") as vm:
             with self.assertRaisesRegex(ValueError, "invalid-preview-width"):
-                tool.observe("lab2", "AMD-DESKTOP", with_preview=True, preview_width=10)
+                tool.observe("lab2", "AMD-DESKTOP", with_preview=True, preview_width=10, historical_vm=True)
             vm.assert_not_called()
 
     def test_wrong_target_receipt_is_not_published(self):
         with patch.object(tool, "_capture_vmware", return_value=self.result("lab1")):
             with self.assertRaisesRegex(ValueError, "adapter-target-mismatch"):
-                tool.observe("lab2", "AMD-DESKTOP")
+                tool.observe("lab2", "AMD-DESKTOP", historical_vm=True)
 
     def test_blocked_adapter_is_preserved_without_retry_or_preview(self):
         blocked = {"status": "blocked", "reason": "UI_TURN_BUSY",
@@ -124,7 +144,7 @@ class TargetRoutingTests(unittest.TestCase):
     def test_preview_attaches_to_single_verified_capture(self):
         with patch.object(tool, "_capture_vmware", return_value=self.result()) as vm, patch.object(
                 tool, "_preview", return_value={"nonAuthoritative": True}) as preview:
-            result = tool.observe("lab2", "AMD-DESKTOP", with_preview=True)
+            result = tool.observe("lab2", "AMD-DESKTOP", with_preview=True, historical_vm=True)
         vm.assert_called_once()
         preview.assert_called_once()
         self.assertTrue(result["preview"]["nonAuthoritative"])
@@ -138,7 +158,7 @@ class TargetRoutingTests(unittest.TestCase):
              patch.object(tool, "_paired_preview", return_value=pair) as paired, \
              patch.object(tool, "_preview") as old_preview:
             result = tool.observe("lab2", "AMD-DESKTOP", with_preview=True,
-                                  preview_detail_crop=(0, 0, 850, 250))
+                                  preview_detail_crop=(0, 0, 850, 250), historical_vm=True)
         capture.assert_called_once()
         paired.assert_called_once_with(result, 840, (0, 0, 850, 250))
         old_preview.assert_not_called()
@@ -151,7 +171,7 @@ class TargetRoutingTests(unittest.TestCase):
         with patch.object(tool, "_capture_vmware", return_value=blocked) as capture, \
              patch.object(tool, "_paired_preview") as paired:
             result = tool.observe("lab2", "AMD-DESKTOP", with_preview=True,
-                                  preview_detail_crop=(0, 0, 850, 250))
+                                  preview_detail_crop=(0, 0, 850, 250), historical_vm=True)
         capture.assert_called_once()
         paired.assert_not_called()
         self.assertNotIn("detailPreview", result)
@@ -159,7 +179,7 @@ class TargetRoutingTests(unittest.TestCase):
     def test_detail_crop_requires_explicit_preview_before_capture(self):
         with patch.object(tool, "_capture_vmware") as capture:
             with self.assertRaisesRegex(ValueError, "detail-crop-requires-preview"):
-                tool.observe("lab2", "AMD-DESKTOP", preview_detail_crop=(0, 0, 850, 250))
+                tool.observe("lab2", "AMD-DESKTOP", preview_detail_crop=(0, 0, 850, 250), historical_vm=True)
             capture.assert_not_called()
 
     def test_invalid_detail_crop_fails_before_capture(self):
@@ -169,7 +189,7 @@ class TargetRoutingTests(unittest.TestCase):
             with self.subTest(crop=crop), patch.object(tool, "_capture_vmware") as capture:
                 with self.assertRaisesRegex(ValueError, "invalid-preview-crop"):
                     tool.observe("lab2", "AMD-DESKTOP", with_preview=True,
-                                 preview_detail_crop=crop)
+                                 preview_detail_crop=crop, historical_vm=True)
                 capture.assert_not_called()
 
     def test_cli_rejects_crop_without_preview_before_capture(self):
@@ -189,7 +209,7 @@ class TargetRoutingTests(unittest.TestCase):
              patch.object(tool, "_paired_preview", return_value=pair) as paired, \
              redirect_stdout(out):
             code = tool.main(["--target", "lab2", "--expected-host", "AMD-DESKTOP",
-                              "--preview", "--preview-detail-crop", "0", "0", "850", "250"])
+                              "--allow-historical-vm", "--preview", "--preview-detail-crop", "0", "0", "850", "250"])
         self.assertEqual(code, 0)
         result = json.loads(out.getvalue())
         capture.assert_called_once()
@@ -204,7 +224,7 @@ class TargetRoutingTests(unittest.TestCase):
         with patch.object(tool, "_capture_host_preview", return_value=receipt) as host, \
              patch.object(tool, "_capture_vmware") as vm, \
              patch.object(tool, "_capture_physical") as physical:
-            result = tool.observe("lab2", "AMD-DESKTOP", host_preview=True)
+            result = tool.observe("lab2", "AMD-DESKTOP", host_preview=True, historical_vm=True)
         host.assert_called_once_with("lab2", "AMD-DESKTOP", None)
         vm.assert_not_called()
         physical.assert_not_called()
@@ -225,7 +245,7 @@ class TargetRoutingTests(unittest.TestCase):
                  patch.object(tool, "_capture_host_preview") as host, \
                  patch.object(tool, "_capture_vmware") as vm:
                 with self.assertRaisesRegex(ValueError, "host-preview-incompatible-options"):
-                    tool.observe(target, "AMD-DESKTOP", host_preview=True, **options)
+                    tool.observe(target, "AMD-DESKTOP", host_preview=True, historical_vm=(target != "physical-amd-desktop"), **options)
                 host.assert_not_called()
                 vm.assert_not_called()
 
@@ -240,7 +260,7 @@ class TargetRoutingTests(unittest.TestCase):
                  patch.object(tool, "_capture_host_preview",
                               return_value=dict(baseline, **changes)):
                 with self.assertRaisesRegex(ValueError, "host-preview-invalid-receipt"):
-                    tool.observe("lab2", "AMD-DESKTOP", host_preview=True)
+                    tool.observe("lab2", "AMD-DESKTOP", host_preview=True, historical_vm=True)
 
     def test_host_preview_cli_preserves_non_authoritative_status(self):
         receipt = {"status": "captured-nonauthoritative", "lab": "lab1",
@@ -249,7 +269,7 @@ class TargetRoutingTests(unittest.TestCase):
         with patch.object(tool, "_capture_host_preview", return_value=receipt), \
              patch.object(tool, "_capture_vmware") as vm, redirect_stdout(out):
             code = tool.main(["--target", "lab1", "--expected-host", "AMD-DESKTOP",
-                              "--host-preview"])
+                              "--allow-historical-vm", "--host-preview"])
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out.getvalue())["status"], "captured-nonauthoritative")
         self.assertFalse(json.loads(out.getvalue())["movementEligible"])
@@ -260,7 +280,8 @@ class TargetRoutingTests(unittest.TestCase):
         failure.details = {"phase": "run", "errorType": "InspectionBlocked"}
         out = io.StringIO()
         with patch.object(tool, "_capture_vmware", side_effect=failure), redirect_stdout(out):
-            code = tool.main(["--target", "lab2", "--expected-host", "AMD-DESKTOP"])
+            code = tool.main(["--target", "lab2", "--expected-host", "AMD-DESKTOP",
+                              "--allow-historical-vm"])
         result = json.loads(out.getvalue())
         self.assertEqual(code, 2)
         self.assertEqual(result["reason"], "active request prevents capture")

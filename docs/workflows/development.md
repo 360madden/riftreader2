@@ -6,7 +6,10 @@ The default is a short path to a working RR2 feature.
 ## Current live workflow: physical RIFT only (2026-11-10)
 
 The production RR2 observation target is the actual Windows host running RIFT:
-**AMD-DESKTOP** or **LEGION**. Verify the machine name first, then pin one local
+**AMD-DESKTOP** or **LEGION**, but **only the verified host for this session**.
+Never use the other host's connector, subagent, repository, game, or installer
+unless Joey explicitly requests cross-host work. Verify the machine name first,
+then pin one local
 `rift_x64` PID and its start/build/window identity. Do not substitute a VMware
 guest, start lab controllers, or fall back to VM after a physical-host blocker.
 Start with the read-only, physical-only selector. It does **not** capture a
@@ -67,7 +70,10 @@ candidate data honestly. A concise evidence note is enough for a useful finding.
 
 - PowerShell 7 (`pwsh`).
 - The exact .NET SDK selected by `global.json` (`10.0.302`); SDK roll-forward is
-  disabled.
+  disabled. On verified LEGION, the 10.0.302 SDK lives at
+  `C:\work\tools\dotnet\10.0.302\dotnet.exe`; invoke it directly for RR2.
+  Unqualified `dotnet` still selects the separate 10.0.403 installation on that
+  host, which cannot satisfy the RR2 pin. Do not globally change PATH.
 - Python with `lupa==2.8` and its Lua 5.1 module for addon and cross-language
   contract tests.
 - Repository root `C:\work\riftreader2`.
@@ -80,7 +86,13 @@ email `360madden@gmail.com`; do not change global Git configuration.
 ```powershell
 Set-Location -LiteralPath 'C:\work\riftreader2'
 git status --short --branch
-dotnet --version
+if ($env:COMPUTERNAME -eq 'LEGION') {
+    & 'C:\work\tools\dotnet\10.0.302\dotnet.exe' --version
+} elseif ($env:COMPUTERNAME -eq 'AMD-DESKTOP') {
+    dotnet --version
+} else {
+    throw 'RR2 physical host must be AMD-DESKTOP or LEGION'
+}
 ```
 
 Preserve unrelated changes. Generated analysis belongs under `artifacts/`.

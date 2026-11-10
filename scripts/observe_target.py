@@ -54,7 +54,8 @@ def _paired_preview(result, width, crop):
 
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
-            preview_detail_crop=None, host_preview=False, physical_pid=None):
+            preview_detail_crop=None, host_preview=False, physical_pid=None,
+            historical_vm=False):
     started = time.perf_counter()
     if target_id not in TARGETS:
         raise ValueError("unknown-target")
@@ -80,6 +81,8 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
                 or not 0 <= box[0] < box[2] <= 8192
                 or not 0 <= box[1] < box[3] <= 8192):
             raise ValueError("invalid-preview-crop")
+    if workflow == "vmware" and historical_vm is not True:
+        raise ValueError("vmware-retired-use-physical-rift")
     if host_preview:
         if workflow != "vmware" or native_vitals or allow_foreground_change or with_preview or preview_detail_crop is not None:
             raise ValueError("host-preview-incompatible-options")
@@ -130,7 +133,9 @@ def main(argv=None):
     parser.add_argument("--target", required=True, choices=tuple(TARGETS))
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--output", type=Path, help="fresh absolute directory; omitted creates a unique artifact path")
-    parser.add_argument("--native-vitals", action="store_true", help="Lab 2 only; retain existing candidate qualifications")
+    parser.add_argument("--native-vitals", action="store_true", help="historical Lab 2 only; retain existing candidate qualifications")
+    parser.add_argument("--allow-historical-vm", action="store_true",
+                        help="explicit archival diagnostic opt-in for retired VMware lab targets")
     parser.add_argument("--host-preview", action="store_true",
                         help="VMware labs only: fast read-only FlaUI host screenshot, never movement authority")
     parser.add_argument("--allow-foreground-change", action="store_true",
@@ -150,7 +155,8 @@ def main(argv=None):
                          with_preview=args.preview, preview_width=args.preview_width,
                           preview_detail_crop=args.preview_detail_crop,
                           host_preview=args.host_preview,
-                          physical_pid=args.physical_pid)
+                          physical_pid=args.physical_pid,
+                          historical_vm=args.allow_historical_vm)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,

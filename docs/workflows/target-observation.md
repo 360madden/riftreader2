@@ -1,5 +1,27 @@
 # Target observation
 
+## Active workflow — physical RIFT only (2026-11-10)
+
+Run on the *actual* owning host, AMD-DESKTOP or LEGION, after verifying its
+Windows machine name. Start with read-only `python scripts/physical_rift.py
+--expected-host AMD-DESKTOP` (or `LEGION` on LEGION); add `--physical-pid
+<actual-PID>` for multibox. This verifies the physical RIFT process without
+VMware, screenshots, window focus or input.
+
+For an explicitly reviewed physical screenshot on the owning host, use
+`python scripts/observe_target.py --target physical-amd-desktop --expected-host
+AMD-DESKTOP --allow-foreground-change` (change both host values for LEGION,
+and pin the PID if needed). The foreground-change option permits a real window
+focus operation; do not use it without desktop ownership. Physical native
+vitals remain unqualified and are blocked. There is no lab fallback.
+
+The historical VMware material below is **archived**. The observation CLI now
+rejects `lab1`/`lab2` by default with `vmware-retired-use-physical-rift`;
+`--allow-historical-vm` is an explicit diagnostic-only opt-in for reproducing
+old evidence, not a live-workflow target or permission to restart guests.
+
+## Historical target reference (superseded)
+
 Run `scripts/observe_target.py` from the owning Windows checkout
 (`C:\work\riftreader2` on AMD-DESKTOP), using the verified repository virtual environment.
 The endpoint's friendly name is not identity proof: the entry point checks the
@@ -19,7 +41,7 @@ authorize a physical capture. Physical routing does not import VMware or guest
 authentication code. Existing VM-specific cached credentials remain owned and
 reused by the established guest helpers when needed; supply no new secrets.
 
-## Screenshot-only default
+## Historical VMware screenshot-only flow (not default)
 
 Enter in PowerShell on AMD-DESKTOP, with the repository as the working directory:
 
