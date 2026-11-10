@@ -243,10 +243,16 @@ def _launch_lock(lab, *, timeout_seconds=10):
         handle.close()
 
 
+def _receiver_pythonw() -> Path:
+    # The managed task is registered against the stable base interpreter, not
+    # whichever virtualenv happens to invoke this helper today.
+    return Path(sys.base_prefix) / "pythonw.exe"
+
+
 def _launch(lab):
     if _port_owners(PORTS[lab]):
         _blocked("receiver-port-already-owned")
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    pythonw = _receiver_pythonw()
     if not pythonw.is_file():
         _blocked("pythonw-unavailable")
     def quote(value):

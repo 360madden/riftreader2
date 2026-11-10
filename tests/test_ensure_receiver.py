@@ -133,6 +133,27 @@ class ManagedReceiverTests(unittest.TestCase):
         self.assertIn(str(receiver.ROOT / "scripts" / "Manage-RR2HelperTask.ps1"), args)
         self.assertEqual(args[-4:], ["-Action", "Status", "-HelperId", "rr2-receiver-lab2"])
 
+    def test_task_registration_uses_stable_base_python_not_venv(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            base = Path(scratch) / "base-python"
+            base.mkdir()
+            pythonw = base / "pythonw.exe"
+            pythonw.write_bytes(b"test-executable")
+            venv_exe = Path(scratch) / "virtualenv" / "Scripts" / "python.exe"
+            with mock.patch.object(receiver.sys, "base_prefix", str(base)), \
+                 mock.patch.object(receiver.sys, "executable", str(venv_exe)), \
+                 mock.patch.object(receiver, "_port_owners", return_value=[]), \
+                 mock.patch.object(receiver.subprocess, "run", return_value=mock.Mock(
+                     returncode=0, stdout=b"", stderr=b"")) as run:
+                self.assertEqual(receiver._receiver_pythonw(), pythonw)
+                self.assertEqual(receiver._launch("lab2"), "rr2-receiver-lab2")
+            run.assert_called_once()
+            command = run.call_args.args[0]
+            decoded = receiver.base64.b64decode(command[-1]).decode("utf-16le")
+            self.assertIn(str(pythonw), decoded)
+            self.assertNotIn(str(venv_exe.with_name("pythonw.exe")), decoded)
+            self.assertIn("rr2-receiver-lab2", decoded)
+
     def test_ensure_reuses_without_starting_duplicate(self):
         candidate = {"pid": 123}
         with mock.patch.object(receiver, "_config", return_value=Path("safe")), \
