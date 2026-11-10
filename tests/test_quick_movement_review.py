@@ -125,6 +125,20 @@ class QuickMovementReviewTests(unittest.TestCase):
         self.assertEqual(result["sessionPlan"], self.prepared["sessionPlan"])
         self.assertNotIn("quickReview", self.prepared)
 
+    def test_opt_in_high_resolution_full_frame_keeps_original_review_deadline(self):
+        result = add_quick_review(self.prepared, preserve_resolution=True)
+        review = result["quickReview"]
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["reviewDeadlineUtc"], "2000-11-09T12:00:45Z")
+        self.assertEqual(review["reviewExpiresInSeconds"], 0)
+        self.assertNotIn("detailPreview", review)
+        image = review["preview"]
+        self.assertEqual(image["previewFormat"], "jpeg")
+        self.assertEqual(image["previewDimensions"], [1000, 580])
+        self.assertEqual(image["sourceSha256"], self.prepared_capture_sha())
+        self.assertLessEqual(len(base64.b64decode(image["base64"])), 40_000)
+        self.assertEqual(review["captureImageSha256"], image["sourceSha256"])
+
     def test_paired_preview_is_one_pinned_review_with_readable_detail(self):
         crop = (100, 50, 1100, 150)
         result = add_quick_review(self.prepared, detail_crop=crop)
@@ -190,6 +204,35 @@ class QuickMovementReviewTests(unittest.TestCase):
         self.assertEqual(result["quickReview"]["detailPreview"]["sourceCrop"],
                          [100, 50, 1100, 150])
         self.assertEqual(result["quickReview"]["reviewExpiresInSeconds"], 0)
+
+    def test_prepare_cli_supports_high_resolution_review_and_rejects_bad_combinations(self):
+        from scripts.run_movement_session import main, MovementSessionError
+        base = ["run_movement_session.py", "prepare", "--managed-lab", "lab2",
+                "--feedback-pin", "pin.json", "--output", "session",
+                "--mode", "turn", "--keys", "a"]
+        flag = "--review-preserve-resolution"
+        for extra, reason in (([flag], "requires --quick-preview"),
+                              (["--quick-preview", flag, "--review-detail-crop",
+                                "100", "50", "1100", "150"], "conflicts")):
+            with self.subTest(extra=extra), mock.patch("sys.argv", base + extra), mock.patch(
+                    "scripts.run_movement_session.prepare") as prepare:
+                with self.assertRaisesRegex(MovementSessionError, reason):
+                    main()
+                prepare.assert_not_called()
+        output = io.StringIO()
+        with mock.patch("sys.argv", base + ["--quick-preview", flag]), mock.patch(
+                "scripts.run_movement_session.prepare", return_value=self.prepared
+                ) as prepare, redirect_stdout(output):
+            self.assertEqual(main(), 0)
+        prepare.assert_called_once()
+        review = json.loads(output.getvalue())["quickReview"]
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["preview"]["previewDimensions"], [1000, 580])
+        self.assertEqual(review["preview"]["previewFormat"], "jpeg")
+        self.assertNotIn("detailPreview", review)
+        self.assertEqual(add_quick_review(self.prepared, detail_crop=(0, 0, 100, 100),
+                                          preserve_resolution=True)["quickReview"]["status"],
+                         "unavailable")
 
     def test_opt_in_only_for_prepare(self):
         args = build_parser().parse_args([

@@ -1266,7 +1266,8 @@ def add_turn_visual_comparison(result: dict, output: Path) -> dict:
     return enriched
 
 
-def add_quick_review(result: dict, *, detail_crop: tuple[int, int, int, int] | None = None) -> dict:
+def add_quick_review(result: dict, *, detail_crop: tuple[int, int, int, int] | None = None,
+                     preserve_resolution: bool = False) -> dict:
     """Attach a non-authoritative image and exact review pins to one prepared session.
 
     The successful preparation and queue lease remain intact if optional image
@@ -1288,9 +1289,13 @@ def add_quick_review(result: dict, *, detail_crop: tuple[int, int, int, int] | N
         remaining = max(0, math.ceil((deadline - utc_now()).total_seconds()))
         screen, digest = Path(capture["image"]), session["captureImageSha256"]
         detail = None
+        if detail_crop is not None and preserve_resolution:
+            raise ValueError("invalid-preview-mode")
         if detail_crop is not None:
             paired = review_pair(screen, digest, detail_crop)
             image, detail = paired["fullFrame"], paired["detail"]
+        elif preserve_resolution:
+            image = preview(screen, digest, width=1000, preserve_resolution=True)
         else:
             try:
                 image = preview(screen, digest, compact=True)
@@ -1344,7 +1349,9 @@ def build_parser():
     prep.add_argument("--calibration-hold-ms", type=int, default=150,
                       help="one reviewed w/q/s/e calibration pulse per key, from 20 through 150 ms")
     prep.add_argument("--quick-preview", action="store_true",
-                      help="include a SHA-pinned compact full-frame preview and exact review pins")
+                      help="include a SHA-pinned full-frame preview and exact review pins")
+    prep.add_argument("--review-preserve-resolution", action="store_true",
+                      help="opt-in larger source-pinned JPEG full-frame review (without detail crop)")
     prep.add_argument("--review-detail-crop", nargs=4, type=int,
                       metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
                       help="with --quick-preview, include one source-pinned readable detail crop")
@@ -1361,6 +1368,10 @@ def main():
     if args.command == "prepare":
         if args.review_detail_crop is not None and not args.quick_preview:
             raise MovementSessionError("--review-detail-crop requires --quick-preview")
+        if args.review_preserve_resolution and not args.quick_preview:
+            raise MovementSessionError("--review-preserve-resolution requires --quick-preview")
+        if args.review_preserve_resolution and args.review_detail_crop is not None:
+            raise MovementSessionError("--review-preserve-resolution conflicts with --review-detail-crop")
         goal = Position(*args.goal) if args.goal else None
         result = prepare(args.host_plan, args.feedback_pin, args.output, args.mode, goal,
                          args.calibration_profile, tuple(args.keys), args.dimension,
@@ -1369,7 +1380,8 @@ def main():
                          calibration_hold_ms=args.calibration_hold_ms)
         if args.quick_preview:
             result = add_quick_review(result, detail_crop=(
-                tuple(args.review_detail_crop) if args.review_detail_crop is not None else None))
+                tuple(args.review_detail_crop) if args.review_detail_crop is not None else None),
+                preserve_resolution=args.review_preserve_resolution)
     else: result = run_reviewed(args.session_plan, args.review, args.output)
     print(json.dumps(sanitized(result), sort_keys=True)); return 0
 
