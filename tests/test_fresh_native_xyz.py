@@ -177,7 +177,7 @@ class NativeXyzHttpTests(unittest.TestCase):
     def test_route_auth_and_strict_no_lease_identity(self):
         payload = {**EXPECTED_GAME, "executableSha256": EXPECTED_GAME["executableSha256"].lower(),
                    "machineName": "RIFT-LAB-2"}
-        for operation in ("native-xyz", "native-orientation", "native-actor-pose"):
+        for operation in ("native-xyz", "native-orientation", "native-actor-pose", "native-smoothed-scalar"):
             with self.subTest(operation=operation):
                 route = "/api/" + operation
                 self.assertEqual(401, self.request("POST", route, payload, token="wrong")[0])
@@ -212,7 +212,7 @@ class NativeXyzGatewayTests(unittest.TestCase):
                     gateway.command("native-vitals", {})
 
     def test_native_lease_capability_is_checked_on_same_session_for_both_operations(self):
-        for operation in ("native-xyz", "native-vitals", "native-orientation", "native-actor-pose"):
+        for operation in ("native-xyz", "native-vitals", "native-orientation", "native-actor-pose", "native-smoothed-scalar"):
             for value in (None, True, False, 0, 2, "1", 1.0):
                 with self.subTest(operation=operation, value=value), tempfile.TemporaryDirectory() as folder:
                     session = Mock(vm_identity=EXPECTED_VM, closed=False,
@@ -231,7 +231,7 @@ class NativeXyzGatewayTests(unittest.TestCase):
                     session.request.assert_called_once_with("status", {}, access=None)
 
     def test_native_instance_or_session_change_blocks_without_reconnect(self):
-        for operation in ("native-xyz", "native-vitals", "native-orientation", "native-actor-pose"):
+        for operation in ("native-xyz", "native-vitals", "native-orientation", "native-actor-pose", "native-smoothed-scalar"):
             for kind in ("wrong-instance", "missing-instance", "replaced", "closed", "hello-changed"):
                 with self.subTest(operation=operation, kind=kind), tempfile.TemporaryDirectory() as folder:
                     session = Mock(vm_identity=EXPECTED_VM, closed=False,
@@ -289,7 +289,7 @@ class NativeXyzGatewayTests(unittest.TestCase):
                 {"instanceId": "a" * 32, "machineName": "RIFT-LAB-2"},
                 transport.host.EvidenceJournal(Path(folder)), lambda _: None)
             self.addCleanup(session.close)
-            for operation in ("native-xyz", "native-actor-pose"):
+            for operation in ("native-xyz", "native-actor-pose", "native-smoothed-scalar"):
                 with self.subTest(operation=operation):
                     with session._admission(operation, None) as admit:
                         self.assertIsNone(admit)
