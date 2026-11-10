@@ -22,6 +22,7 @@ from scripts.compare_native_player_reads import load, compare
 
 PHASES = ("baseline", "camera-only", "turn-left", "turn-right", "forward")
 MATRICES = ("actorMatrix", "modelMatrix", "renderMatrix")
+MAX_PHASE_SOURCE_SKEW_SECONDS = 30.0
 
 
 def wrap180(degrees: float) -> float:
@@ -46,6 +47,15 @@ def assess(paths: list[Path]) -> dict:
     if len(paths) != len(PHASES) or len({str(Path(p).resolve()) for p in paths}) != 5:
         raise ValueError("facing-five-distinct-captures-required")
     saved = [load(path) for path in paths]
+    # A position bearing and actor angle measured far apart cannot describe
+    # the same short action phase, however plausible the phase labels look.
+    for readout, _ in saved:
+        if not {"position", "actor-pose"}.issubset(readout):
+            raise ValueError("facing-position-and-pose-required")
+        position_at = _timestamp(readout["position"]["observedAtUtc"])
+        pose_at = _timestamp(readout["actor-pose"]["observedAtUtc"])
+        if abs((pose_at - position_at).total_seconds()) > MAX_PHASE_SOURCE_SKEW_SECONDS:
+            raise ValueError("facing-phase-source-skew")
     comparisons = []
     for (a, ah), (b, bh) in zip(saved, saved[1:]):
         result = compare(a, b, ah, bh)

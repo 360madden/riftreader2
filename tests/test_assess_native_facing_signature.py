@@ -1,5 +1,6 @@
 """Focused, self-contained facing signature regression fixtures."""
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta, timezone
 import io
 import json
 import math
@@ -183,6 +184,33 @@ class FacingSignatureTests(unittest.TestCase):
         paths[2].write_text(json.dumps(replayed), encoding="utf-8")
         with self.assertRaisesRegex(ValueError, "facing-repeated-position-source"):
             facing.assess(paths)
+
+    def test_position_and_pose_within_phase_must_be_near_time(self):
+        # An A/D/W signature cannot join a position with a pose read hours
+        # apart, even when all five nominal phases are correctly ordered.
+        for skew_seconds in (30, 31):
+            with self.subTest(skew_seconds=skew_seconds):
+                paths = self.sequence()
+                for i, path in enumerate(paths):
+                    start = (datetime(2026, 11, 10, 12, 2, tzinfo=timezone.utc)
+                             + timedelta(minutes=4 * i))
+                    pose_time = start + timedelta(seconds=skew_seconds)
+                    readout = json.loads(path.read_text(encoding="utf-8"))
+                    readout["position"]["observedAtUtc"] = start.isoformat()
+                    readout["actor-pose"]["observedAtUtc"] = pose_time.isoformat()
+                    path.write_text(json.dumps(readout), encoding="utf-8")
+                    # Keep the separately verified actor-pose summary coherent.
+                    summary_path = path.parent / "summary.json"
+                    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+                    summary["observedAtUtc"] = pose_time.isoformat()
+                    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+                if skew_seconds == 30:
+                    result = facing.assess(paths)
+                    self.assertEqual("provisional-behavior-consistent",
+                                     result["matrixCandidates"]["actorMatrix"]["status"])
+                else:
+                    with self.assertRaisesRegex(ValueError, "facing-phase-source-skew"):
+                        facing.assess(paths)
 
     def test_cli_emits_candidate_only(self):
         paths = self.sequence()
