@@ -43,6 +43,7 @@ def _typed_pair(source: dict, target: dict) -> dict:
     native._require(isinstance(selected, dict) and isinstance(captures, dict),
                     "typed source selected/capture evidence missing")
     result = {}
+    previous_completion = None
     for stage in ("before", "after"):
         frame, capture = selected.get(stage), captures.get(stage)
         native._require(isinstance(frame, dict) and isinstance(capture, dict)
@@ -51,6 +52,10 @@ def _typed_pair(source: dict, target: dict) -> dict:
         stamp = native._time(capture.get("completedAtUtc"))
         start = native._time(capture.get("startedAtUtc"))
         native._require(start <= stamp, stage + " typed capture has reversed times")
+        if previous_completion is not None:
+            native._require(start > previous_completion,
+                            "typed capture windows overlap or touch")
+        previous_completion = stamp
         snap = capture.get("snapshotSha256")
         wire = frame.get("wireSha256")
         native._pin_sha(snap)

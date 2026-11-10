@@ -179,6 +179,17 @@ class MotionPairTests(unittest.TestCase):
         with self.assertRaisesRegex(motion.native.EvidenceError, "overlap"):
             self.inspect()
 
+    def test_overlapping_typed_capture_windows_are_not_motion_evidence(self):
+        # Both captures finish in order, but the second begins before the first
+        # has finished; prior behavior incorrectly reported motion consistency.
+        for after_start in ("2026-10-25T00:29:59.500000Z", "2026-10-25T00:30:00Z"):
+            with self.subTest(after_start=after_start):
+                self.source["source"]["after"]["startedAtUtc"] = after_start
+                self.write(self.src, self.source)
+                with self.assertRaisesRegex(motion.native.EvidenceError,
+                                            "typed capture windows overlap"):
+                    self.inspect()
+
     def test_reversed_native_times_block(self):
         self.write(self.b, self.make_native("2026-10-25T00:29:59Z", (101.2, 200.0, 300.0)))
         with self.assertRaisesRegex(motion.native.EvidenceError, "chronological"):
