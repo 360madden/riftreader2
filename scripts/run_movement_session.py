@@ -1377,6 +1377,9 @@ def build_parser():
 
 def main():
     args = build_parser().parse_args()
+    # This legacy command is wired to VmEpochGuard/managed VMware controllers.
+    # Preserve its offline APIs, but do not run its live CLI after VM retirement.
+    raise MovementSessionError("vmware-retired-use-physical-rift")
     if args.command == "prepare":
         if args.review_detail_crop is not None and not args.quick_preview:
             raise MovementSessionError("--review-detail-crop requires --quick-preview")

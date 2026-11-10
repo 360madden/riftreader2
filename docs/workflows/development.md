@@ -40,7 +40,12 @@ are not telemetry qualification; the `--native-vitals` physical route currently
 remains blocked until independently tested. Any physical input additionally
 needs exclusive foreground ownership, action-specific review, STOP and release.
 The **historical** Lab-1/Lab-2 workflow below is retained for research evidence,
-not for active scheduling. Preserve it without deploying to VMware.
+not for active scheduling. Preserve it without deploying to VMware. The old
+`run_movement_session.py` live CLI, `run_targeted_click.py` action path, and
+`run_xyz_workflow.py --run` are now disabled by default because their hosts are
+VMware-bound. Their offline analysis functions remain available. Physical
+movement/control is not yet live-qualified; use the physical selector and native
+reader development path until that milestone passes independent testing.
 
 ## Default fast path
 

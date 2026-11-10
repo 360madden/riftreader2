@@ -51,6 +51,8 @@ def review_from_file(capture, rectangle, path, timeout=40):
 
 
 def run(config, output, rectangle, *, before_action=None, managed_lab=None, review_file=False):
+    # Both the managed and legacy host-plan branches use VMware controls.
+    raise ValueError('vmware-retired-use-physical-rift')
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     if managed_lab:

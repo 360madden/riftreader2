@@ -437,6 +437,9 @@ def main(argv=None):
     parser.add_argument('--cache-login',action='store_true',help='Save a verified guest login in Windows Credential Manager; requires --run')
     args = parser.parse_args(argv)
     try:
+        if args.run:
+            require_session_id(args.session_id)
+            raise ValueError('vmware-retired-use-physical-rift')
         cfg, profile, profile_sha = read_config(args.config.resolve())
         require(not args.cache_login or args.run, '--cache-login requires --run')
         if not args.run:
