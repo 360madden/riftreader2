@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "kind": "rr2-offline-turn-skeleton-handoff",
+  "capturedAtLocal": "2026-11-10T04:18:00-05:00",
+  "host": "AMD-DESKTOP",
+  "project": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "gameAvailability": "offline-user-reported-not-independently-verified",
+  "commits": [
+    {
+      "hash": "56298e512b84bf9982bdb8ab10235d01270725dd",
+      "kind": "csharp-cached-facing-turn-skeleton",
+      "testsPassed": 9
+    },
+    {
+      "hash": "bf48e286cf2d87916246c2d917fc363c3a35aaad",
+      "kind": "direct-guest-sample-pair-compare",
+      "testsPassed": 14
+    }
+  ],
+  "pushed": true,
+  "liveInputSent": false,
+  "changes": {
+    "application": "src/RiftReader2.Application/TurnSkeletonPlanner.cs",
+    "applicationTests": "tests/RiftReader2.Tests/TurnSkeletonPlannerTests.cs",
+    "orientationPair": "scripts/summarize_native_orientation_track.py",
+    "orientationPairTests": "tests/test_summarize_native_orientation_track.py"
+  },
+  "blockers": [
+    "game-offline-user-reported",
+    "lab2-controller-managed-runtime-changed",
+    "actor-heading-not-qualified"
+  ],
+  "next": [
+    "Preserve other developer's work and unrelated untracked files",
+    "Revalidate managed-controller ownership without bypass",
+    "After game returns, re-persist fresh C# pre/post heading candidates and screenshots around a guarded A pulse"
+  ]
+}
