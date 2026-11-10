@@ -86,11 +86,27 @@ qualified actual body-heading change. Evidence:
   actual key-held duration, addon secure state, and any confirmed player
   heading as separate facts. A zero-XYZ turn is not proof that the game
   ignored the key; a delivered SendInput is not proof it consumed it.
-- The Nov 10 read-only cached-login search of expected Lab1/Lab2
-  user-documents SavedVariables roots returned no
-  `RiftReader2Casting.lua`; the host's persisted copies are not
-  current per-VM proof. Locate the actual in-guest persistence path
-  before claiming a Nov 10 API capture.
+- The first Nov 10 guest SavedVariables check incorrectly reported no matching
+  files. A corrected VM-identity-pinned, read-only inventory verified that **both
+  labs** have their existing `RIFT\\Interface\\Saved` and installed `ApiAtlas`
+  and `RiftReader2Casting` addons. Each lab's SavedVariables tree contained
+  multiple `RiftReader2Casting.lua` files; `ApiAtlas.lua` was only 46 bytes,
+  not a new full API snapshot. Inventory receipts are under
+  `artifacts/api-inventory-20261110/{lab1,lab2}/` (ignored).
+- A RIFT client SavedVariables copy last persisted **2026-11-10 05:52 UTC**
+  contains eight selected addon `Inspect.Documentation` strings exactly
+  equal, byte-for-byte, to the complete October 28 API Atlas reference:
+  `Inspect.System.Secure`, `Frame:EventMacroSet`,
+  `Layout:EventMacroSet`, `Command.Event.Attach`, `Inspect.Unit.Detail`,
+  `Inspect.Unit.Castbar`, `Inspect.Ability.New.List`, and
+  `Event.Combat.Damage`. These were parsed as literal Lua strings without
+  executing SavedVariables code. Their **file save time is not a proved
+  capture time** and eight identical entries do not establish that the other
+  1,932 entries are unchanged.
+- Both Lab1 and Lab2 controllers were checked on Nov 10: connected/disarmed
+  but RIFT was *not foreground*. Accordingly no `/atlas collect`, `/reloadui`,
+  or game input was sent. A fresh full catalog from today's live game
+  remains pending verified foreground and collection/export.
 - Do not use Codex, OpenCode or Ollama for this work without renewed
   authorization. Workbridge parallel *commands* are not independent
   reasoning agents.
