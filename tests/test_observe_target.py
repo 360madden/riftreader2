@@ -166,6 +166,64 @@ class TargetRoutingTests(unittest.TestCase):
         self.assertEqual(result["preview"]["previewFormat"], "webp")
         self.assertEqual(result["detailPreview"]["previewFormat"], "jpeg")
 
+    def test_fast_host_preview_is_separate_from_game_capture(self):
+        receipt = {"status": "captured-nonauthoritative", "lab": "lab2",
+                   "image": "host-image.png", "movementEligible": False,
+                   "gameProcessIdentityVerified": False, "gameInputSent": False}
+        with patch.object(tool, "_capture_host_preview", return_value=receipt) as host, \
+             patch.object(tool, "_capture_vmware") as vm, \
+             patch.object(tool, "_capture_physical") as physical:
+            result = tool.observe("lab2", "AMD-DESKTOP", host_preview=True)
+        host.assert_called_once_with("lab2", "AMD-DESKTOP", None)
+        vm.assert_not_called()
+        physical.assert_not_called()
+        self.assertEqual(result["status"], "captured-nonauthoritative")
+        self.assertEqual(result["targetId"], "lab2")
+        self.assertEqual(result["workflow"], "vmware")
+        self.assertEqual(result["ownerHost"], "AMD-DESKTOP")
+        self.assertFalse(result["movementEligible"])
+        self.assertNotIn("captureId", result)
+
+    def test_host_preview_rejects_conflicting_modes_before_capture(self):
+        cases = (("lab2", {"native_vitals": True}),
+                 ("lab2", {"with_preview": True}),
+                 ("lab2", {"allow_foreground_change": True}),
+                 ("physical-amd-desktop", {}))
+        for target, options in cases:
+            with self.subTest(target=target, options=options), \
+                 patch.object(tool, "_capture_host_preview") as host, \
+                 patch.object(tool, "_capture_vmware") as vm:
+                with self.assertRaisesRegex(ValueError, "host-preview-incompatible-options"):
+                    tool.observe(target, "AMD-DESKTOP", host_preview=True, **options)
+                host.assert_not_called()
+                vm.assert_not_called()
+
+    def test_host_preview_rejects_authoritative_or_mismatched_receipts(self):
+        baseline = {"status": "captured-nonauthoritative", "lab": "lab2",
+                    "movementEligible": False, "gameProcessIdentityVerified": False}
+        variants = ({"lab": "lab1"}, {"movementEligible": True},
+                    {"gameProcessIdentityVerified": True},
+                    {"status": "verified-awaiting-visual-review"})
+        for changes in variants:
+            with self.subTest(changes=changes), \
+                 patch.object(tool, "_capture_host_preview",
+                              return_value=dict(baseline, **changes)):
+                with self.assertRaisesRegex(ValueError, "host-preview-invalid-receipt"):
+                    tool.observe("lab2", "AMD-DESKTOP", host_preview=True)
+
+    def test_host_preview_cli_preserves_non_authoritative_status(self):
+        receipt = {"status": "captured-nonauthoritative", "lab": "lab1",
+                   "movementEligible": False, "gameProcessIdentityVerified": False}
+        out = io.StringIO()
+        with patch.object(tool, "_capture_host_preview", return_value=receipt), \
+             patch.object(tool, "_capture_vmware") as vm, redirect_stdout(out):
+            code = tool.main(["--target", "lab1", "--expected-host", "AMD-DESKTOP",
+                              "--host-preview"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue())["status"], "captured-nonauthoritative")
+        self.assertFalse(json.loads(out.getvalue())["movementEligible"])
+        vm.assert_not_called()
+
     def test_cli_failure_retains_sanitized_workflow_reason(self):
         failure = ValueError("active request prevents capture")
         failure.details = {"phase": "run", "errorType": "InspectionBlocked"}

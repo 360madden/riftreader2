@@ -28,6 +28,12 @@ def _capture_vmware(target_id, output, native_vitals):
     return run_inspection(output, capture_only=not native_vitals, lab=target_id)[0]
 
 
+def _capture_host_preview(target_id, expected_host, output):
+    from scripts.preview_vmware_fla_ui import capture
+    directory = output or ROOT / "artifacts" / ("flaui-preview-" + target_id + "-" + uuid.uuid4().hex)
+    return capture(target_id, expected_host, directory)
+
+
 def _capture_physical(expected_host, output, allow_foreground_change):
     from scripts.observe_physical import capture_physical
     output = output or ROOT / "artifacts" / ("observe-physical-" + uuid.uuid4().hex)
@@ -47,7 +53,7 @@ def _paired_preview(result, width, crop):
 
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
-            preview_detail_crop=None):
+            preview_detail_crop=None, host_preview=False):
     started = time.perf_counter()
     if target_id not in TARGETS:
         raise ValueError("unknown-target")
@@ -68,6 +74,20 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
                 or not 0 <= box[0] < box[2] <= 8192
                 or not 0 <= box[1] < box[3] <= 8192):
             raise ValueError("invalid-preview-crop")
+    if host_preview:
+        if workflow != "vmware" or native_vitals or allow_foreground_change or with_preview or preview_detail_crop is not None:
+            raise ValueError("host-preview-incompatible-options")
+        result = _capture_host_preview(target_id, owner_host, output)
+        if (not isinstance(result, dict)
+                or result.get("status") != "captured-nonauthoritative"
+                or result.get("lab") != target_id
+                or result.get("movementEligible") is not False
+                or result.get("gameProcessIdentityVerified") is not False):
+            raise ValueError("host-preview-invalid-receipt")
+        if socket.gethostname().casefold() != actual_host.casefold():
+            raise ValueError("host-changed")
+        return dict(result, targetId=target_id, workflow=workflow, ownerHost=owner_host,
+                    elapsedSeconds=round(time.perf_counter() - started, 3))
     if target_id == "lab1" and native_vitals:
         raise ValueError("lab1-native-vitals-not-yet-qualified")
     if workflow == "physical" and native_vitals:
@@ -105,6 +125,8 @@ def main(argv=None):
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--output", type=Path, help="fresh absolute directory; omitted creates a unique artifact path")
     parser.add_argument("--native-vitals", action="store_true", help="Lab 2 only; retain existing candidate qualifications")
+    parser.add_argument("--host-preview", action="store_true",
+                        help="VMware labs only: fast read-only FlaUI host screenshot, never movement authority")
     parser.add_argument("--allow-foreground-change", action="store_true",
                         help="physical capture only: explicitly allow the desktop backend to focus RIFT")
     parser.add_argument("--preview", action="store_true", help="include a bounded non-authoritative JPEG in the same result")
@@ -118,7 +140,8 @@ def main(argv=None):
                          native_vitals=args.native_vitals,
                          allow_foreground_change=args.allow_foreground_change,
                          with_preview=args.preview, preview_width=args.preview_width,
-                          preview_detail_crop=args.preview_detail_crop)
+                          preview_detail_crop=args.preview_detail_crop,
+                          host_preview=args.host_preview)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,
