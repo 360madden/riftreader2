@@ -995,8 +995,11 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             for index, key in enumerate(calibration_keys, 1):
                 require(clock() - started <= 12, "elapsed budget")
                 lease.check(); lease.heartbeat()
+                # A scoped-fast anchor can advance after a full-scan cycle.
+                # Preserve the existing freshness checks and 12-second total
+                # action budget, but give the first 1D pulse a 5-second window.
                 ready = feedback.wait_action_ready(timeout_seconds=(
-                    1.5 if short_calibration and index == 1
+                    5.0 if short_calibration and index == 1
                     else ACTION_READY_TIMEOUT_SECONDS))
                 require(clock() - started <= 12, "elapsed budget")
                 lease.check(); lease.heartbeat(); host.status(require_armed=True)

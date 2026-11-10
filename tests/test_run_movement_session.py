@@ -206,7 +206,7 @@ class MovementSessionTests(unittest.TestCase):
             session=session("calibration", keys=("w",), dimension="1d", calibration_hold_ms=100),
             review=review(), output=self.root / "short-calibration",
             host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
-        self.assertEqual(feedback.ready_timeouts, [20.0, 1.5])
+        self.assertEqual(feedback.ready_timeouts, [20.0, 5.0])
         self.assertEqual([(action.key, action.hold_ms) for action in host.actions], [("w", 100)])
         self.assertEqual(result["calibrations"]["w"]["calibration_hold_ms"], 118)
         self.assertAlmostEqual(result["calibrations"]["w"]["dx_per_ms"], .4 / 118)
@@ -452,7 +452,7 @@ class MovementSessionTests(unittest.TestCase):
             review=review(), output=self.root / "prewarmed-forward",
             host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
         self.assertTrue(result["success"])
-        self.assertEqual(observations, [(20.0, 0, 6250.0), (1.5, 1, None)])
+        self.assertEqual(observations, [(20.0, 0, 6250.0), (5.0, 1, None)])
         self.assertEqual(len(host.actions), 1)
         self.assertEqual(host.stops, 1)
 
@@ -472,7 +472,7 @@ class MovementSessionTests(unittest.TestCase):
                 session=session("calibration", keys=("w",), dimension="1d"),
                 review=review(), output=self.root / "no-post-arm-source",
                 host=host, lease=lease, feedback=feedback, clock=lambda: 1.0, now=lambda: NOW)
-        self.assertEqual(feedback.ready_timeouts, [20.0, 1.5])
+        self.assertEqual(feedback.ready_timeouts, [20.0, 5.0])
         self.assertEqual(host.arms, 1)
         self.assertEqual(host.actions, [])
         self.assertEqual(host.stops, 1)
