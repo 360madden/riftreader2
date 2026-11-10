@@ -54,8 +54,11 @@ agent only after its exact process/config prerequisites are met. For a
 physical multibox control agent, set **both** optional config fields
 `boundProcessId` and `boundProcessStartUtcTicks` to the same freshly verified
 local RIFT process. Missing or mismatched bindings fail closed; leaving both
-absent retains the original exactly-one-process rule. This is an offline-tested
-binding path, **not yet live-qualified for physical input**. Screenshots
+absent retains the original exactly-one-process rule. The five native control-agent
+readers (HP/resources, XYZ, orientation, actor pose, smoothed scalar) now use
+this same explicit PID/start-epoch selection gate; unbound readers still reject
+multiple running instances. This is offline-tested, **not yet live-qualified
+for physical multibox input**. Screenshots
 are not telemetry qualification; the `--native-vitals` physical route currently
 remains blocked until independently tested. Any physical input additionally
 needs exclusive foreground ownership, action-specific review, STOP and release.

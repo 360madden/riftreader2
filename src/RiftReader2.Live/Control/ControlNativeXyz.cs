@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using RiftReader2.Application;
 using RiftReader2.Domain;
 
@@ -31,17 +30,7 @@ internal static class ControlNativeXyz
     private static async Task<IReadOnlyNativeMemorySession> OpenSessionAsync(
         ControlAgentConfiguration configuration, ControlIdentityRequest expected, CancellationToken token)
     {
-        var processes = Process.GetProcessesByName(configuration.ProcessName);
-        try
-        {
-            if (processes.Length != 1 || processes[0].Id != expected.ProcessId
-                || processes[0].StartTime.ToUniversalTime().Ticks != expected.ProcessStartUtcTicks)
-                throw new InvalidOperationException("Expected exactly one matching RIFT process epoch.");
-        }
-        finally
-        {
-            foreach (var process in processes) process.Dispose();
-        }
+        ControlNativeProcessGate.RequireExpectedProcessEpoch(configuration, expected);
         return await WindowsNativeMemorySession.OpenAsync(expected.ProcessId,
             expected.ProcessStartUtcTicks, expected.ExecutableSha256, token);
     }
