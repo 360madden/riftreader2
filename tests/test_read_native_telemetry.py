@@ -41,7 +41,9 @@ def sample(kind):
                        "freshness": "unqualified"} if kind == "position" else
                       {"unitKey": int(KEY), "health": {"current": 100, "maximum": 100},
                        "mana": {"current": None, "status": "unavailable"}} if kind == "vitals" else
-                       {"unitKey": KEY, "playerKeyDecimal": KEY,
+                       {"unitKey": KEY, "playerKeyDecimal": KEY, "targetCandidate": 2.5,
+                         "headingQualified": False} if kind == "smoothed-scalar" else
+                        {"unitKey": KEY, "playerKeyDecimal": KEY,
                         "actorAngleDegreesCandidate": 45.0,
                         "actorHeadingQualified": False})
     return row
@@ -67,6 +69,8 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.xyz_query = stack.enter_context(patch.object(cli, "query_xyz", return_value=self.position))
         self.vitals_query = stack.enter_context(patch.object(cli, "query_vitals", return_value=self.vitals))
         self.pose_query = stack.enter_context(patch.object(cli, "query_actor_pose", return_value=self.pose))
+        self.scalar = sample("smoothed-scalar")
+        self.scalar_query = stack.enter_context(patch.object(cli, "query_smoothed_scalar", return_value=self.scalar))
 
     def run_read(self):
         return cli.read_once("lab2", "AMD-DESKTOP")
@@ -216,6 +220,25 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.xyz_query.assert_not_called()
         self.vitals_query.assert_not_called()
 
+    def test_scalar_only_retains_candidate_and_never_queries_other_sources(self):
+        result = cli.read_once("lab2", "AMD-DESKTOP", fields=("smoothed-scalar",))
+        self.assertEqual(KEY, result["unitKey"])
+        self.assertEqual(2.5, result["smoothed-scalar"]["metrics"]["targetCandidate"])
+        self.assertFalse(result["smoothed-scalar"]["metrics"]["headingQualified"])
+        self.scalar_query.assert_called_once_with("native-config", VM, GAME, cli.CONFIGS["lab2"], lab="lab2")
+        self.xyz_query.assert_not_called()
+        self.vitals_query.assert_not_called()
+        self.pose_query.assert_not_called()
+
+    def test_scalar_cannot_merge_wrong_owner_or_epoch(self):
+        self.scalar["metrics"]["unitKey"] = "999"
+        with self.assertRaisesRegex(ValueError, "unit-changed"):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("position", "smoothed-scalar"))
+        self.scalar["metrics"]["unitKey"] = KEY
+        self.scalar["gameProcessStartUtcTicks"] += 1
+        with self.assertRaisesRegex(ValueError, "source-identity-mismatch"):
+            cli.read_once("lab2", "AMD-DESKTOP", fields=("smoothed-scalar",))
+
     def test_all_sources_can_be_requested_explicitly(self):
         result = cli.read_once("lab2", "AMD-DESKTOP", fields=("actor-pose", "vitals", "position"))
         self.assertEqual(KEY, result["unitKey"])
@@ -238,6 +261,12 @@ class NativeTelemetryCommandTests(unittest.TestCase):
         self.assertEqual(("position", "vitals"), cli.selected_fields(["vitals", "position"]))
         self.assertEqual(("position", "vitals", "actor-pose"),
                          cli.selected_fields(["actor-pose", "vitals", "position"]))
+
+    def test_scalar_selection_keeps_original_default_and_order(self):
+        self.assertEqual(("position", "vitals"), cli.DEFAULT_FIELDS)
+        self.assertEqual(("position", "actor-pose", "smoothed-scalar"),
+                         cli.selected_fields(["smoothed-scalar", "position", "actor-pose"]))
+        self.scalar_query.assert_not_called()
 
     def test_single_source_still_requires_its_pinned_identity(self):
         self.vitals["gameProcessStartUtcTicks"] += 1
@@ -266,7 +295,8 @@ class NativeTelemetryCommandTests(unittest.TestCase):
     def test_cli_default_and_explicit_field_selections(self):
         for args, expected in (([], cli.DEFAULT_FIELDS), (["--fields", "position"], ["position"]),
                                (["--fields", "vitals"], ["vitals"]),
-                                (["--fields", "actor-pose"], ["actor-pose"])):
+                                (["--fields", "actor-pose"], ["actor-pose"]),
+                                 (["--fields", "smoothed-scalar"], ["smoothed-scalar"])):
             output = io.StringIO()
             with self.subTest(args=args), patch.object(cli, "read_once", return_value={"status":"candidate-only"}) as read, redirect_stdout(output):
                 code = cli.main(["--lab", "lab2", "--expected-host", "AMD-DESKTOP", *args])

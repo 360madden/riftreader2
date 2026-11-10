@@ -1,4 +1,4 @@
-"""Read Lab 2 native position, vitals and optional actor pose without game input.
+"""Read Lab 2 native position, vitals, pose and optional scalar without game input.
 
 Reuses the managed controller and bounded, identity-checked native queries.
 Selected reads are sequential, NOT atomic or qualified movement feedback.
@@ -29,9 +29,10 @@ from scripts.sample_current_native_vitals import checked_expected_game
 from scripts.fresh_native_xyz import query as query_xyz
 from scripts.fresh_native_vitals import query as query_vitals
 from scripts.fresh_native_actor_pose import query as query_actor_pose
+from scripts.fresh_native_smoothed_scalar import query as query_smoothed_scalar
 
 OWNER_HOST = "AMD-DESKTOP"
-NATIVE_FIELDS = ("position", "vitals", "actor-pose")
+NATIVE_FIELDS = ("position", "vitals", "actor-pose", "smoothed-scalar")
 DEFAULT_FIELDS = ("position", "vitals")
 
 
@@ -122,6 +123,8 @@ def read_once(lab: str, expected_host: str, *, fields=DEFAULT_FIELDS) -> dict:
         sources["vitals"] = query_vitals(native, vm, game, CONFIGS[lab])
     if "actor-pose" in fields:
         sources["actor-pose"] = query_actor_pose(native, vm, game, CONFIGS[lab], lab=lab)
+    if "smoothed-scalar" in fields:
+        sources["smoothed-scalar"] = query_smoothed_scalar(native, vm, game, CONFIGS[lab], lab=lab)
     key = validate_sources(sources.values(), game, instance, vm)
     after = client.request("/api/status", method="GET")
     require(target_identity(after) == (game, instance)

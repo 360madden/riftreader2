@@ -81,7 +81,7 @@ def validate_report(report, *, pid, ticks):
         if encoded != bit:
             raise Blocked("native-smoothed-scalar-raw-mismatch")
         values.append(value)
-    return {"playerKeyDecimal": str(key), "playerEntityDecimal": str(entity),
+    return {"unitKey": str(key), "playerKeyDecimal": str(key), "playerEntityDecimal": str(entity),
             "componentAddressDecimal": str(component),
             **dict(zip(VALUES, values)), "headingQualified": False,
             "qualification": QUALIFICATION}
