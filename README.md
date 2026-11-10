@@ -83,6 +83,18 @@ They feed the **Domain → Application → Infrastructure** core, composed by ei
 > [!IMPORTANT]
 > **This is a research preview, not a turnkey bot or a promise of live, qualified telemetry on every RIFT build.** A candidate value, valid saved wire frame, working reader, and independently confirmed live game field are **different states**. For the latest exact results and blockers, use [Current Status](docs/status.md).
 
+## 🖥️ Current live target: physical RIFT
+
+As of **November 10, 2026**, RR2's active live workflow uses the actual
+`rift_x64` process running on **AMD-DESKTOP or LEGION**. VMware RIFT labs are
+retired from active RR2 operation; older lab scripts and results remain for
+historical research. Physical observation already supports strict host routing
+and explicit PID selection for multibox sessions. See the
+[physical-first development workflow](docs/workflows/development.md#current-live-workflow-physical-rift-only-2026-11-10).
+
+Live native telemetry and input require separate host/process/freshness and
+control qualification; a captured physical screenshot alone does not prove them.
+
 ## 🚀 Quick start
 
 ### 1. Prerequisites

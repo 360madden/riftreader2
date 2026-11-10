@@ -1,5 +1,26 @@
 # RiftReader2 repository instructions
 
+## Active RIFT target: physical Windows hosts only (Joey, 2026-11-10)
+
+For new RR2 live discovery, observation, telemetry, and supervised input work, use
+**physical RIFT on AMD-DESKTOP or LEGION**, whichever verified host actually owns
+the selected `rift_x64` process. VMware RIFT-Lab-1/2 are **retired as active RR2
+targets**. Do not start/restart VMs, deploy to guests, use vmrun/VNC/guest login,
+or fall back to a lab on failure. Keep old lab code, test fixtures and evidence
+intact as historical reference; their workflows are opt-in archival diagnostics,
+not the current operational default.
+
+On every run verify `[Environment]::MachineName` against the requested host,
+then obtain fresh local RIFT PID, process start, executable path/hash, and window
+identity as applicable. Fail closed on wrong host, absent/ambiguous processes,
+changed identity, stale sources or unavailable control ownership. With physical
+multibox, require explicit PID binding; never silently choose another instance.
+Reuse `scripts/observe_target.py` physical routes, `scripts/observe_physical.py`,
+and the local .NET 10 live reader/control agent. Maintain addon nonce/freshness,
+exclusive input controller, reviewed actions and STOP/key-release safeguards.
+This decision supersedes the older two-lab and three-target scheduling below.
+Do not infer permission to operate the physical desktop from target availability.
+
 ## Default: results-first development (Joey, 2026-11-08)
 
 Build a functional RR2 capability, not a process around it. Use this short loop:

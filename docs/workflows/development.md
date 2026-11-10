@@ -3,6 +3,37 @@
 Use this as a reference when needed, not a mandatory checklist for every edit.
 The default is a short path to a working RR2 feature.
 
+## Current live workflow: physical RIFT only (2026-11-10)
+
+The production RR2 observation target is the actual Windows host running RIFT:
+**AMD-DESKTOP** or **LEGION**. Verify the machine name first, then pin one local
+`rift_x64` PID and its start/build/window identity. Do not substitute a VMware
+guest, start lab controllers, or fall back to VM after a physical-host blocker.
+Start with the read-only, physical-only selector. It does **not** capture a
+screenshot, focus a game window, or send input:
+
+```powershell
+# Run from the RR2 checkout on AMD-DESKTOP:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP
+# On LEGION, run from a separate checkout on LEGION:
+python scripts/physical_rift.py --expected-host LEGION
+# With multiple physical RIFT instances, append --physical-pid <actual-PID>.
+```
+
+For reviewed visual observation, use `scripts/observe_target.py --target
+physical-amd-desktop --expected-host AMD-DESKTOP` (or the matching LEGION
+pair). That capture requires explicit desktop-ownership/focus authorization:
+`--allow-foreground-change`; no default focus or unattended screenshot is
+assumed.
+
+Use local .NET 10 `RiftReader2.Live` for native reads and the host-local control
+agent only after its exact process/config prerequisites are met. Screenshots
+are not telemetry qualification; the `--native-vitals` physical route currently
+remains blocked until independently tested. Any physical input additionally
+needs exclusive foreground ownership, action-specific review, STOP and release.
+The **historical** Lab-1/Lab-2 workflow below is retained for research evidence,
+not for active scheduling. Preserve it without deploying to VMware.
+
 ## Default fast path
 
 1. **Choose an outcome:** one usable discovery, retrieval, or controlled
@@ -56,7 +87,7 @@ Preserve unrelated changes. Generated analysis belongs under `artifacts/`.
 Use live RIFT or V1 lab tooling only for an explicitly authorized, bounded gate;
 record that evidence separately from offline repository validation.
 
-## Three-target discovery scheduling
+## Historical three-target discovery scheduling (superseded 2026-11-10)
 
 Joey's 2026-11-06 decision makes both labs and physical-PC RIFT available for
 authorized discovery. Prefer isolated labs to reduce inadvertent human input;
