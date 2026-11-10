@@ -114,6 +114,30 @@ public sealed class TurnProbeCliTests : IDisposable
     }
 
     [Fact]
+    public async Task CandidateCalibrationPlansOneBoundedPulseWithoutExecutingIt()
+    {
+        var paths = await EvidenceAsync();
+        using var output = new StringWriter();
+        Assert.Equal(0, await CliRunner.RunAsync(
+            [.. Args(paths), "--target-degrees", "30"], output, TextWriter.Null));
+        using var report = JsonDocument.Parse(output.ToString());
+        var next = report.RootElement.GetProperty("nextCandidatePulse");
+        Assert.Equal("one-bounded-pulse-candidate", next.GetProperty("status").GetString());
+        Assert.Equal("a", next.GetProperty("key").GetString());
+        Assert.Equal(125, next.GetProperty("holdMilliseconds").GetInt32());
+        Assert.False(report.RootElement.GetProperty("actorHeadingQualified").GetBoolean());
+
+        using var contaminated = new StringWriter();
+        Assert.Equal(0, await CliRunner.RunAsync(
+            [.. Args(paths, "false"), "--target-degrees", "30"], contaminated, TextWriter.Null));
+        using var blocked = JsonDocument.Parse(contaminated.ToString());
+        Assert.Equal(JsonValueKind.Null, blocked.RootElement.GetProperty("nextCandidatePulse").ValueKind);
+
+        Assert.Equal(2, await CliRunner.RunAsync(
+            [.. Args(paths), "--target-degrees", "NaN"], TextWriter.Null, TextWriter.Null));
+    }
+
+    [Fact]
     public async Task RejectsChangedComponentIdentity()
     {
         var paths = await EvidenceAsync(afterComponent: 0x87654321);

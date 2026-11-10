@@ -16,7 +16,7 @@ public static class CliRunner
             {
                 await output.WriteLineAsync("""
                     RiftReader2 0.1 — offline evidence tools
-                    analyze-turn-probe --before PATH --after PATH --receipt PATH --matrix primary|secondary --uncontaminated true|false [--output PATH]
+                    analyze-turn-probe --before PATH --after PATH --receipt PATH --matrix primary|secondary --uncontaminated true|false [--target-degrees NUMBER] [--output PATH]
                     analyze --manifest PATH [--config PATH] [--output PATH]
                     validate-capture --manifest PATH [--config PATH]
                     decode-addon --frame PATH [--output PATH]
@@ -49,7 +49,7 @@ public static class CliRunner
             if (command == "analyze-turn-probe")
                 return await TurnProbeCliCommand.RunAsync(
                     ParseOptions(args[1..], "--before", "--after", "--receipt", "--matrix",
-                        "--uncontaminated", "--output"), output, cancellationToken);
+                        "--uncontaminated", "--target-degrees", "--output"), output, cancellationToken);
             if (command == "guide-addon")
                 return await AddonGuidanceCommand.RunAsync(
                     ParseOptions(args[1..], "--frame", "--snapshot", "--lab", "--session-id", "--result-sequence",

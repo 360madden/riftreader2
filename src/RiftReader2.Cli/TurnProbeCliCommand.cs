@@ -57,6 +57,17 @@ internal static class TurnProbeCliCommand
         var analysis = TurnSkeletonPlanner.AnalyzeAProbe(
             before.Facing, after.Facing, action, execution, observedHold,
             uncontaminatedText == "true");
+        double? target = null;
+        TurnSkeletonPlan? next = null;
+        if (options.TryGetValue("--target-degrees", out var targetText))
+        {
+            if (!double.TryParse(targetText, NumberStyles.Float, CultureInfo.InvariantCulture, out var requested)
+                || !double.IsFinite(requested))
+                throw new ArgumentException("--target-degrees must be a finite number.");
+            target = requested;
+            if (analysis.Calibration is not null)
+                next = TurnSkeletonPlanner.PlanNext(after.Facing, requested, analysis.Calibration);
+        }
         var report = new
         {
             schemaVersion = 1,
@@ -77,6 +88,14 @@ internal static class TurnProbeCliCommand
             inputDeliverySucceeded = execution.DeliverySucceeded,
             inputReleaseSucceeded = execution.ReleaseSucceeded,
             analysis.Calibration,
+            targetCandidateDegrees = target,
+            nextCandidatePulse = next is null ? null : new
+            {
+                next.Status,
+                next.SignedCandidateDeltaDegrees,
+                key = next.Action?.Keys.SingleOrDefault(),
+                holdMilliseconds = next.Action?.HoldMilliseconds
+            },
             analysis.Qualification,
             actorHeadingQualified = false
         };
