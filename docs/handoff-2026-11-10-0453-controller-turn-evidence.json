@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-10",
+  "localTime": "04:53 EST",
+  "host": "AMD-DESKTOP",
+  "repo": "C:\\work\\riftreader2",
+  "branch": "codex/modular-foundation",
+  "commits": [
+    "bd3062287c76abe48586afebc0a4a631f26d200a",
+    "456cafe7e98a74c70a530ad348ed3e4391c8683f"
+  ],
+  "tests": {
+    "pythonOperationDependencies": "25/25",
+    "dotnetTurnFocused": "19/19"
+  },
+  "controller": {
+    "lab": "lab2",
+    "taskState": "Running",
+    "pid": 14220,
+    "ownerError": "managed-runtime-changed",
+    "guestConnected": false
+  },
+  "queue": {
+    "blocked": true,
+    "cleanupReceipt": false,
+    "watchdogFault": "session-identity-changed",
+    "emergencyStopVerified": false,
+    "lastFaultUtc": "2026-11-10T09:06:49Z"
+  },
+  "liveActionsThisBlock": 0,
+  "actorHeadingQualified": false,
+  "independentBeforeAfterVisualEvidence": false,
+  "next": "recover controller/STOP path through ownership gates, then capture fresh bounded A turn",
+  "preserveUntracked": [
+    "scripts/project_current_native_energy_variants.py",
+    "scripts/rank_native_anchor_candidates.py",
+    "tests/test_rank_native_anchor_candidates.py"
+  ]
+}
