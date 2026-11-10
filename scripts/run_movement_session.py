@@ -955,6 +955,11 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
             action = MovementAction(turn_keys[0], turn_hold, 0, 0)
             response = host.action(action, output / "action-1.json")
             _result, completed = _action_result(response)
+            observed = _result.get("observedKeyHoldMilliseconds")
+            require(type(observed) in (int, float) and math.isfinite(float(observed))
+                    and 0 < float(observed) <= 250
+                    and abs(float(observed) - turn_hold) <= max(25.0, turn_hold * .25),
+                    "turn measured hold is missing or drifted")
             after = _require_advancing(initial,
                 feedback.wait_after(completed, initial,
                                     timeout_seconds=ACTION_FEEDBACK_TIMEOUT_SECONDS))
@@ -968,6 +973,7 @@ def execute_armed_session(*, session: dict, review: dict, output: Path, host, le
                             "before": initial.to_dict(), "after": after.to_dict()})
             result_payload = {"mode": mode, "status": "turn-input-completed",
                               "turnKey": turn_keys[0], "holdMs": turn_hold,
+                              "observedKeyHoldMilliseconds": float(observed),
                               "planarDisplacement": planar,
                               "verticalDisplacement": vertical,
                               "headingClaimed": False,

@@ -844,6 +844,7 @@ class MovementSessionTests(unittest.TestCase):
             output=self.root / "turn", host=host, lease=lease, feedback=feedback,
             clock=lambda: 1.0, now=lambda: NOW)
         self.assertEqual(result["status"], "turn-input-completed")
+        self.assertEqual(result["observedKeyHoldMilliseconds"], 100.0)
         self.assertFalse(result["headingClaimed"])
         self.assertEqual(result["profileInvalidationScope"],
                          "explicit-after-turn-result-chain-only")
@@ -853,6 +854,31 @@ class MovementSessionTests(unittest.TestCase):
         self.assertEqual(feedback.wait_timeouts, [6.0])
         self.assertEqual(host.arms, 1); self.assertEqual(host.stops, 1)
         self.assertEqual(lease.finishes[0][0], "succeeded")
+
+    def test_turn_requires_valid_measured_hold_and_stops_on_failure(self):
+        for index, observed in enumerate((None, 0, 20, 160, True, "100")):
+            with self.subTest(observed=observed):
+                host, lease = Host(), Lease()
+                original_action = host.action
+                def corrupted_action(action, output):
+                    receipt = original_action(action, output)
+                    if observed is None:
+                        receipt["result"].pop("observedKeyHoldMilliseconds")
+                    else:
+                        receipt["result"]["observedKeyHoldMilliseconds"] = observed
+                    return receipt
+                host.action = corrupted_action
+                with self.assertRaisesRegex(MovementSessionError,
+                                            "turn measured hold is missing or drifted"):
+                    execute_armed_session(
+                        session=session("turn", keys=("a",), turn_hold_ms=100),
+                        review=review(), output=self.root / f"turn-hold-{index}",
+                        host=host, lease=lease,
+                        feedback=Feedback([Sample(0, 0, 0, 1), Sample(0, 0, 0, 2)]),
+                        clock=lambda: 1.0, now=lambda: NOW)
+                self.assertEqual(len(host.actions), 1)
+                self.assertEqual(host.stops, 1)
+                self.assertEqual(lease.finishes[0][0], "failed")
 
     def test_turn_rejects_excess_translation_and_stops(self):
         host, lease = Host(), Lease()
