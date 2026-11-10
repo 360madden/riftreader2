@@ -82,6 +82,50 @@ public sealed class TurnProbeCliTests : IDisposable
         return (beforePath, afterPath, receiptPath);
     }
 
+    private async Task<(string Before, string After, string Receipt)> ActorEvidenceAsync()
+    {
+        var paths = await EvidenceAsync();
+        const string qualification = "actor/model/render-matrix-candidate-only; body-facing, source freshness, input response and restart unverified";
+        object Matrix(double degrees, int offset)
+        {
+            var radians = degrees * Math.PI / 180;
+            var cosine = (float)Math.Cos(radians);
+            var sine = (float)Math.Sin(radians);
+            float[] cells = [cosine, 0, -sine, 0, 1, 0, sine, 0, cosine];
+            return new
+            {
+                status = "structural-y-planar-matrix-candidate",
+                sourceOffset = offset,
+                planarAngleDegreesCandidate = degrees,
+                rawBits = cells.Select(BitConverter.SingleToUInt32Bits).ToArray(),
+                rowMajorF32 = cells
+            };
+        }
+        object Sample(double degrees, string start, string end) => new
+        {
+            identity = new
+            {
+                processId = 1234,
+                processStartUtcTicks = 639298670575905950L,
+                executableSha256 = new string('A', 64),
+                moduleBaseAddress = 0x140000000UL,
+                moduleSize = 50_000_000L
+            },
+            startedAtUtc = start, completedAtUtc = end,
+            playerKeyDecimal = "123456",
+            actorComponentDecimal = "305419896",
+            actorHeadingQualified = false,
+            qualification,
+            actorMatrix = Matrix(degrees, 0x398),
+            modelMatrix = Matrix(degrees, 0x3EC)
+        };
+        await File.WriteAllTextAsync(paths.Before, JsonSerializer.Serialize(
+            Sample(10, "2026-11-10T09:00:00Z", "2026-11-10T09:00:00.100Z")));
+        await File.WriteAllTextAsync(paths.After, JsonSerializer.Serialize(
+            Sample(16, "2026-11-10T09:00:00.700Z", "2026-11-10T09:00:00.800Z")));
+        return paths;
+    }
+
     private static string[] Args((string Before, string After, string Receipt) paths, string uncontaminated = "true") =>
         ["analyze-turn-probe", "--before", paths.Before, "--after", paths.After,
          "--receipt", paths.Receipt, "--matrix", "primary", "--uncontaminated", uncontaminated];
@@ -200,6 +244,51 @@ public sealed class TurnProbeCliTests : IDisposable
         using var error = new StringWriter();
         Assert.Equal(2, await CliRunner.RunAsync(Args(paths), TextWriter.Null, error));
         Assert.Contains("raw matrix", error.ToString());
+    }
+
+    [Theory]
+    [InlineData("actor")]
+    [InlineData("model")]
+    public async Task ConsumesCurrentActorPoseBeforeAfterWithReleaseReceipt(string matrix)
+    {
+        var paths = await ActorEvidenceAsync();
+        var args = Args(paths).Select(value => value == "primary" ? matrix : value).ToArray();
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        Assert.Equal(0, await CliRunner.RunAsync(args, output, error));
+        Assert.Empty(error.ToString());
+        using var report = JsonDocument.Parse(output.ToString());
+        var root = report.RootElement;
+        Assert.Equal(matrix, root.GetProperty("matrix").GetString());
+        Assert.Equal("candidate-rate-observed", root.GetProperty("status").GetString());
+        Assert.Equal(6, root.GetProperty("signedCandidateDeltaDegrees").GetDouble(), 6);
+        Assert.Equal(50, root.GetProperty("calibration").GetProperty("candidateDegreesPerSecond").GetDouble(), 6);
+        Assert.False(root.GetProperty("actorHeadingQualified").GetBoolean());
+    }
+
+    [Fact]
+    public async Task RejectsActorPoseOwnerDriftOrClaimedQualifiedHeading()
+    {
+        var paths = await ActorEvidenceAsync();
+        var args = Args(paths).Select(value => value == "primary" ? "actor" : value).ToArray();
+        var before = await File.ReadAllTextAsync(paths.Before);
+        var after = await File.ReadAllTextAsync(paths.After);
+        await File.WriteAllTextAsync(paths.After,
+            after.Replace("\"actorComponentDecimal\":\"305419896\"",
+                          "\"actorComponentDecimal\":\"305419904\"", StringComparison.Ordinal));
+        using (var changedOwnerError = new StringWriter())
+        {
+            Assert.Equal(2, await CliRunner.RunAsync(args, TextWriter.Null, changedOwnerError));
+            Assert.Contains("candidate-component", changedOwnerError.ToString());
+        }
+
+        await File.WriteAllTextAsync(paths.After, after);
+        await File.WriteAllTextAsync(paths.Before,
+            before.Replace("\"actorHeadingQualified\":false",
+                           "\"actorHeadingQualified\":true", StringComparison.Ordinal));
+        using var falselyQualifiedError = new StringWriter();
+        Assert.Equal(2, await CliRunner.RunAsync(args, TextWriter.Null, falselyQualifiedError));
+        Assert.Contains("unqualified current-build actor-pose", falselyQualifiedError.ToString());
     }
 
     public void Dispose()

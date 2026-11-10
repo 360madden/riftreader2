@@ -22,8 +22,8 @@ internal static class TurnProbeCliCommand
             || !options.TryGetValue("--matrix", out var matrix)
             || !options.TryGetValue("--uncontaminated", out var uncontaminatedText))
             throw new ArgumentException("--before, --after, --receipt, --matrix and --uncontaminated are required.");
-        if (matrix is not ("primary" or "secondary"))
-            throw new ArgumentException("--matrix must be primary or secondary.");
+        if (matrix is not ("primary" or "secondary" or "actor" or "model"))
+            throw new ArgumentException("--matrix must be primary, secondary, actor or model.");
         if (uncontaminatedText is not ("true" or "false"))
             throw new ArgumentException("--uncontaminated must be true or false.");
         using var beforeJson = await LoadAsync(beforePath, cancellationToken);
@@ -124,6 +124,8 @@ internal static class TurnProbeCliCommand
 
     private static Sample ReadSample(JsonElement root, string matrix)
     {
+        if (matrix is "actor" or "model")
+            return ReadActorSample(root, matrix);
         if (root.GetProperty("qualification").GetString() !=
             "matrix-descriptor-candidate-only; body-facing/axis/sign/passive-freshness/restart-unverified")
             throw new InvalidDataException("Expected a current native orientation candidate report.");
@@ -142,6 +144,38 @@ internal static class TurnProbeCliCommand
         if (entry.GetProperty("status").GetString() != "structural-y-planar-matrix-candidate"
             || entry.GetProperty("sourceOffset").GetInt32() != (matrix == "primary" ? 0x60 : 0x94))
             throw new InvalidDataException("Requested orientation matrix is not a structural candidate.");
+        var angle = VerifiedMatrixAngle(entry);
+        var started = root.GetProperty("startedAtUtc").GetDateTimeOffset();
+        var completed = root.GetProperty("completedAtUtc").GetDateTimeOffset();
+        var facing = new TurnSkeletonFacing("native-owned-" + matrix, pid, ticks,
+            unit, angle, completed, false);
+        return new(facing, started, completed, sha.ToUpperInvariant(),
+            id.GetProperty("moduleBaseAddress").GetUInt64(),
+            id.GetProperty("moduleSize").GetInt64(), component);
+    }
+
+    private static Sample ReadActorSample(JsonElement root, string matrix)
+    {
+        if (root.GetProperty("qualification").GetString() !=
+            "actor/model/render-matrix-candidate-only; body-facing, source freshness, input response and restart unverified"
+            || root.GetProperty("actorHeadingQualified").GetBoolean())
+            throw new InvalidDataException("Expected an unqualified current-build actor-pose candidate report.");
+        var id = root.GetProperty("identity");
+        var sha = id.GetProperty("executableSha256").GetString() ?? "";
+        if (sha.Length != 64 || sha.Any(c => !Uri.IsHexDigit(c)))
+            throw new InvalidDataException("Invalid actor-pose game build identity.");
+        var pid = id.GetProperty("processId").GetInt32();
+        var ticks = id.GetProperty("processStartUtcTicks").GetInt64();
+        var unit = root.GetProperty("playerKeyDecimal").GetString() ?? "";
+        var componentText = root.GetProperty("actorComponentDecimal").GetString() ?? "";
+        if (!ulong.TryParse(unit, NumberStyles.None, CultureInfo.InvariantCulture, out var unitId)
+            || unitId == 0 || !ulong.TryParse(componentText, NumberStyles.None,
+                CultureInfo.InvariantCulture, out var component) || component == 0)
+            throw new InvalidDataException("Missing actor-pose player/component owner.");
+        var entry = root.GetProperty(matrix == "actor" ? "actorMatrix" : "modelMatrix");
+        if (entry.GetProperty("status").GetString() != "structural-y-planar-matrix-candidate"
+            || entry.GetProperty("sourceOffset").GetInt32() != (matrix == "actor" ? 0x398 : 0x3EC))
+            throw new InvalidDataException("Requested actor/model matrix is not a structural candidate.");
         var angle = VerifiedMatrixAngle(entry);
         var started = root.GetProperty("startedAtUtc").GetDateTimeOffset();
         var completed = root.GetProperty("completedAtUtc").GetDateTimeOffset();
