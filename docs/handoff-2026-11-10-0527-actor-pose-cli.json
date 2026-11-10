@@ -4,7 +4,7 @@
   "machine": "AMD-DESKTOP",
   "repository": "C:\\work\\riftreader2",
   "branch": "codex/modular-foundation",
-  "head": "52320d0f807acc984ff737d856c953e85d31388b",
+  "lastCodeCommit": "7497afcd1bd7ec18793b25c07457b090568f7a78",
   "pushed": true,
   "commits": [
     "9088e624f60d507c573a21cb7aa65aa55d61a546",
@@ -13,11 +13,20 @@
     "8063fb6dd855cc9b6f871ec18b0200c894c9a666",
     "7ff03b962f6230995fa7a61f615bc7b88c5d7b39",
     "6a8ef1a53f293ff8f8f2104439d1df6e1f1b593b",
-    "52320d0f807acc984ff737d856c953e85d31388b"
+    "52320d0f807acc984ff737d856c953e85d31388b",
+    "7497afcd1bd7ec18793b25c07457b090568f7a78"
   ],
   "tests": {
     "pythonPoseAndCli": 38,
-    "dotnetCli": 414
+    "dotnetCli": 414,
+    "dotnetLive": 1032,
+    "pythonWithFrames": 42
+  },
+  "offlineRelease": {
+    "path": "artifacts/native-actor-pose-release-20261110-0536/publish/RiftReader2.Live.exe",
+    "bytes": 118064992,
+    "sha256": "1A3BA9D3CDAF163C59DE0E75A2E3B007190F0F37B80CBFCBCB488B9F9C5DA9EA",
+    "deployed": false
   },
   "live": {
     "game": "offline-user-reported",
@@ -36,6 +45,7 @@
     "analyze via C# --matrix actor or model"
   ],
   "actorHeadingQualified": false,
+  "unresolvedCurrentBuildWriter": "actor+0x3EC",
   "untrackedPreserved": [
     "scripts/project_current_native_energy_variants.py",
     "scripts/rank_native_anchor_candidates.py",
