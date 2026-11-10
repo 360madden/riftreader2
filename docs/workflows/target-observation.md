@@ -116,7 +116,15 @@ The default without `--allow-foreground-change` is a blocked result. The
 registered Workbridge backend retains its shared desktop turn and quarantine
 checks; the flag does not override those checks or authorize game input.
 Fresh PID/start/build/HWND checks bracket the capture; absent RIFT reports
-`not-running`, not another target's image.
+`not-running`, not another target's image. With multiple `rift_x64` processes,
+the default blocks as `ambiguous-process`. To capture one specific multibox
+client, first identify its PID using `Get-Process rift_x64 | Select-Object Id,MainWindowTitle`
+in PowerShell, then add `--physical-pid 12345` (replace `12345` with the actual
+PID) to the command above. This filters RIFT processes before selecting the
+window and repeats that same PID selection for both post-selection identity
+checks. An absent or changed PID blocks; it never falls back to another client.
+The flag is not valid for VMware lab capture and still requires foreground-change
+authority.
 
 ## Delivery and failures
 

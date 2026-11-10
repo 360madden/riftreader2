@@ -52,13 +52,44 @@ class TargetRoutingTests(unittest.TestCase):
                 return_value=self.result("physical-amd-desktop", "physical")) as physical:
             tool.observe("physical-amd-desktop", "AMD-DESKTOP", allow_foreground_change=True)
         vm.assert_not_called()
-        physical.assert_called_once_with("AMD-DESKTOP", None, True)
+        physical.assert_called_once_with("AMD-DESKTOP", None, True, None)
+
+    def test_physical_pid_routes_to_exact_adapter_only(self):
+        with patch.object(tool, "_capture_vmware") as vm, patch.object(tool, "_capture_physical",
+                 return_value=self.result("physical-amd-desktop", "physical")) as physical:
+            result = tool.observe("physical-amd-desktop", "AMD-DESKTOP",
+                                  allow_foreground_change=True, physical_pid=123)
+        vm.assert_not_called()
+        physical.assert_called_once_with("AMD-DESKTOP", None, True, 123)
+        self.assertEqual(result["targetId"], "physical-amd-desktop")
+
+    def test_physical_pid_is_rejected_for_labs_and_invalid_values(self):
+        with patch.object(tool, "_capture_vmware") as vm, \
+             patch.object(tool, "_capture_physical") as physical:
+            with self.assertRaisesRegex(ValueError, "physical-pid-incompatible-target"):
+                tool.observe("lab2", "AMD-DESKTOP", physical_pid=123)
+            for pid in (True, 0, -1, 4294967296, "123"):
+                with self.subTest(pid=pid), self.assertRaisesRegex(ValueError, "invalid-physical-pid"):
+                    tool.observe("physical-amd-desktop", "AMD-DESKTOP", physical_pid=pid)
+            vm.assert_not_called()
+            physical.assert_not_called()
+
+    def test_cli_passes_physical_pid(self):
+        out = io.StringIO()
+        with patch.object(tool, "_capture_physical",
+                 return_value=self.result("physical-amd-desktop", "physical")) as physical, \
+             redirect_stdout(out):
+            code = tool.main(["--target", "physical-amd-desktop", "--expected-host", "AMD-DESKTOP",
+                              "--allow-foreground-change", "--physical-pid", "123"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out.getvalue())["status"], "verified-awaiting-visual-review")
+        physical.assert_called_once_with("AMD-DESKTOP", None, True, 123)
 
     def test_legion_requires_actual_legion(self):
         with patch.object(tool.socket, "gethostname", return_value="LEGION"), patch.object(
                 tool, "_capture_physical", return_value=self.result("physical-legion", "physical")) as physical:
             tool.observe("physical-legion", "LEGION")
-        physical.assert_called_once_with("LEGION", None, False)
+        physical.assert_called_once_with("LEGION", None, False, None)
 
     def test_unqualified_requests_fail_without_fallback(self):
         for target, opts in (("lab1", {"native_vitals": True}), ("physical-amd-desktop", {"native_vitals": True})):

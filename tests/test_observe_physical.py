@@ -46,6 +46,34 @@ class PhysicalTests(unittest.TestCase):
             identity.assert_not_called()
             call.assert_not_called()
 
+    def test_invalid_pid_blocks_before_creating_output_or_capture(self):
+        for pid in (True, 0, -1, 4294967296, "123"):
+            with self.subTest(pid=pid), patch.object(physical, "_identity") as identity, \
+                 patch.object(physical, "_call") as call:
+                result = physical.capture_physical(
+                    "AMD-DESKTOP", self.root / "run", allow_foreground_change=True,
+                    physical_pid=pid)
+                self.assertEqual(result["reason"], "invalid-physical-pid")
+                self.assertFalse((self.root / "run").exists())
+                identity.assert_not_called()
+                call.assert_not_called()
+
+    def test_identity_selects_requested_rift_pid_without_fallback(self):
+        with patch.object(physical, "_run", return_value=(0, json.dumps(IDENTITY))) as run:
+            self.assertEqual(physical._identity(123), IDENTITY)
+            script = run.call_args.args[0][-1]
+            self.assertIn("Get-Process -Name rift_x64", script)
+            self.assertIn("Where-Object {$_.Id -eq 123}", script)
+        with patch.object(physical, "_run", return_value=(0, '{"status":"not-running"}')):
+            with self.assertRaisesRegex(ValueError, "^not-running$"):
+                physical._identity(999)
+
+    def test_no_pid_still_rejects_multibox_ambiguity(self):
+        with patch.object(physical, "_run", return_value=(0, '{"status":"ambiguous-process"}')) as run:
+            with self.assertRaisesRegex(ValueError, "^ambiguous-process$"):
+                physical._identity()
+            self.assertNotIn("Where-Object", run.call_args.args[0][-1])
+
     def test_not_running(self):
         with patch.object(physical, "_identity", side_effect=ValueError("not-running")), \
              patch.object(physical, "_call") as call:
@@ -94,6 +122,26 @@ class PhysicalTests(unittest.TestCase):
             self.assertEqual(result["target"], IDENTITY)
             self.assertEqual(Path(result["image"]).read_bytes(), PNG)
             self.assertEqual(result["imageSha256"], sha256(PNG).hexdigest().upper())
+
+    def test_selected_pid_is_checked_at_all_three_identity_gates(self):
+        with patch.object(physical, "BRIDGE", self.root / "bridge"), \
+             patch.object(physical, "_identity", return_value=IDENTITY) as identity, \
+             patch.object(physical, "_call", side_effect=self.backend):
+            result = physical.capture_physical(
+                "AMD-DESKTOP", self.root / "selected", allow_foreground_change=True,
+                physical_pid=123)
+            self.assertEqual(result["status"], "verified-awaiting-visual-review")
+            self.assertEqual(identity.call_count, 3)
+            self.assertTrue(all(call.args == (123,) for call in identity.call_args_list))
+
+    def test_selected_pid_receipt_mismatch_never_captures(self):
+        with patch.object(physical, "_identity", return_value=IDENTITY), \
+             patch.object(physical, "_call") as call:
+            result = physical.capture_physical(
+                "AMD-DESKTOP", self.root / "different", allow_foreground_change=True,
+                physical_pid=999)
+            self.assertEqual(result["reason"], "physical-pid-mismatch")
+            call.assert_not_called()
 
     def test_post_capture_drift_rejects_image(self):
         with patch.object(physical, "BRIDGE", self.root / "bridge"), \

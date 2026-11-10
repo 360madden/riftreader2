@@ -58,10 +58,16 @@ def _run(args, timeout=120):
                 proc.wait(timeout=10)
 
 
-def _identity():
+def _identity(physical_pid=None):
+    _require(physical_pid is None or
+             (type(physical_pid) is int and 1 <= physical_pid <= 4294967295),
+             "invalid-physical-pid")
+    selection = (f"$p=@($p | Where-Object {{$_.Id -eq {physical_pid}}});"
+                 if physical_pid is not None else "")
     script = (
         "$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
         "$p=@(Get-Process -Name rift_x64 -ErrorAction SilentlyContinue);"
+        + selection +
         "if($p.Count -eq 0){@{status='not-running'}|ConvertTo-Json -Compress;exit};"
         "if($p.Count -ne 1){@{status='ambiguous-process'}|ConvertTo-Json -Compress;exit};"
         "$p=$p[0];$path=$p.MainModule.FileName;"
@@ -105,7 +111,8 @@ def _call(tool, arguments, output):
     return result
 
 
-def capture_physical(expected_host, output, *, allow_foreground_change=False):
+def capture_physical(expected_host, output, *, allow_foreground_change=False,
+                     physical_pid=None):
     """No fallback, guest authentication, input injection, service startup, or retry."""
     target_id = "physical-" + str(expected_host).lower()
     try:
@@ -113,13 +120,18 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False):
                  expected_host.upper() in ("AMD-DESKTOP", "LEGION"), "invalid-host")
         _require(socket.gethostname().casefold() == expected_host.casefold(), "host-mismatch")
         _require(allow_foreground_change is True, "desktop-ownership-required")
+        _require(physical_pid is None or
+                 (type(physical_pid) is int and 1 <= physical_pid <= 4294967295),
+                 "invalid-physical-pid")
         output = Path(output)
         _require(output.is_absolute(), "absolute-output-required")
         output = Path(os.path.abspath(output))
         _plain_path(output)
         _require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
         output.mkdir()
-        before = _identity()
+        before = _identity(physical_pid)
+        _require(physical_pid is None or before.get("processId") == physical_pid,
+                 "physical-pid-mismatch")
         _require(before.get("hostName", "").casefold() == expected_host.casefold(), "host-mismatch")
         windows = _call("desktop_windows", {"app": str(before["processId"])}, output)
         _require(windows.get("truncated") is False, "window-list-truncated")
@@ -133,7 +145,7 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False):
         _require(isinstance(window.get("title"), str) and bool(window["title"]) and
                  isinstance(window.get("className"), str) and bool(window["className"]),
                  "invalid-window-identity")
-        _require(_identity() == before, "stale-identity")
+        _require(_identity(physical_pid) == before, "stale-identity")
         request_id = "rr2_physical_" + uuid.uuid4().hex
         started = datetime.now(timezone.utc)
         started = started.replace(microsecond=(started.microsecond // 1000) * 1000)
@@ -141,7 +153,7 @@ def capture_physical(expected_host, output, *, allow_foreground_change=False):
             "pid": before["processId"], "hwnd": before["hwnd"], "process": "rift_x64",
             "requestId": request_id, "title": window["title"], "className": window["className"],
         }, output)
-        _require(_identity() == before, "stale-identity")
+        _require(_identity(physical_pid) == before, "stale-identity")
         ended = datetime.now(timezone.utc)
         _require(receipt.get("ok") is True and receipt.get("replayed") is False and
                  receipt.get("requestId") == request_id and receipt.get("pid") == before["processId"] and

@@ -34,11 +34,12 @@ def _capture_host_preview(target_id, expected_host, output):
     return capture(target_id, expected_host, directory)
 
 
-def _capture_physical(expected_host, output, allow_foreground_change):
+def _capture_physical(expected_host, output, allow_foreground_change, physical_pid=None):
     from scripts.observe_physical import capture_physical
     output = output or ROOT / "artifacts" / ("observe-physical-" + uuid.uuid4().hex)
     return capture_physical(expected_host, output,
-                            allow_foreground_change=allow_foreground_change)
+                            allow_foreground_change=allow_foreground_change,
+                            physical_pid=physical_pid)
 
 
 def _preview(result, width):
@@ -53,7 +54,7 @@ def _paired_preview(result, width, crop):
 
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
-            preview_detail_crop=None, host_preview=False):
+            preview_detail_crop=None, host_preview=False, physical_pid=None):
     started = time.perf_counter()
     if target_id not in TARGETS:
         raise ValueError("unknown-target")
@@ -63,6 +64,11 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     actual_host = socket.gethostname()
     if actual_host.casefold() != owner_host.casefold():
         raise ValueError("host-mismatch")
+    if physical_pid is not None:
+        if workflow != "physical":
+            raise ValueError("physical-pid-incompatible-target")
+        if type(physical_pid) is not int or not 1 <= physical_pid <= 4294967295:
+            raise ValueError("invalid-physical-pid")
     if type(preview_width) is not int or not 500 <= preview_width <= 1600:
         raise ValueError("invalid-preview-width")
     if preview_detail_crop is not None:
@@ -97,7 +103,7 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     if workflow == "vmware":
         result = _capture_vmware(target_id, output, native_vitals)
     else:
-        result = _capture_physical(owner_host, output, allow_foreground_change)
+        result = _capture_physical(owner_host, output, allow_foreground_change, physical_pid)
     if (not isinstance(result, dict) or result.get("targetId") != target_id
             or result.get("workflow") != workflow):
         raise ValueError("adapter-target-mismatch")
@@ -129,6 +135,8 @@ def main(argv=None):
                         help="VMware labs only: fast read-only FlaUI host screenshot, never movement authority")
     parser.add_argument("--allow-foreground-change", action="store_true",
                         help="physical capture only: explicitly allow the desktop backend to focus RIFT")
+    parser.add_argument("--physical-pid", type=int,
+                        help="physical capture only: exact rift_x64 process ID for multibox sessions")
     parser.add_argument("--preview", action="store_true", help="include a bounded non-authoritative JPEG in the same result")
     parser.add_argument("--preview-width", type=int, default=840)
     parser.add_argument("--preview-detail-crop", nargs=4, type=int,
@@ -141,7 +149,8 @@ def main(argv=None):
                          allow_foreground_change=args.allow_foreground_change,
                          with_preview=args.preview, preview_width=args.preview_width,
                           preview_detail_crop=args.preview_detail_crop,
-                          host_preview=args.host_preview)
+                          host_preview=args.host_preview,
+                          physical_pid=args.physical_pid)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,
