@@ -259,6 +259,44 @@ class NativePlayerSeriesTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue()),
                              {"status": "blocked", "reason": "native-player-series-unavailable"})
 
+    def test_cli_replays_retained_validation_envelope_with_original_hash(self):
+        with TemporaryDirectory() as folder:
+            before = Path(folder) / "before.json"
+            after = Path(folder) / "wrapped.json"
+            before.write_text(json.dumps(sample(0)), encoding="utf-8")
+            envelope = {
+                "atUtc": "2026-11-09T17:01:01Z",
+                "ownerGeneration": "a" * 32,
+                "controllerPid": 65300,
+                "readout": sample(1),
+                "postflight": {"connected": True, "state": "ready", "armed": False},
+            }
+            after.write_text(json.dumps(envelope), encoding="utf-8")
+            output = io.StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(tool.main(["--reads", str(before), str(after)]), 0)
+            result = json.loads(output.getvalue())
+            self.assertEqual(result["readCount"], 2)
+            self.assertEqual(result["positionSummary"]["netHorizontalXZDistanceCandidate"], 5)
+            self.assertEqual(result["vitalsEndpointDeltasCandidate"]["health"]["deltaCurrentCandidate"], -5)
+            self.assertEqual(result["lastSourceSha256"],
+                             hashlib.sha256(after.read_bytes()).hexdigest().upper())
+
+            for edit in (
+                lambda row: row.update(controllerPid=True),
+                lambda row: row.update(ownerGeneration="invalid"),
+                lambda row: row.update(extra="unknown"),
+                lambda row: row.update(readout={"status": "candidate-only"}),
+            ):
+                with self.subTest(edit=str(edit)):
+                    changed = copy.deepcopy(envelope)
+                    edit(changed)
+                    after.write_text(json.dumps(changed), encoding="utf-8")
+                    output = io.StringIO()
+                    with redirect_stdout(output):
+                        self.assertEqual(tool.main(["--reads", str(before), str(after)]), 2)
+                    self.assertEqual(json.loads(output.getvalue())["status"], "blocked")
+
     def test_script_direct_cli_help(self):
         result = subprocess.run(
             [sys.executable, str(Path(tool.__file__).resolve()), "--help"],

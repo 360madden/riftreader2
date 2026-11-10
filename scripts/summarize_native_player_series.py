@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 import sys
 
@@ -23,6 +24,26 @@ if str(ROOT) not in sys.path:
 from scripts import compare_native_player_reads as comparison
 
 MAX_READS = 32
+
+
+def load_saved_readout(path: Path) -> tuple[dict, str]:
+    """Accept a native readout or the retained controller-validation envelope."""
+    value, file_sha = comparison.load(path)
+    if "readout" not in value:
+        return value, file_sha
+    if (set(value) != {"atUtc", "ownerGeneration", "controllerPid",
+                       "readout", "postflight"}
+            or type(value["readout"]) is not dict
+            or type(value["controllerPid"]) is not int
+            or not 0 < value["controllerPid"] < 2**31
+            or not isinstance(value["ownerGeneration"], str)
+            or re.fullmatch(r"[0-9a-f]{32}", value["ownerGeneration"]) is None
+            or type(value["postflight"]) is not dict):
+        raise ValueError("native-player-series-validation-wrapper-invalid")
+    comparison._utc(value["atUtc"])
+    # Hash and compare the original entire file, not reserialized nested JSON.
+    # Wrapper controller/postflight metadata is not independent game evidence.
+    return value["readout"], file_sha
 
 
 def summarize(reads: list[tuple[dict, str]]) -> dict:
@@ -162,7 +183,7 @@ def main(argv=None):
     try:
         if not 2 <= len(args.reads) <= MAX_READS:
             raise ValueError("native-player-series-length-invalid")
-        reads = [comparison.load(path) for path in args.reads]
+        reads = [load_saved_readout(path) for path in args.reads]
         result = summarize(reads)
         print(json.dumps(result, allow_nan=False, separators=(",", ":")))
         return 0
