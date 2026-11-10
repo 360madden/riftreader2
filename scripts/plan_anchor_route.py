@@ -69,13 +69,16 @@ def plan_route(current_path: Path, catalog_path: Path, route_ids: list[str],
                          and type(receipt.get("arrivalObservations")) is int
                          and receipt["arrivalObservations"] == 2
                          and type(receipt.get("feedbackIterations")) is int
-                         and receipt["feedbackIterations"] >= 1,
+                         and receipt["feedbackIterations"] >= 1
+                         and type(receipt.get("actions")) is int
+                         and receipt["actions"] >= 1,
                          "recorded arrival is not a completed released movement")
         observations = receipt.get("samples")
         actions = receipt.get("actionEvidence")
-        steering.require(isinstance(observations, list) and len(observations) >= 3
-                         and isinstance(actions, list) and len(actions) >= 1,
-                         "recorded arrival lacks observations or action evidence")
+        steering.require(isinstance(actions, list) and len(actions) == receipt["actions"]
+                         and isinstance(observations, list)
+                         and len(observations) == len(actions) + 2,
+                         "recorded arrival lacks a complete action/observation chain")
         for action in actions:
             delivery = action.get("result", {}).get("result", {}) if isinstance(action, dict) else {}
             steering.require(isinstance(delivery, dict)
@@ -90,7 +93,8 @@ def plan_route(current_path: Path, catalog_path: Path, route_ids: list[str],
         steering.require(all(steering.identity(sample) == current["identity"]
                              for sample in observations),
                          "recorded arrival belongs to another source identity")
-        steering.advancing(before, after)
+        for older, newer in zip(observations, observations[1:]):
+            steering.advancing(older, newer)
         if last_sample is not None:
             steering.advancing(last_sample, before)
         anchor = lookup[normalized[index].casefold()]

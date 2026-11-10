@@ -130,7 +130,7 @@ class AnchorRouteTests(unittest.TestCase):
                           first_sequence=4, nonce="nonce", released=True):
         from tests.test_plan_steered_waypoint import sample
         return {"success": True, "mode": "movement", "status": "arrived",
-                "settles": 1, "arrivalObservations": 2, "feedbackIterations": 1,
+                "actions": 1, "settles": 1, "arrivalObservations": 2, "feedbackIterations": 1,
                 "goal": dict(zip(("x", "y", "z"), goal)),
                 "actionEvidence": [{"index": 1, "result": {"result": {
                     "deliverySucceeded": True, "releaseSucceeded": released,
@@ -175,6 +175,8 @@ class AnchorRouteTests(unittest.TestCase):
              "not a completed released movement"),
             ("no-settle", {**self._recorded_arrival(), "settles": 0},
              "not a completed released movement"),
+            ("missing-action", {**self._recorded_arrival(), "actions": 2},
+             "complete action/observation chain"),
             ("late-replay", self._recorded_arrival(first_sequence=15),
              "did not advance"),
         )
@@ -184,6 +186,36 @@ class AnchorRouteTests(unittest.TestCase):
                 with self.assertRaisesRegex(SteeringPlanError, expected):
                     plan_route(current, catalog, ["Start", "Dock"],
                                arrival_result_paths=[path])
+
+    def test_multiple_recorded_arrivals_advance_full_route_in_order(self):
+        current = self._write("after-second-calibration.json",
+                              calibration((3, 4, .03), (4, 4, .03), 10, (1, 0)))
+        catalog = self._catalog()
+        first = self._write("first-arrival.json", self._recorded_arrival())
+        second = self._write("second-arrival.json", self._recorded_arrival(
+            goal=(3, 4, .03), final=(3, 4, .03), first_sequence=7))
+        result = plan_route(current, catalog, ["Start", "Dock"],
+                            arrival_result_paths=[first, second])
+        self.assertEqual(result["recordedArrivalIds"], ["Start", "Dock"])
+        self.assertIsNone(result["nextAnchorId"])
+        self.assertEqual(result["decision"], "within-tolerance-or-declared-complete")
+        self.assertFalse(result["movementEligible"])
+
+        reversed_second = self._write("out-of-order.json", self._recorded_arrival(
+            goal=(3, 4, .03), final=(3, 4, .03), first_sequence=5))
+        with self.assertRaisesRegex(SteeringPlanError, "did not advance"):
+            plan_route(current, catalog, ["Start", "Dock"],
+                       arrival_result_paths=[first, reversed_second])
+
+    def test_rejects_intermediate_receipt_sequence_regression(self):
+        current = self._write("after-arrival-calibration.json",
+                              calibration((1, 4, 0), (2, 4, 0), 10, (1, 0)))
+        receipt = self._recorded_arrival()
+        receipt["samples"][1]["outerSequence"] = 3
+        path = self._write("regressed-midpoint.json", receipt)
+        with self.assertRaisesRegex(SteeringPlanError, "outerSequence did not advance"):
+            plan_route(current, self._catalog(), ["Start", "Dock"],
+                       arrival_result_paths=[path])
 
     def test_cli_accepts_ordered_saved_arrival_but_not_as_live_authority(self):
         current = self._write("after-arrival-calibration.json",
