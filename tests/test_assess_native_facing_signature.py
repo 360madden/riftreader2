@@ -137,6 +137,18 @@ class FacingSignatureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "five-distinct"):
             facing.assess([paths[0]] * 5)
 
+    def test_nonadjacent_position_source_replay_is_rejected(self):
+        paths = self.sequence()
+        first = json.loads(paths[0].read_text(encoding="utf-8"))
+        replayed = json.loads(paths[2].read_text(encoding="utf-8"))
+        # Adjacent pair hashes still differ. The older source is reused
+        # nonadjacently despite newer timestamps and plausible XYZ values.
+        replayed["position"]["sourceReportSha256"] = (
+            first["position"]["sourceReportSha256"].lower())
+        paths[2].write_text(json.dumps(replayed), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "facing-repeated-position-source"):
+            facing.assess(paths)
+
     def test_cli_emits_candidate_only(self):
         paths = self.sequence()
         args = [value for key, path in zip(facing.PHASES, paths)

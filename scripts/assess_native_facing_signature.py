@@ -60,6 +60,14 @@ def assess(paths: list[Path]) -> dict:
         if second_start <= first_end:
             raise ValueError("facing-phase-overlap")
         comparisons.append(result)
+    # Adjacent checks alone can miss a nonadjacent replay (A, B, A, C, D).
+    # Distinct capture paths and later timestamps do not make old source
+    # reports fresh. Enforce one original report hash per phase and field.
+    for field in ("position", "actor-pose"):
+        source_hashes = [readout[field]["sourceReportSha256"].upper()
+                         for readout, _ in saved]
+        if len(set(source_hashes)) != len(source_hashes):
+            raise ValueError("facing-repeated-" + field + "-source")
     # Across all four adjacent comparisons, the same game, VM, agent and player
     # identity is required by the existing verified native-read comparison.
     camera, left, right, forward = (c["comparison"] for c in comparisons)
