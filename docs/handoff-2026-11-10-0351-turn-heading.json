@@ -50,6 +50,7 @@
     "staged": false,
     "activated": false,
     "blockedBy": "managed-owner-refused",
+    "ownerDiagnostic": {"checkedAtUtc": "2026-11-10T08:53:50Z", "uiPort": 49921, "listenerPid": 14220, "managedReceiptError": "managed-runtime-changed"},
     "stopPoint": "managed-controller preflight, before guest copy"
   },
   "next": [

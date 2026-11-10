@@ -15,7 +15,7 @@
 ## Blockers and truthful limitations
 
 - 🟡 Joey was typing during a prior A-turn attempt; classify it **contaminated/inconclusive**. **No A-turn/game movement input was sent by this continuation.** No independently measured actor-yaw change yet.
-- 🟡 At 08:50Z, `stage_managed_guest_release.py --managed-lab lab2` stopped at preflight with **`managed-owner-refused`** from `ensure_controller._verify_existing_owner`. The new binary was **not copied to the guest or activated**, and the running agent/game were untouched. Never force ownership or evade the control guard.
+- 🟡 At 08:50Z, `stage_managed_guest_release.py --managed-lab lab2` stopped at preflight with **`managed-owner-refused`** from `ensure_controller._verify_existing_owner`. The new binary was **not copied to the guest or activated**, and the running agent/game were untouched. Never force ownership or evade the control guard. Read-only owner diagnostic at 08:53:50Z: UI port **49921**, listener PID **14220**, managed receipt **`ManagedReceiptError: managed-runtime-changed`**.
 - 🟡 The running host server and guest controller may still be earlier binaries, so the new endpoint is **offline-tested only**. New source code on disk does not imply a deployed capability. No live benchmark of end-to-end orientation response latency exists yet.
 
 ## Next smallest practical steps
