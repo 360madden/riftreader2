@@ -10,6 +10,7 @@ except ImportError:
     Image = None
 
 from scripts import compare_turn_frames as frames
+from scripts.run_movement_session import add_turn_visual_comparison
 
 
 @unittest.skipIf(Image is None, "Pillow is optional outside screenshot environments")
@@ -50,6 +51,30 @@ class CompareTurnFramesTests(unittest.TestCase):
         self.assertEqual(self._hash(self.output), result["previewSha256"])
         with Image.open(self.output) as image:
             self.assertEqual((120, 85), image.size)
+
+    def test_reviewed_turn_auto_compares_hash_pinned_frames(self):
+        turn = {"mode": "turn", "beforeTurnCapture": {
+            "image": str(self.before), "imageSha256": self._hash(self.before)},
+            "afterTurnCapture": {"status": "captured", "image": str(self.after),
+                                 "imageSha256": self._hash(self.after)}}
+        result = add_turn_visual_comparison(turn, self.folder)
+        review = result["turnVisualComparison"]
+        self.assertEqual(review["status"], "visual-difference-candidate")
+        self.assertEqual(review["changedPixelFraction"], 1)
+        self.assertTrue((self.folder / "turn-before-after.png").is_file())
+        self.assertEqual(review["previewSha256"], self._hash(self.folder / "turn-before-after.png"))
+        self.assertEqual(turn["afterTurnCapture"]["status"], "captured")
+        turn["afterTurnCapture"]["imageSha256"] = "F" * 64
+        blocked = add_turn_visual_comparison(turn, self.folder)
+        self.assertEqual(blocked["turnVisualComparison"]["status"], "unavailable")
+        self.assertIn("hash-mismatch", blocked["turnVisualComparison"]["reason"])
+
+    def test_no_after_frame_reports_unavailable_without_creating_preview(self):
+        result = add_turn_visual_comparison({"mode": "turn",
+            "beforeTurnCapture": {"image": str(self.before), "imageSha256": self._hash(self.before)},
+            "afterTurnCapture": {"status": "unavailable"}}, self.folder)
+        self.assertEqual(result["turnVisualComparison"]["reason"], "after-turn-frame-unavailable")
+        self.assertFalse((self.folder / "turn-before-after.png").exists())
 
     def test_identical_frames_do_not_claim_turn(self):
         self._save(self.after, (0, 0, 0))

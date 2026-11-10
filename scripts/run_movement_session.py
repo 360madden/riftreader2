@@ -1241,8 +1241,29 @@ def run_reviewed(session_path: Path, review_path: Path, output: Path) -> dict:
     result = execute_armed_session(session=session, review=review, output=Path(output),
              host=host, lease=queue, feedback=feedback,
               post_turn_capture=host.capture_after_stop if session["mode"] == "turn" else None)
+    result = add_turn_visual_comparison(result, Path(output))
     save(Path(output) / "result.json", sanitized(result))
     return sanitized(result)
+
+
+def add_turn_visual_comparison(result: dict, output: Path) -> dict:
+    """Hash-check and compare retained turn frames after the input lease is finished."""
+    if result.get("mode") != "turn":
+        return result
+    enriched = dict(result)
+    before, after = result.get("beforeTurnCapture"), result.get("afterTurnCapture")
+    if not isinstance(before, dict) or not isinstance(after, dict) or after.get("status") != "captured":
+        enriched["turnVisualComparison"] = {"status": "unavailable", "reason": "after-turn-frame-unavailable"}
+        return enriched
+    try:
+        from scripts.compare_turn_frames import compare
+        enriched["turnVisualComparison"] = compare(
+            Path(before["image"]), before["imageSha256"],
+            Path(after["image"]), after["imageSha256"],
+            Path(output) / "turn-before-after.png")
+    except (ValueError, KeyError, TypeError, OSError, ImportError) as error:
+        enriched["turnVisualComparison"] = {"status": "unavailable", "reason": str(error)[:160]}
+    return enriched
 
 
 def add_quick_review(result: dict, *, detail_crop: tuple[int, int, int, int] | None = None) -> dict:
