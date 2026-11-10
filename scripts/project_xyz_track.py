@@ -104,7 +104,7 @@ def project(report, *, max_gap_seconds, max_speed_3d):
     # world, zone, session, or same-player identity is represented by them.
     private_identity = TrackIdentity(pid, ticks, GAME_SHA, "one-report-only", "unknown")
     prior = None
-    previous_start = previous_end = previous_utc = None
+    previous_start = previous_end = previous_utc_start = previous_utc_end = None
     points = []
     for index, row in enumerate(rows, 1):
         if not isinstance(row, dict) or type(row.get("index")) is not int or row["index"] != index:
@@ -115,7 +115,8 @@ def project(report, *, max_gap_seconds, max_speed_3d):
         if (start < 0 or end <= start or finished < begun
             or (previous_start is not None and start <= previous_start)
             or (previous_end is not None and start < previous_end)
-            or (previous_utc is not None and begun <= previous_utc)):
+            or (previous_utc_start is not None and begun <= previous_utc_start)
+            or (previous_utc_end is not None and begun < previous_utc_end)):
             raise ValueError("invalid sample timing")
         xyz = tuple(_number(row.get(axis), axis) for axis in ("x", "y", "z"))
         current = TrackSample(*xyz, start / 1000.0, begun, private_identity, "unknown")
@@ -139,7 +140,8 @@ def project(report, *, max_gap_seconds, max_speed_3d):
                        "elapsedStartMilliseconds": start - _number(rows[0]["monotonicStartMilliseconds"], "first start"),
                        "xyz": dict(zip(("x", "y", "z"), xyz)), "reduction": motion})
         prior = current
-        previous_start, previous_end, previous_utc = start, end, begun
+        previous_start, previous_end = start, end
+        previous_utc_start, previous_utc_end = begun, finished
     return {"schemaVersion": 1, "contractVersion": "native-position-offline-track-candidate/1",
             "status": "candidate-only", "sourceQualification": QUALIFICATION,
             "processIdentity": identity, "freshness": "unavailable-offline",

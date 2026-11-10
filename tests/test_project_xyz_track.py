@@ -137,6 +137,23 @@ class ProjectTrackTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             project(fixture(), gap=0)
 
+    def test_utc_capture_windows_must_not_overlap(self):
+        report = fixture()
+        # Sample start times advance, but the second capture began before
+        # the first capture ended. This must not produce a travel candidate.
+        report["observations"][1].update(
+            startedAtUtc="2026-11-08T00:00:00.050Z",
+            completedAtUtc="2026-11-08T00:00:00.150Z")
+        with self.assertRaisesRegex(ValueError, "invalid sample timing"):
+            project(report)
+
+        # Touching, non-overlapping UTC windows are not inherently invalid.
+        report["observations"][1].update(
+            startedAtUtc="2026-11-08T00:00:00.100Z",
+            completedAtUtc="2026-11-08T00:00:00.200Z")
+        self.assertEqual(project(report)["observations"][1]["reduction"]["status"],
+                         "motion-candidate")
+
     def test_cli_pins_source_and_rejects_duplicates(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "sample.json"
