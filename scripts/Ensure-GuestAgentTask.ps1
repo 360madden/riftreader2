@@ -23,6 +23,14 @@ function Require-Rr2($condition, [string]$reason) {
 function Get-Rr2Sha([string]$path) {
     return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
 }
+function Test-Rr2ManagedAgentProcess([string]$ExecutablePath, [string]$CommandLine, [string]$ManagedRoot) {
+    if ([string]::IsNullOrWhiteSpace($ExecutablePath) -or [string]::IsNullOrWhiteSpace($CommandLine)) {
+        throw 'agent-process-identity-unavailable'
+    }
+    $releaseRoot = (Join-Path $ManagedRoot 'releases').TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+    return ($ExecutablePath.StartsWith($releaseRoot, [StringComparison]::OrdinalIgnoreCase) -or
+            $CommandLine -match '(^|\s)control-agent(\s|$)')
+}
 try {
     $canonical = 'C:\RIFT_TRANSFER\RiftReader2Control\managed-fleet-20261029'
     Require-Rr2 ($Root -ieq $canonical) 'unknown-guest-agent-root'
@@ -48,7 +56,13 @@ try {
     $explorer = @(Get-Process -Name explorer -ErrorAction SilentlyContinue)
     Require-Rr2 ($game.Count -eq 1 -and $game[0].SessionId -gt 0 -and
                  @($explorer | Where-Object SessionId -eq $game[0].SessionId).Count -gt 0) 'interactive-game-unavailable'
-    Require-Rr2 (@(Get-Process -Name RiftReader2.Live -ErrorAction SilentlyContinue).Count -eq 0) 'agent-already-present'
+    # Read-only native readers share the EXE basename but are not control agents.
+    # Refuse managed release binaries and all control-agent commands, and fail
+    # closed if any process identity is unreadable.
+    $processes = @(Get-CimInstance Win32_Process -Filter "Name='RiftReader2.Live.exe'" -ErrorAction Stop)
+    foreach ($process in $processes) {
+        Require-Rr2 (-not (Test-Rr2ManagedAgentProcess $process.ExecutablePath $process.CommandLine $Root)) 'agent-already-present'
+    }
     $launchers = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" |
         Where-Object { $_.CommandLine -and $_.CommandLine.Contains($Root) -and
             $_.CommandLine.Contains('Start-GuestAgentLauncher.ps1') })
@@ -92,7 +106,7 @@ try {
     $known = @('unknown-guest-agent-root','guest-machine-mismatch','launcher-missing','launcher-hash-mismatch',
                'guest-profile-mismatch','game-executable-missing','game-executable-hash-mismatch',
                'prior-run-path-invalid','prior-input-uncertain','interactive-game-unavailable',
-               'agent-already-present','launcher-already-present','task-registration-collision')
+               'agent-already-present','agent-process-identity-unavailable','launcher-already-present','task-registration-collision')
     $report.errorCode = if ($_.Exception.Message -in $known) { $_.Exception.Message } else { 'guest-task-command-failed' }
 } finally {
     [IO.File]::WriteAllText($ResultPath, ($report | ConvertTo-Json -Depth 4 -Compress), [Text.UTF8Encoding]::new($false))
