@@ -98,6 +98,74 @@ class TargetRoutingTests(unittest.TestCase):
         preview.assert_called_once()
         self.assertTrue(result["preview"]["nonAuthoritative"])
 
+    def test_paired_preview_uses_single_verified_capture(self):
+        pair = {"fullFrame": {"nonAuthoritative": True, "previewFormat": "webp",
+                              "sourceSha256": "A" * 64},
+                "detail": {"nonAuthoritative": True, "previewFormat": "jpeg",
+                           "sourceSha256": "A" * 64}}
+        with patch.object(tool, "_capture_vmware", return_value=self.result()) as capture, \
+             patch.object(tool, "_paired_preview", return_value=pair) as paired, \
+             patch.object(tool, "_preview") as old_preview:
+            result = tool.observe("lab2", "AMD-DESKTOP", with_preview=True,
+                                  preview_detail_crop=(0, 0, 850, 250))
+        capture.assert_called_once()
+        paired.assert_called_once_with(result, 840, (0, 0, 850, 250))
+        old_preview.assert_not_called()
+        self.assertEqual(result["preview"], pair["fullFrame"])
+        self.assertEqual(result["detailPreview"], pair["detail"])
+
+    def test_paired_preview_is_only_read_after_verified_capture(self):
+        blocked = {"status": "blocked", "reason": "owner-busy",
+                   "targetId": "lab2", "workflow": "vmware"}
+        with patch.object(tool, "_capture_vmware", return_value=blocked) as capture, \
+             patch.object(tool, "_paired_preview") as paired:
+            result = tool.observe("lab2", "AMD-DESKTOP", with_preview=True,
+                                  preview_detail_crop=(0, 0, 850, 250))
+        capture.assert_called_once()
+        paired.assert_not_called()
+        self.assertNotIn("detailPreview", result)
+
+    def test_detail_crop_requires_explicit_preview_before_capture(self):
+        with patch.object(tool, "_capture_vmware") as capture:
+            with self.assertRaisesRegex(ValueError, "detail-crop-requires-preview"):
+                tool.observe("lab2", "AMD-DESKTOP", preview_detail_crop=(0, 0, 850, 250))
+            capture.assert_not_called()
+
+    def test_invalid_detail_crop_fails_before_capture(self):
+        for crop in ((-1, 0, 200, 300), (0, 0, 0, 300),
+                     (0, 0, 8193, 200), (0, 0, True, 200),
+                     ("0", 0, 200, 300), (0, 0, 200), [0, 0, 200, -1]):
+            with self.subTest(crop=crop), patch.object(tool, "_capture_vmware") as capture:
+                with self.assertRaisesRegex(ValueError, "invalid-preview-crop"):
+                    tool.observe("lab2", "AMD-DESKTOP", with_preview=True,
+                                 preview_detail_crop=crop)
+                capture.assert_not_called()
+
+    def test_cli_rejects_crop_without_preview_before_capture(self):
+        out = io.StringIO()
+        with patch.object(tool, "_capture_vmware") as capture, redirect_stdout(out):
+            code = tool.main(["--target", "lab2", "--expected-host", "AMD-DESKTOP",
+                              "--preview-detail-crop", "0", "0", "850", "250"])
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out.getvalue())["reason"], "detail-crop-requires-preview")
+        capture.assert_not_called()
+
+    def test_cli_paired_preview_one_capture_result(self):
+        out = io.StringIO()
+        pair = {"fullFrame": {"nonAuthoritative": True, "previewFormat": "webp"},
+                "detail": {"nonAuthoritative": True, "previewFormat": "jpeg"}}
+        with patch.object(tool, "_capture_vmware", return_value=self.result()) as capture, \
+             patch.object(tool, "_paired_preview", return_value=pair) as paired, \
+             redirect_stdout(out):
+            code = tool.main(["--target", "lab2", "--expected-host", "AMD-DESKTOP",
+                              "--preview", "--preview-detail-crop", "0", "0", "850", "250"])
+        self.assertEqual(code, 0)
+        result = json.loads(out.getvalue())
+        capture.assert_called_once()
+        paired.assert_called_once()
+        self.assertEqual(result["preview"]["previewFormat"], "webp")
+        self.assertEqual(result["detailPreview"]["previewFormat"], "jpeg")
+
     def test_cli_failure_retains_sanitized_workflow_reason(self):
         failure = ValueError("active request prevents capture")
         failure.details = {"phase": "run", "errorType": "InspectionBlocked"}

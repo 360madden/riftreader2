@@ -40,8 +40,14 @@ def _preview(result, width):
     return preview(Path(result["image"]), result["imageSha256"], width)
 
 
+def _paired_preview(result, width, crop):
+    from scripts.quick_review_capture import review_pair
+    return review_pair(Path(result["image"]), result["imageSha256"], crop, width)
+
+
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
-            allow_foreground_change=False, with_preview=False, preview_width=840):
+            allow_foreground_change=False, with_preview=False, preview_width=840,
+            preview_detail_crop=None):
     started = time.perf_counter()
     if target_id not in TARGETS:
         raise ValueError("unknown-target")
@@ -51,8 +57,17 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     actual_host = socket.gethostname()
     if actual_host.casefold() != owner_host.casefold():
         raise ValueError("host-mismatch")
-    if not 500 <= preview_width <= 1600:
+    if type(preview_width) is not int or not 500 <= preview_width <= 1600:
         raise ValueError("invalid-preview-width")
+    if preview_detail_crop is not None:
+        if not with_preview:
+            raise ValueError("detail-crop-requires-preview")
+        box = preview_detail_crop
+        if (not isinstance(box, (tuple, list)) or len(box) != 4
+                or any(type(value) is not int for value in box)
+                or not 0 <= box[0] < box[2] <= 8192
+                or not 0 <= box[1] < box[3] <= 8192):
+            raise ValueError("invalid-preview-crop")
     if target_id == "lab1" and native_vitals:
         raise ValueError("lab1-native-vitals-not-yet-qualified")
     if workflow == "physical" and native_vitals:
@@ -74,7 +89,12 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     if result.get("status") != "verified-awaiting-visual-review":
         raise ValueError("unexpected-adapter-status")
     if with_preview:
-        result["preview"] = _preview(result, preview_width)
+        if preview_detail_crop is None:
+            result["preview"] = _preview(result, preview_width)
+        else:
+            pair = _paired_preview(result, preview_width, tuple(preview_detail_crop))
+            result["preview"] = pair["fullFrame"]
+            result["detailPreview"] = pair["detail"]
     result["elapsedSeconds"] = round(time.perf_counter() - started, 3)
     return result
 
@@ -89,12 +109,16 @@ def main(argv=None):
                         help="physical capture only: explicitly allow the desktop backend to focus RIFT")
     parser.add_argument("--preview", action="store_true", help="include a bounded non-authoritative JPEG in the same result")
     parser.add_argument("--preview-width", type=int, default=840)
+    parser.add_argument("--preview-detail-crop", nargs=4, type=int,
+                        metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
+                        help="with --preview: one SHA-pinned full-frame WebP plus readable JPEG detail")
     args = parser.parse_args(argv)
     try:
         result = observe(args.target, args.expected_host, args.output,
                          native_vitals=args.native_vitals,
                          allow_foreground_change=args.allow_foreground_change,
-                         with_preview=args.preview, preview_width=args.preview_width)
+                         with_preview=args.preview, preview_width=args.preview_width,
+                          preview_detail_crop=args.preview_detail_crop)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,
