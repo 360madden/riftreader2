@@ -46,7 +46,9 @@ class BuildLiveSourcePinTests(unittest.TestCase):
             legacy = self.summary(image)
             current = {**legacy, "maxScanBytes": 4 * 1024**3}
             timed = {**current, "maxScanSeconds": 25}
-            for summary in (legacy, current, timed):
+            seeded = {**timed, "readerStaging": "host-transfer-cache-populated"}
+            reused = {**timed, "readerStaging": "verified-guest-cache"}
+            for summary in (legacy, current, timed, seeded, reused):
                 with self.subTest(fields=set(summary)):
                     pin = builder.build_pin(summary, {"machineName": "RIFT-LAB-2"},
                                             receipt_path, self.receipt())
@@ -64,7 +66,11 @@ class BuildLiveSourcePinTests(unittest.TestCase):
                      {**baseline, "maxScanSeconds": True},
                      {**baseline, "maxScanSeconds": 0},
                      {**baseline, "maxScanSeconds": 61},
-                     {**baseline, "maxScanSeconds": "25"})
+                     {**baseline, "maxScanSeconds": "25"},
+                      {**baseline, "readerStaging": True},
+                      {**baseline, "readerStaging": None},
+                      {**baseline, "readerStaging": "unverified"},
+                      {**baseline, "readerStaging": ""})
             for value in cases:
                 with self.subTest(value=value), self.assertRaises(ValueError):
                     builder.validate_reader_summary(value)
