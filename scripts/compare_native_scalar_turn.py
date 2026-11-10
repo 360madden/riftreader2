@@ -84,7 +84,9 @@ def compare(before_path, after_path):
     if (a["unitKey"] != b["unitKey"] or a["playerEntityDecimal"] != b["playerEntityDecimal"]
             or a["componentAddressDecimal"] != b["componentAddressDecimal"]):
         raise Blocked("scalar-turn-player-or-component-changed")
-    if after_start < before_end:
+    if before["sourceReportSha256"].upper() == after["sourceReportSha256"].upper():
+        raise Blocked("scalar-turn-identical-sources")
+    if after_start <= before_end:
         raise Blocked("scalar-turn-capture-order-invalid")
     changes = {}
     for index, name in enumerate(FIELDS):

@@ -136,6 +136,17 @@ class ScalarTurnCompareTests(unittest.TestCase):
         with self.assertRaisesRegex(scalar.Blocked, "value-invalid"):
             scalar.validate_report(self.b, pid=PID, ticks=TICKS)
 
+    def test_replayed_report_and_touching_capture_windows_are_rejected(self):
+        with self.assertRaisesRegex(scalar.Blocked, "identical-sources"):
+            turns.compare(self.before, self.before)
+        replay = self.write("replay", self.a, observed=2)
+        with self.assertRaisesRegex(scalar.Blocked, "identical-sources"):
+            turns.compare(self.before, replay)
+        touching = report(0.75, start=1, end=2)
+        self.after = self.write("after", touching, observed=3)
+        with self.assertRaisesRegex(scalar.Blocked, "capture-order-invalid"):
+            turns.compare(self.before, self.after)
+
     def test_cli_outputs_json_only_and_failure_is_sanitized(self):
         output = io.StringIO()
         with redirect_stdout(output):
