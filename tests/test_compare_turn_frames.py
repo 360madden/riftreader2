@@ -81,7 +81,19 @@ class CompareTurnFramesTests(unittest.TestCase):
         result = self._compare()
         self.assertTrue(result["sourceBytesEqual"])
         self.assertEqual(0, result["changedPixelFraction"])
+        self.assertEqual("no-visual-difference-observed", result["status"])
         self.assertIn("visual-pixel-difference-only", result["qualification"])
+
+    def test_below_threshold_pixels_do_not_claim_change(self):
+        self._save(self.after, (10, 0, 0))
+        below = self._compare()
+        self.assertFalse(below["sourceBytesEqual"])
+        self.assertEqual(0, below["changedPixelFraction"])
+        self.assertEqual("no-visual-difference-observed", below["status"])
+        self.output.unlink()
+        visible = self._compare(threshold=10)
+        self.assertEqual(1, visible["changedPixelFraction"])
+        self.assertEqual("visual-difference-candidate", visible["status"])
 
     def test_changed_hash_and_dimensions_are_rejected_without_output(self):
         with self.assertRaisesRegex(ValueError, "hash-mismatch"):

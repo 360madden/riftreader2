@@ -88,7 +88,8 @@ def compare(before, before_hash, after, after_hash, output, *, crop=None, thresh
     with output.open("xb") as handle:
         handle.write(image_bytes.getvalue())
     return {
-        "schemaVersion": 1, "status": "visual-difference-candidate",
+        "schemaVersion": 1, "status": ("visual-difference-candidate" if changed else
+                                        "no-visual-difference-observed"),
         "beforeSha256": left_hash, "afterSha256": right_hash,
         "sourceDimensions": [width, height], "comparisonCrop": list(crop),
         "pixelThreshold": threshold, "changedPixelFraction": round(changed / count, 6),
