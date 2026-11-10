@@ -51,7 +51,8 @@ SHA256 = re.compile(r"[0-9a-f]{64}")
 NONCE = re.compile(r"[0-9a-f]{32}")
 PLAYER = re.compile(r"[A-Za-z0-9_]{1,128}")
 NUMBER = re.compile(r"[0-9eE+.-]{1,32}")
-SIMPLE = frozenset({"/reloadui", "/rr2guide status", "/rr2guide clear"})
+SIMPLE = frozenset({"/reloadui", "/rr2guide status", "/rr2guide clear",
+                    "/atlas collect", "/atlas status"})
 
 _GATE_SPEC = importlib.util.spec_from_file_location(
     "rr2_read_live_receipt", Path(__file__).with_name("read-live-receipt.py"))

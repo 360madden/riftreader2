@@ -266,7 +266,8 @@ class AddonCommandValidationTests(unittest.TestCase):
         self.assertIsNone(module.legacy_guest_target_for_vmx(old))
 
     def test_exact_simple_commands(self):
-        for value in ("/reloadui", "/rr2guide status", "/rr2guide clear"):
+        for value in ("/reloadui", "/rr2guide status", "/rr2guide clear",
+                      "/atlas collect", "/atlas status"):
             self.assertEqual(value, module.validate_addon_command(value))
 
     def test_exact_reader_session_bind_command(self):
@@ -305,7 +306,10 @@ class AddonCommandValidationTests(unittest.TestCase):
 
     def test_rejects_arbitrary_commands_and_text(self):
         rejected = [
-            "/say hello", "/script print(1)", "/rr2guide", "/rr2guide bind lab3 " + "a" * 32,
+            "/say hello", "/script print(1)", "/rr2guide",
+            "/atlas", "/atlas collect 1", "/atlas collect ", "/atlas export",
+            "/atlas cancel", "/atlas status ", "/atlas collect; /say hi",
+            "/rr2guide bind lab3 " + "a" * 32,
             "/rr2guide bind lab2 " + "A" * 32, "/reloadui ", "/reloadui\n",
             "/rr2bind " + "a" * 31, "/rr2bind " + "A" * 32,
             "/rr2bind " + "a" * 32 + " /say hi", "/rr2bind  " + "a" * 32,
