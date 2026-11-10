@@ -77,6 +77,41 @@ class NativePlayerSeriesTests(unittest.TestCase):
         self.assertIn("NOT independent movement proof", result["qualification"])
         self.assertEqual(originals, prior)
 
+    def test_observed_rate_uses_position_times_not_vitals_times(self):
+        items = reads()
+        items[1][0]["position"]["observedAtUtc"] = "2026-11-09T17:00:00.500000Z"
+        # Vitals remain at 1s. Displacement timing belongs to the position source.
+        result = tool.summarize(items)
+        first, second = result["segments"]
+        self.assertAlmostEqual(first["positionObservationIntervalSeconds"], 0.5)
+        self.assertAlmostEqual(first["observedAverageXZUnitsPerSecondCandidate"], 10)
+        self.assertAlmostEqual(second["positionObservationIntervalSeconds"], 1.5)
+        self.assertAlmostEqual(second["observedAverageXZUnitsPerSecondCandidate"], 5 / 1.5)
+        self.assertIn("NOT controlled movement speed", result["qualification"])
+
+    def test_unavailable_and_stationary_position_rate(self):
+        stationary = reads(("position",))
+        stationary[1][0]["position"]["metrics"].update({"x": 0, "z": 0})
+        result = tool.summarize(stationary)
+        self.assertEqual(result["segments"][0]["observedAverageXZUnitsPerSecondCandidate"], 0)
+        unavailable = reads(("position",))
+        unavailable[1][0]["position"]["metrics"]["ownerIdentityStatus"] = "unqualified"
+        result = tool.summarize(unavailable)
+        self.assertEqual(result["segments"][0]["positionObservationIntervalSeconds"], 1)
+        self.assertIsNone(result["segments"][0]["observedAverageXZUnitsPerSecondCandidate"])
+        vitals_only = tool.summarize(reads(("vitals",)))
+        self.assertIsNone(vitals_only["segments"][0]["positionObservationIntervalSeconds"])
+        self.assertIsNone(vitals_only["segments"][0]["observedAverageXZUnitsPerSecondCandidate"])
+
+    def test_observed_rate_overflow_is_unavailable(self):
+        items = reads(("position",))[:2]
+        items[1][0]["position"]["observedAtUtc"] = "2026-11-09T17:00:00.000001Z"
+        items[1][0]["position"]["metrics"].update({"x": 1e308, "z": 0})
+        result = tool.summarize(items)
+        self.assertEqual(result["positionSummary"]["status"], "complete-candidate")
+        self.assertEqual(result["segments"][0]["positionObservationIntervalSeconds"], 1e-6)
+        self.assertIsNone(result["segments"][0]["observedAverageXZUnitsPerSecondCandidate"])
+
     def test_translating_course_and_change_are_coordinate_relative(self):
         result = tool.summarize(reads(("position",)))
         first, second = result["segments"]

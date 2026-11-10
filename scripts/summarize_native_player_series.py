@@ -55,6 +55,17 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
                   if position is not None else None)
         if length is not None:
             lengths.append(length)
+        provenance = result["sourceProvenance"].get("position")
+        interval = None
+        if provenance is not None:
+            interval = (
+                comparison._utc(provenance["afterObservedAtUtc"])
+                - comparison._utc(provenance["beforeObservedAtUtc"])
+            ).total_seconds()
+        observed_rate = (length / interval if length is not None
+                         and interval is not None and interval > 0 else None)
+        if observed_rate is not None and not math.isfinite(observed_rate):
+            observed_rate = None
         # Travel direction is measured in the XZ coordinate plane: 0 degrees
         # points along +X and 90 along +Z. It is NOT the player's facing/yaw.
         delta = position.get("deltaCandidate") if position is not None else None
@@ -71,6 +82,8 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
             "sourceProvenance": result["sourceProvenance"],
             "positionStatus": position["status"] if position is not None else "not-selected",
             "horizontalXZDistanceCandidate": length,
+            "positionObservationIntervalSeconds": interval,
+            "observedAverageXZUnitsPerSecondCandidate": observed_rate,
             "travelCourseDegreesCandidate": course,
             "travelCourseChangeDegreesCandidate": course_change,
         })
@@ -114,7 +127,9 @@ def summarize(reads: list[tuple[dict, str]]) -> dict:
         "vitalsEndpointDeltasCandidate": endpoints["comparison"].get("vitals"),
         "qualification": (
             "same VM/game/agent/player and strictly advancing retained source reports; "
-            "candidate arithmetic only; travel course is +X toward +Z, NOT "
+            "candidate arithmetic only; observed distance/time is NOT controlled "
+            "movement speed or proof of continuous motion; travel course "
+            "is +X toward +Z, NOT "
             "player-facing yaw; NOT independent movement proof or turn proof, "
             "passive freshness, qualified field semantics, or restart recovery"
         ),
