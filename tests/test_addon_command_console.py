@@ -50,6 +50,21 @@ class InlineQuickReviewTests(unittest.TestCase):
         })
         self.assertEqual(original, self.plan())
 
+    def test_high_resolution_preview_preserves_source_and_review_deadline(self):
+        original = self.plan()
+        image = {"sourceSha256": original["screenSha256"], "previewFormat": "jpeg",
+                 "previewDimensions": [1000, 580], "nonAuthoritative": True}
+        with mock.patch("quick_review_capture.preview", return_value=image) as stub:
+            review = module.add_quick_review(original, preserve_resolution=True)
+        stub.assert_called_once_with(Path(original["screen"]), original["screenSha256"],
+                                     width=1000, preserve_resolution=True)
+        self.assertEqual(review["status"], "ready")
+        self.assertEqual(review["preview"], image)
+        self.assertEqual(review["reviewDeadlineUtc"], "2000-11-09T16:01:00Z")
+        self.assertEqual(review["reviewExpiresInSeconds"], 0)
+        self.assertEqual(review["screenSha256"], image["sourceSha256"])
+        self.assertEqual(original, self.plan())
+
     def test_preview_counts_down_from_capture_instead_of_resetting_review_age(self):
         original = self.plan()
         captured = datetime.now(timezone.utc) - timedelta(seconds=5)
@@ -95,6 +110,31 @@ class InlineQuickReviewTests(unittest.TestCase):
                   "--expected-game-sha256", "a" * 64, "--ui-step", "open-chat"]
         self.assertFalse(module.build_parser().parse_args(common).quick_preview)
         self.assertTrue(module.build_parser().parse_args(common + ["--quick-preview"]).quick_preview)
+
+    def test_high_resolution_prepare_requires_quick_preview_before_host_work(self):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+        common = ["--vmx", "lab.vmx", "--port", "5900", "--vmrun", "vmrun.exe",
+                  "--output", "review", "prepare", "--lab", "lab2",
+                  "--expected-game-pid", "10876", "--expected-game-start-ticks", "100",
+                  "--expected-game-sha256", "a" * 64, "--ui-step", "open-chat"]
+        flag = "--review-preserve-resolution"
+        with mock.patch.object(module, "validate_config") as config, mock.patch.object(
+                module, "prepare") as prepare, redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(module.main(common + [flag]), 2)
+        self.assertIn("review-preserve-resolution-requires-quick-preview", errors.getvalue())
+        config.assert_not_called()
+        prepare.assert_not_called()
+        self.assertTrue(module.build_parser().parse_args(
+            common + ["--quick-preview", flag]).review_preserve_resolution)
+        with mock.patch.object(module, "validate_config", return_value=mock.Mock(
+                output=Path("review"))), mock.patch.object(
+                module, "prepare", return_value=self.plan()), mock.patch.object(
+                module, "add_quick_review", return_value={"status": "ready"}) as review, \
+                redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(module.main(common + ["--quick-preview", flag]), 0)
+        review.assert_called_once_with(self.plan(), preserve_resolution=True)
+        self.assertEqual(json.loads(output.getvalue())["quickReview"]["status"], "ready")
 
     def test_prepare_cli_returns_inline_review_only_when_requested(self):
         import io

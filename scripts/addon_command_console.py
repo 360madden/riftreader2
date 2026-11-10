@@ -1222,13 +1222,17 @@ def execute(config: Config, plan_path: Path, review_path: Path, *, _timing: _Pha
     return report
 
 
-def add_quick_review(plan: dict) -> dict:
+def add_quick_review(plan: dict, *, preserve_resolution: bool = False) -> dict:
     """Show a SHA-pinned preview with exact pins; never approve or extend a review."""
     try:
         from quick_review_capture import preview
         screen = Path(plan["screen"])
         try:
-            image = preview(screen, plan["screenSha256"], compact=True)
+            if preserve_resolution:
+                image = preview(screen, plan["screenSha256"], width=1000,
+                                preserve_resolution=True)
+            else:
+                image = preview(screen, plan["screenSha256"], compact=True)
         except TypeError as error:
             if "unexpected keyword argument 'compact'" not in str(error):
                 raise
@@ -1273,7 +1277,9 @@ def build_parser() -> argparse.ArgumentParser:
     prepare_parser.add_argument("--fast-source-pin", type=Path)
     prepare_parser.add_argument("--guidance-report", type=Path)
     prepare_parser.add_argument("--quick-preview", action="store_true",
-                                help="inline compact SHA-pinned preview; review gate unchanged")
+                                help="inline SHA-pinned preview; review gate unchanged")
+    prepare_parser.add_argument("--review-preserve-resolution", action="store_true",
+                                help="opt-in larger full-frame JPEG with unchanged review gate")
     execute_parser = commands.add_parser("execute")
     execute_parser.add_argument("--plan", required=True, type=Path)
     execute_parser.add_argument("--review", required=True, type=Path)
@@ -1283,6 +1289,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.action == "prepare" and args.review_preserve_resolution and not args.quick_preview:
+            raise Blocked("review-preserve-resolution-requires-quick-preview")
         config = validate_config(args.vmx, args.port, args.vmrun, args.output,
                                  require_files=True)
         if args.action == "prepare":
@@ -1296,7 +1304,8 @@ def main(argv=None) -> int:
             response = {"status": "prepared", "captureId": result["captureId"],
                         "screen": result["screen"], "plan": str(config.output / "plan.json")}
             if args.quick_preview:
-                response["quickReview"] = add_quick_review(result)
+                response["quickReview"] = add_quick_review(
+                    result, preserve_resolution=args.review_preserve_resolution)
             print(json.dumps(response))
         else:
             result = execute(config, args.plan, args.review)
