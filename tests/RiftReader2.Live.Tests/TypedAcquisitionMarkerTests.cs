@@ -43,6 +43,7 @@ public sealed class TypedAcquisitionMarkerTests
     [Theory]
     [InlineData("RR2R1|")]
     [InlineData("RRAPIVAL2|")]
+    [InlineData("RR2A1|")]
     public void ExplicitProtocolSelectionSurvivesRequestDeserialization(string marker)
     {
         var markerProperty = ",\"marker\":" + JsonSerializer.Serialize(marker);

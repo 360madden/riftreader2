@@ -12,8 +12,11 @@ public sealed class TypedApiPrefixMatcher
     public const int MaxSupportedMatches = 128;
 
     public const string ReferenceMarkerText = "RR2R1|";
+    // The unbound Lua producer publishes RR2A1 before any manual reader nonce.
+    // Matching its bytes is discovery only, never a live/freshness qualification.
+    public const string BaselineMarkerText = "RR2A1|";
 
-    public static string ValidateMarker(string marker) => marker is MarkerText or ReferenceMarkerText
+    public static string ValidateMarker(string marker) => marker is MarkerText or ReferenceMarkerText or BaselineMarkerText
         ? marker : throw new ArgumentException("Unsupported typed API marker.", nameof(marker));
 
     private readonly byte[] MarkerBytes;

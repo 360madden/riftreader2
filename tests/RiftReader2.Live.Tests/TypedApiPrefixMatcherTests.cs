@@ -8,6 +8,17 @@ public sealed class TypedApiPrefixMatcherTests
     private static readonly byte[] Marker = Encoding.ASCII.GetBytes(TypedApiPrefixMatcher.MarkerText);
 
     [Fact]
+    public void Feed_BaselineProducerMarkerIsNotMistakenForBoundReference()
+    {
+        var marker = TypedApiPrefixMatcher.BaselineMarkerText;
+        var bytes = Encoding.ASCII.GetBytes("old RR2R1|{} " + marker + "{}");
+        var matcher = new TypedApiPrefixMatcher(marker);
+        matcher.Feed(0x10000, bytes);
+        Assert.Equal(0x10000UL + (ulong)Encoding.ASCII.GetByteCount("old RR2R1|{} "),
+                     Assert.Single(matcher.Addresses));
+    }
+
+    [Fact]
     public void Feed_FindsMarkerAtExactStartAboveFourGigabytes()
     {
         var matcher = new TypedApiPrefixMatcher(TypedApiPrefixMatcher.MarkerText);
