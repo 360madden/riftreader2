@@ -132,6 +132,7 @@ def replay(index_path, native_summary_path):
         "luaProtocol": "RR2A1-unbound",
         "luaPlayerIdCandidate": expected_player,
         "luaFrameCount": len(frames),
+        "luaEpochCandidate": frames[0]["epoch"],
         "firstSequence": frames[0]["sequence"],
         "lastSequence": frames[-1]["sequence"],
         "firstClockCandidate": frames[0]["clock"],

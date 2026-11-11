@@ -31,15 +31,15 @@ def save_json(path, value):
     return replay.sha(path.read_bytes())
 
 
-def fixture(root, *, second_clock=20, second_sequence=2):
+def fixture(root, *, second_clock=20, second_sequence=2, first_sequence=1, epoch=1):
     folder = root / "scan"
     folder.mkdir()
     request = {"marker": "RR2A1|", "target": deepcopy(IDENTITY)}
     request_sha = save_json(root / "request.json", request)
     candidates = []
-    for i, (seq, clock) in enumerate(((1, 10), (second_sequence, second_clock)), 1):
+    for i, (seq, clock) in enumerate(((first_sequence, 10), (second_sequence, second_clock)), 1):
         frame = {"schemaVersion": 1, "addonVersion": "0.1.0",
-                 "sequence": seq, "epoch": 1,
+                 "sequence": seq, "epoch": epoch,
                  "clock": {"status": "ok", "value": clock},
                  "player": {"status": "ok", "value": "u" + format(int(KEY), "016X")},
                  "fields": {field: {"status": "ok", "value": value} for field, value
@@ -74,6 +74,7 @@ class ReplayTests(unittest.TestCase):
                               return_value=(NATIVE, "A" * 64, None, None)):
                 report = replay.replay(index, Path(d) / "native-summary.json")
             self.assertEqual(report["luaFrameCount"], 2)
+            self.assertEqual(report["luaEpochCandidate"], 1)
             self.assertEqual(report["lastSequence"], 2)
             self.assertAlmostEqual(report["maxAbsCoordinateDifferenceCandidate"]["z"], .004)
             self.assertEqual(report["status"], "candidate-only")

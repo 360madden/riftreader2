@@ -1,0 +1,102 @@
+"""Offline tests for two-pass RR2A1 Lua/native replay. No live process reads."""
+from __future__ import annotations
+
+from copy import deepcopy
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from scripts import compare_physical_rr2a1_passes as pair
+
+
+def pass_report(start, end, *, epoch=1, scan="A", clock_start=10.0,
+                player="u035400012FA2D207"):
+    return {
+        "status": "candidate-only",
+        "luaProtocol": "RR2A1-unbound",
+        "identity": {"host": "AMD-DESKTOP", "processId": 123,
+                     "processStartUtcTicks": "638000000000000001",
+                     "executableSha256": "B" * 64},
+        "luaPlayerIdCandidate": player,
+        "luaEpochCandidate": epoch,
+        "luaFrameCount": 2,
+        "firstSequence": start,
+        "lastSequence": end,
+        "firstClockCandidate": clock_start,
+        "lastClockCandidate": clock_start + 1.0,
+        "luaPositionCandidates": [{"x": 10., "y": 20., "z": 30.},
+                                  {"x": 11., "y": 20., "z": 30.}],
+        "nativePositionCandidate": {"x": 10., "y": 20., "z": 30.},
+        "maxAbsCoordinateDifferenceCandidate": {"x": 1., "y": 0., "z": 0.},
+        "frameEvidence": [{"frameSha256": f"{scan}{start}"},
+                          {"frameSha256": f"{scan}{end}"}],
+        "sourceSha256": {"scanIndex": scan * 64, "scanRequest": "C" * 64,
+                         "nativeBracketSummary": "D" * 64},
+    }
+
+
+class TwoPassTests(unittest.TestCase):
+    def sample(self):
+        return pass_report(1, 2, scan="A"), pass_report(3, 4, scan="B",
+                                                          clock_start=20.0)
+
+    def test_independent_advancing_passes_stay_candidate_only(self):
+        a, b = self.sample()
+        with patch.object(pair.lua, "replay", side_effect=[a, b]) as replay:
+            output = pair.compare("first-index", "second-index", "native")
+        self.assertEqual(replay.call_count, 2)
+        self.assertEqual(output["frameCounts"], [2, 2])
+        self.assertEqual(output["sequenceWindows"], [[1, 2], [3, 4]])
+        self.assertEqual(output["luaEpochCandidate"], 1)
+        self.assertEqual(output["betweenPassLuaXYZDifferenceCandidate"]["x"], -1.)
+        self.assertEqual(output["status"], "candidate-only")
+        self.assertIn("remains unbound", output["qualification"])
+
+    def test_rejects_changed_epoch_and_identity(self):
+        for mutation, error in (
+            ({"luaEpochCandidate": 2}, "lua-epoch-changed"),
+            ({"luaPlayerIdCandidate": "u0000000000000001"},
+             "process-or-player-identity-changed"),
+        ):
+            a, b = self.sample()
+            b.update(mutation)
+            with self.subTest(mutation=mutation), patch.object(
+                    pair.lua, "replay", side_effect=[a, b]):
+                with self.assertRaisesRegex(ValueError, error):
+                    pair.compare("a", "b", "native")
+
+    def test_rejects_nonadvancing_passes_or_duplicate_sources(self):
+        a, b = self.sample()
+        for mutation, error in (
+            ({"firstSequence": 2}, "nonadvancing-or-overlapping"),
+            ({"firstClockCandidate": 11.0}, "nonadvancing-or-overlapping"),
+            ({"sourceSha256": deepcopy(a["sourceSha256"])}, "same-scan-source"),
+            ({"frameEvidence": deepcopy(a["frameEvidence"])}, "reused-frame"),
+        ):
+            left, right = deepcopy(a), deepcopy(b)
+            right.update(mutation)
+            with self.subTest(mutation=mutation), patch.object(
+                    pair.lua, "replay", side_effect=[left, right]):
+                with self.assertRaisesRegex(ValueError, error):
+                    pair.compare("a", "b", "native")
+
+    def test_replay_failure_propagates_and_existing_output_preserved(self):
+        a, b = self.sample()
+        with patch.object(pair.lua, "replay",
+                          side_effect=ValueError("source-sha-mismatch")):
+            with self.assertRaisesRegex(ValueError, "source-sha-mismatch"):
+                pair.compare("a", "b", "native")
+        with tempfile.TemporaryDirectory() as tmp:
+            existing = Path(tmp) / "exists.json"
+            existing.write_text("preserve", encoding="utf-8")
+            self.assertEqual(pair.main([
+                "--first-index", "a", "--second-index", "b",
+                "--first-native-bracket", "native",
+                "--output", str(existing)]), 2)
+            self.assertEqual(existing.read_text(encoding="utf-8"), "preserve")
+
+
+if __name__ == "__main__":
+    unittest.main()
