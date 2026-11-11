@@ -320,11 +320,19 @@ public sealed class ControlAgent
         object response;
         try
         {
-            if (activeAction is { IsCompleted: false } || IsArmed() || File.Exists(PendingPath))
-                throw new InvalidOperationException("Native reads require disarmed, idle control with no pending recovery.");
+            // A bounded arm may observe fresh XYZ/pose between pulses. Dispatch
+            // excludes native/action overlap; STOP still cancels the native token.
+            if (activeAction is { IsCompleted: false } || File.Exists(PendingPath))
+                throw new InvalidOperationException("Native reads require idle control with no pending recovery.");
             var identity = command.Payload.Deserialize<ControlIdentityRequest>(JsonFormat.Options)
                 ?? throw new InvalidDataException("Missing expected identity.");
             identity.Validate();
+            if (IsArmed())
+            {
+                if (reviewedTarget is null)
+                    throw new InvalidOperationException("Armed native read has no reviewed target.");
+                identity.RequireMatch(reviewedTarget);
+            }
             token.ThrowIfCancellationRequested();
             await using var lease = await nativeReadLease(identity, token);
             token.ThrowIfCancellationRequested();

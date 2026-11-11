@@ -104,7 +104,9 @@ def _read_native(path: Path) -> tuple[dict, str]:
         positions.append(Position(*position))
     return {
         "identity": identity, "unitKey": unit_key, "positions": positions,
-        "sampleCount": len(positions), "lastSampleUtc": observations[-1]["completedAtUtc"],
+        "sampleCount": len(positions),
+        "firstSampleUtc": observations[0]["startedAtUtc"],
+        "lastSampleUtc": observations[-1]["completedAtUtc"],
     }, hashlib.sha256(raw).hexdigest().upper()
 
 

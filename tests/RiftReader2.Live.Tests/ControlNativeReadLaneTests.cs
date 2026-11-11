@@ -90,7 +90,10 @@ public sealed class ControlNativeReadLaneTests
             await File.WriteAllTextAsync(Path.Combine(fixture.Directory, "pending.json"), "pending");
         await fixture.Send(operation, Expected);
         using var response = await fixture.Receive();
-        Assert.Contains("disarmed, idle control with no pending recovery",
+        var expectedError = state == "armed"
+            ? "Armed native read has no reviewed target"
+            : "idle control with no pending recovery";
+        Assert.Contains(expectedError,
             response.RootElement.GetProperty("payload").GetProperty("error").GetString());
         Assert.Equal(0, calls);
         await fixture.NativeRead;
