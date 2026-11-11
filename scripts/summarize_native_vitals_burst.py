@@ -98,6 +98,7 @@ def summarize(report, source_sha):
     first_start = None
     last_end = None
     per_field = {name: [] for name in FIELDS}
+    unavailable_reasons = {name: {} for name in FIELDS}
     for row in rows:
         need(type(row) is dict and row.get("identity") == identity
              and row.get("source") == SOURCE
@@ -114,7 +115,12 @@ def summarize(report, source_sha):
             first_start = started
         last_end = completed
         for name in FIELDS:
-            per_field[name].append(_field(row.get(name), name))
+            value = _field(row.get(name), name)
+            per_field[name].append(value)
+            if value is None:
+                reason = row[name]["unavailableReason"]
+                counts = unavailable_reasons[name]
+                counts[reason] = counts.get(reason, 0) + 1
         kind = row.get("resourceKindCandidate")
         need(kind is None or type(kind) is int, "resource-kind-invalid")
         if kind is not None:
@@ -142,6 +148,7 @@ def summarize(report, source_sha):
         resources[name] = {
             "status": "complete-candidate" if complete else "incomplete-candidates",
             "availableSamples": sum(item is not None for item in values),
+            "unavailableReasons": dict(sorted(unavailable_reasons[name].items())),
             "sampleCount": count,
             "firstCandidate": {"current": first[0], "maximum": first[1]} if first else None,
             "lastCandidate": {"current": last[0], "maximum": last[1]} if last else None,

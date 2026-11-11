@@ -118,6 +118,17 @@ class VitalsBurstTests(unittest.TestCase):
         self.assertIn("not independently qualified", result["qualification"])
         self.assertEqual(report, original)
 
+    def test_unavailable_resource_reasons_are_counted_without_fabricating_values(self):
+        report = burst()
+        report["observations"][1]["energy"] = unavailable("native-type-not-decoded")
+        result = tool.summarize(report, "a" * 64)
+        self.assertEqual({}, result["resources"]["health"]["unavailableReasons"])
+        self.assertEqual({"not-mana-kind-three": 3},
+                         result["resources"]["mana"]["unavailableReasons"])
+        self.assertEqual({"native-type-not-decoded": 1},
+                         result["resources"]["energy"]["unavailableReasons"])
+        self.assertEqual(2, result["resources"]["energy"]["availableSamples"])
+
     def test_missing_middle_hp_never_fabricates_complete_range(self):
         report = burst()
         report["observations"][1]["health"] = unavailable("revision-mismatch")
