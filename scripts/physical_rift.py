@@ -66,6 +66,15 @@ def select_physical(expected_host=None, physical_pid=None):
                 "ownerHost": actual, "reason": str(exc)}
 
 
+def _candidate_angle_steps(angles):
+    """Shortest adjacent signed steps; an unavailable or 180-degree step is ambiguous."""
+    if len(angles) < 2 or any(value is None for value in angles):
+        return None
+    steps = [((later - earlier + 180) % 360) - 180
+             for earlier, later in zip(angles, angles[1:])]
+    return None if any(abs(step) == 180 for step in steps) else steps
+
+
 def _native_values(kind, report):
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "actor-pose":
@@ -97,11 +106,13 @@ def _native_values(kind, report):
                     matrix = row.get(name)
                     if name == "renderMatrix" and matrix is None:
                         continue
-                    if not isinstance(matrix, dict):
+                    if (not isinstance(matrix, dict) or
+                            "planarAngleDegreesCandidate" not in matrix):
                         raise ValueError("invalid-native-actor-pose-burst")
-                    angle = matrix.get("planarAngleDegreesCandidate")
+                    angle = matrix["planarAngleDegreesCandidate"]
                     if angle is not None and (type(angle) not in (int, float) or
-                                              not math.isfinite(angle)):
+                                              not math.isfinite(angle) or
+                                              not -180 <= angle <= 180):
                         raise ValueError("invalid-native-actor-pose-burst")
         angles = {}
         for name in ("actorMatrix", "modelMatrix", "renderMatrix"):
@@ -109,11 +120,13 @@ def _native_values(kind, report):
             if matrix is None and name == "renderMatrix":
                 angles[name] = None
                 continue
-            if not isinstance(matrix, dict):
+            if (not isinstance(matrix, dict) or
+                    "planarAngleDegreesCandidate" not in matrix):
                 raise ValueError("invalid-native-actor-pose-report")
-            value = matrix.get("planarAngleDegreesCandidate")
+            value = matrix["planarAngleDegreesCandidate"]
             if value is not None and (type(value) not in (float, int) or
-                                      not math.isfinite(value)):
+                                      not math.isfinite(value) or
+                                      not -180 <= value <= 180):
                 raise ValueError("invalid-native-actor-pose-report")
             angles[name] = value
         result = {"playerKey": key,
@@ -125,6 +138,22 @@ def _native_values(kind, report):
                   "sampledAtUtc": observation.get("completedAtUtc")}
         if observations is not None:
             result["sampleCount"] = len(observations)
+            series = {
+                short: [row[matrix]["planarAngleDegreesCandidate"]
+                        if row[matrix] is not None else None for row in observations]
+                for short, matrix in (("actor", "actorMatrix"),
+                                      ("model", "modelMatrix"),
+                                      ("render", "renderMatrix"))
+            }
+            steps = {name: _candidate_angle_steps(values)
+                     for name, values in series.items()}
+            result["planarAngleSeriesDegreesCandidate"] = series
+            result["planarSignedTravelDegreesCandidate"] = {
+                name: sum(deltas) if deltas is not None else None
+                for name, deltas in steps.items()
+            }
+            result["actorMaxAdjacentStepDegreesCandidate"] = (
+                max(map(abs, steps["actor"])) if steps["actor"] is not None else None)
         return result
     if kind == "vitals":
         observation = report.get("observation")
@@ -274,7 +303,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
                      not isinstance(report.get("observations"), list))):
             raise ValueError("incomplete-native-actor-pose-burst")
         values = _native_values(kind, report)
-    except (OSError, ValueError, TypeError, AttributeError):
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")
     return dict(selection, status="complete", nativeRead=kind,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,

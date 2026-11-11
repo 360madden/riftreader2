@@ -190,7 +190,9 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                        "renderMatrix": None}
         for invalid in ({**observation, "playerKeyDecimal": "0"},
                         {**observation, "actorHeadingQualified": True},
-                        {**observation, "actorMatrix": {"planarAngleDegreesCandidate": float("inf")}}):
+                        {**observation, "actorMatrix": {"planarAngleDegreesCandidate": float("inf")}},
+                        {**observation, "actorMatrix": {"planarAngleDegreesCandidate": 180.1}},
+                        {**observation, "actorMatrix": {}}):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 physical._native_values("actor-pose", {"observation": invalid})
 
@@ -226,6 +228,31 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["actorPlanarDegreesCandidate"], 112)
         self.assertEqual(result["nativeValues"]["playerKey"], "239816685251645959")
         self.assertIs(result["nativeValues"]["actorHeadingQualified"], False)
+        self.assertEqual(result["nativeValues"]["planarAngleSeriesDegreesCandidate"],
+                         {"actor": [110, 111, 112], "model": [0, 0, 0],
+                          "render": [None, None, None]})
+        self.assertEqual(result["nativeValues"]["planarSignedTravelDegreesCandidate"],
+                         {"actor": 2, "model": 0, "render": None})
+        self.assertEqual(result["nativeValues"]["actorMaxAdjacentStepDegreesCandidate"], 1)
+
+    def test_actor_pose_angle_series_unwraps_crossing_180_but_never_qualifies_heading(self):
+        angles = (170, 179, -179, -170)
+        rows = [{"identity": REPORT_IDENTITY, "playerKeyDecimal": "239816685251645959",
+                 "actorHeadingQualified": False, "renderStatus": "unavailable",
+                 "actorMatrix": {"planarAngleDegreesCandidate": angle},
+                 "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                 "renderMatrix": None} for angle in angles]
+        report = {"status": "complete", "identity": REPORT_IDENTITY,
+                  "requestedSamples": 4, "completedSamples": 4,
+                  "observations": rows, "observation": rows[-1]}
+        values = physical._native_values("actor-pose", report)
+        self.assertEqual(values["planarAngleSeriesDegreesCandidate"]["actor"], list(angles))
+        self.assertEqual(values["planarSignedTravelDegreesCandidate"]["actor"], 20)
+        self.assertEqual(values["actorMaxAdjacentStepDegreesCandidate"], 9)
+        self.assertIs(values["actorHeadingQualified"], False)
+        self.assertEqual(physical._candidate_angle_steps([-170, -179, 179, 170]), [-9, -2, -9])
+        self.assertIsNone(physical._candidate_angle_steps([0, 180]))
+        self.assertIsNone(physical._candidate_angle_steps([0, None, 30]))
 
     def test_actor_pose_burst_rejects_missing_mixed_or_incomplete_series(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
@@ -242,6 +269,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             ("qualified-intermediate", {"observations": [{**base, "actorHeadingQualified": True}, base]}),
             ("nonfinite-intermediate", {"observations": [{**base, "actorMatrix": {"planarAngleDegreesCandidate": float("nan")}}, base]}),
             ("missing-matrix-intermediate", {"observations": [{**base, "modelMatrix": None}, base]}),
+            ("out-of-range-intermediate", {"observations": [{**base, "actorMatrix": {"planarAngleDegreesCandidate": -181}}, base]}),
+            ("missing-angle-intermediate", {"observations": [{**base, "actorMatrix": {}}, base]}),
         ):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
                 executable = Path(temporary) / "RiftReader2.Live.exe"

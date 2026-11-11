@@ -55,6 +55,11 @@ For 2-30 actor-pose samples, the separate
 under one lease and process session. Each read revalidates the exact game epoch;
 missing, changed-player or invalidated bursts produce **no completed report**.
 The compact receipt projects the last sample and count, never qualified heading.
+It also exposes `planarAngleSeriesDegreesCandidate` for actor/model/render
+and wrap-aware `planarSignedTravelDegreesCandidate` plus the actor's largest
+adjacent angle step. Missing angle values or an exactly 180° step produce
+unavailable signed travel, not a guessed direction. These are readout aids,
+**not** proof of body-facing response to a turn.
 A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
 captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):
 all ten samples kept one player key and the same 111.8823° actor candidate,
