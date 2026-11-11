@@ -9,6 +9,7 @@
 - Reports raw value deltas, ordinary-minus-unbuffed candidate spreads, unavailable pairs, source SHA-256 hashes, exact game build/player identity, process-epoch match, and limitations. Different players/builds and reversed time order are refused. No process or game access.
 - Focused `NativeStatsComparisonCliTests`: **4/4 pass** (.NET 10; `--no-restore`).
 - Real offline replay: `artifacts/rr2-stats-cross-epoch-spreads-20261111.json` compares retained Lab1 2026-11-07/08 full 20-selector captures of the same player across distinct process epochs: **20/20 selectors, 40/40 values unchanged; zero spread changes**. Historical agreement only—not current live freshness, cause, or restart qualification.
+- Separate cross-player offline mapping check: retained Lab1 and Lab2 different player keys, identical executable SHA, **all 20 selector/index mappings match**. One-build structural compatibility only; not current live validation.
 - No interactive live test, movement, casting, desktop operation, VM operation or RRE repository edit. Other developers' dirty movement files and package locks preserved.
 
 ## Safe continuation
