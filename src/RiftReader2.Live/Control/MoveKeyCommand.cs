@@ -38,6 +38,16 @@ internal static class MoveKeyCommand
             "Same-owner native actor/model matrix candidates only; body-facing, camera separation, freshness and game response unverified.";
     }
 
+    internal sealed record TurnRateCandidate(
+        string Status, string Key, double? SignedDegreesPerSecondCandidate,
+        double? MagnitudeDegreesPerSecondCandidate, string? Reason = null)
+    {
+        public bool ActorHeadingQualified => false;
+        public bool NavigationEligible => false;
+        public string Qualification =>
+            "Measured key-hold and current-build actor-matrix angle only; not an independently validated actor turn rate.";
+    }
+
     private sealed record FocusAttempt(
         string PreviousForegroundWindow, uint PreviousForegroundProcessId,
         bool AttachedForegroundThread, bool AttachedTargetThread,
@@ -320,6 +330,11 @@ internal static class MoveKeyCommand
                 }
             }
         }
+        var turnRateCandidate = options.MeasureActorPose && options.Keys.Length == 1
+            && options.Keys[0] is "a" or "d"
+            ? SummarizeTurnRate(options.Keys[0], insertion, poseFeedback,
+                result.ObservedDuration.TotalMilliseconds)
+            : null;
         Report(options.Json, new
         {
             status = success ? "input-inserted-game-response-unverified" : "input-uncertain",
@@ -339,7 +354,7 @@ internal static class MoveKeyCommand
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
             xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
-            gameResponseVerified = false, xyzFeedback, poseFeedback, result.Error
+            gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error
         });
         return success ? 0 : 2;
     }
@@ -413,6 +428,36 @@ internal static class MoveKeyCommand
         var changed = !before.ActorMatrix.RawBits.SequenceEqual(after.ActorMatrix.RawBits);
         return new PoseFeedback("candidate-native-actor-pose-feedback", before, after,
             actorDelta, modelDelta, changed, gap);
+    }
+
+    internal static TurnRateCandidate SummarizeTurnRate(
+        string key, KeyInsertionEvidence insertion, PoseFeedback? pose,
+        double observedMilliseconds)
+    {
+        if (key is not ("a" or "d"))
+            return new("not-turn-key", key, null, null, "Only A/D turn keys are eligible.");
+        if (!insertion.BoundedActionCompleted || !insertion.AllRequestedKeyDownsInserted)
+            return new("unavailable-input-or-release", key, null, null,
+                "Key insertion, bounded completion, or release was unverified.");
+        if (pose is null || pose.Status != "candidate-native-actor-pose-feedback")
+            return new("unavailable-pose", key, null, null,
+                "Same-owner paired pose evidence was unavailable.");
+        if (!double.IsFinite(observedMilliseconds) || observedMilliseconds < 20
+            || observedMilliseconds > 4000 || pose.CaptureGapSeconds is not double gap
+            || !double.IsFinite(gap) || gap <= 0
+            || gap > observedMilliseconds / 1000 + 2)
+            return new("unavailable-timing", key, null, null,
+                "Observed hold or bracketing gap invalid for a turn-rate candidate.");
+        if (pose.ActorMatrixBitsChanged != true
+            || pose.ActorPlanarDeltaDegreesCandidate is not double delta
+            || !double.IsFinite(delta) || Math.Abs(delta) < 0.001)
+            return new("unavailable-angle-change", key, null, null,
+                "No nonzero finite actor-matrix angle change was observed.");
+        var rate = delta * 1000 / observedMilliseconds;
+        if (!double.IsFinite(rate))
+            return new("unavailable-timing", key, null, null,
+                "Calculated angle rate is nonfinite.");
+        return new("candidate-native-actor-matrix-turn-rate", key, rate, Math.Abs(rate));
     }
 
     internal static bool MayTakeSettledXyz(ControlExecutionResult result) =>

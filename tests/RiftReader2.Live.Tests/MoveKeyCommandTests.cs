@@ -236,6 +236,62 @@ public sealed class MoveKeyCommandTests
             }).Status);
     }
 
+    [Theory]
+    [InlineData("a", 10.0, 28.0, 36.0)]
+    [InlineData("d", 10.0, -8.0, -36.0)]
+    public void TurnRateUsesActualHoldAndSignedCandidateAngle(
+        string key, double beforeAngle, double afterAngle, double expectedRate)
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var pose = MoveKeyCommand.ComparePose(
+            Pose(t, beforeAngle), Pose(t.AddMilliseconds(500), afterAngle));
+        var evidence = MoveKeyCommand.SummarizeInsertion(
+            Execution(delivered: true, released: true), 1, 1, 1);
+        var result = MoveKeyCommand.SummarizeTurnRate(key, evidence, pose, 500);
+        Assert.Equal("candidate-native-actor-matrix-turn-rate", result.Status);
+        Assert.Equal(expectedRate, result.SignedDegreesPerSecondCandidate!.Value, 5);
+        Assert.Equal(Math.Abs(expectedRate), result.MagnitudeDegreesPerSecondCandidate!.Value, 5);
+        Assert.False(result.ActorHeadingQualified);
+        Assert.False(result.NavigationEligible);
+    }
+
+    [Fact]
+    public void TurnRateRefusesUnqualifiedOrIncorrectInputConditions()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var validPose = MoveKeyCommand.ComparePose(Pose(t, 10),
+            Pose(t.AddMilliseconds(500), 28));
+        var success = MoveKeyCommand.SummarizeInsertion(
+            Execution(delivered: true, released: true), 1, 1, 1);
+        var failedRelease = MoveKeyCommand.SummarizeInsertion(
+            Execution(delivered: true, released: false), 1, 1, 1);
+        Assert.Equal("unavailable-input-or-release",
+            MoveKeyCommand.SummarizeTurnRate("a", failedRelease, validPose, 500).Status);
+        Assert.Equal("not-turn-key",
+            MoveKeyCommand.SummarizeTurnRate("q", success, validPose, 500).Status);
+        Assert.Equal("unavailable-pose",
+            MoveKeyCommand.SummarizeTurnRate("d", success, null, 500).Status);
+        Assert.Equal("unavailable-pose",
+            MoveKeyCommand.SummarizeTurnRate("a", success,
+                MoveKeyCommand.ComparePose(Pose(t, 10),
+                    Pose(t.AddMilliseconds(500), 28) with { ActorComponent = 123 }), 500).Status);
+        Assert.Equal("unavailable-timing",
+            MoveKeyCommand.SummarizeTurnRate("a", success, validPose, 0).Status);
+        Assert.Equal("unavailable-timing",
+            MoveKeyCommand.SummarizeTurnRate("a", success, validPose, 5000).Status);
+        Assert.Equal("unavailable-timing",
+            MoveKeyCommand.SummarizeTurnRate("a", success, validPose with
+            {
+                CaptureGapSeconds = 8
+            }, 500).Status);
+        Assert.Equal("unavailable-angle-change",
+            MoveKeyCommand.SummarizeTurnRate("a", success,
+                MoveKeyCommand.ComparePose(Pose(t, 10), Pose(t.AddMilliseconds(500), 10)), 500).Status);
+        Assert.Equal("unavailable-angle-change",
+            MoveKeyCommand.SummarizeTurnRate("a", success,
+                MoveKeyCommand.ComparePose(Pose(t, 10), Pose(t.AddMilliseconds(500), 190)), 500).Status);
+    }
+
     private static ControlExecutionResult Execution(bool delivered, bool released,
         bool cancelled = false, bool targetLost = false) => new(
         delivered, released, cancelled, targetLost, !released, !released,
