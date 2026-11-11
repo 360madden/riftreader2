@@ -71,6 +71,24 @@ The raw bracket also includes `secondaryBeforeCandidate` and `secondaryAfterCand
 from the existing position-component `+0x88` bytes when finite. A read-only physical
 sample on November 10 found both secondary XYZs identical to primary XYZ; actor Y
 was 0.060 lower, so secondary-vs-primary did not explain the vertical offset.
+
+Opt in to the exact-build transform-source comparison with
+`python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 1 --include-position --include-transform-sources`.
+It adds three owner-bracketed native triplets only when requested:
+`position+0x88`, `actor+0x4F8`, `actor+0x770`, and reports their reconstructed
+actor translation and maximum deviation from the stored `actor+0x3BC` XYZ.
+The **2026-11-11 01:12:29 UTC read-only physical capture** on AMD-DESKTOP,
+PID 44888 (exact build SHA pinned), measured primary and secondary Y `863.5872`,
+first actor Y offset `0`, second actor Y offset `-0.06`, and stored/reconstructed
+actor Y `863.5272`, with **0 maximum X/Y/Z difference**. This resolves the
+observed static -0.06 Y discrepancy to actor offset `+0x774` (the Y member
+of the `+0x770` triplet), not primary-vs-secondary position. Raw evidence:
+`artifacts/physical-native-actor-pose-70c4746cabe04dde958b50cad58148d7.json`
+(SHA256 `0593221e66264455e2c31f83860aa7d243fe681efec42a9b6e10d898f62dca85`).
+The arithmetic is verified for this stationary snapshot; source freshness,
+body heading, movement response and restart stability remain unqualified.
+The capture performed no game input, casting or foreground changes.
+
 A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
 captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):
 all ten samples kept one player key and the same 111.8823° actor candidate,

@@ -293,6 +293,71 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertEqual(result["reason"], "invalid-native-reader-report")
 
+    def test_physical_actor_pose_transform_sources_opt_in_passes_native_flag(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        self.assertEqual(physical.read_native(selected, "position", include_transform_sources=True)["reason"],
+                         "transform-sources-require-actor-pose")
+        self.assertEqual(physical.read_native(selected, "actor-pose", include_transform_sources="true")["reason"],
+                         "transform-sources-require-actor-pose")
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "sources.json"
+            base = {"identity": REPORT_IDENTITY, "playerKeyDecimal": "123",
+                    "actorHeadingQualified": False, "renderStatus": "alternate-reference-branch-not-followed",
+                    "actorMatrix": {"planarAngleDegreesCandidate": 12},
+                    "modelMatrix": {"planarAngleDegreesCandidate": 0}, "renderMatrix": None}
+            xyz = {"x": 1, "y": 2, "z": 3}
+            sources = {"positionSecondaryXyz": xyz, "actorOffsetAt04F8": xyz,
+                       "actorOffsetAt0770": xyz, "reconstructedActorWorldTranslation": xyz,
+                       "actorWorldTranslationMaxAbsDelta": 0}
+            def fake_run(command, **_):
+                self.assertEqual(command[-2:], ["--include-transform-sources", "true"])
+                destination.write_text(json.dumps({"status": "complete", "identity": REPORT_IDENTITY,
+                                                   "observation": {**base, "translationSourcesCandidate": sources}}),
+                                       encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-actor-pose-summary/1", "status": "complete",
+                    "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "actor-pose", destination,
+                                              include_transform_sources=True)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeValues"]["translationSourcesCandidate"], sources)
+
+    def test_actor_pose_translation_sources_are_optional_validated_and_owner_scoped(self):
+        base = {"playerKeyDecimal": "123", "actorHeadingQualified": False,
+                "renderStatus": "alternate-reference-branch-not-followed",
+                "actorMatrix": {"planarAngleDegreesCandidate": 42},
+                "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                "renderMatrix": None}
+        xyz = {"x": 11, "y": 20, "z": 33}
+        sources = {"positionSecondaryXyz": xyz,
+                   "actorOffsetAt04F8": {"x": 0, "y": 1.5, "z": 0},
+                   "actorOffsetAt0770": {"x": 0, "y": .5, "z": 0},
+                   "reconstructedActorWorldTranslation": {"x": 11, "y": 22, "z": 33},
+                   "actorWorldTranslationMaxAbsDelta": 0}
+        report = {"observation": {**base, "translationSourcesCandidate": sources}}
+        values = physical._native_values("actor-pose", report, expect_translation_sources=True)
+        self.assertEqual(values["translationSourcesCandidate"], sources)
+        self.assertNotIn("translationSourcesCandidate",
+                         physical._native_values("actor-pose", {"observation": base}))
+        with self.assertRaisesRegex(ValueError, "missing-native-actor-translation-sources"):
+            physical._native_values("actor-pose", {"observation": base},
+                                    expect_translation_sources=True)
+        for bad in ({**sources, "actorOffsetAt0770": {"x": 0, "y": float("nan"), "z": 0}},
+                    {**sources, "positionSecondaryXyz": {"x": 1}},
+                    {**sources, "actorWorldTranslationMaxAbsDelta": -1}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                physical._native_values("actor-pose",
+                                        {"observation": {**base, "translationSourcesCandidate": bad}})
+        burst = {"observation": report["observation"],
+                 "requestedSamples": 2, "completedSamples": 2,
+                 "observations": [base, report["observation"]]}
+        with self.assertRaisesRegex(ValueError, "missing-native-actor-translation-sources"):
+            physical._native_values("actor-pose", burst, expect_translation_sources=True)
+
     def test_actor_pose_projects_optional_world_translation_candidates(self):
         base = {"playerKeyDecimal": "123", "actorHeadingQualified": False,
                 "renderStatus": "normal-render-matrix-candidate",
@@ -741,7 +806,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output.getvalue())["nativeRead"], "stats")
         reader.assert_called_once_with({"status": "ready"}, "stats", None,
-                                       samples=None, interval_ms=None, include_position=False)
+                                       samples=None, interval_ms=None, include_position=False,
+                                        include_transform_sources=False)
 
     def test_cli_default_is_current_physical_host_and_json(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \

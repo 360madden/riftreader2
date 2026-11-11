@@ -220,6 +220,30 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
         Assert.False(fixture.Opened);
     }
 
+    [Fact]
+    public async Task RequestedTranslationSourcesMissingFromReaderNeverPublishes()
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--include-transform-sources"] = "true";
+        using var output = new StringWriter();
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Run(output));
+        Assert.False(File.Exists(fixture.Path));
+        Assert.Empty(output.ToString());
+        Assert.True(fixture.LeaseDisposedAfterSession);
+    }
+
+    [Theory]
+    [InlineData("True")]
+    [InlineData("1")]
+    public async Task InvalidTranslationSourcesFlagNeverAcquiresLease(string raw)
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--include-transform-sources"] = raw;
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Run(new StringWriter()));
+        Assert.False(fixture.LeaseHeld);
+        Assert.False(fixture.Opened);
+    }
+
     [Theory]
     [InlineData("--samples", "0")]
     [InlineData("--samples", "31")]

@@ -61,6 +61,8 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         Assert.Equal("alternate-reference-branch-not-followed", result.RenderStatus);
         Assert.Equal(0, source.ReadCount(Actor + 0x410, 8));
         Assert.Equal(0, source.ReadCount(Renderer + 0xA0, 0x30));
+        Assert.Equal(0, source.ReadCount(Actor + 0x4F8, 12));
+        Assert.Equal(0, source.ReadCount(Actor + 0x770, 12));
     }
 
     [Fact]
@@ -101,6 +103,37 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
     }
 
     [Fact]
+    public void OptInTranslationSourcesReconstructActorWorldWithoutInput()
+    {
+        var source = Source(1, Renderer, includeRenderer: false, includeTranslationSources: true);
+        var pose = CurrentBuildActorPoseCandidateReader.ReadResolved(source, Identity,
+            DateTimeOffset.UtcNow, 1, PlayerEntity, Actor, Position, () => { }, true);
+        var sources = Assert.IsType<CurrentBuildActorTranslationSourcesCandidate>(pose.TranslationSourcesCandidate);
+        Assert.Equal(new CurrentBuildXyz(11, 20, 33), sources.PositionSecondaryXyz);
+        Assert.Equal(new CurrentBuildXyz(0, 1.5f, 0), sources.ActorOffsetAt04F8);
+        Assert.Equal(new CurrentBuildXyz(0, .5f, 0), sources.ActorOffsetAt0770);
+        Assert.Equal(pose.ActorWorldTranslationCandidate, sources.ReconstructedActorWorldTranslation);
+        Assert.Equal(0, sources.ActorWorldTranslationMaxAbsDelta);
+        Assert.Equal(2, source.ReadCount(Position + 0x88, 12));
+        Assert.Equal(2, source.ReadCount(Actor + 0x4F8, 12));
+        Assert.Equal(2, source.ReadCount(Actor + 0x770, 12));
+        Assert.Equal(0, source.ReadCount(Actor + 0x410, 8));
+    }
+
+    [Fact]
+    public void OptInTranslationSourcesRejectNonfiniteAndChangedOffsets()
+    {
+        var invalid = Source(1, Renderer, includeRenderer: false, includeTranslationSources: true,
+            secondOffsetY: float.NaN);
+        Assert.Throws<InvalidDataException>(() => CurrentBuildActorPoseCandidateReader.ReadResolved(
+            invalid, Identity, DateTimeOffset.UtcNow, 1, PlayerEntity, Actor, Position, () => { }, true));
+        var changed = Source(1, Renderer, includeRenderer: false, includeTranslationSources: true,
+            mutateOffsetOnSecondRead: true);
+        Assert.Throws<InvalidDataException>(() => CurrentBuildActorPoseCandidateReader.ReadResolved(
+            changed, Identity, DateTimeOffset.UtcNow, 1, PlayerEntity, Actor, Position, () => { }, true));
+    }
+
+    [Fact]
     public void WrongBuildAndAliasedComponentsFailBeforeReading()
     {
         var source = Source(0, Renderer);
@@ -126,7 +159,9 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
     }
 
     private static FakeSession Source(uint flags, ulong render, bool includeRenderer = true,
-        bool mutateActorOnSecondRead = false, float renderTranslationY = 22f)
+        bool mutateActorOnSecondRead = false, float renderTranslationY = 22f,
+        bool includeTranslationSources = false, float secondOffsetY = .5f,
+        bool mutateOffsetOnSecondRead = false)
     {
         var blocks = new Dictionary<(ulong, int), byte[]>
         {
@@ -139,7 +174,17 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         BinaryPrimitives.WriteUInt64LittleEndian(blocks[(Actor + 0x410, 8)], render);
         if (includeRenderer)
             blocks[(Renderer + 0xA0, 0x30)] = Floats([.. QuarterTurnY, 11f, renderTranslationY, 33f], 0x30);
-        return new(Identity, blocks) { MutateActorOnSecondRead = mutateActorOnSecondRead };
+        if (includeTranslationSources)
+        {
+            blocks[(Position + 0x88, 12)] = Floats([11f, 20f, 33f], 12);
+            blocks[(Actor + 0x4F8, 12)] = Floats([0f, 1.5f, 0f], 12);
+            blocks[(Actor + 0x770, 12)] = Floats([0f, secondOffsetY, 0f], 12);
+        }
+        return new(Identity, blocks)
+        {
+            MutateActorOnSecondRead = mutateActorOnSecondRead,
+            MutateOffsetOnSecondRead = mutateOffsetOnSecondRead
+        };
     }
 
     private static byte[] Floats(IReadOnlyList<float> values, int length)
@@ -156,6 +201,7 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         private readonly Dictionary<(ulong, int), int> counts = [];
         public NativeProcessIdentity Identity { get; } = identity;
         public bool MutateActorOnSecondRead { get; init; }
+        public bool MutateOffsetOnSecondRead { get; init; }
         public int Reads { get; private set; }
         public int ReadCount(ulong address, int size) =>
             counts.GetValueOrDefault((address, size));
@@ -169,6 +215,8 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
                 return new("unavailable", [], 299, "Unknown fixture range.");
             var copy = bytes.ToArray();
             if (MutateActorOnSecondRead && key == (Actor + 0x398, 0x30) && counts[key] == 2)
+                copy[0] ^= 1;
+            if (MutateOffsetOnSecondRead && key == (Actor + 0x770, 12) && counts[key] == 2)
                 copy[0] ^= 1;
             return new("success", copy, null, null);
         }

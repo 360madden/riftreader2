@@ -16,7 +16,9 @@ internal static class CurrentBuildActorPoseSampleCommand
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
             static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
-            CurrentBuildActorPoseCandidateReader.Read,
+            options.TryGetValue("--include-transform-sources", out var rawInclude) && rawInclude == "true"
+                ? static session => CurrentBuildActorPoseCandidateReader.ReadWithTranslationSources(session)
+                : CurrentBuildActorPoseCandidateReader.Read,
             CurrentBuildPositionCandidateReader.ReadOwned);
 
     // Offline injection seam preserves the exact production lease/session/publication path.
@@ -42,6 +44,7 @@ internal static class CurrentBuildActorPoseSampleCommand
         var samples = BoundedInt(options, "--samples", 1, 1, 30);
         var intervalMilliseconds = BoundedInt(options, "--interval-ms", 500, 0, 2000);
         var includePosition = BoolOption(options, "--include-position");
+        var includeTranslationSources = BoolOption(options, "--include-transform-sources");
 
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path))
@@ -56,6 +59,8 @@ internal static class CurrentBuildActorPoseSampleCommand
         var elapsed = Stopwatch.StartNew();
         var observation = await CaptureAsync(session, read, ct,
             includePosition ? readPosition : null);
+        if (includeTranslationSources && observation.TranslationSourcesCandidate is null)
+            throw new InvalidDataException("Requested actor translation sources are missing.");
         if (samples > 1)
         {
             var observations = new List<CurrentBuildActorPoseCandidate>(samples) { observation };
@@ -65,6 +70,8 @@ internal static class CurrentBuildActorPoseSampleCommand
                     await Task.Delay(intervalMilliseconds, ct);
                 var next = await CaptureAsync(session, read, ct,
                     includePosition ? readPosition : null);
+                if (includeTranslationSources && next.TranslationSourcesCandidate is null)
+                    throw new InvalidDataException("Requested actor translation sources are missing.");
                 if (next.PlayerKey != observation.PlayerKey || next.Identity != identity)
                     throw new InvalidDataException("Actor pose player or process changed during burst; no report published.");
                 observations.Add(next);

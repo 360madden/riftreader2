@@ -75,7 +75,7 @@ def _candidate_angle_steps(angles):
     return None if any(abs(step) == 180 for step in steps) else steps
 
 
-def _native_values(kind, report, *, expect_position=False):
+def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "actor-pose":
         observation = report.get("observation")
@@ -175,6 +175,24 @@ def _native_values(kind, report, *, expect_position=False):
             result["actorMaxAdjacentStepDegreesCandidate"] = (
                 max(map(abs, steps["actor"])) if steps["actor"] is not None else None)
         rows = observations if observations is not None else [observation]
+        if expect_translation_sources and any(not isinstance(row.get("translationSourcesCandidate"), dict)
+                                              for row in rows):
+            raise ValueError("missing-native-actor-translation-sources")
+        if "translationSourcesCandidate" in observation:
+            sources = observation["translationSourcesCandidate"]
+            if not isinstance(sources, dict):
+                raise ValueError("invalid-native-actor-translation-sources")
+            for name in ("positionSecondaryXyz", "actorOffsetAt04F8", "actorOffsetAt0770",
+                         "reconstructedActorWorldTranslation"):
+                coords = sources.get(name)
+                if (not isinstance(coords, dict) or
+                        any(type(coords.get(axis)) not in (int, float) or
+                            not math.isfinite(coords[axis]) for axis in ("x", "y", "z"))):
+                    raise ValueError("invalid-native-actor-translation-sources")
+            residual = sources.get("actorWorldTranslationMaxAbsDelta")
+            if type(residual) not in (int, float) or not math.isfinite(residual) or residual < 0:
+                raise ValueError("invalid-native-actor-translation-sources")
+            result["translationSourcesCandidate"] = sources
         if expect_position:
             brackets = []
             for row in rows:
@@ -297,7 +315,7 @@ def _native_values(kind, report, *, expect_position=False):
 
 
 def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
-                include_position=False):
+                include_position=False, include_transform_sources=False):
     """Read a candidate from the exact selected LOCAL physical process, without input."""
     if selection.get("status") != "ready":
         return selection
@@ -312,6 +330,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="unknown-native-read")
     if type(include_position) is not bool or (include_position and kind != "actor-pose"):
         return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
+    if type(include_transform_sources) is not bool or (include_transform_sources and kind != "actor-pose"):
+        return dict(selection, status="blocked", reason="transform-sources-require-actor-pose")
     if kind not in ("position", "vitals", "actor-pose") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-position-vitals-or-actor-pose")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
@@ -344,6 +364,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         command.extend(("--interval-ms", str(interval_ms)))
     if include_position:
         command.extend(("--include-position", "true"))
+    if include_transform_sources:
+        command.extend(("--include-transform-sources", "true"))
     # Long, explicitly requested intervals must not hit the wrapper's timeout.
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
@@ -398,7 +420,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 and (report.get("completedSamples") != samples or
                      not isinstance(report.get("observations"), list))):
             raise ValueError("incomplete-native-actor-pose-burst")
-        values = _native_values(kind, report, expect_position=include_position)
+        values = _native_values(kind, report, expect_position=include_position,
+                                expect_translation_sources=include_transform_sources)
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")
     return dict(selection, status="complete", nativeRead=kind,
@@ -422,6 +445,8 @@ def main(argv=None):
                         help="position/vitals/actor-pose: 0-2000ms between reads (default: 500)")
     parser.add_argument("--include-position", action="store_true",
                         help="actor-pose only: bracket each pose with same-player native XYZ candidates")
+    parser.add_argument("--include-transform-sources", action="store_true",
+                        help="actor-pose only: read secondary XYZ and both actor transform offsets")
     args = parser.parse_args(argv)
     if args.read_native is not None and args.expected_host is None:
         result = {"status": "blocked", "workflow": "physical",
@@ -429,6 +454,9 @@ def main(argv=None):
     elif args.include_position and args.read_native != "actor-pose":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "position-bracket-requires-actor-pose"}
+    elif args.include_transform_sources and args.read_native != "actor-pose":
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "transform-sources-require-actor-pose"}
     elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
@@ -439,7 +467,8 @@ def main(argv=None):
     elif args.read_native:
         result = read_native(result, args.read_native, args.output,
                              samples=args.samples, interval_ms=args.interval_ms,
-                              include_position=args.include_position)
+                              include_position=args.include_position,
+                              include_transform_sources=args.include_transform_sources)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] in ("ready", "complete") else 2
 

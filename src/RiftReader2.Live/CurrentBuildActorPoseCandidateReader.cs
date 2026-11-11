@@ -30,6 +30,8 @@ internal sealed record CurrentBuildActorPoseCandidate(
     public CurrentBuildXyz? RenderWorldTranslationCandidate { get; init; }
     public double? RenderWorldTranslationMaxAbsDeltaCandidate { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CurrentBuildActorTranslationSourcesCandidate? TranslationSourcesCandidate { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CurrentBuildActorPosePositionBracketCandidate? PositionBracketCandidate { get; init; }
     public string Qualification =>
         "actor/model/render-matrix/translation-candidate-only; body-facing, source freshness, input response and restart unverified";
@@ -45,6 +47,11 @@ internal sealed record CurrentBuildActorPosePositionBracketCandidate(
     public CurrentBuildXyz? SecondaryAfterCandidate { get; init; }
 }
 
+internal sealed record CurrentBuildActorTranslationSourcesCandidate(
+    CurrentBuildXyz PositionSecondaryXyz, CurrentBuildXyz ActorOffsetAt04F8,
+    CurrentBuildXyz ActorOffsetAt0770, CurrentBuildXyz ReconstructedActorWorldTranslation,
+    double ActorWorldTranslationMaxAbsDelta);
+
 /// <summary>
 /// Exact-build self-owned actor pose from the known component selectors. The actor
 /// and model matrices are retained even when the normal renderer branch is absent.
@@ -55,7 +62,11 @@ internal static class CurrentBuildActorPoseCandidateReader
     internal const ulong ActorSelectorRva = 0x2F58490;
     internal const ulong PositionSelectorRva = 0x2F588A0;
 
-    internal static CurrentBuildActorPoseCandidate Read(IReadOnlyNativeMemorySession session)
+    internal static CurrentBuildActorPoseCandidate Read(IReadOnlyNativeMemorySession session) =>
+        ReadWithTranslationSources(session, false);
+
+    internal static CurrentBuildActorPoseCandidate ReadWithTranslationSources(
+        IReadOnlyNativeMemorySession session, bool includeTranslationSources = true)
     {
         ArgumentNullException.ThrowIfNull(session);
         var lookup = CurrentBuildPlayerLookup.Resolve(session);
@@ -63,13 +74,14 @@ internal static class CurrentBuildActorPoseCandidateReader
             lookup.PlayerKey, lookup.EntityAddress,
             lookup.ResolveComponent(ActorSelectorRva),
             lookup.ResolveComponent(PositionSelectorRva),
-            lookup.VerifyUnchanged);
+            lookup.VerifyUnchanged, includeTranslationSources);
     }
 
     internal static CurrentBuildActorPoseCandidate ReadResolved(
         IReadOnlyNativeMemorySession session, NativeProcessIdentity identity,
         DateTimeOffset started, ulong playerKey, ulong playerEntity,
-        ulong actorComponent, ulong positionComponent, Action verifyOwner)
+        ulong actorComponent, ulong positionComponent, Action verifyOwner,
+        bool includeTranslationSources = false)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(verifyOwner);
@@ -80,8 +92,10 @@ internal static class CurrentBuildActorPoseCandidateReader
             || identity.ModuleSize < PositionSelectorRva + 4)
             throw new InvalidDataException("Actor pose requires exact current-build process and owner.");
         CurrentBuildPlayerLookup.Pointer(playerEntity, 128);
-        var actor = CurrentBuildPlayerLookup.Pointer(actorComponent, 0x418);
-        var position = CurrentBuildPlayerLookup.Pointer(positionComponent);
+        var actor = CurrentBuildPlayerLookup.Pointer(actorComponent,
+            includeTranslationSources ? 0x77C : 0x418);
+        var position = CurrentBuildPlayerLookup.Pointer(positionComponent,
+            includeTranslationSources ? 0x94 : 1);
         if (actor == position)
             throw new InvalidDataException("Actor and position components unexpectedly alias.");
 
@@ -119,6 +133,15 @@ internal static class CurrentBuildActorPoseCandidateReader
             }
         }
 
+        // Exact-build 0x687320 writer: world XYZ = secondary position + both actor offsets.
+        // Extra native reads are strictly opt-in, bracketed and tied to the same owner.
+        var secondaryAddress = checked(position + 0x88);
+        var firstOffsetAddress = checked(actor + 0x4F8);
+        var secondOffsetAddress = checked(actor + 0x770);
+        var secondaryRaw = includeTranslationSources ? CurrentBuildPlayerLookup.Exact(session, secondaryAddress, 12) : null;
+        var firstOffsetRaw = includeTranslationSources ? CurrentBuildPlayerLookup.Exact(session, firstOffsetAddress, 12) : null;
+        var secondOffsetRaw = includeTranslationSources ? CurrentBuildPlayerLookup.Exact(session, secondOffsetAddress, 12) : null;
+
         verifyOwner();
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, flagsAddress, 4), flagsRaw);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, actorAddress, 0x30), actorRaw);
@@ -127,18 +150,42 @@ internal static class CurrentBuildActorPoseCandidateReader
             CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, pointerAddress, 8), pointerRaw);
         if (renderRaw is not null)
             CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, renderAddress, 0x30), renderRaw);
+        if (secondaryRaw is not null && firstOffsetRaw is not null && secondOffsetRaw is not null)
+        {
+            CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, secondaryAddress, 12), secondaryRaw);
+            CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, firstOffsetAddress, 12), firstOffsetRaw);
+            CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, secondOffsetAddress, 12), secondOffsetRaw);
+        }
         if (session.Identity != identity)
             throw new InvalidDataException("Actor pose process identity changed.");
         var delta = CompositionDelta(actorMatrix.RowMajorF32, modelMatrix.RowMajorF32,
             renderMatrix?.RowMajorF32);
         var actorTranslation = DecodeFiniteTranslation(actorRaw.AsSpan(0x24, 0x0C));
         var renderTranslation = renderRaw is null ? null : DecodeFiniteTranslation(renderRaw.AsSpan(0x24, 0x0C));
+        CurrentBuildActorTranslationSourcesCandidate? translationSources = null;
+        if (secondaryRaw is not null && firstOffsetRaw is not null && secondOffsetRaw is not null)
+        {
+            var secondary = DecodeFiniteTranslation(secondaryRaw);
+            var firstOffset = DecodeFiniteTranslation(firstOffsetRaw);
+            var secondOffset = DecodeFiniteTranslation(secondOffsetRaw);
+            if (secondary is null || firstOffset is null || secondOffset is null || actorTranslation is null)
+                throw new InvalidDataException("Actor translation source contains a nonfinite value.");
+            var reconstructed = new CurrentBuildXyz(
+                secondary.X + firstOffset.X + secondOffset.X,
+                secondary.Y + firstOffset.Y + secondOffset.Y,
+                secondary.Z + firstOffset.Z + secondOffset.Z);
+            if (!float.IsFinite(reconstructed.X) || !float.IsFinite(reconstructed.Y) || !float.IsFinite(reconstructed.Z))
+                throw new InvalidDataException("Actor translation reconstruction overflowed.");
+            translationSources = new(secondary, firstOffset, secondOffset, reconstructed,
+                TranslationDelta(actorTranslation, reconstructed)!.Value);
+        }
         return new(identity, started, DateTimeOffset.UtcNow, playerKey, playerEntity, actor, position,
             flags, actorMatrix, modelMatrix, renderMatrix, renderStatus, delta)
         {
             ActorWorldTranslationCandidate = actorTranslation,
             RenderWorldTranslationCandidate = renderTranslation,
-            RenderWorldTranslationMaxAbsDeltaCandidate = TranslationDelta(actorTranslation, renderTranslation)
+            RenderWorldTranslationMaxAbsDeltaCandidate = TranslationDelta(actorTranslation, renderTranslation),
+            TranslationSourcesCandidate = translationSources
         };
     }
 
