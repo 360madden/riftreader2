@@ -48,12 +48,16 @@ public sealed class NativeStatsComparisonCliTests
         var dir = NewDirectory();
         try
         {
-            var before = Save(dir, "before.json", Snapshot(100, "2026-11-07T21:00:00Z"));
-            var after = Save(dir, "after.json", Snapshot(110, "2026-11-08T21:00:00Z", pid: 456, ticks: 789));
+            var before = Save(dir, "before.json", Snapshot(100, "2026-11-07T21:00:00Z", ownerOffset: 0));
+            var after = Save(dir, "after.json", Snapshot(110, "2026-11-08T21:00:00Z", pid: 456, ticks: 789, ownerOffset: 0));
             var (code, json, _) = await Run(before, after);
             Assert.Equal(0, code);
             using var result = JsonDocument.Parse(json);
             Assert.False(result.RootElement.GetProperty("identity").GetProperty("sameProcessEpoch").GetBoolean());
+            Assert.Equal("cross-epoch-unqualified",
+                result.RootElement.GetProperty("ownerPathComparison").GetProperty("status").GetString());
+            Assert.Equal(JsonValueKind.Null,
+                result.RootElement.GetProperty("ownerPathComparison").GetProperty("sameAddresses").ValueKind);
             Assert.Equal("candidate-only", result.RootElement.GetProperty("status").GetString());
         }
         finally { Directory.Delete(dir, recursive: true); }
@@ -116,6 +120,30 @@ public sealed class NativeStatsComparisonCliTests
     }
 
     [Fact]
+    public async Task DetectsSameEpochOwnerDriftIndependentlyOfRawValues()
+    {
+        var dir = NewDirectory();
+        try
+        {
+            var before = Save(dir, "before.json",
+                Snapshot(100, "2026-11-07T21:00:00Z", ownerOffset: 0));
+            var after = Save(dir, "after.json",
+                Snapshot(100, "2026-11-07T21:01:00Z", ownerOffset: 8));
+            var (code, json, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var result = JsonDocument.Parse(json);
+            var ownerPath = result.RootElement.GetProperty("ownerPathComparison");
+            Assert.Equal("same-process-epoch", ownerPath.GetProperty("status").GetString());
+            Assert.False(ownerPath.GetProperty("sameAddresses").GetBoolean());
+            Assert.False(ownerPath.GetProperty("matchingAnchors").GetProperty("owner").GetBoolean());
+            Assert.True(ownerPath.GetProperty("matchingAnchors").GetProperty("record").GetBoolean());
+            Assert.Equal(0, result.RootElement.GetProperty("summary").GetProperty("changedValues").GetInt32());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task SavedOutputIsNeverOverwritten()
     {
         var dir = NewDirectory();
@@ -135,7 +163,8 @@ public sealed class NativeStatsComparisonCliTests
     }
 
     private static object Snapshot(long armor, string observedAt, int pid = 123, long ticks = 456,
-        ulong unitKey = 42, int? armorMappedIndex = null, string? completedAt = null)
+        ulong unitKey = 42, int? armorMappedIndex = null, string? completedAt = null,
+        int? ownerOffset = null)
     {
         var rows = Fields.Select((f, i) => new
         {
@@ -159,7 +188,13 @@ public sealed class NativeStatsComparisonCliTests
             {
                 identity = new { processId = pid, processStartUtcTicks = ticks,
                     executableSha256 = new string('A', 64) },
-                startedAtUtc = observedAt, completedAtUtc = completedAt ?? observedAt, unitKey, stats = rows
+                startedAtUtc = observedAt, completedAtUtc = completedAt ?? observedAt, unitKey,
+                entity = ownerOffset.HasValue ? (ulong?)0x20000000UL : null,
+                health = ownerOffset.HasValue ? (ulong?)0x20010000UL : null,
+                owner = ownerOffset.HasValue ? (ulong?)(0x20020000UL + (ulong)ownerOffset.Value) : null,
+                record = ownerOffset.HasValue ? (ulong?)0x20030000UL : null,
+                mapping = ownerOffset.HasValue ? (ulong?)0x20040000UL : null,
+                stats = rows
             }
         };
     }

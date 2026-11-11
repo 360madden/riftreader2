@@ -21,7 +21,8 @@ internal static class NativeStatsComparisonCommand
     private sealed record Value(string Status, long? Raw);
     private sealed record Row(string Name, int Selector, int Index, Value Ordinary, Value Unbuffed);
     private sealed record Snapshot(string Path, string Sha256, string Build, int Pid, long StartTicks,
-        ulong PlayerKey, DateTimeOffset Started, DateTimeOffset Completed, IReadOnlyList<Row> Rows);
+        ulong PlayerKey, DateTimeOffset Started, DateTimeOffset Completed, IReadOnlyList<Row> Rows, OwnerPath? OwnerPath);
+    private sealed record OwnerPath(ulong Entity, ulong Health, ulong Owner, ulong Record, ulong Mapping);
     private sealed record Difference(string Status, long? Before, long? After, decimal? Delta);
     private sealed record Spread(string Status, decimal? Before, decimal? After, decimal? Delta);
 
@@ -61,6 +62,18 @@ internal static class NativeStatsComparisonCommand
             };
         }).ToArray();
 
+        var beforeOwnerPath = before.OwnerPath;
+        var afterOwnerPath = after.OwnerPath;
+        var comparableOwnerPath = sameEpoch && beforeOwnerPath is not null && afterOwnerPath is not null;
+        var matchingAnchors = comparableOwnerPath ? new
+        {
+            entity = beforeOwnerPath!.Entity == afterOwnerPath!.Entity,
+            health = beforeOwnerPath.Health == afterOwnerPath.Health,
+            owner = beforeOwnerPath.Owner == afterOwnerPath.Owner,
+            record = beforeOwnerPath.Record == afterOwnerPath.Record,
+            mapping = beforeOwnerPath.Mapping == afterOwnerPath.Mapping
+        } : null;
+
         var report = new
         {
             schemaVersion = 1,
@@ -73,6 +86,14 @@ internal static class NativeStatsComparisonCommand
                     processStartUtcTicks = before.StartTicks, startedAtUtc = before.Started, completedAtUtc = before.Completed },
                 after = new { path = after.Path, sha256 = after.Sha256, processId = after.Pid,
                     processStartUtcTicks = after.StartTicks, startedAtUtc = after.Started, completedAtUtc = after.Completed }
+            },
+            ownerPathComparison = new
+            {
+                status = beforeOwnerPath is null || afterOwnerPath is null ? "unavailable" :
+                    sameEpoch ? "same-process-epoch" : "cross-epoch-unqualified",
+                before = beforeOwnerPath, after = afterOwnerPath,
+                sameAddresses = comparableOwnerPath ? beforeOwnerPath == afterOwnerPath : (bool?)null,
+                matchingAnchors
             },
             summary = new
             {
@@ -90,6 +111,7 @@ internal static class NativeStatsComparisonCommand
             {
                 "Saved raw numeric candidates; a delta does not prove stat semantics, cause, or live freshness.",
                 "Selector-index remapping is reported independently of raw-value changes.",
+                "Same-epoch owner pointer equality is address stability, not semantic or freshness qualification.",
                 "Cross-epoch comparisons are historical and do not establish restart recovery.",
                 "Unavailable values remain null, never zero. No process access or game input occurs."
             }
@@ -167,7 +189,23 @@ internal static class NativeStatsComparisonCommand
                 ReadValue(element, "unbuffed", mappedIndex)));
         }
         return new(full, Convert.ToHexString(SHA256.HashData(bytes)), build, pid, ticks,
-            playerKey, started, completed, rows);
+            playerKey, started, completed, rows, ReadOwnerPath(observation));
+    }
+
+    private static OwnerPath? ReadOwnerPath(JsonElement observation)
+    {
+        string[] fields = ["entity", "health", "owner", "record", "mapping"];
+        var present = fields.Count(name =>
+            observation.TryGetProperty(name, out var field) && field.ValueKind != JsonValueKind.Null);
+        if (present == 0) return null; // Retained minimal reports have no pointer fields.
+        if (present != fields.Length)
+            throw new InvalidDataException("Incomplete native owner-chain evidence.");
+        var chain = new OwnerPath(ULong(observation, "entity"), ULong(observation, "health"),
+            ULong(observation, "owner"), ULong(observation, "record"), ULong(observation, "mapping"));
+        if (new[] { chain.Entity, chain.Health, chain.Owner, chain.Record, chain.Mapping }
+            .Any(address => address < 0x10000 || address % 8 != 0))
+            throw new InvalidDataException("Invalid native owner-chain pointer.");
+        return chain;
     }
 
     private static Value ReadValue(JsonElement row, string kind, int mappedIndex)
