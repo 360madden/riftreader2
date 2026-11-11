@@ -197,6 +197,72 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["status"], "complete")
         self.assertEqual(result["nativeValues"]["secondaryPlanarDegreesCandidate"], 90)
 
+    def test_orientation_passive_burst_projects_both_angles_and_rejects_mixed_owner(self):
+        def candidate(offset, degrees):
+            radians = __import__("math").radians(degrees)
+            values = [__import__("math").cos(radians), 0., -__import__("math").sin(radians),
+                      0., 1., 0., __import__("math").sin(radians), 0.,
+                      __import__("math").cos(radians)]
+            values = [__import__("struct").unpack("<f", __import__("struct").pack("<f", v))[0]
+                      for v in values]
+            bits = [__import__("struct").unpack("<I", __import__("struct").pack("<f", v))[0]
+                    for v in values]
+            return {"sourceOffset": offset, "status": "structural-y-planar-matrix-candidate",
+                    "rawBits": bits, "rowMajorF32": values,
+                    "planarAngleDegreesCandidate": __import__("math").degrees(
+                        __import__("math").atan2(values[6], values[0]))}
+
+        rows = [{"identity": REPORT_IDENTITY, "unitKey": "239816685251645959",
+                 "componentAddress": 0x20060000,
+                 "refreshHandleRaw": "0x0000000000000000", "refreshFlagRaw": 0,
+                 "primary": candidate(0x60, angle), "secondary": candidate(0x94, angle),
+                 "completedAtUtc": str(index)}
+                for index, angle in enumerate((10, 20, 30))]
+        report = {"status": "complete", "identity": REPORT_IDENTITY,
+                  "requestedSamples": 3, "completedSamples": 3,
+                  "observation": rows[-1], "observations": rows}
+        values = physical._native_values("orientation", report)
+        self.assertEqual(values["sampleCount"], 3)
+        self.assertAlmostEqual(values["orientationSignedTravelDegreesCandidate"]["primary"], 20,
+                               delta=0.0001)
+        self.assertAlmostEqual(values["orientationSignedTravelDegreesCandidate"]["secondary"], 20,
+                               delta=0.0001)
+        self.assertIs(values["headingQualified"], False)
+
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[-4:], ["--samples", "3", "--interval-ms", "0"])
+                output_path = Path(command[command.index("--output") + 1])
+                output_path.write_text(json.dumps(report), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-orientation-summary/1",
+                    "status": "complete", "output": str(output_path)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "orientation",
+                                              Path(temporary) / "orientation-burst.json",
+                                              samples=3, interval_ms=0)
+                self.assertEqual(result["status"], "complete")
+                self.assertEqual(result["nativeValues"]["sampleCount"], 3)
+                for index, mismatch in enumerate((
+                        {"observations": [rows[0], {**rows[1], "unitKey": "2"}, rows[-1]]},
+                        {"observations": [rows[0], {**rows[1], "componentAddress": 1234}, rows[-1]]},
+                        {"completedSamples": 2},
+                        {"observations": [rows[0], {**rows[1], "primary":
+                            {**rows[1]["primary"], "rawBits": [0] * 9}}, rows[-1]]})):
+                    report.update(mismatch)
+                    invalid = physical.read_native(selected, "orientation",
+                                                   Path(temporary) / f"orientation-bad-{index}.json",
+                                                   samples=3, interval_ms=0)
+                    self.assertEqual(invalid["status"], "blocked")
+                    self.assertEqual(invalid["reason"], "invalid-native-reader-report")
+                    report = {"status": "complete", "identity": REPORT_IDENTITY,
+                              "requestedSamples": 3, "completedSamples": 3,
+                              "observation": rows[-1], "observations": rows}
+
     def test_physical_smoothed_scalar_validates_raw_bits_and_unqualified_heading(self):
         observed = {"playerKeyDecimal": "239816685251645959", "headingQualified": False,
                     "rawBits": [0x3F000000, 0x3FC00000, 0x40200000, 0x3E800000],
@@ -913,7 +979,9 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with patch.object(physical.subprocess, "run") as runner:
             for kind, samples, interval, expected in (
-                ("orientation", 3, None, "sampling-options-require-position-vitals-or-actor-pose"),
+                ("orientation", 0, None, "invalid-position-sampling"),
+                ("orientation", 31, None, "invalid-position-sampling"),
+                ("orientation", None, 2001, "invalid-position-sampling"),
                 ("position", 0, None, "invalid-position-sampling"),
                 ("position", 31, None, "invalid-position-sampling"),
                 ("position", None, 2001, "invalid-position-sampling"),

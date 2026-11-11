@@ -127,15 +127,47 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             if not structural and angle is not None:
                 raise ValueError("invalid-native-orientation-angle")
             matrices[name], angles[name], states[name] = values, angle, matrix["status"]
-        return {"unitKey": key, "headingQualified": False,
-                "refreshHandleRaw": refresh_handle, "refreshFlagRaw": refresh_flag,
-                "primaryPlanarDegreesCandidate": angles["primary"],
-                "secondaryPlanarDegreesCandidate": angles["secondary"],
-                "primaryMatrixStatus": states["primary"],
-                "secondaryMatrixStatus": states["secondary"],
-                "primarySecondaryMaxAbsElementDeltaCandidate": max(
-                    abs(a - b) for a, b in zip(matrices["primary"], matrices["secondary"])),
-                "sampledAtUtc": observation.get("completedAtUtc")}
+        result = {"unitKey": key, "headingQualified": False,
+                  "refreshHandleRaw": refresh_handle, "refreshFlagRaw": refresh_flag,
+                  "primaryPlanarDegreesCandidate": angles["primary"],
+                  "secondaryPlanarDegreesCandidate": angles["secondary"],
+                  "primaryMatrixStatus": states["primary"],
+                  "secondaryMatrixStatus": states["secondary"],
+                  "primarySecondaryMaxAbsElementDeltaCandidate": max(
+                      abs(a - b) for a, b in zip(matrices["primary"], matrices["secondary"])),
+                  "sampledAtUtc": observation.get("completedAtUtc")}
+        observations = report.get("observations")
+        if observations is not None:
+            if (not isinstance(observations, list) or len(observations) < 2 or
+                    type(report.get("requestedSamples")) is not int or
+                    report["requestedSamples"] != len(observations) or
+                    type(report.get("completedSamples")) is not int or
+                    report["completedSamples"] != len(observations) or
+                    observations[-1] != observation or
+                    any(not isinstance(row, dict) or row.get("identity") != report.get("identity")
+                        or row.get("unitKey") != key or
+                        row.get("componentAddress") != observation.get("componentAddress")
+                        for row in observations)):
+                raise ValueError("invalid-native-orientation-burst")
+            series = [_native_values("orientation", {"observation": row})
+                      for row in observations]
+            angles_by_source = {
+                name: [row[name + "PlanarDegreesCandidate"] for row in series]
+                for name in ("primary", "secondary")
+            }
+            result["sampleCount"] = len(series)
+            result["orientationSeriesDegreesCandidate"] = angles_by_source
+            result["orientationSignedTravelDegreesCandidate"] = {
+                name: sum(steps) if steps is not None else None
+                for name, values in angles_by_source.items()
+                for steps in [_candidate_angle_steps(values)]
+            }
+            result["primarySecondaryMaxAbsElementDeltaSeriesCandidate"] = [
+                row["primarySecondaryMaxAbsElementDeltaCandidate"] for row in series
+            ]
+            result["refreshFlagSeriesRaw"] = [row["refreshFlagRaw"] for row in series]
+            result["refreshHandleSeriesRaw"] = [row["refreshHandleRaw"] for row in series]
+        return result
     if kind == "smoothed-scalar":
         observation = report.get("observation")
         if not isinstance(observation, dict) or observation.get("headingQualified") is not False:
@@ -433,7 +465,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
     if type(include_transform_sources) is not bool or (include_transform_sources and kind != "actor-pose"):
         return dict(selection, status="blocked", reason="transform-sources-require-actor-pose")
-    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar") and (samples is not None or interval_ms is not None):
+    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-position-vitals-or-actor-pose")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
@@ -471,7 +503,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar") else 30)
+               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -525,6 +557,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 and (report.get("completedSamples") != samples or
                      not isinstance(report.get("observations"), list))):
             raise ValueError("incomplete-native-smoothed-scalar-burst")
+        if (kind == "orientation" and samples is not None and samples > 1
+                and (report.get("completedSamples") != samples or
+                     not isinstance(report.get("observations"), list))):
+            raise ValueError("incomplete-native-orientation-burst")
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources)
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
@@ -545,9 +581,9 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
-                        help="position/vitals/actor-pose/smoothed-scalar: 1-30 samples (default: 3 position, 1 otherwise)")
+                        help="position/vitals/actor-pose/smoothed-scalar/orientation: 1-30 samples (default: 3 position, 1 otherwise)")
     parser.add_argument("--interval-ms", type=int,
-                        help="position/vitals/actor-pose/smoothed-scalar: 0-2000ms between reads (default: 500)")
+                        help="position/vitals/actor-pose/smoothed-scalar/orientation: 0-2000ms between reads (default: 500)")
     parser.add_argument("--include-position", action="store_true",
                         help="actor-pose only: bracket each pose with same-player native XYZ candidates")
     parser.add_argument("--include-transform-sources", action="store_true",
@@ -562,7 +598,7 @@ def main(argv=None):
     elif args.include_transform_sources and args.read_native != "actor-pose":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "transform-sources-require-actor-pose"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
     else:

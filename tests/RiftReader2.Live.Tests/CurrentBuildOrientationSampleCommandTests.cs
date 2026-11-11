@@ -27,6 +27,42 @@ public sealed class CurrentBuildOrientationSampleCommandTests
     }
 
     [Fact]
+    public async Task PassiveBurstPublishesThreeOwnerPinnedMatricesAndRefreshStates()
+    {
+        using var f = new Fixture();
+        f.Options["--samples"] = "3";
+        f.Options["--interval-ms"] = "0";
+        var output = new StringWriter();
+        Assert.Equal(0, await f.Run(output));
+        Assert.Equal(3, f.ReadCount);
+        Assert.Equal(3, f.Session.RevalidationCount);
+        Assert.True(f.LeaseDisposedAfterSession);
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(f.Path));
+        Assert.Equal("native-current-orientation-candidate-burst/1",
+            json.RootElement.GetProperty("contractVersion").GetString());
+        Assert.Equal(3, json.RootElement.GetProperty("completedSamples").GetInt32());
+        Assert.Equal(3, json.RootElement.GetProperty("observations").GetArrayLength());
+        Assert.Equal(3, JsonDocument.Parse(output.ToString()).RootElement
+            .GetProperty("completedSamples").GetInt32());
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task PassiveBurstChangedOwnerOrComponentDoesNotPublish(bool changeOwner)
+    {
+        using var f = new Fixture();
+        f.Options["--samples"] = "3";
+        f.Options["--interval-ms"] = "0";
+        if (changeOwner) f.ChangeUnitAtRead = 2;
+        else f.ChangeComponentAtRead = 2;
+        await Assert.ThrowsAsync<InvalidDataException>(() => f.Run(new StringWriter()));
+        Assert.Equal(2, f.ReadCount);
+        Assert.True(f.LeaseDisposedAfterSession);
+        Assert.False(File.Exists(f.Path));
+    }
+
+    [Fact]
     public async Task LeaseDenialPreventsSessionOpen()
     {
         using var f = new Fixture();
@@ -37,6 +73,9 @@ public sealed class CurrentBuildOrientationSampleCommandTests
     }
 
     [Theory]
+    [InlineData("--samples", "0")]
+    [InlineData("--samples", "31")]
+    [InlineData("--interval-ms", "2001")]
     [InlineData("--pid", "0")]
     [InlineData("--pid", "abc")]
     [InlineData("--start-ticks", "-1")]
@@ -121,6 +160,9 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         public bool LeaseHeld { get; private set; }
         public bool LeaseDisposedAfterSession { get; private set; }
         public bool WrongObservation { get; set; }
+        public int ReadCount { get; private set; }
+        public int ChangeUnitAtRead { get; set; }
+        public int ChangeComponentAtRead { get; set; }
         public Dictionary<string, string> Options { get; }
         public Fixture()
         {
@@ -147,9 +189,12 @@ public sealed class CurrentBuildOrientationSampleCommandTests
                 },
                 s =>
                 {
+                    ReadCount++;
                     var matrix = CurrentBuildOrientationCandidateReader.Decode(new byte[36], 0x60);
                     return new(WrongObservation ? s.Identity with { ProcessStartUtcTicks = 999 } : s.Identity,
-                        DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, ulong.MaxValue, 0x20060000,
+                        DateTimeOffset.UtcNow, DateTimeOffset.UtcNow,
+                         ReadCount == ChangeUnitAtRead ? 42UL : ulong.MaxValue,
+                         ReadCount == ChangeComponentAtRead ? 0x20061000UL : 0x20060000UL,
                         ulong.MaxValue, 0, matrix, matrix with { SourceOffset = 0x94 });
                 });
         public void Dispose() => Directory.Delete(directory, true);
@@ -165,6 +210,7 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         public NativeProcessIdentity Identity { get; set; } = new(123, 456, "rift_x64.exe",
             CurrentBuildPlayerLookup.GameSha256, 0x140000000, 64 * 1024 * 1024);
         public bool Revalidated { get; private set; }
+        public int RevalidationCount { get; private set; }
         public bool Disposed { get; private set; }
         public string? RevalidationError { get; set; }
         public Action? OnRevalidate { get; set; }
@@ -172,6 +218,7 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         public ValueTask<string?> RevalidateAsync(CancellationToken ct)
         {
             Revalidated = true;
+            RevalidationCount++;
             OnRevalidate?.Invoke();
             ct.ThrowIfCancellationRequested();
             return ValueTask.FromResult(RevalidationError);
