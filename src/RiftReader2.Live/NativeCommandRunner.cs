@@ -87,7 +87,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-localization")
                 return await CurrentBuildLocalizationSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--keys", "--output"), output, cancellationToken);
             if (args[0] == "sample-current-player-context")
-                return await CurrentBuildPlayerContextSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output"), output, cancellationToken);
+                return await CurrentBuildPlayerContextSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-selected-target")
                 return await CurrentBuildSelectedTargetSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--include-name-seed", "--include-position", "--include-context"), output, cancellationToken);
             if (args[0] == "sample-current-target-template-name")

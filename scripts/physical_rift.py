@@ -423,6 +423,42 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             raise ValueError("unexpected-native-actor-position-bracket")
         return result
     if kind == "player-context":
+        if report.get("contractVersion") == "native-current-player-context-candidate-burst/1":
+            rows = report.get("observations")
+            identity = report.get("identity")
+            count = report.get("requestedSamples")
+            if (type(count) is not int or not 2 <= count <= 30
+                    or report.get("completedSamples") != count
+                    or not isinstance(rows, list) or len(rows) != count
+                    or rows[-1] != report.get("observation")
+                    or not isinstance(identity, dict)):
+                raise ValueError("invalid-native-player-context-burst")
+            projected = []
+            previous_end = None
+            for row in rows:
+                if not isinstance(row, dict) or row.get("identity") != identity:
+                    raise ValueError("invalid-native-player-context-burst-identity")
+                single = dict(report, contractVersion="native-current-player-context-candidate-sample/1",
+                              observation=row)
+                single.pop("observations", None)
+                value = _native_values(kind, single)
+                start = datetime.fromisoformat(row["startedAtUtc"].replace("Z", "+00:00"))
+                end = datetime.fromisoformat(row["completedAtUtc"].replace("Z", "+00:00"))
+                if ((previous_end is not None and start < previous_end)
+                        or (projected and value["unitKey"] != projected[0]["unitKey"])):
+                    raise ValueError("invalid-native-player-context-burst-order-or-owner")
+                previous_end = end
+                projected.append(value)
+            last = projected[-1]
+            targets = [value["target"]["unitIdCandidate"] for value in projected]
+            compared = [(before, after) for before, after in zip(targets, targets[1:])
+                        if before is not None and after is not None]
+            return dict(last, sampleCount=count,
+                        selfKeyStableCandidate=True,
+                        targetStatusSeries=[value["target"]["status"] for value in projected],
+                        targetIdSeriesCandidate=targets,
+                        comparableTargetPairs=len(compared),
+                        changedTargetPairsCandidate=sum(a != b for a, b in compared))
         observation = report.get("observation")
         qualification = "candidate-only; changed-state, API correspondence and restart unverified"
         if (type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
@@ -579,8 +615,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
     if type(include_transform_sources) is not bool or (include_transform_sources and kind != "actor-pose"):
         return dict(selection, status="blocked", reason="transform-sources-require-actor-pose")
-    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation") and (samples is not None or interval_ms is not None):
-        return dict(selection, status="blocked", reason="sampling-options-require-position-vitals-or-actor-pose")
+    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "player-context") and (samples is not None or interval_ms is not None):
+        return dict(selection, status="blocked", reason="sampling-options-require-supported-native-burst")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
         return dict(selection, status="blocked", reason="invalid-position-sampling")
@@ -617,7 +653,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation") else 30)
+               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "player-context") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -661,6 +697,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                     report["completedSamples"] != expected_count or
                     not isinstance(rows, list) or len(rows) != expected_count):
                 raise ValueError("incomplete-native-position-burst")
+        if (kind == "player-context" and samples is not None and samples > 1
+                and (report.get("completedSamples") != samples or
+                     not isinstance(report.get("observations"), list))):
+            raise ValueError("incomplete-native-player-context-burst")
         if (kind == "vitals" and samples is not None and samples > 1
                 and report.get("completedSamples") != samples):
             raise ValueError("incomplete-native-vitals-burst")
@@ -701,9 +741,9 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
-                        help="position/vitals/actor-pose/smoothed-scalar/orientation: 1-30 samples (default: 3 position, 1 otherwise)")
+                        help="position/vitals/actor-pose/smoothed-scalar/orientation/player-context: 1-30 samples (default: 3 position, 1 otherwise)")
     parser.add_argument("--interval-ms", type=int,
-                        help="position/vitals/actor-pose/smoothed-scalar/orientation: 0-2000ms between reads (default: 500)")
+                        help="position/vitals/actor-pose/smoothed-scalar/orientation/player-context: 0-2000ms between reads (default: 500)")
     parser.add_argument("--include-position", action="store_true",
                         help="actor-pose only: bracket each pose with same-player native XYZ candidates")
     parser.add_argument("--include-transform-sources", action="store_true",
@@ -727,7 +767,7 @@ def main(argv=None):
     elif args.include_transform_sources and args.read_native != "actor-pose":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "transform-sources-require-actor-pose"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "player-context"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
     else:
