@@ -115,6 +115,22 @@ class PhysicalContextPairTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             pair.compare(sample(), second, "A" * 64, "B" * 64)
 
+    def test_rejects_incomplete_receipt_even_with_stale_observation(self):
+        first, second = sample(), later()
+        for status in ("blocked", "partial", None):
+            first["status"] = status
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, "incomplete-report"):
+                pair.compare(first, second, "A" * 64, "B" * 64)
+
+    def test_cannot_infer_target_selection_when_self_owner_changes(self):
+        first, second = sample(), later()
+        target(first, 0x1234)
+        target(second, 0x2345)
+        second["observation"]["unitKey"] += 1
+        result = pair.compare(first, second, "A" * 64, "B" * 64)
+        self.assertFalse(result["selfKey"]["unchangedCandidate"])
+        self.assertIsNone(result["target"]["selectionChangedCandidate"])
+
     def test_source_hash_pinning_and_cli(self):
         with TemporaryDirectory() as tmp:
             before, after = Path(tmp) / "before.json", Path(tmp) / "after.json"

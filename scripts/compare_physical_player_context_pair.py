@@ -59,6 +59,7 @@ def _utc(value):
 
 
 def _sample(report):
+    _require(report.get("status") == "complete", "incomplete-report")
     # Reuse the current native value-contract validation rather than accepting
     # raw labels without checking their accompanying key/status evidence.
     values = _native_values("player-context", report)
@@ -91,8 +92,10 @@ def compare(before, after, before_sha256, after_sha256):
     first = a["target"]["unitIdCandidate"]
     second = b["target"]["unitIdCandidate"]
     both_available = first is not None and second is not None
-    target_changed = first != second if both_available else None
     self_stable = a["unitKey"] == b["unitKey"]
+    # A different self owner invalidates a target-selection inference, even
+    # when both raw target getters happened to produce nonzero candidates.
+    target_changed = first != second if both_available and self_stable else None
     return {
         "status": "complete",
         "qualification": QUALIFICATION,
