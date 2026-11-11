@@ -30,3 +30,10 @@ No live work or new game authority is implied by this handoff.
 - `283f543`: offline comparator reports selector-index drift independently of raw numeric changes and rejects overlapping captures. Six focused comparison tests passed. Retained Nov 7/8 pair replay saved as `artifacts/rr2-stats-cross-epoch-mapping-20261111.json`: 20/20 mappings stable, 40/40 values unchanged, zero changed spreads.
 - `a3a64aa`: HP/Mana/Energy `inputs` expose `unclampedRatePerClockUnitCandidate` from already-decoded native coefficients (31 focused reader tests passed). This is **formula arithmetic, not measured regeneration**; clamping, tick quantization and clock calibration remain unresolved.
 - Continue in the isolated player-stat lane. No live capture, movement, casting, VM or RRE changes this block. Concurrent developer edits and package locks were preserved.
+
+## 2026-11-10 21:20 EST — physical offline replay and ownership guards
+
+- `33339ec`: native `sample-current-stats` production path now resolves one anchored current-player lookup rather than three context scans; 9/9 focused tests passed. Actual latency change not measured.
+- `5ccf0e9`: comparator reports five stat owner-path anchors and detects pointer changes within one process epoch; 7/7 focused tests passed. Physical saved 23:05→23:17 UTC replay `artifacts/rr2-physical-stats-owner-path-20261111.json`: 5/5 addresses, 20/20 mappings and 40/40 raw values unchanged. This is not dynamic freshness proof.
+- `423098c`: offline vitals comparator rejects typed Mana/Energy samples contradicting explicit native resource kind; 7/7 tests passed. Legacy kind-absent saved samples remain accepted.
+- Only offline saved artifacts and fake-memory/.NET tests were used. Physical RIFT, movement/navigation, RRE and unrelated working-tree changes remained untouched.
