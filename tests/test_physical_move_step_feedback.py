@@ -101,6 +101,65 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         self.write()
         self.assertEqual(self.assess()["comparison"], "candidate-consistent")
 
+    def test_sendinput_hold_window_must_fit_navigation_tolerance(self):
+        r = completed_w()
+        r["inputCallTiming"] = {
+            "startedAtUtc": "2026-11-11T07:06:42.520Z",
+            "completedAtUtc": "2026-11-11T07:06:42.700Z",
+            "monotonicElapsedMilliseconds": 180,
+            "executorObservedMilliseconds": 110,
+            "utcOrderValid": True,
+            "wallClockConsistentWithMonotonic": True,
+        }
+        r["keySendEvents"] = [
+            {"key": "w", "phase": "key-down", "inserted": True,
+             "callStartedAtUtc": "2026-11-11T07:06:42.535Z",
+             "callCompletedAtUtc": "2026-11-11T07:06:42.575Z",
+             "sendCallElapsedMilliseconds": 40},
+            {"key": "w", "phase": "key-up", "inserted": True,
+             "callStartedAtUtc": "2026-11-11T07:06:42.635Z",
+             "callCompletedAtUtc": "2026-11-11T07:06:42.675Z",
+             "sendCallElapsedMilliseconds": 40},
+        ]
+        r["keyHoldWindows"] = [{
+            "key": "w", "status": "candidate-sendinput-hold-bounds",
+            "minimumMillisecondsCandidate": 60,
+            "maximumMillisecondsCandidate": 140,
+            "midpointMillisecondsCandidate": 100,
+            "downCallStartedAtUtc": r["keySendEvents"][0]["callStartedAtUtc"],
+            "downCallCompletedAtUtc": r["keySendEvents"][0]["callCompletedAtUtc"],
+            "upCallStartedAtUtc": r["keySendEvents"][1]["callStartedAtUtc"],
+            "upCallCompletedAtUtc": r["keySendEvents"][1]["callCompletedAtUtc"],
+            "exactKeyDownUpTimesKnown": False,
+            "gameResponseVerified": False,
+        }]
+        self.write(r=r)
+        imported = feedback.calibration.from_helper_receipt(self.receipt_file)
+        self.assertEqual(imported["observedHoldMilliseconds"], 100)
+        with self.assertRaisesRegex(
+            ValueError, "feedback-hold-window-too-wide-for-navigation"
+        ):
+            self.assess()
+
+        # A narrow 99-101 ms interval from the same synthetic action passes.
+        r["keySendEvents"][0].update(
+            callStartedAtUtc="2026-11-11T07:06:42.550Z",
+            callCompletedAtUtc="2026-11-11T07:06:42.551Z",
+            sendCallElapsedMilliseconds=1)
+        r["keySendEvents"][1].update(
+            callStartedAtUtc="2026-11-11T07:06:42.650Z",
+            callCompletedAtUtc="2026-11-11T07:06:42.651Z",
+            sendCallElapsedMilliseconds=1)
+        r["keyHoldWindows"][0].update(
+            minimumMillisecondsCandidate=99,
+            maximumMillisecondsCandidate=101,
+            downCallStartedAtUtc=r["keySendEvents"][0]["callStartedAtUtc"],
+            downCallCompletedAtUtc=r["keySendEvents"][0]["callCompletedAtUtc"],
+            upCallStartedAtUtc=r["keySendEvents"][1]["callStartedAtUtc"],
+            upCallCompletedAtUtc=r["keySendEvents"][1]["callCompletedAtUtc"])
+        self.write(r=r)
+        self.assertEqual(self.assess()["comparison"], "candidate-consistent")
+
     def test_replans_one_revised_candidate_without_resetting_controller(self):
         r = completed_w()
         r.update(holdMilliseconds=150, observedMilliseconds=155)

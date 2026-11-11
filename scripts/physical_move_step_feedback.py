@@ -123,9 +123,18 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
     # Receipt import permits up to 50 ms of scheduler variance for calibration.
     # A feedback-driven NAVIGATION step needs a tighter +/-25% (15 ms floor)
     # actual hold, or the later waypoint prediction is not trustworthy.
+    timing_tolerance = max(15, hold * .25)
     require(math.isfinite(observed_hold)
-            and abs(observed_hold - hold) <= max(15, hold * .25),
+            and abs(observed_hold - hold) <= timing_tolerance,
             "feedback-hold-outside-navigation-tolerance")
+    # With modern SendInput receipts, even a plausible midpoint can hide a
+    # large unknown time inside the down/up system calls. Bound the WHOLE
+    # possible interval, rather than qualifying its midpoint alone.
+    bounds = imported["holdBoundsCandidate"]
+    if bounds is not None:
+        require(bounds["minimumMillisecondsCandidate"] >= hold - timing_tolerance
+                and bounds["maximumMillisecondsCandidate"] <= hold + timing_tolerance,
+                "feedback-hold-window-too-wide-for-navigation")
     predicted = action["predictedDeltaXYZCandidate"]
     scaled = {axis: float(predicted[axis]) * observed_hold / hold for axis in ("x", "y", "z")}
     actual = {axis: actual_after[axis] - actual_before[axis] for axis in ("x", "y", "z")}
