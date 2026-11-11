@@ -16,6 +16,7 @@ public sealed class MoveKeyCommandTests
             Assert.False(options.Execute);
             Assert.True(options.Focus);
             Assert.False(options.MeasureXyz);
+            Assert.Equal(0, options.XyzSettleMilliseconds);
         }
     }
 
@@ -59,6 +60,50 @@ public sealed class MoveKeyCommandTests
         Assert.False(options.Execute);
         Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
             ["--pid", "12345", "--key", "w", "--measure-xyz", "--measure-xyz"]));
+    }
+
+    [Theory]
+    [InlineData("0", 0)]
+    [InlineData("250", 250)]
+    [InlineData("2000", 2000)]
+    public void XyzSettleIsOptionalBoundedAndNeverEnablesInput(string raw, int expected)
+    {
+        var options = MoveKeyCommand.Parse([
+            "--pid", "12345", "--key", "w", "--measure-xyz", "--xyz-settle-ms", raw]);
+        Assert.True(options.MeasureXyz);
+        Assert.False(options.Execute);
+        Assert.Equal(expected, options.XyzSettleMilliseconds);
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("2001")]
+    [InlineData("NaN")]
+    [InlineData("100.5")]
+    [InlineData("2147483648")]
+    public void InvalidXyzSettleIsRejected(string raw)
+    {
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse([
+            "--pid", "12345", "--key", "w", "--measure-xyz", "--xyz-settle-ms", raw]));
+    }
+
+    [Fact]
+    public void SettleRequiresExplicitXyzMeasurement()
+    {
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse([
+            "--pid", "12345", "--key", "w", "--xyz-settle-ms", "250"]));
+    }
+
+    [Fact]
+    public void SettledCaptureRequiresCompletedActionAndConfirmedRelease()
+    {
+        Assert.True(MoveKeyCommand.MayTakeSettledXyz(Execution(delivered: true, released: true)));
+        Assert.False(MoveKeyCommand.MayTakeSettledXyz(Execution(delivered: false, released: true)));
+        Assert.False(MoveKeyCommand.MayTakeSettledXyz(Execution(delivered: true, released: false)));
+        Assert.False(MoveKeyCommand.MayTakeSettledXyz(
+            Execution(delivered: false, released: true, cancelled: true)));
+        Assert.False(MoveKeyCommand.MayTakeSettledXyz(
+            Execution(delivered: false, released: true, targetLost: true)));
     }
 
     [Fact]
@@ -159,6 +204,23 @@ public sealed class MoveKeyCommandTests
         Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(before, changedOwner).Status);
         Assert.False(MoveKeyCommand.CompareXyz(before, changedOwner).MovementCandidate);
         Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(before, stale).Status);
+    }
+
+    [Fact]
+    public void NativeXyzComparisonRejectsReversedOrOverlongAcquisitionIntervals()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var baseline = new MoveKeyCommand.XyzSample(t, t.AddMilliseconds(10), "42", 100, 20, 200);
+        var normal = new MoveKeyCommand.XyzSample(
+            t.AddSeconds(1), t.AddSeconds(1.01), "42", 102, 20, 200);
+        var reversedBefore = baseline with { CompletedAtUtc = t.AddMilliseconds(-1) };
+        var reversedAfter = normal with { CompletedAtUtc = t.AddMilliseconds(900) };
+        var longBefore = baseline with { CompletedAtUtc = t.AddSeconds(6) };
+        var longAfter = normal with { CompletedAtUtc = t.AddSeconds(7) };
+        Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(reversedBefore, normal).Status);
+        Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(baseline, reversedAfter).Status);
+        Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(longBefore, normal).Status);
+        Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(baseline, longAfter).Status);
     }
 
     [Theory]

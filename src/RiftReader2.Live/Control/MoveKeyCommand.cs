@@ -17,7 +17,8 @@ internal static class MoveKeyCommand
 {
     internal sealed record Options(
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
-        bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz);
+        bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
+        int XyzSettleMilliseconds);
 
     internal sealed record XyzSample(
         DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
@@ -53,7 +54,7 @@ internal static class MoveKeyCommand
     }
 
     private const string Usage =
-        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz]"
+        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250]"
         + " [--expect-start-ticks TICKS] [--expect-sha256 HASH]";
 
     internal static Options Parse(string[] args)
@@ -61,6 +62,7 @@ internal static class MoveKeyCommand
         int? pid = null;
         string[]? keys = null;
         int hold = 1000;
+        int xyzSettleMilliseconds = 0;
         bool focus = true, execute = false, json = false, measureXyz = false;
         long? expectedTicks = null;
         string? expectedSha = null;
@@ -98,6 +100,11 @@ internal static class MoveKeyCommand
                     if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out hold))
                         throw new InvalidDataException("Hold duration must be an integer in milliseconds.");
                     break;
+                case "--xyz-settle-ms":
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture,
+                        out xyzSettleMilliseconds) || xyzSettleMilliseconds > 2000)
+                        throw new InvalidDataException("XYZ settle must be 0..2000 milliseconds.");
+                    break;
                 case "--expect-start-ticks":
                     if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
                         || ticks <= 0 || ticks > DateTime.MaxValue.Ticks)
@@ -120,7 +127,10 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("Exact --pid and --key are required.");
         // Reuse the input engine's actual six-key, conflict and hold validation.
         BoundedControlExecutor.Validate(new ControlAction(keys, hold));
-        return new Options(pid.Value, keys, hold, focus, execute, json, expectedTicks, expectedSha, measureXyz);
+        if (seen.Contains("--xyz-settle-ms") && !measureXyz)
+            throw new InvalidDataException("--xyz-settle-ms requires --measure-xyz.");
+        return new Options(pid.Value, keys, hold, focus, execute, json,
+            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -135,7 +145,8 @@ internal static class MoveKeyCommand
                 {
                     status = "preview-only", machine = Environment.MachineName,
                     processId = options.Pid, keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
-                    focusRequested = options.Focus, measureXyzRequested = options.MeasureXyz, inputSent = false,
+                    focusRequested = options.Focus, measureXyzRequested = options.MeasureXyz,
+                    xyzSettleMilliseconds = options.XyzSettleMilliseconds, inputSent = false,
                     instruction = "Add --execute to send one bounded manual pulse."
                 });
                 return 0;
@@ -230,17 +241,34 @@ internal static class MoveKeyCommand
             input.KeyDownAttempts, input.KeyDownInsertions);
         var success = insertion.BoundedActionCompleted;
         XyzFeedback? xyzFeedback = null;
+        var xyzSettleApplied = false;
         if (before is not null)
         {
-            try
+            // Never extend an uncertain release or aborted target state with a
+            // settling delay. No new key press is ever part of this observation.
+            if (options.XyzSettleMilliseconds > 0 && !MayTakeSettledXyz(result))
             {
-                var after = await CaptureXyzAsync(options.Pid, startTicks, token);
-                xyzFeedback = CompareXyz(before, after);
+                xyzFeedback = new XyzFeedback("unavailable-release-or-target-state", before,
+                    null, null, null, false, null,
+                    "Cannot schedule a settled sample after uncertain release/cancellation/target loss.");
             }
-            catch (Exception exception)
+            else
             {
-                xyzFeedback = new XyzFeedback("unavailable-after-pulse", before, null,
-                    null, null, false, null, exception.Message);
+                try
+                {
+                    if (options.XyzSettleMilliseconds > 0)
+                    {
+                        await Task.Delay(options.XyzSettleMilliseconds, token);
+                        xyzSettleApplied = true;
+                    }
+                    var after = await CaptureXyzAsync(options.Pid, startTicks, token);
+                    xyzFeedback = CompareXyz(before, after);
+                }
+                catch (Exception exception)
+                {
+                    xyzFeedback = new XyzFeedback("unavailable-after-pulse", before, null,
+                        null, null, false, null, exception.Message);
+                }
             }
         }
         Report(options.Json, new
@@ -260,6 +288,7 @@ internal static class MoveKeyCommand
             releaseSucceeded = result.ReleaseSucceeded,
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
+            xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
             gameResponseVerified = false, xyzFeedback, result.Error
         });
         return success ? 0 : 2;
@@ -283,8 +312,18 @@ internal static class MoveKeyCommand
             owned.Position.X, owned.Position.Y, owned.Position.Z);
     }
 
+    internal static bool MayTakeSettledXyz(ControlExecutionResult result) =>
+        result.DeliverySucceeded && result.ReleaseSucceeded
+        && !result.Cancelled && !result.TargetLost;
+
     internal static XyzFeedback CompareXyz(XyzSample before, XyzSample after)
     {
+        if (before.CompletedAtUtc < before.StartedAtUtc
+            || after.CompletedAtUtc < after.StartedAtUtc
+            || before.CompletedAtUtc - before.StartedAtUtc > TimeSpan.FromSeconds(5)
+            || after.CompletedAtUtc - after.StartedAtUtc > TimeSpan.FromSeconds(5))
+            return new XyzFeedback("unavailable", before, after, null, null, false,
+                null, "Native XYZ observation interval is invalid.");
         if (!string.Equals(before.UnitKey, after.UnitKey, StringComparison.Ordinal))
             return new XyzFeedback("unavailable", before, after, null, null, false,
                 null, "Native XYZ owner changed between captures.");
