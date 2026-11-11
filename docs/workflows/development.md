@@ -27,7 +27,9 @@ Native read-only telemetry now has a **single physical-only command** on the ver
 
 ```powershell
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
-# Also: position, orientation, player-context, selected-target, stats.
+# Also: position, orientation, actor-pose, player-context, selected-target, stats.
+# For read-only actor/model/render matrix candidates (NOT qualified body heading):
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose
 # For a short read-only movement-observation burst:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native position --samples 10 --interval-ms 0
 # For repeated HP/resource observations under one native session:
@@ -38,9 +40,14 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 It rechecks local process/build identity, passes exact PID/start epoch to the .NET
 reader and writes a new unique JSON artifact; no game input, screenshot, guest,
 or foreground change. Build `src/RiftReader2.Live` with the pinned .NET 10 SDK
-first if `native-reader-not-built` is returned. Native `vitals` and `position`
-receipts include compact `nativeValues` (HP/resources or last XYZ sample) for
-programmatic use; the full raw candidate report is retained at `nativeOutput`.
+first if `native-reader-not-built` is returned. Native `vitals`, `position`,
+and `actor-pose` receipts include compact `nativeValues` (HP/resources, last XYZ,
+or actor/model/render planar-angle candidates) for programmatic use; the full raw
+candidate report is retained at `nativeOutput`. The actor-pose report is a new
+read-only physical route using the existing exact-build actor reader; it does
+not qualify body or camera facing. On AMD-DESKTOP (November 10), one physical
+RIFT read returned actor planar candidate **111.8823°**, model candidate **0°**,
+and `alternate-reference-branch-not-followed`, with no game input.
 Before every native launch, the reader also checks the **current physical PC's**
 hostname against the selection owner and selected process host. A cached selection
 from the other PC (or a malformed target) is blocked before launching the reader.

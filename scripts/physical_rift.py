@@ -21,6 +21,7 @@ NATIVE_READS = {
     "position": "sample-current-position",
     "vitals": "sample-current-vitals",
     "orientation": "sample-current-orientation",
+    "actor-pose": "sample-current-actor-pose",
     "player-context": "sample-current-player-context",
     "selected-target": "sample-current-selected-target",
     "stats": "sample-current-stats",
@@ -29,6 +30,7 @@ NATIVE_RECEIPTS = {
     "position": "native-current-position-candidate-summary/1",
     "vitals": "native-current-vitals-candidate-summary/2",
     "orientation": "native-current-orientation-summary/1",
+    "actor-pose": "native-current-actor-pose-summary/1",
     "player-context": "native-current-player-context-candidate-summary/1",
     "selected-target": "native-current-selected-target-candidate-summary/1",
     "stats": "native-current-stats-summary/1",
@@ -66,6 +68,36 @@ def select_physical(expected_host=None, physical_pid=None):
 
 def _native_values(kind, report):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "actor-pose":
+        observation = report.get("observation")
+        if not isinstance(observation, dict):
+            raise ValueError("invalid-native-actor-pose-report")
+        key = observation.get("playerKeyDecimal")
+        if (not isinstance(key, str) or not key.isdecimal() or
+                not 0 < int(key) < 2**64 or str(int(key)) != key or
+                observation.get("actorHeadingQualified") is not False or
+                not isinstance(observation.get("renderStatus"), str)):
+            raise ValueError("invalid-native-actor-pose-report")
+        angles = {}
+        for name in ("actorMatrix", "modelMatrix", "renderMatrix"):
+            matrix = observation.get(name)
+            if matrix is None and name == "renderMatrix":
+                angles[name] = None
+                continue
+            if not isinstance(matrix, dict):
+                raise ValueError("invalid-native-actor-pose-report")
+            value = matrix.get("planarAngleDegreesCandidate")
+            if value is not None and (type(value) not in (float, int) or
+                                      not math.isfinite(value)):
+                raise ValueError("invalid-native-actor-pose-report")
+            angles[name] = value
+        return {"playerKey": key,
+                "actorPlanarDegreesCandidate": angles["actorMatrix"],
+                "modelPlanarDegreesCandidate": angles["modelMatrix"],
+                "renderPlanarDegreesCandidate": angles["renderMatrix"],
+                "renderStatus": observation["renderStatus"],
+                "actorHeadingQualified": False,
+                "sampledAtUtc": observation.get("completedAtUtc")}
     if kind == "vitals":
         observation = report.get("observation")
         if not isinstance(observation, dict) or type(observation.get("unitKey")) is not int:

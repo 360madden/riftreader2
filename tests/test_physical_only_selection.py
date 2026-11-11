@@ -152,6 +152,48 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
         self.assertIn("candidate-only", result["qualification"])
 
+    def test_native_actor_pose_projects_only_candidate_angles(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "pose.json"
+            observed = {"identity": REPORT_IDENTITY, "playerKeyDecimal": "239816685251645959",
+                        "actorHeadingQualified": False, "renderStatus": "normal-render-pointer-absent",
+                        "actorMatrix": {"planarAngleDegreesCandidate": 111.5},
+                        "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                        "renderMatrix": None, "completedAtUtc": "now"}
+
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[1], "sample-current-actor-pose")
+                destination.write_text(json.dumps({
+                    "status": "complete", "identity": REPORT_IDENTITY,
+                    "observation": observed}), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-actor-pose-summary/1",
+                    "status": "complete", "output": str(destination)}), "")
+
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "actor-pose", destination)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeValues"]["playerKey"], "239816685251645959")
+        self.assertEqual(result["nativeValues"]["actorPlanarDegreesCandidate"], 111.5)
+        self.assertIsNone(result["nativeValues"]["renderPlanarDegreesCandidate"])
+        self.assertIs(result["nativeValues"]["actorHeadingQualified"], False)
+
+    def test_actor_pose_rejects_invalid_key_or_qualified_heading(self):
+        observation = {"playerKeyDecimal": "239816685251645959",
+                       "actorHeadingQualified": False, "renderStatus": "unavailable",
+                       "actorMatrix": {"planarAngleDegreesCandidate": 111.5},
+                       "modelMatrix": {"planarAngleDegreesCandidate": None},
+                       "renderMatrix": None}
+        for invalid in ({**observation, "playerKeyDecimal": "0"},
+                        {**observation, "actorHeadingQualified": True},
+                        {**observation, "actorMatrix": {"planarAngleDegreesCandidate": float("inf")}}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                physical._native_values("actor-pose", {"observation": invalid})
+
     def test_vitals_burst_reports_last_hp_from_stable_player(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
