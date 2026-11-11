@@ -37,7 +37,13 @@ internal sealed record CurrentBuildActorPoseCandidate(
 
 internal sealed record CurrentBuildActorPosePositionBracketCandidate(
     string PlayerKeyDecimal, CurrentBuildXyz Before, CurrentBuildXyz After,
-    double ElapsedMilliseconds);
+    double ElapsedMilliseconds)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CurrentBuildXyz? SecondaryBeforeCandidate { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CurrentBuildXyz? SecondaryAfterCandidate { get; init; }
+}
 
 /// <summary>
 /// Exact-build self-owned actor pose from the known component selectors. The actor

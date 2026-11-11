@@ -170,6 +170,8 @@ internal sealed record CurrentBuildOwnedPosition(ulong UnitKey, CurrentBuildXyz 
     public string? RefreshHandleHex { get; init; }
     public byte? RefreshFlagRaw { get; init; }
     public string? RefreshGuardStatus { get; init; }
+    // The component's cached secondary XYZ at +0x88, not proven current world position.
+    public CurrentBuildXyz? SecondaryPositionCandidate { get; init; }
 }
 
 internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong EntityAddress, ulong ComponentAddress, Action VerifyUnchanged);
@@ -241,8 +243,16 @@ internal static class CurrentBuildPositionCandidateReader
         var z = BitConverter.Int32BitsToSingle(BinaryPrimitives.ReadInt32LittleEndian(xyzBytes.AsSpan(8, 4)));
         if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z))
             throw new InvalidDataException("Native position component is nonfinite.");
+        // +0x88 is already inside the 0x110-byte owner-checked component read.
+        // Keep it optional so a bad secondary buffer cannot invalidate primary XYZ.
+        var sx = BinaryPrimitives.ReadSingleLittleEndian(valueRaw.AsSpan(0x88, 4));
+        var sy = BinaryPrimitives.ReadSingleLittleEndian(valueRaw.AsSpan(0x8C, 4));
+        var sz = BinaryPrimitives.ReadSingleLittleEndian(valueRaw.AsSpan(0x90, 4));
+        var secondary = float.IsFinite(sx) && float.IsFinite(sy) && float.IsFinite(sz)
+            ? new CurrentBuildXyz(sx, sy, sz) : null;
         return new(owner.UnitKey, new(x, y, z))
         {
+            SecondaryPositionCandidate = secondary,
             RefreshHandleHex = $"0x{refreshHandle:X16}",
             RefreshFlagRaw = refreshFlag,
             RefreshGuardStatus = refreshHandle != 0 ? "handle-present-guard-candidate"

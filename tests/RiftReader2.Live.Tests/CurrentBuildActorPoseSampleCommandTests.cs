@@ -168,6 +168,9 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
         Assert.Equal(ulong.MaxValue.ToString(), first.GetProperty("playerKeyDecimal").GetString());
         Assert.Equal(1.0f, first.GetProperty("before").GetProperty("x").GetSingle());
         Assert.Equal(2.0f, first.GetProperty("after").GetProperty("x").GetSingle());
+        Assert.Equal(1.0f, first.GetProperty("secondaryBeforeCandidate").GetProperty("x").GetSingle());
+        Assert.Equal(2.0f, first.GetProperty("secondaryAfterCandidate").GetProperty("x").GetSingle());
+        Assert.Equal(5.0f, first.GetProperty("secondaryBeforeCandidate").GetProperty("y").GetSingle());
         Assert.True(first.GetProperty("elapsedMilliseconds").GetDouble() >= 0);
         Assert.False(observations[1].GetProperty("actorHeadingQualified").GetBoolean());
         Assert.True(fixture.Session.Disposed);
@@ -308,7 +311,10 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
                     PositionReadCount++;
                     return new CurrentBuildOwnedPosition(
                         DifferentPositionPlayerAtRead == PositionReadCount ? 123UL : ulong.MaxValue,
-                        new CurrentBuildXyz(PositionReadCount, 4, PositionReadCount));
+                        new CurrentBuildXyz(PositionReadCount, 4, PositionReadCount))
+                    {
+                        SecondaryPositionCandidate = new CurrentBuildXyz(PositionReadCount, 5, PositionReadCount)
+                    };
                 });
 
         public void Dispose() => Directory.Delete(directory, recursive: true);

@@ -67,6 +67,10 @@ measures each actor X/Z's distance to its same-owner before/after position segme
 `actorPositionVerticalOffsetSeriesCandidate` compares Y to the segment's projected
 height. `actorPositionMaxPlanarResidualCandidate` is null if any actor translation is
 unavailable. These are structural consistency scores, not proof of freshness or facing.
+The raw bracket also includes `secondaryBeforeCandidate` and `secondaryAfterCandidate`
+from the existing position-component `+0x88` bytes when finite. A read-only physical
+sample on November 10 found both secondary XYZs identical to primary XYZ; actor Y
+was 0.060 lower, so secondary-vs-primary did not explain the vertical offset.
 A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
 captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):
 all ten samples kept one player key and the same 111.8823° actor candidate,

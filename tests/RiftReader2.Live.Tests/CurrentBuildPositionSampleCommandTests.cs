@@ -43,6 +43,32 @@ public sealed class CurrentBuildPositionSampleCommandTests
     }
 
     [Fact]
+    public void SecondaryPositionIsDecodedFromExistingComponentBytesWithoutExtraReads()
+    {
+        var session = Fixture();
+        var raw = session.Get(Position, 0x110);
+        BinaryPrimitives.WriteSingleLittleEndian(raw.AsSpan(0x88), 10.5f);
+        BinaryPrimitives.WriteSingleLittleEndian(raw.AsSpan(0x8C), 20.25f);
+        BinaryPrimitives.WriteSingleLittleEndian(raw.AsSpan(0x90), 30.125f);
+        session.Set(Position, raw);
+        var owned = CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(Key, Entity, Position, () => { }));
+        Assert.Equal(new CurrentBuildXyz(10.5f, 20.25f, 30.125f), owned.SecondaryPositionCandidate);
+        Assert.Equal(4, session.Calls);
+        Assert.Equal(7181.80078125f, owned.Position.X);
+
+        session = Fixture();
+        raw = session.Get(Position, 0x110);
+        BinaryPrimitives.WriteSingleLittleEndian(raw.AsSpan(0x8C), float.NaN);
+        session.Set(Position, raw);
+        owned = CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(Key, Entity, Position, () => { }));
+        Assert.Null(owned.SecondaryPositionCandidate);
+        Assert.Equal(4, session.Calls);
+        Assert.Equal(820.8821411132812f, owned.Position.Y);
+    }
+
+    [Fact]
     public void ObservationSerializesLosslessIdentityWithoutChangingExistingFields()
     {
         var owned = new CurrentBuildOwnedPosition(ulong.MaxValue, new(1.5f, -2f, 3f));

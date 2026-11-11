@@ -159,6 +159,10 @@ internal static class CurrentBuildActorPoseSampleCommand
                 PositionBracketCandidate = new(observation.PlayerKeyDecimal,
                     before.Position, after.Position,
                     positionBracketElapsedMilliseconds)
+                {
+                    SecondaryBeforeCandidate = before.SecondaryPositionCandidate,
+                    SecondaryAfterCandidate = after.SecondaryPositionCandidate
+                }
             };
         return observation;
     }
