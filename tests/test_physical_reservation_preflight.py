@@ -67,6 +67,13 @@ class ReadOnlyPhysicalPreflightTests(unittest.TestCase):
                     probe.PhysicalPreflightError):
                 probe.preflight(host, pid, selector=no_select)
 
+    def test_malformed_selection_metadata_fails_closed(self):
+        for change in ({"ownerHost": 42}, {"ownerHost": "LEGION"},
+                       {"workflow": "vm"}, {"target": None}):
+            with self.subTest(change=change), self.assertRaisesRegex(
+                    probe.PhysicalPreflightError, "metadata-mismatch"):
+                probe.selected_identity({**ready(), **change}, HOST, PID)
+
     def test_wrong_pid_executable_or_host_is_rejected(self):
         for changes in (
             {"processId": PID + 1},
