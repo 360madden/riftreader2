@@ -221,6 +221,27 @@ public sealed class CurrentBuildPositionSampleCommandTests
         Assert.Throws<InvalidDataException>(() => CurrentBuildPositionCandidateReader.Read(session));
     }
 
+    [Theory]
+    [InlineData("player-system")]
+    [InlineData("entity-manager")]
+    public void ColdStartNullSingletonFailsClosedAndFreshResolveRecovers(string root)
+    {
+        // RRE exact-build static evidence shows both roots are conditionally published.
+        // A missing root must never yield an entity, and a later invocation must
+        // reread the root rather than cache the earlier unavailable state.
+        var session = Fixture();
+        var rootAddress = ModuleBase + (root == "player-system" ? 0x33623E0UL : 0x33624A8UL);
+        var populatedAddress = root == "player-system" ? PlayerSystem : Manager;
+        session.Set(rootAddress, Bytes64(0));
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPlayerLookup.Resolve(session));
+
+        session.Set(rootAddress, Bytes64(populatedAddress));
+        var recovered = CurrentBuildPlayerLookup.Resolve(session);
+        Assert.Equal(Key, recovered.PlayerKey);
+        Assert.Equal(Entity, recovered.EntityAddress);
+        recovered.VerifyUnchanged();
+    }
+
     [Fact]
     public void RejectsNonfiniteXyzAndPartialRead()
     {
