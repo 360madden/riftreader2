@@ -138,6 +138,9 @@ internal static class CurrentBuildVitalsCandidateReader
             baseRaw = baseline,
             maximumRaw = maximum,
             modifierRaw = modifier,
+            unclampedRatePerClockUnitCandidate = modifier is >= int.MinValue and <= int.MaxValue
+                ? -((double)(float)modifier * -0.009999999776482582)
+                : (double?)null,
             recordRevision = revision,
             wrapperRevision = cachedRevision,
             wrapperClock = FiniteOrNull(cachedClock),
@@ -177,11 +180,13 @@ internal static class CurrentBuildVitalsCandidateReader
         var revision = I32(raw.AsSpan(0x34));
         var cachedRevision = I32(cache);
         var cachedClock = F32(cache.AsSpan(4));
+        var scaledRate = (float)rate * BitConverter.Int32BitsToSingle(unchecked((int)0xBC23D70A));
         var inputs = new
         {
             baseRaw = baseline,
             maximumRaw = maximum,
             rateRaw = rate,
+            unclampedRatePerClockUnitCandidate = -(double)scaledRate,
             recordRevision = revision,
             wrapperRevision = cachedRevision,
             wrapperClock = FiniteOrNull(cachedClock),
@@ -194,7 +199,6 @@ internal static class CurrentBuildVitalsCandidateReader
         if (!float.IsFinite(clock) || !float.IsFinite(cachedClock) || !float.IsFinite(elapsed) ||
             elapsed < 0 || (double)elapsed >= 2147483648d) return Missing("clock-delta-outside-normal-domain", inputs);
         // Keep the two native MULSS rounding steps separate; never fuse them.
-        var scaledRate = (float)rate * BitConverter.Int32BitsToSingle(unchecked((int)0xBC23D70A));
         var product = scaledRate * elapsed;
         if (!float.IsFinite(product) || (double)product <= int.MinValue || (double)product >= int.MaxValue)
             return Missing("int32-conversion-overflow-or-sentinel", inputs);

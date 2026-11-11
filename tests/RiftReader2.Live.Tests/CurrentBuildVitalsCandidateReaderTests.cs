@@ -19,6 +19,10 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, result.Health.Maximum);
         Assert.Equal(100, result.Energy.Current);
         Assert.Equal(100, result.Energy.Maximum);
+        using var hpRate = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Health.Inputs));
+        using var energyRate = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Energy.Inputs));
+        Assert.InRange(hpRate.RootElement.GetProperty("unclampedRatePerClockUnitCandidate").GetDouble(), 142.49, 142.51);
+        Assert.InRange(energyRate.RootElement.GetProperty("unclampedRatePerClockUnitCandidate").GetDouble(), 19.99, 20.01);
         Assert.Equal(4, result.ResourceKindCandidate);
         Assert.Contains("0x072B", System.Text.Json.JsonSerializer.Serialize(result.Energy.Inputs));
         Assert.Equal("not-mana-kind-three", result.Mana.UnavailableReason);
@@ -108,6 +112,8 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal("calculated-candidate", result.Mana.Status);
         Assert.Equal(3980, result.Mana.Current);
         Assert.Equal(3980, result.Mana.Maximum);
+        using var manaRate = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Mana.Inputs));
+        Assert.InRange(manaRate.RootElement.GetProperty("unclampedRatePerClockUnitCandidate").GetDouble(), 98.06, 98.08);
         Assert.Equal("not-energy-kind-four", result.Energy.UnavailableReason);
     }
 

@@ -87,11 +87,13 @@ internal static class CurrentBuildManaCandidateField
         var maximum = I32(record.AsSpan(0x24));
         var wrapperRevision = I32(wrapper.AsSpan(0x1C));
         var wrapperClock = F32(wrapper.AsSpan(0x24));
+        var scaledRate = (float)rate * BitConverter.Int32BitsToSingle(unchecked((int)0xBC23D70A));
         var inputs = new
         {
             baseRaw = baseline,
             maximumRaw = maximum,
             rateRaw = rate,
+            unclampedRatePerClockUnitCandidate = -(double)scaledRate,
             recordRevision = revision,
             wrapperRevision,
             wrapperClock = FiniteOrNull(wrapperClock),
@@ -107,7 +109,6 @@ internal static class CurrentBuildManaCandidateField
         var elapsed = gameClock - wrapperClock;
         if (!float.IsFinite(elapsed) || elapsed < 0 || (double)elapsed >= 2147483648d)
             return Missing("clock-delta-outside-normal-domain", inputs);
-        var scaledRate = (float)rate * BitConverter.Int32BitsToSingle(unchecked((int)0xBC23D70A));
         var product = scaledRate * elapsed;
         if (!float.IsFinite(product) || (double)product <= int.MinValue || (double)product >= int.MaxValue)
             return Missing("int32-conversion-overflow-or-sentinel", inputs);
