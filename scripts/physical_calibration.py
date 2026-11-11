@@ -23,6 +23,17 @@ class PhysicalCalibrationError(ValueError):
     pass
 
 
+# Physical calibration may describe a longer *observed* helper pulse. Keep the
+# actual waypoint controller's 20–150 ms action budget unchanged.
+MAX_PHYSICAL_CALIBRATION_HOLD_MS = 1000
+
+
+def physical_horizontal_limit(hold_ms):
+    if type(hold_ms) is not int or not 20 <= hold_ms <= MAX_PHYSICAL_CALIBRATION_HOLD_MS:
+        raise PhysicalCalibrationError('physical calibration hold_ms must be in 20..1000')
+    return max(2.0, 2.0 * hold_ms / 150)
+
+
 def require(condition, reason):
     if not condition:
         raise PhysicalCalibrationError(reason)
@@ -45,7 +56,9 @@ def calibrate(before_path: Path, after_path: Path, key: str, hold_ms: int) -> di
     require(before_end < after_start, 'before/after position captures overlap or reorder')
     try:
         measured = movement.calibrate_displacement(
-            key, before['positions'][-1], after['positions'][0], hold_ms)
+            key, before['positions'][-1], after['positions'][0], hold_ms,
+            maximum_horizontal=physical_horizontal_limit(hold_ms),
+            maximum_calibration_hold_ms=MAX_PHYSICAL_CALIBRATION_HOLD_MS)
     except movement.MovementError as error:
         raise PhysicalCalibrationError(str(error)) from error
     identity = before['identity']

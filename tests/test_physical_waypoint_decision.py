@@ -130,6 +130,24 @@ class PhysicalWaypointDecisionTests(unittest.TestCase):
         self.assertNotIn("inputCommand", result)
         self.assertEqual(set(result["calibrationReportSha256"]), {"w", "q"})
 
+    def test_imports_400_500_ms_calibrations_but_retains_150_ms_action_cap(self):
+        w, q = empirical("w"), empirical("q")
+        w.update(calibration_hold_ms=400, dx_per_ms=0.0025,
+                 dz_per_ms=0.0, horizontal_displacement=1.0)
+        q.update(calibration_hold_ms=500, dx_per_ms=0.0,
+                 dz_per_ms=0.002, horizontal_displacement=1.0)
+        self.store(calibrations={"w": w, "q": q})
+        result = self.plan()
+        self.assertEqual("suggested-one-pulse", result["decision"])
+        self.assertEqual("w", result["candidateAction"]["key"])
+        self.assertEqual(150, result["candidateAction"]["holdMilliseconds"])
+        self.assertFalse(result["movementEligible"])
+        self.assertFalse(result["arrivalQualified"])
+        q["calibration_hold_ms"] = 1001
+        self.store(calibrations={"w": w, "q": q})
+        with self.assertRaisesRegex(decision.PhysicalWaypointError, "invalid"):
+            self.plan()
+
     def test_away_from_both_calibrated_keys_blocks(self):
         self.store(anchors_value=catalog(x=-.8))
         with self.assertRaisesRegex(Exception, "no-useful-calibrated-action"):

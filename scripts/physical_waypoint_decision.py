@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import navigation_anchors as anchors
+from scripts import physical_calibration as physical_cal
 from scripts import physical_route_preview as route
 from scripts.movement_controller import (
     MovementError, MovementHalted, Position, WaypointController,
@@ -94,12 +95,14 @@ def _calibration(path: Path, key: str, native: dict) -> tuple[object, str]:
     require(all(type(value[name]) in (int, float) and math.isfinite(value[name])
                 for name in numbers), "calibration vector nonfinite")
     dx, dz, vertical = value["dx_per_ms"], value["dz_per_ms"], value["vertical_displacement"]
-    require(type(hold) is int and 20 <= hold <= 150 and
-            all(math.isfinite(component * hold) for component in (dx, dz)),
+    require(type(hold) is int and 20 <= hold <= physical_cal.MAX_PHYSICAL_CALIBRATION_HOLD_MS
+            and all(math.isfinite(component * hold) for component in (dx, dz)),
             "calibration displacement invalid")
     measured = calibrate_displacement(
         key, Position(0, 0, 0),
-        Position(dx * hold, vertical, dz * hold), hold)
+        Position(dx * hold, vertical, dz * hold), hold,
+        maximum_horizontal=physical_cal.physical_horizontal_limit(hold),
+        maximum_calibration_hold_ms=physical_cal.MAX_PHYSICAL_CALIBRATION_HOLD_MS)
     require(math.isclose(measured.horizontal_displacement, value["horizontal_displacement"],
                          rel_tol=1e-6, abs_tol=1e-8), "calibration report magnitude mismatch")
     return measured, hashlib.sha256(raw).hexdigest().upper()

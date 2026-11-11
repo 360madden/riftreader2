@@ -84,6 +84,24 @@ class PhysicalCalibrationTests(unittest.TestCase):
         with self.assertRaisesRegex(calibration.PhysicalCalibrationError, "implausible"):
             calibration.calibrate(self.before, self.after, "w", 100)
 
+    def test_physical_longer_observed_hold_reuses_short_pulse_calibration_contract(self):
+        # The actual physical helper's W/Q/E experiments used 400-500 ms.
+        # Importing those candidates must NOT extend the navigation action budget.
+        for key, hold in (("w", 400), ("q", 500), ("e", 500)):
+            with self.subTest(key=key, hold=hold):
+                result = calibration.calibrate(self.before, self.after, key, hold)
+                self.assertEqual(result["calibration_hold_ms"], hold)
+                self.assertAlmostEqual(result["dx_per_ms"], 0.8 / hold)
+                self.assertAlmostEqual(result["dz_per_ms"], 0.6 / hold)
+                self.assertFalse(result["movementEligible"])
+                self.assertFalse(result["actionVerified"])
+        after = json.loads(self.after.read_text(encoding="utf-8"))
+        for row in after["observations"]:
+            row["x"] += 15
+        self.after.write_text(json.dumps(after), encoding="utf-8")
+        with self.assertRaisesRegex(calibration.PhysicalCalibrationError, "implausible"):
+            calibration.calibrate(self.before, self.after, "w", 400)
+
     def test_key_hold_and_cli_blocked_are_explicit(self):
         record = self.root / "q-calibration.json"
         valid = ["--before", str(self.before), "--after", str(self.after),
@@ -95,10 +113,10 @@ class PhysicalCalibrationTests(unittest.TestCase):
             self.assertEqual(calibration.main(valid), 2)
         self.assertEqual(json.loads(out.getvalue())["status"], "blocked")
         with self.assertRaisesRegex(calibration.PhysicalCalibrationError, "hold_ms"):
-            calibration.calibrate(self.before, self.after, "w", 500)
+            calibration.calibrate(self.before, self.after, "w", 1001)
         with redirect_stdout(io.StringIO()) as out:
             status = calibration.main(["--before", str(self.before), "--after", str(self.after),
-                                       "--key", "w", "--hold-ms", "500"])
+                                       "--key", "w", "--hold-ms", "1001"])
         self.assertEqual(status, 2)
         self.assertEqual(json.loads(out.getvalue())["status"], "blocked")
 

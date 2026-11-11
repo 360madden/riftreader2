@@ -90,12 +90,17 @@ def calibrate_displacement(
     minimum_horizontal: float = 0.05,
     maximum_horizontal: float = 2.0,
     maximum_vertical: float = 0.75,
+    maximum_calibration_hold_ms: int = 150,
 ) -> Calibration:
     """Derive one measured key vector; never infer an opposite key."""
     if key not in MOVEMENT_KEYS:
         raise MovementError("calibration key must be one of w/q/s/e")
-    if type(hold_ms) is not int or not 20 <= hold_ms <= 150:
-        raise MovementError("calibration hold_ms must be an integer from 20 through 150")
+    if (type(maximum_calibration_hold_ms) is not int
+            or not 150 <= maximum_calibration_hold_ms <= 1000):
+        raise MovementError("maximum calibration hold must be from 150 through 1000 ms")
+    if type(hold_ms) is not int or not 20 <= hold_ms <= maximum_calibration_hold_ms:
+        raise MovementError(
+            f"calibration hold_ms must be an integer from 20 through {maximum_calibration_hold_ms}")
     before, after = _position(before, "before"), _position(after, "after")
     minimum_horizontal = _finite(minimum_horizontal, "minimum_horizontal")
     maximum_horizontal = _finite(maximum_horizontal, "maximum_horizontal")
