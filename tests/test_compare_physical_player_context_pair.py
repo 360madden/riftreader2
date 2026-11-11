@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
@@ -48,6 +49,21 @@ def target(report, key):
     report["observation"].update(rawFallbackKey=key, targetKeyCandidate=key,
                                  targetStatus="fallback-key-candidate",
                                  targetUnitIdCandidate=f"u{key:016X}")
+
+def burst(first, second):
+    result = deepcopy(second)
+    result["identity"] = deepcopy(first["observation"]["identity"])
+    result["contractVersion"] = "native-current-player-context-candidate-burst/1"
+    result["requestedSamples"] = result["completedSamples"] = 2
+    result["observations"] = [deepcopy(first["observation"]), deepcopy(second["observation"])]
+    return result
+
+
+def intermediate():
+    result = sample()
+    result["observation"]["startedAtUtc"] = "2026-11-11T09:30:00.0000000Z"
+    result["observation"]["completedAtUtc"] = "2026-11-11T09:30:00.1000000Z"
+    return result
 
 
 class PhysicalContextPairTests(unittest.TestCase):
@@ -130,6 +146,60 @@ class PhysicalContextPairTests(unittest.TestCase):
         result = pair.compare(first, second, "A" * 64, "B" * 64)
         self.assertFalse(result["selfKey"]["unchangedCandidate"])
         self.assertIsNone(result["target"]["selectionChangedCandidate"])
+
+
+    def test_detects_target_transition_inside_burst_not_visible_at_endpoints(self):
+        first, middle, after = sample(), intermediate(), later()
+        target(first, 0x1234)
+        target(middle, 0x2345)
+        target(after, 0x2345)
+        result = pair.compare(burst(first, middle), after, "A" * 64, "B" * 64)
+        self.assertIs(result["target"]["selectionChangedCandidate"], False)
+        self.assertEqual(
+            {"beforeSamples": 2, "afterSamples": 1, "adjacentPairs": 2,
+             "comparableAdjacentPairsCandidate": 2, "changedAdjacentPairsCandidate": 1,
+             "unavailableOrUnqualifiedPairs": 0, "differentSelfOwnerPairs": 0},
+            result["targetSequenceCandidate"])
+        self.assertIn("candidate-only", result["qualification"])
+
+    def test_burst_unknown_target_never_fabricates_change(self):
+        first, middle, after = sample(), intermediate(), later()
+        target(middle, 0x2345)
+        target(after, 0x2345)
+        result = pair.compare(burst(first, middle), after, "A" * 64, "B" * 64)
+        summary = result["targetSequenceCandidate"]
+        self.assertEqual(1, summary["comparableAdjacentPairsCandidate"])
+        self.assertEqual(0, summary["changedAdjacentPairsCandidate"])
+        self.assertEqual(1, summary["unavailableOrUnqualifiedPairs"])
+
+    def test_burst_cross_owner_pair_not_counted_as_selection_change(self):
+        first, middle, after = sample(), intermediate(), later()
+        target(first, 0x1234)
+        target(middle, 0x2345)
+        target(after, 0x3456)
+        after["observation"]["unitKey"] += 1
+        result = pair.compare(burst(first, middle), after, "A" * 64, "B" * 64)
+        summary = result["targetSequenceCandidate"]
+        self.assertFalse(result["selfKey"]["unchangedCandidate"])
+        self.assertIsNone(result["target"]["selectionChangedCandidate"])
+        self.assertEqual(1, summary["comparableAdjacentPairsCandidate"])
+        self.assertEqual(1, summary["changedAdjacentPairsCandidate"])
+        self.assertEqual(1, summary["differentSelfOwnerPairs"])
+
+    def test_rejects_inconsistent_or_reordered_burst(self):
+        for change in ("wrong-count", "different-owner", "reversed-times", "wrong-identity"):
+            first, middle = sample(), intermediate()
+            report = burst(first, middle)
+            if change == "wrong-count":
+                report["completedSamples"] = 1
+            elif change == "different-owner":
+                report["observations"][0]["unitKey"] += 1
+            elif change == "reversed-times":
+                report["observations"][0]["completedAtUtc"] = "2026-11-11T09:31:00Z"
+            else:
+                report["observations"][0]["identity"]["moduleBaseAddress"] += 8
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                pair.compare(report, later(), "A" * 64, "B" * 64)
 
     def test_source_hash_pinning_and_cli(self):
         with TemporaryDirectory() as tmp:

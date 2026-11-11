@@ -82,6 +82,34 @@ def _sample(report):
     return values, identity, start, end
 
 
+def _target_sequence(before, after):
+    """Include within-burst transitions; unavailable IDs never become selections."""
+    def rows(report):
+        if report.get("contractVersion") == "native-current-player-context-candidate-burst/1":
+            return report["observations"]
+        return [report["observation"]]
+
+    left, right = rows(before), rows(after)
+    edges = list(zip(left, left[1:])) + [(left[-1], right[0])] + list(zip(right, right[1:]))
+    comparable = changed = owner_mismatch = 0
+    for earlier, later in edges:
+        if earlier["unitKey"] != later["unitKey"]:
+            owner_mismatch += 1
+            continue
+        first, second = earlier["targetUnitIdCandidate"], later["targetUnitIdCandidate"]
+        if first is not None and second is not None:
+            comparable += 1
+            changed += first != second
+    return {
+        "beforeSamples": len(left), "afterSamples": len(right),
+        "adjacentPairs": len(edges),
+        "comparableAdjacentPairsCandidate": comparable,
+        "changedAdjacentPairsCandidate": changed,
+        "unavailableOrUnqualifiedPairs": len(edges) - comparable,
+        "differentSelfOwnerPairs": owner_mismatch,
+    }
+
+
 def compare(before, after, before_sha256, after_sha256):
     _require(before_sha256 != after_sha256, "reused-source")
     a, a_id, a_start, a_end = _sample(before)
@@ -120,6 +148,7 @@ def compare(before, after, before_sha256, after_sha256):
             "afterIdCandidate": second,
             "selectionChangedCandidate": target_changed,
         },
+        "targetSequenceCandidate": _target_sequence(before, after),
         "level": {"beforeRawCandidate": a["level"]["rawCandidate"],
                   "afterRawCandidate": b["level"]["rawCandidate"]},
         "calling": {"before": a["calling"]["nameCandidate"],
