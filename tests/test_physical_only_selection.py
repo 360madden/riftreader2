@@ -229,6 +229,26 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                                delta=0.0001)
         self.assertIs(values["headingQualified"], False)
 
+        # The shortest signed steps must unwrap +180/-180 without implying heading.
+        wrapped = [{**rows[0], "primary": candidate(0x60, angle),
+                    "secondary": candidate(0x94, angle)}
+                   for angle in (170, 179, -179, -170)]
+        wrapped_report = {"identity": REPORT_IDENTITY,
+                          "observation": wrapped[-1], "observations": wrapped,
+                          "requestedSamples": 4, "completedSamples": 4}
+        projected = physical._native_values("orientation", wrapped_report)
+        self.assertAlmostEqual(projected["orientationSignedTravelDegreesCandidate"]["primary"],
+                               20, delta=0.0001)
+        self.assertIs(projected["headingQualified"], False)
+
+        # An intermediate angle must be derived from its raw matrix, not trusted.
+        forged = [{**row, "primary": dict(row["primary"])} for row in wrapped]
+        forged[1]["primary"]["planarAngleDegreesCandidate"] -= 15
+        with self.assertRaisesRegex(ValueError, "invalid-native-orientation-angle"):
+            physical._native_values("orientation", {**wrapped_report,
+                                                    "observations": forged,
+                                                    "observation": forged[-1]})
+
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
             executable = Path(temporary) / "RiftReader2.Live.exe"

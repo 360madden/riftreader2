@@ -124,7 +124,12 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                     (type(angle) not in (int, float) or not math.isfinite(angle) or
                      not -180 <= angle <= 180)):
                 raise ValueError("invalid-native-orientation-angle")
-            if not structural and angle is not None:
+            if structural:
+                derived = math.degrees(math.atan2(values[6], values[0]))
+                signed_error = ((angle - derived + 180) % 360) - 180
+                if abs(signed_error) > 0.001:
+                    raise ValueError("invalid-native-orientation-angle")
+            elif angle is not None:
                 raise ValueError("invalid-native-orientation-angle")
             matrices[name], angles[name], states[name] = values, angle, matrix["status"]
         result = {"unitKey": key, "headingQualified": False,
