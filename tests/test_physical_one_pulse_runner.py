@@ -182,7 +182,21 @@ class OnePulseTests(unittest.TestCase):
             observed.append((host, pid, self.gateway.started, pinned.process_id))
         result = self.run_pulse(focus=True, focus_window=focus_window, hold_ms=1000)
         self.assertEqual(result["holdMilliseconds"], 1000)
-        self.assertEqual(observed, [(HOST, PID, False, PID)])
+        self.assertEqual(observed, [(HOST, PID, False, PID),
+                                    (HOST, PID, True, PID)])
+
+    def test_post_review_focus_denied_never_arms_or_sends_keys(self):
+        attempted = []
+        def focus_window(*_):
+            attempted.append(len(self.gateway.calls))
+            if len(attempted) == 2:
+                raise pulse.PhysicalPulseError("review-shifted-focus-refused")
+        with self.assertRaisesRegex(pulse.PhysicalPulseError, "review-shifted-focus-refused"):
+            self.run_pulse(focus=True, focus_window=focus_window)
+        operations = [name for name, _ in self.gateway.calls]
+        self.assertIn("capture", operations)
+        self.assertNotIn("arm", operations)
+        self.assertNotIn("action", operations)
 
     def test_denied_focus_stops_before_agent_or_input(self):
         def deny(*_):

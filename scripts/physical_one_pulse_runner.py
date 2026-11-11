@@ -212,6 +212,11 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w"
             note = (reviewer(capture, pinned, key, hold_ms) if reviewer is not None
                     else _approval(approval_path, capture, pinned, key=key, hold_ms=hold_ms))
             lease.check()
+            # The operator may view/edit the approval in another window. Reclaim
+            # the exact RIFT foreground after review, before the short arm window.
+            if focus:
+                focus_window(host, pid, pinned)
+                lease.check()
             require(_same_target(gateway.command("identity", identity_payload).get("target"), pinned),
                     "identity-changed-before-arm")
             armed = gateway.command("arm", {"captureId": capture["captureId"], "reviewNote": note})
