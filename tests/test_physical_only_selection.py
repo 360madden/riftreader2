@@ -331,8 +331,35 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         values = result["nativeValues"]
         self.assertEqual(values["positionNetPlanarDisplacementCandidate"], 2.5)
         self.assertEqual(values["positionMaxWithinSamplePlanarChangeCandidate"], 0.5)
+        self.assertEqual(values["positionObservedPlanarPathLengthCandidate"], 2.5)
+        self.assertEqual(values["positionMaxAdjacentPlanarStepCandidate"], 1)
         self.assertEqual(len(values["positionBracketSeriesCandidate"]), 3)
         self.assertEqual(values["planarSignedTravelDegreesCandidate"]["actor"], 2)
+        self.assertFalse(values["actorHeadingQualified"])
+
+    def test_actor_pose_out_and_back_motion_is_visible_despite_zero_net_displacement(self):
+        key = "239816685251645959"
+        rows = []
+        for index, x in enumerate((0, 10, 0)):
+            rows.append({
+                "identity": REPORT_IDENTITY, "playerKeyDecimal": key,
+                "actorHeadingQualified": False, "renderStatus": "unavailable",
+                "actorMatrix": {"planarAngleDegreesCandidate": 12},
+                "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                "renderMatrix": None,
+                "positionBracketCandidate": {
+                    "playerKeyDecimal": key, "elapsedMilliseconds": 5,
+                    "before": {"x": x, "y": 1, "z": 2},
+                    "after": {"x": x, "y": 1, "z": 2}
+                }})
+        values = physical._native_values("actor-pose", {
+            "identity": REPORT_IDENTITY, "requestedSamples": 3,
+            "completedSamples": 3, "observation": rows[-1], "observations": rows
+        }, expect_position=True)
+        self.assertEqual(values["positionNetPlanarDisplacementCandidate"], 0)
+        self.assertEqual(values["positionMaxWithinSamplePlanarChangeCandidate"], 0)
+        self.assertEqual(values["positionObservedPlanarPathLengthCandidate"], 20)
+        self.assertEqual(values["positionMaxAdjacentPlanarStepCandidate"], 10)
         self.assertFalse(values["actorHeadingQualified"])
 
     def test_actor_pose_position_bracket_rejects_missing_mixed_or_nonfinite_source(self):
@@ -355,6 +382,9 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             {**base, "positionBracketCandidate": {**bracket, "elapsedMilliseconds": -1}},
             {**base, "positionBracketCandidate": {**bracket, "after": {"x": float("nan"), "y": 2, "z": 3}}},
             {**base, "positionBracketCandidate": {**bracket, "before": {"x": 1, "y": 2}}},
+            {**base, "positionBracketCandidate": {**bracket,
+                "before": {"x": 1e308, "y": 2, "z": 3},
+                "after": {"x": -1e308, "y": 2, "z": 3}}},
         ):
             with self.subTest(malformed=malformed), self.assertRaises(ValueError):
                 physical._native_values("actor-pose", {"observation": malformed},

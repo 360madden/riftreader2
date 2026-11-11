@@ -178,11 +178,21 @@ def _native_values(kind, report, *, expect_position=False):
                              brackets[-1]["after"]["z"] - brackets[0]["before"]["z"])
             within = [math.hypot(b["after"]["x"] - b["before"]["x"],
                                  b["after"]["z"] - b["before"]["z"]) for b in brackets]
-            if not math.isfinite(net) or any(not math.isfinite(value) for value in within):
+            anchors = [point for bracket in brackets
+                       for point in (bracket["before"], bracket["after"])]
+            steps = [math.hypot(later["x"] - earlier["x"],
+                                later["z"] - earlier["z"])
+                     for earlier, later in zip(anchors, anchors[1:])]
+            observed_path = sum(steps)
+            if (not math.isfinite(net) or
+                    any(not math.isfinite(value) for value in within + steps) or
+                    not math.isfinite(observed_path)):
                 raise ValueError("invalid-native-actor-position-bracket")
             result["positionBracketSeriesCandidate"] = brackets
             result["positionNetPlanarDisplacementCandidate"] = net
             result["positionMaxWithinSamplePlanarChangeCandidate"] = max(within)
+            result["positionObservedPlanarPathLengthCandidate"] = observed_path
+            result["positionMaxAdjacentPlanarStepCandidate"] = max(steps)
         elif any(row.get("positionBracketCandidate") is not None for row in rows):
             raise ValueError("unexpected-native-actor-position-bracket")
         return result
