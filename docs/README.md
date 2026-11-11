@@ -9,6 +9,7 @@ topic below instead of loading every document for each task.
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Continuity | [Movement handoff](workflows/movement-handoff-2026-10-29.md) | Verified partial trial, cleanup, exact build, reusable bootstrap and remaining acquisition work. |
+| Postmortem | [Move-key focus failure and recovery (2026-11-11)](validation/move-key-focus-failure-postmortem-2026-11-11.md) | Full assistant failure analysis, known-good A/B evidence, successful fix, and prevention rules. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |
 | Planning | [Current discovery roadmap](planning/discovery-roadmap-2026-11-06.md) | Parallel development packages, concrete worker ownership, useful outputs and real dependencies. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |

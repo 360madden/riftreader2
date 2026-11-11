@@ -2,6 +2,8 @@
 
 This manual, one-shot helper sends a bounded Windows scan-code hold through RR2's C# input engine. No VMware, addon chat-focus synchronization, PowerShell input, or legacy RiftReader runtime.
 
+**Failure and recovery record:** [Why previous RR2 focus implementations failed, and how the known-good RiftReader A/B test resolved the blocker](validation/move-key-focus-failure-postmortem-2026-11-11.md).
+
 Run **on the PC actually hosting physical RIFT** from `C:\work\riftreader2`. Initial build and checks were verified on **AMD-DESKTOP only**.
 
 ```powershell

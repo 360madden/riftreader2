@@ -377,6 +377,14 @@ ask Joey to press movement keys when the authorized helper can perform the test.
 - Build an improved RiftReader2 guided by this repository's goals and decisions.
   Do not copy the original application or inherit its architecture by default.
   Evaluate selective reuse against V2's goals and validation needs.
+
+**Known-good-first regression rule (2026-11-11):** When a failing RR2 helper
+has a historically proven RiftReader counterpart, inspect and, when live action
+is authorized, A/B test the **unchanged known-good binary** on the same verified
+host and exact target before speculative rewrites. Compare call ordering,
+thread/context, timing, and foreground diagnostics; selectively port the proven
+mechanism while keeping RR2 standalone. Offline tests alone never prove desktop
+focus or game response. See the [move-key focus failure postmortem](docs/validation/move-key-focus-failure-postmortem-2026-11-11.md).
 - Keep a compact handoff in `docs/status.md`: what changed, what was actually
   verified, unresolved questions, and the next authorized task.
 
