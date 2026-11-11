@@ -95,6 +95,7 @@ def summarize(report, source_sha):
          "elapsed-invalid")
 
     unit = None
+    first_start = None
     last_end = None
     per_field = {name: [] for name in FIELDS}
     for row in rows:
@@ -109,6 +110,8 @@ def summarize(report, source_sha):
         started, completed = utc(row.get("startedAtUtc")), utc(row.get("completedAtUtc"))
         need(started <= completed and (last_end is None or started >= last_end),
              "capture-overlap-or-reversed")
+        if first_start is None:
+            first_start = started
         last_end = completed
         for name in FIELDS:
             per_field[name].append(_field(row.get(name), name))
@@ -120,6 +123,11 @@ def summarize(report, source_sha):
             need(per_field["mana"][-1] is None
                  and row["mana"].get("unavailableReason") == "not-mana-kind-three",
                  "resource-kind-conflict")
+
+    # The producer's Stopwatch spans all reads; reject impossible UTC spans.
+    # Allow one second of wall-clock vs monotonic-clock skew.
+    need((last_end - first_start).total_seconds() * 1000 <= elapsed + 1000.0,
+         "elapsed-window-mismatch")
 
     resources = {}
     for name, values in per_field.items():

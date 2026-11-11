@@ -102,6 +102,26 @@ class VitalsBurstTests(unittest.TestCase):
             with self.subTest(alter=str(alter)), self.assertRaises(ValueError):
                 tool.summarize(report, "b"*64)
 
+    def test_elapsed_stopwatch_must_cover_reported_utc_capture_span(self):
+        report = burst()
+        # The producer uses one Stopwatch around all observations. A retained
+        # burst cannot span minutes of UTC time in only two seconds elapsed.
+        last = report["observations"][-1]
+        for key in ("startedAtUtc", "completedAtUtc"):
+            last[key] = (datetime.fromisoformat(last[key])
+                         + timedelta(minutes=10)).isoformat()
+        report["observation"] = copy.deepcopy(last)
+        with self.assertRaisesRegex(ValueError, "elapsed-window-mismatch"):
+            tool.summarize(report, "a"*64)
+
+        report = burst()
+        report["captureElapsedMilliseconds"] = 1049.0
+        with self.assertRaisesRegex(ValueError, "elapsed-window-mismatch"):
+            tool.summarize(report, "b"*64)
+        # Allow a bounded UTC/monotonic-clock skew without claiming precision.
+        report["captureElapsedMilliseconds"] = 1051.0
+        self.assertEqual("candidate-only", tool.summarize(report, "c"*64)["status"])
+
     def test_missing_and_malformed_resource_state_rejected(self):
         edits = (
             lambda r: r["observations"][0].pop("mana"),
