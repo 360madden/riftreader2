@@ -320,7 +320,14 @@ public sealed class CurrentBuildPositionSampleCommandTests
     [Fact]
     public void HashMatchesNativeSignedLow32Reference()
     {
-        Assert.Equal(463UL, CurrentBuildPositionCandidateReader.BucketIndex(1, 681));
+        // RRE's exact-build import/CRT evidence identifies signed low-DWORD ldiv.
+        Assert.Equal(463UL, CurrentBuildPositionCandidateReader.BucketIndex(0x00000001, 681));
+        Assert.Equal(78UL, CurrentBuildPositionCandidateReader.BucketIndex(0x80000000, 681));
+        Assert.Equal(78UL, CurrentBuildPositionCandidateReader.BucketIndex(0xFFFFFFFF, 681));
+        Assert.Equal(CurrentBuildPositionCandidateReader.BucketIndex(0x80000000, 681),
+                     CurrentBuildPositionCandidateReader.BucketIndex(0x1234000080000000, 681));
+        Assert.Equal(CurrentBuildPositionCandidateReader.BucketIndex(0xFFFFFFFF, 681),
+                     CurrentBuildPositionCandidateReader.BucketIndex(0x12340000FFFFFFFF, 681));
         Assert.Equal(CurrentBuildPositionCandidateReader.BucketIndex(0x80000001, 681),
                      CurrentBuildPositionCandidateReader.BucketIndex(0x1234000080000001, 681));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
