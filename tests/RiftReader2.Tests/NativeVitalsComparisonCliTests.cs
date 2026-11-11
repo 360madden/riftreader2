@@ -20,6 +20,7 @@ public sealed class NativeVitalsComparisonCliTests
             var root = json.RootElement;
             Assert.Equal("candidate-only", root.GetProperty("status").GetString());
             Assert.True(root.GetProperty("identity").GetProperty("sameProcessEpoch").GetBoolean());
+            Assert.Equal(JsonValueKind.Null, root.GetProperty("resourceKindCandidates").GetProperty("same").ValueKind);
             Assert.Equal(10, root.GetProperty("intervalSeconds").GetDecimal());
             Assert.Equal(2, root.GetProperty("summary").GetProperty("changedResources").GetInt32());
             var resources = root.GetProperty("resources");
@@ -76,6 +77,26 @@ public sealed class NativeVitalsComparisonCliTests
     }
 
     [Fact]
+    public async Task ComparesOptionalNativeResourceKindWithoutAssumingItsMeaning()
+    {
+        var dir = MakeDir();
+        try
+        {
+            var before = Write(dir, "before.json", Sample("2026-11-10T23:00:00Z", 100, null, resourceKind: 2));
+            var after = Write(dir, "after.json", Sample("2026-11-10T23:00:10Z", 100, null, resourceKind: 5));
+            var (code, output, _) = await Run(before, after);
+            Assert.Equal(0, code);
+            using var json = JsonDocument.Parse(output);
+            var kinds = json.RootElement.GetProperty("resourceKindCandidates");
+            Assert.Equal(2, kinds.GetProperty("before").GetInt32());
+            Assert.Equal(5, kinds.GetProperty("after").GetInt32());
+            Assert.False(kinds.GetProperty("same").GetBoolean());
+            Assert.Equal(0, json.RootElement.GetProperty("summary").GetProperty("changedResources").GetInt32());
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public async Task RejectsDifferentPlayerAndReversedObservation()
     {
         var dir = MakeDir();
@@ -109,7 +130,7 @@ public sealed class NativeVitalsComparisonCliTests
     }
 
     private static object Sample(string instant, long health, long? energy, ulong unitKey = 42,
-        bool diagnosticUnavailable = false)
+        bool diagnosticUnavailable = false, int? resourceKind = null)
     {
         object present(long value, long maximum, string? type = null) =>
             new { status = "calculated-candidate", unavailableReason = (string?)null,
@@ -130,6 +151,7 @@ public sealed class NativeVitalsComparisonCliTests
                 identity = new { processId = 123, processStartUtcTicks = 456L,
                     executableSha256 = new string('A', 64) },
                 startedAtUtc = instant, completedAtUtc = instant, unitKey,
+                resourceKindCandidate = resourceKind,
                 source = "native-process-memory",
                 qualification = "candidate-only; semantics/passive-freshness/restart-unverified",
                 health = present(health, 150), mana = missing("not-mana-kind-three"),

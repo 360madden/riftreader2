@@ -15,7 +15,7 @@ internal static class NativeVitalsComparisonCommand
 
     private sealed record Resource(string Status, long? Current, long? Maximum, string? UnavailableReason);
     private sealed record Snapshot(string Path, string Sha256, string Build, int Pid, long StartTicks,
-        ulong PlayerKey, DateTimeOffset Started, DateTimeOffset Completed,
+        ulong PlayerKey, int? ResourceKindCandidate, DateTimeOffset Started, DateTimeOffset Completed,
         Resource Health, Resource Mana, Resource Energy);
     private sealed record Change(string Status, long? BeforeCurrent, long? AfterCurrent,
         long? BeforeMaximum, long? AfterMaximum, long? NetChange,
@@ -51,6 +51,12 @@ internal static class NativeVitalsComparisonCommand
             contractVersion = "native-vitals-snapshot-comparison/1",
             status = "candidate-only",
             identity = new { executableSha256 = before.Build, unitKey = before.PlayerKey, sameProcessEpoch = sameEpoch },
+            resourceKindCandidates = new
+            {
+                before = before.ResourceKindCandidate, after = after.ResourceKindCandidate,
+                same = before.ResourceKindCandidate.HasValue && after.ResourceKindCandidate.HasValue
+                    ? before.ResourceKindCandidate == after.ResourceKindCandidate : (bool?)null
+            },
             source = new
             {
                 before = new { path = before.Path, sha256 = before.Sha256, processId = before.Pid,
@@ -118,6 +124,14 @@ internal static class NativeVitalsComparisonCommand
             throw new InvalidDataException("Invalid game identity for native vitals.");
         var key = ULong(observation, "unitKey");
         if (key == 0) throw new InvalidDataException("Invalid native vitals player key.");
+        int? resourceKind = null;
+        if (observation.TryGetProperty("resourceKindCandidate", out var kindValue) &&
+            kindValue.ValueKind != JsonValueKind.Null)
+        {
+            if (kindValue.ValueKind != JsonValueKind.Number || !kindValue.TryGetInt32(out var kind))
+                throw new InvalidDataException("Invalid native resource-kind candidate.");
+            resourceKind = kind;
+        }
         var started = Utc(observation, "startedAtUtc");
         var completed = Utc(observation, "completedAtUtc");
         if (completed < started) throw new InvalidDataException("Native vitals sample interval reversed.");
@@ -127,7 +141,7 @@ internal static class NativeVitalsComparisonCommand
         if (mana.Status == "calculated-candidate" && energy.Status == "calculated-candidate")
             throw new InvalidDataException("Contradictory simultaneous Mana and Energy kinds.");
         return new(full, Convert.ToHexString(SHA256.HashData(bytes)), build, pid, ticks,
-            key, started, completed, health, mana, energy);
+            key, resourceKind, started, completed, health, mana, energy);
     }
 
     private static Resource ReadResource(JsonElement observation, string name)
