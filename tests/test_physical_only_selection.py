@@ -194,6 +194,76 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 physical._native_values("actor-pose", {"observation": invalid})
 
+    def test_actor_pose_burst_projects_last_angle_and_sample_count(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "pose-burst.json"
+            rows = [{"identity": REPORT_IDENTITY, "playerKeyDecimal": "239816685251645959",
+                     "actorHeadingQualified": False, "renderStatus": "unavailable",
+                     "actorMatrix": {"planarAngleDegreesCandidate": 110 + i},
+                     "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                     "renderMatrix": None, "completedAtUtc": str(i)} for i in range(3)]
+
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[-4:], ["--samples", "3", "--interval-ms", "0"])
+                self.assertGreaterEqual(kwargs["timeout"], 30)
+                destination.write_text(json.dumps({
+                    "status": "complete", "identity": REPORT_IDENTITY,
+                    "requestedSamples": 3, "completedSamples": 3,
+                    "observation": rows[-1], "observations": rows}), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-actor-pose-summary/1",
+                    "status": "complete", "output": str(destination)}), "")
+
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "actor-pose", destination,
+                                              samples=3, interval_ms=0)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeValues"]["sampleCount"], 3)
+        self.assertEqual(result["nativeValues"]["actorPlanarDegreesCandidate"], 112)
+        self.assertEqual(result["nativeValues"]["playerKey"], "239816685251645959")
+        self.assertIs(result["nativeValues"]["actorHeadingQualified"], False)
+
+    def test_actor_pose_burst_rejects_missing_mixed_or_incomplete_series(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        base = {"identity": REPORT_IDENTITY, "playerKeyDecimal": "239816685251645959",
+                "actorHeadingQualified": False, "renderStatus": "unavailable",
+                "actorMatrix": {"planarAngleDegreesCandidate": 111.5},
+                "modelMatrix": {"planarAngleDegreesCandidate": None},
+                "renderMatrix": None}
+        for name, changes in (
+            ("missing-series", {"observations": None}),
+            ("incomplete", {"completedSamples": 1}),
+            ("mixed-player", {"observations": [base, {**base, "playerKeyDecimal": "2"}]}),
+            ("mixed-epoch", {"observations": [base, {**base, "identity": {**REPORT_IDENTITY, "processStartUtcTicks": 1}}]}),
+            ("qualified-intermediate", {"observations": [{**base, "actorHeadingQualified": True}, base]}),
+            ("nonfinite-intermediate", {"observations": [{**base, "actorMatrix": {"planarAngleDegreesCandidate": float("nan")}}, base]}),
+            ("missing-matrix-intermediate", {"observations": [{**base, "modelMatrix": None}, base]}),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                executable = Path(temporary) / "RiftReader2.Live.exe"
+                executable.write_bytes(b"MZ")
+                destination = Path(temporary) / "invalid-pose.json"
+                rows = changes.get("observations", [base, base])
+                report = {"status": "complete", "identity": REPORT_IDENTITY,
+                          "requestedSamples": 2, "completedSamples": 2,
+                          "observation": rows[-1] if rows else base, "observations": rows}
+                report.update(changes)
+                def fake_run(command, **kwargs):
+                    destination.write_text(json.dumps(report), encoding="utf-8")
+                    return subprocess.CompletedProcess(command, 0, json.dumps({
+                        "recordType": "native-current-actor-pose-summary/1",
+                        "status": "complete", "output": str(destination)}), "")
+                with patch.object(physical, "NATIVE_EXE", executable), \
+                     patch.object(physical.subprocess, "run", side_effect=fake_run):
+                    result = physical.read_native(selected, "actor-pose", destination,
+                                                  samples=2, interval_ms=0)
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["reason"], "invalid-native-reader-report")
+
     def test_vitals_burst_reports_last_hp_from_stable_player(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
@@ -445,7 +515,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with patch.object(physical.subprocess, "run") as runner:
             for kind, samples, interval, expected in (
-                ("orientation", 3, None, "sampling-options-require-position-or-vitals"),
+                ("orientation", 3, None, "sampling-options-require-position-vitals-or-actor-pose"),
                 ("position", 0, None, "invalid-position-sampling"),
                 ("position", 31, None, "invalid-position-sampling"),
                 ("position", None, 2001, "invalid-position-sampling"),

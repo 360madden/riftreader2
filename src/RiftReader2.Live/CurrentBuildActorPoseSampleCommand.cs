@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using RiftReader2.Application;
@@ -35,6 +36,8 @@ internal static class CurrentBuildActorPoseSampleCommand
             !long.TryParse(rawTicks, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks) || ticks <= 0 ||
             !options.TryGetValue("--output", out var path) || string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("--pid, --start-ticks and --output are required for actor pose.");
+        var samples = BoundedInt(options, "--samples", 1, 1, 30);
+        var intervalMilliseconds = BoundedInt(options, "--interval-ms", 500, 0, 2000);
 
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path))
@@ -46,13 +49,52 @@ internal static class CurrentBuildActorPoseSampleCommand
         if (identity.ProcessId != pid || identity.ProcessStartUtcTicks != ticks ||
             !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Opened actor pose process identity mismatch.");
-        ct.ThrowIfCancellationRequested();
-        var observation = read(session);
-        if (observation.Identity != identity || observation.PlayerKey == 0 || session.Identity != identity)
-            throw new InvalidDataException("Actor pose observation owner or process changed.");
-        if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
-            throw new InvalidDataException("Actor pose process identity invalidated; no report published.");
-        ct.ThrowIfCancellationRequested();
+        var elapsed = Stopwatch.StartNew();
+        var observation = await CaptureAsync(session, read, ct);
+        if (samples > 1)
+        {
+            var observations = new List<CurrentBuildActorPoseCandidate>(samples) { observation };
+            for (var index = 1; index < samples; index++)
+            {
+                if (intervalMilliseconds > 0)
+                    await Task.Delay(intervalMilliseconds, ct);
+                var next = await CaptureAsync(session, read, ct);
+                if (next.PlayerKey != observation.PlayerKey || next.Identity != identity)
+                    throw new InvalidDataException("Actor pose player or process changed during burst; no report published.");
+                observations.Add(next);
+            }
+            var last = observations[^1];
+            var burst = new
+            {
+                schemaVersion = 1,
+                contractVersion = "native-current-actor-pose-candidate-burst/1",
+                status = "complete",
+                identity,
+                requestedSamples = samples,
+                completedSamples = observations.Count,
+                captureElapsedMilliseconds = elapsed.Elapsed.TotalMilliseconds,
+                observation = last,
+                observations,
+                limitations = new[]
+                {
+                    "All samples share one physical PID, start epoch, build SHA, read lease and session.",
+                    "All observed player keys match; continuity between samples cannot be proved.",
+                    "Matrices and planar angles remain candidates, not qualified body or camera facing.",
+                    "Sequential reads cannot exclude ABA; no changed-state, freshness or restart qualification.",
+                    "No game input, process write, getter invocation or foreground change is performed."
+                }
+            };
+            await JsonReportWriter.WriteNewAsync(path, burst, ct);
+            await output.WriteLineAsync(JsonSerializer.Serialize(new
+            {
+                recordType = "native-current-actor-pose-summary/1",
+                burst.status,
+                last.Qualification,
+                burst.completedSamples,
+                output = Path.GetFullPath(path)
+            }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
+            return 0;
+        }
         var report = new
         {
             schemaVersion = 1,
@@ -78,5 +120,32 @@ internal static class CurrentBuildActorPoseSampleCommand
             output = Path.GetFullPath(path)
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
+    }
+
+    internal static async Task<CurrentBuildActorPoseCandidate> CaptureAsync(
+        IReadOnlyNativeMemorySession session,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildActorPoseCandidate> read,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var identity = session.Identity;
+        var observation = read(session);
+        if (observation.Identity != identity || observation.PlayerKey == 0 || session.Identity != identity)
+            throw new InvalidDataException("Actor pose observation owner or process changed.");
+        if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
+            throw new InvalidDataException("Actor pose process identity invalidated; no report published.");
+        ct.ThrowIfCancellationRequested();
+        return observation;
+    }
+
+    private static int BoundedInt(IReadOnlyDictionary<string, string> options, string name,
+        int fallback, int minimum, int maximum)
+    {
+        if (!options.TryGetValue(name, out var raw))
+            return fallback;
+        if (!int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out var value) ||
+            value < minimum || value > maximum)
+            throw new ArgumentException($"{name} must be in {minimum}..{maximum}.");
+        return value;
     }
 }

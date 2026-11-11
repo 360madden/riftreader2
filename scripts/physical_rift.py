@@ -78,6 +78,31 @@ def _native_values(kind, report):
                 observation.get("actorHeadingQualified") is not False or
                 not isinstance(observation.get("renderStatus"), str)):
             raise ValueError("invalid-native-actor-pose-report")
+        observations = report.get("observations")
+        if observations is not None:
+            if (not isinstance(observations, list) or len(observations) < 2 or
+                    type(report.get("requestedSamples")) is not int or
+                    report["requestedSamples"] != len(observations) or
+                    type(report.get("completedSamples")) is not int or
+                    report["completedSamples"] != len(observations) or
+                    observations[-1] != observation or
+                    any(not isinstance(row, dict) or row.get("identity") != report.get("identity")
+                        or row.get("playerKeyDecimal") != key or
+                        row.get("actorHeadingQualified") is not False for row in observations)):
+                raise ValueError("invalid-native-actor-pose-burst")
+            for row in observations:
+                if not isinstance(row.get("renderStatus"), str):
+                    raise ValueError("invalid-native-actor-pose-burst")
+                for name in ("actorMatrix", "modelMatrix", "renderMatrix"):
+                    matrix = row.get(name)
+                    if name == "renderMatrix" and matrix is None:
+                        continue
+                    if not isinstance(matrix, dict):
+                        raise ValueError("invalid-native-actor-pose-burst")
+                    angle = matrix.get("planarAngleDegreesCandidate")
+                    if angle is not None and (type(angle) not in (int, float) or
+                                              not math.isfinite(angle)):
+                        raise ValueError("invalid-native-actor-pose-burst")
         angles = {}
         for name in ("actorMatrix", "modelMatrix", "renderMatrix"):
             matrix = observation.get(name)
@@ -91,13 +116,16 @@ def _native_values(kind, report):
                                       not math.isfinite(value)):
                 raise ValueError("invalid-native-actor-pose-report")
             angles[name] = value
-        return {"playerKey": key,
-                "actorPlanarDegreesCandidate": angles["actorMatrix"],
-                "modelPlanarDegreesCandidate": angles["modelMatrix"],
-                "renderPlanarDegreesCandidate": angles["renderMatrix"],
-                "renderStatus": observation["renderStatus"],
-                "actorHeadingQualified": False,
-                "sampledAtUtc": observation.get("completedAtUtc")}
+        result = {"playerKey": key,
+                  "actorPlanarDegreesCandidate": angles["actorMatrix"],
+                  "modelPlanarDegreesCandidate": angles["modelMatrix"],
+                  "renderPlanarDegreesCandidate": angles["renderMatrix"],
+                  "renderStatus": observation["renderStatus"],
+                  "actorHeadingQualified": False,
+                  "sampledAtUtc": observation.get("completedAtUtc")}
+        if observations is not None:
+            result["sampleCount"] = len(observations)
+        return result
     if kind == "vitals":
         observation = report.get("observation")
         if not isinstance(observation, dict) or type(observation.get("unitKey")) is not int:
@@ -161,8 +189,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
         return dict(selection, status="blocked", reason="host-mismatch")
     if kind not in NATIVE_READS:
         return dict(selection, status="blocked", reason="unknown-native-read")
-    if kind not in ("position", "vitals") and (samples is not None or interval_ms is not None):
-        return dict(selection, status="blocked", reason="sampling-options-require-position-or-vitals")
+    if kind not in ("position", "vitals", "actor-pose") and (samples is not None or interval_ms is not None):
+        return dict(selection, status="blocked", reason="sampling-options-require-position-vitals-or-actor-pose")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
         return dict(selection, status="blocked", reason="invalid-position-sampling")
@@ -195,7 +223,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals") else 30)
+               if kind in ("position", "vitals", "actor-pose") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -241,6 +269,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
         if (kind == "vitals" and samples is not None and samples > 1
                 and report.get("completedSamples") != samples):
             raise ValueError("incomplete-native-vitals-burst")
+        if (kind == "actor-pose" and samples is not None and samples > 1
+                and (report.get("completedSamples") != samples or
+                     not isinstance(report.get("observations"), list))):
+            raise ValueError("incomplete-native-actor-pose-burst")
         values = _native_values(kind, report)
     except (OSError, ValueError, TypeError, AttributeError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")
@@ -260,16 +292,16 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
-                        help="position/vitals: 1-30 samples (default: 3 for position, 1 for vitals)")
+                        help="position/vitals/actor-pose: 1-30 samples (default: 3 position, 1 otherwise)")
     parser.add_argument("--interval-ms", type=int,
-                        help="position/vitals: 0-2000ms between reads (default: 500)")
+                        help="position/vitals/actor-pose: 0-2000ms between reads (default: 500)")
     args = parser.parse_args(argv)
     if args.read_native is not None and args.expected_host is None:
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "native-read-requires-expected-host"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose"):
         result = {"status": "blocked", "workflow": "physical",
-                  "reason": "sampling-options-require-position-or-vitals"}
+                  "reason": "sampling-options-require-position-vitals-or-actor-pose"}
     else:
         result = select_physical(args.expected_host, args.physical_pid)
     if args.output is not None and args.read_native is None:

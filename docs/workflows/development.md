@@ -30,6 +30,8 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 # Also: position, orientation, actor-pose, player-context, selected-target, stats.
 # For read-only actor/model/render matrix candidates (NOT qualified body heading):
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose
+# For a bounded passive actor/model/render pose time series under one native lease:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100
 # For a short read-only movement-observation burst:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native position --samples 10 --interval-ms 0
 # For repeated HP/resource observations under one native session:
@@ -48,6 +50,16 @@ read-only physical route using the existing exact-build actor reader; it does
 not qualify body or camera facing. On AMD-DESKTOP (November 10), one physical
 RIFT read returned actor planar candidate **111.8823°**, model candidate **0°**,
 and `alternate-reference-branch-not-followed`, with no game input.
+For 2-30 actor-pose samples, the separate
+`native-current-actor-pose-candidate-burst/1` report retains every raw sample
+under one lease and process session. Each read revalidates the exact game epoch;
+missing, changed-player or invalidated bursts produce **no completed report**.
+The compact receipt projects the last sample and count, never qualified heading.
+A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
+captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):
+all ten samples kept one player key and the same 111.8823° actor candidate,
+0° model candidate, and unobserved alternate render branch. This static series
+proves capture mechanics, **not** angle response to turning.
 Before every native launch, the reader also checks the **current physical PC's**
 hostname against the selection owner and selected process host. A cached selection
 from the other PC (or a malformed target) is blocked before launching the reader.
