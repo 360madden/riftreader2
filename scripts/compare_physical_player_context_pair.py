@@ -77,7 +77,12 @@ def _sample(report):
              and identity["executableSha256"].upper() == BUILD_SHA,
              "invalid-source-identity")
     observation = report["observation"]
-    start, end = _utc(observation.get("startedAtUtc")), _utc(observation.get("completedAtUtc"))
+    # The last observation is only the burst endpoint. A later final sample
+    # must not conceal overlap between the first burst sample and prior capture.
+    first = (report["observations"][0]
+             if report.get("contractVersion") == "native-current-player-context-candidate-burst/1"
+             else observation)
+    start, end = _utc(first.get("startedAtUtc")), _utc(observation.get("completedAtUtc"))
     _require(end >= start, "negative-capture-duration")
     return values, identity, start, end
 

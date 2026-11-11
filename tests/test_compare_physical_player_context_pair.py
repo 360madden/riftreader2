@@ -123,6 +123,18 @@ class PhysicalContextPairTests(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 pair.compare(sample(), second, "A" * 64, "B" * 64)
 
+    def test_rejects_cross_capture_overlap_hidden_by_last_burst_sample(self):
+        # A later final observation does not make an overlapping first observation valid.
+        before, during, after = sample(), intermediate(), later()
+        for first, second in (
+            (before, burst(before, after)),
+            (burst(before, during), burst(during, after)),
+        ):
+            with self.subTest(before_burst="observations" in first), self.assertRaisesRegex(
+                ValueError, "overlapping-or-reordered-observations"
+            ):
+                pair.compare(first, second, "A" * 64, "B" * 64)
+
     def test_rejects_inconsistent_target_and_duplicate_source(self):
         with self.assertRaisesRegex(ValueError, "reused-source"):
             pair.compare(sample(), later(), "A" * 64, "A" * 64)
