@@ -73,8 +73,8 @@ class HelperCalibrationTests(unittest.TestCase):
     def test_uses_observed_not_requested_hold_and_retains_provenance(self):
         result = self.analyze()
         self.assertEqual("offline-helper-move-calibration-candidate", result["status"])
-        self.assertAlmostEqual(-2 / 408, result["dxPerMillisecondCandidate"])
-        self.assertAlmostEqual(.5 / 408, result["dzPerMillisecondCandidate"])
+        self.assertAlmostEqual(-2 / 408.2, result["dxPerMillisecondCandidate"])
+        self.assertAlmostEqual(.5 / 408.2, result["dzPerMillisecondCandidate"])
         self.assertEqual(408, result["calibrationHoldMillisecondsRounded"])
         self.assertEqual(400, result["requestedHoldMilliseconds"])
         self.assertEqual(408.2, result["observedHoldMilliseconds"])
@@ -95,6 +95,7 @@ class HelperCalibrationTests(unittest.TestCase):
                 result = self.analyze()
                 self.assertEqual(key, result["key"])
                 self.assertEqual(520, result["calibrationHoldMillisecondsRounded"])
+                self.assertAlmostEqual(-2 / 520, result["dxPerMillisecondCandidate"])
 
     def test_rejects_unverified_delivery_release_or_nonmovement_key(self):
         base = receipt()
