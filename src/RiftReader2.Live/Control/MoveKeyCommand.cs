@@ -179,16 +179,15 @@ internal static class MoveKeyCommand
         {
             var handle = new IntPtr(long.Parse(target.WindowHandle.AsSpan(2),
                 NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-            if (!SetForegroundWindow(handle))
-                throw new InvalidOperationException("Windows refused to foreground the RIFT window.");
-            var timer = Stopwatch.StartNew();
-            while (timer.ElapsedMilliseconds < 600)
+            // SetForegroundWindow may return false even for a valid visible game.
+            // Reuse RiftReader's proven GUI-thread attachment only when needed.
+            if (!SetForegroundWindow(handle)
+                || !await WaitForForegroundAsync(Inspect, 180, token))
             {
-                token.ThrowIfCancellationRequested();
-                var observed = Inspect();
-                if (observed.IsForeground)
-                    break;
-                await Task.Delay(30, token);
+                RequestForegroundWithAttachedThreads(handle, options.Pid);
+                if (!await WaitForForegroundAsync(Inspect, 600, token))
+                    throw new InvalidOperationException(
+                        "Windows denied RIFT foreground after direct and attached-thread activation; no input sent.");
             }
         }
         var ready = Inspect();
@@ -305,7 +304,77 @@ internal static class MoveKeyCommand
         Console.WriteLine(serialized);
     }
 
+    private static async Task<bool> WaitForForegroundAsync(
+        Func<DesktopTarget> inspect, int timeoutMilliseconds, CancellationToken token)
+    {
+        var timer = Stopwatch.StartNew();
+        do
+        {
+            token.ThrowIfCancellationRequested();
+            if (inspect().IsForeground)
+                return true;
+            await Task.Delay(30, token);
+        }
+        while (timer.ElapsedMilliseconds < timeoutMilliseconds);
+        return false;
+    }
+
+    private static void RequestForegroundWithAttachedThreads(IntPtr window, int expectedPid)
+    {
+        var targetThread = GetWindowThreadProcessId(window, out var actualPid);
+        if (targetThread == 0 || actualPid != (uint)expectedPid)
+            throw new InvalidOperationException("RIFT window owner changed during foreground activation.");
+
+        var previousForeground = GetForegroundWindow();
+        var foregroundThread = previousForeground == IntPtr.Zero
+            ? 0 : GetWindowThreadProcessId(previousForeground, out _);
+        var currentThread = GetCurrentThreadId();
+        var attachedForeground = false;
+        var attachedTarget = false;
+        try
+        {
+            if (foregroundThread != 0 && foregroundThread != currentThread)
+                attachedForeground = AttachThreadInput(currentThread, foregroundThread, true);
+            if (targetThread != currentThread && targetThread != foregroundThread)
+                attachedTarget = AttachThreadInput(currentThread, targetThread, true);
+
+            // Never restore an already visible/maximized RIFT: it can move or resize the game.
+            if (IsIconic(window))
+                _ = ShowWindow(window, 9); // SW_RESTORE only for minimized windows.
+            _ = SetForegroundWindow(window);
+            Thread.Sleep(500); // Historical RiftReader C# default: allow focus to settle.
+        }
+        finally
+        {
+            if (attachedTarget)
+                _ = AttachThreadInput(currentThread, targetThread, false);
+            if (attachedForeground)
+                _ = AttachThreadInput(currentThread, foregroundThread, false);
+        }
+    }
+
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr window);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachThreadInput(uint threadId, uint attachToThreadId, bool attach);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr window);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr window, int showCommand);
 }
