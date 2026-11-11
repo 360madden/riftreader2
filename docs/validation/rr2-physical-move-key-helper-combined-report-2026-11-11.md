@@ -5,6 +5,8 @@
 **Repository:** `C:\work\riftreader2`, branch `codex/modular-foundation`
 **Scope:** Standalone RR2 .NET 10 helper, physical RIFT Live x64, Windows focus/input, native XYZ feedback, screenshot verification and failures. **No VMware or LEGION work.**
 
+**Latest update (Nov 11, after report creation):** The November 9 Workbridge desktop lock was archived and WinApp screenshots resumed. Physical RR2 A/D 500 ms key pulses were then independently checked against three actual game screenshots: A visibly rotated the viewpoint; D visibly reversed it toward the initial view. **A/D visual turn response is now observed** (actor yaw/turn rate still unqualified). See [the A/D visual-turn verification and steering continuation](physical-ad-turn-visual-verification-2026-11-11.md). The original findings below describe the earlier incomplete state.
+
 ## Executive status
 
 **Working:** The corrected RR2 helper acquired RIFT foreground focus, inserted bounded scan-code key presses, and reported successful release for W, S, Q, E, A and D. Same-owner native XYZ candidates changed in directionally consistent ways for W/S/Q/E. A and D were delivered but **not visually verified as turns**. A separate PowerShell/.NET virtual-desktop screenshot capture succeeded after the WinApp CLI capture backend repeatedly returned `UI_TURN_BUSY`.
