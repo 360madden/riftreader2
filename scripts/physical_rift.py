@@ -422,6 +422,67 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
         elif any(row.get("positionBracketCandidate") is not None for row in rows):
             raise ValueError("unexpected-native-actor-position-bracket")
         return result
+    if kind == "player-context":
+        observation = report.get("observation")
+        qualification = "candidate-only; changed-state, API correspondence and restart unverified"
+        if (type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
+                or report.get("contractVersion") != "native-current-player-context-candidate-sample/1"
+                or report.get("qualification") != qualification
+                or not isinstance(observation, dict)
+                or observation.get("qualification") != qualification):
+            raise ValueError("invalid-native-player-context-contract")
+        unit = observation.get("unitKey")
+        level, combat = observation.get("rawLevel"), observation.get("rawCombat")
+        fallback, target_key = observation.get("rawFallbackKey"), observation.get("targetKeyCandidate")
+        target_status, target_id = observation.get("targetStatus"), observation.get("targetUnitIdCandidate")
+        if (type(unit) is not int or not 0 < unit < 2**64
+                or type(level) is not int or not -(2**31) <= level < 2**31
+                or type(combat) is not int or not 0 <= combat <= 255
+                or observation.get("combatStatus") != "raw-byte-candidate"
+                or type(observation.get("combatCandidate")) is not bool
+                or observation["combatCandidate"] != (combat != 0)
+                or observation.get("levelStatus") not in (
+                    "alternate-component-unavailable",
+                    "numeric-getter-and-presentation-candidate",
+                    "numeric-getter-candidate-presentation-unqualified")
+                or type(fallback) is not int or not 0 <= fallback < 2**64):
+            raise ValueError("invalid-native-player-context-values")
+        if target_status == "fallback-key-candidate":
+            if (type(target_key) is not int or target_key == 0
+                    or target_key != fallback or target_id != f"u{target_key:016X}"):
+                raise ValueError("invalid-native-player-context-target")
+        elif target_status == "raw-getter-zero-candidate":
+            if target_key != 0 or type(target_key) is not int or fallback != 0 or target_id is not None:
+                raise ValueError("invalid-native-player-context-target")
+        elif target_status in ("override-unavailable", "guard-unreadable-or-invalid"):
+            if target_key is not None or target_id is not None:
+                raise ValueError("invalid-native-player-context-target")
+        else:
+            raise ValueError("invalid-native-player-context-target")
+        calling = observation.get("rawCalling")
+        calling_name = observation.get("callingCandidate")
+        calling_names = {1: "warrior", 2: "cleric", 3: "mage", 4: "rogue", 7: "primalist"}
+        if ((calling is not None and (type(calling) is not int
+                                       or not 0 <= calling < 2**32
+                                       or calling_name != calling_names.get(calling)))
+                or (calling is None and calling_name is not None)):
+            raise ValueError("invalid-native-player-context-calling")
+        try:
+            started = datetime.fromisoformat(observation["startedAtUtc"].replace("Z", "+00:00"))
+            completed = datetime.fromisoformat(observation["completedAtUtc"].replace("Z", "+00:00"))
+            if (started.utcoffset() != timedelta(0) or completed.utcoffset() != timedelta(0)
+                    or completed < started):
+                raise ValueError("invalid-native-player-context-time")
+        except (KeyError, AttributeError, ValueError, TypeError, OverflowError) as exc:
+            raise ValueError("invalid-native-player-context-time") from exc
+        return {
+            "unitKey": str(unit), "sampledAtUtc": observation["completedAtUtc"],
+            "level": {"status": observation["levelStatus"], "rawCandidate": level},
+            "combat": {"status": "raw-byte-candidate", "rawByte": combat,
+                       "candidate": observation["combatCandidate"]},
+            "target": {"status": target_status, "unitIdCandidate": target_id},
+            "calling": {"rawCandidate": calling, "nameCandidate": calling_name},
+        }
     if kind == "vitals":
         observation = report.get("observation")
         if not isinstance(observation, dict) or type(observation.get("unitKey")) is not int:
