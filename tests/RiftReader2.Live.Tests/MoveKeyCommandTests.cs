@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text.Json;
 using RiftReader2.Live.Control;
 using RiftReader2.Domain;
 
@@ -41,6 +43,101 @@ public sealed class MoveKeyCommandTests
             start, start.AddMilliseconds(500), TimeSpan.FromMilliseconds(200),
             TimeSpan.FromMilliseconds(500));
         Assert.False(missed.WallClockConsistentWithMonotonic);
+    }
+
+    private static MoveKeyCommand.KeySendTimeline DeterministicTimeline(
+        IReadOnlyList<int> millisecondTicks)
+    {
+        var ticks = new Queue<long>(millisecondTicks.Select(ms =>
+            (long)Math.Round(ms * Stopwatch.Frequency / 1000.0)));
+        var origin = DateTimeOffset.Parse("2026-11-11T18:00:00Z");
+        var dates = new Queue<DateTimeOffset>(millisecondTicks.Select(ms => origin.AddMilliseconds(ms)));
+        return new MoveKeyCommand.KeySendTimeline(
+            monotonicTick: () => ticks.Dequeue(),
+            utcNow: () => dates.Dequeue());
+    }
+
+    [Fact]
+    public async Task SuccessfulDownAndWatchdogThreadUpProduceTightMonotonicHoldBounds()
+    {
+        var sends = new List<string>();
+        var timeline = DeterministicTimeline([0, 1, 511, 512]);
+        timeline.Send("a", true, () => sends.Add("down"));
+        // The actual bounded-release worker can call KeyUp from a different thread.
+        await Task.Run(() => timeline.Send("a", false, () =>
+        {
+            lock (sends) sends.Add("up");
+        }));
+        var events = timeline.Snapshot();
+        Assert.Equal(["down", "up"], sends);
+        Assert.Equal(2, events.Length);
+        Assert.Equal(["key-down", "key-up"], events.Select(e => e.Phase));
+        Assert.All(events, e => Assert.True(e.Inserted));
+        var window = MoveKeyCommand.SummarizeKeyHold("a", events);
+        Assert.Equal("candidate-sendinput-hold-bounds", window.Status);
+        Assert.Equal(510, window.MinimumMillisecondsCandidate!.Value, 2);
+        Assert.Equal(512, window.MaximumMillisecondsCandidate!.Value, 2);
+        Assert.Equal(511, window.MidpointMillisecondsCandidate!.Value, 2);
+        Assert.False(window.ExactKeyDownUpTimesKnown);
+        Assert.False(window.GameResponseVerified);
+        var startedAt = DateTimeOffset.Parse("2026-11-11T18:00:00Z");
+        var timing = MoveKeyCommand.SummarizeInputCallTiming(
+            startedAt, startedAt.AddMilliseconds(512),
+            TimeSpan.FromMilliseconds(512), TimeSpan.FromMilliseconds(511));
+        Assert.Equal(511,
+            MoveKeyCommand.TurnRateHoldCandidateMilliseconds(window, timing), 2);
+        Assert.True(double.IsNaN(MoveKeyCommand.TurnRateHoldCandidateMilliseconds(
+            window, timing with { WallClockConsistentWithMonotonic = false })));
+        Assert.NotNull(window.DownCallStartedAtUtc);
+        Assert.NotNull(window.UpCallCompletedAtUtc);
+        // Stopwatch ticks are internal, not serialized as huge unstable host values.
+        var serialized = JsonSerializer.Serialize(events);
+        Assert.DoesNotContain("MonotonicStartTick", serialized);
+        Assert.DoesNotContain("MonotonicEndTick", serialized);
+    }
+
+    [Fact]
+    public void FailedDownOrUpNeverProduceAQualifiedHoldDuration()
+    {
+        var failedDown = DeterministicTimeline([0, 1, 100, 101]);
+        Assert.Throws<InvalidOperationException>(() =>
+            failedDown.Send("q", true, () => throw new InvalidOperationException("down refused")));
+        failedDown.Send("q", false, () => { });
+        var unsuccessful = MoveKeyCommand.SummarizeKeyHold("q", failedDown.Snapshot());
+        Assert.Equal("unavailable-keydown-not-confirmed", unsuccessful.Status);
+        Assert.Null(unsuccessful.MidpointMillisecondsCandidate);
+        Assert.False(failedDown.Snapshot()[0].Inserted);
+        Assert.True(failedDown.Snapshot()[1].Inserted);
+
+        var failedUp = DeterministicTimeline([0, 1, 100, 101]);
+        failedUp.Send("d", true, () => { });
+        Assert.Throws<InvalidOperationException>(() =>
+            failedUp.Send("d", false, () => throw new InvalidOperationException("up failed")));
+        Assert.Equal("unavailable-keyup-not-confirmed",
+            MoveKeyCommand.SummarizeKeyHold("d", failedUp.Snapshot()).Status);
+        Assert.Null(MoveKeyCommand.SummarizeKeyHold("d", failedUp.Snapshot())
+            .MaximumMillisecondsCandidate);
+    }
+
+    [Fact]
+    public void MissingReplayedOrOverlappingEventsDoNotInventASingleCleanRelease()
+    {
+        var clean = DeterministicTimeline([0, 1, 100, 101]);
+        clean.Send("e", true, () => { });
+        clean.Send("e", false, () => { });
+        var events = clean.Snapshot();
+        Assert.Equal("unavailable-keyup-not-confirmed",
+            MoveKeyCommand.SummarizeKeyHold("e", events.Take(1).ToArray()).Status);
+        Assert.Equal("unavailable-keydown-not-confirmed",
+            MoveKeyCommand.SummarizeKeyHold("e", events.Skip(1).ToArray()).Status);
+        Assert.Equal("unavailable-keyup-not-confirmed",
+            MoveKeyCommand.SummarizeKeyHold("e", [events[0], events[1], events[1]]).Status);
+        var overlapping = events[1] with
+        {
+            MonotonicStartTick = events[0].MonotonicEndTick - 1
+        };
+        Assert.Equal("unavailable-send-order",
+            MoveKeyCommand.SummarizeKeyHold("e", [events[0], overlapping]).Status);
     }
 
     [Fact]

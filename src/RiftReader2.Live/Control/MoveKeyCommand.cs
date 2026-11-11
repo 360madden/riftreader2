@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using RiftReader2.Application;
 using RiftReader2.Domain;
 
@@ -44,6 +45,109 @@ internal static class MoveKeyCommand
             && executed <= ms + 50;
         return new(started, completed, ms, executed, valid, consistent);
     }
+
+    internal sealed record KeySendEvent(
+        string Key, string Phase,
+        DateTimeOffset CallStartedAtUtc, DateTimeOffset CallCompletedAtUtc,
+        double SendCallElapsedMilliseconds, bool Inserted,
+        [property: JsonIgnore] long MonotonicStartTick,
+        [property: JsonIgnore] long MonotonicEndTick);
+
+    internal sealed record KeyHoldWindow(
+        string Key, string Status, double? MinimumMillisecondsCandidate,
+        double? MaximumMillisecondsCandidate, double? MidpointMillisecondsCandidate,
+        DateTimeOffset? DownCallStartedAtUtc, DateTimeOffset? DownCallCompletedAtUtc,
+        DateTimeOffset? UpCallStartedAtUtc, DateTimeOffset? UpCallCompletedAtUtc)
+    {
+        public bool ExactKeyDownUpTimesKnown => false;
+        public bool GameResponseVerified => false;
+        public string Qualification =>
+            "Bounds from successful Windows SendInput call start/return, not exact OS insertion or game-consumption time.";
+    }
+
+    internal sealed class KeySendTimeline(
+        Func<long>? monotonicTick = null,
+        Func<DateTimeOffset>? utcNow = null)
+    {
+        private readonly object gate = new();
+        private readonly List<KeySendEvent> events = [];
+        private readonly Func<long> tick = monotonicTick ?? Stopwatch.GetTimestamp;
+        private readonly Func<DateTimeOffset> utc = utcNow ?? (() => DateTimeOffset.UtcNow);
+
+        public void Send(string key, bool down, Action send)
+        {
+            var beforeTick = tick();
+            var beforeUtc = utc();
+            var succeeded = false;
+            try
+            {
+                send();
+                succeeded = true;
+            }
+            finally
+            {
+                var afterTick = tick();
+                var afterUtc = utc();
+                lock (gate)
+                    events.Add(new KeySendEvent(
+                        key, down ? "key-down" : "key-up",
+                        beforeUtc, afterUtc,
+                        Stopwatch.GetElapsedTime(beforeTick, afterTick).TotalMilliseconds,
+                        succeeded, beforeTick, afterTick));
+            }
+        }
+
+        public KeySendEvent[] Snapshot()
+        {
+            lock (gate) return events.ToArray();
+        }
+    }
+
+    internal static KeyHoldWindow SummarizeKeyHold(string key,
+        IReadOnlyList<KeySendEvent> events)
+    {
+        var down = events.Where(x => x.Key == key && x.Phase == "key-down").ToArray();
+        var up = events.Where(x => x.Key == key && x.Phase == "key-up").ToArray();
+        if (down.Length != 1 || !down[0].Inserted)
+            return new(key, "unavailable-keydown-not-confirmed", null, null, null,
+                down.FirstOrDefault()?.CallStartedAtUtc, down.FirstOrDefault()?.CallCompletedAtUtc,
+                up.FirstOrDefault()?.CallStartedAtUtc, up.FirstOrDefault()?.CallCompletedAtUtc);
+        if (up.Length != 1 || !up[0].Inserted)
+            return new(key, "unavailable-keyup-not-confirmed", null, null, null,
+                down[0].CallStartedAtUtc, down[0].CallCompletedAtUtc,
+                up.FirstOrDefault()?.CallStartedAtUtc, up.FirstOrDefault()?.CallCompletedAtUtc);
+        var before = down[0];
+        var after = up[0];
+        if (before.MonotonicStartTick > before.MonotonicEndTick
+            || after.MonotonicStartTick > after.MonotonicEndTick
+            || before.MonotonicEndTick > after.MonotonicStartTick
+            || before.CallCompletedAtUtc < before.CallStartedAtUtc
+            || after.CallCompletedAtUtc < after.CallStartedAtUtc)
+            return new(key, "unavailable-send-order", null, null, null,
+                before.CallStartedAtUtc, before.CallCompletedAtUtc,
+                after.CallStartedAtUtc, after.CallCompletedAtUtc);
+        var minimum = Stopwatch.GetElapsedTime(
+            before.MonotonicEndTick, after.MonotonicStartTick).TotalMilliseconds;
+        var maximum = Stopwatch.GetElapsedTime(
+            before.MonotonicStartTick, after.MonotonicEndTick).TotalMilliseconds;
+        if (!double.IsFinite(minimum) || !double.IsFinite(maximum)
+            || minimum < 0 || maximum < minimum)
+            return new(key, "unavailable-timing", null, null, null,
+                before.CallStartedAtUtc, before.CallCompletedAtUtc,
+                after.CallStartedAtUtc, after.CallCompletedAtUtc);
+        return new(key, "candidate-sendinput-hold-bounds", minimum, maximum,
+            (minimum + maximum) / 2,
+            before.CallStartedAtUtc, before.CallCompletedAtUtc,
+            after.CallStartedAtUtc, after.CallCompletedAtUtc);
+    }
+
+    internal static double TurnRateHoldCandidateMilliseconds(
+        KeyHoldWindow hold, InputCallTiming call)
+        => hold.Status == "candidate-sendinput-hold-bounds"
+            && call.UtcOrderValid && call.WallClockConsistentWithMonotonic
+            && hold.MidpointMillisecondsCandidate is double milliseconds
+            && double.IsFinite(milliseconds)
+            ? milliseconds : double.NaN;
 
     internal sealed record XyzSample(
         DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
@@ -295,7 +399,8 @@ internal static class MoveKeyCommand
             ? await CaptureActorPoseAsync(options.Pid, startTicks, token) : null;
         if ((before is not null || beforePose is not null) && !Inspect().IsForeground)
             throw new InvalidOperationException("RIFT lost foreground during native pre-capture.");
-        using var input = new KeyInput(WindowsControlDesktop.PinInputTarget(ready));
+        var keySendTimeline = new KeySendTimeline();
+        using var input = new KeyInput(WindowsControlDesktop.PinInputTarget(ready), keySendTimeline);
         var action = new ControlAction(options.Keys, options.HoldMilliseconds);
         var callStartedUtc = DateTimeOffset.UtcNow;
         var callClock = Stopwatch.StartNew();
@@ -305,6 +410,8 @@ internal static class MoveKeyCommand
             callStartedUtc, DateTimeOffset.UtcNow, callClock.Elapsed, result.ObservedDuration);
         var insertion = SummarizeInsertion(result, options.Keys.Length,
             input.KeyDownAttempts, input.KeyDownInsertions);
+        var keySendEvents = keySendTimeline.Snapshot();
+        var keyHoldWindows = options.Keys.Select(key => SummarizeKeyHold(key, keySendEvents)).ToArray();
         var success = insertion.BoundedActionCompleted;
         XyzFeedback? xyzFeedback = null;
         var xyzSettleApplied = false;
@@ -363,7 +470,7 @@ internal static class MoveKeyCommand
         var turnRateCandidate = options.MeasureActorPose && options.Keys.Length == 1
             && options.Keys[0] is "a" or "d"
             ? SummarizeTurnRate(options.Keys[0], insertion, poseFeedback,
-                result.ObservedDuration.TotalMilliseconds)
+                TurnRateHoldCandidateMilliseconds(keyHoldWindows[0], inputCallTiming))
             : null;
         Report(options.Json, new
         {
@@ -383,7 +490,7 @@ internal static class MoveKeyCommand
             releaseSucceeded = result.ReleaseSucceeded,
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
-            inputCallTiming,
+            inputCallTiming, keySendEvents, keyHoldWindows,
             xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
             gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error
         });
@@ -519,7 +626,9 @@ internal static class MoveKeyCommand
             planar, planar >= 0.03, gap);
     }
 
-    private sealed class KeyInput(WindowsControlDesktop.PinnedInputTarget pinned) : IControlInput, IDisposable
+    private sealed class KeyInput(
+        WindowsControlDesktop.PinnedInputTarget pinned, KeySendTimeline timeline)
+        : IControlInput, IDisposable
     {
         public bool IsTargetCurrent() => pinned.IsCurrent();
         public int KeyDownAttempts { get; private set; }
@@ -529,11 +638,12 @@ internal static class MoveKeyCommand
             if (!pinned.IsCurrent())
                 throw new InvalidOperationException("RIFT window lost identity or foreground before key down.");
             KeyDownAttempts++;
-            WindowsControlDesktop.SendKeys(key, true);
+            timeline.Send(key, true, () => WindowsControlDesktop.SendKeys(key, true));
             KeyDownInsertions++;
         }
         // Never condition key-up on focus or process identity: release is unconditional.
-        public void KeyUp(string key) => WindowsControlDesktop.SendKeys(key, false);
+        public void KeyUp(string key) =>
+            timeline.Send(key, false, () => WindowsControlDesktop.SendKeys(key, false));
         public void ButtonDown(string _) => throw new NotSupportedException();
         public void ButtonUp(string _) => throw new NotSupportedException();
         public void MoveRelative(int _, int __) => throw new NotSupportedException();

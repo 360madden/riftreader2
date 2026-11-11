@@ -104,7 +104,85 @@ def from_helper_receipt(path: Path):
             and 20 <= observed <= physical.MAX_PHYSICAL_CALIBRATION_HOLD_MS
             and abs(observed - requested) <= max(50, requested * .25),
             "helper-observed-hold-invalid")
-    rounded = int(math.floor(observed + .5))
+    hold_source = "executor-total-duration-legacy"
+    hold_bounds = None
+    effective_hold = observed
+    timing_keys = ("inputCallTiming", "keySendEvents", "keyHoldWindows")
+    if any(k in receipt for k in timing_keys):
+        require("inputCallTiming" in receipt
+                and ("keySendEvents" in receipt) == ("keyHoldWindows" in receipt),
+                "helper-keysend-timing-incomplete")
+        timing = receipt["inputCallTiming"]
+        events = receipt.get("keySendEvents")
+        windows = receipt.get("keyHoldWindows")
+        require(isinstance(timing, dict)
+                and timing.get("utcOrderValid") is True
+                and timing.get("wallClockConsistentWithMonotonic") is True,
+                "helper-keysend-timing-invalid")
+        call_start = utc(timing.get("startedAtUtc"))
+        call_end = utc(timing.get("completedAtUtc"))
+        call_elapsed = finite(timing.get("monotonicElapsedMilliseconds"),
+                              "helper-keysend-timing-invalid")
+        executor_elapsed = finite(timing.get("executorObservedMilliseconds"),
+                                  "helper-keysend-timing-invalid")
+        require(call_start < call_end and call_elapsed >= 20
+                and abs(executor_elapsed - observed) <= 0.2
+                and abs((call_end - call_start).total_seconds()*1000 - call_elapsed)
+                    <= max(50, call_elapsed*.2),
+                "helper-keysend-timing-invalid")
+        if events is None:
+            hold_source = "executor-total-duration-with-call-envelope"
+        else:
+            require(isinstance(events, list) and len(events) == 2
+                    and isinstance(windows, list) and len(windows) == 1,
+                    "helper-keysend-timing-invalid")
+            stamp_pairs = []
+            for event, phase in zip(events, ("key-down", "key-up")):
+                require(isinstance(event, dict) and event.get("key") == keys[0]
+                        and event.get("phase") == phase and event.get("inserted") is True,
+                        "helper-keysend-event-invalid")
+                began = utc(event.get("callStartedAtUtc"))
+                ended = utc(event.get("callCompletedAtUtc"))
+                elapsed_ms = finite(event.get("sendCallElapsedMilliseconds"),
+                                    "helper-keysend-event-invalid")
+                require(call_start <= began <= ended <= call_end
+                        and 0 <= elapsed_ms <= 100
+                        and abs((ended - began).total_seconds()*1000 - elapsed_ms) <= 50,
+                        "helper-keysend-event-invalid")
+                stamp_pairs.append((began, ended))
+            require(stamp_pairs[0][1] <= stamp_pairs[1][0],
+                    "helper-keysend-event-order-invalid")
+            w = windows[0]
+            require(isinstance(w, dict) and w.get("key") == keys[0]
+                    and w.get("status") == "candidate-sendinput-hold-bounds"
+                    and w.get("exactKeyDownUpTimesKnown") is False
+                    and w.get("gameResponseVerified") is False,
+                    "helper-keysend-window-invalid")
+            minimum = finite(w.get("minimumMillisecondsCandidate"),
+                             "helper-keysend-window-invalid")
+            maximum = finite(w.get("maximumMillisecondsCandidate"),
+                             "helper-keysend-window-invalid")
+            midpoint = finite(w.get("midpointMillisecondsCandidate"),
+                              "helper-keysend-window-invalid")
+            require(20 <= minimum <= midpoint <= maximum
+                    and maximum <= physical.MAX_PHYSICAL_CALIBRATION_HOLD_MS
+                    and math.isclose(midpoint, (minimum+maximum)/2, rel_tol=0, abs_tol=.01)
+                    and abs(midpoint - requested) <= max(50, requested*.25)
+                    and maximum <= call_elapsed+50
+                    and w.get("downCallStartedAtUtc") == events[0]["callStartedAtUtc"]
+                    and w.get("downCallCompletedAtUtc") == events[0]["callCompletedAtUtc"]
+                    and w.get("upCallStartedAtUtc") == events[1]["callStartedAtUtc"]
+                    and w.get("upCallCompletedAtUtc") == events[1]["callCompletedAtUtc"],
+                    "helper-keysend-window-invalid")
+            min_wall = (stamp_pairs[1][0]-stamp_pairs[0][1]).total_seconds()*1000
+            max_wall = (stamp_pairs[1][1]-stamp_pairs[0][0]).total_seconds()*1000
+            require(abs(minimum-min_wall) <= 50 and abs(maximum-max_wall) <= 50,
+                    "helper-keysend-window-time-mismatch")
+            effective_hold = midpoint
+            hold_source = "sendinput-keydown-keyup-bounded-midpoint"
+            hold_bounds = {"minimumMillisecondsCandidate": minimum,
+                           "maximumMillisecondsCandidate": maximum}
+    rounded = int(math.floor(effective_hold + .5))
     feedback = receipt.get("xyzFeedback")
     require(isinstance(feedback, dict)
             and feedback.get("status") == "candidate-native-xyz-feedback"
@@ -126,6 +204,9 @@ def from_helper_receipt(path: Path):
                                   for axis in ("x", "y", "z")))
         point.append((a, b, pos))
     capture_gap = (point[1][0] - point[0][1]).total_seconds()
+    if "inputCallTiming" in receipt:
+        require(point[0][1] <= call_start and call_end <= point[1][0],
+                "helper-keysend-native-capture-order-invalid")
     require(0 < capture_gap <= observed / 1000 + 3,
             "helper-native-capture-gap-invalid")
     require(abs(finite(feedback.get("captureGapSeconds"), "helper-native-gap-mismatch")
@@ -159,10 +240,13 @@ def from_helper_receipt(path: Path):
         "qualification": "windows-key-inserted-and-released-with-native-xyz-candidates-only",
         "movementEligible": False, "actionVerified": False, "headingQualified": False,
         "gameResponseVerified": False, "key": measured.key,
-        "requestedHoldMilliseconds": requested, "observedHoldMilliseconds": observed,
+        "requestedHoldMilliseconds": requested, "observedHoldMilliseconds": effective_hold,
+        "executorObservedMilliseconds": observed,
+        "holdMeasurementSource": hold_source,
+        "holdBoundsCandidate": hold_bounds,
         "calibrationHoldMillisecondsRounded": rounded,
-        "dxPerMillisecondCandidate": dx / observed,
-        "dzPerMillisecondCandidate": dz / observed,
+        "dxPerMillisecondCandidate": dx / effective_hold,
+        "dzPerMillisecondCandidate": dz / effective_hold,
         "horizontalDisplacementCandidate": measured.horizontal_displacement,
         "verticalDisplacementCandidate": measured.vertical_displacement,
         "captureGapSeconds": capture_gap,

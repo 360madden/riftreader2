@@ -56,6 +56,44 @@ def receipt():
     }
 
 
+
+
+def timed_receipt():
+    result = receipt()
+    result["inputCallTiming"] = {
+        "startedAtUtc": "2026-11-11T14:54:05.200Z",
+        "completedAtUtc": "2026-11-11T14:54:05.620Z",
+        "monotonicElapsedMilliseconds": 420,
+        "executorObservedMilliseconds": 408.2,
+        "utcOrderValid": True,
+        "wallClockConsistentWithMonotonic": True,
+        "exactKeyDownUpTimesKnown": False,
+    }
+    result["keySendEvents"] = [
+        {"key": "w", "phase": "key-down",
+         "callStartedAtUtc": "2026-11-11T14:54:05.205Z",
+         "callCompletedAtUtc": "2026-11-11T14:54:05.206Z",
+         "sendCallElapsedMilliseconds": 1.0, "inserted": True},
+        {"key": "w", "phase": "key-up",
+         "callStartedAtUtc": "2026-11-11T14:54:05.605Z",
+         "callCompletedAtUtc": "2026-11-11T14:54:05.606Z",
+         "sendCallElapsedMilliseconds": 1.0, "inserted": True},
+    ]
+    result["keyHoldWindows"] = [{
+        "key": "w",
+        "status": "candidate-sendinput-hold-bounds",
+        "minimumMillisecondsCandidate": 399,
+        "maximumMillisecondsCandidate": 401,
+        "midpointMillisecondsCandidate": 400,
+        "downCallStartedAtUtc": "2026-11-11T14:54:05.205Z",
+        "downCallCompletedAtUtc": "2026-11-11T14:54:05.206Z",
+        "upCallStartedAtUtc": "2026-11-11T14:54:05.605Z",
+        "upCallCompletedAtUtc": "2026-11-11T14:54:05.606Z",
+        "exactKeyDownUpTimesKnown": False,
+        "gameResponseVerified": False,
+    }]
+    return result
+
 class HelperCalibrationTests(unittest.TestCase):
     def setUp(self):
         temp = TemporaryDirectory()
@@ -83,6 +121,75 @@ class HelperCalibrationTests(unittest.TestCase):
         self.assertFalse(result["headingQualified"])
         self.assertFalse(result["gameResponseVerified"])
         self.assertRegex(result["sourceReceiptSha256"], r"^[A-F0-9]{64}$")
+
+    def test_new_receipt_uses_key_down_up_window_instead_of_executor_overhead(self):
+        self.save(timed_receipt())
+        result = self.analyze()
+        self.assertEqual(result["holdMeasurementSource"],
+                         "sendinput-keydown-keyup-bounded-midpoint")
+        self.assertEqual(result["holdBoundsCandidate"],
+                         {"minimumMillisecondsCandidate": 399,
+                          "maximumMillisecondsCandidate": 401})
+        self.assertEqual(400, result["observedHoldMilliseconds"])
+        self.assertEqual(408.2, result["executorObservedMilliseconds"])
+        self.assertAlmostEqual(result["dxPerMillisecondCandidate"], -2 / 400)
+        self.assertAlmostEqual(result["dzPerMillisecondCandidate"], .5 / 400)
+        self.assertEqual(result["calibrationHoldMillisecondsRounded"], 400)
+        self.assertFalse(result["navigationEligible"] if "navigationEligible" in result
+                         else result["movementEligible"])
+
+    def test_timed_receipt_fails_closed_on_partial_or_contradictory_timings(self):
+        cases = [
+            (lambda r: r.pop("keySendEvents"), "timing-incomplete"),
+            (lambda r: r["inputCallTiming"].update(wallClockConsistentWithMonotonic=False),
+             "timing-invalid"),
+            (lambda r: r["inputCallTiming"].update(executorObservedMilliseconds=100),
+             "timing-invalid"),
+            (lambda r: r["keySendEvents"][1].update(inserted=False), "event-invalid"),
+            (lambda r: r["keySendEvents"][1].update(key="q"), "event-invalid"),
+            (lambda r: r["keySendEvents"][1].update(phase="key-down"), "event-invalid"),
+            (lambda r: r["keySendEvents"][1].update(
+                callStartedAtUtc="2026-11-11T14:54:05.204Z",
+                callCompletedAtUtc="2026-11-11T14:54:05.205Z"), "event-order-invalid"),
+            (lambda r: r["keyHoldWindows"][0].update(
+                status="unavailable-keyup-not-confirmed"), "window-invalid"),
+            (lambda r: r["keyHoldWindows"][0].update(
+                midpointMillisecondsCandidate=410), "window-invalid"),
+            (lambda r: r["keyHoldWindows"][0].update(
+                upCallCompletedAtUtc="2026-11-11T14:54:05.611Z"), "window-invalid"),
+            (lambda r: r["keyHoldWindows"][0].update(
+                maximumMillisecondsCandidate=900), "window-invalid"),
+            (lambda r: r["inputCallTiming"].update(
+                startedAtUtc="2026-11-11T14:54:05.109Z",
+                monotonicElapsedMilliseconds=511), "capture-order-invalid"),
+        ]
+        for mutate, expected in cases:
+            with self.subTest(expected=expected):
+                report = timed_receipt()
+                mutate(report)
+                self.save(report)
+                with self.assertRaisesRegex(ValueError, expected):
+                    self.analyze()
+
+    def test_previous_generation_envelope_only_receipt_remains_readable(self):
+        report = timed_receipt()
+        report.pop("keySendEvents")
+        report.pop("keyHoldWindows")
+        self.save(report)
+        imported = self.analyze()
+        self.assertEqual("executor-total-duration-with-call-envelope",
+                         imported["holdMeasurementSource"])
+        self.assertIsNone(imported["holdBoundsCandidate"])
+        self.assertEqual(408.2, imported["observedHoldMilliseconds"])
+        self.assertAlmostEqual(-2/408.2, imported["dxPerMillisecondCandidate"])
+        self.assertFalse(imported["movementEligible"])
+
+    def test_legacy_receipt_still_uses_executor_elapsed_with_explicit_label(self):
+        result = self.analyze()
+        self.assertEqual("executor-total-duration-legacy", result["holdMeasurementSource"])
+        self.assertIsNone(result["holdBoundsCandidate"])
+        self.assertEqual(408.2, result["observedHoldMilliseconds"])
+        self.assertEqual(408.2, result["executorObservedMilliseconds"])
 
     def test_accepts_single_longer_q_e_w_s_candidate(self):
         for key in ("w", "s", "q", "e"):
