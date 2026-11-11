@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+from datetime import datetime, timedelta
 import json
+import math
 from pathlib import Path
 import re
 import socket
@@ -149,10 +151,58 @@ def _wait_session(gateway, *, clock=time.monotonic, sleep=time.sleep, timeout=8)
     raise PhysicalPulseError("agent-not-connected")
 
 
+def _native_position(host, pid, pinned):
+    """One native-position read bound to the selected physical RIFT process."""
+    from scripts import physical_manual_motion_probe as manual
+    selection = physical_rift.select_physical(expected_host=host, physical_pid=pid)
+    require(selected_identity(selection, host, pid) == pinned, "xyz-target-changed")
+    return manual._capture(selection)
+
+
+def _native_delta(before_capture, after_capture):
+    """Candidate XYZ delta, not proof RIFT consumed the injected input."""
+    before, before_hash, before_path = before_capture
+    after, after_hash, after_path = after_capture
+    require(before_hash != after_hash and before["identity"] == after["identity"]
+            and before["unitKey"] == after["unitKey"], "xyz-source-or-owner-mismatch")
+    require(before["sampleCount"] == after["sampleCount"] == 1,
+            "xyz-pulse-requires-one-sample-per-side")
+    try:
+        end_before = datetime.fromisoformat(before["lastSampleUtc"].replace("Z", "+00:00"))
+        start_after = datetime.fromisoformat(after["firstSampleUtc"].replace("Z", "+00:00"))
+    except (ValueError, AttributeError) as error:
+        raise PhysicalPulseError("xyz-sample-time-invalid") from error
+    gap = (start_after - end_before).total_seconds()
+    require(end_before.utcoffset() == timedelta(0)
+            and start_after.utcoffset() == timedelta(0)
+            and 0 < gap <= 30, "xyz-pulse-sample-gap-invalid")
+    initial, final = before["positions"][0], after["positions"][0]
+    delta = {axis: getattr(final, axis) - getattr(initial, axis)
+             for axis in ("x", "y", "z")}
+    planar = math.hypot(delta["x"], delta["z"])
+    require(all(math.isfinite(v) for v in (*delta.values(), planar)),
+            "xyz-pulse-displacement-nonfinite")
+    return {
+        "status": "candidate-native-xyz-feedback",
+        "beforeXYZ": {axis: getattr(initial, axis) for axis in ("x", "y", "z")},
+        "afterXYZ": {axis: getattr(final, axis) for axis in ("x", "y", "z")},
+        "deltaXYZ": delta,
+        "planarDisplacementCandidate": planar,
+        "movementCandidate": planar >= 0.03,
+        "captureGapSeconds": gap,
+        "unitKey": before["unitKey"],
+        "sourceReports": [{"path": before_path, "sha256": before_hash},
+                          {"path": after_path, "sha256": after_hash}],
+        "gameResponseVerified": False,
+        "qualification": "cached native XYZ candidates; not independent RIFT input-consumption proof",
+    }
+
+
 def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w",
              selector=physical_rift.select_physical, gateway_factory=control_host.AgentGateway,
              launch_agent=_owned_agent, wait_session=_wait_session, reviewer=None,
-             announce=print, focus=False, focus_window=_focus_selected_window):
+             announce=print, focus=False, focus_window=_focus_selected_window,
+              measure_xyz=False, capture_xyz=_native_position):
     require(host.upper() == "AMD-DESKTOP" and socket.gethostname().casefold() == host.casefold(),
             "wrong-physical-host")
     require(type(pid) is int and 0 < pid <= 2147483647
@@ -212,6 +262,8 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w"
             note = (reviewer(capture, pinned, key, hold_ms) if reviewer is not None
                     else _approval(approval_path, capture, pinned, key=key, hold_ms=hold_ms))
             lease.check()
+            before_position = capture_xyz(host, pid, pinned) if measure_xyz else None
+            lease.check()
             # The operator may view/edit the approval in another window. Reclaim
             # the exact RIFT foreground after review, before the short arm window.
             if focus:
@@ -232,9 +284,18 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w"
             require(isinstance(result, dict) and result.get("deliverySucceeded") is True
                     and result.get("releaseSucceeded") is True
                     and action.get("recoveryRequired") is False, "action-delivery-or-release-unverified")
+            xyz_feedback = None
+            if before_position is not None:
+                try:
+                    xyz_feedback = _native_delta(before_position, capture_xyz(host, pid, pinned))
+                except (PhysicalPulseError, ValueError, OSError, KeyError,
+                        TypeError, IndexError, OverflowError) as error:
+                    xyz_feedback = {"status": "xyz-unavailable-after-pulse",
+                                    "reason": str(error), "gameResponseVerified": False}
             return {"status": "pulse-inserted-unverified-game-response", "key": key,
                     "holdMilliseconds": hold_ms, "processId": pid,
-                    "releaseSucceeded": True, "gameResponseVerified": False}
+                    "releaseSucceeded": True, "gameResponseVerified": False,
+                    "xyzFeedback": xyz_feedback}
         finally:
             # Even a timeout after a possibly delivered action must attempt STOP.
             if agent is not None:
@@ -278,6 +339,7 @@ def main(argv=None):
     p.add_argument("--hold-ms", type=int, default=1000)
     p.add_argument("--key", choices=("w", "a", "s", "d", "q", "e"), default="w")
     p.add_argument("--focus", action="store_true", help="bring the exact physical RIFT window forward")
+    p.add_argument("--measure-xyz", action="store_true", help="read native XYZ before/after this pulse")
     p.add_argument("--host-config", type=Path, required=True)
     p.add_argument("--agent-config", type=Path, required=True)
     p.add_argument("--approval-file", type=Path, required=True)
@@ -285,7 +347,8 @@ def main(argv=None):
     try:
         config = control_host.HostConfig.load(a.host_config)
         result = run_once(config, a.agent_config, a.host, a.pid, a.hold_ms,
-                          a.approval_file, key=a.key, focus=a.focus)
+                          a.approval_file, key=a.key, focus=a.focus,
+                          measure_xyz=a.measure_xyz)
         print(json.dumps(result, sort_keys=True))
         return 0
     except (PhysicalPulseError, control_host.ControlHostError, OSError, ValueError) as error:

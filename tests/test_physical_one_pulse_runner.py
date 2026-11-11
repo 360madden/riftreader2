@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import socket
+from types import SimpleNamespace
 import tempfile
 import unittest
 
@@ -121,7 +122,7 @@ class OnePulseTests(unittest.TestCase):
         self.approval = self.folder / "approval.json"
 
     def run_pulse(self, *, reviewer=None, key="w", hold_ms=80, focus=False,
-                  focus_window=None):
+                  focus_window=None, measure_xyz=False, capture_xyz=None):
         return pulse.run_once(self.config, self.agent_config, HOST, PID, hold_ms,
                               self.approval, key=key, selector=selector,
                               gateway_factory=lambda *_args, **_kw: self.gateway,
@@ -131,7 +132,9 @@ class OnePulseTests(unittest.TestCase):
                                         else lambda *_: "Reviewed clear walk lane"),
                               announce=lambda line, **_: self.messages.append(json.loads(line)),
                                focus=focus,
-                               focus_window=focus_window or (lambda *_: None))
+                               focus_window=focus_window or (lambda *_: None),
+                                measure_xyz=measure_xyz,
+                                capture_xyz=capture_xyz or (lambda *_: None))
 
     def test_malformed_target_is_a_clean_refusal(self):
         from scripts.nav_physical_reservation import PhysicalClientIdentity
@@ -328,6 +331,59 @@ class OnePulseTests(unittest.TestCase):
                 with self.assertRaisesRegex(pulse.PhysicalPulseError, "invalid-one-pulse"):
                     self.run_pulse(key=key, hold_ms=hold_ms)
                 self.assertFalse(self.gateway.started)
+
+
+    def test_optional_xyz_feedback_reports_candidate_displacement(self):
+        def native(x, z, timestamp):
+            return {"identity": target(), "unitKey": "player",
+                    "sampleCount": 1, "firstSampleUtc": timestamp,
+                    "lastSampleUtc": timestamp,
+                    "positions": [SimpleNamespace(x=x, y=5.0, z=z)]}
+        captures = [
+            (native(10.0, 20.0, "2026-11-11T12:00:00Z"), "A" * 64, "before.json"),
+            (native(13.0, 24.0, "2026-11-11T12:00:02Z"), "B" * 64, "after.json")
+        ]
+        def capture_xyz(host, pid, pinned):
+            self.assertEqual((host, pid, pinned.process_id), (HOST, PID, PID))
+            self.assertTrue(captures)
+            return captures.pop(0)
+        result = self.run_pulse(measure_xyz=True, capture_xyz=capture_xyz, hold_ms=1000)
+        self.assertEqual(result["status"], "pulse-inserted-unverified-game-response")
+        self.assertEqual(result["xyzFeedback"]["status"], "candidate-native-xyz-feedback")
+        self.assertEqual(result["xyzFeedback"]["deltaXYZ"],
+                         {"x": 3.0, "y": 0.0, "z": 4.0})
+        self.assertEqual(result["xyzFeedback"]["planarDisplacementCandidate"], 5.0)
+        self.assertFalse(result["xyzFeedback"]["gameResponseVerified"])
+        self.assertEqual([name for name, _ in self.gateway.calls].count("action"), 1)
+        self.assertEqual([name for name, _ in self.gateway.calls][-3:],
+                         ["release", "stop", "status"])
+
+    def test_pre_pulse_xyz_failure_blocks_before_arm(self):
+        def broken(*_):
+            raise pulse.PhysicalPulseError("native-xyz-not-available")
+        with self.assertRaisesRegex(pulse.PhysicalPulseError, "native-xyz-not-available"):
+            self.run_pulse(measure_xyz=True, capture_xyz=broken)
+        operations = [name for name, _ in self.gateway.calls]
+        self.assertNotIn("arm", operations)
+        self.assertNotIn("action", operations)
+
+    def test_post_pulse_xyz_failure_does_not_repeat_or_hide_inserted_action(self):
+        attempted = []
+        def capture(*_):
+            attempted.append(True)
+            if len(attempted) == 2:
+                raise pulse.PhysicalPulseError("post-read-unavailable")
+            return ({"identity": target(), "unitKey": "player",
+                     "sampleCount": 1, "firstSampleUtc": "2026-11-11T12:00:00Z",
+                     "lastSampleUtc": "2026-11-11T12:00:00Z",
+                     "positions": [SimpleNamespace(x=1.0, y=2.0, z=3.0)]},
+                    "A" * 64, "before.json")
+        result = self.run_pulse(measure_xyz=True, capture_xyz=capture)
+        self.assertEqual(result["xyzFeedback"]["status"], "xyz-unavailable-after-pulse")
+        self.assertEqual(result["xyzFeedback"]["reason"], "post-read-unavailable")
+        self.assertEqual(len(attempted), 2)
+        self.assertEqual([name for name, _ in self.gateway.calls].count("action"), 1)
+        self.assertTrue(self.proc.terminated)
 
 
 if __name__ == "__main__":
