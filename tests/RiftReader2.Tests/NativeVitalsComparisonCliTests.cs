@@ -97,6 +97,23 @@ public sealed class NativeVitalsComparisonCliTests
     }
 
     [Fact]
+    public async Task RejectsTypedEnergyThatContradictsDeclaredResourceKind()
+    {
+        var dir = MakeDir();
+        try
+        {
+            var before = Write(dir, "before.json", Sample("2026-11-10T23:00:00Z", 100, 90,
+                resourceKind: 3));
+            var after = Write(dir, "after.json", Sample("2026-11-10T23:00:10Z", 100, 90,
+                resourceKind: 3));
+            var (code, _, error) = await Run(before, after);
+            Assert.Equal(2, code);
+            Assert.Contains("resource kind", error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public async Task RejectsDifferentPlayerAndReversedObservation()
     {
         var dir = MakeDir();

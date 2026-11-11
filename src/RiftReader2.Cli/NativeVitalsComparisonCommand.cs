@@ -140,6 +140,10 @@ internal static class NativeVitalsComparisonCommand
         var energy = ReadResource(observation, "energy");
         if (mana.Status == "calculated-candidate" && energy.Status == "calculated-candidate")
             throw new InvalidDataException("Contradictory simultaneous Mana and Energy kinds.");
+        if (resourceKind is int kindCandidate &&
+            ((mana.Status == "calculated-candidate" && kindCandidate != 3) ||
+             (energy.Status == "calculated-candidate" && kindCandidate != 4)))
+            throw new InvalidDataException("Native vitals resource kind contradicts typed Mana/Energy data.");
         return new(full, Convert.ToHexString(SHA256.HashData(bytes)), build, pid, ticks,
             key, resourceKind, started, completed, health, mana, energy);
     }
