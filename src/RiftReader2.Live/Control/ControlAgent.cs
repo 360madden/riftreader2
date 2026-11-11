@@ -404,7 +404,7 @@ public sealed class ControlAgent
                         ?? throw new InvalidDataException("Missing expected identity.");
                     response = InspectFreshIdentity(identity, () => WindowsControlDesktop.InspectFreshIdentity(
                         configuration.ProcessName, configuration.ExecutablePath,
-                        configuration.ExecutableSha256, identity));
+                        configuration.ExecutableSha256, identity), configuration);
                     break;
                 case "stop":
                     StopSession();
@@ -471,9 +471,16 @@ public sealed class ControlAgent
     }
 
     internal static ControlIdentityResponse InspectFreshIdentity(
-        ControlIdentityRequest expectedIdentity, Func<DesktopTarget> inspectFresh)
+        ControlIdentityRequest expectedIdentity, Func<DesktopTarget> inspectFresh,
+        ControlAgentConfiguration? configuration = null)
     {
         expectedIdentity.Validate();
+        // A physical multibox agent is pinned to one game epoch. Its read-only
+        // identity endpoint must not attest another client on the same host.
+        if (configuration?.BoundProcessId is int boundPid
+            && (expectedIdentity.ProcessId != boundPid
+                || expectedIdentity.ProcessStartUtcTicks != configuration.BoundProcessStartUtcTicks))
+            throw new InvalidOperationException("Identity request differs from the bound process epoch.");
         var target = inspectFresh();
         expectedIdentity.RequireMatch(target);
         return new ControlIdentityResponse(1, "fresh-bytes", DateTimeOffset.UtcNow, target);

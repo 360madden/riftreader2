@@ -464,11 +464,39 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             unit_keys.add(key)
         if len(unit_keys) != 1:
             raise ValueError("native-position-owner-changed")
-        last = observations[-1]
-        return {"sampleCount": len(observations), "unitKey": last["unitKey"],
-                "x": last["x"], "y": last["y"], "z": last["z"],
-                "sampledAtUtc": last.get("completedAtUtc"),
-                "refreshGuardStatus": last.get("refreshGuardStatus")}
+        # Observed path length captures out-and-back travel that net displacement
+        # misses. Neither a zero path nor a changed XYZ proves source freshness.
+        if any("index" in sample for sample in observations):
+            if any(type(sample.get("index")) is not int or sample["index"] != i
+                   for i, sample in enumerate(observations, 1)):
+                raise ValueError("invalid-native-position-sample-order")
+        first, last = observations[0], observations[-1]
+        planar_steps = [
+            math.hypot(later["x"] - earlier["x"], later["z"] - earlier["z"])
+            for earlier, later in zip(observations, observations[1:])
+        ]
+        net = math.hypot(last["x"] - first["x"], last["z"] - first["z"])
+        try:
+            path = math.fsum(planar_steps)
+        except OverflowError as exc:
+            raise ValueError("invalid-native-position-motion") from exc
+        vertical_delta = last["y"] - first["y"]
+        if not all(math.isfinite(v) for v in (net, path, vertical_delta, *planar_steps)):
+            raise ValueError("invalid-native-position-motion")
+        result = {"sampleCount": len(observations), "unitKey": last["unitKey"],
+                  "x": last["x"], "y": last["y"], "z": last["z"],
+                  "sampledAtUtc": last.get("completedAtUtc"),
+                  "refreshGuardStatus": last.get("refreshGuardStatus")}
+        # A single point cannot establish displacement or a traveled path.
+        if len(observations) > 1:
+            result.update({
+                "firstPositionCandidate": {axis: first[axis] for axis in ("x", "y", "z")},
+                "netPlanarDisplacementCandidate": net,
+                "observedPlanarPathLengthCandidate": path,
+                "maxAdjacentPlanarStepCandidate": max(planar_steps),
+                "verticalDeltaCandidate": vertical_delta,
+            })
+        return result
     return None
 
 
