@@ -67,6 +67,43 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         self.assertFalse(result["gameResponseVerified"])
         self.assertFalse(result["navigationEligible"])
         self.assertFalse(result["arrivalQualified"])
+        self.assertEqual(result["controllerFeedbackStatus"], "confirming-arrival")
+        self.assertEqual(result["nextCandidateStatus"], "requires-independent-arrival-settle")
+        self.assertIsNone(result["nextCandidateAction"])
+
+    def test_replans_one_revised_candidate_without_resetting_controller(self):
+        r = completed_w()
+        r.update(holdMilliseconds=150, observedMilliseconds=155)
+        r["xyzFeedback"]["afterXYZ"].update(x=-.93, z=-.11625)
+        r["xyzFeedback"]["deltaXYZ"] = {"x": -.93, "y": 0, "z": -.11625}
+        r["xyzFeedback"]["planarDisplacementCandidate"] = (.93**2 + .11625**2)**.5
+        self.write(r=r)
+        result = self.assess(-1.2, .5)
+        self.assertEqual(result["comparison"], "candidate-consistent")
+        self.assertEqual(result["nextCandidateStatus"], "one-revised-offline-candidate")
+        self.assertEqual(result["controllerFeedbackStatus"], "active")
+        next_action = result["nextCandidateAction"]
+        self.assertIsNotNone(next_action)
+        self.assertEqual(next_action["key"], "q")
+        self.assertLessEqual(next_action["holdMilliseconds"], 150)
+        self.assertGreaterEqual(next_action["holdMilliseconds"], 20)
+        self.assertFalse(next_action["navigationEligible"])
+        self.assertFalse(next_action["inputSent"])
+        self.assertFalse(result["inputSent"])
+        self.assertFalse(result["navigationEligible"])
+
+    def test_consistent_displacement_that_breaks_corridor_stops(self):
+        r = completed_w()
+        r.update(holdMilliseconds=150, observedMilliseconds=155)
+        r["xyzFeedback"]["afterXYZ"].update(x=-.93, z=-.33)
+        r["xyzFeedback"]["deltaXYZ"] = {"x": -.93, "y": 0, "z": -.33}
+        r["xyzFeedback"]["planarDisplacementCandidate"] = (.93**2 + .33**2)**.5
+        self.write(r=r)
+        result = self.assess(-1.2, .5)
+        self.assertEqual(result["comparison"], "candidate-consistent")
+        self.assertEqual(result["decision"], "stop-and-review")
+        self.assertEqual(result["nextCandidateStatus"], "stop-controller-cross-track")
+        self.assertIsNone(result["nextCandidateAction"])
 
     def test_divergent_direction_means_stop_and_review(self):
         r = completed_w()
@@ -77,6 +114,8 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         result = self.assess()
         self.assertEqual(result["comparison"], "candidate-divergent")
         self.assertEqual(result["decision"], "stop-and-review")
+        self.assertEqual(result["nextCandidateStatus"], "stop-divergent-feedback")
+        self.assertIsNone(result["nextCandidateAction"])
         self.assertGreater(result["planarPredictionErrorCandidate"],
                            result["planarErrorToleranceCandidate"])
 

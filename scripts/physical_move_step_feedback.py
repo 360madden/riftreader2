@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 from scripts import physical_move_basis_waypoint as waypoint
 from scripts import physical_move_key_calibration as calibration
 from scripts import physical_route_preview as route
+from scripts.movement_controller import MovementError, MovementHalted, Position, WaypointController
 
 
 def require(value, reason):
@@ -99,11 +100,68 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
     goal = proposed["goalXYZ"]
     before_distance = math.hypot(goal["x"] - actual_before["x"], goal["z"] - actual_before["z"])
     after_distance = math.hypot(goal["x"] - actual_after["x"], goal["z"] - actual_after["z"])
+    progress = before_distance - after_distance
+
+    # Replay the same bounded controller state against the observed candidate
+    # instead of creating a second steering algorithm or refreshing its budget.
+    next_status = "stop-divergent-feedback"
+    next_action = None
+    controller_status = "not-replayed"
+    if consistent and progress < .03:
+        next_status = "stop-insufficient-progress"
+    elif consistent:
+        b, basis_sha = waypoint.read_basis(basis_path)
+        require(basis_sha == proposed["basisReportSha256"],
+                "feedback-basis-source-changed")
+        calibrations, vectors = waypoint.candidate_calibrations(b)
+        controller = WaypointController(calibrations, Position(**start), Position(**goal))
+        first = controller.decide(Position(**start), 0.0)
+        require(first is not None and first.key == action["key"]
+                and first.hold_ms == action["holdMilliseconds"],
+                "feedback-proposed-controller-mismatch")
+        # Charge observed key-down duration to the remaining hold budget.
+        controller.total_hold_ms = max(controller.total_hold_ms,
+                                       int(math.ceil(observed_hold)))
+        elapsed = (utc(after["completedAtUtc"]) - utc(native["firstSampleUtc"])).total_seconds()
+        require(0 < elapsed <= controller.max_elapsed_seconds,
+                "feedback-controller-elapsed-budget")
+        after_position = Position(**actual_after)
+        try:
+            report = controller.record_feedback(after_position, elapsed)
+            controller_status = report.status
+            if report.status == "confirming-arrival":
+                next_status = "requires-independent-arrival-settle"
+            elif report.status == "active":
+                following = controller.decide(after_position, elapsed)
+                if following is None:
+                    next_status = "requires-independent-arrival-settle"
+                else:
+                    vx, vz = vectors[following.key]
+                    predicted_dx = vx * following.hold_ms
+                    predicted_dz = vz * following.hold_ms
+                    next_action = {
+                        "key": following.key, "holdMilliseconds": following.hold_ms,
+                        "predictedBeforeDistanceCandidate": following.distance_before,
+                        "predictedAfterDistanceCandidate": following.predicted_distance_after,
+                        "predictedDeltaXYZCandidate": {"x": predicted_dx, "y": 0.0, "z": predicted_dz},
+                        "predictedAfterXYZCandidate": {
+                            "x": actual_after["x"] + predicted_dx,
+                            "y": actual_after["y"],
+                            "z": actual_after["z"] + predicted_dz,
+                        },
+                        "inputSent": False, "navigationEligible": False,
+                    }
+                    next_status = "one-revised-offline-candidate"
+            else:
+                next_status = "stop-controller-state"
+        except (MovementHalted, MovementError) as err:
+            controller_status = "halted"
+            next_status = "stop-controller-" + str(err)
     return {
         "schemaVersion": 1,
         "status": "offline-physical-waypoint-feedback-candidate",
         "comparison": "candidate-consistent" if consistent else "candidate-divergent",
-        "decision": "stop-and-review" if not consistent else "observation-only",
+        "decision": "stop-and-review" if next_status.startswith("stop-") else "observation-only",
         "inputSent": False,
         "navigationEligible": False,
         "gameResponseVerified": False,
@@ -125,12 +183,17 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
         "observedPlanarDisplacementCandidate": actual_norm,
         "distanceBeforeCandidate": before_distance,
         "distanceAfterCandidate": after_distance,
-        "progressTowardTargetCandidate": before_distance - after_distance,
+        "progressTowardTargetCandidate": progress,
+        "controllerFeedbackStatus": controller_status,
+        "nextCandidateStatus": next_status,
+        "nextCandidateAction": next_action,
         "limitations": [
             "The saved helper receipt reports Windows input; it is not independent game input-consumption proof.",
             "Native before/after XYZ can be cached; comparison is candidate-only.",
             "Matching source/player and timestamps does not establish facing, zone, world instance or arrival.",
             "No input is sent or automatically repeated; divergence means stop/review.",
+            "A revised second step is an offline candidate derived from the same unqualified basis.",
+            "In-tolerance feedback requires an independent stationary post-release observation.",
         ],
     }
 

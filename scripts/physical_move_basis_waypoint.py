@@ -92,6 +92,24 @@ def read_basis(path):
     return b, hashlib.sha256(raw).hexdigest().upper()
 
 
+def candidate_calibrations(b):
+    """Build unqualified 100-ms reference vectors; never create input authority."""
+    model = b["laterFacingReprojectionCandidate"]["modeledVectors"]
+    later = b["samples"]["laterW"]
+    vectors = {"w": (number(later.get("vxCandidate")), number(later.get("vzCandidate")))}
+    for key in ("s", "q", "e"):
+        row = model[key]
+        vectors[key] = (number(row.get("vxPerMillisecondCandidate")),
+                        number(row.get("vzPerMillisecondCandidate")))
+    calibrations = {}
+    for key, (x, z) in vectors.items():
+        require(math.hypot(x, z) > 0, "waypoint-basis-vector-zero")
+        calibrations[key] = Calibration(key, x, z, 100,
+                                        math.hypot(x, z) * 100, 0.0)
+    validate_noncollinear(calibrations)
+    return calibrations, vectors
+
+
 def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
     b, basis_sha = read_basis(basis_path)
     native, position_sha = route._read_native(Path(position_path))
@@ -116,22 +134,8 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
     goal = Position(number(goal_x), start.y if goal_y is None else number(goal_y),
                     number(goal_z))
     require(abs(goal.y - start.y) <= 1.5, "waypoint-vertical-target-unqualified")
-    model = b["laterFacingReprojectionCandidate"]["modeledVectors"]
-    later = b["samples"]["laterW"]
-    vectors = {"w": (number(later.get("vxCandidate")), number(later.get("vzCandidate")))}
-    for key in ("s", "q", "e"):
-        row = model[key]
-        vectors[key] = (number(row.get("vxPerMillisecondCandidate")),
-                        number(row.get("vzPerMillisecondCandidate")))
-    # Only speed/direction *candidates*. The Calibration record is used to
-    # reuse RR2's pure bounded decision mathematics, not to claim qualification.
-    calibrations = {}
-    for key, (x, z) in vectors.items():
-        require(math.hypot(x, z) > 0, "waypoint-basis-vector-zero")
-        # The model's 100ms displacement is a projection, NOT a measured pulse.
-        calibrations[key] = Calibration(key, x, z, 100,
-                                        math.hypot(x, z) * 100, 0.0)
-    validate_noncollinear(calibrations)
+    # Unqualified source velocities are reused only for pure candidate arithmetic.
+    calibrations, vectors = candidate_calibrations(b)
     try:
         controller = WaypointController(calibrations, start, goal)
         action = controller.decide(start, 0.0)

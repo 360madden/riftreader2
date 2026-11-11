@@ -29,6 +29,14 @@ C:\Python314\python.exe scripts/physical_move_step_feedback.py `
 
 **The example intentionally blocks** because the 400 ms historical receipt is not the proposed 100 ms action. Do not treat the example as an executable movement instruction.
 
+## November 11 continuation: one-step feedback-driven replan
+
+The existing `WaypointController` already provides the correct pending-action state machine. The feedback script now **replays the initial decision and its bounded budget**, applies the receipt's candidate final position through `record_feedback`, and—only when that observation is directionally consistent, useful, and still outside tolerance—calculates **one revised candidate** via the controller's existing `decide` method. Observed key-down milliseconds are charged against the same hold budget. It does **not** reset the controller to a new starting location or send any input.
+
+**Offline tests:** A synthetic W150 receipt with an actual 155 ms hold and matching displacement suggested **Q** as the revised next candidate for a two-axis destination; its hold remained within 20–150 ms. A consistent displacement that exceeded the route's cross-track corridor instead produced `stop-controller-cross-track` and `stop-and-review`, with no next action. A position landing within tolerance produced `requires-independent-arrival-settle`; it did **not** claim arrival. A divergent displacement still stopped without replan. **35/35 focused Python tests passed**, including the existing movement controller tests.
+
+New fields in the feedback record: `controllerFeedbackStatus`, `nextCandidateStatus`, and optional `nextCandidateAction` with its predicted X/Z delta and endpoint. All next actions retain `navigationEligible=false` and `inputSent=false`. A real historical 400 ms W receipt remains unsuitable for the synthetic 100 ms example; **no new physical input or independent changed-state test was performed**.
+
 ## Qualification boundary
 
 Outputs retain `inputSent=false`, `navigationEligible=false`, `gameResponseVerified=false`, `arrivalQualified=false`, and `sameFacingConfirmed=false`. The old Q/E vectors were reprojected to a later W heading mathematically and **not tested at that newer facing**. Current native XYZ can be cached and does not independently prove game response. An actual same-facing bounded pulse, matched pre/post native readings and independent visual/Lua response are still needed before steering can be qualified.
