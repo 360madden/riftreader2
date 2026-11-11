@@ -29,6 +29,7 @@ public static class CliRunner
                     find-pattern --snapshot PATH --pattern PATTERN [--output PATH]
                     compare-memory --before PATH --after PATH --type TYPE --mode MODE [--output PATH]
                     compare-native-stats --before PATH --after PATH [--output PATH]
+                    compare-native-vitals --before PATH --after PATH [--output PATH]
                     audit-targeted-health --request PATH --manifest PATH --receipt PATH --snapshot PATH [--output PATH]
                      compare-targeted-health --before PATH --after PATH [--output PATH]
                      find-pointers --snapshot PATH --target 0xADDRESS --max-depth 1..4 --max-offset 0..4096 [--output PATH]
@@ -71,6 +72,9 @@ public static class CliRunner
                     ParseOptions(args[1..], "--before", "--after", "--session-id", "--protocol", "--output"), output, cancellationToken);
             if (command == "compare-native-stats")
                 return await NativeStatsComparisonCommand.RunAsync(
+                    ParseOptions(args[1..], "--before", "--after", "--output"), output, cancellationToken);
+            if (command == "compare-native-vitals")
+                return await NativeVitalsComparisonCommand.RunAsync(
                     ParseOptions(args[1..], "--before", "--after", "--output"), output, cancellationToken);
             if (command == "compare-targeted-health")
                 return await TargetedHealthAuditCommand.CompareAsync(

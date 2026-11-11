@@ -10,6 +10,9 @@
 - Focused `NativeStatsComparisonCliTests`: **4/4 pass** (.NET 10; `--no-restore`).
 - Real offline replay: `artifacts/rr2-stats-cross-epoch-spreads-20261111.json` compares retained Lab1 2026-11-07/08 full 20-selector captures of the same player across distinct process epochs: **20/20 selectors, 40/40 values unchanged; zero spread changes**. Historical agreement only—not current live freshness, cause, or restart qualification.
 - Separate cross-player offline mapping check: retained Lab1 and Lab2 different player keys, identical executable SHA, **all 20 selector/index mappings match**. One-build structural compatibility only; not current live validation.
+- Additional .NET 10 CLI `compare-native-vitals --before PATH --after PATH [--output PATH]` accepts two individual `native-current-vitals-candidate-sample/2` reports, checks build/player/time/resource kinds, and reports HP/Mana/Energy net deltas and per-second arithmetic without claiming regeneration. The existing Python tool remains the burst-format reader.
+- Focused stat+vitals C# checks: **8/8 pass**. Retained physical single-sample replay in `artifacts/rr2-physical-vitals-compare-20261111.json`: same player/process for **2238.0873828 s**, HP candidate **18208 → 18208**, Mana/Energy explicitly unavailable; no change or regeneration inferred.
+- Existing offline burst reducer separately accepted historical physical **10/10 and 2/2** samples, all with the same HP candidate **18208**; Mana/Energy unavailable. One mismatched burst was correctly rejected by the single-sample CLI, then a valid pair was used. No new game observation occurred.
 - No interactive live test, movement, casting, desktop operation, VM operation or RRE repository edit. Other developers' dirty movement files and package locks preserved.
 
 ## Safe continuation
