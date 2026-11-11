@@ -38,8 +38,9 @@ internal static class NativeStatsComparisonCommand
         var after = await LoadAsync(afterPath, cancellationToken);
         if (before.Build != after.Build || before.PlayerKey != after.PlayerKey)
             throw new InvalidDataException("Saved stats must have matching game build and player key.");
-        if (before.Rows.Count != after.Rows.Count || after.Started <= before.Started)
-            throw new InvalidDataException("Saved stats need matching selectors in chronological order.");
+        if (before.Rows.Count != after.Rows.Count || after.Started <= before.Started ||
+            after.Started < before.Completed)
+            throw new InvalidDataException("Saved stats need matching selectors in nonoverlapping chronological order.");
 
         var sameEpoch = before.Pid == after.Pid && before.StartTicks == after.StartTicks;
         var stats = before.Rows.Select((oldRow, i) =>
@@ -53,6 +54,7 @@ internal static class NativeStatsComparisonCommand
                 selector = oldRow.Selector,
                 beforeMappedIndex = oldRow.Index,
                 afterMappedIndex = newRow.Index,
+                mappedIndexChanged = oldRow.Index != newRow.Index,
                 ordinary = Compare(oldRow.Ordinary, newRow.Ordinary),
                 unbuffed = Compare(oldRow.Unbuffed, newRow.Unbuffed),
                 ordinaryMinusUnbuffed = CompareSpread(oldRow, newRow)
@@ -75,6 +77,7 @@ internal static class NativeStatsComparisonCommand
             summary = new
             {
                 comparedSelectors = stats.Length,
+                changedMappings = stats.Count(s => s.mappedIndexChanged),
                 changedSelectors = stats.Count(s => s.ordinary.Status == "changed" || s.unbuffed.Status == "changed"),
                 changedValues = stats.Sum(s => (s.ordinary.Status == "changed" ? 1 : 0) +
                                                 (s.unbuffed.Status == "changed" ? 1 : 0)),
@@ -86,6 +89,7 @@ internal static class NativeStatsComparisonCommand
             limitations = new[]
             {
                 "Saved raw numeric candidates; a delta does not prove stat semantics, cause, or live freshness.",
+                "Selector-index remapping is reported independently of raw-value changes.",
                 "Cross-epoch comparisons are historical and do not establish restart recovery.",
                 "Unavailable values remain null, never zero. No process access or game input occurs."
             }

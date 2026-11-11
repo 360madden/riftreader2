@@ -78,6 +78,44 @@ public sealed class NativeStatsComparisonCliTests
     }
 
     [Fact]
+    public async Task ReportsSelectorMappingDriftSeparatelyFromRawValueChanges()
+    {
+        var dir = NewDirectory();
+        try
+        {
+            var before = Save(dir, "before.json", Snapshot(100, "2026-11-07T21:00:00Z"));
+            var after = Save(dir, "after.json",
+                Snapshot(100, "2026-11-07T21:01:00Z", armorMappedIndex: 17));
+            var (code, json, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var result = JsonDocument.Parse(json);
+            Assert.Equal(1, result.RootElement.GetProperty("summary").GetProperty("changedMappings").GetInt32());
+            Assert.Equal(0, result.RootElement.GetProperty("summary").GetProperty("changedValues").GetInt32());
+            Assert.True(result.RootElement.GetProperty("stats")[0].GetProperty("mappedIndexChanged").GetBoolean());
+            Assert.False(result.RootElement.GetProperty("stats")[2].GetProperty("mappedIndexChanged").GetBoolean());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RejectsOverlappingAcquisitionIntervals()
+    {
+        var dir = NewDirectory();
+        try
+        {
+            var before = Save(dir, "before.json", Snapshot(100, "2026-11-07T21:00:00Z",
+                completedAt: "2026-11-07T21:02:00Z"));
+            var after = Save(dir, "after.json", Snapshot(101, "2026-11-07T21:01:00Z"));
+            var (code, json, error) = await Run(before, after);
+            Assert.Equal(2, code);
+            Assert.Empty(json);
+            Assert.Contains("nonoverlapping chronological order", error);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
     public async Task SavedOutputIsNeverOverwritten()
     {
         var dir = NewDirectory();
@@ -96,11 +134,13 @@ public sealed class NativeStatsComparisonCliTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    private static object Snapshot(long armor, string observedAt, int pid = 123, long ticks = 456, ulong unitKey = 42)
+    private static object Snapshot(long armor, string observedAt, int pid = 123, long ticks = 456,
+        ulong unitKey = 42, int? armorMappedIndex = null, string? completedAt = null)
     {
         var rows = Fields.Select((f, i) => new
         {
-            name = f.Name, selector = f.Selector, mappedIndex = i == 1 ? -1 : i,
+            name = f.Name, selector = f.Selector,
+            mappedIndex = i == 1 ? -1 : i == 0 && armorMappedIndex.HasValue ? armorMappedIndex.Value : i,
             ordinary = new
             {
                 status = i == 1 ? "index-unavailable" : "raw-candidate",
@@ -119,7 +159,7 @@ public sealed class NativeStatsComparisonCliTests
             {
                 identity = new { processId = pid, processStartUtcTicks = ticks,
                     executableSha256 = new string('A', 64) },
-                startedAtUtc = observedAt, completedAtUtc = observedAt, unitKey, stats = rows
+                startedAtUtc = observedAt, completedAtUtc = completedAt ?? observedAt, unitKey, stats = rows
             }
         };
     }
