@@ -27,11 +27,13 @@ Native read-only telemetry now has a **single physical-only command** on the ver
 
 ```powershell
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
-# Also: position, orientation, actor-pose, player-context, selected-target, stats.
+# Also: position, orientation, actor-pose, smoothed-scalar, player-context, selected-target, stats.
 # For read-only actor/model/render matrix candidates (NOT qualified body heading):
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose
 # For a bounded passive actor/model/render pose time series under one native lease:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100
+# For four native entity-owned, unqualified smooth-state scalar candidates:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native smoothed-scalar --samples 5 --interval-ms 100
 # For a short read-only movement-observation burst:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native position --samples 10 --interval-ms 0
 # For repeated HP/resource observations under one native session:
@@ -88,6 +90,21 @@ of the `+0x770` triplet), not primary-vs-secondary position. Raw evidence:
 The arithmetic is verified for this stationary snapshot; source freshness,
 body heading, movement response and restart stability remain unqualified.
 The capture performed no game input, casting or foreground changes.
+
+The physical-only `smoothed-scalar` route reuses the existing exact-build
+native scalar reader; it never invokes in-game getter functions or controls the
+character. Its four float candidates are reported with exact raw bits and the
+same PID/start epoch and owner checks as other physical reads. A 2-30-sample
+burst acquires one native lease/session, revalidates each observation, rejects
+changed-player/invalidated bursts, and publishes only a complete series. The
+**2026-11-11 01:31 UTC AMD-DESKTOP five-sample passive capture**, PID 44888,
+returned current/source/target `0/0/0` and factor `15` in all five observations
+for owner key `239816685251645959`. Raw evidence:
+`artifacts/physical-native-smoothed-scalar-818b2a1bb1904e2ca84a8c727791e30e.json`.
+The preceding single sample yielded the same values. These scalars are not
+qualified as body heading, camera yaw or turn speed; stationary consistency
+cannot establish movement response, source freshness, or post-restart stability.
+No input, memory write, screen capture or foreground change occurred.
 
 A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
 captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):

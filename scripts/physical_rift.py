@@ -6,6 +6,7 @@ import json
 import math
 from pathlib import Path
 import socket
+import struct
 import subprocess
 import sys
 import uuid
@@ -21,6 +22,7 @@ NATIVE_READS = {
     "position": "sample-current-position",
     "vitals": "sample-current-vitals",
     "orientation": "sample-current-orientation",
+    "smoothed-scalar": "sample-current-smoothed-scalar",
     "actor-pose": "sample-current-actor-pose",
     "player-context": "sample-current-player-context",
     "selected-target": "sample-current-selected-target",
@@ -30,6 +32,7 @@ NATIVE_RECEIPTS = {
     "position": "native-current-position-candidate-summary/1",
     "vitals": "native-current-vitals-candidate-summary/2",
     "orientation": "native-current-orientation-summary/1",
+    "smoothed-scalar": "native-current-smoothed-scalar-summary/1",
     "actor-pose": "native-current-actor-pose-summary/1",
     "player-context": "native-current-player-context-candidate-summary/1",
     "selected-target": "native-current-selected-target-candidate-summary/1",
@@ -77,6 +80,48 @@ def _candidate_angle_steps(angles):
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "smoothed-scalar":
+        observation = report.get("observation")
+        if not isinstance(observation, dict) or observation.get("headingQualified") is not False:
+            raise ValueError("invalid-native-smoothed-scalar")
+        key = observation.get("playerKeyDecimal")
+        if not isinstance(key, str) or not key.isdecimal() or not 0 < int(key) < 2**64:
+            raise ValueError("invalid-native-smoothed-scalar")
+        raw_bits = observation.get("rawBits")
+        if (not isinstance(raw_bits, list) or len(raw_bits) != 4 or
+                any(type(bit) is not int or not 0 <= bit <= 0xFFFFFFFF for bit in raw_bits)):
+            raise ValueError("invalid-native-smoothed-scalar")
+        values = {"playerKey": key, "headingQualified": False,
+                  "sampledAtUtc": observation.get("completedAtUtc")}
+        for name, bits in zip(("currentCandidate", "sourceCandidate", "targetCandidate",
+                               "factorCandidate"), raw_bits):
+            value = observation.get(name)
+            if type(value) not in (float, int) or not math.isfinite(value):
+                raise ValueError("invalid-native-smoothed-scalar")
+            try:
+                actual = struct.unpack("<I", struct.pack("<f", value))[0]
+            except (ValueError, OverflowError, struct.error) as exc:
+                raise ValueError("invalid-native-smoothed-scalar") from exc
+            if actual != bits:
+                raise ValueError("invalid-native-smoothed-scalar-raw-bits")
+            values[name] = value
+        observations = report.get("observations")
+        if observations is not None:
+            if (not isinstance(observations, list) or len(observations) < 2 or
+                    report.get("requestedSamples") != len(observations) or
+                    report.get("completedSamples") != len(observations) or
+                    observations[-1] != observation or
+                    any(not isinstance(row, dict) or row.get("identity") != report.get("identity")
+                        or row.get("playerKeyDecimal") != key for row in observations)):
+                raise ValueError("invalid-native-smoothed-scalar-burst")
+            series = [_native_values("smoothed-scalar", {"observation": row})
+                      for row in observations]
+            values["sampleCount"] = len(series)
+            values["smoothedScalarSeriesCandidate"] = {
+                name: [sample[name] for sample in series]
+                for name in ("currentCandidate", "sourceCandidate", "targetCandidate", "factorCandidate")
+            }
+        return values
     if kind == "actor-pose":
         observation = report.get("observation")
         if not isinstance(observation, dict):
@@ -332,7 +377,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
     if type(include_transform_sources) is not bool or (include_transform_sources and kind != "actor-pose"):
         return dict(selection, status="blocked", reason="transform-sources-require-actor-pose")
-    if kind not in ("position", "vitals", "actor-pose") and (samples is not None or interval_ms is not None):
+    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-position-vitals-or-actor-pose")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
@@ -370,7 +415,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals", "actor-pose") else 30)
+               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -420,6 +465,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                 and (report.get("completedSamples") != samples or
                      not isinstance(report.get("observations"), list))):
             raise ValueError("incomplete-native-actor-pose-burst")
+        if (kind == "smoothed-scalar" and samples is not None and samples > 1
+                and (report.get("completedSamples") != samples or
+                     not isinstance(report.get("observations"), list))):
+            raise ValueError("incomplete-native-smoothed-scalar-burst")
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources)
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
@@ -440,9 +489,9 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
-                        help="position/vitals/actor-pose: 1-30 samples (default: 3 position, 1 otherwise)")
+                        help="position/vitals/actor-pose/smoothed-scalar: 1-30 samples (default: 3 position, 1 otherwise)")
     parser.add_argument("--interval-ms", type=int,
-                        help="position/vitals/actor-pose: 0-2000ms between reads (default: 500)")
+                        help="position/vitals/actor-pose/smoothed-scalar: 0-2000ms between reads (default: 500)")
     parser.add_argument("--include-position", action="store_true",
                         help="actor-pose only: bracket each pose with same-player native XYZ candidates")
     parser.add_argument("--include-transform-sources", action="store_true",
@@ -457,7 +506,7 @@ def main(argv=None):
     elif args.include_transform_sources and args.read_native != "actor-pose":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "transform-sources-require-actor-pose"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
     else:

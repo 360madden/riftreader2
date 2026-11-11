@@ -152,6 +152,97 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
         self.assertIn("candidate-only", result["qualification"])
 
+    def test_physical_smoothed_scalar_validates_raw_bits_and_unqualified_heading(self):
+        observed = {"playerKeyDecimal": "239816685251645959", "headingQualified": False,
+                    "rawBits": [0x3F000000, 0x3FC00000, 0x40200000, 0x3E800000],
+                    "currentCandidate": .5, "sourceCandidate": 1.5,
+                    "targetCandidate": 2.5, "factorCandidate": .25,
+                    "completedAtUtc": "now"}
+        values = physical._native_values("smoothed-scalar", {"observation": observed})
+        self.assertEqual(values["playerKey"], "239816685251645959")
+        self.assertEqual(values["factorCandidate"], .25)
+        self.assertIs(values["headingQualified"], False)
+        for invalid in ({**observed, "headingQualified": True},
+                        {**observed, "playerKeyDecimal": "0"},
+                        {**observed, "rawBits": observed["rawBits"][:3]},
+                        {**observed, "rawBits": [0, *observed["rawBits"][1:]]},
+                        {**observed, "factorCandidate": float("inf")}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                physical._native_values("smoothed-scalar", {"observation": invalid})
+
+    def test_native_physical_smoothed_scalar_routes_only_to_local_epoch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "scalar.json"
+            observed = {"identity": REPORT_IDENTITY, "playerKeyDecimal": "123",
+                        "headingQualified": False, "rawBits": [0x3F000000] * 4,
+                        "currentCandidate": .5, "sourceCandidate": .5,
+                        "targetCandidate": .5, "factorCandidate": .5}
+            def fake_run(command, **_):
+                self.assertEqual(command[1:6], ["sample-current-smoothed-scalar", "--pid", "123",
+                                                 "--start-ticks", IDENTITY["processStartUtcTicks"]])
+                destination.write_text(json.dumps({"status": "complete", "identity": REPORT_IDENTITY,
+                                                   "observation": observed}), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-smoothed-scalar-summary/1",
+                    "status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "smoothed-scalar", destination)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeValues"]["currentCandidate"], .5)
+        self.assertIs(result["nativeValues"]["headingQualified"], False)
+
+    def test_smoothed_scalar_passive_burst_projects_series_and_rejects_mixed_rows(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "scalar-burst.json"
+            rows = [{"identity": REPORT_IDENTITY, "playerKeyDecimal": "239816685251645959",
+                     "headingQualified": False,
+                     "rawBits": [0x3F000000] * 3 + [0x3F000000, 0x3F800000, 0x40000000][i:i+1],
+                     "currentCandidate": .5, "sourceCandidate": .5,
+                     "targetCandidate": .5, "factorCandidate": [.5, 1., 2.][i]}
+                    for i in range(3)]
+            report = {"status": "complete", "identity": REPORT_IDENTITY,
+                      "requestedSamples": 3, "completedSamples": 3,
+                      "observation": rows[-1], "observations": rows}
+
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[-4:], ["--samples", "3", "--interval-ms", "0"])
+                self.assertGreaterEqual(kwargs["timeout"], 30)
+                output_path = Path(command[command.index("--output") + 1])
+                output_path.write_text(json.dumps(report), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-smoothed-scalar-summary/1",
+                    "status": "complete", "output": str(output_path)}), "")
+
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "smoothed-scalar", destination,
+                                              samples=3, interval_ms=0)
+                self.assertEqual(result["status"], "complete")
+                self.assertEqual(result["nativeValues"]["sampleCount"], 3)
+                self.assertEqual(result["nativeValues"]["smoothedScalarSeriesCandidate"]["factorCandidate"],
+                                 [.5, 1., 2.])
+                self.assertIs(result["nativeValues"]["headingQualified"], False)
+                for index, mismatch in enumerate((
+                        {"observations": [rows[0], {**rows[1], "playerKeyDecimal": "2"}, rows[-1]]},
+                        {"completedSamples": 2},
+                        {"observations": [rows[0], {**rows[1], "rawBits": [0] * 4}, rows[-1]]})):
+                    report.update(mismatch)
+                    rejected = physical.read_native(selected, "smoothed-scalar",
+                                                    destination.with_name(f"rejected-{index}.json"),
+                                                    samples=3, interval_ms=0)
+                    self.assertEqual(rejected["status"], "blocked")
+                    self.assertEqual(rejected["reason"], "invalid-native-reader-report")
+                    report = {"status": "complete", "identity": REPORT_IDENTITY,
+                              "requestedSamples": 3, "completedSamples": 3,
+                              "observation": rows[-1], "observations": rows}
+
     def test_native_actor_pose_projects_only_candidate_angles(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
