@@ -53,6 +53,7 @@ REQUIRED_CONFIG = frozenset((
 ))
 OPTIONAL_CONFIG = frozenset((
     "bootstrapFile", "bootstrapPort", "vmx", "vmrun", "vncPort",
+    "physicalProcessId", "physicalProcessStartUtcTicks", "physicalExecutableSha256",
 ))
 
 
@@ -149,6 +150,9 @@ class HostConfig:
     vmx: Path | None = None
     vmrun: Path | None = None
     vnc_port: int | None = None
+    physical_process_id: int | None = None
+    physical_process_start_utc_ticks: int | None = None
+    physical_executable_sha256: str | None = None
 
     @staticmethod
     def load(path: Path) -> "HostConfig":
@@ -202,13 +206,30 @@ class HostConfig:
             if not vmrun.is_absolute():
                 vmrun = path.parent / vmrun
             vnc_port = _port(vm_values[2], "vncPort")
+        physical_values = (value.get("physicalProcessId"),
+                           value.get("physicalProcessStartUtcTicks"),
+                           value.get("physicalExecutableSha256"))
+        if any(item is not None for item in physical_values):
+            if (not all(item is not None for item in physical_values)
+                    or any(item is not None for item in vm_values)):
+                raise ControlHostError("physical target requires complete PID/start/SHA and no VM target")
+            pid, ticks, sha = physical_values
+            if (type(pid) is not int or not 1 <= pid <= 2147483647
+                    or type(ticks) is not int or not 1 <= ticks <= 3155378975999999999
+                    or not isinstance(sha, str) or re.fullmatch(r"[0-9a-f]{64}", sha) is None):
+                raise ControlHostError("physical target PID/start/SHA is invalid")
+            if (machine.casefold() != socket.gethostname().casefold()
+                    or bind != guest):
+                raise ControlHostError("physical target requires the local machine and same-host address")
+        else:
+            pid = ticks = sha = None
         return HostConfig(
             bind, _port(value["agentPort"], "agentPort"),
             _port(value["uiPort"], "uiPort"), guest, machine, token, operator,
             output.resolve(), resolved_bootstrap, bootstrap_port,
             vmx.resolve() if vmx is not None else None,
             vmrun.resolve() if vmrun is not None else None,
-            vnc_port,
+            vnc_port, pid, ticks, sha,
         )
 
 
@@ -795,6 +816,15 @@ class AgentSession:
             self._reader.join(timeout=1)
 
 
+def _physical_rift_module():
+    # Import lazily: historical VMware host operation has no physical-reader dependency.
+    if __package__:
+        from . import physical_rift
+    else:
+        import physical_rift
+    return physical_rift
+
+
 class AgentGateway:
     def __init__(self, config: HostConfig, journal: EvidenceJournal, *, dispatch_policy=None,
                  require_supervisor=False, exclusive_console=False):
@@ -943,7 +973,61 @@ class AgentGateway:
             result["coordination"] = self.coordinator.status()
         return result
 
+    def _physical_native(self, operation: str, payload: object) -> dict:
+        """Read the explicitly pinned LOCAL RIFT process; no control-agent or VM fallback."""
+        if operation not in ("native-xyz", "native-orientation"):
+            raise ControlHostError("unsupported physical native read")
+        config = self.config
+        expected = validate_identity_payload(payload)
+        pid, ticks, sha = (config.physical_process_id,
+                           config.physical_process_start_utc_ticks,
+                           config.physical_executable_sha256)
+        if (type(pid) is not int or type(ticks) is not int
+                or not isinstance(sha, str)
+                or config.expected_machine_name.casefold() != socket.gethostname().casefold()
+                or any(item is not None for item in (config.vmx, config.vmrun, config.vnc_port))
+                or expected["machineName"].casefold() != config.expected_machine_name.casefold()
+                or expected["processId"] != pid
+                or expected["processStartUtcTicks"] != ticks
+                or expected["executableSha256"] != sha):
+            raise ControlHostError("physical native request differs from local configured process epoch")
+        reader = _physical_rift_module()
+        selection = reader.select_physical(expected_host=config.expected_machine_name,
+                                           physical_pid=pid)
+        if selection.get("status") != "ready":
+            raise ControlHostError("physical native selection blocked: " + selection.get("reason", "unavailable"))
+        target = selection.get("target")
+        if (not isinstance(target, dict) or target.get("processId") != pid
+                or str(target.get("processStartUtcTicks")) != str(ticks)
+                or str(target.get("executableSha256", "")).casefold() != sha
+                or str(target.get("hostName", "")).casefold() != config.expected_machine_name.casefold()):
+            raise ControlHostError("physical native selection changed from configured epoch")
+        kind = "position" if operation == "native-xyz" else "orientation"
+        result = reader.read_native(selection, kind)
+        if (not isinstance(result, dict) or result.get("status") != "complete"
+                or result.get("nativeRead") != kind or result.get("target") != target
+                or not isinstance(result.get("nativeSummary"), dict)
+                or result["nativeSummary"].get("recordType") != reader.NATIVE_RECEIPTS[kind]
+                or not isinstance(result.get("nativeValues"), dict)):
+            raise ControlHostError("physical native reader failed or returned mismatched evidence")
+        # Re-select the local game after the native read. No VM/other-host retry.
+        after = reader.select_physical(expected_host=config.expected_machine_name,
+                                       physical_pid=pid)
+        if after.get("status") != "ready" or after.get("target") != target:
+            raise ControlHostError("physical native process changed during acquisition")
+        return {"recordType": "physical-host-native-candidate/1",
+                "status": "complete", "nativeKind": kind,
+                "qualification": "candidate-only; heading/freshness/restart-unverified",
+                "movementEligible": False, "headingQualified": False,
+                "ownerHost": config.expected_machine_name, "target": target,
+                "nativeValues": result["nativeValues"],
+                "nativeSummary": result["nativeSummary"],
+                "nativeOutput": result.get("nativeOutput")}
+
     def command(self, operation: str, payload: dict | None = None, *, access=None) -> dict:
+        if (self.config.physical_process_id is not None
+                and operation in ("native-xyz", "native-orientation")):
+            return self._physical_native(operation, payload)
         session = self.session()
         if operation in ("native-vitals", "native-xyz", "native-orientation", "native-actor-pose", "native-smoothed-scalar") and (
                 not self.vm_guard.enabled or not isinstance(session.vm_identity, dict)):
