@@ -83,6 +83,24 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         self.assertEqual(result["nextCandidateStatus"], "requires-independent-arrival-settle")
         self.assertIsNone(result["nextCandidateAction"])
 
+    def test_off_plan_hold_cannot_drive_a_revised_waypoint(self):
+        # The generic receipt importer tolerates these execution times for
+        # historical calibration, but navigation needs tighter pulse control.
+        for actual_ms in (65, 140):
+            with self.subTest(actual_ms=actual_ms):
+                r = completed_w()
+                r["observedMilliseconds"] = actual_ms
+                self.write(r=r)
+                imported = feedback.calibration.from_helper_receipt(self.receipt_file)
+                self.assertEqual(imported["observedHoldMilliseconds"], actual_ms)
+                with self.assertRaisesRegex(
+                    ValueError, "feedback-hold-outside-navigation-tolerance"
+                ):
+                    self.assess()
+        # The pre-existing close-to-request 110 ms hold remains accepted.
+        self.write()
+        self.assertEqual(self.assess()["comparison"], "candidate-consistent")
+
     def test_replans_one_revised_candidate_without_resetting_controller(self):
         r = completed_w()
         r.update(holdMilliseconds=150, observedMilliseconds=155)

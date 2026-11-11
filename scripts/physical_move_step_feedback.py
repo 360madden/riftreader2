@@ -120,6 +120,12 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
 
     hold = action["holdMilliseconds"]
     observed_hold = imported["observedHoldMilliseconds"]
+    # Receipt import permits up to 50 ms of scheduler variance for calibration.
+    # A feedback-driven NAVIGATION step needs a tighter +/-25% (15 ms floor)
+    # actual hold, or the later waypoint prediction is not trustworthy.
+    require(math.isfinite(observed_hold)
+            and abs(observed_hold - hold) <= max(15, hold * .25),
+            "feedback-hold-outside-navigation-tolerance")
     predicted = action["predictedDeltaXYZCandidate"]
     scaled = {axis: float(predicted[axis]) * observed_hold / hold for axis in ("x", "y", "z")}
     actual = {axis: actual_after[axis] - actual_before[axis] for axis in ("x", "y", "z")}
