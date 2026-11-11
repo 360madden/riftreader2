@@ -19,6 +19,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         Assert.Equal(10635, result.Health.Maximum);
         Assert.Equal(100, result.Energy.Current);
         Assert.Equal(100, result.Energy.Maximum);
+        Assert.Equal(4, result.ResourceKindCandidate);
         Assert.Contains("0x072B", System.Text.Json.JsonSerializer.Serialize(result.Energy.Inputs));
         Assert.Equal("not-mana-kind-three", result.Mana.UnavailableReason);
         Assert.Equal("native-process-memory", result.Source);
@@ -103,10 +104,22 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         var s = Fixture();
         ConfigureMana(s);
         var result = Read(s);
+        Assert.Equal(3, result.ResourceKindCandidate);
         Assert.Equal("calculated-candidate", result.Mana.Status);
         Assert.Equal(3980, result.Mana.Current);
         Assert.Equal(3980, result.Mana.Maximum);
         Assert.Equal("not-energy-kind-four", result.Energy.UnavailableReason);
+    }
+
+    [Fact]
+    public void OtherResourceKindsRemainVisibleWithoutFalseManaOrEnergy()
+    {
+        var s = Fixture();
+        s.Put(KindOwner + 0x168, D(2));
+        var result = Read(s);
+        Assert.Equal(2, result.ResourceKindCandidate);
+        Assert.Equal("unavailable", result.Mana.Status);
+        Assert.Equal("unavailable", result.Energy.Status);
     }
 
     [Fact]

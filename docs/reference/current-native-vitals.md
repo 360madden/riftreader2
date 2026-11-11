@@ -9,6 +9,8 @@ Mana requires resource kind 3 and its type fingerprint (`0x072A`); Energy requir
 kind 4 and its type fingerprint (`0x072B`). Energy is not a generic resource
 reader. Check each field's `status` and `unavailableReason` before using its
 values; a complete report does not mean every field is available.
+The read-only report also exposes `resourceKindCandidate` (raw discriminator),
+including unsupported resource kinds without assuming they are Mana or Energy.
 
 On the activated Lab 2 controller, use the joined persistent diagnostic to avoid
 guest process launch and executable/report transfers:

@@ -11,6 +11,7 @@ internal sealed record CurrentBuildVitalsObservation(NativeProcessIdentity Ident
     DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, ulong UnitKey,
     CurrentBuildVitalCandidate Health, CurrentBuildVitalCandidate Energy)
 {
+    public int? ResourceKindCandidate { get; init; }
     public CurrentBuildVitalCandidate Mana { get; init; } =
         new("unavailable", "not-mana-kind-three");
     public string Source => "native-process-memory";
@@ -106,7 +107,8 @@ internal static class CurrentBuildVitalsCandidateReader
             throw new InvalidDataException("Vitals player owner or process epoch changed during capture.");
         return new(identity, started, DateTimeOffset.UtcNow, owner.UnitKey, health, energy)
         {
-            Mana = mana
+            Mana = mana,
+            ResourceKindCandidate = kind
         };
 
         void CheckType(byte[] raw, ulong vtable, ulong getter, ulong descriptor,
