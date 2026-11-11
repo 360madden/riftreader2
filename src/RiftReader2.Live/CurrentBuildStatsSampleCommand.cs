@@ -38,13 +38,32 @@ internal static class CurrentBuildStatsSampleCommand
   var map=Ptr(Q(id.ModuleBaseAddress+0x33E3AE8),336);
   (ulong Begin,ulong Count) Span(ulong address){var h=Take(address,16);var b=U64(h);var e=U64(h.AsSpan(8));if((b==0)!=(e==0)||e<b||(e-b)%8!=0||(e-b)/8>4096)throw new InvalidDataException("Invalid stat vector.");if(b!=0)Ptr(b,e==b?8:checked((int)(e-b)));return(b,(e-b)/8);}
   var ordinary=Span(record+0x78);var unbuffed=Span(record+0x148);
-  StatValueCandidate Value((ulong Begin,ulong Count) vector,int index)
-  {
-   if(index<0||(ulong)index>=vector.Count)return new("index-unavailable");
-   var raw=BinaryPrimitives.ReadInt64LittleEndian(Take(checked(vector.Begin+(ulong)index*8),8));return new("raw-candidate",raw,(double)raw,raw is >= -9007199254740992L and <= 9007199254740992L?"exact-integer-range":"may-round");
-  }
   var mappedIndices=Take(map,336);
-  var rows=new List<StatCandidate>();foreach(var (name,selector) in new[]{("armor",37),("powerAttack",24),("powerSpell",32),("critAttack",26),("critSpell",33),("strength",5),("dexterity",1),("intelligence",3),("wisdom",4),("endurance",2),("resistLife",35),("resistDeath",36),("resistFire",38),("resistWater",39),("resistEarth",40),("resistAir",41),("hit",31),("critPower",83),("block",27),("dodge",30)}){var index=BinaryPrimitives.ReadInt32LittleEndian(mappedIndices.AsSpan(selector*4,4));rows.Add(new(name,selector,index,Value(ordinary,index),Value(unbuffed,index)));}
+  var selectors=new[]{("armor",37),("powerAttack",24),("powerSpell",32),("critAttack",26),("critSpell",33),("strength",5),("dexterity",1),("intelligence",3),("wisdom",4),("endurance",2),("resistLife",35),("resistDeath",36),("resistFire",38),("resistWater",39),("resistEarth",40),("resistAir",41),("hit",31),("critPower",83),("block",27),("dodge",30)};
+  var selected=selectors.Select(s=>(s.Item1,s.Item2,Index:BinaryPrimitives.ReadInt32LittleEndian(mappedIndices.AsSpan(s.Item2*4,4)))).ToArray();
+  Dictionary<int,long> ReadGrouped((ulong Begin,ulong Count) vector)
+  {
+   var indices=selected.Select(s=>s.Index).Where(i=>i>=0&&(ulong)i<vector.Count).Distinct().Order().ToArray();
+   var values=new Dictionary<int,long>();
+   for(var first=0;first<indices.Length;)
+   {
+    var end=first+1;
+    while(end<indices.Length&&end-first<512&&indices[end]==indices[end-1]+1)end++;
+    var raw=Take(checked(vector.Begin+(ulong)indices[first]*8),checked((end-first)*8));
+    for(var i=first;i<end;i++)
+     values[indices[i]]=BinaryPrimitives.ReadInt64LittleEndian(raw.AsSpan((i-first)*8,8));
+    first=end;
+   }
+   return values;
+  }
+  var ordinaryValues=ReadGrouped(ordinary);
+  var unbuffedValues=ReadGrouped(unbuffed);
+  StatValueCandidate Value(Dictionary<int,long> values,int index)
+  {
+   if(!values.TryGetValue(index,out var raw))return new("index-unavailable");
+   return new("raw-candidate",raw,(double)raw,raw is >= -9007199254740992L and <= 9007199254740992L?"exact-integer-range":"may-round");
+  }
+  var rows=selected.Select(s=>new StatCandidate(s.Item1,s.Item2,s.Index,Value(ordinaryValues,s.Index),Value(unbuffedValues,s.Index))).ToArray();
   lookup.Verify();var after=context(session);if(after.Identity!=id||after.UnitKey!=lookup.Key||after.Entity!=entity||after.HealthComponent!=health||after.Owner!=owner||after.CachedContext!=health||session.Identity!=id)throw new InvalidDataException("Stats self changed.");foreach(var a in anchors)CurrentBuildPlayerLookup.RequireSame(Take(a.Key.Item1,a.Key.Item2,false),a.Value);if(session.Identity!=id)throw new InvalidDataException("Stats process changed.");
   return new(id,started,DateTimeOffset.UtcNow,lookup.Key,entity,health,owner,record,map,rows);
  }
