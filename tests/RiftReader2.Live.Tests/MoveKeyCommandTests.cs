@@ -6,6 +6,44 @@ namespace RiftReader2.Live.Tests;
 public sealed class MoveKeyCommandTests
 {
     [Fact]
+    public void InputCallTimingProvidesUsableUtcEnvelopeWithoutClaimingKeyDownOrGameResponse()
+    {
+        var start = DateTimeOffset.Parse("2026-11-11T18:00:00.1000000Z");
+        var result = MoveKeyCommand.SummarizeInputCallTiming(
+            start, start.AddMilliseconds(518), TimeSpan.FromMilliseconds(517.4),
+            TimeSpan.FromMilliseconds(516.8));
+        Assert.Equal(start, result.StartedAtUtc);
+        Assert.Equal(start.AddMilliseconds(518), result.CompletedAtUtc);
+        Assert.Equal(517.4, result.MonotonicElapsedMilliseconds, 6);
+        Assert.Equal(516.8, result.ExecutorObservedMilliseconds, 6);
+        Assert.True(result.UtcOrderValid);
+        Assert.True(result.WallClockConsistentWithMonotonic);
+        Assert.False(result.ExactKeyDownUpTimesKnown);
+        Assert.Contains("unverified", result.Qualification);
+    }
+
+    [Fact]
+    public void InputCallTimingDetectsWallClockJumpWithoutConcealingInputReceipt()
+    {
+        var start = DateTimeOffset.Parse("2026-11-11T18:00:00Z");
+        var jumped = MoveKeyCommand.SummarizeInputCallTiming(
+            start, start.AddSeconds(4), TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(497));
+        Assert.True(jumped.UtcOrderValid);
+        Assert.False(jumped.WallClockConsistentWithMonotonic);
+        Assert.False(jumped.ExactKeyDownUpTimesKnown);
+        var reversed = MoveKeyCommand.SummarizeInputCallTiming(
+            start, start.AddSeconds(-1), TimeSpan.FromMilliseconds(500),
+            TimeSpan.FromMilliseconds(497));
+        Assert.False(reversed.UtcOrderValid);
+        Assert.False(reversed.WallClockConsistentWithMonotonic);
+        var missed = MoveKeyCommand.SummarizeInputCallTiming(
+            start, start.AddMilliseconds(500), TimeSpan.FromMilliseconds(200),
+            TimeSpan.FromMilliseconds(500));
+        Assert.False(missed.WallClockConsistentWithMonotonic);
+    }
+
+    [Fact]
     public void DefaultOneSecondHoldSupportsEachMovementKey()
     {
         foreach (var key in new[] { "w", "a", "s", "d", "q", "e" })

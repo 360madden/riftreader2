@@ -20,6 +20,31 @@ internal static class MoveKeyCommand
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
         int XyzSettleMilliseconds, bool MeasureActorPose);
 
+    // A timed envelope around the bounded input executor, NOT exact down/up
+    // timestamps or proof that the RIFT game consumed the injected key.
+    internal sealed record InputCallTiming(
+        DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
+        double MonotonicElapsedMilliseconds, double ExecutorObservedMilliseconds,
+        bool UtcOrderValid, bool WallClockConsistentWithMonotonic)
+    {
+        public bool ExactKeyDownUpTimesKnown => false;
+        public string Qualification =>
+            "UTC executor-call envelope only; exact SendInput down/up times, game response and heading causality unverified.";
+    }
+
+    internal static InputCallTiming SummarizeInputCallTiming(
+        DateTimeOffset started, DateTimeOffset completed,
+        TimeSpan monotonicElapsed, TimeSpan executorObserved)
+    {
+        var ms = monotonicElapsed.TotalMilliseconds;
+        var executed = executorObserved.TotalMilliseconds;
+        var valid = completed >= started && ms >= 0 && executed >= 0;
+        var wallMs = (completed - started).TotalMilliseconds;
+        var consistent = valid && Math.Abs(wallMs - ms) <= Math.Max(50, ms * 0.20)
+            && executed <= ms + 50;
+        return new(started, completed, ms, executed, valid, consistent);
+    }
+
     internal sealed record XyzSample(
         DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
         string UnitKey, float X, float Y, float Z);
@@ -272,7 +297,12 @@ internal static class MoveKeyCommand
             throw new InvalidOperationException("RIFT lost foreground during native pre-capture.");
         using var input = new KeyInput(WindowsControlDesktop.PinInputTarget(ready));
         var action = new ControlAction(options.Keys, options.HoldMilliseconds);
+        var callStartedUtc = DateTimeOffset.UtcNow;
+        var callClock = Stopwatch.StartNew();
         var result = await new BoundedControlExecutor(input).ExecuteAsync(action, token);
+        callClock.Stop();
+        var inputCallTiming = SummarizeInputCallTiming(
+            callStartedUtc, DateTimeOffset.UtcNow, callClock.Elapsed, result.ObservedDuration);
         var insertion = SummarizeInsertion(result, options.Keys.Length,
             input.KeyDownAttempts, input.KeyDownInsertions);
         var success = insertion.BoundedActionCompleted;
@@ -353,6 +383,7 @@ internal static class MoveKeyCommand
             releaseSucceeded = result.ReleaseSucceeded,
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
+            inputCallTiming,
             xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
             gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error
         });
