@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta
 import json
 import math
 from pathlib import Path
@@ -154,6 +155,24 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                         row.get("componentAddress") != observation.get("componentAddress")
                         for row in observations)):
                 raise ValueError("invalid-native-orientation-burst")
+            # Travel depends on acquisition order. A replayed, overlapping, or
+            # reordered capture can otherwise manufacture an apparent turn.
+            last_completed = None
+            for row in observations:
+                try:
+                    started_raw, completed_raw = row["startedAtUtc"], row["completedAtUtc"]
+                    if type(started_raw) is not str or type(completed_raw) is not str:
+                        raise ValueError("missing-timestamp")
+                    started = datetime.fromisoformat(started_raw.replace("Z", "+00:00"))
+                    completed = datetime.fromisoformat(completed_raw.replace("Z", "+00:00"))
+                    if (started.utcoffset() != timedelta(0) or
+                            completed.utcoffset() != timedelta(0) or
+                            not started < completed or
+                            (last_completed is not None and started <= last_completed)):
+                        raise ValueError("overlap-or-not-utc")
+                except (ValueError, TypeError, KeyError, OverflowError) as exc:
+                    raise ValueError("invalid-native-orientation-burst-time") from exc
+                last_completed = completed
             series = [_native_values("orientation", {"observation": row})
                       for row in observations]
             angles_by_source = {

@@ -216,7 +216,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                  "componentAddress": 0x20060000,
                  "refreshHandleRaw": "0x0000000000000000", "refreshFlagRaw": 0,
                  "primary": candidate(0x60, angle), "secondary": candidate(0x94, angle),
-                 "completedAtUtc": str(index)}
+                 "startedAtUtc": f"2026-11-11T02:31:{index:02d}.0000000+00:00",
+                 "completedAtUtc": f"2026-11-11T02:31:{index:02d}.1000000+00:00"}
                 for index, angle in enumerate((10, 20, 30))]
         report = {"status": "complete", "identity": REPORT_IDENTITY,
                   "requestedSamples": 3, "completedSamples": 3,
@@ -229,10 +230,27 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                                delta=0.0001)
         self.assertIs(values["headingQualified"], False)
 
+        # Overlapping, replayed, or malformed captures cannot prove rotation.
+        for altered in (
+            [rows[0], {**rows[1], "startedAtUtc": rows[0]["completedAtUtc"]}, rows[2]],
+            [rows[0], {**rows[1], "startedAtUtc": rows[0]["startedAtUtc"],
+                       "completedAtUtc": rows[0]["completedAtUtc"]}, rows[2]],
+            [rows[0], {**rows[1], "startedAtUtc": "not-a-timestamp"}, rows[2]],
+            [rows[0], {**rows[1], "startedAtUtc": "2026-11-11T02:31:01+01:00"}, rows[2]],
+            [rows[0], rows[2], rows[1]],
+        ):
+            with self.subTest(altered=altered[1]["startedAtUtc"]), \
+                 self.assertRaisesRegex(ValueError, "invalid-native-orientation-burst-time"):
+                physical._native_values("orientation", {**report, "observations": altered,
+                                                        "observation": altered[-1]})
+
         # The shortest signed steps must unwrap +180/-180 without implying heading.
-        wrapped = [{**rows[0], "primary": candidate(0x60, angle),
+        wrapped = [{**rows[0],
+                    "startedAtUtc": f"2026-11-11T02:32:{index:02d}.0000000+00:00",
+                    "completedAtUtc": f"2026-11-11T02:32:{index:02d}.1000000+00:00",
+                    "primary": candidate(0x60, angle),
                     "secondary": candidate(0x94, angle)}
-                   for angle in (170, 179, -179, -170)]
+                   for index, angle in enumerate((170, 179, -179, -170))]
         wrapped_report = {"identity": REPORT_IDENTITY,
                           "observation": wrapped[-1], "observations": wrapped,
                           "requestedSamples": 4, "completedSamples": 4}
