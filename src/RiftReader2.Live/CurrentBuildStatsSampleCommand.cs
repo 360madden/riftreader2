@@ -7,7 +7,8 @@ namespace RiftReader2.Live;
 internal sealed record StatValueCandidate(string Status,long? RawSigned64=null,double? DoubleCandidate=null,string? Precision=null);
 internal sealed record StatCandidate(string Name,int Selector,int MappedIndex,StatValueCandidate Ordinary,StatValueCandidate Unbuffed);
 internal sealed record StatsObservation(object Identity,DateTimeOffset StartedAtUtc,DateTimeOffset CompletedAtUtc,ulong UnitKey,ulong Entity,ulong Health,ulong Owner,ulong Record,ulong Mapping,IReadOnlyList<StatCandidate> Stats)
-{public string Qualification=>"raw typed stat candidates; API availability, units, freshness and restart unverified";}
+{public string Qualification=>"raw typed stat candidates; API availability, units, freshness and restart unverified";
+ public IReadOnlyList<int> SelectorMapCandidate { get; init; } = [];}
 internal static class CurrentBuildStatsSampleCommand
 {
  internal static Task<int> RunAsync(IReadOnlyDictionary<string,string> options,TextWriter output,CancellationToken ct) =>
@@ -39,8 +40,10 @@ internal static class CurrentBuildStatsSampleCommand
   (ulong Begin,ulong Count) Span(ulong address){var h=Take(address,16);var b=U64(h);var e=U64(h.AsSpan(8));if((b==0)!=(e==0)||e<b||(e-b)%8!=0||(e-b)/8>4096)throw new InvalidDataException("Invalid stat vector.");if(b!=0)Ptr(b,e==b?8:checked((int)(e-b)));return(b,(e-b)/8);}
   var ordinary=Span(record+0x78);var unbuffed=Span(record+0x148);
   var mappedIndices=Take(map,336);
+  // Export the already-read full map, including unknown selectors and negative sentinels.
+  var allMappedIndices=Enumerable.Range(0,84).Select(i=>BinaryPrimitives.ReadInt32LittleEndian(mappedIndices.AsSpan(i*4,4))).ToArray();
   var selectors=new[]{("armor",37),("powerAttack",24),("powerSpell",32),("critAttack",26),("critSpell",33),("strength",5),("dexterity",1),("intelligence",3),("wisdom",4),("endurance",2),("resistLife",35),("resistDeath",36),("resistFire",38),("resistWater",39),("resistEarth",40),("resistAir",41),("hit",31),("critPower",83),("block",27),("dodge",30)};
-  var selected=selectors.Select(s=>(s.Item1,s.Item2,Index:BinaryPrimitives.ReadInt32LittleEndian(mappedIndices.AsSpan(s.Item2*4,4)))).ToArray();
+  var selected=selectors.Select(s=>(s.Item1,s.Item2,Index:allMappedIndices[s.Item2])).ToArray();
   Dictionary<int,long> ReadGrouped((ulong Begin,ulong Count) vector)
   {
    var indices=selected.Select(s=>s.Index).Where(i=>i>=0&&(ulong)i<vector.Count).Distinct().Order().ToArray();
@@ -65,7 +68,8 @@ internal static class CurrentBuildStatsSampleCommand
   }
   var rows=selected.Select(s=>new StatCandidate(s.Item1,s.Item2,s.Index,Value(ordinaryValues,s.Index),Value(unbuffedValues,s.Index))).ToArray();
   lookup.Verify();var after=context?.Invoke(session);if((after is not null&&(after.Identity!=id||after.UnitKey!=lookup.Key||after.Entity!=entity||after.HealthComponent!=health||after.Owner!=owner||after.CachedContext!=health))||session.Identity!=id)throw new InvalidDataException("Stats self changed.");foreach(var a in anchors)CurrentBuildPlayerLookup.RequireSame(Take(a.Key.Item1,a.Key.Item2,false),a.Value);if(session.Identity!=id)throw new InvalidDataException("Stats process changed.");
-  return new(id,started,DateTimeOffset.UtcNow,lookup.Key,entity,health,owner,record,map,rows);
+  return new(id,started,DateTimeOffset.UtcNow,lookup.Key,entity,health,owner,record,map,rows)
+  {SelectorMapCandidate=allMappedIndices};
  }
  static ulong U64(ReadOnlySpan<byte>b)=>BinaryPrimitives.ReadUInt64LittleEndian(b);
 }

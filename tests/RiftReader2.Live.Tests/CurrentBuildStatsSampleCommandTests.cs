@@ -8,6 +8,21 @@ public sealed class CurrentBuildStatsSampleCommandTests
  [Fact] public void ReadsKnownIndexAndPreservesMissing(){var s=Fixture();var r=Read(s);Assert.Equal(123L,r.Stats[0].Ordinary.RawSigned64);Assert.Equal(-7L,r.Stats[0].Unbuffed.RawSigned64);Assert.Equal("index-unavailable",r.Stats[1].Ordinary.Status);Assert.Null(r.Stats[1].Ordinary.RawSigned64);}
  [Fact] public void AllTwentyVerifiedSelectorsAreCaptured(){var s=Fixture();var rows=Read(s).Stats;Assert.Equal(20,rows.Count);Assert.Contains(rows,r=>r.Name=="strength"&&r.Selector==5);Assert.Contains(rows,r=>r.Name=="critPower"&&r.Selector==83);Assert.Contains(rows,r=>r.Name=="resistAir"&&r.Selector==41);}
   [Fact] public void SelectorMappingUsesOneBracketedRead(){var s=Fixture();Read(s);Assert.Equal(2,s.ReadCount(Map));}
+  [Fact] public void ExportsAllEightyFourSelectorMappingsWithoutExtraReads()
+  {
+   var s=Fixture();var map=s.Get(Map);
+   BinaryPrimitives.WriteInt32LittleEndian(map.AsSpan(0,4),146);
+   BinaryPrimitives.WriteInt32LittleEndian(map.AsSpan(82*4,4),-2);
+   s.Put(Map,map);
+   var result=Read(s);
+   Assert.Equal(84,result.SelectorMapCandidate.Count);
+   Assert.Equal(146,result.SelectorMapCandidate[0]);
+   Assert.Equal(-2,result.SelectorMapCandidate[82]);
+   Assert.Equal(0,result.SelectorMapCandidate[37]);
+   Assert.Equal(-1,result.SelectorMapCandidate[81]);
+   Assert.Equal(123L,result.Stats[0].Ordinary.RawSigned64);
+   Assert.Equal(2,s.ReadCount(Map));
+  }
  [Fact] public void AdjacentStatsShareOneValueReadPerVector()
  {
   var s=Fixture();var map=s.Get(Map);BinaryPrimitives.WriteInt32LittleEndian(map.AsSpan(24*4,4),1);s.Put(Map,map);

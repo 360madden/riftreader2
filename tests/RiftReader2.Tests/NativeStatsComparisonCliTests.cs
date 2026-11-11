@@ -162,9 +162,77 @@ public sealed class NativeStatsComparisonCliTests
         finally { Directory.Delete(dir, recursive: true); }
     }
 
+    [Fact]
+    public async Task DetectsUnnamedSelectorMapDriftWithoutAdditionalValueComparisons()
+    {
+        var dir = NewDirectory();
+        try
+        {
+            var before = Save(dir, "before.json",
+                Snapshot(100, "2026-11-07T21:00:00Z", withSelectorMap: true, unnamedSelectorIndex: 12));
+            var after = Save(dir, "after.json",
+                Snapshot(100, "2026-11-07T21:01:00Z", withSelectorMap: true, unnamedSelectorIndex: 99));
+            var (code, json, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var result = JsonDocument.Parse(json);
+            var root = result.RootElement;
+            var map = root.GetProperty("selectorMapComparison");
+            Assert.Equal("candidate-only", map.GetProperty("status").GetString());
+            Assert.Equal(84, map.GetProperty("comparedSelectors").GetInt32());
+            Assert.Equal(1, map.GetProperty("changedSelectors").GetInt32());
+            Assert.Equal(0, map.GetProperty("changes")[0].GetProperty("selector").GetInt32());
+            Assert.Equal(12, map.GetProperty("changes")[0].GetProperty("beforeMappedIndex").GetInt32());
+            Assert.Equal(99, map.GetProperty("changes")[0].GetProperty("afterMappedIndex").GetInt32());
+            Assert.Equal(0, root.GetProperty("summary").GetProperty("changedMappings").GetInt32());
+            Assert.Equal(0, root.GetProperty("summary").GetProperty("changedValues").GetInt32());
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task RejectsSelectorMapThatContradictsNamedMapping()
+    {
+        var dir = NewDirectory();
+        try
+        {
+            var before = Save(dir, "before.json",
+                Snapshot(100, "2026-11-07T21:00:00Z", withSelectorMap: true, corruptRawMap: true));
+            var after = Save(dir, "after.json",
+                Snapshot(100, "2026-11-07T21:01:00Z", withSelectorMap: true));
+            var (code, json, error) = await Run(before, after);
+            Assert.Equal(2, code);
+            Assert.Empty(json);
+            Assert.Contains("contradicts named stat mapping", error);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
+    [Fact]
+    public async Task OlderReportsWithoutFullMapRemainComparable()
+    {
+        var dir = NewDirectory();
+        try
+        {
+            var before = Save(dir, "before.json", Snapshot(100, "2026-11-07T21:00:00Z"));
+            var after = Save(dir, "after.json",
+                Snapshot(100, "2026-11-07T21:01:00Z", withSelectorMap: true));
+            var (code, json, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var result = JsonDocument.Parse(json);
+            var map = result.RootElement.GetProperty("selectorMapComparison");
+            Assert.Equal("unavailable", map.GetProperty("status").GetString());
+            Assert.Equal(0, map.GetProperty("comparedSelectors").GetInt32());
+            Assert.Equal(JsonValueKind.Null, map.GetProperty("changes").ValueKind);
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     private static object Snapshot(long armor, string observedAt, int pid = 123, long ticks = 456,
         ulong unitKey = 42, int? armorMappedIndex = null, string? completedAt = null,
-        int? ownerOffset = null)
+        int? ownerOffset = null, bool withSelectorMap = false, int? unnamedSelectorIndex = null,
+        bool corruptRawMap = false)
     {
         var rows = Fields.Select((f, i) => new
         {
@@ -181,6 +249,14 @@ public sealed class NativeStatsComparisonCliTests
                 rawSigned64 = i == 1 ? (long?)null : 100L
             }
         }).ToArray();
+        int[]? fullMap = null;
+        if (withSelectorMap)
+        {
+            fullMap = Enumerable.Repeat(-1, 84).ToArray();
+            foreach (var row in rows) fullMap[row.selector] = row.mappedIndex;
+            fullMap[0] = unnamedSelectorIndex ?? -1;
+            if (corruptRawMap) fullMap[37] = 999;
+        }
         return new
         {
             schemaVersion = 1, contractVersion = "native-current-stats-candidate/1", status = "complete",
@@ -194,7 +270,7 @@ public sealed class NativeStatsComparisonCliTests
                 owner = ownerOffset.HasValue ? (ulong?)(0x20020000UL + (ulong)ownerOffset.Value) : null,
                 record = ownerOffset.HasValue ? (ulong?)0x20030000UL : null,
                 mapping = ownerOffset.HasValue ? (ulong?)0x20040000UL : null,
-                stats = rows
+                stats = rows, selectorMapCandidate = fullMap
             }
         };
     }

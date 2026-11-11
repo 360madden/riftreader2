@@ -37,3 +37,11 @@ No live work or new game authority is implied by this handoff.
 - `5ccf0e9`: comparator reports five stat owner-path anchors and detects pointer changes within one process epoch; 7/7 focused tests passed. Physical saved 23:05→23:17 UTC replay `artifacts/rr2-physical-stats-owner-path-20261111.json`: 5/5 addresses, 20/20 mappings and 40/40 raw values unchanged. This is not dynamic freshness proof.
 - `423098c`: offline vitals comparator rejects typed Mana/Energy samples contradicting explicit native resource kind; 7/7 tests passed. Legacy kind-absent saved samples remain accepted.
 - Only offline saved artifacts and fake-memory/.NET tests were used. Physical RIFT, movement/navigation, RRE and unrelated working-tree changes remained untouched.
+
+## 2026-11-11 EST — full native selector-map milestone
+
+- `sample-current-stats` now exports `selectorMapCandidate`: all **84 signed selector-to-vector-index entries**, including unknown selectors and negative sentinels, from its **existing 336-byte bracketed map read**. The known 20 selectors and their 40 ordinary/unbuffed candidates are unchanged; no extra process read is introduced.
+- `compare-native-stats` optionally compares those complete maps and reports changed unnamed selectors separately from named stat values. It rejects invalid map length/entries and any contradiction with named selector mappings. Old saved snapshots without the map remain comparable with `selectorMapComparison.status=unavailable`.
+- Focused .NET 10 regression checks: native reader **10/10 pass**; offline comparison CLI **10/10 pass**. Initial concurrent test builds collided on a shared compiler output file; sequential rerun passed.
+- No live process sampling, gameplay input, VM access, movement/nav edits or RRE spellcasting work. Candidate map indices do **not** independently establish stat semantics or regeneration rates.
+

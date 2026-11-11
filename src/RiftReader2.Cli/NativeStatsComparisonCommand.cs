@@ -21,7 +21,7 @@ internal static class NativeStatsComparisonCommand
     private sealed record Value(string Status, long? Raw);
     private sealed record Row(string Name, int Selector, int Index, Value Ordinary, Value Unbuffed);
     private sealed record Snapshot(string Path, string Sha256, string Build, int Pid, long StartTicks,
-        ulong PlayerKey, DateTimeOffset Started, DateTimeOffset Completed, IReadOnlyList<Row> Rows, OwnerPath? OwnerPath);
+        ulong PlayerKey, DateTimeOffset Started, DateTimeOffset Completed, IReadOnlyList<Row> Rows, OwnerPath? OwnerPath, int[]? SelectorMap);
     private sealed record OwnerPath(ulong Entity, ulong Health, ulong Owner, ulong Record, ulong Mapping);
     private sealed record Difference(string Status, long? Before, long? After, decimal? Delta);
     private sealed record Spread(string Status, decimal? Before, decimal? After, decimal? Delta);
@@ -62,6 +62,11 @@ internal static class NativeStatsComparisonCommand
             };
         }).ToArray();
 
+        var fullMapChanges = before.SelectorMap is { } oldMap && after.SelectorMap is { } newMap
+            ? Enumerable.Range(0, 84).Where(i => oldMap[i] != newMap[i])
+                .Select(i => new { selector = i, beforeMappedIndex = oldMap[i], afterMappedIndex = newMap[i] }).ToArray()
+            : null;
+
         var beforeOwnerPath = before.OwnerPath;
         var afterOwnerPath = after.OwnerPath;
         var comparableOwnerPath = sameEpoch && beforeOwnerPath is not null && afterOwnerPath is not null;
@@ -87,6 +92,13 @@ internal static class NativeStatsComparisonCommand
                 after = new { path = after.Path, sha256 = after.Sha256, processId = after.Pid,
                     processStartUtcTicks = after.StartTicks, startedAtUtc = after.Started, completedAtUtc = after.Completed }
             },
+            selectorMapComparison = new
+            {
+                status = fullMapChanges is null ? "unavailable" : "candidate-only",
+                comparedSelectors = fullMapChanges is null ? 0 : 84,
+                changedSelectors = fullMapChanges?.Length,
+                changes = fullMapChanges
+            },
             ownerPathComparison = new
             {
                 status = beforeOwnerPath is null || afterOwnerPath is null ? "unavailable" :
@@ -111,6 +123,7 @@ internal static class NativeStatsComparisonCommand
             {
                 "Saved raw numeric candidates; a delta does not prove stat semantics, cause, or live freshness.",
                 "Selector-index remapping is reported independently of raw-value changes.",
+                "Full selector map entries are unqualified indices, not verified stat names or meanings.",
                 "Same-epoch owner pointer equality is address stability, not semantic or freshness qualification.",
                 "Cross-epoch comparisons are historical and do not establish restart recovery.",
                 "Unavailable values remain null, never zero. No process access or game input occurs."
@@ -189,7 +202,25 @@ internal static class NativeStatsComparisonCommand
                 ReadValue(element, "unbuffed", mappedIndex)));
         }
         return new(full, Convert.ToHexString(SHA256.HashData(bytes)), build, pid, ticks,
-            playerKey, started, completed, rows, ReadOwnerPath(observation));
+            playerKey, started, completed, rows, ReadOwnerPath(observation), ReadSelectorMap(observation, rows));
+    }
+
+    private static int[]? ReadSelectorMap(JsonElement observation, IReadOnlyList<Row> rows)
+    {
+        if (!observation.TryGetProperty("selectorMapCandidate", out var value) ||
+            value.ValueKind == JsonValueKind.Null)
+            return null; // Older saved reports remain comparable.
+        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 84)
+            throw new InvalidDataException("Invalid complete native selector map.");
+        var indices = new int[84];
+        for (var i = 0; i < indices.Length; i++)
+        {
+            if (value[i].ValueKind != JsonValueKind.Number || !value[i].TryGetInt32(out indices[i]))
+                throw new InvalidDataException("Invalid native selector map entry.");
+        }
+        if (rows.Any(row => indices[row.Selector] != row.Index))
+            throw new InvalidDataException("Raw selector map contradicts named stat mapping.");
+        return indices;
     }
 
     private static OwnerPath? ReadOwnerPath(JsonElement observation)
