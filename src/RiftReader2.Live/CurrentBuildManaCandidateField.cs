@@ -21,7 +21,20 @@ internal static class CurrentBuildManaCandidateField
 
     internal static CurrentBuildVitalCandidate Read(IReadOnlyNativeMemorySession session,
         NativeProcessIdentity expectedIdentity, ulong componentAddress, ulong disallowedRecordAddress,
-        Action verifyOwnerUnchanged)
+        Action verifyOwnerUnchanged) => ReadCore(session, expectedIdentity, componentAddress,
+            disallowedRecordAddress, verifyOwnerUnchanged, null);
+
+    // Only the enclosing vitals capture may supply these already-read inputs. It
+    // brackets the clock owner, kind owner and kind value through final validation.
+    internal static CurrentBuildVitalCandidate ReadWithSharedVitalsInputs(
+        IReadOnlyNativeMemorySession session, NativeProcessIdentity expectedIdentity,
+        ulong componentAddress, ulong disallowedRecordAddress, Action verifyOwnerUnchanged,
+        float gameClock, int resourceKind) => ReadCore(session, expectedIdentity,
+            componentAddress, disallowedRecordAddress, verifyOwnerUnchanged, (gameClock, resourceKind));
+
+    private static CurrentBuildVitalCandidate ReadCore(IReadOnlyNativeMemorySession session,
+        NativeProcessIdentity expectedIdentity, ulong componentAddress, ulong disallowedRecordAddress,
+        Action verifyOwnerUnchanged, (float Clock, int ResourceKind)? sharedVitals)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(verifyOwnerUnchanged);
@@ -43,13 +56,22 @@ internal static class CurrentBuildManaCandidateField
         }
         ulong Ptr(ulong address) => Pointer(U64(Take(address, 8)));
 
-        var clockOwner = Ptr(checked(module + 0x33DC2B0));
-        // The clock value is sampled from this exact process and may advance
-        // normally. Bracket its owner pointer, not the mutable clock bytes.
-        var gameClock = F32(Take(checked(clockOwner + 0x18), 4, false));
-        var kindOwner = Ptr(checked(component + 0x40));
-        if (I32(Take(checked(kindOwner + 0x168), 4)) != 3)
-            throw new InvalidDataException("Mana field requires resource kind three.");
+        float gameClock;
+        if (sharedVitals is { } shared)
+        {
+            if (shared.ResourceKind != 3)
+                throw new InvalidDataException("Mana field requires resource kind three.");
+            gameClock = shared.Clock;
+        }
+        else
+        {
+            var clockOwner = Ptr(checked(module + 0x33DC2B0));
+            // The clock value may advance; bracket its owner, not the clock bytes.
+            gameClock = F32(Take(checked(clockOwner + 0x18), 4, false));
+            var kindOwner = Ptr(checked(component + 0x40));
+            if (I32(Take(checked(kindOwner + 0x168), 4)) != 3)
+                throw new InvalidDataException("Mana field requires resource kind three.");
+        }
         var wrapper = Ptr(checked(component + 0x38));
         var wrapperRaw = Take(wrapper, 48);
         var reference = Pointer(U64(wrapperRaw.AsSpan(0x10, 8)));

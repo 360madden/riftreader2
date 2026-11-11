@@ -31,6 +31,19 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
     }
 
     [Fact]
+    public void EnergyCaptureBatchesAdjacentInputsWithoutLosingFinalBrackets()
+    {
+        var s = Fixture();
+        var result = Read(s);
+        Assert.Equal(10635, result.Health.Current);
+        Assert.Equal(100, result.Energy.Current);
+        Assert.Equal(2, s.Requests.Count(r => r == (Component + 0x28, 16)));
+        Assert.Equal(2, s.Requests.Count(r => r == (Wrapper + 0x10, 16)));
+        Assert.DoesNotContain(s.Requests, r => r == (Component + 0x30, 8));
+        Assert.DoesNotContain(s.Requests, r => r == (Wrapper + 0x18, 8));
+    }
+
+    [Fact]
     public void ProductionLookupBracketsOriginalIntermediateAnchors()
     {
         const ulong manager = 0x20100000, system = 0x20110000, table = 0x20120000,
@@ -86,7 +99,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         var s = Fixture();
         if (defect == "type") s.Put(Module + 0x2D1D428, Q(Module + 1));
         if (defect == "record") s.ChangeAfterFirst(Energy, s.Get(Energy).Select((v, i) => i == 0x20 ? (byte)99 : v).ToArray());
-        if (defect == "wrapper") s.ChangeAfterFirst(Component + 0x30, new byte[8]);
+        if (defect == "wrapper") s.ChangeAfterFirst(Component + 0x28, Join(Q(Owner), new byte[8]));
         if (defect == "clock-owner") s.ChangeAfterFirst(Module + 0x33DC2B0, Q(Clock + 8));
         Assert.Throws<InvalidDataException>(() => Read(s));
     }
@@ -95,7 +108,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
     public void RevisionMismatchIsExplicitUnavailable()
     {
         var s = Fixture();
-        s.Put(Wrapper + 0x18, Cache(58, 61610.41796875f));
+        s.Put(Wrapper + 0x10, Join(Q(Reference), Cache(58, 61610.41796875f)));
         var result = Read(s);
         Assert.Equal("unavailable", result.Energy.Status);
         Assert.Equal("revision-mismatch-needs-native-cache-write", result.Energy.UnavailableReason);
@@ -115,6 +128,30 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         using var manaRate = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Mana.Inputs));
         Assert.InRange(manaRate.RootElement.GetProperty("unclampedRatePerClockUnitCandidate").GetDouble(), 98.06, 98.08);
         Assert.Equal("not-energy-kind-four", result.Energy.UnavailableReason);
+    }
+
+    [Fact]
+    public void ManaReusesParentClockAndResourceKindWithoutDuplicatedReads()
+    {
+        var s = Fixture();
+        ConfigureMana(s);
+        var result = Read(s);
+        Assert.Equal(3980, result.Mana.Current);
+        Assert.Equal(1, s.Requests.Count(r => r == (Clock + 0x18, 4)));
+        Assert.Equal(2, s.Requests.Count(r => r == (Module + 0x33DC2B0, 8)));
+        Assert.Equal(2, s.Requests.Count(r => r == (KindOwner + 0x168, 4)));
+        Assert.Equal(2, s.Requests.Count(r => r == (Component + 0x40, 8)));
+        Assert.Equal(2, s.Requests.Count(r => r == (Wrapper, 48)));
+    }
+
+    [Fact]
+    public void ManaSharedKindChangeStillFailsEnclosingVitalsVerification()
+    {
+        var s = Fixture();
+        ConfigureMana(s);
+        s.ChangeAfterFirst(KindOwner + 0x168, D(4));
+        var error = Assert.Throws<InvalidDataException>(() => Read(s));
+        Assert.Contains("Vitals ownership", error.Message);
     }
 
     [Fact]
@@ -197,13 +234,15 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
     {
         var s = new FakeSession();
         s.Put(Module + 0x33DC2B0, Q(Clock)); s.Put(Clock + 0x18, D(BitConverter.SingleToInt32Bits(61827.53515625f)));
-        s.Put(Component + 0x28, Q(Owner)); s.Put(Owner + 0x40, Q(Container)); s.Put(Container + 0x640, Q(Hp));
-        s.Put(Hp, HealthRaw()); s.Put(Component + 0x30, Cache(74, 61827.53515625f));
+        s.Put(Component + 0x28, Join(Q(Owner), Cache(74, 61827.53515625f)));
+        s.Put(Owner + 0x40, Q(Container)); s.Put(Container + 0x640, Q(Hp));
+        s.Put(Hp, HealthRaw());
         s.Put(Module + 0x2C0EEC8, Q(Module + 0x20CCC60)); s.Put(Module + 0x355F430, Q(Module + 0x2C281B0));
         s.Put(Module + 0x2C281B8, Q(Module + 0x20F2480));
         s.Put(Component + 0x40, Q(KindOwner)); s.Put(KindOwner + 0x168, D(4));
-        s.Put(Component + 0x38, Q(Wrapper)); s.Put(Wrapper + 0x10, Q(Reference)); s.Put(Reference, Q(Energy));
-        s.Put(Energy, EnergyRaw()); s.Put(Wrapper + 0x18, Cache(59, 61610.41796875f));
+        s.Put(Component + 0x38, Q(Wrapper));
+        s.Put(Wrapper + 0x10, Join(Q(Reference), Cache(59, 61610.41796875f)));
+        s.Put(Reference, Q(Energy)); s.Put(Energy, EnergyRaw());
         s.Put(Module + 0x2D194D8, Q(Module + 0x231BEB0)); s.Put(Module + 0x35AEB80, Q(Module + 0x2D1D420));
         s.Put(Module + 0x2D1D428, Q(Module + 0x233E9B0));
         return s;
@@ -237,6 +276,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         s.Put(Module + 0x34D8990, Q(Module + 0x2A7C418));
         s.Put(Module + 0x2A7C420, Q(Module + 0x1CF9F10));
     }
+    private static byte[] Join(byte[] a, byte[] b) => [.. a, .. b];
     private static byte[] Q(ulong v) { var b = new byte[8]; BinaryPrimitives.WriteUInt64LittleEndian(b, v); return b; }
     private static byte[] D(int v) { var b = new byte[4]; BinaryPrimitives.WriteInt32LittleEndian(b, v); return b; }
     private static byte[] Cache(int rev, float clock) { var b = new byte[8]; D(rev).CopyTo(b, 0); D(BitConverter.SingleToInt32Bits(clock)).CopyTo(b, 4); return b; }
@@ -246,6 +286,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         private readonly Dictionary<ulong, byte[]> changed = [];
         private readonly HashSet<ulong> seen = [];
         public int Reads { get; private set; }
+        public List<(ulong Address, int Length)> Requests { get; } = [];
         public NativeProcessIdentity Identity { get; set; } = new(123, 456, @"C:\RIFT\rift_x64.exe", CurrentBuildPositionSampleCommand.GameSha256, Module, 0x4000000);
         public void Put(ulong address, byte[] bytes) => data[address] = bytes;
         public byte[] Get(ulong address) => data[address].ToArray();
@@ -254,6 +295,7 @@ public sealed class CurrentBuildVitalsCandidateReaderTests
         public NativeReadResult Read(ulong address, int length)
         {
             Reads++;
+            Requests.Add((address, length));
             var b = !seen.Add(address) && changed.TryGetValue(address, out var c) ? c : data.GetValueOrDefault(address);
             return b is not null && b.Length == length ? new("success", b.ToArray(), null, null) : new("unavailable", [], null, null);
         }

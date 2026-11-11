@@ -65,11 +65,14 @@ internal static class CurrentBuildVitalsCandidateReader
         var clockOwner = Ptr(checked(module + 0x33DC2B0));
         // Clock itself may advance normally; bracket the pointer, not its value.
         var clock = F32(Take(checked(clockOwner + 0x18), 4, false));
-        var healthOwner = Ptr(checked(component + 0x28));
+        // The HP owner pointer and HP cache are adjacent in this exact build.
+        // Keep the full pair under one before/after anchor rather than four native reads.
+        var healthOwnerAndCache = Take(checked(component + 0x28), 16);
+        var healthOwner = Pointer(U64(healthOwnerAndCache));
         var container = Ptr(checked(healthOwner + 0x40));
         var healthRecord = Ptr(checked(container + 0x640));
         var healthRaw = Take(healthRecord, 128);
-        var hpCache = Take(checked(component + 0x30), 8);
+        var hpCache = healthOwnerAndCache[8..16];
         CheckType(healthRaw, 0x2C0EE88, 0x20CCC60, 0x355F430, 0x2C281B0, 0x20F2480);
         var health = CalculateHealth(healthRaw, hpCache, clock);
         var kindOwner = Ptr(checked(component + 0x40));
@@ -78,19 +81,21 @@ internal static class CurrentBuildVitalsCandidateReader
         CurrentBuildVitalCandidate energy;
         if (kind == 3)
         {
-            mana = CurrentBuildManaCandidateField.Read(
-                session, identity, component, healthRecord, owner.VerifyUnchanged);
+            mana = CurrentBuildManaCandidateField.ReadWithSharedVitalsInputs(
+                session, identity, component, healthRecord, owner.VerifyUnchanged, clock, kind);
             energy = new("unavailable", "not-energy-kind-four");
         }
         else if (kind == 4)
         {
             mana = new("unavailable", "not-mana-kind-three");
             var wrapper = Ptr(checked(component + 0x38));
-            var reference = Ptr(checked(wrapper + 0x10));
+            // Energy reference and revision/clock cache are also contiguous.
+            var referenceAndCache = Take(checked(wrapper + 0x10), 16);
+            var reference = Pointer(U64(referenceAndCache));
             var record = Ptr(reference);
             if (record == healthRecord) throw new InvalidDataException("Health/resource record alias.");
             var raw = Take(record, 64);
-            var cache = Take(checked(wrapper + 0x18), 8);
+            var cache = referenceAndCache[8..16];
             CheckType(raw, 0x2D19498, 0x231BEB0, 0x35AEB80, 0x2D1D420, 0x233E9B0);
             energy = CalculateEnergy(raw, cache, clock);
         }
