@@ -25,6 +25,23 @@ internal static class MoveKeyCommand
 
     internal sealed record XyzDelta(double X, double Y, double Z);
 
+    // A successful key-down SendInput call is distinct from completing the
+    // bounded hold/release sequence, and neither proves game consumption.
+    internal sealed record KeyInsertionEvidence(
+        bool WindowsInputAttempted, bool WindowsInputInserted,
+        bool AllRequestedKeyDownsInserted, int KeyDownAttempts, int KeyDownInsertions,
+        bool BoundedActionCompleted, bool InsertionUncertain);
+
+    internal static KeyInsertionEvidence SummarizeInsertion(
+        ControlExecutionResult result, int requestedKeys, int attempts, int inserted)
+    {
+        var completed = result.DeliverySucceeded && result.ReleaseSucceeded
+            && !result.Cancelled && !result.TargetLost;
+        return new(attempts > 0, inserted > 0,
+            requestedKeys > 0 && inserted == requestedKeys,
+            attempts, inserted, completed, attempts > inserted);
+    }
+
     internal sealed record XyzFeedback(
         string Status, XyzSample? BeforeXYZ, XyzSample? AfterXYZ,
         XyzDelta? DeltaXYZ, double? PlanarDisplacementCandidate,
@@ -209,8 +226,9 @@ internal static class MoveKeyCommand
         using var input = new KeyInput(WindowsControlDesktop.PinInputTarget(ready));
         var action = new ControlAction(options.Keys, options.HoldMilliseconds);
         var result = await new BoundedControlExecutor(input).ExecuteAsync(action, token);
-        var success = result.DeliverySucceeded && result.ReleaseSucceeded
-            && !result.Cancelled && !result.TargetLost;
+        var insertion = SummarizeInsertion(result, options.Keys.Length,
+            input.KeyDownAttempts, input.KeyDownInsertions);
+        var success = insertion.BoundedActionCompleted;
         XyzFeedback? xyzFeedback = null;
         if (before is not null)
         {
@@ -232,7 +250,13 @@ internal static class MoveKeyCommand
             processStartUtcTicks = ready.ProcessStartUtcTicks,
             executableSha256 = ready.ExecutableSha256,
             keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
-            windowsInputInserted = result.DeliverySucceeded,
+            windowsInputInserted = insertion.WindowsInputInserted,
+            windowsInputAttempted = insertion.WindowsInputAttempted,
+            allRequestedKeyDownsInserted = insertion.AllRequestedKeyDownsInserted,
+            keyDownAttempts = insertion.KeyDownAttempts,
+            keyDownInsertions = insertion.KeyDownInsertions,
+            insertionUncertain = insertion.InsertionUncertain,
+            boundedActionCompleted = insertion.BoundedActionCompleted,
             releaseSucceeded = result.ReleaseSucceeded,
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
@@ -280,11 +304,15 @@ internal static class MoveKeyCommand
     private sealed class KeyInput(WindowsControlDesktop.PinnedInputTarget pinned) : IControlInput, IDisposable
     {
         public bool IsTargetCurrent() => pinned.IsCurrent();
+        public int KeyDownAttempts { get; private set; }
+        public int KeyDownInsertions { get; private set; }
         public void KeyDown(string key)
         {
             if (!pinned.IsCurrent())
                 throw new InvalidOperationException("RIFT window lost identity or foreground before key down.");
+            KeyDownAttempts++;
             WindowsControlDesktop.SendKeys(key, true);
+            KeyDownInsertions++;
         }
         // Never condition key-up on focus or process identity: release is unconditional.
         public void KeyUp(string key) => WindowsControlDesktop.SendKeys(key, false);
