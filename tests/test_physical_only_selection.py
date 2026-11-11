@@ -293,6 +293,84 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertEqual(result["reason"], "invalid-native-reader-report")
 
+    def test_actor_pose_opt_in_position_brackets_project_owner_checked_xyz(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        key = "239816685251645959"
+        rows = []
+        for index in range(3):
+            rows.append({
+                "identity": REPORT_IDENTITY, "playerKeyDecimal": key,
+                "actorHeadingQualified": False, "renderStatus": "unavailable",
+                "actorMatrix": {"planarAngleDegreesCandidate": 110 + index},
+                "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                "renderMatrix": None,
+                "positionBracketCandidate": {
+                    "playerKeyDecimal": key, "elapsedMilliseconds": 7.5,
+                    "before": {"x": 10 + index, "y": 2, "z": 20},
+                    "after": {"x": 10 + index + (0.5 if index else 0), "y": 2, "z": 20}
+                }})
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "pose-xyz.json"
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[-2:], ["--include-position", "true"])
+                destination.write_text(json.dumps({
+                    "status": "complete", "identity": REPORT_IDENTITY,
+                    "requestedSamples": 3, "completedSamples": 3,
+                    "observation": rows[-1], "observations": rows}), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-actor-pose-summary/1",
+                    "status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "actor-pose", destination,
+                                              samples=3, interval_ms=0,
+                                              include_position=True)
+        self.assertEqual(result["status"], "complete")
+        values = result["nativeValues"]
+        self.assertEqual(values["positionNetPlanarDisplacementCandidate"], 2.5)
+        self.assertEqual(values["positionMaxWithinSamplePlanarChangeCandidate"], 0.5)
+        self.assertEqual(len(values["positionBracketSeriesCandidate"]), 3)
+        self.assertEqual(values["planarSignedTravelDegreesCandidate"]["actor"], 2)
+        self.assertFalse(values["actorHeadingQualified"])
+
+    def test_actor_pose_position_bracket_rejects_missing_mixed_or_nonfinite_source(self):
+        key = "239816685251645959"
+        base = {"identity": REPORT_IDENTITY, "playerKeyDecimal": key,
+                "actorHeadingQualified": False, "renderStatus": "unavailable",
+                "actorMatrix": {"planarAngleDegreesCandidate": 12},
+                "modelMatrix": {"planarAngleDegreesCandidate": None},
+                "renderMatrix": None}
+        bracket = {"playerKeyDecimal": key, "elapsedMilliseconds": 8.0,
+                   "before": {"x": 1, "y": 2, "z": 3},
+                   "after": {"x": 1, "y": 2, "z": 3}}
+        report = {"observation": {**base, "positionBracketCandidate": bracket}}
+        self.assertEqual(
+            physical._native_values("actor-pose", report, expect_position=True)
+            ["positionNetPlanarDisplacementCandidate"], 0)
+        for malformed in (
+            {**base},
+            {**base, "positionBracketCandidate": {**bracket, "playerKeyDecimal": "1"}},
+            {**base, "positionBracketCandidate": {**bracket, "elapsedMilliseconds": -1}},
+            {**base, "positionBracketCandidate": {**bracket, "after": {"x": float("nan"), "y": 2, "z": 3}}},
+            {**base, "positionBracketCandidate": {**bracket, "before": {"x": 1, "y": 2}}},
+        ):
+            with self.subTest(malformed=malformed), self.assertRaises(ValueError):
+                physical._native_values("actor-pose", {"observation": malformed},
+                                        expect_position=True)
+        with self.assertRaises(ValueError):
+            physical._native_values("actor-pose", report)
+
+    def test_position_bracket_is_refused_for_other_native_kinds_without_launch(self):
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with patch.object(physical.subprocess, "run") as reader:
+            for kind in ("vitals", "position", "stats"):
+                with self.subTest(kind=kind):
+                    result = physical.read_native(selected, kind, include_position=True)
+                self.assertEqual(result["reason"], "position-bracket-requires-actor-pose")
+            reader.assert_not_called()
+
     def test_vitals_burst_reports_last_hp_from_stable_player(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         with tempfile.TemporaryDirectory() as temporary:
@@ -573,7 +651,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(output.getvalue())["nativeRead"], "stats")
         reader.assert_called_once_with({"status": "ready"}, "stats", None,
-                                       samples=None, interval_ms=None)
+                                       samples=None, interval_ms=None, include_position=False)
 
     def test_cli_default_is_current_physical_host_and_json(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \

@@ -151,6 +151,58 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
         Assert.False(File.Exists(invalidated.Path));
     }
 
+    [Fact]
+    public async Task OptInPositionBracketsCaptureSamePlayerBeforeAndAfterEveryPose()
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--samples"] = "2";
+        fixture.Options["--interval-ms"] = "0";
+        fixture.Options["--include-position"] = "true";
+        Assert.Equal(0, await fixture.Run(new StringWriter()));
+        Assert.Equal(2, fixture.ReadCount);
+        Assert.Equal(4, fixture.PositionReadCount);
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(fixture.Path));
+        var observations = json.RootElement.GetProperty("observations");
+        Assert.Equal(2, observations.GetArrayLength());
+        var first = observations[0].GetProperty("positionBracketCandidate");
+        Assert.Equal(ulong.MaxValue.ToString(), first.GetProperty("playerKeyDecimal").GetString());
+        Assert.Equal(1.0f, first.GetProperty("before").GetProperty("x").GetSingle());
+        Assert.Equal(2.0f, first.GetProperty("after").GetProperty("x").GetSingle());
+        Assert.True(first.GetProperty("elapsedMilliseconds").GetDouble() >= 0);
+        Assert.False(observations[1].GetProperty("actorHeadingQualified").GetBoolean());
+        Assert.True(fixture.Session.Disposed);
+        Assert.True(fixture.LeaseDisposedAfterSession);
+    }
+
+    [Fact]
+    public async Task MismatchedPositionOwnerNeverPublishesAReport()
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--samples"] = "2";
+        fixture.Options["--interval-ms"] = "0";
+        fixture.Options["--include-position"] = "true";
+        fixture.DifferentPositionPlayerAtRead = 3;
+        using var output = new StringWriter();
+        await Assert.ThrowsAsync<InvalidDataException>(() => fixture.Run(output));
+        Assert.Equal(4, fixture.PositionReadCount);
+        Assert.False(File.Exists(fixture.Path));
+        Assert.Empty(output.ToString());
+        Assert.True(fixture.LeaseDisposedAfterSession);
+    }
+
+    [Theory]
+    [InlineData("TRUE")]
+    [InlineData("1")]
+    [InlineData("")]
+    public async Task InvalidPositionFlagNeverAcquiresLease(string raw)
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--include-position"] = raw;
+        await Assert.ThrowsAsync<ArgumentException>(() => fixture.Run(new StringWriter()));
+        Assert.False(fixture.LeaseHeld);
+        Assert.False(fixture.Opened);
+    }
+
     [Theory]
     [InlineData("--samples", "0")]
     [InlineData("--samples", "31")]
@@ -198,6 +250,8 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
         public bool LeaseDisposedAfterSession { get; private set; }
         public bool WrongObservation { get; set; }
         public int ReadCount { get; private set; }
+        public int PositionReadCount { get; private set; }
+        public int? DifferentPositionPlayerAtRead { get; set; }
         public int? DifferentPlayerAtRead { get; set; }
 
         public Fixture()
@@ -234,6 +288,13 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
                         DifferentPlayerAtRead == ReadCount ? 123UL : ulong.MaxValue,
                         0x200000, 0x300000, 0x400000, 0,
                         matrix, matrix, null, "alternate-reference-branch-not-followed", null);
+                },
+                _ =>
+                {
+                    PositionReadCount++;
+                    return new CurrentBuildOwnedPosition(
+                        DifferentPositionPlayerAtRead == PositionReadCount ? 123UL : ulong.MaxValue,
+                        new CurrentBuildXyz(PositionReadCount, 4, PositionReadCount));
                 });
 
         public void Dispose() => Directory.Delete(directory, recursive: true);

@@ -16,20 +16,23 @@ internal static class CurrentBuildActorPoseSampleCommand
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
             static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
                 pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
-            CurrentBuildActorPoseCandidateReader.Read);
+            CurrentBuildActorPoseCandidateReader.Read,
+            CurrentBuildPositionCandidateReader.ReadOwned);
 
     // Offline injection seam preserves the exact production lease/session/publication path.
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct,
         Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildActorPoseCandidate> read)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildActorPoseCandidate> read,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildOwnedPosition> readPosition)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(acquireLease);
         ArgumentNullException.ThrowIfNull(open);
         ArgumentNullException.ThrowIfNull(read);
+        ArgumentNullException.ThrowIfNull(readPosition);
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
             !options.TryGetValue("--start-ticks", out var rawTicks) ||
@@ -38,6 +41,7 @@ internal static class CurrentBuildActorPoseSampleCommand
             throw new ArgumentException("--pid, --start-ticks and --output are required for actor pose.");
         var samples = BoundedInt(options, "--samples", 1, 1, 30);
         var intervalMilliseconds = BoundedInt(options, "--interval-ms", 500, 0, 2000);
+        var includePosition = BoolOption(options, "--include-position");
 
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path))
@@ -50,7 +54,8 @@ internal static class CurrentBuildActorPoseSampleCommand
             !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Opened actor pose process identity mismatch.");
         var elapsed = Stopwatch.StartNew();
-        var observation = await CaptureAsync(session, read, ct);
+        var observation = await CaptureAsync(session, read, ct,
+            includePosition ? readPosition : null);
         if (samples > 1)
         {
             var observations = new List<CurrentBuildActorPoseCandidate>(samples) { observation };
@@ -58,7 +63,8 @@ internal static class CurrentBuildActorPoseSampleCommand
             {
                 if (intervalMilliseconds > 0)
                     await Task.Delay(intervalMilliseconds, ct);
-                var next = await CaptureAsync(session, read, ct);
+                var next = await CaptureAsync(session, read, ct,
+                    includePosition ? readPosition : null);
                 if (next.PlayerKey != observation.PlayerKey || next.Identity != identity)
                     throw new InvalidDataException("Actor pose player or process changed during burst; no report published.");
                 observations.Add(next);
@@ -80,6 +86,7 @@ internal static class CurrentBuildActorPoseSampleCommand
                     "All samples share one physical PID, start epoch, build SHA, read lease and session.",
                     "All observed player keys match; continuity between samples cannot be proved.",
                     "Matrices and planar angles remain candidates, not qualified body or camera facing.",
+                    "Optional XYZ brackets share the actor owner, lease and session but are sequential candidates, not atomic movement proof.",
                     "Sequential reads cannot exclude ABA; no changed-state, freshness or restart qualification.",
                     "No game input, process write, getter invocation or foreground change is performed."
                 }
@@ -106,6 +113,7 @@ internal static class CurrentBuildActorPoseSampleCommand
             {
                 "Actor/model/render matrices are candidates, not qualified body or camera facing.",
                 "Structural planar angles do not prove axis, sign, source freshness or input response.",
+                "Optional XYZ brackets share the actor owner and session but are sequential, not atomic position evidence.",
                 "Owner and consumed bytes are bracketed but reads are sequential and cannot exclude ABA.",
                 "The executable SHA256 covers on-disk bytes; loaded module bytes are not separately hashed.",
                 "No game input, getter invocation, process write or foreground change is performed."
@@ -125,17 +133,39 @@ internal static class CurrentBuildActorPoseSampleCommand
     internal static async Task<CurrentBuildActorPoseCandidate> CaptureAsync(
         IReadOnlyNativeMemorySession session,
         Func<IReadOnlyNativeMemorySession, CurrentBuildActorPoseCandidate> read,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildOwnedPosition>? readPosition = null)
     {
         ct.ThrowIfCancellationRequested();
         var identity = session.Identity;
+        var started = Stopwatch.GetTimestamp();
+        var before = readPosition?.Invoke(session);
         var observation = read(session);
+        var after = readPosition?.Invoke(session);
         if (observation.Identity != identity || observation.PlayerKey == 0 || session.Identity != identity)
             throw new InvalidDataException("Actor pose observation owner or process changed.");
+        if (before is not null && (after is null || before.UnitKey != observation.PlayerKey ||
+                                   after.UnitKey != observation.PlayerKey))
+            throw new InvalidDataException("Actor pose and bracketed XYZ player owner differ; no report published.");
         if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
             throw new InvalidDataException("Actor pose process identity invalidated; no report published.");
         ct.ThrowIfCancellationRequested();
+        if (before is not null && after is not null)
+            observation = observation with
+            {
+                PositionBracketCandidate = new(observation.PlayerKeyDecimal,
+                    before.Position, after.Position,
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds)
+            };
         return observation;
+    }
+
+    private static bool BoolOption(IReadOnlyDictionary<string, string> options, string name)
+    {
+        if (!options.TryGetValue(name, out var raw)) return false;
+        if (raw == "true") return true;
+        if (raw == "false") return false;
+        throw new ArgumentException($"{name} must be true or false.");
     }
 
     private static int BoundedInt(IReadOnlyDictionary<string, string> options, string name,

@@ -75,7 +75,7 @@ def _candidate_angle_steps(angles):
     return None if any(abs(step) == 180 for step in steps) else steps
 
 
-def _native_values(kind, report):
+def _native_values(kind, report, *, expect_position=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "actor-pose":
         observation = report.get("observation")
@@ -154,6 +154,37 @@ def _native_values(kind, report):
             }
             result["actorMaxAdjacentStepDegreesCandidate"] = (
                 max(map(abs, steps["actor"])) if steps["actor"] is not None else None)
+        rows = observations if observations is not None else [observation]
+        if expect_position:
+            brackets = []
+            for row in rows:
+                bracket = row.get("positionBracketCandidate")
+                if (not isinstance(bracket, dict) or
+                        bracket.get("playerKeyDecimal") != key):
+                    raise ValueError("invalid-native-actor-position-bracket")
+                elapsed = bracket.get("elapsedMilliseconds")
+                if type(elapsed) not in (int, float) or not math.isfinite(elapsed) or elapsed < 0:
+                    raise ValueError("invalid-native-actor-position-bracket")
+                pair = {"elapsedMilliseconds": elapsed}
+                for edge in ("before", "after"):
+                    coords = bracket.get(edge)
+                    if (not isinstance(coords, dict) or
+                            any(type(coords.get(axis)) not in (int, float) or
+                                not math.isfinite(coords[axis]) for axis in ("x", "y", "z"))):
+                        raise ValueError("invalid-native-actor-position-bracket")
+                    pair[edge] = {axis: coords[axis] for axis in ("x", "y", "z")}
+                brackets.append(pair)
+            net = math.hypot(brackets[-1]["after"]["x"] - brackets[0]["before"]["x"],
+                             brackets[-1]["after"]["z"] - brackets[0]["before"]["z"])
+            within = [math.hypot(b["after"]["x"] - b["before"]["x"],
+                                 b["after"]["z"] - b["before"]["z"]) for b in brackets]
+            if not math.isfinite(net) or any(not math.isfinite(value) for value in within):
+                raise ValueError("invalid-native-actor-position-bracket")
+            result["positionBracketSeriesCandidate"] = brackets
+            result["positionNetPlanarDisplacementCandidate"] = net
+            result["positionMaxWithinSamplePlanarChangeCandidate"] = max(within)
+        elif any(row.get("positionBracketCandidate") is not None for row in rows):
+            raise ValueError("unexpected-native-actor-position-bracket")
         return result
     if kind == "vitals":
         observation = report.get("observation")
@@ -205,7 +236,8 @@ def _native_values(kind, report):
     return None
 
 
-def read_native(selection, kind, output=None, *, samples=None, interval_ms=None):
+def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
+                include_position=False):
     """Read a candidate from the exact selected LOCAL physical process, without input."""
     if selection.get("status") != "ready":
         return selection
@@ -218,6 +250,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
         return dict(selection, status="blocked", reason="host-mismatch")
     if kind not in NATIVE_READS:
         return dict(selection, status="blocked", reason="unknown-native-read")
+    if type(include_position) is not bool or (include_position and kind != "actor-pose"):
+        return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
     if kind not in ("position", "vitals", "actor-pose") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-position-vitals-or-actor-pose")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
@@ -248,6 +282,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
         command.extend(("--samples", str(samples)))
     if interval_ms is not None:
         command.extend(("--interval-ms", str(interval_ms)))
+    if include_position:
+        command.extend(("--include-position", "true"))
     # Long, explicitly requested intervals must not hit the wrapper's timeout.
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
@@ -302,7 +338,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None)
                 and (report.get("completedSamples") != samples or
                      not isinstance(report.get("observations"), list))):
             raise ValueError("incomplete-native-actor-pose-burst")
-        values = _native_values(kind, report)
+        values = _native_values(kind, report, expect_position=include_position)
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")
     return dict(selection, status="complete", nativeRead=kind,
@@ -324,10 +360,15 @@ def main(argv=None):
                         help="position/vitals/actor-pose: 1-30 samples (default: 3 position, 1 otherwise)")
     parser.add_argument("--interval-ms", type=int,
                         help="position/vitals/actor-pose: 0-2000ms between reads (default: 500)")
+    parser.add_argument("--include-position", action="store_true",
+                        help="actor-pose only: bracket each pose with same-player native XYZ candidates")
     args = parser.parse_args(argv)
     if args.read_native is not None and args.expected_host is None:
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "native-read-requires-expected-host"}
+    elif args.include_position and args.read_native != "actor-pose":
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "position-bracket-requires-actor-pose"}
     elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
@@ -337,7 +378,8 @@ def main(argv=None):
         result = dict(result, status="blocked", reason="output-requires-native-read")
     elif args.read_native:
         result = read_native(result, args.read_native, args.output,
-                             samples=args.samples, interval_ms=args.interval_ms)
+                             samples=args.samples, interval_ms=args.interval_ms,
+                              include_position=args.include_position)
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] in ("ready", "complete") else 2
 

@@ -24,9 +24,15 @@ internal sealed record CurrentBuildActorPoseCandidate(
     public string PositionComponentDecimal => PositionComponent.ToString(CultureInfo.InvariantCulture);
     public bool NormalRenderBranch => (ActorFlags & 1) == 0;
     public bool ActorHeadingQualified => false;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CurrentBuildActorPosePositionBracketCandidate? PositionBracketCandidate { get; init; }
     public string Qualification =>
         "actor/model/render-matrix-candidate-only; body-facing, source freshness, input response and restart unverified";
 }
+
+internal sealed record CurrentBuildActorPosePositionBracketCandidate(
+    string PlayerKeyDecimal, CurrentBuildXyz Before, CurrentBuildXyz After,
+    double ElapsedMilliseconds);
 
 /// <summary>
 /// Exact-build self-owned actor pose from the known component selectors. The actor

@@ -60,6 +60,7 @@ and wrap-aware `planarSignedTravelDegreesCandidate` plus the actor's largest
 adjacent angle step. Missing angle values or an exactly 180° step produce
 unavailable signed travel, not a guessed direction. These are readout aids,
 **not** proof of body-facing response to a turn.
+Use `python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100 --include-position` for opt-in, read-only before/after XYZ brackets around each actor pose (explicit `--physical-pid N` when multiboxed). The compact receipt adds `positionBracketSeriesCandidate`, `positionNetPlanarDisplacementCandidate` and `positionMaxWithinSamplePlanarChangeCandidate`; every bracket is checked against the same player key. Brackets are sequential, not atomic or proof of body-facing, motion freshness or turn response. No game input or foreground changes are made.
 A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
 captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):
 all ten samples kept one player key and the same 111.8823° actor candidate,
