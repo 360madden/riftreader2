@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timedelta
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -16,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import observe_physical
+from scripts import observe_physical, summarize_native_vitals_burst
 
 SUPPORTED_HOSTS = ("AMD-DESKTOP", "LEGION")
 NATIVE_READS = {
@@ -551,7 +552,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             or summary.get("status") != (None if kind == "stats" else "complete")):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     try:
-        report = json.loads(path.read_text(encoding="utf-8"))
+        report_bytes = path.read_bytes()
+        report = json.loads(report_bytes.decode("utf-8"))
         observation = report.get("observation")
         identity = report.get("identity") or (observation.get("identity")
                                                 if isinstance(observation, dict) else None)
@@ -587,11 +589,16 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             raise ValueError("incomplete-native-orientation-burst")
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources)
+        # Reuse the strict offline reducer for candidate HP/resource deltas.
+        burst_summary = (summarize_native_vitals_burst.summarize(
+            report, hashlib.sha256(report_bytes).hexdigest())
+            if kind == "vitals" and samples is not None and samples > 1 else None)
     except (OSError, ValueError, TypeError, AttributeError, KeyError):
         return dict(selection, status="blocked", reason="invalid-native-reader-report")
     return dict(selection, status="complete", nativeRead=kind,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
-                qualification="candidate-only; changed-state/freshness/restart-unverified")
+                qualification="candidate-only; changed-state/freshness/restart-unverified",
+                **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}))
 
 
 def main(argv=None):

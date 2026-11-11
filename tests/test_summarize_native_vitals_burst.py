@@ -7,10 +7,13 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
+from scripts import physical_rift as physical
 from scripts import summarize_native_vitals_burst as tool
 
 IDENTITY = {
@@ -57,6 +60,43 @@ def burst():
 
 
 class VitalsBurstTests(unittest.TestCase):
+    def test_physical_vitals_read_exposes_existing_offline_burst_summary(self):
+        report = burst()
+        selection = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": {
+            "hostName": "AMD-DESKTOP", "processId": IDENTITY["processId"],
+            "processStartUtcTicks": str(IDENTITY["processStartUtcTicks"]),
+            "executableSha256": tool.GAME_SHA}}
+        with TemporaryDirectory() as folder:
+            executable = Path(folder) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(folder) / "vitals-burst.json"
+
+            def fake_run(command, **_):
+                destination.write_text(json.dumps(report), encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": physical.NATIVE_RECEIPTS["vitals"],
+                    "status": "complete", "output": str(destination)}), "")
+
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selection, "vitals", destination,
+                                              samples=3, interval_ms=0)
+                source_sha = hashlib.sha256(destination.read_bytes()).hexdigest().upper()
+                report["observations"][1]["resourceKindCandidate"] = 3
+                destination = Path(folder) / "vitals-kind-conflict.json"
+                invalid = physical.read_native(selection, "vitals", destination,
+                                               samples=3, interval_ms=0)
+            self.assertEqual("blocked", invalid["status"])
+            self.assertEqual("invalid-native-reader-report", invalid["reason"])
+            self.assertEqual("complete", result["status"])
+            summary = result["nativeBurstSummary"]
+            self.assertEqual(-20, summary["resources"]["health"]["deltaCurrentCandidate"])
+            self.assertEqual(-20, summary["resources"]["energy"]["deltaCurrentCandidate"])
+            self.assertEqual(3, summary["sampleCount"])
+            self.assertEqual(source_sha, summary["sourceReportSha256"])
+            self.assertIn("not independently qualified", summary["qualification"])
+
     def test_valid_health_and_energy_candidates_remain_unqualified(self):
         report = burst()
         original = copy.deepcopy(report)

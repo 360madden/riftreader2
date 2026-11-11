@@ -767,23 +767,39 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
             reader.assert_not_called()
 
     def test_vitals_burst_reports_last_hp_from_stable_player(self):
-        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        game_sha = physical.summarize_native_vitals_burst.GAME_SHA
+        identity = {**REPORT_IDENTITY, "executableSha256": game_sha}
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP",
+                    "target": {**IDENTITY, "executableSha256": game_sha}}
         with tempfile.TemporaryDirectory() as temporary:
             executable = Path(temporary) / "RiftReader2.Live.exe"
             executable.write_bytes(b"MZ")
             destination = Path(temporary) / "vitals-burst.json"
             rows = [{
-                "identity": REPORT_IDENTITY, "unitKey": 239816685251645959,
-                "health": {"status": "calculated-candidate", "current": 100 + i, "maximum": 150},
-                "energy": {"status": "unavailable"},
-                "mana": {"status": "unavailable"},
-                "completedAtUtc": str(i)} for i in range(3)]
+                "identity": identity, "unitKey": 239816685251645959,
+                "source": "native-process-memory",
+                "qualification": "candidate-only; semantics/passive-freshness/restart-unverified",
+                "health": {"status": "calculated-candidate", "current": 100 + i,
+                           "maximum": 150, "unavailableReason": None,
+                           "inputs": {"baseRaw": 100 + i}},
+                "energy": {"status": "unavailable", "unavailableReason": "not-energy-kind-four",
+                           "current": None, "maximum": None},
+                "mana": {"status": "unavailable", "unavailableReason": "not-mana-kind-three",
+                         "current": None, "maximum": None},
+                "startedAtUtc": f"2026-11-10T17:00:0{i}.000000+00:00",
+                "completedAtUtc": f"2026-11-10T17:00:0{i}.050000+00:00"} for i in range(3)]
 
             def fake_run(command, **kwargs):
                 self.assertEqual(command[-4:], ["--samples", "3", "--interval-ms", "0"])
                 destination.write_text(json.dumps({
-                    "status": "complete", "identity": REPORT_IDENTITY,
+                    "schemaVersion": 1,
+                    "contractVersion": "native-current-vitals-candidate-burst/1",
+                    "sourceBuildSha256": game_sha,
+                    "status": "complete", "identity": identity,
+                    "source": "native-process-memory",
+                    "qualification": "candidate-only; semantics/passive-freshness/restart-unverified",
                     "requestedSamples": 3, "completedSamples": 3,
+                    "captureElapsedMilliseconds": 2050.25,
                     "observation": rows[-1], "observations": rows}), encoding="utf-8")
                 return subprocess.CompletedProcess(command, 0,
                     json.dumps({"recordType": "native-current-vitals-candidate-summary/2",
@@ -797,6 +813,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["sampleCount"], 3)
         self.assertEqual(result["nativeValues"]["health"]["current"], 102)
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
+        self.assertEqual(result["nativeBurstSummary"]["resources"]["health"]
+                         ["deltaCurrentCandidate"], 2)
 
     def test_vitals_burst_rejects_mixed_player_samples(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
