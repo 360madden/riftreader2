@@ -293,6 +293,31 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 self.assertEqual(result["status"], "blocked")
                 self.assertEqual(result["reason"], "invalid-native-reader-report")
 
+    def test_actor_pose_projects_optional_world_translation_candidates(self):
+        base = {"playerKeyDecimal": "123", "actorHeadingQualified": False,
+                "renderStatus": "normal-render-matrix-candidate",
+                "actorMatrix": {"planarAngleDegreesCandidate": 42},
+                "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                "renderMatrix": {"planarAngleDegreesCandidate": 42}}
+        self.assertNotIn("actorWorldTranslationCandidate",
+                         physical._native_values("actor-pose", {"observation": base}))
+        xyz = {"x": 7444.156, "y": 863.5272, "z": 2965.9778}
+        observation = {**base, "actorWorldTranslationCandidate": xyz,
+                       "renderWorldTranslationCandidate": {**xyz, "y": 863.5872},
+                       "renderWorldTranslationMaxAbsDeltaCandidate": 0.06}
+        values = physical._native_values("actor-pose", {"observation": observation})
+        self.assertEqual(values["actorWorldTranslationCandidate"], xyz)
+        self.assertEqual(values["renderWorldTranslationCandidate"]["z"], xyz["z"])
+        self.assertEqual(values["renderWorldTranslationMaxAbsDeltaCandidate"], 0.06)
+        for wrong in (
+            {**observation, "actorWorldTranslationCandidate": {**xyz, "x": float("nan")}},
+            {**observation, "renderWorldTranslationCandidate": {"x": 1, "y": 2}},
+            {**observation, "renderWorldTranslationMaxAbsDeltaCandidate": -1},
+            {**observation, "renderWorldTranslationMaxAbsDeltaCandidate": float("inf")},
+        ):
+            with self.subTest(wrong=wrong), self.assertRaises(ValueError):
+                physical._native_values("actor-pose", {"observation": wrong})
+
     def test_actor_pose_opt_in_position_brackets_project_owner_checked_xyz(self):
         selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
         key = "239816685251645959"

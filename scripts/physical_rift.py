@@ -136,6 +136,26 @@ def _native_values(kind, report, *, expect_position=False):
                   "renderStatus": observation["renderStatus"],
                   "actorHeadingQualified": False,
                   "sampledAtUtc": observation.get("completedAtUtc")}
+        # Optional additions: older native reports have no world translations.
+        for field in ("actorWorldTranslationCandidate", "renderWorldTranslationCandidate"):
+            if field not in observation:
+                continue
+            candidate = observation[field]
+            if candidate is None:
+                result[field] = None
+                continue
+            if (not isinstance(candidate, dict) or
+                    any(type(candidate.get(axis)) not in (int, float) or
+                        not math.isfinite(candidate[axis]) for axis in ("x", "y", "z"))):
+                raise ValueError("invalid-native-actor-world-translation")
+            result[field] = {axis: candidate[axis] for axis in ("x", "y", "z")}
+        field = "renderWorldTranslationMaxAbsDeltaCandidate"
+        if field in observation:
+            delta = observation[field]
+            if delta is not None and (type(delta) not in (int, float) or
+                                      not math.isfinite(delta) or delta < 0):
+                raise ValueError("invalid-native-actor-world-translation")
+            result[field] = delta
         if observations is not None:
             result["sampleCount"] = len(observations)
             series = {
