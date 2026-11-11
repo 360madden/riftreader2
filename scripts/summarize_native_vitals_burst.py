@@ -115,6 +115,12 @@ def summarize(report, source_sha):
         last_end = completed
         for name in FIELDS:
             per_field[name].append(_field(row.get(name), name))
+        kind = row.get("resourceKindCandidate")
+        need(kind is None or type(kind) is int, "resource-kind-invalid")
+        if kind is not None:
+            need((per_field["mana"][-1] is None or kind == 3)
+                 and (per_field["energy"][-1] is None or kind == 4),
+                 "resource-kind-conflict")
         if per_field["mana"][-1] is not None:
             need(per_field["energy"][-1] is None
                  and row["energy"].get("unavailableReason") == "not-energy-kind-four",

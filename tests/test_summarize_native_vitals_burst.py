@@ -137,6 +137,31 @@ class VitalsBurstTests(unittest.TestCase):
             with self.subTest(edit=str(edit)), self.assertRaises(ValueError):
                 tool.summarize(report, "c"*64)
 
+    def test_reported_resource_kind_must_agree_with_typed_resources(self):
+        report = burst()
+        # The producer records the raw resource kind for every observation.
+        for row in report["observations"]:
+            row["resourceKindCandidate"] = 4
+        report["observation"] = copy.deepcopy(report["observations"][-1])
+        self.assertEqual("candidate-only", tool.summarize(report, "a"*64)["status"])
+
+        report["observations"][0]["resourceKindCandidate"] = 3
+        with self.assertRaisesRegex(ValueError, "resource-kind-conflict"):
+            tool.summarize(report, "b"*64)
+
+        report = burst()
+        row = report["observations"][0]
+        row["resourceKindCandidate"] = 4
+        row["mana"] = field(40, 50, kind="0x072A")
+        row["energy"] = unavailable("not-energy-kind-four")
+        with self.assertRaisesRegex(ValueError, "resource-kind-conflict"):
+            tool.summarize(report, "c"*64)
+
+        report = burst()
+        report["observations"][0]["resourceKindCandidate"] = True
+        with self.assertRaisesRegex(ValueError, "resource-kind-invalid"):
+            tool.summarize(report, "d"*64)
+
     def test_mismatched_summary_and_sample_counts_rejected(self):
         for edit in (
             lambda r: r.update(completedSamples=2),
