@@ -80,6 +80,62 @@ def _candidate_angle_steps(angles):
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "orientation":
+        observation = report.get("observation")
+        if not isinstance(observation, dict):
+            raise ValueError("invalid-native-orientation")
+        key = observation.get("unitKey")
+        if (not isinstance(key, str) or not key.isdecimal() or
+                not 0 < int(key) < 2**64 or str(int(key)) != key):
+            raise ValueError("invalid-native-orientation-owner")
+        refresh_handle = observation.get("refreshHandleRaw")
+        refresh_flag = observation.get("refreshFlagRaw")
+        if (not isinstance(refresh_handle, str) or len(refresh_handle) != 18 or
+                not refresh_handle.startswith("0x") or
+                any(c not in "0123456789abcdefABCDEF" for c in refresh_handle[2:]) or
+                type(refresh_flag) is not int or not 0 <= refresh_flag <= 255):
+            raise ValueError("invalid-native-orientation-refresh")
+        matrices = {}
+        angles = {}
+        states = {}
+        for name, offset in (("primary", 0x60), ("secondary", 0x94)):
+            matrix = observation.get(name)
+            if (not isinstance(matrix, dict) or matrix.get("sourceOffset") != offset or
+                    not isinstance(matrix.get("status"), str)):
+                raise ValueError("invalid-native-orientation-matrix")
+            bits, values = matrix.get("rawBits"), matrix.get("rowMajorF32")
+            if (not isinstance(bits, list) or len(bits) != 9 or
+                    not isinstance(values, list) or len(values) != 9 or
+                    any(type(bit) is not int or not 0 <= bit <= 0xFFFFFFFF
+                        for bit in bits)):
+                raise ValueError("invalid-native-orientation-matrix")
+            for bit, value in zip(bits, values):
+                if type(value) not in (int, float) or not math.isfinite(value):
+                    raise ValueError("invalid-native-orientation-matrix")
+                try:
+                    actual = struct.unpack("<I", struct.pack("<f", value))[0]
+                except (ValueError, OverflowError, struct.error) as exc:
+                    raise ValueError("invalid-native-orientation-matrix") from exc
+                if actual != bit:
+                    raise ValueError("invalid-native-orientation-matrix-bits")
+            angle = matrix.get("planarAngleDegreesCandidate")
+            structural = matrix["status"] == "structural-y-planar-matrix-candidate"
+            if (structural and
+                    (type(angle) not in (int, float) or not math.isfinite(angle) or
+                     not -180 <= angle <= 180)):
+                raise ValueError("invalid-native-orientation-angle")
+            if not structural and angle is not None:
+                raise ValueError("invalid-native-orientation-angle")
+            matrices[name], angles[name], states[name] = values, angle, matrix["status"]
+        return {"unitKey": key, "headingQualified": False,
+                "refreshHandleRaw": refresh_handle, "refreshFlagRaw": refresh_flag,
+                "primaryPlanarDegreesCandidate": angles["primary"],
+                "secondaryPlanarDegreesCandidate": angles["secondary"],
+                "primaryMatrixStatus": states["primary"],
+                "secondaryMatrixStatus": states["secondary"],
+                "primarySecondaryMaxAbsElementDeltaCandidate": max(
+                    abs(a - b) for a, b in zip(matrices["primary"], matrices["secondary"])),
+                "sampledAtUtc": observation.get("completedAtUtc")}
     if kind == "smoothed-scalar":
         observation = report.get("observation")
         if not isinstance(observation, dict) or observation.get("headingQualified") is not False:

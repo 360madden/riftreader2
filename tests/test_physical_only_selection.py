@@ -152,6 +152,51 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(result["nativeValues"]["unitKey"], "239816685251645959")
         self.assertIn("candidate-only", result["qualification"])
 
+    def test_native_orientation_projects_matrix_candidates_without_promoting_heading(self):
+        primary_values = [1., 0., 0., 0., 1., 0., 0., 0., 1.]
+        secondary_values = [0., 0., -1., 0., 1., 0., 1., 0., 0.]
+        primary = {"sourceOffset": 0x60, "status": "structural-y-planar-matrix-candidate",
+                   "rawBits": [0x3F800000, 0, 0, 0, 0x3F800000, 0, 0, 0, 0x3F800000],
+                   "rowMajorF32": primary_values, "planarAngleDegreesCandidate": 0.}
+        secondary = {"sourceOffset": 0x94, "status": "structural-y-planar-matrix-candidate",
+                     "rawBits": [0, 0, 0xBF800000, 0, 0x3F800000, 0, 0x3F800000, 0, 0],
+                     "rowMajorF32": secondary_values, "planarAngleDegreesCandidate": 90.}
+        observed = {"identity": REPORT_IDENTITY, "unitKey": "239816685251645959",
+                    "refreshHandleRaw": "0x0000000000000000", "refreshFlagRaw": 0,
+                    "primary": primary, "secondary": secondary, "completedAtUtc": "now"}
+        values = physical._native_values("orientation", {"observation": observed})
+        self.assertEqual(values["unitKey"], "239816685251645959")
+        self.assertEqual(values["primaryPlanarDegreesCandidate"], 0)
+        self.assertEqual(values["secondaryPlanarDegreesCandidate"], 90)
+        self.assertEqual(values["primarySecondaryMaxAbsElementDeltaCandidate"], 1)
+        self.assertIs(values["headingQualified"], False)
+        for mismatch in ({"unitKey": "0"},
+                         {"refreshFlagRaw": True},
+                         {"refreshHandleRaw": "garbage"},
+                         {"primary": {**primary, "rawBits": [0] * 9}},
+                         {"secondary": {**secondary, "sourceOffset": 0x60}},
+                         {"secondary": {**secondary, "status": "unqualified-matrix-shape"}}):
+            with self.subTest(mismatch=mismatch), self.assertRaises(ValueError):
+                physical._native_values("orientation", {"observation": {**observed, **mismatch}})
+        selected = {"status": "ready", "ownerHost": "AMD-DESKTOP", "target": IDENTITY}
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "RiftReader2.Live.exe"
+            executable.write_bytes(b"MZ")
+            destination = Path(temporary) / "orientation.json"
+            def fake_run(command, **kwargs):
+                self.assertEqual(command[1:6], ["sample-current-orientation", "--pid", "123",
+                                                 "--start-ticks", IDENTITY["processStartUtcTicks"]])
+                destination.write_text(json.dumps({"status": "complete", "observation": observed}),
+                                       encoding="utf-8")
+                return subprocess.CompletedProcess(command, 0, json.dumps({
+                    "recordType": "native-current-orientation-summary/1",
+                    "status": "complete", "output": str(destination)}), "")
+            with patch.object(physical, "NATIVE_EXE", executable), \
+                 patch.object(physical.subprocess, "run", side_effect=fake_run):
+                result = physical.read_native(selected, "orientation", destination)
+        self.assertEqual(result["status"], "complete")
+        self.assertEqual(result["nativeValues"]["secondaryPlanarDegreesCandidate"], 90)
+
     def test_physical_smoothed_scalar_validates_raw_bits_and_unqualified_heading(self):
         observed = {"playerKeyDecimal": "239816685251645959", "headingQualified": False,
                     "rawBits": [0x3F000000, 0x3FC00000, 0x40200000, 0x3E800000],

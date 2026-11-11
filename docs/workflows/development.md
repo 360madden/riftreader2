@@ -91,6 +91,22 @@ The arithmetic is verified for this stationary snapshot; source freshness,
 body heading, movement response and restart stability remain unqualified.
 The capture performed no game input, casting or foreground changes.
 
+The physical `--read-native orientation` route now returns validated primary and
+secondary matrix angles, the two refresh indicators, and maximum matrix-element
+difference in `nativeValues`; raw float32 bits remain in its artifact. A **2026-11-11
+02:08-02:10 UTC** AMD-DESKTOP passive comparison (PID 44888, exact pinned SHA)
+found the nine actor-matrix raw float bits at `actor+0x398` **identical** to the
+position secondary matrix at `position+0x94` across two sequential, separate
+owner-pinned captures. Both decoded to `111.8823333629°`; the position primary
+at `position+0x60` decoded to `111.8816776312°`. Refresh handle/flag were zero.
+This is empirical confirmation of the existing `0x687320` copy path on this
+stationary process, **not independent or changed-state body-heading proof**.
+Evidence: `artifacts/physical-native-orientation-fec7abee8bf046aeb5aa3e983572526b.json`
+(SHA256 `c103b3301152d97448f37ae28c776988bac1c7a73b40eb4ccee6f07eaf916912`),
+and `artifacts/physical-native-actor-pose-823b891c15ed46798ca5b1b43d644791.json`
+(SHA256 `b375211022dc3c16897a4c59584db6bdf570988839936f601b4f51badf088958`).
+There was no game input or focus change; the samples were not atomic.
+
 The physical-only `smoothed-scalar` route reuses the existing exact-build
 native scalar reader; it never invokes in-game getter functions or controls the
 character. Its four float candidates are reported with exact raw bits and the
