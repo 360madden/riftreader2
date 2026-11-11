@@ -50,6 +50,25 @@ public sealed class CurrentBuildStatsSampleCommandTests
   }
   Assert.Equal(0,s.ReadCount(A));Assert.Equal(0,s.ReadCount(U));
  }
+  [Fact] public void ProductionStatsReaderReusesOneAnchoredLookup()
+  {
+   var s=Fixture();const ulong manager=0x20100000,table=0x20110000,buckets=0x20120000,components=0x20130000;
+   s.Put(M+0x33624A8,Q(manager));s.Put(manager+0x50,Q(table));
+   var header=new byte[24];Q(buckets).CopyTo(header,0);Q(24).CopyTo(header,8);Q(1).CopyTo(header,16);s.Put(table,header);
+   var bucket=new byte[24];Q(44).CopyTo(bucket,8);Q(E).CopyTo(bucket,16);s.Put(buckets,bucket);
+   var entity=new byte[128];entity[0x18]=0;Q(components).CopyTo(entity,0x78);s.Put(E,entity);
+   s.Put(components,Q(H));s.Put(M+0x2F57850,BitConverter.GetBytes(0));
+   var result=CurrentBuildStatsSampleCommand.Read(s);
+   Assert.Equal(123L,result.Stats[0].Ordinary.RawSigned64);
+   Assert.Equal(2,s.ReadCount(M+0x33624A8)); // One lookup plus its anchor recheck.
+   Assert.Equal(0,s.ReadCount(O+0x100)); // Unrelated level field.
+   Assert.Equal(0,s.ReadCount(M+0x2F58270)); // Unrelated target/level selector.
+   s=Fixture();s.Put(M+0x33624A8,Q(manager));s.Put(manager+0x50,Q(table));
+   s.Put(table,header);s.Put(buckets,bucket);s.Put(E,entity);
+   s.Put(components,Q(H));s.Put(M+0x2F57850,BitConverter.GetBytes(0));
+   s.Change(manager+0x50,Q(table+0x1000));
+   Assert.Throws<InvalidDataException>(()=>CurrentBuildStatsSampleCommand.Read(s));
+  }
  [Fact] public void CachedReceiverMismatchFails(){var s=Fixture();s.Put(S+0x400,Q(H+8));Assert.Throws<InvalidDataException>(()=>Read(s));}
  [Fact] public void MappingAndValueMutationFail(){var s=Fixture();var changedMap=s.Get(Map);BinaryPrimitives.WriteInt32LittleEndian(changedMap.AsSpan(37*4,4),1);s.Change(Map,changedMap);Assert.Throws<InvalidDataException>(()=>Read(s));s=Fixture();s.Change(A,Q(124));Assert.Throws<InvalidDataException>(()=>Read(s));}
  [Fact] public void WrongRecordTypeFails(){var s=Fixture();s.Put(R,Q(M+0x1234));Assert.Throws<InvalidDataException>(()=>Read(s));}
