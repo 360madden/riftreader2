@@ -115,6 +115,22 @@ class PhysicalTurnPairTests(unittest.TestCase):
             "orientation", [4, 5], [-179, -179]))
         return left, right
 
+    def test_rapid_100ns_spaced_orientation_burst_keeps_precise_order(self):
+        source = report("orientation", [1, 2, 3], [10, 15, 20])
+        for i, row in enumerate(source["observations"]):
+            row["startedAtUtc"] = f"2026-11-11T02:00:00.100000{i*2+1}+00:00"
+            row["completedAtUtc"] = f"2026-11-11T02:00:00.100000{i*2+2}+00:00"
+        source["observation"] = deepcopy(source["observations"][-1])
+        path = self.save("fast-candidate.json", source)
+        loaded = turn._load(path)
+        self.assertEqual(3, loaded["samples"])
+        self.assertEqual("orientation", loaded["kind"])
+        # A genuinely repeated 100ns timestamp must still fail closed.
+        source["observations"][1]["startedAtUtc"] = source["observations"][0]["completedAtUtc"]
+        path = self.save("fast-candidate-invalid.json", source)
+        with self.assertRaisesRegex(ValueError, "turn-capture-time-order-invalid"):
+            turn._load(path)
+
     def test_orientation_wrap_and_endpoints(self):
         output = turn.compare(*self.pair())
         self.assertEqual(output["status"], "candidate-only")

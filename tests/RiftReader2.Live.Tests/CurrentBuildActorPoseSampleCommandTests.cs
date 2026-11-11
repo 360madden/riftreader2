@@ -109,7 +109,7 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
         using var output = new StringWriter();
         Assert.Equal(0, await fixture.Run(output));
         Assert.Equal(3, fixture.ReadCount);
-        Assert.Equal(3, fixture.Session.RevalidationCount);
+        Assert.Equal(1, fixture.Session.RevalidationCount);
         Assert.True(fixture.LeaseDisposedAfterSession);
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(fixture.Path));
         var report = json.RootElement;
@@ -145,10 +145,43 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
         using var invalidated = new Fixture();
         invalidated.Options["--samples"] = "3";
         invalidated.Options["--interval-ms"] = "0";
-        invalidated.Session.FailRevalidationOn = 2;
+        invalidated.Session.FailRevalidationOn = 1;
         await Assert.ThrowsAsync<InvalidDataException>(() => invalidated.Run(new StringWriter()));
-        Assert.Equal(2, invalidated.Session.RevalidationCount);
+        Assert.Equal(1, invalidated.Session.RevalidationCount);
         Assert.False(File.Exists(invalidated.Path));
+    }
+
+    [Fact]
+    public async Task BurstRevalidatesExactlyOnceAfterLastReadBeforePublication()
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--samples"] = "5";
+        fixture.Options["--interval-ms"] = "0";
+        fixture.Session.OnRevalidate = () =>
+        {
+            Assert.Equal(5, fixture.ReadCount);
+            Assert.True(fixture.LeaseHeld);
+            Assert.False(File.Exists(fixture.Path));
+        };
+        Assert.Equal(0, await fixture.Run(new StringWriter()));
+        Assert.Equal(5, fixture.ReadCount);
+        Assert.Equal(1, fixture.Session.RevalidationCount);
+        Assert.True(fixture.LeaseDisposedAfterSession);
+        Assert.True(File.Exists(fixture.Path));
+
+        using var failed = new Fixture();
+        failed.Options["--samples"] = "5";
+        failed.Options["--interval-ms"] = "0";
+        failed.Session.OnRevalidate = () =>
+            Assert.Equal(5, failed.ReadCount);
+        failed.Session.RevalidationError = "post-burst-executable-changed";
+        using var output = new StringWriter();
+        await Assert.ThrowsAsync<InvalidDataException>(() => failed.Run(output));
+        Assert.Equal(5, failed.ReadCount);
+        Assert.Equal(1, failed.Session.RevalidationCount);
+        Assert.False(File.Exists(failed.Path));
+        Assert.Empty(output.ToString());
+        Assert.True(failed.LeaseDisposedAfterSession);
     }
 
     [Fact]

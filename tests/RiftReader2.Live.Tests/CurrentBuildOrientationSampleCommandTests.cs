@@ -35,7 +35,7 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         var output = new StringWriter();
         Assert.Equal(0, await f.Run(output));
         Assert.Equal(3, f.ReadCount);
-        Assert.Equal(3, f.Session.RevalidationCount);
+        Assert.Equal(1, f.Session.RevalidationCount);
         Assert.True(f.LeaseDisposedAfterSession);
         using var json = JsonDocument.Parse(await File.ReadAllTextAsync(f.Path));
         Assert.Equal("native-current-orientation-candidate-burst/1",
@@ -44,6 +44,35 @@ public sealed class CurrentBuildOrientationSampleCommandTests
         Assert.Equal(3, json.RootElement.GetProperty("observations").GetArrayLength());
         Assert.Equal(3, JsonDocument.Parse(output.ToString()).RootElement
             .GetProperty("completedSamples").GetInt32());
+    }
+
+    [Fact]
+    public async Task BurstFullRevalidationRunsOnceAfterAllReadsAndRejectsInvalidatedBuild()
+    {
+        using var f = new Fixture();
+        f.Options["--samples"] = "5";
+        f.Options["--interval-ms"] = "0";
+        f.Session.OnRevalidate = () =>
+        {
+            Assert.Equal(5, f.ReadCount);
+            Assert.True(f.LeaseHeld);
+            Assert.False(File.Exists(f.Path));
+        };
+        Assert.Equal(0, await f.Run(new StringWriter()));
+        Assert.Equal(1, f.Session.RevalidationCount);
+        Assert.True(f.LeaseDisposedAfterSession);
+
+        using var failed = new Fixture();
+        failed.Options["--samples"] = "5";
+        failed.Options["--interval-ms"] = "0";
+        failed.Session.RevalidationError = "post-burst-build-changed";
+        failed.Session.OnRevalidate = () => Assert.Equal(5, failed.ReadCount);
+        using var output = new StringWriter();
+        await Assert.ThrowsAsync<InvalidDataException>(() => failed.Run(output));
+        Assert.Equal(1, failed.Session.RevalidationCount);
+        Assert.False(File.Exists(failed.Path));
+        Assert.Empty(output.ToString());
+        Assert.True(failed.LeaseDisposedAfterSession);
     }
 
     [Theory]

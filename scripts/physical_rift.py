@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import hashlib
 import json
 import math
+import re
 from pathlib import Path
 import socket
 import struct
@@ -78,6 +79,23 @@ def _candidate_angle_steps(angles):
     steps = [((later - earlier + 180) % 360) - 180
              for earlier, later in zip(angles, angles[1:])]
     return None if any(abs(step) == 180 for step in steps) else steps
+
+
+def _utc_tick_order_key(value):
+    """Retain .NET's seventh fractional second digit instead of truncating to µs."""
+    if not isinstance(value, str):
+        raise ValueError("invalid-utc-tick-time")
+    match = re.fullmatch(
+        r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,7}))?(Z|\+00:00)",
+        value)
+    if match is None:
+        raise ValueError("invalid-utc-tick-time")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.utcoffset() != timedelta(0):
+        raise ValueError("invalid-utc-tick-time")
+    # Python datetime stores microseconds; .NET serializes 100 ns ticks.
+    remainder = int((match.group(2) or "").ljust(7, "0")[-1])
+    return parsed, remainder
 
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
@@ -162,13 +180,9 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             for row in observations:
                 try:
                     started_raw, completed_raw = row["startedAtUtc"], row["completedAtUtc"]
-                    if type(started_raw) is not str or type(completed_raw) is not str:
-                        raise ValueError("missing-timestamp")
-                    started = datetime.fromisoformat(started_raw.replace("Z", "+00:00"))
-                    completed = datetime.fromisoformat(completed_raw.replace("Z", "+00:00"))
-                    if (started.utcoffset() != timedelta(0) or
-                            completed.utcoffset() != timedelta(0) or
-                            not started < completed or
+                    started = _utc_tick_order_key(started_raw)
+                    completed = _utc_tick_order_key(completed_raw)
+                    if (not started < completed or
                             (last_completed is not None and started <= last_completed)):
                         raise ValueError("overlap-or-not-utc")
                 except (ValueError, TypeError, KeyError, OverflowError) as exc:

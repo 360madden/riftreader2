@@ -230,6 +230,23 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                                delta=0.0001)
         self.assertIs(values["headingQualified"], False)
 
+        # Fast .NET sampling can separate reads by 100 ns: Python datetime alone
+        # truncates the seventh fractional digit and falsely rejects valid order.
+        fast = [
+            {**row,
+             "startedAtUtc": f"2026-11-11T02:31:00.100000{index*2+1}+00:00",
+             "completedAtUtc": f"2026-11-11T02:31:00.100000{index*2+2}+00:00"}
+            for index, row in enumerate(rows)
+        ]
+        very_fast = physical._native_values("orientation", {
+            **report, "observations": fast, "observation": fast[-1]})
+        self.assertEqual(very_fast["sampleCount"], 3)
+        replayed = list(fast)
+        replayed[1] = {**fast[1], "startedAtUtc": fast[0]["completedAtUtc"]}
+        with self.assertRaisesRegex(ValueError, "invalid-native-orientation-burst-time"):
+            physical._native_values("orientation", {
+                **report, "observations": replayed, "observation": replayed[-1]})
+
         # Overlapping, replayed, or malformed captures cannot prove rotation.
         for altered in (
             [rows[0], {**rows[1], "startedAtUtc": rows[0]["completedAtUtc"]}, rows[2]],

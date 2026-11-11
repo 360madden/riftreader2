@@ -48,7 +48,10 @@ internal static class CurrentBuildOrientationSampleCommand
             !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Opened orientation process identity mismatch.");
         var elapsed = Stopwatch.StartNew();
-        var observation = await CaptureAsync(session, read, ct);
+        // The session holds an exact-epoch process handle; each read checks
+        // its player and component. For multi-sample bursts, defer the costly
+        // on-disk executable hash/module revalidation to the end before publishing.
+        var observation = await CaptureAsync(session, read, ct, revalidate: samples == 1);
         if (samples > 1)
         {
             var observations = new List<CurrentBuildOrientationCandidate>(samples) { observation };
@@ -56,12 +59,15 @@ internal static class CurrentBuildOrientationSampleCommand
             {
                 if (intervalMilliseconds > 0)
                     await Task.Delay(intervalMilliseconds, ct);
-                var next = await CaptureAsync(session, read, ct);
+                var next = await CaptureAsync(session, read, ct, revalidate: false);
                 if (next.Identity != identity || next.UnitKey != observation.UnitKey ||
                     next.ComponentAddress != observation.ComponentAddress)
                     throw new InvalidDataException("Orientation owner or component changed during burst.");
                 observations.Add(next);
             }
+            if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
+                throw new InvalidDataException("Orientation burst process identity invalidated; no report published.");
+            ct.ThrowIfCancellationRequested();
             var last = observations[^1];
             var burst = new
             {
@@ -77,6 +83,7 @@ internal static class CurrentBuildOrientationSampleCommand
                 limitations = new[]
                 {
                     "Each sample shares the exact game process/build epoch, unit key, component, read lease and session.",
+                    "Full process/path/executable-hash/module revalidation runs once after the bounded burst, before publication.",
                     "Position matrices can be cached; these are not qualified player body or camera headings.",
                     "Sequential samples cannot exclude ABA or prove state changes between reads.",
                     "No gameplay input, memory write, getter invocation or foreground change is performed."
@@ -122,14 +129,14 @@ internal static class CurrentBuildOrientationSampleCommand
     private static async Task<CurrentBuildOrientationCandidate> CaptureAsync(
         IReadOnlyNativeMemorySession session,
         Func<IReadOnlyNativeMemorySession, CurrentBuildOrientationCandidate> read,
-        CancellationToken ct)
+        CancellationToken ct, bool revalidate = true)
     {
         ct.ThrowIfCancellationRequested();
         var identity = session.Identity;
         var observation = read(session);
         if (observation.Identity != identity || observation.UnitKey == 0 || session.Identity != identity)
             throw new InvalidDataException("Orientation observation identity mismatch.");
-        if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
+        if (revalidate && (await session.RevalidateAsync(ct) is not null || session.Identity != identity))
             throw new InvalidDataException("Process identity invalidated; no report published.");
         ct.ThrowIfCancellationRequested();
         return observation;

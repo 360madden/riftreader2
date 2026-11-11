@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.physical_rift import _native_values
+from scripts.physical_rift import _native_values, _utc_tick_order_key
 from scripts.project_xyz_track import _pairs
 
 MAX_FILE_BYTES = 2_000_000
@@ -154,15 +154,22 @@ def _load(path):
                  else (isinstance(v, str) and re.fullmatch(r"[1-9][0-9]{0,19}", v)
                        and int(v) < 2**64), "invalid-turn-component")
     times = []
+    last_exact_end = None
     for row in rows:
         _require(row.get(key_field) == key
                  and tuple(row.get(field) for field in components) == owner,
                  "turn-player-or-component-changed")
         _require("candidate" in str(row.get("qualification", "")).lower(),
                  "turn-qualification-missing")
-        a, b = _utc(row.get("startedAtUtc")), _utc(row.get("completedAtUtc"))
-        _require(a <= b and (not times or a > times[-1][1]),
+        # .NET emits 100 ns timestamps. Preserve its seventh fractional digit
+        # when checking rapid bursts; Python datetime truncates to microseconds.
+        exact_start = _utc_tick_order_key(row.get("startedAtUtc"))
+        exact_end = _utc_tick_order_key(row.get("completedAtUtc"))
+        _require(exact_start <= exact_end
+                 and (last_exact_end is None or exact_start > last_exact_end),
                  "turn-capture-time-order-invalid")
+        last_exact_end = exact_end
+        a, b = _utc(row.get("startedAtUtc")), _utc(row.get("completedAtUtc"))
         times.append((a, b))
     # Reuse the production physical projection's burst/owner/bit guards.
     bracketed = (kind == "actor-pose" and

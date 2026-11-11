@@ -57,8 +57,12 @@ internal static class CurrentBuildActorPoseSampleCommand
             !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Opened actor pose process identity mismatch.");
         var elapsed = Stopwatch.StartNew();
+        // The opened session holds a stable process handle, and every
+        // candidate read brackets its player owner. For a burst, defer the
+        // expensive full executable SHA/module revalidation until all samples
+        // are read, then fail closed before any output is published.
         var observation = await CaptureAsync(session, read, ct,
-            includePosition ? readPosition : null);
+            includePosition ? readPosition : null, revalidate: samples == 1);
         if (includeTranslationSources && observation.TranslationSourcesCandidate is null)
             throw new InvalidDataException("Requested actor translation sources are missing.");
         if (samples > 1)
@@ -69,13 +73,18 @@ internal static class CurrentBuildActorPoseSampleCommand
                 if (intervalMilliseconds > 0)
                     await Task.Delay(intervalMilliseconds, ct);
                 var next = await CaptureAsync(session, read, ct,
-                    includePosition ? readPosition : null);
+                    includePosition ? readPosition : null, revalidate: false);
                 if (includeTranslationSources && next.TranslationSourcesCandidate is null)
                     throw new InvalidDataException("Requested actor translation sources are missing.");
                 if (next.PlayerKey != observation.PlayerKey || next.Identity != identity)
                     throw new InvalidDataException("Actor pose player or process changed during burst; no report published.");
                 observations.Add(next);
             }
+            // One full post-burst process/start/path/EXE-hash/module check
+            // before publishing. Never emit partial data on any failure.
+            if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
+                throw new InvalidDataException("Actor pose burst process identity invalidated; no report published.");
+            ct.ThrowIfCancellationRequested();
             var last = observations[^1];
             var burst = new
             {
@@ -92,6 +101,7 @@ internal static class CurrentBuildActorPoseSampleCommand
                 {
                     "All samples share one physical PID, start epoch, build SHA, read lease and session.",
                     "All observed player keys match; continuity between samples cannot be proved.",
+                    "Full executable/hash/module revalidation runs once after the bounded burst; the stable process handle and per-read player rechecks apply during sampling.",
                     "Matrices and planar angles remain candidates, not qualified body or camera facing.",
                     "Optional XYZ brackets share the actor owner, lease and session but are sequential candidates, not atomic movement proof.",
                     "Sequential reads cannot exclude ABA; no changed-state, freshness or restart qualification.",
@@ -141,7 +151,8 @@ internal static class CurrentBuildActorPoseSampleCommand
         IReadOnlyNativeMemorySession session,
         Func<IReadOnlyNativeMemorySession, CurrentBuildActorPoseCandidate> read,
         CancellationToken ct,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildOwnedPosition>? readPosition = null)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildOwnedPosition>? readPosition = null,
+        bool revalidate = true)
     {
         ct.ThrowIfCancellationRequested();
         var identity = session.Identity;
@@ -157,7 +168,7 @@ internal static class CurrentBuildActorPoseSampleCommand
         if (before is not null && (after is null || before.UnitKey != observation.PlayerKey ||
                                    after.UnitKey != observation.PlayerKey))
             throw new InvalidDataException("Actor pose and bracketed XYZ player owner differ; no report published.");
-        if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
+        if (revalidate && (await session.RevalidateAsync(ct) is not null || session.Identity != identity))
             throw new InvalidDataException("Actor pose process identity invalidated; no report published.");
         ct.ThrowIfCancellationRequested();
         if (before is not null && after is not null)
