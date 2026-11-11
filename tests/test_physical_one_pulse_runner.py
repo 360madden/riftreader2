@@ -120,7 +120,8 @@ class OnePulseTests(unittest.TestCase):
         self.messages = []
         self.approval = self.folder / "approval.json"
 
-    def run_pulse(self, *, reviewer=None, key="w", hold_ms=80):
+    def run_pulse(self, *, reviewer=None, key="w", hold_ms=80, focus=False,
+                  focus_window=None):
         return pulse.run_once(self.config, self.agent_config, HOST, PID, hold_ms,
                               self.approval, key=key, selector=selector,
                               gateway_factory=lambda *_args, **_kw: self.gateway,
@@ -128,7 +129,9 @@ class OnePulseTests(unittest.TestCase):
                               wait_session=lambda _: self.gateway,
                               reviewer=(reviewer if reviewer is not None
                                         else lambda *_: "Reviewed clear walk lane"),
-                              announce=lambda line, **_: self.messages.append(json.loads(line)))
+                              announce=lambda line, **_: self.messages.append(json.loads(line)),
+                               focus=focus,
+                               focus_window=focus_window or (lambda *_: None))
 
     def test_malformed_target_is_a_clean_refusal(self):
         from scripts.nav_physical_reservation import PhysicalClientIdentity
@@ -148,6 +151,28 @@ class OnePulseTests(unittest.TestCase):
         self.assertEqual(action["holdMilliseconds"], 80)
         self.assertTrue(self.gateway.closed and self.proc.terminated and self.proc.waited)
         self.assertEqual(self.messages[0]["status"], "awaiting-review")
+
+    def test_one_second_forward_pulse_is_admitted(self):
+        result = self.run_pulse(key="w", hold_ms=1000)
+        self.assertEqual(result["holdMilliseconds"], 1000)
+        self.assertEqual(dict(self.gateway.calls)["action"]["action"]["holdMilliseconds"], 1000)
+
+    def test_requested_focus_runs_before_control_agent(self):
+        observed = []
+        def focus_window(host, pid, pinned):
+            observed.append((host, pid, self.gateway.started, pinned.process_id))
+        result = self.run_pulse(focus=True, focus_window=focus_window, hold_ms=1000)
+        self.assertEqual(result["holdMilliseconds"], 1000)
+        self.assertEqual(observed, [(HOST, PID, False, PID)])
+
+    def test_denied_focus_stops_before_agent_or_input(self):
+        def deny(*_):
+            raise pulse.PhysicalPulseError("physical-rift-focus-denied")
+        with self.assertRaisesRegex(pulse.PhysicalPulseError, "physical-rift-focus-denied"):
+            self.run_pulse(focus=True, focus_window=deny)
+        self.assertFalse(self.gateway.started)
+        self.assertEqual(self.gateway.calls, [])
+        self.assertFalse(self.proc.terminated)
 
     def test_review_refusal_never_sends_input(self):
         def refuse(*_):
@@ -265,7 +290,7 @@ class OnePulseTests(unittest.TestCase):
         self.assertEqual(result["key"], "w")
 
     def test_invalid_key_and_duration_refused_before_gateway(self):
-        for key, hold_ms in (("a", 80), ("Q", 80), ("w", 19), ("q", 101), ("w", True)):
+        for key, hold_ms in (("a", 80), ("Q", 80), ("w", 19), ("q", 3001), ("w", True)):
             with self.subTest(key=key, hold_ms=hold_ms):
                 with self.assertRaisesRegex(pulse.PhysicalPulseError, "invalid-one-pulse"):
                     self.run_pulse(key=key, hold_ms=hold_ms)

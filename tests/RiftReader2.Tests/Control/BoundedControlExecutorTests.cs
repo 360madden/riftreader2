@@ -43,7 +43,7 @@ public sealed class BoundedControlExecutorTests
             new(["W"], 20),
             new([], 0),
             new(["w"], 19),
-            new(["w"], 251),
+            new(["w"], 3001),
             new([], 20, "middle"),
             new([], 20, DeltaX: 201),
             new([], 20, DeltaY: -201),
@@ -67,6 +67,8 @@ public sealed class BoundedControlExecutorTests
     [Theory]
     [InlineData(20)]
     [InlineData(250)]
+    [InlineData(1000)]
+    [InlineData(3000)]
     public async Task ExecuteAsync_AcceptsInclusiveMovementHoldBounds(int holdMilliseconds)
     {
         var result = await Executor(new RecordingInput())

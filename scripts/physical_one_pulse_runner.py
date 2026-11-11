@@ -8,6 +8,7 @@ its BMP; missing approval never sends input.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 from pathlib import Path
 import re
@@ -108,6 +109,28 @@ def _approval(path, capture, pinned, *, key, hold_ms, expires_seconds=30, now=ti
     raise PhysicalPulseError("review-expired-no-game-input")
 
 
+def _focus_selected_window(host, pid, pinned):
+    """Bring the exact selected physical game window forward when explicitly requested."""
+    selection = physical_rift.select_physical(expected_host=host, physical_pid=pid)
+    require(selected_identity(selection, host, pid) == pinned, "focus-target-changed")
+    hwnd = selection["target"].get("hwnd")
+    require(type(hwnd) is int and hwnd > 0, "focus-window-missing")
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetForegroundWindow.restype = ctypes.c_void_p
+    user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
+    user32.SetForegroundWindow.restype = ctypes.c_bool
+    user32.IsIconic.argtypes = [ctypes.c_void_p]
+    user32.IsIconic.restype = ctypes.c_bool
+    user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    if user32.IsIconic(hwnd):
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+    require(user32.SetForegroundWindow(hwnd), "physical-rift-focus-denied")
+    deadline = time.monotonic() + 1.0
+    while user32.GetForegroundWindow() != hwnd and time.monotonic() < deadline:
+        time.sleep(0.05)
+    require(user32.GetForegroundWindow() == hwnd, "physical-rift-not-foreground")
+
+
 def _owned_agent(exe, config_path):
     exe = Path(exe)
     require(exe.is_file(), "control-agent-executable-missing")
@@ -129,11 +152,11 @@ def _wait_session(gateway, *, clock=time.monotonic, sleep=time.sleep, timeout=8)
 def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w",
              selector=physical_rift.select_physical, gateway_factory=control_host.AgentGateway,
              launch_agent=_owned_agent, wait_session=_wait_session, reviewer=None,
-             announce=print):
+             announce=print, focus=False, focus_window=_focus_selected_window):
     require(host.upper() == "AMD-DESKTOP" and socket.gethostname().casefold() == host.casefold(),
             "wrong-physical-host")
     require(type(pid) is int and 0 < pid <= 2147483647
-            and type(hold_ms) is int and 20 <= hold_ms <= 100
+            and type(hold_ms) is int and 20 <= hold_ms <= 3000
             and isinstance(key, str) and key in ("w", "q"), "invalid-one-pulse-arguments")
     require(config.physical_process_id == pid and config.vmx is None and config.vmrun is None
             and config.vnc_port is None
@@ -155,6 +178,9 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w"
                         "processStartUtcTicks": pinned.process_start_utc_ticks,
                         "executableSha256": pinned.executable_sha256.upper()}
     with PhysicalClientReservation(pinned, observe) as lease:
+        if focus:
+            focus_window(host, pid, pinned)
+            lease.check()
         gateway = gateway_factory(config, control_host.EvidenceJournal(config.output_directory),
                                   require_supervisor=False, exclusive_console=False)
         agent = None
@@ -244,8 +270,9 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--host", choices=("AMD-DESKTOP",), required=True)
     p.add_argument("--pid", type=int, required=True)
-    p.add_argument("--hold-ms", type=int, default=80)
+    p.add_argument("--hold-ms", type=int, default=1000)
     p.add_argument("--key", choices=("w", "q"), default="w")
+    p.add_argument("--focus", action="store_true", help="bring the exact physical RIFT window forward")
     p.add_argument("--host-config", type=Path, required=True)
     p.add_argument("--agent-config", type=Path, required=True)
     p.add_argument("--approval-file", type=Path, required=True)
@@ -253,7 +280,7 @@ def main(argv=None):
     try:
         config = control_host.HostConfig.load(a.host_config)
         result = run_once(config, a.agent_config, a.host, a.pid, a.hold_ms,
-                          a.approval_file, key=a.key)
+                          a.approval_file, key=a.key, focus=a.focus)
         print(json.dumps(result, sort_keys=True))
         return 0
     except (PhysicalPulseError, control_host.ControlHostError, OSError, ValueError) as error:

@@ -240,9 +240,9 @@ public sealed class BoundedControlExecutor
             if (action.HoldMilliseconds != 0)
                 throw new InvalidDataException("A standalone wheel action must have a zero millisecond hold.");
         }
-        else if (action.HoldMilliseconds is < 20 or > 250)
+        else if (action.HoldMilliseconds is < 20 or > 3000)
         {
-            throw new InvalidDataException("Movement and camera holds must be between 20 and 250 milliseconds.");
+            throw new InvalidDataException("Movement and camera holds must be between 20 and 3000 milliseconds.");
         }
     }
 }
