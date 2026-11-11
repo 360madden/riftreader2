@@ -54,6 +54,28 @@ public sealed class NativeVitalsComparisonCliTests
     }
 
     [Fact]
+    public async Task UnavailableResourceMayCarryNativeDiagnosticInputs()
+    {
+        var dir = MakeDir();
+        try
+        {
+            var before = Write(dir, "before.json", Sample("2026-11-10T23:00:00Z", 100, 90));
+            var after = Write(dir, "after.json", Sample("2026-11-10T23:00:10Z", 100, null,
+                diagnosticUnavailable: true));
+            var (code, output, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var json = JsonDocument.Parse(output);
+            var energy = json.RootElement.GetProperty("resources").GetProperty("energy");
+            Assert.Equal("unavailable", energy.GetProperty("status").GetString());
+            Assert.Equal("revision-mismatch-needs-native-cache-write",
+                energy.GetProperty("afterUnavailableReason").GetString());
+            Assert.Equal(JsonValueKind.Null, energy.GetProperty("netChange").ValueKind);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
     public async Task RejectsDifferentPlayerAndReversedObservation()
     {
         var dir = MakeDir();
@@ -86,7 +108,8 @@ public sealed class NativeVitalsComparisonCliTests
         finally { Directory.Delete(dir, true); }
     }
 
-    private static object Sample(string instant, long health, long? energy, ulong unitKey = 42)
+    private static object Sample(string instant, long health, long? energy, ulong unitKey = 42,
+        bool diagnosticUnavailable = false)
     {
         object present(long value, long maximum, string? type = null) =>
             new { status = "calculated-candidate", unavailableReason = (string?)null,
@@ -111,7 +134,12 @@ public sealed class NativeVitalsComparisonCliTests
                 qualification = "candidate-only; semantics/passive-freshness/restart-unverified",
                 health = present(health, 150), mana = missing("not-mana-kind-three"),
                 energy = energy.HasValue ? present(energy.Value, 100, "0x072B") :
-                    missing("not-energy-kind-four")
+                    diagnosticUnavailable ? new
+                    {
+                        status = "unavailable", unavailableReason = "revision-mismatch-needs-native-cache-write",
+                        current = (long?)null, maximum = (long?)null,
+                        inputs = (object?)new { baseRaw = 90, recordRevision = 1, wrapperRevision = 2 }
+                    } : missing("not-energy-kind-four")
             }
         };
     }

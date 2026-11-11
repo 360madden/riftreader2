@@ -139,7 +139,8 @@ internal static class NativeVitalsComparisonCommand
         var unavailableReason = Property(field, "unavailableReason");
         var inputs = Property(field, "inputs");
         if (status == "unavailable" && current.ValueKind == JsonValueKind.Null &&
-            maximum.ValueKind == JsonValueKind.Null && inputs.ValueKind == JsonValueKind.Null &&
+            maximum.ValueKind == JsonValueKind.Null &&
+            (inputs.ValueKind is JsonValueKind.Null or JsonValueKind.Object) &&
             unavailableReason.ValueKind == JsonValueKind.String &&
             !string.IsNullOrWhiteSpace(unavailableReason.GetString()))
             return new(status, null, null, unavailableReason.GetString());
