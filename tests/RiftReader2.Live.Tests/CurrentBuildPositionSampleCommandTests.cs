@@ -243,6 +243,25 @@ public sealed class CurrentBuildPositionSampleCommandTests
     }
 
     [Fact]
+    public void PublishedPlayerSystemWithConstructorZeroKeyFailsClosedThenRecovers()
+    {
+        // RRE's exact-build constructor initializes the self key at +0x360 to zero.
+        // A non-null singleton root therefore does not yet prove player identity.
+        var session = Fixture();
+        session.Set(PlayerSystem + 0x360, Bytes64(0));
+
+        Assert.Throws<InvalidDataException>(() => CurrentBuildPlayerLookup.Resolve(session));
+
+        // Simulate later key publication within the same process and memory session.
+        // Resolve must reacquire the key and entity rather than cache an absent owner.
+        session.Set(PlayerSystem + 0x360, Bytes64(Key));
+        var recovered = CurrentBuildPlayerLookup.Resolve(session);
+        Assert.Equal(Key, recovered.PlayerKey);
+        Assert.Equal(Entity, recovered.EntityAddress);
+        recovered.VerifyUnchanged();
+    }
+
+    [Fact]
     public void RejectsNonfiniteXyzAndPartialRead()
     {
         var session = Fixture();
