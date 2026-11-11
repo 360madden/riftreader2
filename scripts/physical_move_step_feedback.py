@@ -39,7 +39,8 @@ def utc(raw):
 
 
 def compare(basis_path: Path, position_path: Path, goal_x: float,
-            goal_z: float, receipt_path: Path, goal_y: float | None = None) -> dict:
+            goal_z: float, receipt_path: Path, goal_y: float | None = None,
+            *, post_position_path: Path | None = None) -> dict:
     # Recompute the plan from its exact two saved sources. Do not trust a
     # free-standing "suggested action" text field or execute anything.
     proposed = waypoint.preview(basis_path, position_path, goal_x, goal_z, goal_y)
@@ -79,6 +80,40 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
     start = proposed["currentXYZ"]
     actual_before = {axis: float(before[axis]) for axis in ("x", "y", "z")}
     actual_after = {axis: float(after[axis]) for axis in ("x", "y", "z")}
+    after_for_controller = actual_after
+    post_source_sha = None
+    post_gap_seconds = None
+    post_position_candidate = None
+    post_observation_end = utc(after["completedAtUtc"])
+    if post_position_path is not None:
+        post_native, post_source_sha = route._read_native(Path(post_position_path))
+        require(post_source_sha != native_hash
+                and post_source_sha != imported["sourceReceiptSha256"],
+                "feedback-post-source-not-independent")
+        require(post_native["identity"] == native["identity"]
+                and post_native["unitKey"] == native["unitKey"],
+                "feedback-post-owner-changed")
+        post_gap_seconds = (utc(post_native["firstSampleUtc"]) - post_observation_end).total_seconds()
+        require(0 < post_gap_seconds <= 5,
+                "feedback-post-capture-gap-invalid")
+        require(post_native["sampleCount"] >= 2,
+                "feedback-post-insufficient-samples")
+        post_burst_seconds = (utc(post_native["lastSampleUtc"])
+                              - utc(post_native["firstSampleUtc"])).total_seconds()
+        require(0 <= post_burst_seconds <= 2,
+                "feedback-post-burst-too-long")
+        last_post = post_native["positions"][-1]
+        require(all(math.hypot(last_post.x - sample.x, last_post.z - sample.z) <= .05
+                        and abs(last_post.y - sample.y) <= .10
+                    for sample in post_native["positions"]),
+                "feedback-post-capture-not-stationary")
+        post_position_candidate = {"x": last_post.x, "y": last_post.y, "z": last_post.z}
+        difference = math.hypot(last_post.x - actual_after["x"],
+                                last_post.z - actual_after["z"])
+        require(difference <= .05 and abs(last_post.y - actual_after["y"]) <= .10,
+                "feedback-post-disagrees-with-helper")
+        after_for_controller = post_position_candidate
+        post_observation_end = utc(post_native["lastSampleUtc"])
     mismatch = math.sqrt(sum((actual_before[k] - start[k]) ** 2 for k in ("x", "y", "z")))
     require(math.isfinite(mismatch) and mismatch <= .05,
             "feedback-unexpected-start-position")
@@ -99,7 +134,8 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
     consistent = prediction_error <= tolerance
     goal = proposed["goalXYZ"]
     before_distance = math.hypot(goal["x"] - actual_before["x"], goal["z"] - actual_before["z"])
-    after_distance = math.hypot(goal["x"] - actual_after["x"], goal["z"] - actual_after["z"])
+    after_distance = math.hypot(goal["x"] - after_for_controller["x"],
+                                goal["z"] - after_for_controller["z"])
     progress = before_distance - after_distance
 
     # Replay the same bounded controller state against the observed candidate
@@ -122,10 +158,10 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
         # Charge observed key-down duration to the remaining hold budget.
         controller.total_hold_ms = max(controller.total_hold_ms,
                                        int(math.ceil(observed_hold)))
-        elapsed = (utc(after["completedAtUtc"]) - utc(native["firstSampleUtc"])).total_seconds()
+        elapsed = (post_observation_end - utc(native["firstSampleUtc"])).total_seconds()
         require(0 < elapsed <= controller.max_elapsed_seconds,
                 "feedback-controller-elapsed-budget")
-        after_position = Position(**actual_after)
+        after_position = Position(**after_for_controller)
         try:
             report = controller.record_feedback(after_position, elapsed)
             controller_status = report.status
@@ -145,9 +181,9 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
                         "predictedAfterDistanceCandidate": following.predicted_distance_after,
                         "predictedDeltaXYZCandidate": {"x": predicted_dx, "y": 0.0, "z": predicted_dz},
                         "predictedAfterXYZCandidate": {
-                            "x": actual_after["x"] + predicted_dx,
-                            "y": actual_after["y"],
-                            "z": actual_after["z"] + predicted_dz,
+                            "x": after_for_controller["x"] + predicted_dx,
+                            "y": after_for_controller["y"],
+                            "z": after_for_controller["z"] + predicted_dz,
                         },
                         "inputSent": False, "navigationEligible": False,
                     }
@@ -170,6 +206,10 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
         "basisReportSha256": proposed["basisReportSha256"],
         "nativePositionReportSha256": native_hash,
         "sourceReceiptSha256": imported["sourceReceiptSha256"],
+        "postPositionReportSha256": post_source_sha,
+        "postCaptureGapSeconds": post_gap_seconds,
+        "postPositionMatchesReceiptCandidate": True if post_source_sha is not None else None,
+        "postPositionXYZCandidate": post_position_candidate,
         "key": action["key"],
         "requestedHoldMilliseconds": hold,
         "observedHoldMilliseconds": observed_hold,
@@ -194,6 +234,7 @@ def compare(basis_path: Path, position_path: Path, goal_x: float,
             "No input is sent or automatically repeated; divergence means stop/review.",
             "A revised second step is an offline candidate derived from the same unqualified basis.",
             "In-tolerance feedback requires an independent stationary post-release observation.",
+            "Optional separate native post-position burst matches only the same cache reader, not independent gameplay proof.",
         ],
     }
 
@@ -203,6 +244,7 @@ def main(argv=None):
     p.add_argument("--basis", type=Path, required=True)
     p.add_argument("--position", type=Path, required=True)
     p.add_argument("--receipt", type=Path, required=True)
+    p.add_argument("--post-position", type=Path, help="optional separate later native capture file")
     p.add_argument("--target-x", type=float, required=True)
     p.add_argument("--target-z", type=float, required=True)
     p.add_argument("--target-y", type=float)
@@ -210,7 +252,8 @@ def main(argv=None):
     a = p.parse_args(argv)
     try:
         result = compare(a.basis, a.position, a.target_x,
-                         a.target_z, a.receipt, a.target_y)
+                         a.target_z, a.receipt, a.target_y,
+                         post_position_path=a.post_position)
         rendered = json.dumps(result, sort_keys=True, allow_nan=False)
         if a.out:
             with a.out.open("x", encoding="utf-8") as stream:

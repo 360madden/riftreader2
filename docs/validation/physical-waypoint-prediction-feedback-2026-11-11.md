@@ -37,6 +37,14 @@ The existing `WaypointController` already provides the correct pending-action st
 
 New fields in the feedback record: `controllerFeedbackStatus`, `nextCandidateStatus`, and optional `nextCandidateAction` with its predicted X/Z delta and endpoint. All next actions retain `navigationEligible=false` and `inputSent=false`. A real historical 400 ms W receipt remains unsuitable for the synthetic 100 ms example; **no new physical input or independent changed-state test was performed**.
 
+## Optional separate post-release native capture
+
+The same offline feedback command now accepts `--post-position PATH.json`, referring to a **separate native XYZ burst recorded after the helper's final XYZ sample**. It uses the same existing RR2 position reader, but a different saved capture; this is **not** independent RIFT UI/Lua proof.
+
+When supplied, RR2 requires the original process/build/player identity, distinct report hash, a **0–5 second** post-capture gap, at least two native samples within a 2-second burst, every sample stationary within 0.05 horizontal / 0.10 vertical units of the final sample, and agreement with the helper's reported endpoint (within 0.05 horizontal / 0.10 vertical). Failures block the comparison and yield **no revised action**. A matching later sample becomes the candidate position for the existing controller's next-step arithmetic. Output includes `postPositionReportSha256`, `postCaptureGapSeconds`, `postPositionMatchesReceiptCandidate`, and `postPositionXYZCandidate`.
+
+**39/39 focused tests passed**, including agreement, contradiction, wrong identity, stale after-capture, continuing drift, and the actual `--post-position` CLI route. Real helper/pulse coordination has **not** been performed for this new option; all tests were offline synthetic fixtures. The earlier historical 400 ms W receipt cannot be substituted for a new 100 ms proposal, and the script still never sends gameplay input.
+
 ## Qualification boundary
 
 Outputs retain `inputSent=false`, `navigationEligible=false`, `gameResponseVerified=false`, `arrivalQualified=false`, and `sameFacingConfirmed=false`. The old Q/E vectors were reprojected to a later W heading mathematically and **not tested at that newer facing**. Current native XYZ can be cached and does not independently prove game response. An actual same-facing bounded pulse, matched pre/post native readings and independent visual/Lua response are still needed before steering can be qualified.

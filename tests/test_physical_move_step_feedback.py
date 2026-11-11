@@ -48,8 +48,20 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         self.position_file.write_text(json.dumps(position() if p is None else p), encoding="utf-8")
         self.receipt_file.write_text(json.dumps(completed_w() if r is None else r), encoding="utf-8")
 
-    def assess(self, x=-.6, z=-.075):
-        return feedback.compare(self.basis_file, self.position_file, x, z, self.receipt_file)
+    def assess(self, x=-.6, z=-.075, post=False):
+        extra = {"post_position_path": self.root / "post.json"} if post else {}
+        return feedback.compare(self.basis_file, self.position_file, x, z,
+                                self.receipt_file, **extra)
+
+    def save_post(self, x=-.66, z=-.0825, start_second="42"):
+        report = position()
+        for index, row in enumerate(report["observations"]):
+            ms = 850 + index * 100
+            row["startedAtUtc"] = f"2026-11-11T07:06:{start_second}.{ms:03d}Z"
+            row["completedAtUtc"] = f"2026-11-11T07:06:{start_second}.{ms+10:03d}Z"
+            row.update(x=x, y=0, z=z)
+        (self.root / "post.json").write_text(json.dumps(report), encoding="utf-8")
+        return report
 
     def test_matching_pulse_produces_candidate_feedback_not_control_authority(self):
         result = self.assess()
@@ -104,6 +116,80 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         self.assertEqual(result["decision"], "stop-and-review")
         self.assertEqual(result["nextCandidateStatus"], "stop-controller-cross-track")
         self.assertIsNone(result["nextCandidateAction"])
+
+    def test_separate_stationary_post_capture_matches_helper_candidate(self):
+        self.save_post(x=-.661, z=-.082)
+        result = self.assess(post=True)
+        self.assertTrue(result["postPositionMatchesReceiptCandidate"])
+        self.assertRegex(result["postPositionReportSha256"], "^[0-9A-F]{64}$")
+        self.assertGreater(result["postCaptureGapSeconds"], 0)
+        self.assertEqual(result["nextCandidateStatus"], "requires-independent-arrival-settle")
+        self.assertFalse(result["arrivalQualified"])
+        self.assertFalse(result["gameResponseVerified"])
+        self.assertIsNone(result["nextCandidateAction"])
+
+    def test_separate_post_capture_can_support_revised_offline_candidate(self):
+        r = completed_w()
+        r.update(holdMilliseconds=150, observedMilliseconds=155)
+        r["xyzFeedback"]["afterXYZ"].update(x=-.93, z=-.11625)
+        r["xyzFeedback"]["deltaXYZ"] = {"x": -.93, "y": 0, "z": -.11625}
+        r["xyzFeedback"]["planarDisplacementCandidate"] = (.93**2 + .11625**2)**.5
+        self.write(r=r)
+        self.save_post(x=-.931, z=-.116)
+        result = self.assess(-1.2, .5, post=True)
+        self.assertEqual(result["nextCandidateStatus"], "one-revised-offline-candidate")
+        self.assertEqual(result["nextCandidateAction"]["key"], "q")
+        self.assertAlmostEqual(result["postPositionXYZCandidate"]["x"], -.931)
+        self.assertFalse(result["navigationEligible"])
+
+    def test_post_capture_wrong_owner_stale_unstable_or_disagreeing_blocks(self):
+        p = self.save_post()
+        p["identity"]["processId"] += 1
+        (self.root / "post.json").write_text(json.dumps(p), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "feedback-post-owner-changed"):
+            self.assess(post=True)
+        self.save_post(start_second="49")
+        with self.assertRaisesRegex(ValueError, "feedback-post-capture-gap-invalid"):
+            self.assess(post=True)
+        self.save_post(x=-.4)
+        with self.assertRaisesRegex(ValueError, "feedback-post-disagrees-with-helper"):
+            self.assess(post=True)
+        p = self.save_post()
+        p["observations"][0]["x"] = -.50
+        (self.root / "post.json").write_text(json.dumps(p), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "feedback-post-capture-not-stationary"):
+            self.assess(post=True)
+        p = self.save_post()
+        p["observations"][1].update(
+            startedAtUtc="2026-11-11T07:06:45.950Z",
+            completedAtUtc="2026-11-11T07:06:45.960Z")
+        (self.root / "post.json").write_text(json.dumps(p), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "feedback-post-burst-too-long"):
+            self.assess(post=True)
+        p = self.save_post()
+        middle = deepcopy(p["observations"][0])
+        middle.update(index=2, x=-.4,
+                      startedAtUtc="2026-11-11T07:06:42.910Z",
+                      completedAtUtc="2026-11-11T07:06:42.920Z")
+        p["observations"].insert(1, middle)
+        p["observations"][2]["index"] = 3
+        p["requestedSamples"] = p["completedSamples"] = 3
+        (self.root / "post.json").write_text(json.dumps(p), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "feedback-post-capture-not-stationary"):
+            self.assess(post=True)
+
+    def test_cli_optional_post_position_reuses_later_native_capture(self):
+        self.save_post()
+        args = ["--basis", str(self.basis_file), "--position", str(self.position_file),
+                "--receipt", str(self.receipt_file),
+                "--post-position", str(self.root / "post.json"),
+                "--target-x", "-.6", "--target-z", "-.075"]
+        with contextlib.redirect_stdout(StringIO()) as printed:
+            self.assertEqual(feedback.main(args), 0)
+        report = json.loads(printed.getvalue())
+        self.assertTrue(report["postPositionMatchesReceiptCandidate"])
+        self.assertFalse(report["gameResponseVerified"])
+        self.assertFalse(report["inputSent"])
 
     def test_divergent_direction_means_stop_and_review(self):
         r = completed_w()
