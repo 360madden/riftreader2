@@ -11,6 +11,10 @@ reader. Check each field's `status` and `unavailableReason` before using its
 values; a complete report does not mean every field is available.
 The read-only report also exposes `resourceKindCandidate` (raw discriminator),
 including unsupported resource kinds without assuming they are Mana or Energy.
+For calculated resources, the `inputs` object also exposes
+`unclampedRatePerClockUnitCandidate`, derived from the native rate coefficient.
+It ignores clamping, caps and tick quantization; it is not an observed
+regeneration rate, and a game-clock unit has not been externally calibrated.
 
 On the activated Lab 2 controller, use the joined persistent diagnostic to avoid
 guest process launch and executable/report transfers:

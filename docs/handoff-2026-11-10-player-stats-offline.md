@@ -22,3 +22,11 @@
 3. Broaden selectors or optimize contiguous reads only for a concrete retrieval need; keep candidate labels, same-player/build/epoch checks, and no interference with active movement ownership.
 
 No live work or new game authority is implied by this handoff.
+
+## 2026-11-10 20:41 EST — further offline milestones
+
+- `dec1313`: C# selector-map acquisition batches all 84 map entries into one guarded buffer (two reads including final bracket).
+- `dacca83`: adjacent mapped stat values are now grouped in native C#, retaining the per-range reread. Historical 20 selectors map to five contiguous groups per vector: `2..6`, `8..10`, `12..15`, `18..24`, `146`. A fake-memory regression verifies all 40 raw values and exactly two reads per group. This is a read-call model, **not measured live latency**.
+- `283f543`: offline comparator reports selector-index drift independently of raw numeric changes and rejects overlapping captures. Six focused comparison tests passed. Retained Nov 7/8 pair replay saved as `artifacts/rr2-stats-cross-epoch-mapping-20261111.json`: 20/20 mappings stable, 40/40 values unchanged, zero changed spreads.
+- `a3a64aa`: HP/Mana/Energy `inputs` expose `unclampedRatePerClockUnitCandidate` from already-decoded native coefficients (31 focused reader tests passed). This is **formula arithmetic, not measured regeneration**; clamping, tick quantization and clock calibration remain unresolved.
+- Continue in the isolated player-stat lane. No live capture, movement, casting, VM or RRE changes this block. Concurrent developer edits and package locks were preserved.

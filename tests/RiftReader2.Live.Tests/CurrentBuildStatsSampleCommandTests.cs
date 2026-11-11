@@ -17,6 +17,39 @@ public sealed class CurrentBuildStatsSampleCommandTests
   var rows=Read(s).Stats;Assert.Equal(321L,rows[1].Ordinary.RawSigned64);Assert.Equal(-9L,rows[1].Unbuffed.RawSigned64);
   Assert.Equal(2,s.ReadCount(A));Assert.Equal(2,s.ReadCount(U));Assert.Equal(0,s.ReadCount(A+8));Assert.Equal(0,s.ReadCount(U+8));
  }
+ [Fact] public void HistoricalTwentySelectorLayoutBatchesIntoFiveGroupsPerVector()
+ {
+  var s=Fixture();var map=s.Get(Map);
+  var mappings=new (int Selector,int Index)[]{(37,20),(24,8),(32,14),(26,9),(33,15),
+   (5,2),(1,3),(3,4),(4,5),(2,6),(35,18),(36,19),(38,21),(39,22),
+   (40,23),(41,24),(31,13),(83,146),(27,10),(30,12)};
+  foreach(var (selector,index) in mappings)
+   BinaryPrimitives.WriteInt32LittleEndian(map.AsSpan(selector*4,4),index);
+  s.Put(Map,map);s.Put(R+0x78,Header(A,147));s.Put(R+0x148,Header(U,147));
+  var groups=new (int Start,int End)[]{(2,6),(8,10),(12,15),(18,24),(146,146)};
+  foreach(var (start,end) in groups)
+  {
+   var ordinary=new byte[(end-start+1)*8];var unbuffed=new byte[ordinary.Length];
+   for(var index=start;index<=end;index++)
+   {
+    BitConverter.GetBytes(1000L+index).CopyTo(ordinary,(index-start)*8);
+    BitConverter.GetBytes(-1000L-index).CopyTo(unbuffed,(index-start)*8);
+   }
+   s.Put(A+(ulong)start*8,ordinary);s.Put(U+(ulong)start*8,unbuffed);
+  }
+  var rows=Read(s).Stats;Assert.Equal(20,rows.Count);
+  foreach(var row in rows)
+  {
+   Assert.Equal(1000L+row.MappedIndex,row.Ordinary.RawSigned64);
+   Assert.Equal(-1000L-row.MappedIndex,row.Unbuffed.RawSigned64);
+  }
+  foreach(var (start,_) in groups)
+  {
+   Assert.Equal(2,s.ReadCount(A+(ulong)start*8));
+   Assert.Equal(2,s.ReadCount(U+(ulong)start*8));
+  }
+  Assert.Equal(0,s.ReadCount(A));Assert.Equal(0,s.ReadCount(U));
+ }
  [Fact] public void CachedReceiverMismatchFails(){var s=Fixture();s.Put(S+0x400,Q(H+8));Assert.Throws<InvalidDataException>(()=>Read(s));}
  [Fact] public void MappingAndValueMutationFail(){var s=Fixture();var changedMap=s.Get(Map);BinaryPrimitives.WriteInt32LittleEndian(changedMap.AsSpan(37*4,4),1);s.Change(Map,changedMap);Assert.Throws<InvalidDataException>(()=>Read(s));s=Fixture();s.Change(A,Q(124));Assert.Throws<InvalidDataException>(()=>Read(s));}
  [Fact] public void WrongRecordTypeFails(){var s=Fixture();s.Put(R,Q(M+0x1234));Assert.Throws<InvalidDataException>(()=>Read(s));}
