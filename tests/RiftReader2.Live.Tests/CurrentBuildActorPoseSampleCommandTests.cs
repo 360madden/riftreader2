@@ -175,6 +175,20 @@ public sealed class CurrentBuildActorPoseSampleCommandTests
     }
 
     [Fact]
+    public async Task PositionBracketDurationExcludesSubsequentProcessRevalidation()
+    {
+        using var fixture = new Fixture();
+        fixture.Options["--include-position"] = "true";
+        fixture.Session.OnRevalidate = () => Thread.Sleep(200);
+        Assert.Equal(0, await fixture.Run(new StringWriter()));
+        using var json = JsonDocument.Parse(await File.ReadAllTextAsync(fixture.Path));
+        var duration = json.RootElement.GetProperty("observation")
+            .GetProperty("positionBracketCandidate").GetProperty("elapsedMilliseconds").GetDouble();
+        Assert.InRange(duration, 0, 150);
+        Assert.True(fixture.Session.Revalidated);
+    }
+
+    [Fact]
     public async Task MismatchedPositionOwnerNeverPublishesAReport()
     {
         using var fixture = new Fixture();

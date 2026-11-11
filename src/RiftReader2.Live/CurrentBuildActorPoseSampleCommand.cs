@@ -142,6 +142,9 @@ internal static class CurrentBuildActorPoseSampleCommand
         var before = readPosition?.Invoke(session);
         var observation = read(session);
         var after = readPosition?.Invoke(session);
+        // The XYZ bracket ends with the second position read, not with the later
+        // process revalidation (which can take unrelated time).
+        var positionBracketElapsedMilliseconds = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
         if (observation.Identity != identity || observation.PlayerKey == 0 || session.Identity != identity)
             throw new InvalidDataException("Actor pose observation owner or process changed.");
         if (before is not null && (after is null || before.UnitKey != observation.PlayerKey ||
@@ -155,7 +158,7 @@ internal static class CurrentBuildActorPoseSampleCommand
             {
                 PositionBracketCandidate = new(observation.PlayerKeyDecimal,
                     before.Position, after.Position,
-                    Stopwatch.GetElapsedTime(started).TotalMilliseconds)
+                    positionBracketElapsedMilliseconds)
             };
         return observation;
     }
