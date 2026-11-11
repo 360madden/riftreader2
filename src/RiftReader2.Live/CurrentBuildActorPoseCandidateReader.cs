@@ -24,10 +24,15 @@ internal sealed record CurrentBuildActorPoseCandidate(
     public string PositionComponentDecimal => PositionComponent.ToString(CultureInfo.InvariantCulture);
     public bool NormalRenderBranch => (ActorFlags & 1) == 0;
     public bool ActorHeadingQualified => false;
+    // These translation triplets share the already bracketed matrix payloads.
+    // They are not independently qualified as the live player world position.
+    public CurrentBuildXyz? ActorWorldTranslationCandidate { get; init; }
+    public CurrentBuildXyz? RenderWorldTranslationCandidate { get; init; }
+    public double? RenderWorldTranslationMaxAbsDeltaCandidate { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CurrentBuildActorPosePositionBracketCandidate? PositionBracketCandidate { get; init; }
     public string Qualification =>
-        "actor/model/render-matrix-candidate-only; body-facing, source freshness, input response and restart unverified";
+        "actor/model/render-matrix/translation-candidate-only; body-facing, source freshness, input response and restart unverified";
 }
 
 internal sealed record CurrentBuildActorPosePositionBracketCandidate(
@@ -120,9 +125,30 @@ internal static class CurrentBuildActorPoseCandidateReader
             throw new InvalidDataException("Actor pose process identity changed.");
         var delta = CompositionDelta(actorMatrix.RowMajorF32, modelMatrix.RowMajorF32,
             renderMatrix?.RowMajorF32);
+        var actorTranslation = DecodeFiniteTranslation(actorRaw.AsSpan(0x24, 0x0C));
+        var renderTranslation = renderRaw is null ? null : DecodeFiniteTranslation(renderRaw.AsSpan(0x24, 0x0C));
         return new(identity, started, DateTimeOffset.UtcNow, playerKey, playerEntity, actor, position,
-            flags, actorMatrix, modelMatrix, renderMatrix, renderStatus, delta);
+            flags, actorMatrix, modelMatrix, renderMatrix, renderStatus, delta)
+        {
+            ActorWorldTranslationCandidate = actorTranslation,
+            RenderWorldTranslationCandidate = renderTranslation,
+            RenderWorldTranslationMaxAbsDeltaCandidate = TranslationDelta(actorTranslation, renderTranslation)
+        };
     }
+
+    private static CurrentBuildXyz? DecodeFiniteTranslation(ReadOnlySpan<byte> raw)
+    {
+        var x = BinaryPrimitives.ReadSingleLittleEndian(raw);
+        var y = BinaryPrimitives.ReadSingleLittleEndian(raw.Slice(4));
+        var z = BinaryPrimitives.ReadSingleLittleEndian(raw.Slice(8));
+        return float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(z)
+            ? new CurrentBuildXyz(x, y, z) : null;
+    }
+
+    private static double? TranslationDelta(CurrentBuildXyz? actor, CurrentBuildXyz? render) =>
+        actor is null || render is null ? null : Math.Max(
+            Math.Max(Math.Abs((double)actor.X - render.X), Math.Abs((double)actor.Y - render.Y)),
+            Math.Abs((double)actor.Z - render.Z));
 
     private static double? CompositionDelta(float[]? actor, float[]? model, float[]? render)
     {

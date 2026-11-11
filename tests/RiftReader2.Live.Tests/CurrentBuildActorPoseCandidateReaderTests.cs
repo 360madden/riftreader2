@@ -31,6 +31,9 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         Assert.Equal(9, result.ActorMatrix.RawBits.Length);
         Assert.Equal(90, result.ActorMatrix.PlanarAngleDegreesCandidate!.Value, 6);
         Assert.Equal(0, result.RenderCompositionMaxAbsDelta!.Value, 8);
+        Assert.Equal(new CurrentBuildXyz(11, 22, 33), result.ActorWorldTranslationCandidate);
+        Assert.Equal(result.ActorWorldTranslationCandidate, result.RenderWorldTranslationCandidate);
+        Assert.Equal(0, result.RenderWorldTranslationMaxAbsDeltaCandidate);
         Assert.Equal("structural-y-planar-matrix-candidate", result.RenderMatrix!.Status);
         Assert.Contains("candidate-only", result.Qualification);
         Assert.Equal("4660", result.PlayerKeyDecimal);
@@ -52,6 +55,9 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         Assert.False(result.NormalRenderBranch);
         Assert.Null(result.RenderMatrix);
         Assert.Null(result.RenderCompositionMaxAbsDelta);
+        Assert.Equal(new CurrentBuildXyz(11, 22, 33), result.ActorWorldTranslationCandidate);
+        Assert.Null(result.RenderWorldTranslationCandidate);
+        Assert.Null(result.RenderWorldTranslationMaxAbsDeltaCandidate);
         Assert.Equal("alternate-reference-branch-not-followed", result.RenderStatus);
         Assert.Equal(0, source.ReadCount(Actor + 0x410, 8));
         Assert.Equal(0, source.ReadCount(Renderer + 0xA0, 0x30));
@@ -66,6 +72,32 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
         Assert.Equal("normal-render-pointer-absent", result.RenderStatus);
         Assert.NotNull(result.ActorMatrix.RowMajorF32);
         Assert.Null(result.RenderMatrix);
+    }
+
+    [Fact]
+    public void ReportsActorRenderTranslationMismatchFromAlreadyReadPayloads()
+    {
+        var source = Source(0, Renderer, renderTranslationY: 25);
+        var result = CurrentBuildActorPoseCandidateReader.ReadResolved(source, Identity,
+            DateTimeOffset.UtcNow, 1, PlayerEntity, Actor, Position, () => { });
+        Assert.Equal(new CurrentBuildXyz(11, 22, 33), result.ActorWorldTranslationCandidate);
+        Assert.Equal(new CurrentBuildXyz(11, 25, 33), result.RenderWorldTranslationCandidate);
+        Assert.Equal(3, result.RenderWorldTranslationMaxAbsDeltaCandidate);
+        Assert.Equal(0, result.RenderCompositionMaxAbsDelta);
+        Assert.Equal(2, source.ReadCount(Actor + 0x398, 0x30));
+        Assert.Equal(2, source.ReadCount(Renderer + 0xA0, 0x30));
+    }
+
+    [Fact]
+    public void NonfiniteRenderTranslationIsNotPublishedAsWorldPosition()
+    {
+        var source = Source(0, Renderer, renderTranslationY: float.NaN);
+        var result = CurrentBuildActorPoseCandidateReader.ReadResolved(source, Identity,
+            DateTimeOffset.UtcNow, 1, PlayerEntity, Actor, Position, () => { });
+        Assert.Equal(new CurrentBuildXyz(11, 22, 33), result.ActorWorldTranslationCandidate);
+        Assert.Null(result.RenderWorldTranslationCandidate);
+        Assert.Null(result.RenderWorldTranslationMaxAbsDeltaCandidate);
+        Assert.NotNull(result.RenderMatrix);
     }
 
     [Fact]
@@ -94,19 +126,19 @@ public sealed class CurrentBuildActorPoseCandidateReaderTests
     }
 
     private static FakeSession Source(uint flags, ulong render, bool includeRenderer = true,
-        bool mutateActorOnSecondRead = false)
+        bool mutateActorOnSecondRead = false, float renderTranslationY = 22f)
     {
         var blocks = new Dictionary<(ulong, int), byte[]>
         {
             [(Actor + 0x1C0, 4)] = new byte[4],
-            [(Actor + 0x398, 0x30)] = Floats(QuarterTurnY, 0x30),
+            [(Actor + 0x398, 0x30)] = Floats([.. QuarterTurnY, 11f, 22f, 33f], 0x30),
             [(Actor + 0x3EC, 0x24)] = Floats(IdentityMatrix, 0x24),
             [(Actor + 0x410, 8)] = new byte[8]
         };
         BinaryPrimitives.WriteUInt32LittleEndian(blocks[(Actor + 0x1C0, 4)], flags);
         BinaryPrimitives.WriteUInt64LittleEndian(blocks[(Actor + 0x410, 8)], render);
         if (includeRenderer)
-            blocks[(Renderer + 0xA0, 0x30)] = Floats(QuarterTurnY, 0x30);
+            blocks[(Renderer + 0xA0, 0x30)] = Floats([.. QuarterTurnY, 11f, renderTranslationY, 33f], 0x30);
         return new(Identity, blocks) { MutateActorOnSecondRead = mutateActorOnSecondRead };
     }
 
