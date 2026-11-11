@@ -18,13 +18,25 @@ internal static class MoveKeyCommand
     internal sealed record Options(
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
-        int XyzSettleMilliseconds);
+        int XyzSettleMilliseconds, bool MeasureActorPose);
 
     internal sealed record XyzSample(
         DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
         string UnitKey, float X, float Y, float Z);
 
     internal sealed record XyzDelta(double X, double Y, double Z);
+
+    internal sealed record PoseFeedback(
+        string Status, CurrentBuildActorPoseCandidate? BeforePose,
+        CurrentBuildActorPoseCandidate? AfterPose,
+        double? ActorPlanarDeltaDegreesCandidate, double? ModelPlanarDeltaDegreesCandidate,
+        bool? ActorMatrixBitsChanged, double? CaptureGapSeconds, string? Reason = null)
+    {
+        public bool ActorHeadingQualified => false;
+        public bool GameResponseVerified => false;
+        public string Qualification =>
+            "Same-owner native actor/model matrix candidates only; body-facing, camera separation, freshness and game response unverified.";
+    }
 
     private sealed record FocusAttempt(
         string PreviousForegroundWindow, uint PreviousForegroundProcessId,
@@ -60,7 +72,7 @@ internal static class MoveKeyCommand
     }
 
     private const string Usage =
-        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250]"
+        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose]"
         + " [--expect-start-ticks TICKS] [--expect-sha256 HASH]";
 
     internal static Options Parse(string[] args)
@@ -69,7 +81,7 @@ internal static class MoveKeyCommand
         string[]? keys = null;
         int hold = 1000;
         int xyzSettleMilliseconds = 0;
-        bool focus = true, execute = false, json = false, measureXyz = false;
+        bool focus = true, execute = false, json = false, measureXyz = false, measureActorPose = false;
         long? expectedTicks = null;
         string? expectedSha = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -79,13 +91,15 @@ internal static class MoveKeyCommand
             var option = args[i];
             if (!seen.Add(option))
                 throw new InvalidDataException($"Repeated option: {option}");
-            if (option is "--focus" or "--no-focus" or "--execute" or "--json" or "--measure-xyz")
+            if (option is "--focus" or "--no-focus" or "--execute" or "--json" or "--measure-xyz"
+                or "--measure-actor-pose")
             {
                 if (option == "--focus") focus = true;
                 if (option == "--no-focus") focus = false;
                 if (option == "--execute") execute = true;
                 if (option == "--json") json = true;
                 if (option == "--measure-xyz") measureXyz = true;
+                if (option == "--measure-actor-pose") measureActorPose = true;
                 continue;
             }
             if (i + 1 >= args.Length)
@@ -136,7 +150,7 @@ internal static class MoveKeyCommand
         if (seen.Contains("--xyz-settle-ms") && !measureXyz)
             throw new InvalidDataException("--xyz-settle-ms requires --measure-xyz.");
         return new Options(pid.Value, keys, hold, focus, execute, json,
-            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds);
+            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -152,6 +166,7 @@ internal static class MoveKeyCommand
                     status = "preview-only", machine = Environment.MachineName,
                     processId = options.Pid, keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
                     focusRequested = options.Focus, measureXyzRequested = options.MeasureXyz,
+                    measureActorPoseRequested = options.MeasureActorPose,
                     xyzSettleMilliseconds = options.XyzSettleMilliseconds, inputSent = false,
                     instruction = "Add --execute to send one bounded manual pulse."
                 });
@@ -201,10 +216,10 @@ internal static class MoveKeyCommand
         if (options.ExpectedSha256 is not null
             && !string.Equals(options.ExpectedSha256, sha, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("RIFT executable hash changed.");
-        if (options.MeasureXyz && !string.Equals(sha,
+        if ((options.MeasureXyz || options.MeasureActorPose) && !string.Equals(sha,
             CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException(
-                "Native XYZ measurement is unavailable for this RIFT build; no game input sent.");
+                "Native XYZ/actor-pose measurement is unavailable for this RIFT build; no game input sent.");
 
         DesktopTarget Inspect() => WindowsControlDesktop.InspectPinned("rift_x64", path, sha,
             options.Pid, startTicks);
@@ -241,8 +256,10 @@ internal static class MoveKeyCommand
         // capture never conceals a completed action or causes it to be repeated.
         var before = options.MeasureXyz
             ? await CaptureXyzAsync(options.Pid, startTicks, token) : null;
-        if (before is not null && !Inspect().IsForeground)
-            throw new InvalidOperationException("RIFT lost foreground during native XYZ pre-capture.");
+        var beforePose = options.MeasureActorPose
+            ? await CaptureActorPoseAsync(options.Pid, startTicks, token) : null;
+        if ((before is not null || beforePose is not null) && !Inspect().IsForeground)
+            throw new InvalidOperationException("RIFT lost foreground during native pre-capture.");
         using var input = new KeyInput(WindowsControlDesktop.PinInputTarget(ready));
         var action = new ControlAction(options.Keys, options.HoldMilliseconds);
         var result = await new BoundedControlExecutor(input).ExecuteAsync(action, token);
@@ -280,6 +297,29 @@ internal static class MoveKeyCommand
                 }
             }
         }
+        PoseFeedback? poseFeedback = null;
+        if (beforePose is not null)
+        {
+            // Actor pose is observational only. Never extend an uncertain key
+            // release with another read, and never repeat the key on read error.
+            if (!MayTakeSettledXyz(result))
+                poseFeedback = new PoseFeedback("unavailable-release-or-target-state",
+                    beforePose, null, null, null, null, null,
+                    "Actor pose after-sample withheld because release or target state is uncertain.");
+            else
+            {
+                try
+                {
+                    var afterPose = await CaptureActorPoseAsync(options.Pid, startTicks, token);
+                    poseFeedback = ComparePose(beforePose, afterPose);
+                }
+                catch (Exception exception)
+                {
+                    poseFeedback = new PoseFeedback("unavailable-after-pulse",
+                        beforePose, null, null, null, null, null, exception.Message);
+                }
+            }
+        }
         Report(options.Json, new
         {
             status = success ? "input-inserted-game-response-unverified" : "input-uncertain",
@@ -299,7 +339,7 @@ internal static class MoveKeyCommand
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
             xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
-            gameResponseVerified = false, xyzFeedback, result.Error
+            gameResponseVerified = false, xyzFeedback, poseFeedback, result.Error
         });
         return success ? 0 : 2;
     }
@@ -320,6 +360,59 @@ internal static class MoveKeyCommand
         var completed = DateTimeOffset.UtcNow;
         return new XyzSample(started, completed, owned.UnitKeyText,
             owned.Position.X, owned.Position.Y, owned.Position.Z);
+    }
+
+    private static async Task<CurrentBuildActorPoseCandidate> CaptureActorPoseAsync(
+        int pid, long startTicks, CancellationToken token)
+    {
+        var build = CurrentBuildPositionSampleCommand.GameSha256;
+        await using var lease = await NativeReadFileLease.AcquireAsync(
+            pid, startTicks, build, TimeSpan.FromSeconds(1), token);
+        await using var session = await WindowsNativeMemorySession.OpenAsync(
+            pid, startTicks, build, token);
+        var pose = await CurrentBuildActorPoseSampleCommand.CaptureAsync(
+            session, CurrentBuildActorPoseCandidateReader.Read, token,
+            CurrentBuildPositionCandidateReader.ReadOwned);
+        if (pose.Identity.ProcessId != pid || pose.Identity.ProcessStartUtcTicks != startTicks)
+            throw new InvalidDataException("Native actor-pose identity changed.");
+        return pose;
+    }
+
+    internal static double? ShortestPlanarAngleDelta(double? before, double? after)
+    {
+        if (before is not double a || after is not double b
+            || !double.IsFinite(a) || !double.IsFinite(b))
+            return null;
+        var signed = (b - a + 180.0) % 360.0;
+        if (signed < 0) signed += 360.0;
+        signed -= 180.0;
+        return Math.Abs(Math.Abs(signed) - 180.0) < 1e-7 ? null : signed;
+    }
+
+    internal static PoseFeedback ComparePose(
+        CurrentBuildActorPoseCandidate before, CurrentBuildActorPoseCandidate after)
+    {
+        var gap = (after.StartedAtUtc - before.CompletedAtUtc).TotalSeconds;
+        if (before.CompletedAtUtc < before.StartedAtUtc
+            || after.CompletedAtUtc < after.StartedAtUtc
+            || before.CompletedAtUtc - before.StartedAtUtc > TimeSpan.FromSeconds(5)
+            || after.CompletedAtUtc - after.StartedAtUtc > TimeSpan.FromSeconds(5)
+            || gap <= 0 || gap > 30)
+            return new PoseFeedback("unavailable-capture-time",
+                before, after, null, null, null, gap, "Pose sample order or capture gap invalid.");
+        if (before.Identity != after.Identity || before.PlayerKey != after.PlayerKey
+            || before.PlayerEntity != after.PlayerEntity
+            || before.ActorComponent != after.ActorComponent
+            || before.PositionComponent != after.PositionComponent)
+            return new PoseFeedback("unavailable-owner-changed",
+                before, after, null, null, null, gap, "Pose player/component/process epoch changed.");
+        var actorDelta = ShortestPlanarAngleDelta(
+            before.ActorMatrix.PlanarAngleDegreesCandidate, after.ActorMatrix.PlanarAngleDegreesCandidate);
+        var modelDelta = ShortestPlanarAngleDelta(
+            before.ModelMatrix.PlanarAngleDegreesCandidate, after.ModelMatrix.PlanarAngleDegreesCandidate);
+        var changed = !before.ActorMatrix.RawBits.SequenceEqual(after.ActorMatrix.RawBits);
+        return new PoseFeedback("candidate-native-actor-pose-feedback", before, after,
+            actorDelta, modelDelta, changed, gap);
     }
 
     internal static bool MayTakeSettledXyz(ControlExecutionResult result) =>

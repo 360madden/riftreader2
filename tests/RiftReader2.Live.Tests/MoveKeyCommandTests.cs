@@ -158,6 +158,84 @@ public sealed class MoveKeyCommandTests
         Assert.False(releaseFailed.BoundedActionCompleted);
     }
 
+    [Fact]
+    public void ActorPoseMeasurementIsExplicitPreviewOnlyAndRejectsDuplicates()
+    {
+        var options = MoveKeyCommand.Parse([
+            "--pid", "12345", "--key", "a", "--measure-actor-pose"]);
+        Assert.True(options.MeasureActorPose);
+        Assert.False(options.MeasureXyz);
+        Assert.False(options.Execute);
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse([
+            "--pid", "12345", "--key", "d",
+            "--measure-actor-pose", "--measure-actor-pose"]));
+    }
+
+    [Theory]
+    [InlineData(179, -179, 2)]
+    [InlineData(-179, 179, -2)]
+    [InlineData(10, 10, 0)]
+    [InlineData(40, 130, 90)]
+    public void ActorPoseAngleDeltaWrapsAcrossSignedBoundary(double before, double after, double expected)
+    {
+        Assert.Equal(expected, MoveKeyCommand.ShortestPlanarAngleDelta(before, after)!.Value, 6);
+        Assert.Null(MoveKeyCommand.ShortestPlanarAngleDelta(null, after));
+        Assert.Null(MoveKeyCommand.ShortestPlanarAngleDelta(before, double.NaN));
+        Assert.Null(MoveKeyCommand.ShortestPlanarAngleDelta(0, 180));
+    }
+
+    private static CurrentBuildActorPoseCandidate Pose(
+        DateTimeOffset start, double angle, ulong playerKey = 42, ulong actorComponent = 2000)
+    {
+        var identity = new NativeProcessIdentity(44888, 639299470183328173,
+            @"C:\Program Files (x86)\Glyph\Games\RIFT\Live\rift_x64.exe",
+            new string('A', 64), 0x140000000, 63164416);
+        static CurrentBuildMatrixDescriptorCandidate Matrix(double degrees, int offset) =>
+            new(offset, new uint[] { (uint)(degrees + 400), 0, 0, 0, 0, 0, 0, 0, 0 },
+                new float[9], "structural-y-planar-matrix-candidate", 0, 1, 0,
+                degrees * Math.PI / 180.0, degrees);
+        return new CurrentBuildActorPoseCandidate(
+            identity, start, start.AddMilliseconds(5), playerKey,
+            1000, actorComponent, 3000, 0,
+            Matrix(angle, 0x398), Matrix(0, 0x3EC), null,
+            "alternate-reference-branch-not-followed", null);
+    }
+
+    [Fact]
+    public void ActorPoseCandidateComparisonDetectsChangeWithoutClaimingQualifiedHeading()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var result = MoveKeyCommand.ComparePose(
+            Pose(t, 179), Pose(t.AddSeconds(1), -179));
+        Assert.Equal("candidate-native-actor-pose-feedback", result.Status);
+        Assert.Equal(2, result.ActorPlanarDeltaDegreesCandidate!.Value, 6);
+        Assert.Equal(0, result.ModelPlanarDeltaDegreesCandidate!.Value, 6);
+        Assert.True(result.ActorMatrixBitsChanged);
+        Assert.False(result.ActorHeadingQualified);
+        Assert.False(result.GameResponseVerified);
+        Assert.Equal(.995, result.CaptureGapSeconds!.Value, 6);
+    }
+
+    [Fact]
+    public void ActorPoseComparisonRejectsOwnerAndTimeChanges()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var before = Pose(t, 10);
+        var after = Pose(t.AddSeconds(1), 30);
+        Assert.Equal("unavailable-owner-changed",
+            MoveKeyCommand.ComparePose(before, after with { ActorComponent = 99 }).Status);
+        Assert.Equal("unavailable-owner-changed",
+            MoveKeyCommand.ComparePose(before, after with { PlayerKey = 99 }).Status);
+        Assert.Equal("unavailable-capture-time",
+            MoveKeyCommand.ComparePose(before, after with { StartedAtUtc = t }).Status);
+        Assert.Equal("unavailable-capture-time",
+            MoveKeyCommand.ComparePose(before, after with
+            {
+                StartedAtUtc = t.AddSeconds(31),
+                CompletedAtUtc = t.AddSeconds(31.005)
+            }).Status);
+    }
+
     private static ControlExecutionResult Execution(bool delivered, bool released,
         bool cancelled = false, bool targetLost = false) => new(
         delivered, released, cancelled, targetLost, !released, !released,

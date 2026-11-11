@@ -21,6 +21,9 @@ dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore
 
 # Any single key a/s/d/q/e; also combines compatible keys:
 dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w,e --hold-ms 1200 --execute --json
+
+# NEW: actor-pose measurement preview; no game input without --execute.
+dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key a --hold-ms 500 --measure-actor-pose --json
 ```
 
 - `--execute` is mandatory to emit input. Without it, only preview output.
@@ -32,6 +35,8 @@ dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore
 - This **direct operator CLI** does not use the screenshot approval journal of `scripts/physical_one_pulse_runner.py`. That existing runner remains the supervised capture-bound/recovery option.
 - `--measure-xyz` optionally reads the exact-build native player XYZ before and after this single pulse. `--xyz-settle-ms 250` optionally delays only the after-sample if release/target state is clean. The first read must succeed or **no input is sent**; a failed second read is reported without repeating input. It reuses the existing C# native memory reader and lease; no addon, PowerShell movement, extra report file, or additional service.
 - `xyzFeedback.planarDisplacementCandidate` is distance in X/Z; `movementCandidate` is true at 0.03+ units with the same owner and a valid capture gap. Cached native XYZ may be stale; the reading is **not independent proof the game consumed input**.
+- `--measure-actor-pose` (new, offline-tested Nov 11) optionally reads the current-build actor/model matrix candidate and same-player bracketed XYZ **before and after** a bounded pulse. A missing/failed before-read prevents sending input; a failed after-read never repeats input. `poseFeedback.actorPlanarDeltaDegreesCandidate`, `modelPlanarDeltaDegreesCandidate`, `actorMatrixBitsChanged` and capture timestamps are candidate evidence only. `poseFeedback.actorHeadingQualified=false` and `gameResponseVerified=false` deliberately remain false. For A/D, use independent before/after screenshots to distinguish actual viewpoint movement; precise actor yaw is still unqualified. If both XYZ and pose are requested, reads are sequential, not atomic; XYZ settling (if requested) precedes the after-pose acquisition.
+- `--measure-actor-pose` passed **41/41 focused .NET 10 movement-helper tests** including wraparound, missing angle, owner mismatch and invalid capture timing; **no live pulse with this new flag has been executed**. It is not an automatic navigation loop.
 - "Input inserted" is **not proof the character moved**. Use candidate XYZ alongside observed gameplay movement, especially when the cached position does not refresh.
 
 **AMD-DESKTOP live result (2026-11-11 08:53 EST):** RIFT PID44888/HWND `0x911EC`; legacy-style focus from Edge succeeded (both thread attachments true), one 750 ms W completed with release and 770.2 ms observed duration; same-unit native position shifted **4.6516 X/Z units** after 250 ms settle. This is strong candidate movement feedback, but an independent RIFT gameplay/Lua confirmation is still pending; do not reuse the run-specific PID or HWND.
