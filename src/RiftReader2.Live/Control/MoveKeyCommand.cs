@@ -36,7 +36,7 @@ internal static class MoveKeyCommand
     }
 
     private const string Usage =
-        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--focus] [--execute] [--json] [--measure-xyz]"
+        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz]"
         + " [--expect-start-ticks TICKS] [--expect-sha256 HASH]";
 
     internal static Options Parse(string[] args)
@@ -44,7 +44,7 @@ internal static class MoveKeyCommand
         int? pid = null;
         string[]? keys = null;
         int hold = 1000;
-        bool focus = false, execute = false, json = false, measureXyz = false;
+        bool focus = true, execute = false, json = false, measureXyz = false;
         long? expectedTicks = null;
         string? expectedSha = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -54,9 +54,10 @@ internal static class MoveKeyCommand
             var option = args[i];
             if (!seen.Add(option))
                 throw new InvalidDataException($"Repeated option: {option}");
-            if (option is "--focus" or "--execute" or "--json" or "--measure-xyz")
+            if (option is "--focus" or "--no-focus" or "--execute" or "--json" or "--measure-xyz")
             {
                 if (option == "--focus") focus = true;
+                if (option == "--no-focus") focus = false;
                 if (option == "--execute") execute = true;
                 if (option == "--json") json = true;
                 if (option == "--measure-xyz") measureXyz = true;
@@ -96,6 +97,8 @@ internal static class MoveKeyCommand
             }
         }
 
+        if (seen.Contains("--focus") && seen.Contains("--no-focus"))
+            throw new InvalidDataException("--focus and --no-focus cannot be combined.");
         if (pid is null || keys is null)
             throw new InvalidDataException("Exact --pid and --key are required.");
         // Reuse the input engine's actual six-key, conflict and hold validation.

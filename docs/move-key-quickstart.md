@@ -12,20 +12,20 @@ Get-Process rift_x64 | Select-Object Id, ProcessName, StartTime
 dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --json
 
 # Supervised one-second W pulse: replace 12345 with the actual PID.
-dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --focus --execute --json
+dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --execute --json
 
 # One pulse with native C# before/after XYZ (exact known RIFT build only):
-dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --focus --execute --measure-xyz --json
+dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --execute --measure-xyz --json
 
 # Any single key a/s/d/q/e; also combines compatible keys:
-dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w,e --hold-ms 1200 --focus --execute --json
+dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w,e --hold-ms 1200 --execute --json
 ```
 
 - `--execute` is mandatory to emit input. Without it, only preview output.
 - Default hold **1000 ms**; accepted **20–3000 ms**.
 - Supports `w,a,s,d,q,e`, including compatible simultaneous combinations. Conflicting `w,s`, `a,d`, `q,e` are refused.
 - Exact `--pid` is mandatory. Optional `--expect-start-ticks` and `--expect-sha256` lock it to previously observed identity.
-- `--focus` requests **Windows RIFT window focus**, not addon chat focus. If Windows denies focus, no input is sent; foreground the game manually and retry.
+- With `--execute`, the helper **focuses the selected RIFT game window by default**. Use `--no-focus` only if you want to manage focus yourself; the legacy `--focus` flag remains accepted. This is Windows game-window focus, not addon chat focus. If Windows denies focus, no input is sent; foreground the game manually and retry. Preview without `--execute` never changes focus.
 - The helper uses the same RR2 control-agent semaphore, checks the target epoch/build/window, monitors foreground while holding, and always attempts key-up on normal completion or cancellation.
 - This **direct operator CLI** does not use the screenshot approval journal of `scripts/physical_one_pulse_runner.py`. That existing runner remains the supervised capture-bound/recovery option.
 - `--measure-xyz` optionally reads the exact-build native player XYZ before and after this single pulse. The first read must succeed or **no input is sent**; a failed second read is reported without repeating input. It reuses the existing C# native memory reader and lease; no addon, PowerShell movement, extra report file, or additional service.

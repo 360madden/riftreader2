@@ -13,7 +13,7 @@ public sealed class MoveKeyCommandTests
             Assert.Equal(new[] { key }, options.Keys);
             Assert.Equal(1000, options.HoldMilliseconds);
             Assert.False(options.Execute);
-            Assert.False(options.Focus);
+            Assert.True(options.Focus);
             Assert.False(options.MeasureXyz);
         }
     }
@@ -34,6 +34,19 @@ public sealed class MoveKeyCommandTests
         Assert.False(options.MeasureXyz);
         Assert.Equal(639299470183328173, options.ExpectedStartTicks);
         Assert.Equal(new string('A', 64), options.ExpectedSha256);
+    }
+
+    [Fact]
+    public void FocusIsDefaultAndNoFocusOptsOut()
+    {
+        var defaultOptions = MoveKeyCommand.Parse(
+            ["--pid", "12345", "--key", "w", "--execute"]);
+        Assert.True(defaultOptions.Focus);
+        var noFocus = MoveKeyCommand.Parse(
+            ["--pid", "12345", "--key", "w", "--no-focus", "--execute"]);
+        Assert.False(noFocus.Focus);
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "12345", "--key", "w", "--focus", "--no-focus"]));
     }
 
     [Fact]
