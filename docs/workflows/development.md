@@ -61,6 +61,12 @@ adjacent angle step. Missing angle values or an exactly 180° step produce
 unavailable signed travel, not a guessed direction. These are readout aids,
 **not** proof of body-facing response to a turn.
 Use `python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100 --include-position` for opt-in, read-only before/after XYZ brackets around each actor pose (explicit `--physical-pid N` when multiboxed). The compact receipt adds `positionBracketSeriesCandidate`, `positionNetPlanarDisplacementCandidate` and `positionMaxWithinSamplePlanarChangeCandidate`; every bracket is checked against the same player key. Brackets are sequential, not atomic or proof of body-facing, motion freshness or turn response. The receipt also provides `positionObservedPlanarPathLengthCandidate` and `positionMaxAdjacentPlanarStepCandidate` across all successive before/after X/Z anchors. Unlike net displacement, observed path length can reveal an out-and-back excursion; zero is not proof of no movement between samples. No game input or foreground changes are made.
+Actor and render world-translation candidates are now exposed from the matrix payloads
+already read. With `--include-position`, `actorPositionPlanarResidualSeriesCandidate`
+measures each actor X/Z's distance to its same-owner before/after position segment;
+`actorPositionVerticalOffsetSeriesCandidate` compares Y to the segment's projected
+height. `actorPositionMaxPlanarResidualCandidate` is null if any actor translation is
+unavailable. These are structural consistency scores, not proof of freshness or facing.
 A verified AMD-DESKTOP physical ten-sample, zero-delay read on November 10
 captured in **395.6 ms** (~39.6 ms per observation, excluding process startup):
 all ten samples kept one player key and the same 111.8823° actor candidate,

@@ -213,6 +213,36 @@ def _native_values(kind, report, *, expect_position=False):
             result["positionMaxWithinSamplePlanarChangeCandidate"] = max(within)
             result["positionObservedPlanarPathLengthCandidate"] = observed_path
             result["positionMaxAdjacentPlanarStepCandidate"] = max(steps)
+            if any("actorWorldTranslationCandidate" in row for row in rows):
+                planar_residuals = []
+                vertical_offsets = []
+                for row, bracket in zip(rows, brackets):
+                    actor = row.get("actorWorldTranslationCandidate")
+                    if actor is None:
+                        planar_residuals.append(None)
+                        vertical_offsets.append(None)
+                        continue
+                    if (not isinstance(actor, dict) or
+                            any(type(actor.get(axis)) not in (int, float) or
+                                not math.isfinite(actor[axis]) for axis in ("x", "y", "z"))):
+                        raise ValueError("invalid-native-actor-world-translation")
+                    before, after = bracket["before"], bracket["after"]
+                    dx, dz = after["x"] - before["x"], after["z"] - before["z"]
+                    length_squared = dx * dx + dz * dz
+                    projection = ((actor["x"] - before["x"]) * dx +
+                                  (actor["z"] - before["z"]) * dz)
+                    fraction = min(1.0, max(0.0, projection / length_squared)) if length_squared else 0.0
+                    residual = math.hypot(actor["x"] - (before["x"] + fraction * dx),
+                                          actor["z"] - (before["z"] + fraction * dz))
+                    vertical = actor["y"] - (before["y"] + fraction * (after["y"] - before["y"]))
+                    if not math.isfinite(residual) or not math.isfinite(vertical):
+                        raise ValueError("invalid-native-actor-position-fit")
+                    planar_residuals.append(residual)
+                    vertical_offsets.append(vertical)
+                result["actorPositionPlanarResidualSeriesCandidate"] = planar_residuals
+                result["actorPositionVerticalOffsetSeriesCandidate"] = vertical_offsets
+                result["actorPositionMaxPlanarResidualCandidate"] = (
+                    max(planar_residuals) if all(v is not None for v in planar_residuals) else None)
         elif any(row.get("positionBracketCandidate") is not None for row in rows):
             raise ValueError("unexpected-native-actor-position-bracket")
         return result

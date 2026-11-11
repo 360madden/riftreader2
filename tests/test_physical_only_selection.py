@@ -329,6 +329,8 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
                 "actorMatrix": {"planarAngleDegreesCandidate": 110 + index},
                 "modelMatrix": {"planarAngleDegreesCandidate": 0},
                 "renderMatrix": None,
+                "actorWorldTranslationCandidate": {
+                    "x": 10 + index + (0.25 if index else 0), "y": 1.94, "z": 20},
                 "positionBracketCandidate": {
                     "playerKeyDecimal": key, "elapsedMilliseconds": 7.5,
                     "before": {"x": 10 + index, "y": 2, "z": 20},
@@ -359,8 +361,41 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(values["positionObservedPlanarPathLengthCandidate"], 2.5)
         self.assertEqual(values["positionMaxAdjacentPlanarStepCandidate"], 1)
         self.assertEqual(len(values["positionBracketSeriesCandidate"]), 3)
+        self.assertEqual(values["actorPositionPlanarResidualSeriesCandidate"], [0, 0, 0])
+        self.assertEqual(values["actorPositionMaxPlanarResidualCandidate"], 0)
+        for vertical in values["actorPositionVerticalOffsetSeriesCandidate"]:
+            self.assertAlmostEqual(vertical, -0.06, places=6)
         self.assertEqual(values["planarSignedTravelDegreesCandidate"]["actor"], 2)
         self.assertFalse(values["actorHeadingQualified"])
+
+    def test_actor_pose_bracket_fit_clamps_to_segment_and_rejects_bad_actor_values(self):
+        base = {"playerKeyDecimal": "123", "actorHeadingQualified": False,
+                "renderStatus": "alternate-reference-branch-not-followed",
+                "actorMatrix": {"planarAngleDegreesCandidate": 42},
+                "modelMatrix": {"planarAngleDegreesCandidate": 0},
+                "renderMatrix": None,
+                "positionBracketCandidate": {
+                    "playerKeyDecimal": "123", "elapsedMilliseconds": 5,
+                    "before": {"x": 0, "y": 2, "z": 0},
+                    "after": {"x": 10, "y": 2, "z": 0}}}
+        def fit(actor):
+            row = {**base, "actorWorldTranslationCandidate": actor}
+            return physical._native_values("actor-pose", {"observation": row},
+                                           expect_position=True)
+        aligned = fit({"x": 5, "y": 1.94, "z": 0})
+        self.assertEqual(aligned["actorPositionMaxPlanarResidualCandidate"], 0)
+        self.assertAlmostEqual(aligned["actorPositionVerticalOffsetSeriesCandidate"][0],
+                               -0.06, places=6)
+        self.assertEqual(fit({"x": 5, "y": 1.94, "z": 3})
+                         ["actorPositionMaxPlanarResidualCandidate"], 3)
+        self.assertEqual(fit({"x": 12, "y": 1.94, "z": 0})
+                         ["actorPositionMaxPlanarResidualCandidate"], 2)
+        self.assertIsNone(fit(None)["actorPositionMaxPlanarResidualCandidate"])
+        for invalid in ({"x": 5, "y": float("nan"), "z": 0},
+                        {"x": 5, "y": 0},
+                        {"x": 1.7e308, "y": 0, "z": 1.7e308}):
+            with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                fit(invalid)
 
     def test_actor_pose_out_and_back_motion_is_visible_despite_zero_net_displacement(self):
         key = "239816685251645959"
