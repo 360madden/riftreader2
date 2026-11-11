@@ -28,6 +28,15 @@ def _require(ok, reason):
         raise ValueError("physical-context-pair-" + reason)
 
 
+def _unique_pairs(pairs):
+    """Refuse ambiguous evidence rather than using JSON's last-key-wins rule."""
+    result = {}
+    for key, value in pairs:
+        _require(key not in result, "duplicate-json-key")
+        result[key] = value
+    return result
+
+
 def load(path, expected_sha256=None):
     """Return a pinned report and its actual source SHA256."""
     path = Path(path)
@@ -41,7 +50,7 @@ def load(path, expected_sha256=None):
         _require(type(expected_sha256) is str and
                  expected_sha256.upper() == digest, "source-sha-mismatch")
     try:
-        report = json.loads(raw.decode("utf-8-sig"),
+        report = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=_unique_pairs,
                             parse_constant=lambda _: _require(False, "nonfinite-json"))
     except (UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("physical-context-pair-invalid-json") from exc

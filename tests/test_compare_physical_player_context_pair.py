@@ -213,6 +213,23 @@ class PhysicalContextPairTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 pair.compare(report, later(), "A" * 64, "B" * 64)
 
+    def test_rejects_duplicate_json_fields_even_when_later_field_is_valid(self):
+        # JSON's default last-key-wins behavior can conceal a failed receipt
+        # or an earlier, contradictory native player identity.
+        valid = json.dumps(sample(), separators=(",", ":"))
+        duplicate_cases = (
+            '{"status":"partial",' + valid[1:],
+            valid.replace('"unitKey":239816685251645959',
+                          '"unitKey":777,"unitKey":239816685251645959', 1),
+        )
+        with TemporaryDirectory() as tmp:
+            source = Path(tmp) / "ambiguous.json"
+            for raw in duplicate_cases:
+                with self.subTest(raw=raw[:45]):
+                    source.write_text(raw, encoding="utf-8")
+                    with self.assertRaisesRegex(ValueError, "duplicate-json-key"):
+                        pair.load(source)
+
     def test_source_hash_pinning_and_cli(self):
         with TemporaryDirectory() as tmp:
             before, after = Path(tmp) / "before.json", Path(tmp) / "after.json"
