@@ -14,6 +14,9 @@ dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore
 # Supervised one-second W pulse: replace 12345 with the actual PID.
 dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --focus --execute --json
 
+# One pulse with native C# before/after XYZ (exact known RIFT build only):
+dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w --hold-ms 1000 --focus --execute --measure-xyz --json
+
 # Any single key a/s/d/q/e; also combines compatible keys:
 dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore -- move-key --pid 12345 --key w,e --hold-ms 1200 --focus --execute --json
 ```
@@ -25,7 +28,9 @@ dotnet run --project .\src\RiftReader2.Live\RiftReader2.Live.csproj --no-restore
 - `--focus` requests **Windows RIFT window focus**, not addon chat focus. If Windows denies focus, no input is sent; foreground the game manually and retry.
 - The helper uses the same RR2 control-agent semaphore, checks the target epoch/build/window, monitors foreground while holding, and always attempts key-up on normal completion or cancellation.
 - This **direct operator CLI** does not use the screenshot approval journal of `scripts/physical_one_pulse_runner.py`. That existing runner remains the supervised capture-bound/recovery option.
-- "Input inserted" is **not proof the character moved**. Compare before/after XYZ using RR2's separate reader.
+- `--measure-xyz` optionally reads the exact-build native player XYZ before and after this single pulse. The first read must succeed or **no input is sent**; a failed second read is reported without repeating input. It reuses the existing C# native memory reader and lease; no addon, PowerShell movement, extra report file, or additional service.
+- `xyzFeedback.planarDisplacementCandidate` is distance in X/Z; `movementCandidate` is true at 0.03+ units with the same owner and a valid capture gap. Cached native XYZ may be stale; the reading is **not independent proof the game consumed input**.
+- "Input inserted" is **not proof the character moved**. Use candidate XYZ alongside observed gameplay movement, especially when the cached position does not refresh.
 
 Offline checks (never send game input):
 

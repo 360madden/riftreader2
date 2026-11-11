@@ -14,6 +14,7 @@ public sealed class MoveKeyCommandTests
             Assert.Equal(1000, options.HoldMilliseconds);
             Assert.False(options.Execute);
             Assert.False(options.Focus);
+            Assert.False(options.MeasureXyz);
         }
     }
 
@@ -30,8 +31,63 @@ public sealed class MoveKeyCommandTests
         Assert.True(options.Focus);
         Assert.True(options.Execute);
         Assert.True(options.Json);
+        Assert.False(options.MeasureXyz);
         Assert.Equal(639299470183328173, options.ExpectedStartTicks);
         Assert.Equal(new string('A', 64), options.ExpectedSha256);
+    }
+
+    [Fact]
+    public void MeasureXyzIsExplicitAndDoesNotEnableInput()
+    {
+        var options = MoveKeyCommand.Parse(
+            ["--pid", "12345", "--key", "w", "--measure-xyz"]);
+        Assert.True(options.MeasureXyz);
+        Assert.False(options.Execute);
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "12345", "--key", "w", "--measure-xyz", "--measure-xyz"]));
+    }
+
+    [Fact]
+    public void NativeXyzComparisonReportsCandidatePlanarDisplacement()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var before = new MoveKeyCommand.XyzSample(t, t.AddMilliseconds(10), "42", 100, 20, 200);
+        var after = new MoveKeyCommand.XyzSample(
+            t.AddMilliseconds(1010), t.AddMilliseconds(1020), "42", 103, 21, 204);
+        var feedback = MoveKeyCommand.CompareXyz(before, after);
+        Assert.Equal("candidate-native-xyz-feedback", feedback.Status);
+        Assert.True(feedback.MovementCandidate);
+        Assert.Equal(5, feedback.PlanarDisplacementCandidate);
+        Assert.Equal(1, feedback.DeltaXYZ!.Y);
+        Assert.Equal(1, feedback.CaptureGapSeconds);
+        Assert.False(feedback.GameResponseVerified);
+    }
+
+    [Fact]
+    public void NativeXyzComparisonDoesNotInventMovementForUnchangedCoordinates()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var before = new MoveKeyCommand.XyzSample(t, t.AddMilliseconds(10), "42", 100, 20, 200);
+        var after = new MoveKeyCommand.XyzSample(
+            t.AddMilliseconds(1010), t.AddMilliseconds(1020), "42", 100, 20, 200);
+        var feedback = MoveKeyCommand.CompareXyz(before, after);
+        Assert.Equal("candidate-native-xyz-feedback", feedback.Status);
+        Assert.False(feedback.MovementCandidate);
+        Assert.Equal(0, feedback.PlanarDisplacementCandidate);
+    }
+
+    [Fact]
+    public void NativeXyzComparisonRejectsOwnerChangesAndStaleReadings()
+    {
+        var t = DateTimeOffset.Parse("2026-11-11T12:00:00Z");
+        var before = new MoveKeyCommand.XyzSample(t, t.AddMilliseconds(10), "42", 100, 20, 200);
+        var changedOwner = new MoveKeyCommand.XyzSample(
+            t.AddSeconds(1), t.AddSeconds(1.1), "99", 103, 20, 204);
+        var stale = new MoveKeyCommand.XyzSample(
+            t.AddSeconds(31), t.AddSeconds(31.1), "42", 103, 20, 204);
+        Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(before, changedOwner).Status);
+        Assert.False(MoveKeyCommand.CompareXyz(before, changedOwner).MovementCandidate);
+        Assert.Equal("unavailable", MoveKeyCommand.CompareXyz(before, stale).Status);
     }
 
     [Theory]

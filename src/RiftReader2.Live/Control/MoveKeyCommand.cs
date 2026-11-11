@@ -17,10 +17,26 @@ internal static class MoveKeyCommand
 {
     internal sealed record Options(
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
-        bool Json, long? ExpectedStartTicks, string? ExpectedSha256);
+        bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz);
+
+    internal sealed record XyzSample(
+        DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
+        string UnitKey, float X, float Y, float Z);
+
+    internal sealed record XyzDelta(double X, double Y, double Z);
+
+    internal sealed record XyzFeedback(
+        string Status, XyzSample? BeforeXYZ, XyzSample? AfterXYZ,
+        XyzDelta? DeltaXYZ, double? PlanarDisplacementCandidate,
+        bool MovementCandidate, double? CaptureGapSeconds, string? Reason = null)
+    {
+        public bool GameResponseVerified => false;
+        public string Qualification =>
+            "Cached native XYZ candidates; not independent proof that RIFT consumed Windows input.";
+    }
 
     private const string Usage =
-        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--focus] [--execute] [--json]"
+        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--focus] [--execute] [--json] [--measure-xyz]"
         + " [--expect-start-ticks TICKS] [--expect-sha256 HASH]";
 
     internal static Options Parse(string[] args)
@@ -28,7 +44,7 @@ internal static class MoveKeyCommand
         int? pid = null;
         string[]? keys = null;
         int hold = 1000;
-        bool focus = false, execute = false, json = false;
+        bool focus = false, execute = false, json = false, measureXyz = false;
         long? expectedTicks = null;
         string? expectedSha = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -38,11 +54,12 @@ internal static class MoveKeyCommand
             var option = args[i];
             if (!seen.Add(option))
                 throw new InvalidDataException($"Repeated option: {option}");
-            if (option is "--focus" or "--execute" or "--json")
+            if (option is "--focus" or "--execute" or "--json" or "--measure-xyz")
             {
                 if (option == "--focus") focus = true;
                 if (option == "--execute") execute = true;
                 if (option == "--json") json = true;
+                if (option == "--measure-xyz") measureXyz = true;
                 continue;
             }
             if (i + 1 >= args.Length)
@@ -83,7 +100,7 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("Exact --pid and --key are required.");
         // Reuse the input engine's actual six-key, conflict and hold validation.
         BoundedControlExecutor.Validate(new ControlAction(keys, hold));
-        return new Options(pid.Value, keys, hold, focus, execute, json, expectedTicks, expectedSha);
+        return new Options(pid.Value, keys, hold, focus, execute, json, expectedTicks, expectedSha, measureXyz);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -98,7 +115,7 @@ internal static class MoveKeyCommand
                 {
                     status = "preview-only", machine = Environment.MachineName,
                     processId = options.Pid, keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
-                    focusRequested = options.Focus, inputSent = false,
+                    focusRequested = options.Focus, measureXyzRequested = options.MeasureXyz, inputSent = false,
                     instruction = "Add --execute to send one bounded manual pulse."
                 });
                 return 0;
@@ -147,6 +164,10 @@ internal static class MoveKeyCommand
         if (options.ExpectedSha256 is not null
             && !string.Equals(options.ExpectedSha256, sha, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("RIFT executable hash changed.");
+        if (options.MeasureXyz && !string.Equals(sha,
+            CurrentBuildPositionSampleCommand.GameSha256, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Native XYZ measurement is unavailable for this RIFT build; no game input sent.");
 
         DesktopTarget Inspect() => WindowsControlDesktop.InspectPinned("rift_x64", path, sha,
             options.Pid, startTicks);
@@ -177,11 +198,31 @@ internal static class MoveKeyCommand
         if (otherInputs.Any())
             throw new InvalidOperationException("Desktop inputs already held: " + string.Join(", ", otherInputs));
         token.ThrowIfCancellationRequested();
+        // An unavailable BEFORE capture blocks the pulse; an unavailable AFTER
+        // capture never conceals a completed action or causes it to be repeated.
+        var before = options.MeasureXyz
+            ? await CaptureXyzAsync(options.Pid, startTicks, token) : null;
+        if (before is not null && !Inspect().IsForeground)
+            throw new InvalidOperationException("RIFT lost foreground during native XYZ pre-capture.");
         using var input = new KeyInput(WindowsControlDesktop.PinInputTarget(ready));
         var action = new ControlAction(options.Keys, options.HoldMilliseconds);
         var result = await new BoundedControlExecutor(input).ExecuteAsync(action, token);
         var success = result.DeliverySucceeded && result.ReleaseSucceeded
             && !result.Cancelled && !result.TargetLost;
+        XyzFeedback? xyzFeedback = null;
+        if (before is not null)
+        {
+            try
+            {
+                var after = await CaptureXyzAsync(options.Pid, startTicks, token);
+                xyzFeedback = CompareXyz(before, after);
+            }
+            catch (Exception exception)
+            {
+                xyzFeedback = new XyzFeedback("unavailable-after-pulse", before, null,
+                    null, null, false, null, exception.Message);
+            }
+        }
         Report(options.Json, new
         {
             status = success ? "input-inserted-game-response-unverified" : "input-uncertain",
@@ -193,9 +234,45 @@ internal static class MoveKeyCommand
             releaseSucceeded = result.ReleaseSucceeded,
             targetLost = result.TargetLost, cancelled = result.Cancelled,
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
-            gameResponseVerified = false, result.Error
+            gameResponseVerified = false, xyzFeedback, result.Error
         });
         return success ? 0 : 2;
+    }
+
+    private static async Task<XyzSample> CaptureXyzAsync(
+        int pid, long startTicks, CancellationToken token)
+    {
+        var build = CurrentBuildPositionSampleCommand.GameSha256;
+        await using var lease = await NativeReadFileLease.AcquireAsync(
+            pid, startTicks, build, TimeSpan.FromSeconds(1), token);
+        await using var session = await WindowsNativeMemorySession.OpenAsync(
+            pid, startTicks, build, token);
+        var started = DateTimeOffset.UtcNow;
+        var owned = CurrentBuildPositionCandidateReader.ReadOwned(session);
+        var invalidated = await session.RevalidateAsync(token);
+        if (invalidated is not null)
+            throw new InvalidDataException("Native XYZ process identity changed: " + invalidated);
+        var completed = DateTimeOffset.UtcNow;
+        return new XyzSample(started, completed, owned.UnitKeyText,
+            owned.Position.X, owned.Position.Y, owned.Position.Z);
+    }
+
+    internal static XyzFeedback CompareXyz(XyzSample before, XyzSample after)
+    {
+        if (!string.Equals(before.UnitKey, after.UnitKey, StringComparison.Ordinal))
+            return new XyzFeedback("unavailable", before, after, null, null, false,
+                null, "Native XYZ owner changed between captures.");
+        var gap = (after.StartedAtUtc - before.CompletedAtUtc).TotalSeconds;
+        if (gap <= 0 || gap > 30)
+            return new XyzFeedback("unavailable", before, after, null, null, false,
+                gap, "Native XYZ capture gap is invalid.");
+        var delta = new XyzDelta(after.X - before.X, after.Y - before.Y, after.Z - before.Z);
+        var planar = Math.Sqrt(delta.X * delta.X + delta.Z * delta.Z);
+        if (!double.IsFinite(planar) || !double.IsFinite(delta.Y))
+            return new XyzFeedback("unavailable", before, after, null, null, false,
+                gap, "Native XYZ displacement is not finite.");
+        return new XyzFeedback("candidate-native-xyz-feedback", before, after, delta,
+            planar, planar >= 0.03, gap);
     }
 
     private sealed class KeyInput(WindowsControlDesktop.PinnedInputTarget pinned) : IControlInput, IDisposable
@@ -218,7 +295,10 @@ internal static class MoveKeyCommand
 
     private static void Report(bool json, object result)
     {
-        var serialized = JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = !json });
+        var serialized = JsonSerializer.Serialize(result, new JsonSerializerOptions
+        {
+            WriteIndented = !json, PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
         Console.WriteLine(serialized);
     }
 
