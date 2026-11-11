@@ -1,4 +1,4 @@
-"""Offline protocol checks for a single reviewed physical W/Q pulse; NO RIFT input."""
+"""Offline protocol checks for a single reviewed physical movement pulse; NO RIFT input."""
 from __future__ import annotations
 
 import json
@@ -157,6 +157,25 @@ class OnePulseTests(unittest.TestCase):
         self.assertEqual(result["holdMilliseconds"], 1000)
         self.assertEqual(dict(self.gateway.calls)["action"]["action"]["holdMilliseconds"], 1000)
 
+    def test_all_six_movement_keys_send_once_and_release(self):
+        for key in ("w", "a", "s", "d", "q", "e"):
+            with self.subTest(key=key):
+                self.gateway = FakeGateway(self.config, None)
+                self.proc = FakeProcess()
+                self.messages = []
+                result = self.run_pulse(key=key, hold_ms=1000)
+                self.assertEqual(result["key"], key)
+                self.assertEqual(result["holdMilliseconds"], 1000)
+                self.assertEqual(self.messages[0]["key"], key)
+                self.assertEqual(self.messages[0]["holdMilliseconds"], 1000)
+                operations = [name for name, _ in self.gateway.calls]
+                self.assertEqual(operations.count("action"), 1)
+                self.assertEqual(operations[-3:], ["release", "stop", "status"])
+                action = dict(self.gateway.calls)["action"]["action"]
+                self.assertEqual(action["keys"], [key])
+                self.assertEqual(action["holdMilliseconds"], 1000)
+                self.assertTrue(self.gateway.closed and self.proc.terminated and self.proc.waited)
+
     def test_requested_focus_runs_before_control_agent(self):
         observed = []
         def focus_window(host, pid, pinned):
@@ -290,7 +309,7 @@ class OnePulseTests(unittest.TestCase):
         self.assertEqual(result["key"], "w")
 
     def test_invalid_key_and_duration_refused_before_gateway(self):
-        for key, hold_ms in (("a", 80), ("Q", 80), ("w", 19), ("q", 3001), ("w", True)):
+        for key, hold_ms in (("z", 80), ("Q", 80), ("w", 19), ("q", 3001), ("w", True)):
             with self.subTest(key=key, hold_ms=hold_ms):
                 with self.assertRaisesRegex(pulse.PhysicalPulseError, "invalid-one-pulse"):
                     self.run_pulse(key=key, hold_ms=hold_ms)

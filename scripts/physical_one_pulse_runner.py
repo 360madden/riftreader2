@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One reviewed, bounded W/Q pulse on a pinned PHYSICAL RIFT client.
+"""One reviewed, bounded movement-key pulse on a pinned PHYSICAL RIFT client.
 
 No UI/VM service. This is an operator-driven experiment, not autonomous navigation.
 The live entry point requires a new capture-bound approval file after displaying
@@ -157,7 +157,7 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w"
             "wrong-physical-host")
     require(type(pid) is int and 0 < pid <= 2147483647
             and type(hold_ms) is int and 20 <= hold_ms <= 3000
-            and isinstance(key, str) and key in ("w", "q"), "invalid-one-pulse-arguments")
+            and isinstance(key, str) and key in ("w", "a", "s", "d", "q", "e"), "invalid-one-pulse-arguments")
     require(config.physical_process_id == pid and config.vmx is None and config.vmrun is None
             and config.vnc_port is None
             and config.expected_machine_name.casefold() == host.casefold()
@@ -271,7 +271,7 @@ def main(argv=None):
     p.add_argument("--host", choices=("AMD-DESKTOP",), required=True)
     p.add_argument("--pid", type=int, required=True)
     p.add_argument("--hold-ms", type=int, default=1000)
-    p.add_argument("--key", choices=("w", "q"), default="w")
+    p.add_argument("--key", choices=("w", "a", "s", "d", "q", "e"), default="w")
     p.add_argument("--focus", action="store_true", help="bring the exact physical RIFT window forward")
     p.add_argument("--host-config", type=Path, required=True)
     p.add_argument("--agent-config", type=Path, required=True)
