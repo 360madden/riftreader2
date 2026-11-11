@@ -1,4 +1,4 @@
-"""Offline protocol checks for a single reviewed physical W pulse; NO RIFT input."""
+"""Offline protocol checks for a single reviewed physical W/Q pulse; NO RIFT input."""
 from __future__ import annotations
 
 import json
@@ -120,9 +120,9 @@ class OnePulseTests(unittest.TestCase):
         self.messages = []
         self.approval = self.folder / "approval.json"
 
-    def run_pulse(self, *, reviewer=None):
-        return pulse.run_once(self.config, self.agent_config, HOST, PID, 80,
-                              self.approval, selector=selector,
+    def run_pulse(self, *, reviewer=None, key="w", hold_ms=80):
+        return pulse.run_once(self.config, self.agent_config, HOST, PID, hold_ms,
+                              self.approval, key=key, selector=selector,
                               gateway_factory=lambda *_args, **_kw: self.gateway,
                               launch_agent=lambda *_args: self.proc,
                               wait_session=lambda _: self.gateway,
@@ -191,17 +191,85 @@ class OnePulseTests(unittest.TestCase):
         approved = {"captureId": capture["captureId"], "sha256": capture["sha256"],
                     "machineName": HOST, "processId": PID,
                     "processStartUtcTicks": str(TICKS),
+                    "key": "w", "holdMilliseconds": 80,
                     "reviewNote": "Reviewed physical RIFT lane"}
 
         def write_approval(_):
             self.approval.write_text(json.dumps(approved), encoding="utf-8")
 
         self.assertEqual(pulse._approval(self.approval, capture, identity,
-                                         sleep=write_approval), approved["reviewNote"])
+                                         key="w", hold_ms=80, sleep=write_approval), approved["reviewNote"])
         self.approval.unlink()
         approved["sha256"] = "C" * 64
         with self.assertRaisesRegex(pulse.PhysicalPulseError, "approval-capture-or-target"):
-            pulse._approval(self.approval, capture, identity, sleep=write_approval)
+            pulse._approval(self.approval, capture, identity,
+                            key="w", hold_ms=80, sleep=write_approval)
+
+
+    def test_q_pulse_preserves_exact_key_and_duration(self):
+        reviewed = []
+        def review(capture, pinned, key, hold_ms):
+            reviewed.append((key, hold_ms))
+            return "Reviewed clear strafe lane"
+        result = self.run_pulse(reviewer=review, key="q", hold_ms=60)
+        self.assertEqual(reviewed, [("q", 60)])
+        self.assertEqual(result["key"], "q")
+        self.assertEqual(result["holdMilliseconds"], 60)
+        self.assertEqual(self.messages[0]["key"], "q")
+        action = dict(self.gateway.calls)["action"]["action"]
+        self.assertEqual(action["keys"], ["q"])
+        self.assertEqual(action["holdMilliseconds"], 60)
+
+    def file_reviewer(self, approved_key="w", approved_hold=80, omit_action=False):
+        def review(capture, pinned, key, hold_ms):
+            approved = {"captureId": capture["captureId"], "sha256": capture["sha256"],
+                        "machineName": HOST, "processId": PID,
+                        "processStartUtcTicks": str(TICKS),
+                        "key": approved_key, "holdMilliseconds": approved_hold,
+                        "reviewNote": "Reviewed physical RIFT lane"}
+            if omit_action:
+                del approved["key"]
+                del approved["holdMilliseconds"]
+            def write(_):
+                self.approval.write_text(json.dumps(approved), encoding="utf-8")
+            return pulse._approval(self.approval, capture, pinned,
+                                   key=key, hold_ms=hold_ms, sleep=write)
+        return review
+
+    def assert_approval_refused(self, reviewer, reason):
+        with self.assertRaisesRegex(pulse.PhysicalPulseError, reason):
+            self.run_pulse(reviewer=reviewer)
+        operations = [name for name, _ in self.gateway.calls]
+        self.assertNotIn("arm", operations)
+        self.assertNotIn("action", operations)
+        self.assertEqual(operations[-3:], ["release", "stop", "status"])
+
+    def test_approval_key_mismatch_refused_before_arm(self):
+        self.assert_approval_refused(self.file_reviewer(approved_key="q"),
+                                     "approval-action-mismatch")
+
+    def test_approval_hold_mismatch_refused_before_arm(self):
+        self.assert_approval_refused(self.file_reviewer(approved_hold=60),
+                                     "approval-action-mismatch")
+
+    def test_approval_noninteger_hold_refused_before_arm(self):
+        self.assert_approval_refused(self.file_reviewer(approved_hold=80.0),
+                                     "approval-action-mismatch")
+
+    def test_legacy_approval_refused_before_arm(self):
+        self.assert_approval_refused(self.file_reviewer(omit_action=True),
+                                     "approval-fields-invalid")
+
+    def test_file_approval_accepts_exact_action(self):
+        result = self.run_pulse(reviewer=self.file_reviewer())
+        self.assertEqual(result["key"], "w")
+
+    def test_invalid_key_and_duration_refused_before_gateway(self):
+        for key, hold_ms in (("a", 80), ("Q", 80), ("w", 19), ("q", 101), ("w", True)):
+            with self.subTest(key=key, hold_ms=hold_ms):
+                with self.assertRaisesRegex(pulse.PhysicalPulseError, "invalid-one-pulse"):
+                    self.run_pulse(key=key, hold_ms=hold_ms)
+                self.assertFalse(self.gateway.started)
 
 
 if __name__ == "__main__":

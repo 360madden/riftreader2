@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One reviewed, bounded W pulse on a pinned PHYSICAL RIFT client.
+"""One reviewed, bounded W/Q pulse on a pinned PHYSICAL RIFT client.
 
 No UI/VM service. This is an operator-driven experiment, not autonomous navigation.
 The live entry point requires a new capture-bound approval file after displaying
@@ -74,7 +74,7 @@ def _agent_config_matches(path, host_config, pinned):
             "agent-config-identity-or-endpoint-mismatch")
 
 
-def _approval(path, capture, pinned, *, expires_seconds=30, now=time.monotonic,
+def _approval(path, capture, pinned, *, key, hold_ms, expires_seconds=30, now=time.monotonic,
               sleep=time.sleep):
     path = Path(path)
     require(not path.exists() and not path.is_symlink(), "approval-file-must-not-preexist")
@@ -87,7 +87,8 @@ def _approval(path, capture, pinned, *, expires_seconds=30, now=time.monotonic,
             approval = control_host.decode_json(path.read_bytes())
             require(isinstance(approval, dict) and set(approval) == {
                 "captureId", "sha256", "machineName", "processId",
-                "processStartUtcTicks", "reviewNote"}, "approval-fields-invalid")
+                "processStartUtcTicks", "key", "holdMilliseconds", "reviewNote"},
+                    "approval-fields-invalid")
             require(approval["captureId"] == capture.get("captureId")
                     and isinstance(approval["sha256"], str)
                     and approval["sha256"].casefold() == capture["sha256"].casefold()
@@ -95,6 +96,10 @@ def _approval(path, capture, pinned, *, expires_seconds=30, now=time.monotonic,
                     and approval["processId"] == pinned.process_id
                     and str(approval["processStartUtcTicks"]) == str(pinned.process_start_utc_ticks),
                     "approval-capture-or-target-mismatch")
+            require(approval["key"] == key
+                    and type(approval["holdMilliseconds"]) is int
+                    and approval["holdMilliseconds"] == hold_ms,
+                    "approval-action-mismatch")
             note = approval["reviewNote"]
             require(isinstance(note, str) and 12 <= len(note.strip()) <= 512,
                     "approval-review-note-invalid")
@@ -121,14 +126,15 @@ def _wait_session(gateway, *, clock=time.monotonic, sleep=time.sleep, timeout=8)
     raise PhysicalPulseError("agent-not-connected")
 
 
-def run_once(config, agent_config, host, pid, hold_ms, approval_path, *,
+def run_once(config, agent_config, host, pid, hold_ms, approval_path, *, key="w",
              selector=physical_rift.select_physical, gateway_factory=control_host.AgentGateway,
              launch_agent=_owned_agent, wait_session=_wait_session, reviewer=None,
              announce=print):
     require(host.upper() == "AMD-DESKTOP" and socket.gethostname().casefold() == host.casefold(),
             "wrong-physical-host")
     require(type(pid) is int and 0 < pid <= 2147483647
-            and type(hold_ms) is int and 20 <= hold_ms <= 100, "invalid-one-pulse-arguments")
+            and type(hold_ms) is int and 20 <= hold_ms <= 100
+            and isinstance(key, str) and key in ("w", "q"), "invalid-one-pulse-arguments")
     require(config.physical_process_id == pid and config.vmx is None and config.vmrun is None
             and config.vnc_port is None
             and config.expected_machine_name.casefold() == host.casefold()
@@ -175,10 +181,10 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *,
                     "capture-identity-or-image-invalid")
             announce(json.dumps({"status": "awaiting-review", "captureId": capture["captureId"],
                                  "sha256": capture["sha256"], "bmpPath": capture["artifact"]["path"],
-                                 "processId": pid, "holdMilliseconds": hold_ms}, sort_keys=True),
+                                 "processId": pid, "key": key, "holdMilliseconds": hold_ms}, sort_keys=True),
                      flush=True)
-            note = (reviewer(capture, pinned) if reviewer is not None
-                    else _approval(approval_path, capture, pinned))
+            note = (reviewer(capture, pinned, key, hold_ms) if reviewer is not None
+                    else _approval(approval_path, capture, pinned, key=key, hold_ms=hold_ms))
             lease.check()
             require(_same_target(gateway.command("identity", identity_payload).get("target"), pinned),
                     "identity-changed-before-arm")
@@ -189,13 +195,13 @@ def run_once(config, agent_config, host, pid, hold_ms, approval_path, *,
             lease.check()
             action_attempted = True
             action = gateway.command("action", {"armToken": armed["armToken"], "action": {
-                "keys": ["w"], "holdMilliseconds": hold_ms, "mouseButton": None,
+                "keys": [key], "holdMilliseconds": hold_ms, "mouseButton": None,
                 "deltaX": 0, "deltaY": 0, "wheelNotches": 0}})
             result = action.get("result")
             require(isinstance(result, dict) and result.get("deliverySucceeded") is True
                     and result.get("releaseSucceeded") is True
                     and action.get("recoveryRequired") is False, "action-delivery-or-release-unverified")
-            return {"status": "pulse-inserted-unverified-game-response", "key": "w",
+            return {"status": "pulse-inserted-unverified-game-response", "key": key,
                     "holdMilliseconds": hold_ms, "processId": pid,
                     "releaseSucceeded": True, "gameResponseVerified": False}
         finally:
@@ -239,6 +245,7 @@ def main(argv=None):
     p.add_argument("--host", choices=("AMD-DESKTOP",), required=True)
     p.add_argument("--pid", type=int, required=True)
     p.add_argument("--hold-ms", type=int, default=80)
+    p.add_argument("--key", choices=("w", "q"), default="w")
     p.add_argument("--host-config", type=Path, required=True)
     p.add_argument("--agent-config", type=Path, required=True)
     p.add_argument("--approval-file", type=Path, required=True)
@@ -246,7 +253,7 @@ def main(argv=None):
     try:
         config = control_host.HostConfig.load(a.host_config)
         result = run_once(config, a.agent_config, a.host, a.pid, a.hold_ms,
-                          a.approval_file)
+                          a.approval_file, key=a.key)
         print(json.dumps(result, sort_keys=True))
         return 0
     except (PhysicalPulseError, control_host.ControlHostError, OSError, ValueError) as error:
