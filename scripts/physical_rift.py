@@ -647,8 +647,17 @@ def main(argv=None):
                         help="actor-pose only: bracket each pose with same-player native XYZ candidates")
     parser.add_argument("--include-transform-sources", action="store_true",
                         help="actor-pose only: read secondary XYZ and both actor transform offsets")
+    parser.add_argument("--anchor-catalog", type=Path,
+                        help="with native position: offline compare XYZ to named-anchor catalog")
+    parser.add_argument("--anchor-id",
+                        help="with --anchor-catalog: offline destination ID; no movement")
     args = parser.parse_args(argv)
-    if args.read_native is not None and args.expected_host is None:
+    anchor_requested = args.anchor_catalog is not None or args.anchor_id is not None
+    if anchor_requested and (args.anchor_catalog is None or args.anchor_id is None
+                             or args.read_native != "position"):
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "anchor-preview-requires-position-catalog-and-id"}
+    elif args.read_native is not None and args.expected_host is None:
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "native-read-requires-expected-host"}
     elif args.include_position and args.read_native != "actor-pose":
@@ -669,6 +678,15 @@ def main(argv=None):
                              samples=args.samples, interval_ms=args.interval_ms,
                               include_position=args.include_position,
                               include_transform_sources=args.include_transform_sources)
+    if anchor_requested and result["status"] == "complete":
+        from scripts import physical_route_preview
+        try:
+            preview = physical_route_preview.preview(
+                Path(result["nativeOutput"]), args.anchor_catalog, args.anchor_id)
+            result = dict(result, offlineAnchorPreview=preview)
+        except (OSError, ValueError) as exc:
+            result = dict(result, status="blocked", reason="offline-anchor-preview-failed",
+                          detail=str(exc)[:240])
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] in ("ready", "complete") else 2
 

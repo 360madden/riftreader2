@@ -41,6 +41,18 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 
+For a **single-command, read-only** distance/progress preview against an existing
+named anchor (replace the example catalog and ID with actual saved values):
+
+```powershell
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --read-native position --samples 10 --interval-ms 100 --anchor-catalog config/my-anchors.json --anchor-id North_Gate
+```
+
+The `offlineAnchorPreview` is candidate X/Z arithmetic only. It never authorizes
+movement or proves source freshness, world-instance compatibility or arrival.
+Use `scripts/analyze_physical_turn_pair.py --help` for an independent offline
+before/after orientation comparison; its deltas also remain unqualified candidates.
+
 It rechecks local process/build identity, passes exact PID/start epoch to the .NET
 reader and writes a new unique JSON artifact; no game input, screenshot, guest,
 or foreground change. Build `src/RiftReader2.Live` with the pinned .NET 10 SDK
