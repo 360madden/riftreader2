@@ -145,5 +145,77 @@ class ProbeTests(unittest.TestCase):
                 probe.check_index(path, req, probe.digest(source), SELECTION)
 
 
+    def test_resume_scans_new_address_ranges_after_verifying_prior_receipts(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+            starts = []
+
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                starts.append(request["startAddress"])
+                directory.mkdir()
+                index = self.index(request, request_path)
+                index["scan"]["nextAddress"] = hex(int(starts[-1], 16) + 0x10000)
+                (directory / "index.json").write_text(json.dumps(index))
+                return subprocess.CompletedProcess(argv, 3, "", "")
+
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke) as scan:
+                prior, _ = probe.collect(123, root / "first", max_scans=2,
+                                         gap_seconds=0)
+                resumed, result = probe.collect(123, root / "second", max_scans=1,
+                                                gap_seconds=0, resume_summary=prior)
+
+            self.assertEqual(starts, ["0x10000", "0x20000", "0x30000"])
+            self.assertEqual(scan.call_count, 3)
+            self.assertEqual(result["initialCursor"], "0x30000")
+            self.assertEqual(result["runs"][0]["startAddress"], "0x30000")
+            self.assertEqual(result["resumeSourceSha256"], probe.digest(prior))
+            self.assertEqual(json.loads(resumed.read_text()), result)
+
+    def test_resume_rejects_tampered_receipt_changed_epoch_or_reader(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                directory.mkdir()
+                index = self.index(request, request_path)
+                index["scan"]["nextAddress"] = "0x30000"
+                (directory / "index.json").write_text(json.dumps(index))
+                return subprocess.CompletedProcess(argv, 3, "", "")
+
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke) as scan:
+                prior, _ = probe.collect(123, root / "first", max_scans=1,
+                                         gap_seconds=0)
+                index_path = prior.parent / "run-01" / "index.json"
+                original = index_path.read_bytes()
+                tampered = json.loads(original)
+                tampered["scan"]["nextAddress"] = "0x40000"
+                index_path.write_text(json.dumps(tampered))
+                with self.assertRaisesRegex(ValueError, "resume-receipt-mismatch"):
+                    probe.collect(123, root / "bad-index", resume_summary=prior)
+                index_path.write_bytes(original)
+                changed = deepcopy(SELECTION)
+                changed["target"]["processStartUtcTicks"] = "639299470183328174"
+                with patch.object(probe, "pinned_selection", return_value=changed), \
+                     self.assertRaisesRegex(ValueError, "resume-epoch-reader-or-status-mismatch"):
+                    probe.collect(123, root / "bad-epoch", resume_summary=prior)
+                reader.write_bytes(b"changed-reader")
+                with self.assertRaisesRegex(ValueError, "resume-epoch-reader-or-status-mismatch"):
+                    probe.collect(123, root / "bad-reader", resume_summary=prior)
+                self.assertEqual(scan.call_count, 1)
+                for name in ("bad-index", "bad-epoch", "bad-reader"):
+                    self.assertFalse((root / name).exists())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -97,8 +97,66 @@ def check_index(path, request, request_sha, selection):
     }
 
 
+def checked_cursor(text, previous=None):
+    require(isinstance(text, str) and text.startswith("0x"), "invalid-next-cursor")
+    try:
+        number = int(text[2:], 16)
+    except ValueError as exc:
+        raise ValueError("physical-rr2r1-invalid-next-cursor") from exc
+    require(0x10000 <= number < 2**47 and
+            (previous is None or number > int(previous, 16)), "invalid-next-cursor")
+    return text
+
+
+def resume_cursor(path, selection, reader_sha):
+    """Resume only after checking saved C# receipts against this *live* epoch.
+
+    A bare historical cursor or summary is not proof of process identity or scan
+    completion; reject changed readers, copied candidates and broken source chains.
+    """
+    path = Path(path)
+    raw = path.read_bytes()
+    require(len(raw) <= 1_000_000, "resume-summary-too-large")
+    summary = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique)
+    target = selection["target"]
+    expected = {"processId": target["processId"],
+                "processStartUtcTicks": int(target["processStartUtcTicks"]),
+                "executableSha256": BUILD_SHA}
+    require(summary.get("schemaVersion") == 1 and
+            summary.get("evidenceKind") == "amd-physical-rr2r1-prefix-scan/1" and
+            summary.get("ownerHost") == HOST and summary.get("target") == expected and
+            summary.get("readerSha256") == reader_sha and
+            summary.get("status") == "no-copied-candidate-in-bounded-scopes",
+            "resume-epoch-reader-or-status-mismatch")
+    rows = summary.get("runs")
+    require(isinstance(rows, list) and 1 <= len(rows) <= 16,
+            "resume-runs-invalid")
+    prior = None
+    for number, row in enumerate(rows, 1):
+        require(isinstance(row, dict) and row.get("run") == number and
+                row.get("publishedSnapshots") == 0, "resume-run-unusable")
+        request_path = path.parent / f"request-{number:02d}.json"
+        request_raw = request_path.read_bytes()
+        require(len(request_raw) <= 16_384, "resume-request-too-large")
+        request = json.loads(request_raw.decode("utf-8-sig"), object_pairs_hook=unique)
+        request_sha = hashlib.sha256(request_raw).hexdigest().upper()
+        require(request.get("target") == expected and request.get("marker") == MARKER and
+                request.get("startAddress") == row.get("startAddress") and
+                request_sha == row.get("requestSha256") and
+                (prior is None or request["startAddress"] == prior),
+                "resume-request-chain-mismatch")
+        receipt_path = path.parent / f"run-{number:02d}" / "index.json"
+        verified = check_index(receipt_path, request, request_sha, selection)
+        require(all(verified.get(key) == row.get(key) for key in
+                    ("indexSha256", "status", "publishedSnapshots", "prefixCount",
+                     "startAddress", "nextAddress", "scanStatus", "scanReason",
+                     "examinedBytes")), "resume-receipt-mismatch")
+        prior = checked_cursor(row.get("nextAddress"), row["startAddress"])
+    return prior, hashlib.sha256(raw).hexdigest().upper()
+
+
 def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
-            max_scans=SCAN_COUNT, gap_seconds=1.0):
+            max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None):
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
     require(type(scan_bytes) is int and 1_048_576 <= scan_bytes <= 536_870_912
             and scan_bytes % 4096 == 0
@@ -111,6 +169,8 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
     require(reader.is_file(), "existing-dotnet-reader-unavailable")
     reader_sha = digest(reader)
     target = selection["target"]
+    resume = (resume_cursor(resume_summary, selection, reader_sha)
+              if resume_summary is not None else None)
     request_template = {
         "schemaVersion": 1,
         "evidenceKind": "native-typed-inline-capture-request/1",
@@ -130,7 +190,8 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)
     results = []
-    cursor = "0x10000"
+    cursor = resume[0] if resume else "0x10000"
+    initial_cursor = cursor
     for number in range(1, max_scans + 1):
         require(pinned_selection(pid)["target"] == target, "epoch-changed-before-scan")
         require(digest(reader) == reader_sha, "reader-changed")
@@ -158,15 +219,9 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
         results.append(result)
         if result["publishedSnapshots"] == 0:
             next_cursor = result["nextAddress"]
-            if not isinstance(next_cursor, str):
+            if next_cursor is None:
                 break
-            try:
-                next_number = int(next_cursor, 16)
-            except ValueError as exc:
-                raise ValueError("physical-rr2r1-invalid-next-cursor") from exc
-            require(next_number > int(cursor, 16) and next_number < 2**47,
-                    "invalid-next-cursor")
-            cursor = next_cursor
+            cursor = checked_cursor(next_cursor, cursor)
         if number < max_scans and gap_seconds:
             time.sleep(gap_seconds)
     summary = {
@@ -178,6 +233,8 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
         "ownerHost": HOST,
         "target": request["target"],
         "readerSha256": reader_sha,
+        "initialCursor": initial_cursor,
+        "resumeSourceSha256": resume[1] if resume else None,
         "runs": results,
         "limitations": [
             "Each no-snapshot scan advances the C# memory cursor; a candidate scan is repeated to seek an advancing frame.",
@@ -201,11 +258,14 @@ def main(argv=None):
     parser.add_argument("--scan-bytes", type=int, default=SCAN_BYTES)
     parser.add_argument("--scan-ms", type=int, default=SCAN_MS)
     parser.add_argument("--max-scans", type=int, default=SCAN_COUNT)
+    parser.add_argument("--resume-summary", type=Path,
+                        help="Prior exact-epoch scanner summary; its requests/index files are reverified")
     args = parser.parse_args(argv)
     try:
         path, result = collect(args.physical_pid, args.output_dir,
                                scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
-                               max_scans=args.max_scans)
+                               max_scans=args.max_scans,
+                               resume_summary=args.resume_summary)
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2
