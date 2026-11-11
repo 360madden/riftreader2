@@ -74,6 +74,14 @@ class PhysicalBasisWaypointTests(unittest.TestCase):
         self.assertEqual("suggested-one-pulse", result["decision"])
         self.assertEqual("w", result["candidateAction"]["key"])
         self.assertEqual(100, result["candidateAction"]["holdMilliseconds"])
+        expected = result["candidateAction"]["predictedAfterXYZCandidate"]
+        delta = result["candidateAction"]["predictedDeltaXYZCandidate"]
+        self.assertAlmostEqual(-.6, expected["x"])
+        self.assertAlmostEqual(-.075, expected["z"])
+        self.assertAlmostEqual(0, expected["y"])
+        self.assertAlmostEqual(-.6, delta["x"])
+        self.assertAlmostEqual(-.075, delta["z"])
+        self.assertAlmostEqual(0, delta["y"])
         self.assertFalse(result["navigationEligible"])
         self.assertFalse(result["arrivalQualified"])
         self.assertFalse(result["worldInstanceMatched"])

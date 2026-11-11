@@ -137,6 +137,18 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
         action = controller.decide(start, 0.0)
     except (MovementError, MovementHalted) as err:
         raise BasisWaypointError(str(err)) from err
+    predicted_position = None
+    predicted_displacement = None
+    if action is not None:
+        vx, vz = vectors[action.key]
+        predicted_displacement = {
+            "x": vx * action.hold_ms, "y": 0.0, "z": vz * action.hold_ms,
+        }
+        predicted_position = {
+            "x": start.x + predicted_displacement["x"],
+            "y": start.y,
+            "z": start.z + predicted_displacement["z"],
+        }
     return {
         "schemaVersion": 1,
         "status": "offline-physical-waypoint-candidate",
@@ -158,6 +170,8 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
             "key": action.key, "holdMilliseconds": action.hold_ms,
             "predictedBeforeDistanceCandidate": action.distance_before,
             "predictedAfterDistanceCandidate": action.predicted_distance_after,
+            "predictedDeltaXYZCandidate": predicted_displacement,
+            "predictedAfterXYZCandidate": predicted_position,
         },
         "decision": "within-tolerance-candidate" if action is None else "suggested-one-pulse",
         "limitations": [
