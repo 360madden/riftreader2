@@ -13,10 +13,12 @@ internal static class NativeVitalsComparisonCommand
     private const string Qualification = "candidate-only; semantics/passive-freshness/restart-unverified";
     private const string Source = "native-process-memory";
 
-    private sealed record Resource(string Status, long? Current, long? Maximum, string? UnavailableReason);
+    private sealed record Resource(string Status, long? Current, long? Maximum, string? UnavailableReason,
+        double? UnclampedRatePerClockUnitCandidate);
     private sealed record Snapshot(string Path, string Sha256, string Build, int Pid, long StartTicks,
         ulong PlayerKey, int? ResourceKindCandidate, DateTimeOffset Started, DateTimeOffset Completed,
         Resource Health, Resource Mana, Resource Energy);
+    private sealed record RateChange(string Status, double? Before, double? After, double? Delta);
     private sealed record Change(string Status, long? BeforeCurrent, long? AfterCurrent,
         long? BeforeMaximum, long? AfterMaximum, long? NetChange,
         decimal? NetChangePerSecondCandidate, string? BeforeUnavailableReason, string? AfterUnavailableReason);
@@ -45,6 +47,12 @@ internal static class NativeVitalsComparisonCommand
         var energy = Compare(before.Energy, after.Energy, seconds);
         var sameEpoch = before.Pid == after.Pid && before.StartTicks == after.StartTicks;
         var results = new[] { health, mana, energy };
+        var rateCandidates = new
+        {
+            health = CompareRate(before.Health, after.Health),
+            mana = CompareRate(before.Mana, after.Mana),
+            energy = CompareRate(before.Energy, after.Energy)
+        };
         var report = new
         {
             schemaVersion = 1,
@@ -74,9 +82,11 @@ internal static class NativeVitalsComparisonCommand
                 unavailableResources = results.Count(r => r.Status == "unavailable")
             },
             resources = new { health, mana, energy },
+            unclampedRatePerClockUnitCandidates = rateCandidates,
             limitations = new[]
             {
                 "Average net change between saved observations is not a regeneration rate or cause of change.",
+                "Native unclamped rate coefficients are per game-clock unit and do not establish actual regeneration or clock calibration.",
                 "Raw native calculations remain candidates; no live freshness or restart qualification.",
                 "Unavailable resource values remain null, never zero. No process or game access occurs."
             }
@@ -85,6 +95,15 @@ internal static class NativeVitalsComparisonCommand
             await JsonReportWriter.WriteNewAsync(destination, report, ct);
         await output.WriteLineAsync(JsonSerializer.Serialize(report, JsonFormat.Options));
         return 0;
+    }
+
+    private static RateChange CompareRate(Resource before, Resource after)
+    {
+        if (before.UnclampedRatePerClockUnitCandidate is not double oldRate ||
+            after.UnclampedRatePerClockUnitCandidate is not double newRate)
+            return new("unavailable", before.UnclampedRatePerClockUnitCandidate,
+                after.UnclampedRatePerClockUnitCandidate, null);
+        return new(oldRate == newRate ? "unchanged" : "changed", oldRate, newRate, newRate - oldRate);
     }
 
     private static Change Compare(Resource before, Resource after, decimal seconds)
@@ -156,12 +175,13 @@ internal static class NativeVitalsComparisonCommand
         var maximum = Property(field, "maximum");
         var unavailableReason = Property(field, "unavailableReason");
         var inputs = Property(field, "inputs");
+        var rateCandidate = ReadRateCandidate(inputs);
         if (status == "unavailable" && current.ValueKind == JsonValueKind.Null &&
             maximum.ValueKind == JsonValueKind.Null &&
             (inputs.ValueKind is JsonValueKind.Null or JsonValueKind.Object) &&
             unavailableReason.ValueKind == JsonValueKind.String &&
             !string.IsNullOrWhiteSpace(unavailableReason.GetString()))
-            return new(status, null, null, unavailableReason.GetString());
+            return new(status, null, null, unavailableReason.GetString(), rateCandidate);
         if (status != "calculated-candidate" || unavailableReason.ValueKind != JsonValueKind.Null ||
             inputs.ValueKind != JsonValueKind.Object ||
             current.ValueKind != JsonValueKind.Number || !current.TryGetInt64(out var value) ||
@@ -174,7 +194,19 @@ internal static class NativeVitalsComparisonCommand
             if (type != (name == "mana" ? "0x072A" : "0x072B"))
                 throw new InvalidDataException($"Native {name} type fingerprint differs.");
         }
-        return new(status, value, max, null);
+        return new(status, value, max, null, rateCandidate);
+    }
+
+    private static double? ReadRateCandidate(JsonElement inputs)
+    {
+        if (inputs.ValueKind != JsonValueKind.Object ||
+            !inputs.TryGetProperty("unclampedRatePerClockUnitCandidate", out var value) ||
+            value.ValueKind == JsonValueKind.Null)
+            return null; // Older captures do not include the decoded rate candidate.
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out var rate) ||
+            !double.IsFinite(rate))
+            throw new InvalidDataException("Invalid native unclamped rate candidate.");
+        return rate;
     }
 
     private static JsonElement Property(JsonElement item, string name) =>

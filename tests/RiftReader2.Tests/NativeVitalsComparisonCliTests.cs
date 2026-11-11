@@ -146,14 +146,64 @@ public sealed class NativeVitalsComparisonCliTests
         finally { Directory.Delete(dir, true); }
     }
 
-    private static object Sample(string instant, long health, long? energy, ulong unitKey = 42,
-        bool diagnosticUnavailable = false, int? resourceKind = null)
+    [Fact]
+    public async Task ComparesNativeUnclampedRatesIndependentlyOfCurrentValues()
     {
-        object present(long value, long maximum, string? type = null) =>
+        var dir = MakeDir();
+        try
+        {
+            var before = Write(dir, "before.json", Sample("2026-11-10T23:00:00Z", 100, 90,
+                healthRate: 0.5, energyRate: 1.25));
+            var after = Write(dir, "after.json", Sample("2026-11-10T23:00:10Z", 100, 90,
+                healthRate: 1.0, energyRate: 1.25));
+            var (code, output, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var json = JsonDocument.Parse(output);
+            var root = json.RootElement;
+            Assert.Equal(0, root.GetProperty("summary").GetProperty("changedResources").GetInt32());
+            var rates = root.GetProperty("unclampedRatePerClockUnitCandidates");
+            Assert.Equal("changed", rates.GetProperty("health").GetProperty("status").GetString());
+            Assert.Equal(0.5, rates.GetProperty("health").GetProperty("delta").GetDouble());
+            Assert.Equal("unchanged", rates.GetProperty("energy").GetProperty("status").GetString());
+            Assert.Equal("unavailable", rates.GetProperty("mana").GetProperty("status").GetString());
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Fact]
+    public async Task RetainsRateCandidatesEvenWhenRevisionMismatchMakesCurrentUnavailable()
+    {
+        var dir = MakeDir();
+        try
+        {
+            var before = Write(dir, "before.json", Sample("2026-11-10T23:00:00Z", 100, null,
+                diagnosticUnavailable: true, unavailableEnergyRate: 3.0));
+            var after = Write(dir, "after.json", Sample("2026-11-10T23:00:10Z", 100, null,
+                diagnosticUnavailable: true, unavailableEnergyRate: 4.0));
+            var (code, output, error) = await Run(before, after);
+            Assert.Equal(0, code);
+            Assert.Empty(error);
+            using var json = JsonDocument.Parse(output);
+            var root = json.RootElement;
+            Assert.Equal("unavailable", root.GetProperty("resources").GetProperty("energy")
+                .GetProperty("status").GetString());
+            var rate = root.GetProperty("unclampedRatePerClockUnitCandidates").GetProperty("energy");
+            Assert.Equal("changed", rate.GetProperty("status").GetString());
+            Assert.Equal(1.0, rate.GetProperty("delta").GetDouble());
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    private static object Sample(string instant, long health, long? energy, ulong unitKey = 42,
+        bool diagnosticUnavailable = false, int? resourceKind = null,
+        double? healthRate = null, double? energyRate = null, double? unavailableEnergyRate = null)
+    {
+        object present(long value, long maximum, string? type = null, double? rate = null) =>
             new { status = "calculated-candidate", unavailableReason = (string?)null,
                 current = (long?)value, maximum = (long?)maximum,
-                inputs = type is null ? (object)new { baseRaw = value } :
-                    new { verifiedTypeCode = type } };
+                inputs = type is null ? (object)new { baseRaw = value, unclampedRatePerClockUnitCandidate = rate } :
+                    new { verifiedTypeCode = type, unclampedRatePerClockUnitCandidate = rate } };
         object missing(string reason) =>
             new { status = "unavailable", unavailableReason = (string?)reason,
                 current = (long?)null, maximum = (long?)null, inputs = (object?)null };
@@ -171,13 +221,14 @@ public sealed class NativeVitalsComparisonCliTests
                 resourceKindCandidate = resourceKind,
                 source = "native-process-memory",
                 qualification = "candidate-only; semantics/passive-freshness/restart-unverified",
-                health = present(health, 150), mana = missing("not-mana-kind-three"),
-                energy = energy.HasValue ? present(energy.Value, 100, "0x072B") :
+                health = present(health, 150, rate: healthRate), mana = missing("not-mana-kind-three"),
+                energy = energy.HasValue ? present(energy.Value, 100, "0x072B", energyRate) :
                     diagnosticUnavailable ? new
                     {
                         status = "unavailable", unavailableReason = "revision-mismatch-needs-native-cache-write",
                         current = (long?)null, maximum = (long?)null,
-                        inputs = (object?)new { baseRaw = 90, recordRevision = 1, wrapperRevision = 2 }
+                        inputs = (object?)new { baseRaw = 90, recordRevision = 1, wrapperRevision = 2,
+                            unclampedRatePerClockUnitCandidate = unavailableEnergyRate }
                     } : missing("not-energy-kind-four")
             }
         };
