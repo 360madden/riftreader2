@@ -26,6 +26,12 @@ internal static class MoveKeyCommand
 
     internal sealed record XyzDelta(double X, double Y, double Z);
 
+    private sealed record FocusAttempt(
+        string PreviousForegroundWindow, uint PreviousForegroundProcessId,
+        bool AttachedForegroundThread, bool AttachedTargetThread,
+        bool ForegroundRequestAccepted,
+        string ForegroundAfterWindow, uint ForegroundAfterProcessId);
+
     // A successful key-down SendInput call is distinct from completing the
     // bounded hold/release sequence, and neither proves game consumption.
     internal sealed record KeyInsertionEvidence(
@@ -203,20 +209,23 @@ internal static class MoveKeyCommand
         DesktopTarget Inspect() => WindowsControlDesktop.InspectPinned("rift_x64", path, sha,
             options.Pid, startTicks);
         var target = Inspect();
+        FocusAttempt? focusAttempt = null;
         if (!target.IsForeground && options.Focus)
         {
             var handle = new IntPtr(long.Parse(target.WindowHandle.AsSpan(2),
                 NumberStyles.HexNumber, CultureInfo.InvariantCulture));
-            // SetForegroundWindow may return false even for a valid visible game.
-            // Reuse RiftReader's proven GUI-thread attachment only when needed.
-            if (!SetForegroundWindow(handle)
-                || !await WaitForForegroundAsync(Inspect, 180, token))
-            {
-                RequestForegroundWithAttachedThreads(handle, options.Pid);
-                if (!await WaitForForegroundAsync(Inspect, 600, token))
-                    throw new InvalidOperationException(
-                        "Windows denied RIFT foreground after direct and attached-thread activation; no input sent.");
-            }
+            // The working legacy RiftReader helper attaches both GUI input threads
+            // BEFORE requesting foreground. Do so on this original CLI thread,
+            // before any awaited continuation can switch threads.
+            focusAttempt = RequestForegroundWithAttachedThreads(handle, options.Pid);
+            if (!await WaitForForegroundAsync(Inspect, 600, token))
+                throw new InvalidOperationException(
+                    "RIFT focus failed after legacy-style attached-thread activation. "
+                    + $"Foreground PID={focusAttempt.ForegroundAfterProcessId}, "
+                    + $"HWND={focusAttempt.ForegroundAfterWindow}; "
+                    + $"foregroundAttached={focusAttempt.AttachedForegroundThread}, "
+                    + $"targetAttached={focusAttempt.AttachedTargetThread}, "
+                    + $"SetForegroundWindow={focusAttempt.ForegroundRequestAccepted}; no input sent.");
         }
         var ready = Inspect();
         if (!ready.IsForeground)
@@ -277,6 +286,7 @@ internal static class MoveKeyCommand
             machine = ready.MachineName, processId = ready.ProcessId,
             processStartUtcTicks = ready.ProcessStartUtcTicks,
             executableSha256 = ready.ExecutableSha256,
+            focusAttempt,
             keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
             windowsInputInserted = insertion.WindowsInputInserted,
             windowsInputAttempted = insertion.WindowsInputAttempted,
@@ -386,30 +396,34 @@ internal static class MoveKeyCommand
         return false;
     }
 
-    private static void RequestForegroundWithAttachedThreads(IntPtr window, int expectedPid)
+    private static FocusAttempt RequestForegroundWithAttachedThreads(IntPtr window, int expectedPid)
     {
         var targetThread = GetWindowThreadProcessId(window, out var actualPid);
         if (targetThread == 0 || actualPid != (uint)expectedPid)
             throw new InvalidOperationException("RIFT window owner changed during foreground activation.");
 
         var previousForeground = GetForegroundWindow();
+        _ = GetWindowThreadProcessId(previousForeground, out var previousPid);
         var foregroundThread = previousForeground == IntPtr.Zero
             ? 0 : GetWindowThreadProcessId(previousForeground, out _);
         var currentThread = GetCurrentThreadId();
         var attachedForeground = false;
         var attachedTarget = false;
+        var foregroundRequestAccepted = false;
         try
         {
             if (foregroundThread != 0 && foregroundThread != currentThread)
                 attachedForeground = AttachThreadInput(currentThread, foregroundThread, true);
-            if (targetThread != currentThread && targetThread != foregroundThread)
+            if (targetThread != currentThread)
                 attachedTarget = AttachThreadInput(currentThread, targetThread, true);
 
             // Never restore an already visible/maximized RIFT: it can move or resize the game.
             if (IsIconic(window))
                 _ = ShowWindow(window, 9); // SW_RESTORE only for minimized windows.
-            _ = SetForegroundWindow(window);
-            Thread.Sleep(500); // Historical RiftReader C# default: allow focus to settle.
+            else if (!IsWindowVisible(window))
+                _ = ShowWindow(window, 5); // SW_SHOW, no un-maximize.
+            foregroundRequestAccepted = SetForegroundWindow(window);
+            Thread.Sleep(250); // Same settling interval as successful legacy test.
         }
         finally
         {
@@ -418,6 +432,12 @@ internal static class MoveKeyCommand
             if (attachedForeground)
                 _ = AttachThreadInput(currentThread, foregroundThread, false);
         }
+        var foregroundAfter = GetForegroundWindow();
+        _ = GetWindowThreadProcessId(foregroundAfter, out var afterPid);
+        return new FocusAttempt(
+            $"0x{previousForeground.ToInt64():X}", previousPid,
+            attachedForeground, attachedTarget, foregroundRequestAccepted,
+            $"0x{foregroundAfter.ToInt64():X}", afterPid);
     }
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -440,6 +460,10 @@ internal static class MoveKeyCommand
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsIconic(IntPtr window);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr window);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
