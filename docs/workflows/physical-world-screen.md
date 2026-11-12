@@ -436,8 +436,9 @@ No Windows display settings were changed by this check. Evidence:
 `artifacts/qt-active-restart-current-displays-38136.json`.
 
 Projection inside the viewport does not establish visibility: depth, occlusion,
-terrain and obstacle clearance are not checked. World/zone identity is currently
-unavailable, so matching host/build/player alone cannot establish the same world.
+terrain and obstacle clearance are not checked. Projection packets have no
+admitted zone/instance binding, so matching host/build/player alone cannot
+establish the same world.
 
 ## Native zone context candidate
 
@@ -450,3 +451,28 @@ This is useful context, not a qualified world-instance token, freshness result o
 route-admission rule. The current location reader explicitly reports world
 instance unavailable; the historical shard lookup also cannot prove co-instance
 geometry. Keep source intervals and candidate labels intact.
+
+The reusable physical wrapper now exposes this existing command directly:
+
+```powershell
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --read-native zone-context --output C:\work\riftreader2\artifacts\new-zone-context.json
+```
+
+Use a freshly admitted PID and new output path. The wrapper retains the raw
+report and SHA-256, checks exact process/build identity and source times within
+the actual invocation, and returns lossless self key, raw uint32 zone key,
+supported typed zone-ID candidate or an explicit unavailable reason. A complete
+cache acquisition with no resolved zone remains an unavailable value rather than
+a fabricated zone or a missing-zone claim. No focus change or game input occurs.
+
+Fresh PID17212 retrieval at 20:07 UTC returned the same raw key, child key and
+`z487C9102D2EA79BE` as retained PID69312, with the same build/player but distinct
+process starts. Native acquisition took 45.8844 ms. This reproduces retrieval
+after the retained genuine restarts for this one case; API correspondence,
+changed-zone semantics and passive freshness remain unverified. World-instance
+identity remains unavailable, and equal candidates do not authorize cross-world
+route reuse. Seventy-one focused wrapper/selection/facing/unit-position tests
+passed, including twelve new zone cases. Evidence:
+`artifacts/physical-zone-context-wrapper-first-17212.json`,
+`artifacts/zone-context-wrapper-first-17212-result.json`,
+`artifacts/zone-context-restart-comparison-69312-17212.json`.

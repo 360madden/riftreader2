@@ -1,5 +1,17 @@
 # Current status
 
+**15:07 EST NOVEMBER 12 — ZONE-CONTEXT RETRIEVAL EXPOSED AND REPRODUCED:**
+On **AMD-DESKTOP/PID17212**, `physical_rift.py --read-native zone-context` now
+wraps the existing bounded, read-only zone-seed command. It retains source/hash,
+checks process/build identity and invocation-time freshness, and preserves
+candidate/unavailable status and lossless keys. The fresh result matched retained
+PID69312's raw key `1216123138`, child key `650763347` and zone candidate
+`z487C9102D2EA79BE` across the intervening genuine restarts; native acquisition
+took 45.8844 ms. This is one reproduced retrieval case, not API/changed-zone/
+passive-freshness or world-instance qualification. No route binding or new scan
+was added. All 71 focused wrapper/selection/facing/unit-position checks passed.
+[Usage and evidence](workflows/physical-world-screen.md#native-zone-context-candidate).
+
 **15:02 EST NOVEMBER 12 — OFF-SCREEN NEXT CUE PASSED; GENUINE RESUME COMPLETE:**
 On **AMD-DESKTOP/PID17212**, a saved NEXT point outside the actual camera viewport
 now gets a cyan edge chevron and direct horizontal distance. Behind-camera points
