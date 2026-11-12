@@ -159,4 +159,10 @@ The live 150 ms trial used the key and duration chosen in a preceding offline re
 
 On AMD-DESKTOP, one controller instance used a fresh position and the earlier measured W/S vectors to select a pulse toward the previously occupied point in `artifacts/bounded-return-20261111-211335/after-w.json`. The goal was 0.49862 horizontal units away. The decision selected W for 81 ms, the input helper reported successful release, and two successive paired position reads each placed Atank 0.00191 units from the goal. The first read produced confirming-arrival and the second produced arrived.
 
-The decision, input receipt, position reads and controller result are in `artifacts/live-controller-20261111-211518/`. This single forward pulse used a supervised, one-off invocation and a previously sampled heading. Multi-step convergence and reuse after a turn or restart remain open.
+The decision, input receipt, position reads and controller result are in `artifacts/live-controller-20261111-211518/`. This single forward pulse used a supervised, one-off invocation and a previously sampled heading. The subsequent backward trial exercised a second decision from live feedback.
+
+## Two-step backward waypoint
+
+For `artifacts/two-step-20261111-211631/`, the goal was 0.880 units along the measured backward direction. The controller chose S for 150 ms. Fresh position feedback left 0.39234 units to go, so the same controller chose S for 131 ms. Both keys released. The measured hold midpoints were 163.14 and 143.04 ms. The final and confirmation samples put Atank 0.03740 units from the goal, including 0.03740 units past the goal along the intended path and 0.00070 units of lateral offset. Two in-tolerance readings produced arrived.
+
+The directory contains both decisions, both helper receipts, pre-pulse pose checks, position feedback, confirmation, and the controller result. Live multi-step feedback has now been observed at one facing in one process epoch. Using a calibration collected before a turn or a client restart still needs separate evidence.
