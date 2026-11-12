@@ -1,5 +1,16 @@
 # Current status
 
+**12:53 EST NOVEMBER 12 — RESIZE QUALIFIED; WINDOW RECOVERED:** On **AMD-DESKTOP**,
+the live overlay followed 1600x900 to 1920x1009 in one uninterrupted run: 60 frames,
+one expected geometry-change withholding, foreground preserved. The compact,
+separated labels also passed live review and 19 presenter tests. A later desktop-
+tool title-bar drag moved RIFT off-screen; the existing BlackBox helper recovered
+normal rendering on `\\.\DISPLAY5`, with client rect `(-1920,53,1920,1009)` and
+unchanged Atank XYZ/body bearing. Avoid that desktop-tool placement method; use
+the existing recovery path. Exact evidence and origin caveat are in the
+[projection guide](workflows/physical-world-screen.md). Mixed-DPI and full-restart
+overlay qualification remain next. Goal remains active through **19:44 EST**.
+
 **12:39 EST NOVEMBER 12 — CAMERA TRACKING AND EVERYDAY MARKER BUTTONS:** On
 **AMD-DESKTOP**, a camera drag through a painted marker reached RIFT, changed its
 optical bearing by 17.18897 degrees and left Atank's XYZ/body bearing unchanged.

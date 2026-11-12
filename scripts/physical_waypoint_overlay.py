@@ -353,6 +353,44 @@ class _OwnedWindow:
         self.dib = None
 
 
+def _label_layout(labels, width, height, font):
+    """Greedy nearby label lanes; anchors retain their exact projected position."""
+    placed = []
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    for anchor, text in labels:
+        # Preserve custom text; wrap only when wider than the physical client.
+        lines, line = [], ""
+        for character in text:
+            if line and font.getlength(line + character) > max(1, width - 6):
+                lines.append(line)
+                line = ""
+            line += character
+        text = "\n".join(lines + [line])
+        bounds = measure.multiline_textbbox((0, 0), text, font=font, anchor="lt", spacing=2, stroke_width=1)
+        w, h = min(width, bounds[2] - bounds[0] + 4), min(height, bounds[3] - bounds[1] + 4)
+        x, y = anchor
+        candidates = []
+        for lane in range(max(1, math.ceil(height / (h + 4)))):
+            for offset in ((0,) if lane == 0 else (-lane * (h + 4), lane * (h + 4))):
+                for left in (x + 10, x - 10 - w):
+                    left = max(0, min(width - w, left))
+                    top = max(0, min(height - h, y - 10 - h + offset))
+                    box = (left, top, left + w, top + h)
+                    overlap = sum(max(0, min(box[2], prior[1][2]) - max(box[0], prior[1][0])) *
+                                  max(0, min(box[3], prior[1][3]) - max(box[1], prior[1][1]))
+                                  for prior in placed)
+                    candidates.append((overlap, box))
+                    if overlap == 0:
+                        break
+                if candidates[-1][0] == 0:
+                    break
+            if candidates[-1][0] == 0:
+                break
+        _, box = min(candidates, key=lambda item: item[0])
+        placed.append((text, box, anchor))
+    return placed
+
+
 class PhysicalWaypointOverlay:
     def __init__(self, target, *, max_age=.8):
         self.target = _target(target)
@@ -406,15 +444,26 @@ class PhysicalWaypointOverlay:
             rect = self._validate(frame)
             image = Image.new("RGB", tuple(rect[2:]), (1, 2, 3))
             draw, font = ImageDraw.Draw(image), ImageFont.load_default(size=16)
+            markers = []
             for marker in frame["points"]:
                 ground = _projection(marker["ground"], *rect[2:])
                 top = _projection(marker["beaconTop"], *rect[2:])
                 if ground is not None:
-                    x, y = ground
-                    draw.ellipse((x-7, y-7, x+7, y+7), outline="#ffd54f", width=2)
-                    draw.text((x+10, y-10), f"{marker['number']} {marker['label']}", fill="#ffd54f", font=font, anchor="ls")
-                    if top is not None:
-                        draw.line((*ground, *top), fill="#ffd54f", width=2)
+                    text = (str(marker["number"]) if marker["label"] == f"Recorded {marker['number']}"
+                            else f"{marker['number']} {marker['label']}")
+                    markers.append((ground, top, text))
+            for text, box, anchor in _label_layout([(ground, text) for ground, top, text in markers], *rect[2:], font):
+                endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
+                draw.line((*anchor, *endpoint), fill="#ffd54f", width=1)
+                draw.multiline_text((box[0]+2, box[1]+2), text, fill="#ffd54f", font=font,
+                                    anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
+            # Rings/beacons are painted last so label lanes never move or erase
+            # the exact world-to-screen reference pixels.
+            for ground, top, text in markers:
+                x, y = ground
+                draw.ellipse((x-7, y-7, x+7, y+7), outline="#ffd54f", width=2)
+                if top is not None:
+                    draw.line((*ground, *top), fill="#ffd54f", width=2)
             player = _projection(frame["playerGround"], *rect[2:])
             if player is not None:
                 x, y = player

@@ -91,6 +91,42 @@ class PresenterTests(unittest.TestCase):
         del f["points"][0]["ground"]["insideViewportCandidate"]
         self.assertFalse(self.presenter.present(f))
 
+    def test_captured_near_coincident_labels_separate_without_moving_world_anchors(self):
+        # Normalized anchors retained from the seven-point live proof packet;
+        # the test needs no artifact file, window or fresh native observation.
+        anchors = [(.4985856943, .5717270670), (.5001097458, .6438167331),
+                   (.5018158311, .7243812097), (.6174528778, .7093054045),
+                   (.6074622950, .5721093843), (.5538553464, .5741758156),
+                   (.5018598613, .5762331013)]
+        f = frame()
+        f["points"] = [dict(number=i, label=f"Recorded {i}", ground=projection(x, y),
+                            beaconTop=projection(x, y-.05)) for i, (x, y) in enumerate(anchors, 1)]
+        with patch.object(overlay, "_label_layout", wraps=overlay._label_layout) as layout:
+            self.assertTrue(self.presenter.present(f))
+        labels, width, height, font = layout.call_args.args
+        self.assertEqual([str(i) for i in range(1, 8)], [text for anchor, text in labels])
+        placed = overlay._label_layout(labels, width, height, font)
+        self.assert_layout(placed, width, height)
+        image = self.presenter.window.images[-1]
+        for x, y in anchors:
+            self.assertEqual((255, 213, 79), image.getpixel((int(x*width), int(y*height))))
+            self.assertEqual((255, 213, 79), image.getpixel((int(x*width), int((y-.05)*height))))
+
+    def assert_layout(self, placed, width, height):
+        for index, (text, box, anchor) in enumerate(placed):
+            self.assertTrue(0 <= box[0] < box[2] <= width)
+            self.assertTrue(0 <= box[1] < box[3] <= height)
+            for _, other, _ in placed[:index]:
+                self.assertTrue(box[2] <= other[0] or other[2] <= box[0] or
+                                box[3] <= other[1] or other[3] <= box[1], (box, other))
+
+    def test_custom_label_names_preserved_and_edge_lanes_stay_inside_client(self):
+        font = overlay.ImageFont.load_default(size=16)
+        labels = [((319, 2), f"{i} Custom destination {i}") for i in range(1, 8)]
+        placed = overlay._label_layout(labels, 320, 240, font)
+        self.assert_layout(placed, 320, 240)
+        self.assertEqual([text for anchor, text in labels], [text for text, box, anchor in placed])
+
     def test_watchdog_hides_expired_frame_and_close_cancels_timer(self):
         self.assertTrue(self.presenter.present(frame()))
         self.clock.return_value = 101.
