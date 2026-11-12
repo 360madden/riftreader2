@@ -237,5 +237,34 @@ class PhysicalTurnPairTests(unittest.TestCase):
                          "turn-source-missing-or-oversized")
 
 
+
+
+class BurstStabilityTests(unittest.TestCase):
+    def assess(self, angles, seconds=.4):
+        from datetime import datetime, timedelta, timezone
+        start = datetime(2026, 11, 11, tzinfo=timezone.utc)
+        capture = {
+            "matrices": [{"actor": {"angle": angle}} for angle in angles],
+            "times": [(start, start + timedelta(seconds=seconds))],
+        }
+        return turn.burst_stability(capture, "actor")
+
+    def test_stable_sampled_interval(self):
+        result = self.assess([-40.0] * 5)
+        self.assertTrue(result["sampledPoseStableCandidate"])
+        self.assertEqual(result["angularSpanDegreesCandidate"], 0)
+
+    def test_turning_and_insufficient_samples_are_unstable(self):
+        self.assertFalse(self.assess([-40, -42, -44])["sampledPoseStableCandidate"])
+        self.assertFalse(self.assess([-40])["sampledPoseStableCandidate"])
+        self.assertFalse(self.assess([-40] * 5, .01)["sampledPoseStableCandidate"])
+        self.assertFalse(self.assess([None] * 5)["sampledPoseStableCandidate"])
+
+    def test_wrap_boundary_has_small_angular_span(self):
+        result = self.assess([179.999, -179.999, 180.0])
+        self.assertAlmostEqual(result["angularSpanDegreesCandidate"], .002)
+        self.assertTrue(result["sampledPoseStableCandidate"])
+
+
 if __name__ == "__main__":
     unittest.main()

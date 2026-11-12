@@ -186,6 +186,27 @@ def _load(path):
             "samples": len(rows)}
 
 
+def burst_stability(capture, matrix_name):
+    angles = [row[matrix_name]["angle"] if row[matrix_name] else None
+              for row in capture["matrices"]]
+    duration = (capture["times"][-1][1] - capture["times"][0][0]).total_seconds()
+    span = None
+    if all(angle is not None for angle in angles):
+        # Smallest circular arc containing every sample, including wrap at +/-180.
+        ordered = sorted(angle % 360 for angle in angles)
+        gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+        gaps.append(ordered[0] + 360 - ordered[-1])
+        span = round(360 - max(gaps), 12)
+    return {
+        "samples": len(angles),
+        "observationSeconds": duration,
+        "angularSpanDegreesCandidate": span,
+        "sampledPoseStableCandidate": (len(angles) >= 3 and duration >= .2
+                                       and span is not None and span < .01),
+        "qualification": "Stability during sampled interval only; later settling and body yaw unverified.",
+    }
+
+
 def compare(before_path, after_path, *, max_gap_seconds=120.0):
     _require(type(max_gap_seconds) in (int, float) and math.isfinite(max_gap_seconds)
              and 0 < max_gap_seconds <= 3600, "invalid-turn-gap-limit")
@@ -207,6 +228,8 @@ def compare(before_path, after_path, *, max_gap_seconds=120.0):
         start_angle = start["angle"] if start else None
         end_angle = end["angle"] if end else None
         changes[name] = {
+            "beforeBurstStability": burst_stability(before, name),
+            "afterBurstStability": burst_stability(after, name),
             "beforeEndDegreesCandidate": old_angle,
             "afterStartDegreesCandidate": start_angle,
             "afterEndDegreesCandidate": end_angle,
