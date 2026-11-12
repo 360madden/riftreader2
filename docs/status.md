@@ -1,5 +1,15 @@
 # Current status
 
+**17:29 EST NOVEMBER 12 — UNSAVED ROUTE SWITCHING PROTECTS EDITS:**
+Load and Load recent now ask whether to save a dirty route before replacing it.
+Cancel, cancelled Save As and failed saves preserve the route, association,
+checkpoint/cache and Undo; invalid destinations are rejected before prompting.
+Eight new focused tests and 14 existing edit/Undo tests passed. On AMD-DESKTOP,
+actual Cancel retained a reordered named landmark and Undo; explicit No then
+loaded the original route and restored its byte-identical genuine 7/7 checkpoint.
+The named source file was untouched; no game input was sent. GUI PID62500 is idle,
+markers off. Evidence: `artifacts/unsaved-route-live-51524/validation.json`.
+
 **17:24 EST NOVEMBER 12 — NAMED TARGET WAYPOINT SAVED AND RELOADED:**
 On **AMD-DESKTOP/PID51524**, Add Target now reuses the existing native template
 name reader and labels the measured point **3rd Guard Soldier**. Save Route and

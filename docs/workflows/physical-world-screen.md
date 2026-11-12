@@ -76,6 +76,9 @@ The ordinary **Open view** still opens the annotated PNG. **Recent routes** /
 checks, without starting playback. Its history shares the existing last-route
 cache, and missing/broken history does not prevent route recovery. Live proof:
 `artifacts/route-controls-17212-validation.json`.
+Loading another route with unsaved edits first offers Save / No / Cancel.
+Cancel or an unsuccessful save keeps the current route and Undo history; No
+explicitly discards only the in-memory edits and loads the validated destination.
 
 The 3D pane also shows the retained native optical eye and screen-edge view rays.
 These invert the same matrix X/Y/W rows used by projection, using NumPy from the

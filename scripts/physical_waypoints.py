@@ -1485,8 +1485,10 @@ def launch_window(args):
                 write_json_atomic(path, document)
                 mark_saved(path)
                 cache_route(document, "Route saved: " + str(path))
+                return True
             except (ValueError, TypeError, OSError) as exc:
                 messagebox.showerror("Cannot save route", str(exc))
+        return False
 
     def load_from(path):
         nonlocal playback_view, pending_progress_selection
@@ -1494,6 +1496,15 @@ def launch_window(args):
             return
         try:
             document = prepared_document(json.loads(Path(path).read_text(encoding="utf-8")))
+            if route_dirty:
+                decision = messagebox.askyesnocancel(
+                    "Unsaved route changes", "Save changes to the current route before loading another route?",
+                    parent=window)
+                if decision is None or (decision and not save_route()):
+                    return
+                if decision:
+                    # Saving may have updated the very file being loaded.
+                    document = prepared_document(json.loads(Path(path).read_text(encoding="utf-8")))
             if not stop_markers():
                 raise WaypointError("Cannot stop markers; route unchanged")
             progress = select_progress(document)
