@@ -63,21 +63,26 @@ def read_basis(path):
             and b.get("cardinalGeometryCandidate") is True,
             "waypoint-basis-unqualified")
     model = b.get("laterFacingReprojectionCandidate")
-    require(isinstance(model, dict)
-            and model.get("status") == "unverified-rigid-rotation-model"
-            and model.get("sameFacingConfirmed") is False
-            and model.get("navigationEligible") is False
-            and isinstance(model.get("modeledVectors"), dict)
-            and set(model["modeledVectors"]) == {"s", "q", "e"},
-            "waypoint-later-facing-model-unavailable")
     sample = b.get("samples")
-    require(isinstance(sample, dict) and set(sample) == {"w", "s", "q", "e", "laterW"},
+    keys = {"w", "s", "q", "e"}
+    require(isinstance(sample, dict) and set(sample) in (keys, keys | {"laterW"})
+            and all(isinstance(row, dict) for row in sample.values()),
             "waypoint-basis-samples-invalid")
+    if "laterW" in sample:
+        require(isinstance(model, dict)
+                and model.get("status") == "unverified-rigid-rotation-model"
+                and model.get("sameFacingConfirmed") is False
+                and model.get("navigationEligible") is False
+                and isinstance(model.get("modeledVectors"), dict)
+                and set(model["modeledVectors"]) == {"s", "q", "e"},
+                "waypoint-later-facing-model-unavailable")
+    else:
+        require(model is None, "waypoint-basis-unexpected-model")
     sources = b.get("sourceReceiptsSha256")
     require(isinstance(sources, dict) and set(sources) == set(sample)
             and all(isinstance(v, str) and anchors.SHA256.fullmatch(v)
                     for v in sources.values())
-            and len(set(sources.values())) == 5, "waypoint-basis-source-hashes-invalid")
+            and len(set(sources.values())) == len(sample), "waypoint-basis-source-hashes-invalid")
     ident = b.get("identity")
     require(isinstance(ident, dict)
             and ident.get("machine") in ("AMD-DESKTOP", "LEGION")
@@ -94,13 +99,17 @@ def read_basis(path):
 
 def candidate_calibrations(b):
     """Build unqualified 100-ms reference vectors; never create input authority."""
-    model = b["laterFacingReprojectionCandidate"]["modeledVectors"]
-    later = b["samples"]["laterW"]
-    vectors = {"w": (number(later.get("vxCandidate")), number(later.get("vzCandidate")))}
-    for key in ("s", "q", "e"):
-        row = model[key]
-        vectors[key] = (number(row.get("vxPerMillisecondCandidate")),
-                        number(row.get("vzPerMillisecondCandidate")))
+    if "laterW" in b["samples"]:
+        model = b["laterFacingReprojectionCandidate"]["modeledVectors"]
+        later = b["samples"]["laterW"]
+        vectors = {"w": (number(later.get("vxCandidate")), number(later.get("vzCandidate")))}
+        for key in ("s", "q", "e"):
+            row = model[key]
+            vectors[key] = (number(row.get("vxPerMillisecondCandidate")),
+                            number(row.get("vzPerMillisecondCandidate")))
+    else:
+        vectors = {key: (number(row.get("vxCandidate")), number(row.get("vzCandidate")))
+                   for key, row in b["samples"].items()}
     calibrations = {}
     for key, (x, z) in vectors.items():
         require(math.hypot(x, z) > 0, "waypoint-basis-vector-zero")
@@ -122,9 +131,11 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
             "waypoint-native-basis-identity-mismatch")
     try:
         position_at = datetime.fromisoformat(native["firstSampleUtc"].replace("Z", "+00:00"))
-        calibration_at = datetime.fromisoformat(
-            b["samples"]["laterW"]["afterSampleUtc"].replace("Z", "+00:00"))
-    except (ValueError, AttributeError, TypeError) as err:
+        end_rows = [b["samples"]["laterW"]] if "laterW" in b["samples"] else b["samples"].values()
+        ends = [datetime.fromisoformat(row["afterSampleUtc"].replace("Z", "+00:00")) for row in end_rows]
+        require(all(end.utcoffset() == timedelta(0) for end in ends), "waypoint-sample-time-invalid")
+        calibration_at = max(ends)
+    except (KeyError, ValueError, AttributeError, TypeError) as err:
         raise BasisWaypointError("waypoint-sample-time-invalid") from err
     require(position_at.utcoffset() == timedelta(0)
             and calibration_at.utcoffset() == timedelta(0)
@@ -165,7 +176,7 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
         "inputSent": False,
         "basisReportSha256": basis_sha,
         "nativePositionReportSha256": position_sha,
-        "basisLastForwardSampleUtc": b["samples"]["laterW"]["afterSampleUtc"],
+        "basisLastForwardSampleUtc": b["samples"].get("laterW", b["samples"]["w"])["afterSampleUtc"],
         "positionFirstSampleUtc": native["firstSampleUtc"],
         "identity": ident,
         "currentXYZ": {"x": start.x, "y": start.y, "z": start.z},
@@ -180,7 +191,8 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
         "decision": "within-tolerance-candidate" if action is None else "suggested-one-pulse",
         "limitations": [
             "Explicit destination does not prove same-world navigation or arrival.",
-            "Only forward was observed at the later facing; S/Q/E are modeled rotations.",
+            ("Only forward was observed at the later facing; S/Q/E are modeled rotations."
+             if "laterW" in b["samples"] else "All four vectors come from separate measured pulses."),
             "Current native XYZ is cached candidate data, not independently refreshed gameplay state.",
             "Linear speed scaling to 20-150 ms is unqualified; this never executes input.",
         ],

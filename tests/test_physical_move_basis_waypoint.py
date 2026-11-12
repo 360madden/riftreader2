@@ -114,6 +114,27 @@ class PhysicalBasisWaypointTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "waypoint-native-basis-identity-mismatch"):
             self.preview()
 
+    def test_four_measured_vectors_require_position_after_last_sample(self):
+        value = basis()
+        value["samples"].pop("laterW")
+        value["sourceReceiptsSha256"].pop("laterW")
+        value["laterFacingReprojectionCandidate"] = None
+        for key, (x, z) in {"w": (-.006, 0), "s": (.003, 0),
+                            "q": (0, .006), "e": (0, -.006)}.items():
+            value["samples"][key] = {
+                "vxCandidate": x, "vzCandidate": z,
+                "afterSampleUtc": "2026-11-11T07:06:41.500Z",
+            }
+        self.store(basis_value=value)
+        result = self.preview(x=0, z=.6)
+        self.assertEqual("q", result["candidateAction"]["key"])
+        self.assertEqual(100, result["candidateAction"]["holdMilliseconds"])
+
+        value["samples"]["e"]["afterSampleUtc"] = "2026-11-11T07:06:43Z"
+        self.store(basis_value=value)
+        with self.assertRaisesRegex(ValueError, "waypoint-position-precedes-calibration"):
+            self.preview()
+
     def test_current_position_must_follow_basis_and_model_must_be_available(self):
         value = basis()
         value["samples"]["laterW"]["afterSampleUtc"] = "2026-11-11T07:06:43Z"
