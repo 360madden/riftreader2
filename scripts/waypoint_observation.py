@@ -6,7 +6,7 @@ import time
 
 from scripts import physical_rift
 from scripts.movement_controller import Position
-from scripts.physical_waypoints import Snapshot, WaypointError, finite
+from scripts.physical_waypoints import Snapshot, WaypointError, finite, capture_reason
 
 
 def observe_batch(adapter, *, samples=8, interval_ms=100) -> list[Snapshot]:
@@ -22,10 +22,7 @@ def observe_batch(adapter, *, samples=8, interval_ms=100) -> list[Snapshot]:
     capture = physical_rift.read_native(adapter.selection, "facing", samples=samples,
                                         interval_ms=interval_ms, include_target=False)
     if capture.get("status") != "complete":
-        reason = capture.get("reason", "Native observation unavailable")
-        if capture.get("detail"):
-            reason += ": " + str(capture["detail"])
-        raise WaypointError(reason)
+        raise WaypointError(capture_reason(capture))
     try:
         source = capture["nativeOutput"]
         report = json.loads(Path(source).read_text(encoding="utf-8"))

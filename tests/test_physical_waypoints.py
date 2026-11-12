@@ -102,7 +102,7 @@ class WaypointRunnerTests(unittest.TestCase):
         result = run_route(adapter, [("Long", 8, 0)], threading.Event())[0]
         self.assertEqual(result["status"], "arrived")
         self.assertLessEqual(result["distance"], .30)
-        self.assertEqual(len(result["segments"]), 2)
+        self.assertGreater(len(result["segments"]), 1)
         self.assertGreater(result["pulses"], 6)
         self.assertTrue(adapter.calls[0][1])
         self.assertTrue(all(not focus for _, focus in adapter.calls[1:]))

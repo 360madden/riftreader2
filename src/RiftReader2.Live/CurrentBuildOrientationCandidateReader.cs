@@ -41,7 +41,8 @@ internal static class CurrentBuildOrientationCandidateReader
         });
 
     internal static CurrentBuildOrientationCandidate Read(IReadOnlyNativeMemorySession session,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner,
+        PosePayloadCheck? check = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(resolveOwner);
@@ -57,8 +58,14 @@ internal static class CurrentBuildOrientationCandidateReader
         var raw = CurrentBuildPlayerLookup.Exact(session, component, 0x110);
         var primary = Decode(raw.AsSpan(0x60, 0x24), 0x60);
         var secondary = Decode(raw.AsSpan(0x94, 0x24), 0x94);
-        CurrentBuildPlayerLookup.RequireSame(
-            CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 0x70), raw.AsSpan(0x48, 0x70).ToArray());
+        var reread = CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 0x70);
+        // Unknown bytes between the XYZ/matrix fields keep their strict guard.
+        CurrentBuildPlayerLookup.RequireSame(reread.AsSpan(0x0C, 12).ToArray(), raw.AsSpan(0x54, 12).ToArray());
+        CurrentBuildPlayerLookup.RequireSame(reread.AsSpan(0x3C, 4).ToArray(), raw.AsSpan(0x84, 4).ToArray());
+        PosePayloadCheck.Verify(reread.AsSpan(0, 12), raw.AsSpan(0x48, 12), "entity XYZ", check);
+        PosePayloadCheck.Verify(reread.AsSpan(0x18, 0x24), raw.AsSpan(0x60, 0x24), "primary matrix", check);
+        PosePayloadCheck.Verify(reread.AsSpan(0x40, 12), raw.AsSpan(0x88, 12), "secondary XYZ", check);
+        PosePayloadCheck.Verify(reread.AsSpan(0x4C, 0x24), raw.AsSpan(0x94, 0x24), "secondary matrix", check);
         CurrentBuildPlayerLookup.RequireSame(
             CurrentBuildPlayerLookup.Exact(session, checked(component + 0x100), 9), raw.AsSpan(0x100, 9).ToArray());
         owner.VerifyUnchanged();

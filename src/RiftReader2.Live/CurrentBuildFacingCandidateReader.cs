@@ -18,6 +18,7 @@ internal sealed record CurrentBuildFacingCandidate(
     public string PlayerEntityDecimal => PlayerEntity.ToString(CultureInfo.InvariantCulture);
     public string PlayerSystemDecimal => PlayerSystem.ToString(CultureInfo.InvariantCulture);
     public string BearingConvention => "degrees-from-positive-z-toward-positive-x";
+    public int CaptureAttempts { get; init; } = 1;
     public bool HeadingQualified => false;
     public bool CameraYawQualified => false;
     public CurrentBuildOpticalCameraCandidate? OpticalCameraCandidate { get; init; }
@@ -41,8 +42,60 @@ internal sealed record CurrentBuildFacingCandidate(
 
 internal sealed record CurrentBuildFacingOwner(ulong Key, ulong Entity, ulong System, Action Verify);
 
+// Only explicitly recognized pose values may defer a mismatch. All owner,
+// epoch, refresh, type, read-hole and other failures still abort the caller.
+internal sealed class PosePayloadCheck
+{
+    internal string? ChangedField { get; private set; }
+
+    internal static void Verify(ReadOnlySpan<byte> current, ReadOnlySpan<byte> first,
+        string field, PosePayloadCheck? attempt)
+    {
+        if (current.SequenceEqual(first)) return;
+        if (attempt is null) throw new InvalidDataException($"Native pose payload changed: {field}.");
+        attempt.ChangedField ??= field;
+    }
+}
+
 internal static class CurrentBuildFacingCandidateReader
 {
+    internal static CurrentBuildFacingCandidate ReadStableObservation(
+        IReadOnlyNativeMemorySession session, CancellationToken token)
+    {
+        var lookup = CurrentBuildPlayerLookup.Resolve(session);
+        var component = lookup.ResolveComponent(CurrentBuildPositionCandidateReader.PositionIndexRva);
+        var owner = new CurrentBuildFacingOwner(lookup.PlayerKey, lookup.EntityAddress,
+            lookup.PlayerSystemAddress, lookup.VerifyUnchanged);
+        var positionOwner = new CurrentBuildPositionOwnerSnapshot(lookup.PlayerKey,
+            lookup.EntityAddress, component, lookup.VerifyUnchanged);
+        return ReadStableObservation(check => Read(session, _ => owner,
+            source => CurrentBuildOrientationCandidateReader.Read(source, _ => positionOwner, check), check),
+            token, TimeProvider.System);
+    }
+
+    internal static CurrentBuildFacingCandidate ReadStableObservation(
+        Func<PosePayloadCheck, CurrentBuildFacingCandidate> read, CancellationToken token, TimeProvider clock)
+    {
+        var started = clock.GetTimestamp();
+        var budget = TimeSpan.FromMilliseconds(100);
+        for (var number = 1; ; number++)
+        {
+            token.ThrowIfCancellationRequested();
+            if (number > 1 && clock.GetElapsedTime(started) >= budget)
+                throw new InvalidDataException("Native facing payload reacquisition exceeded 100 ms.");
+            var check = new PosePayloadCheck();
+            var sample = read(check);
+            token.ThrowIfCancellationRequested();
+            var elapsed = clock.GetElapsedTime(started);
+            if (number > 1 && elapsed >= budget)
+                throw new InvalidDataException("Native facing payload reacquisition exceeded 100 ms.");
+            if (check.ChangedField is null)
+                return sample with { CaptureAttempts = number };
+            if (number == 3 || elapsed >= budget)
+                throw new InvalidDataException($"Native facing {check.ChangedField} remained unstable after {number} attempt(s).");
+        }
+    }
+
     internal static CurrentBuildFacingCandidate Read(IReadOnlyNativeMemorySession session) =>
         Read(session, source =>
         {
@@ -53,7 +106,8 @@ internal static class CurrentBuildFacingCandidateReader
 
     internal static CurrentBuildFacingCandidate Read(IReadOnlyNativeMemorySession session,
         Func<IReadOnlyNativeMemorySession, CurrentBuildFacingOwner> resolve,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildOrientationCandidate> readOrientation)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildOrientationCandidate> readOrientation,
+        PosePayloadCheck? check = null)
     {
         var identity = session.Identity;
         if (identity.ProcessId <= 0 || identity.ProcessStartUtcTicks <= 0 ||
@@ -87,11 +141,11 @@ internal static class CurrentBuildFacingCandidateReader
         // Use the entity position component, rather than the downstream player-system
         // copy, for current coordinate arithmetic. Reuse the existing type/backlink checks.
         var entityPosition = CurrentBuildPositionCandidateReader.ReadOwned(session,
-            _ => new(owner.Key, entity, orientation.ComponentAddress, owner.Verify));
+            _ => new(owner.Key, entity, orientation.ComponentAddress, owner.Verify), check);
         var camera = CurrentBuildOpticalCameraCandidateReader.TryRead(session, system);
-        CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x304, 4), yaw);
-        CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x30C, 12), aim);
-        CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x320, 12), xyz);
+        PosePayloadCheck.Verify(CurrentBuildPlayerLookup.Exact(session, system + 0x304, 4), yaw, "yaw", check);
+        PosePayloadCheck.Verify(CurrentBuildPlayerLookup.Exact(session, system + 0x30C, 12), aim, "aim", check);
+        PosePayloadCheck.Verify(CurrentBuildPlayerLookup.Exact(session, system + 0x320, 12), xyz, "player-system XYZ", check);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x3F8, 8), cached);
         owner.Verify();
         if (session.Identity != identity) throw new InvalidDataException("Facing process epoch changed.");

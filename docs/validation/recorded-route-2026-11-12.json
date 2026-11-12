@@ -1,0 +1,92 @@
+{
+  "waypoints": [
+    [
+      "Recorded 1",
+      7421.605957,
+      2940.939941
+    ],
+    [
+      "Recorded 2",
+      7418.671387,
+      2939.276855
+    ],
+    [
+      "Recorded 3",
+      7420.498047,
+      2936.428223
+    ],
+    [
+      "Recorded 4",
+      7423.384766,
+      2937.901855
+    ]
+  ],
+  "heights": [
+    863.581116,
+    863.581116,
+    863.581116,
+    863.581116
+  ],
+  "recording": {
+    "version": 1,
+    "complete": true,
+    "identity": {
+      "mode": "reused-seed",
+      "basisSha256": "9A556D85DE26258D94E5A438BBC37D5938CCE762C67BC9B2E693602FDAB39251",
+      "calibrationIdentity": {
+        "gameBuildSha256": "1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8",
+        "machine": "AMD-DESKTOP",
+        "processId": 18092,
+        "processStartUtcTicks": "639300391441133615",
+        "unitKey": "239816685251645959"
+      },
+      "runtimeIdentity": {
+        "machine": "AMD-DESKTOP",
+        "processId": 31696,
+        "processStartUtcTicks": "639300720494342174",
+        "gameBuildSha256": "1935a05c9db6d468e34e0055014a4a99c1b5afceb1695884e24600f5c20a4be8",
+        "unitKey": "239816685251645959"
+      }
+    },
+    "sampleCount": 30,
+    "retainedCount": 4,
+    "observedPathLength": 9.998156995831748,
+    "routeLength": 9.998156205135485,
+    "maxDeviation": 0.05,
+    "maxGapSeconds": 3.0,
+    "firstObservedAtUtc": "2026-11-12T12:19:15.250327+00:00",
+    "lastObservedAtUtc": "2026-11-12T12:19:45.144870+00:00",
+    "sources": [
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-6647e86b6812477eb08e3fb383fc72e2.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-3e5680fcf9ac4afa95c73de457a0aa51.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-8dd3a6378bb742a6a9f77010a922817b.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-6472c5ed659e4874968df1d3b3b69359.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-265642d899de4c76a4981f55c44e0c55.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-2cbf3f5920a04c9ca91c3cacce97e71e.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-5bacfe8aa8be46d0a2ed88e2291183a4.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-b3a2e7f21bec41498974bd6732ff59cc.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-9ad9a8f3053f46abb233542007b57636.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-70e63c84638043a6a7b15f683fcbbaaf.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-ebbeb2450f3a44ab8bfd0c2e37ef814d.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-6cd2dd36f1b64af9997f6b1d91861f45.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-2161f0f289d24f8caf59c7219b9d6884.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-553bfba755734345b28e3a5ff0198015.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-d39deff4a42b48d9b06e93cd443a5a01.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-b8e09481a2ba43589832ddf511e5cbf0.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-2d45cb804df04c0cab9be28c7367b97b.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-93a5b31d2a2d49a9b44c203d6a470a33.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-a3d61585a36644168b0ea2dc95b55b9c.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-10415b171d064b228e4de9acf8e2dcb8.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-0ce7826931ea4a07b8973c1eda6dd7ce.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-2f8b770b6a96474ab6d01804933a3d9e.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-873871660e6b4d8c988ad0f39cd77293.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-96e765eb91624c5490390674880dc3d3.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-fb108f599b694dcab7547229a94bb2eb.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-54730130ef594cdca99e3554afff83eb.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-de1271286f9c4875aa290ca1ffe2eb33.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-1083ac40188a43feadb06c2bcfd3ce69.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-57fd4ce500f14c0d9661415034738558.json",
+      "C:\\work\\riftreader2\\artifacts\\physical-native-facing-ceca1f7b3ac2467fa6e6d500d53242b0.json"
+    ]
+  }
+}

@@ -65,6 +65,57 @@ public sealed class CurrentBuildFacingTests
     }
 
     [Fact]
+    public void PacedObservationReacquiresTheWholeSampleAfterPayloadDrift()
+    {
+        var session = new Fake { ChangeOnSecondRead = 0x320 };
+        var calls = 0;
+        var result = CurrentBuildFacingCandidateReader.ReadStableObservation(check =>
+        {
+            calls++;
+            if (calls == 2) session.Float(0x320, 108);
+            return CurrentBuildFacingCandidateReader.Read(session,
+                _ => new(42, Entity, SystemAddress, () => { }), Orientation, check);
+        }, default, new ManualClock());
+        Assert.Equal(2, result.CaptureAttempts);
+        Assert.Equal(2, calls);
+        Assert.InRange(result.PositionCandidate.X, 107.99f, 108.01f);
+    }
+
+    [Theory]
+    [InlineData(false, 0, 3)]
+    [InlineData(false, 60, 2)]
+    [InlineData(false, 100, 1)]
+    [InlineData(true, 0, 1)]
+    public void PacedObservationAbortsOnUnstablePayloadDeadlineOrOwnerLoss(
+        bool ownerChanged, int millisecondsPerAttempt, int expectedAttempts)
+    {
+        var clock = new ManualClock();
+        var calls = 0;
+        var error = Assert.Throws<InvalidDataException>(() =>
+            CurrentBuildFacingCandidateReader.ReadStableObservation(check =>
+            {
+                calls++;
+                var session = new Fake { ChangeOnSecondRead = 0x320 };
+                clock.Milliseconds += millisecondsPerAttempt;
+                return CurrentBuildFacingCandidateReader.Read(session,
+                    _ => new(42, Entity, SystemAddress, () =>
+                    {
+                        if (ownerChanged && check.ChangedField is not null)
+                            throw new InvalidDataException("owner changed");
+                    }), Orientation, check);
+            }, default, clock));
+        Assert.Equal(expectedAttempts, calls);
+        if (ownerChanged) Assert.Equal("owner changed", error.Message);
+    }
+
+    private sealed class ManualClock : TimeProvider
+    {
+        public long Milliseconds { get; set; }
+        public override long TimestampFrequency => 1000;
+        public override long GetTimestamp() => Milliseconds;
+    }
+
+    [Fact]
     public void ReportsPrimaryGetterYawSeparatelyFromSecondaryBodyAngle()
     {
         var session = new Fake();

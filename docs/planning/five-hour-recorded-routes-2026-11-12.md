@@ -1,6 +1,8 @@
 # Five-hour goal: record, replay and resume nearby routes
 
-Status: proposed work; this roadmap does not start the goal or implement the features.
+Status: goal activated November 12 at 11:56:02 UTC. Interruption checkpoint and
+verified results: [recorded-route handoff](../handoff-2026-11-12-recorded-routes.md).
+The user requested continuing the goal after saving and pushing that checkpoint.
 Scope: `C:\work\riftreader2`, verified **AMD-DESKTOP**, physical Atank only.
 Start the five-hour window when the user activates the goal.
 

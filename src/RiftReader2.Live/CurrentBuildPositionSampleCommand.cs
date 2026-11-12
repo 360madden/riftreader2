@@ -182,7 +182,7 @@ internal sealed record CurrentBuildPositionOwnerSnapshot(ulong UnitKey, ulong En
 /// </summary>
 internal static class CurrentBuildPositionCandidateReader
 {
-    private const ulong PositionIndexRva = 0x2F588A0;
+    internal const ulong PositionIndexRva = 0x2F588A0;
     // Historical exact-build position components: 49/49 headers matched this RVA.
     private const ulong PositionComponentVptrRva = 0x26B4FB0;
 
@@ -201,7 +201,8 @@ internal static class CurrentBuildPositionCandidateReader
         });
 
     internal static CurrentBuildOwnedPosition ReadOwned(IReadOnlyNativeMemorySession session,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPositionOwnerSnapshot> resolveOwner,
+        PosePayloadCheck? check = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(resolveOwner);
@@ -230,8 +231,8 @@ internal static class CurrentBuildPositionCandidateReader
         if (session.Identity != identity) throw new InvalidDataException("Position process identity changed.");
         CurrentBuildPlayerLookup.RequireSame(
             CurrentBuildPlayerLookup.Exact(session, component, 8), valueRaw.AsSpan(0, 8).ToArray());
-        CurrentBuildPlayerLookup.RequireSame(
-            CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 12), xyzBytes);
+        PosePayloadCheck.Verify(
+            CurrentBuildPlayerLookup.Exact(session, checked(component + 0x48), 12), xyzBytes, "entity XYZ", check);
         CurrentBuildPlayerLookup.RequireSame(
             CurrentBuildPlayerLookup.Exact(session, checked(component + 0x10), 8),
             valueRaw.AsSpan(0x10, 8).ToArray());

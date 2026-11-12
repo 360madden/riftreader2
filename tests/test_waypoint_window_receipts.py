@@ -89,10 +89,11 @@ class WindowReceiptTests(unittest.TestCase):
         face = self.invoke_and_wait("Face Selected")
         self.assertEqual("face", face["operation"])
         self.assertEqual("full-turn", face["result"]["sentinel"])
+        self.table.insert("", "end", values=("Unfinished", "3", "0"))
+        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"direction": "reverse", "nextIndex": 1}))
         forward = self.invoke_and_wait("Play Forward")
         self.assertEqual(("play", "forward"), (forward["operation"], forward["direction"]))
-        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"direction": "reverse"}))
         resumed = self.invoke_and_wait("Resume")
         self.assertEqual(("resume", "reverse"), (resumed["operation"], resumed["direction"]))
         self.assertTrue(self.play.call_args.kwargs["resume"])

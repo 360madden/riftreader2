@@ -198,6 +198,19 @@ def finite(value):
     return result
 
 
+def capture_reason(capture):
+    reason = capture.get("reason", "Native pose unavailable")
+    detail = capture.get("detail")
+    if detail:
+        try:
+            decoded = json.loads(detail)
+            detail = decoded.get("error", detail) if isinstance(decoded, dict) else detail
+        except (TypeError, ValueError):
+            pass
+        reason += ": " + " ".join(str(detail).split())
+    return reason
+
+
 def spatial_distance(a, b):
     return math.dist((a.x, a.y, a.z), (b.x, b.y, b.z))
 
@@ -292,10 +305,7 @@ class PhysicalAdapter:
         capture = physical_rift.read_native(self.selection, "facing", samples=1,
                                             include_target=include_target)
         if capture.get("status") != "complete":
-            reason = capture.get("reason", "Native pose unavailable")
-            if capture.get("detail"):
-                reason += ": " + str(capture["detail"])
-            raise WaypointError(reason)
+            raise WaypointError(capture_reason(capture))
         values = capture["nativeValues"]
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(values["sampledAtUtc"])).total_seconds()
         if not -0.1 <= age <= 2 or values["playerKey"] != self.unit_key:
@@ -579,7 +589,17 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
             start = current.position
             goal = Position(px, start.y, pz)
             distance = planar_distance(start, goal)
-            count = max(1, math.ceil(distance / (3.5 if face_waypoints else 4)))
+            span = 3.5
+            if not face_waypoints:
+                speeds = [math.hypot(finite(row.dx_per_ms), finite(row.dz_per_ms))
+                          for row in adapter.calibrations(current).values()]
+                if not speeds or min(speeds) <= 0:
+                    raise WaypointError("Movement seed has no usable planar speed")
+                # Backward travel can be slower than W. Size each intermediate
+                # leg for about 600 ms at the slowest measured speed, leaving
+                # room inside the unchanged six-pulse / 900-ms controller guard.
+                span = min(4, 600 * min(speeds))
+            count = max(1, math.ceil(distance / span))
             segments = []
             emit({"status": "leg", "name": label, "segmentCount": count})
             for index in range(1, count + 1):
@@ -737,21 +757,30 @@ def launch_window(args):
             draw_route(canvas, None, [], set())
             summary.set("Position unavailable; refresh to preview the route.")
             if not busy:
-                for button in (go_button, route_button, face_button):
+                for button in (go_button, route_button, face_button, record_button,
+                               forward_button, reverse_button, resume_button):
                     button.configure(state="disabled")
             return
         map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()))
         draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active)
-        distance = route_length(*last_pose[:2], selected_points(True))
+        remaining = points[index:] if playback_view is not None else points
+        distance = route_length(*last_pose[:2], [row[1:] for row in remaining])
+        planned_distance = route_length(*last_pose[:2], selected_points(True))
         selected = selected_points()
         chosen = route_length(*last_pose[:2], selected) if selected else None
-        summary.set(f"Route: {distance:.2f} / 20 units"
+        summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
                     + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
                     + ("   •   Shorten the route to run it" if distance > 20 else ""))
         if not busy:
             go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
-            route_button.configure(state="normal" if points and distance <= 20 else "disabled")
+            route_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
             face_button.configure(state="normal" if len(selected) == 1 and .3 < chosen <= 20 else "disabled")
+            record_button.configure(state="normal")
+            forward_button.configure(state="normal" if points else "disabled")
+            reverse_button.configure(state="normal" if points else "disabled")
+            resumable = (playback_view is not None and checkpoint.exists()
+                         and 0 <= playback_view["nextIndex"] < len(points))
+            resume_button.configure(state="normal" if resumable else "disabled")
 
     def map_click(event):
         if busy or map_view is None:
@@ -1031,6 +1060,7 @@ def launch_window(args):
               command=request_stop, width=16).pack(side="right")
     recording_controls = ttk.Frame(frame)
     recording_controls.pack(fill="x", pady=4)
+    playback_buttons = {}
     for label, callback in (("Record", lambda: start("record")),
                             ("Play Forward", lambda: playback("forward")),
                             ("Play Reverse", lambda: playback("reverse")),
@@ -1038,6 +1068,11 @@ def launch_window(args):
         button = ttk.Button(recording_controls, text=label, command=callback)
         button.pack(side="left", padx=(0, 6))
         editable.append(button)
+        playback_buttons[label] = button
+    record_button = playback_buttons["Record"]
+    forward_button = playback_buttons["Play Forward"]
+    reverse_button = playback_buttons["Play Reverse"]
+    resume_button = playback_buttons["Resume"]
     record_end_button = ttk.Button(recording_controls, text="Stop Recording", command=stop_recording, state="disabled")
     record_end_button.pack(side="left", padx=(0, 6))
     progress_text = tk.StringVar(value="No playback started.")
@@ -1192,7 +1227,9 @@ def launch_window(args):
             show_document(saved["route"])
             playback_view = {"direction": saved["direction"], "nextIndex": int(saved["nextIndex"])}
             redraw()
-            progress_text.set(f"Saved progress: {saved['nextIndex']} / {len(saved['route']['waypoints'])}; choose Resume.")
+            count = len(saved["route"]["waypoints"])
+            hint = "choose Play Forward or Play Reverse." if saved["nextIndex"] == count else "choose Resume."
+            progress_text.set(f"Saved progress: {saved['nextIndex']} / {count}; {hint}")
         except (OSError, ValueError, KeyError, TypeError):
             progress_text.set("Saved progress unavailable; load a route to continue.")
     poll()

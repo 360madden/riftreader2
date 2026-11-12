@@ -47,6 +47,11 @@ After moving along a short open-ground path, choose **Stop Recording** to finish
 save a new `artifacts/recorded-route-*.json`, and load its points into the window.
 **STOP** cancels recording without saving; capture or identity errors also leave
 the recording incomplete. Passive GUI recording has not yet passed live acceptance.
+Paced native capture can reacquire a changing pose payload up to three attempts
+within 100 ms, retaining the same owner/epoch checks and reporting
+`captureAttempts`; this latest fix has focused test coverage and still needs a
+moving-player trial. Interrupted work and the reusable taught route are preserved
+in [the recorded-route handoff](../handoff-2026-11-12-recorded-routes.md).
 
 **Play Forward** starts near the recorded first endpoint; **Play Reverse** starts
 near its last endpoint. Playback checkpoints each confirmed waypoint to
@@ -59,8 +64,21 @@ still apply, and routes have no obstacle avoidance.
 
 On AMD-DESKTOP, a controlled taught route retained four points from 30 observed
 samples across 9.998 units with 19 released pulses. Reverse playback completed
-with 25 pulses and ended 0.09917 units from its endpoint. These observations do
-not establish passive GUI recording or resume across a full game restart.
+with 25 pulses and ended 0.09917 units from its endpoint; an earlier forward CLI
+playback ended 0.10648 units from its endpoint
+(`artifacts/waypoint-run-b4c277aafd324c988564fcf60556790e.json`).
+
+A later GUI reverse playback was stopped by clicking **STOP** and settled with
+three of four waypoints confirmed. Closing and reopening the app without
+`--route` restored that reverse checkpoint. RIFT then fully exited (PID 31696)
+and was normally relaunched through Glyph into Atank (PID 3820, start ticks
+639300839889408581). The same app (PID 75780) reconnected without changing the
+movement basis. An explicit **Resume** completed only the final leg, ending
+0.0679574 units from its endpoint after eight released pulses and 963 ms of
+requested hold. The interrupted and resumed run receipts are
+`artifacts/waypoint-run-dc32b7e0c93747ccbe11baca1e305f79.json` and
+`artifacts/waypoint-run-8d88bf44e6034217ba570b18b6dfd731.json`. This covers
+that same-build/player restart case; passive GUI recording remains unverified.
 
 **Face Selected** turns toward a waypoint without walking. **Face, then walk**
 aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E
@@ -69,7 +87,10 @@ settled A/D measurements as numerical seeds and checks the observed response
 after every release. Alignment allows eight 20–150-ms presses and 20 seconds,
 stopping within 4 degrees. It refuses unexpected XYZ movement during a turn.
 Turns share the trip's hold/pulse budget; facing mode uses segments up to 3.5
-units long. The existing translation controller retains its own limits.
+units long. Fixed-facing W/S/Q/E routes use shorter intermediate legs when the
+slowest calibrated direction needs them, targeting 600 ms of requested travel
+per segment and capping segment distance at four units. The existing translation
+controller retains its six-pulse, 900-ms and 12-second limits.
 
 For a requested facing without walking:
 

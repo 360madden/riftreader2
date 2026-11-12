@@ -16,14 +16,16 @@ internal static class CurrentBuildFacingSampleCommand
             pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(3), token),
         static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
             pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
-        CurrentBuildFacingCandidateReader.Read);
+        CurrentBuildFacingCandidateReader.Read,
+        readPacedObservation: session => CurrentBuildFacingCandidateReader.ReadStableObservation(session, ct));
 
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct,
         Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
         Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> read,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? readTarget = null)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? readTarget = null,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate>? readPacedObservation = null)
     {
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
@@ -46,12 +48,14 @@ internal static class CurrentBuildFacingSampleCommand
                            StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Facing session identity mismatch.");
         var observations = new List<CurrentBuildFacingCandidate>(count);
+        var sampleReader = count > 1 && interval > 0 && !includeTarget && readPacedObservation is not null
+            ? readPacedObservation : read;
         for (var index = 0; index < count; index++)
         {
             ct.ThrowIfCancellationRequested();
             if (index > 0 && interval > 0) await Task.Delay(interval, ct);
             var timer = Stopwatch.StartNew();
-            var sample = read(session);
+            var sample = sampleReader(session);
             if (includeTarget)
             {
                 var pair = readTarget is null ? CurrentBuildPairedPositionCandidateReader.Read(session) : readTarget(session);

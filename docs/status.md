@@ -1,5 +1,17 @@
 # Current status
 
+**NOVEMBER 12 — RECORDED ROUTES / INTERRUPTION CHECKPOINT:** On **AMD-DESKTOP**,
+controller teaching retained both corners of a 9.998-unit path; forward/reverse
+playback worked. GUI STOP retained reverse progress at 3/4; app restart and a full
+RIFT PID31696 → PID3820 restart preserved it, and explicit Resume completed the
+last leg within **0.06796 units** using the unchanged movement basis. Passive GUI
+recording still needs moving-player acceptance after a tested capture-race fix.
+RIFT was absent after an interrupted subsequent launch; crash cause is unknown.
+The owned waiting app was closed. Joey requested handoff/commit/push and then
+continuation of the active goal. Start at
+[the recorded-route handoff](handoff-2026-11-12-recorded-routes.md); its route data
+is preserved in Git, with local capture/receipt references and exact limitations.
+
 **04:31 EST NOVEMBER 12 — WAYPOINT RESTART RECOVERY WORKING:** On **AMD-DESKTOP**,
 the prototype now reuses the same-host/build/player numerical movement/turn seed
 across process epochs, keeping original measurement provenance and freshly pinning
