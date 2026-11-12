@@ -27,9 +27,9 @@ def pass_report(start, end, *, epoch=1, scan="A", clock_start=10.0,
         "firstClockCandidate": clock_start,
         "lastClockCandidate": clock_start + 1.0,
         "luaPositionCandidates": [{"x": 10., "y": 20., "z": 30.},
-                                  {"x": 11., "y": 20., "z": 30.}],
+                                  {"x": 10.002, "y": 20., "z": 30.}],
         "nativePositionCandidate": {"x": 10., "y": 20., "z": 30.},
-        "maxAbsCoordinateDifferenceCandidate": {"x": 1., "y": 0., "z": 0.},
+        "maxAbsCoordinateDifferenceCandidate": {"x": .002, "y": 0., "z": 0.},
         "frameEvidence": [{"frameSha256": f"{scan}{start}"},
                           {"frameSha256": f"{scan}{end}"}],
         "sourceSha256": {"scanIndex": scan * 64, "scanRequest": "C" * 64,
@@ -50,7 +50,9 @@ class TwoPassTests(unittest.TestCase):
         self.assertEqual(output["frameCounts"], [2, 2])
         self.assertEqual(output["sequenceWindows"], [[1, 2], [3, 4]])
         self.assertEqual(output["luaEpochCandidate"], 1)
-        self.assertEqual(output["betweenPassLuaXYZDifferenceCandidate"]["x"], -1.)
+        self.assertAlmostEqual(output["betweenPassLuaXYZDifferenceCandidate"]["x"], -.002)
+        self.assertEqual(output["coordinateAgreementScreen"]["result"], "consistent")
+        self.assertTrue(output["coordinateAgreementScreen"]["withinTolerance"])
         self.assertEqual(output["status"], "candidate-only")
         self.assertIn("remains unbound", output["qualification"])
 
@@ -80,6 +82,42 @@ class TwoPassTests(unittest.TestCase):
             with self.subTest(mutation=mutation), patch.object(
                     pair.lua, "replay", side_effect=[left, right]):
                 with self.assertRaisesRegex(ValueError, error):
+                    pair.compare("a", "b", "native")
+
+    def test_large_coordinate_gap_does_not_claim_correspondence(self):
+        a, b = self.sample()
+        b["luaPositionCandidates"][0]["x"] += .5
+        b["maxAbsCoordinateDifferenceCandidate"]["x"] = .5
+        with patch.object(pair.lua, "replay", side_effect=[a, b]):
+            output = pair.compare("a", "b", "native")
+        self.assertEqual(output["status"], "candidate-disagreement")
+        self.assertFalse(output["coordinateAgreementScreen"]["withinTolerance"])
+        self.assertIn("not demonstrated", output["qualification"])
+        self.assertNotIn("matching native player ID and XYZ", output["qualification"])
+
+    def test_disagreement_cli_returns_nonzero_with_preserved_evidence(self):
+        a, b = self.sample()
+        b["maxAbsCoordinateDifferenceCandidate"]["z"] = .051
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+                pair.lua, "replay", side_effect=[a, b]):
+            receipt = Path(tmp) / "disagreement.json"
+            rc = pair.main(["--first-index", "first",
+                            "--second-index", "second",
+                            "--first-native-bracket", "native",
+                            "--output", str(receipt)])
+            self.assertEqual(rc, 2)
+            saved = json.loads(receipt.read_text(encoding="utf-8"))
+            self.assertEqual(saved["status"], "candidate-disagreement")
+            self.assertEqual(saved["coordinateAgreementScreen"]["result"],
+                             "disagreement")
+
+    def test_nonfinite_or_negative_coordinate_gaps_rejected(self):
+        for gap in (float("nan"), float("inf"), -.01):
+            a, b = self.sample()
+            b["maxAbsCoordinateDifferenceCandidate"]["x"] = gap
+            with self.subTest(gap=gap), patch.object(
+                    pair.lua, "replay", side_effect=[a, b]):
+                with self.assertRaisesRegex(ValueError, "invalid-coordinate-gap"):
                     pair.compare("a", "b", "native")
 
     def test_replay_failure_propagates_and_existing_output_preserved(self):

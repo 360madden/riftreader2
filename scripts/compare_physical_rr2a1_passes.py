@@ -19,6 +19,9 @@ if str(ROOT) not in sys.path:
 
 from scripts import replay_physical_rr2a1 as lua
 
+# Empirical stationary XYZ screening threshold, NOT a live semantic qualification.
+MAX_COORDINATE_GAP_CANDIDATE = 0.05
+
 
 def require(ok, reason):
     if not ok:
@@ -59,12 +62,17 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
                                     second["nativePositionCandidate"])
     native_delta = {axis: native_second[axis] - native_first[axis]
                     for axis in ("x", "y", "z")}
+    require(all(type(p[axis]) in (int, float) and math.isfinite(p[axis])
+                and p[axis] >= 0
+                for p in (first["maxAbsCoordinateDifferenceCandidate"],
+                          second["maxAbsCoordinateDifferenceCandidate"])
+                for axis in ("x", "y", "z")), "invalid-coordinate-gap")
     across_max = {axis: max(first["maxAbsCoordinateDifferenceCandidate"][axis],
                             second["maxAbsCoordinateDifferenceCandidate"][axis])
                   for axis in ("x", "y", "z")}
     require(all(math.isfinite(v) for group in (lua_delta, native_delta, across_max)
                 for v in group.values()), "nonfinite-comparison")
-    return {
+    result = {
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2a1-two-pass-native-comparison/1",
         "status": "candidate-only",
@@ -92,6 +100,24 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
     }
 
 
+    agreement = all(gap <= MAX_COORDINATE_GAP_CANDIDATE
+                    for gap in across_max.values())
+    result["coordinateAgreementScreen"] = {
+        "result": "consistent" if agreement else "disagreement",
+        "withinTolerance": agreement,
+        "maximumAxisGapNativeUnits": MAX_COORDINATE_GAP_CANDIDATE,
+    }
+    if not agreement:
+        result["status"] = "candidate-disagreement"
+        result["qualification"] = (
+            "Two source-verified RR2A1 Lua passes advance with the same player ID, "
+            "but close Lua/native XYZ correspondence is not demonstrated at the "
+            "0.05-unit empirical screening tolerance. Captures are not time-atomic; "
+            "the disagreement may reflect time separation or stale candidate data. "
+            "Producer freshness, movement semantics and restart recovery are unqualified.")
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--first-index", type=Path, required=True)
@@ -114,7 +140,7 @@ def main(argv=None):
                           "maxAbsXYZDifference":
                           result["maxAbsLuaNativeCoordinateDifferenceCandidate"],
                           "output": str(args.output)}))
-        return 0
+        return 0 if result["status"] == "candidate-only" else 2
     except (OSError, ValueError, TypeError, KeyError, OverflowError,
             json.JSONDecodeError, lua.base64.binascii.Error) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
