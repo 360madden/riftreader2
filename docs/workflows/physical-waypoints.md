@@ -151,6 +151,22 @@ validation still runs before any input. A live saved-file restart/Load/Resume ca
 preserved its 2/4 cursor and finished within 0.18620 units with four released W
 pulses. Existing route and input limits
 still apply, and routes have no obstacle avoidance.
+
+Live saved-route switching passed on AMD-DESKTOP/PID51524 after the user-handled
+RIFT restart. A registered F8 press sent by the desktop tool stopped forward
+playback at 2/7. Normal helper close/reopen with an alternate four-point `--route`
+archived the genuine checkpoint; choosing the original file through Recent routes
+restored its exact bytes, direction, cursor and starting position. Neither route
+load started movement. Explicit Resume confirmed only Recorded 3-7 and finished
+0.06794182 units from the endpoint: 26 released pulses, 3,364 ms total requested
+hold, maximum 150 ms requested per pulse. Separate settled samples showed zero
+XYZ/yaw drift; inspection found no held desktop inputs. The movement basis stayed
+unchanged. An earlier desktop-tool STOP click focused the helper and triggered
+the foreground guard first; that receipt is a halt, not a verified STOP.
+Evidence: `artifacts/route-switch-live-51524/validation.json`, its exact stopped/
+completed checkpoints and settled/inspection receipts, and
+`artifacts/waypoint-run-dc167877457d4311abe10013d8aa160c.json`.
+
 Failed movement actions also retain two post-halt candidate pose observations when
 available, through the existing `stopVerification` receipt field. A failure keeps
 its original reason and halted status even if those observations are stationary;

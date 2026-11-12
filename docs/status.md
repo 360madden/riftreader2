@@ -1,5 +1,27 @@
 # Current status
 
+**17:07 EST NOVEMBER 12 — GENUINE STOP CURSOR SURVIVES ROUTE SWITCHING LIVE:**
+On **AMD-DESKTOP/PID51524**, desktop-tool F8 stopped forward playback at 2/7,
+with five released pulses and zero independently measured post-STOP drift. Normal
+helper restart with the alternate four-point route archived that genuine cursor;
+Recent routes restored the original seven-point route and byte-identical 2/7
+forward checkpoint. Explicit Resume visited only Recorded 3-7, completing at
+0.06794182-unit endpoint error with 26 released pulses / 3,364 ms requested hold.
+Separate final samples showed zero XYZ/yaw drift; inspection found no held inputs,
+and the movement basis remained unchanged. First desktop-tool STOP click instead
+triggered foreground loss; its receipt is accurately retained as a halt.
+GUI PID50532 is idle on the original route with genuine 7/7 forward completion;
+markers are off. Evidence: `artifacts/route-switch-live-51524/validation.json`,
+`artifacts/waypoint-run-dc167877457d4311abe10013d8aa160c.json`.
+
+The pinned Rerun ViewerClient also produced a reviewed complete paired 3D/image
+PNG using an owned loopback headless viewer and repeated painted-screenshot
+requests. `loading=[]` alone did not guarantee image assets were painted; this
+is a useful pilot workflow, not a general readiness proof or changed default.
+Preview: `artifacts/waypoint-view-36c62fcf466947ceb889b5fd214e651b/scene-viewer-paint-3.png`.
+Owned diagnostic viewer processes were stopped; the actual GUI viewer had already
+been closed normally after the earlier scene acceptance.
+
 **16:50 EST NOVEMBER 12 — NEARBY UNIT SAMPLES WORK IN THE SAVED 3D SCENE:**
 On **AMD-DESKTOP/PID51524**, the new unchecked-by-default **Nearby units in 3D**
 control passed actual Save view -> Open 3D view acceptance. A bounded native scan
