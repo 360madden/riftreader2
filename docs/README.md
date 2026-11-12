@@ -9,6 +9,7 @@ topic below instead of loading every document for each task.
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Live prototype | [Physical waypoints](workflows/physical-waypoints.md) | Record or teach a route, save/load, forward/reverse replay, STOP/Resume and same-build restart recovery. |
+| Live projection candidate | [Physical world-to-screen markers](workflows/physical-world-screen.md) | Guarded native/WGC capture with projected recorded XYZ markers/beacons; live overlay and occlusion qualification pending. |
 | Continuity | [Movement handoff](workflows/movement-handoff-2026-10-29.md) | Verified partial trial, cleanup, exact build, reusable bootstrap and remaining acquisition work. |
 | Postmortem | [Move-key focus failure and recovery (2026-11-11)](validation/move-key-focus-failure-postmortem-2026-11-11.md) | Full assistant failure analysis, known-good A/B evidence, successful fix, and prevention rules. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |

@@ -1,5 +1,16 @@
 # Current status
 
+**FIRST WORLD-TO-SCREEN RESULT, NOVEMBER 12 — EXTENDED GOAL ACTIVE:** On
+**AMD-DESKTOP**, the existing camera/matrix projector and stable WGC bracket now
+feed a small offline marker renderer. A fresh PID69312 capture displayed all seven
+recorded waypoint ground markers and +1.5-Y beacons; the player crosshair aligned
+with Atank's feet at frame `(960.00,599.39)`. Renderer/projection/frame tests passed
+31 cases; root reviewed and ran the actual capture. This is a saved-frame
+candidate, not yet a live overlay or occlusion/obstacle result. See
+[the projection guide](workflows/physical-world-screen.md). Goal remains active
+through **19:44 EST / 00:44 UTC November 13**. Next: camera/window variation checks
+and a no-focus click-through overlay, reusing the same projection path.
+
 **11:44 EST NOVEMBER 12 — GOAL EXTENDED EIGHT HOURS; WORLD-TO-SCREEN NEXT:** On
 **AMD-DESKTOP**, Joey extended the active goal through **19:44 EST November 12 /
 00:44 UTC November 13**. Do not stop at the original 11:56 EST deadline. The next
