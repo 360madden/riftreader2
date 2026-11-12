@@ -131,3 +131,9 @@ Replay the W measurement from the repository root using the coordinate precision
 ```powershell
 python scripts/physical_move_key_calibration.py --receipt artifacts/second-facing-20261111-210134/w.json
 ```
+
+## Short correction toward the selected dummy
+
+The native template fallback identified the selected target as Normal Practice Dummy. The target key in `artifacts/dummy-bearing-20261111-210353/template.json` matches the before and after position pairs in `artifacts/dummy-align-20261111-210518/`. In those pairs the bearing to the target was +35.553 degrees from +Z toward +X, at a horizontal distance of 5.417 units.
+
+One D press requested for 50 ms had Windows hold bounds of 57.51–60.80 ms (midpoint 59.16 ms). The settled forward bearing moved from +45.308 to +34.996 degrees. The absolute alignment error fell from 9.755 to 0.556 degrees, crossing the target bearing. Use the before/after pose bursts and position pairs alongside `d.json` to replay this observation. This is one short correction at one heading.
