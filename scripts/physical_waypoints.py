@@ -641,7 +641,7 @@ def launch_window(args):
     from scripts.waypoint_observation import observe_batch
     from scripts.waypoint_recording import RouteRecorder
     from scripts.waypoint_playback import play_route
-    from scripts.waypoint_progress import _route as progress_route
+    from scripts.waypoint_progress import _route as progress_route, write_json_atomic
 
     window.title(f"RR2 Waypoints — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
@@ -1007,7 +1007,7 @@ def launch_window(args):
         path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="rift-waypoints.json")
         if path:
             try:
-                Path(path).write_text(json.dumps(route_document(), indent=2), encoding="utf-8")
+                write_json_atomic(path, route_document())
                 state.set("Route saved: " + str(path))
             except (ValueError, TypeError, OSError) as exc:
                 messagebox.showerror("Cannot save route", str(exc))
@@ -1199,7 +1199,7 @@ def launch_window(args):
                 record_end_button.configure(state="disabled")
                 output = ROOT / "artifacts" / ("recorded-route-" + uuid.uuid4().hex + ".json")
                 try:
-                    output.write_text(json.dumps(event["document"], indent=2), encoding="utf-8")
+                    write_json_atomic(output, event["document"])
                     invalidate_progress()
                     show_document(event["document"])
                 except (OSError, ValueError, KeyError, TypeError) as exc:

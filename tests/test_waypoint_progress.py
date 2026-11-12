@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.waypoint_progress import ProgressError, RouteProgress
+from scripts.waypoint_progress import ProgressError, RouteProgress, write_json_atomic
 
 
 IDENTITY = {"machine": "AMD-DESKTOP", "gameBuildSha256": "ABCD", "unitKey": "player"}
@@ -85,6 +85,21 @@ class ProgressTests(unittest.TestCase):
                     p.save(path)
             self.assertEqual(RouteProgress.load(path, ROUTE, IDENTITY).next_index, 0)
             self.assertEqual(list(Path(temp).iterdir()), [path])
+
+    def test_atomic_route_write_preserves_old_file_on_failure(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "route.json"
+            original = {**ROUTE, "recording": {"complete": True}}
+            write_json_atomic(path, original)
+            before = path.read_bytes()
+            for operation in ("fsync", "replace"):
+                with self.subTest(operation=operation), \
+                     patch(f"scripts.waypoint_progress.os.{operation}", side_effect=OSError("interrupted")):
+                    with self.assertRaises(OSError):
+                        write_json_atomic(path, {"waypoints": [["Changed", 1, 2]]})
+                self.assertEqual(before, path.read_bytes())
+                self.assertEqual(original, json.loads(path.read_text(encoding="utf-8")))
+                self.assertEqual([path], list(Path(temp).iterdir()))
 
     def test_invalid_checkpoint_cursor(self):
         with tempfile.TemporaryDirectory() as temp:

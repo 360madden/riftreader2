@@ -39,6 +39,10 @@ geometry only, without terrain or obstacle information.
 Select a point and choose **Go Selected**,
 or choose **Run Route** to visit the list in order. **Load** and **Save Route**
 use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
+GUI Save Route and completed recording publication write a synced sibling
+temporary file before replacing the destination, reusing checkpoint persistence.
+A failed write or replace leaves the previous saved route intact and reports the
+error; closing during passive recording discards that unfinished recording.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
 **Up / Down** reorder the selected point; **Clear** empties the list. A completed
 run reports the number of visited waypoints and final distance explicitly.

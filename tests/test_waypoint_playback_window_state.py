@@ -225,6 +225,24 @@ class PlaybackWindowStateTests(unittest.TestCase):
         values = [str(self.roots[0].getvar(label)) for label in labels]
         self.assertTrue(any("Saved progress: 1 / 2" in value for value in values), values)
 
+    def test_failed_route_replacement_preserves_existing_saved_route(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 10]}
+        route = self.path / "loaded.json"
+        route.write_text(json.dumps(document), encoding="utf-8")
+        destination = self.path / "saved.json"
+        original = json.dumps({"waypoints": [["Previous", 5, 6]]}).encode("utf-8")
+        destination.write_bytes(original)
+        pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(destination)), \
+             patch("scripts.waypoint_progress.os.replace", side_effect=OSError("simulated replace failure")), \
+             patch("tkinter.messagebox.showerror") as error:
+            self.button("Save Route").invoke()
+        self.assertEqual(original, destination.read_bytes())
+        error.assert_called_once()
+        self.assertIn("simulated replace failure", error.call_args.args[1])
+        self.assertEqual([], list(self.path.glob("saved.json.*.tmp")))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,24 @@ def _canonical(value):
         raise ProgressError("invalid checkpoint data") from exc
 
 
+def write_json_atomic(path, document):
+    """Flush a JSON document to a sibling temporary file, then replace the target."""
+    path = Path(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(_canonical(document) + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _route(document):
     if not isinstance(document, dict):
         raise ProgressError("route document must be an object")
@@ -159,20 +177,7 @@ class RouteProgress:
             raise ProgressError("begin before saving progress")
         payload = {"version": 1, "route": self.document, "routeHash": self.route_hash, "direction": self.direction,
                    "identity": self.identity, "nextIndex": self.next_index, "start": self.start}
-        path = Path(path)
-        temporary = None
-        try:
-            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
-                                             prefix=path.name + ".", suffix=".tmp", delete=False) as stream:
-                temporary = Path(stream.name)
-                stream.write(_canonical(payload) + "\n")
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, path)
-            temporary = None
-        finally:
-            if temporary is not None:
-                temporary.unlink(missing_ok=True)
+        write_json_atomic(path, payload)
 
     @classmethod
     def load(cls, path, document, identity):

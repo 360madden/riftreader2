@@ -144,6 +144,25 @@ Current checkpoint is 4/4 forward and app PID71916 is idle. Fresh native pose wa
 `(7421.657715, 863.586548, 2941.027100)`, bearing 60.980718 degrees, with identity
 and source saved in `artifacts/recorded-route-checkpoint-1358-79136.json`.
 
+**09:02–09:06 EST recording closure and saved-file durability:** closing owned
+app PID71916 during passive capture exited normally without publishing a route
+or input file; the existing 4/4 checkpoint stayed byte-for-byte unchanged.
+Before/after checks: `artifacts/record-close-before-79136.json` and
+`artifacts/record-close-after-79136.json`. Reopening restored that route and
+completion state without movement.
+
+GUI Save Route previously used a direct overwrite. It and completed recording
+publication now reuse the checkpoint's existing sibling-temp/flush/fsync/replace
+writer. Nine persistence tests and thirteen GUI callback tests passed, including
+injected fsync/replace failures preserving prior bytes and temporary-file cleanup.
+Normal Save Route through the updated real app wrote
+`artifacts/route-atomic-save-20261112-1406-a91f.json`; its full decoded document
+exactly matches the checkpoint route (all points, heights and provenance), with
+no temporary file left behind and no checkpoint change. No game input was sent
+for these tests. Current owned app is PID76124/window5248196, idle at 4/4;
+RIFT is still PID79136. This is failure-safe replacement evidence, not a tested
+guarantee against every filesystem or power-loss scenario.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads
