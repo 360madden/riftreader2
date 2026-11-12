@@ -299,8 +299,10 @@ isolated and reproducible:
 
 ```powershell
 python -m venv artifacts/tools/lua-python
-artifacts/tools/lua-python/Scripts/python.exe -m pip install -r requirements-lua-tests.txt
+artifacts/tools/lua-python/Scripts/python.exe -m pip install -r requirements-lua-tests.txt -r requirements-control.txt
 ```
+
+Full Python discovery also imports Pillow for screenshot tests. The two requirements files above provide the pinned Lua and control-test dependencies in the same interpreter. On Windows, the local PowerShell cache tests use the built-in Microsoft.PowerShell.Utility module for `Get-FileHash`. If a host shell overrides `PSModulePath`, include the Windows PowerShell system module directory in the test process.
 
 The validation script resolves Lua Python in this order: explicit
 `-LuaPython PATH`, environment variable `RIFTREADER2_LUA_PYTHON`,
