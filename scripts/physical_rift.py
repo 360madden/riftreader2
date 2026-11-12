@@ -220,6 +220,24 @@ def _project_world_point(camera, xyz):
             "coordinateConvention": "top-left-normalized-client"}
 
 
+def _target_relative_arithmetic(player_xyz, target_xyz, primary, body):
+    """Native-coordinate arithmetic only; no world identity or control authority."""
+    delta = {axis: target_xyz[axis] - player_xyz[axis] for axis in ("x", "y", "z")}
+    horizontal = math.hypot(delta["x"], delta["z"])
+    bearing = math.degrees(math.atan2(delta["x"], delta["z"])) if horizontal else None
+    def angle_from(heading):
+        steps = _candidate_angle_steps([heading, bearing])
+        return steps[0] if steps is not None else None
+    return {"deltaXYZCandidate": delta, "horizontalDistanceCandidate": horizontal,
+            "distance3DCandidate": math.hypot(*delta.values()),
+            "worldBearingDegreesCandidate": bearing,
+            "primarySignedAngleToTargetDegreesCandidate": angle_from(primary),
+            "bodySignedAngleToTargetDegreesCandidate": angle_from(body),
+            "bearingConvention": "degrees-from-positive-z-toward-positive-x",
+            "distanceUnit": "native-coordinate-units", "worldIdentityStatus": "unavailable",
+            "headingQualified": False, "movementEligible": False}
+
+
 def _target_screen_point(row):
     pair = row.get("targetPositionPairCandidate")
     after_camera = row.get("opticalCameraAfterTargetCandidate")
@@ -262,10 +280,14 @@ def _target_screen_point(row):
         raise ValueError("invalid-native-facing-target-position")
     # Recover the float32 coordinates serialized by the native position reader.
     exact = {axis: struct.unpack("<f", struct.pack("<f", xyz[axis]))[0] for axis in ("x", "y", "z")}
+    player_xyz = dict(zip(("x", "y", "z"), (struct.unpack("<f", struct.pack("<I", bit))[0]
+                                             for bit in row["rawBits"][4:])))
     screen = (_project_world_point(camera, exact) if stable else
               {"status": "unavailable", "reason": "camera-not-stable-across-target-read"})
     return {"status": "candidate", "targetKey": key, "targetUnitIdCandidate": target["unitIdCandidate"],
             "positionXYZCandidate": exact, "screenPointCandidate": screen,
+            "relativeToPlayerCandidate": _target_relative_arithmetic(
+                player_xyz, exact, row.get("primaryBearingDegreesCandidate"), row.get("bodyBearingDegreesCandidate")),
             "sampledAtUtc": target["completedAtUtc"], "acquisitionSpanMilliseconds": span,
             "cameraStableCandidate": stable, "guardStatus": pair["afterGuardStatus"]}
 

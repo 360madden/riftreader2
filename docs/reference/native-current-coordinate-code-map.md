@@ -616,3 +616,14 @@ reviewed. The native bracket reports are
 `artifacts/physical-native-facing-ea88cf0668f743bd94f79cb12f9f2d26.json`.
 This remains a sequential candidate association, with ABA, renderer freshness,
 occlusion and full restart qualification open.
+
+The same target readout now returns native-coordinate relative arithmetic. At
+23:28 EST, a fresh three-sample AMD-DESKTOP read gave target-minus-self XYZ
+(4.26953125, -0.060546875, 2.79443359375), horizontal distance 5.102720471 and
+3D distance 5.103079671. World bearing was 56.795014° and body-relative signed
+angle +57.219329°, consistent with the dummy's ahead-left screen position.
+The source report is `artifacts/physical-native-facing-121b53826ba14f1ea6d60a6235fe29e4.json`.
+`relativeToPlayerCandidate` keeps world identity unavailable and movement
+eligibility false. It does not bypass the world/zone requirements of the separate
+`xyz_relative_candidate` track-based reducer. Zero planar displacement and an
+exact 180° direction withhold signed turn angles.

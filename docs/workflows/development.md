@@ -60,6 +60,11 @@ and screen point. Camera reads bracket the target acquisition. A changed camera
 withholds the screen point; a changed player owner or position rejects the combined
 sample. The fallback target-key branch remains explicitly labeled. Target freshness,
 hover independence, occlusion and restart recovery are separate qualifications.
+The target result also includes `relativeToPlayerCandidate`, with the XYZ delta,
+horizontal/3D distance, world bearing and signed angles from primary/body facing.
+Distances use native coordinate units; bearings use positive Z toward positive X.
+Coincident X/Z and exactly opposite directions withhold a signed turn angle.
+This arithmetic does not establish matching world identity or movement eligibility.
 
 For one read-only screenshot plus a matching native position/facing/target snapshot
 on AMD-DESKTOP, use the existing observation entry point:

@@ -93,6 +93,29 @@ def report_with_target():
 
 
 class PhysicalFacingTests(unittest.TestCase):
+    def test_relative_geometry_cardinals_distance_and_wrapped_heading(self):
+        origin = {'x': 10, 'y': 20, 'z': 30}
+        for dx, dz, bearing, turn in ((0, 5, 0, 0), (5, 0, 90, 90),
+                                       (0, -5, 180, None), (-5, 0, -90, -90)):
+            with self.subTest(bearing=bearing):
+                target = {'x': 10 + dx, 'y': 32, 'z': 30 + dz}
+                value = physical._target_relative_arithmetic(origin, target, 0, 10)
+                self.assertEqual(5, value['horizontalDistanceCandidate'])
+                self.assertEqual(13, value['distance3DCandidate'])
+                self.assertEqual(bearing, value['worldBearingDegreesCandidate'])
+                self.assertEqual(turn, value['primarySignedAngleToTargetDegreesCandidate'])
+                self.assertFalse(value['movementEligible'])
+        radians = math.radians(-179)
+        target = {'x': 10 + math.sin(radians), 'y': 20, 'z': 30 + math.cos(radians)}
+        value = physical._target_relative_arithmetic(origin, target, 179, None)
+        self.assertAlmostEqual(2, value['primarySignedAngleToTargetDegreesCandidate'])
+        self.assertIsNone(value['bodySignedAngleToTargetDegreesCandidate'])
+        coincident = physical._target_relative_arithmetic(origin, {'x': 10, 'y': 32, 'z': 30}, 90, 90)
+        self.assertEqual(0, coincident['horizontalDistanceCandidate'])
+        self.assertEqual(12, coincident['distance3DCandidate'])
+        self.assertIsNone(coincident['worldBearingDegreesCandidate'])
+        self.assertIsNone(coincident['primarySignedAngleToTargetDegreesCandidate'])
+
     def test_selected_target_projection_requires_stable_camera_and_matching_self(self):
         source = report_with_target()
         value = physical._native_values('facing', source)['selectedTargetProjectionCandidate']
