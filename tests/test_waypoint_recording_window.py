@@ -73,7 +73,8 @@ class RecordingWindowTests(unittest.TestCase):
                                                  side_effect=AssertionError("Input is forbidden")))
         self.stack.enter_context(patch("scripts.waypoint_observation.observe_batch", side_effect=self.batch))
         self.identity = Mock(side_effect=AssertionError("passive recorder must not claim input control"))
-        self.adapter = SimpleNamespace(binding={"runtimeIdentity": {"processId": 123}},
+        self.adapter = SimpleNamespace(binding={"runtimeIdentity": {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
+                                                                         "unitKey": "player", "processId": 123}},
                                        input_receipt_path=self.root_path / "unused.jsonl",
                                        read=lambda **_: self.pose(0), identity=self.identity)
         args = SimpleNamespace(expected_host="AMD-DESKTOP", physical_pid=123,

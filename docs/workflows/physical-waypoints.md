@@ -140,7 +140,13 @@ the window can restore the checkpoint's route; choose **Resume** explicitly to
 continue the unfinished leg. A fresh stationary pose must be near that leg, and
 the host, build and player must match. Reconnection never starts or resumes a trip.
 Loading or explicitly opening the same waypoint names/coordinates/heights restores
-matching progress; changing the route invalidates it. Backend identity/checkpoint
+matching progress. Switching to another saved route shelves the current checkpoint
+under `artifacts/waypoint-progress/`; returning restores its original direction,
+cursor and starting position for the same verified host, build and player. Loading
+a route never starts playback. A deliberate route edit clears that route's saved
+cursor, including its archived copy; Undo does not revive it. An unavailable player
+identity keeps Resume unavailable until a fresh binding can restore matching progress.
+Backend identity/checkpoint
 validation still runs before any input. A live saved-file restart/Load/Resume case
 preserved its 2/4 cursor and finished within 0.18620 units with four released W
 pulses. Existing route and input limits

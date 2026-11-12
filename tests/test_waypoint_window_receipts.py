@@ -7,6 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
+from scripts.waypoint_progress import RouteProgress
 from tests import test_waypoint_recording_window as fixture
 
 
@@ -65,7 +66,11 @@ class WindowReceiptTests(unittest.TestCase):
         return {"status": "faced", "actions": [{"key": "a"}], "sentinel": "full-turn"}
 
     def playback(self, adapter, document, stop, emit, **kwargs):
-        kwargs["checkpoint"].write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 1}))
+        progress = RouteProgress(document, "reverse", adapter.binding["runtimeIdentity"])
+        endpoint = progress.ordered_points[0]
+        progress.begin({"x": endpoint[1], "y": 0, "z": endpoint[2]})
+        progress.confirm_arrival(0, endpoint)
+        progress.save(kwargs["checkpoint"])
         emit(self.result)
         return [self.result], SimpleNamespace(next_index=1, ordered_points=document["waypoints"])
 
@@ -77,9 +82,8 @@ class WindowReceiptTests(unittest.TestCase):
         self.button(label).invoke()
         self.wait_for(lambda: len(self.receipts()) > before)
         latest = max(self.receipts(), key=lambda p: p.stat().st_mtime_ns)
-        self.wait_for(lambda: any(str(latest) in self.window.getvar(w["textvariable"])
-                                 for w in self.widgets() if isinstance(w, fixture.ttk.Label)
-                                 and w["textvariable"]))
+        self.wait_for(lambda: any(str(latest) in w.get("1.0", "end")
+                                 for w in self.widgets() if isinstance(w, fixture.tk.Text)))
         return json.loads(latest.read_text())
 
     def test_successful_go_preserves_full_result_events_binding_and_pulses(self):

@@ -183,19 +183,96 @@ class RouteProgress:
     def load(cls, path, document, identity):
         try:
             payload = json.loads(Path(path).read_text(encoding="utf-8"))
-            if not isinstance(payload, dict) or payload.get("version") != 1:
-                raise ProgressError("invalid progress version")
-            result = cls(document, payload.get("direction"), identity)
-            stored_route = cls(payload.get("route"), payload.get("direction"), identity)
-            if (payload.get("routeHash") != result.route_hash or stored_route.route_hash != result.route_hash
-                    or payload.get("identity") != result.identity):
-                raise ProgressError("route or player/build identity changed")
-            index = payload.get("nextIndex")
-            if type(index) is not int or not 0 <= index <= len(result.points):
-                raise ProgressError("invalid progress cursor")
-            result.start = _position(payload.get("start"))
-            result.next_index = index
-            result.document = stored_route.document
-            return result
+            return cls._from_payload(payload, document, identity)
         except (OSError, json.JSONDecodeError, TypeError) as exc:
             raise ProgressError("cannot load progress") from exc
+
+    @classmethod
+    def _from_payload(cls, payload, document, identity):
+        if not isinstance(payload, dict) or type(payload.get("version")) is not int or payload["version"] != 1:
+            raise ProgressError("invalid progress version")
+        result = cls(document, payload.get("direction"), identity)
+        stored_route = cls(payload.get("route"), payload.get("direction"), identity)
+        if (payload.get("routeHash") != result.route_hash or stored_route.route_hash != result.route_hash
+                or payload.get("identity") != result.identity):
+            raise ProgressError("route or player/build identity changed")
+        index = payload.get("nextIndex")
+        if type(index) is not int or not 0 <= index <= len(result.points):
+            raise ProgressError("invalid progress cursor")
+        result.start = _position(payload.get("start"))
+        result.next_index = index
+        result.document = stored_route.document
+        return result
+
+
+def _archive_path(directory, document, identity):
+    # Route selection does not choose a direction; the saved payload owns it.
+    forward = RouteProgress(document, "forward", identity)
+    key = _canonical([forward.route_hash, forward.identity]).encode("utf-8")
+    return Path(directory) / (hashlib.sha256(key).hexdigest() + ".json")
+
+
+def _read_if_present(path):
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def _validated_cursor(raw, document=None, identity=None):
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+        if not isinstance(payload, dict):
+            return None
+        if document is None:  # A displaced checkpoint must validate against its own route and owner.
+            document, identity = payload.get("route"), payload.get("identity")
+        return RouteProgress._from_payload(payload, document, identity)
+    except (UnicodeError, ValueError):
+        return None
+
+
+def _require_unchanged(path, original):
+    if _read_if_present(path) != original:
+        raise ProgressError("Checkpoint changed during route switch")
+
+
+def select_route_progress(active_path, archive_dir, document, identity):
+    """Select an explicit route while its playback writer is idle; return its saved cursor."""
+    active = Path(active_path)
+    if identity is None:
+        _route(document)
+    destination = _archive_path(archive_dir, document, identity) if identity is not None else None
+    raw = _read_if_present(active)
+    old = _validated_cursor(raw)
+    if old is not None:
+        old_slot = _archive_path(archive_dir, old.document, old.identity)
+        if old_slot == destination:
+            return old
+        old_slot.parent.mkdir(parents=True, exist_ok=True)
+        _require_unchanged(active, raw)
+        write_json_atomic(old_slot, json.loads(raw))
+
+    incoming = _read_if_present(destination) if destination is not None else None
+    selected = _validated_cursor(incoming, document, identity)
+    _require_unchanged(active, raw)
+    if selected is not None:
+        _require_unchanged(destination, incoming)
+        os.replace(destination, active)
+    elif raw is not None:
+        active.unlink()
+    return selected
+
+
+def invalidate_route_progress(active_path, archive_dir, document, identity):
+    """Discard this player's cursor for the pre-edit route, including any archived copy."""
+    if identity is None:
+        return
+    slot = _archive_path(archive_dir, document, identity)
+    active = Path(active_path)
+    for path in (slot, active):
+        raw = _read_if_present(path)
+        if _validated_cursor(raw, document, identity) is not None:
+            _require_unchanged(path, raw)
+            path.unlink()

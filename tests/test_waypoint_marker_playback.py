@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
+from scripts.waypoint_progress import RouteProgress
 from tests import test_waypoint_recording_window as fixture
 
 
@@ -65,8 +66,11 @@ class MarkerPlaybackTests(unittest.TestCase):
 
     def test_resume_keeps_marker_child_until_stop(self):
         checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Start", 0, 0], ["End", 1, 0]]},
-                                          "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+        progress = RouteProgress({"waypoints": [["Start", 0, 0], ["End", 1, 0]]},
+                                 "forward", self.adapter.binding["runtimeIdentity"])
+        progress.begin({"x": 0, "y": 0, "z": 0})
+        progress.confirm_arrival(0, progress.ordered_points[0])
+        progress.save(checkpoint)
         self.button("Refresh").invoke()
         self.wait_for(lambda: str(self.button("Resume")["state"]) != "disabled")
         self.button("Resume").invoke()

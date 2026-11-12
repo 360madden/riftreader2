@@ -11,6 +11,9 @@ import unittest
 from unittest.mock import patch
 
 from scripts import physical_waypoints as app
+from scripts.waypoint_progress import RouteProgress
+
+TEST_IDENTITY = {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64, "unitKey": "player"}
 
 try:
     import tkinter as tk
@@ -80,6 +83,8 @@ class PlaybackWindowStateTests(unittest.TestCase):
                     if isinstance(w, (tk.Button, ttk.Button)) and str(w["text"]) == label)
 
     def launch(self, adapter=None, route=None):
+        if adapter is not None and not getattr(adapter, "binding", None):
+            adapter.binding = {"runtimeIdentity": dict(TEST_IDENTITY)}
         args = SimpleNamespace(expected_host="AMD-DESKTOP", physical_pid=None if adapter is None else 123,
                                initial_adapter=adapter, basis=Path("unused"), face_waypoints=True,
                                route=route, auto_reconnect=True, initial_reason="waiting" if adapter is None else None)
@@ -92,6 +97,17 @@ class PlaybackWindowStateTests(unittest.TestCase):
                 return
             time.sleep(.01)
         self.fail("fake reader did not settle")
+
+    def write_checkpoint(self, document, direction, index):
+        path = self.path / "artifacts" / "waypoint-current-progress.json"
+        progress = RouteProgress(document, direction, TEST_IDENTITY)
+        endpoint = progress.ordered_points[0]
+        height = document.get("heights", [0] * len(progress.ordered_points))[0 if direction == "forward" else -1]
+        progress.begin({"x": endpoint[1], "y": height if height is not None else 0, "z": endpoint[2]})
+        for number in range(index):
+            progress.confirm_arrival(number, progress.ordered_points[number])
+        progress.save(path)
+        return path
 
     def test_waiting_disables_actions_but_keeps_route_editing(self):
         self.stack.enter_context(patch.object(app, "PhysicalAdapter", side_effect=ValueError("absent")))
@@ -144,7 +160,9 @@ class PlaybackWindowStateTests(unittest.TestCase):
         route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 2, 0]], "heights": {}}), encoding="utf-8")
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         reader = unittest.mock.Mock(return_value=pose)
-        self.launch(SimpleNamespace(read=reader, pid=123), route)
+        with patch("tkinter.messagebox.showerror") as error:
+            self.launch(SimpleNamespace(read=reader, pid=123), route)
+        error.assert_called_once()
         self.assertTrue(self.roots[0].winfo_exists())
         self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
         self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
@@ -183,9 +201,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
 
     def test_complete_checkpoint_cannot_resume(self):
-        path = self.path / "artifacts" / "waypoint-current-progress.json"
-        path.write_text(json.dumps({"route": {"waypoints": [["A", 0, 0], ["B", 1, 0]]},
-                                    "direction": "forward", "nextIndex": 2}), encoding="utf-8")
+        self.write_checkpoint({"waypoints": [["A", 0, 0], ["B", 1, 0]]}, "forward", 2)
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123)
         self.launch(adapter)
@@ -200,22 +216,18 @@ class PlaybackWindowStateTests(unittest.TestCase):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}
         route = self.path / "route.json"
         route.write_text(json.dumps(document), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 1}), encoding="utf-8")
+        self.write_checkpoint(document, "reverse", 1)
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
 
     def test_refresh_reconciles_checkpoint_completed_by_external_cli(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0], ["C", 2, 0], ["D", 3, 0]]}
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        saved = {"route": document, "direction": "reverse", "nextIndex": 2}
-        checkpoint.write_text(json.dumps(saved))
+        checkpoint = self.write_checkpoint(document, "reverse", 2)
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
-        saved["nextIndex"] = 4
-        checkpoint.write_text(json.dumps(saved))
+        self.write_checkpoint(document, "reverse", 4)
         unchanged = checkpoint.read_bytes()
         self.button("Refresh").invoke()
         deadline = time.monotonic() + 3
@@ -235,8 +247,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
 
     def test_teach_progress_without_playback_cursor_after_completed_checkpoint(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 2}))
+        checkpoint = self.write_checkpoint(document, "reverse", 2)
         original = checkpoint.read_bytes()
         self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
         release = threading.Event()
@@ -281,9 +292,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
     def test_explicit_different_route_cannot_resume(self):
         route = self.path / "route.json"
         route.write_text(json.dumps({"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 12]}), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]},
-                                          "direction": "reverse", "nextIndex": 1}), encoding="utf-8")
+        self.write_checkpoint({"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}, "reverse", 1)
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
@@ -293,14 +302,20 @@ class PlaybackWindowStateTests(unittest.TestCase):
                     "recording": {"complete": True}}
         route = self.path / "route.json"
         route.write_text(json.dumps(document), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+        checkpoint = self.write_checkpoint(document, "forward", 1)
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
         with patch("tkinter.filedialog.askopenfilename", return_value=str(route)):
             self.button("Load").invoke()
         self.assertTrue(checkpoint.exists())
         self.assertEqual(1, json.loads(checkpoint.read_text(encoding="utf-8"))["nextIndex"])
+        self.button("Refresh").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
 
     def test_loading_changed_route_invalidates_and_clears_progress(self):
@@ -309,8 +324,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
                "recording": {"complete": True}}
         route = self.path / "route.json"
         route.write_text(json.dumps(new), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": old, "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+        checkpoint = self.write_checkpoint(old, "forward", 1)
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
         with patch("tkinter.filedialog.askopenfilename", return_value=str(route)):
@@ -324,8 +338,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
 
     def test_rejected_play_restores_completed_checkpoint_view(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 2}), encoding="utf-8")
+        checkpoint = self.write_checkpoint(document, "reverse", 2)
         original = checkpoint.read_bytes()
         self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
         current = {"pose": app.Snapshot(app.Position(1, 0, 0), 0, time.monotonic(), "fake")}
@@ -360,10 +373,9 @@ class PlaybackWindowStateTests(unittest.TestCase):
 
     def test_partial_play_keeps_new_checkpoint_cursor(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 2}), encoding="utf-8")
+        checkpoint = self.write_checkpoint(document, "forward", 2)
         def partial(adapter, route, stop, emit, **kwargs):
-            checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+            self.write_checkpoint(document, "forward", 1)
             emit({"status": "arrived", "nextWaypoint": 1, "waypointCount": 2})
             raise ValueError("later leg failed")
         self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
@@ -378,6 +390,13 @@ class PlaybackWindowStateTests(unittest.TestCase):
                 break
             time.sleep(.01)
         self.assertEqual(1, json.loads(checkpoint.read_text(encoding="utf-8"))["nextIndex"])
+        self.button("Refresh").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
@@ -409,9 +428,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
     def test_checkpoint_and_explicit_route_take_precedence_over_cache(self):
         cache = self.path / "artifacts" / "waypoint-last-route.json"
         cache.write_text(json.dumps({"waypoints": [["Cached", 0, 0]]}), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Checkpoint", 0, 0]]},
-                                          "direction": "forward", "nextIndex": 0}), encoding="utf-8")
+        self.write_checkpoint({"waypoints": [["Checkpoint", 0, 0]]}, "forward", 0)
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123)
         self.launch(adapter)
@@ -507,8 +524,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         snapshot = self.path / "artifacts" / "waypoint-last-route.json"
         snapshot.write_text(json.dumps({"version": 1, "route": document,
                                         "sourcePath": str(self.path / "missing.json")}), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+        self.write_checkpoint(document, "forward", 1)
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
@@ -522,9 +538,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         source.write_text(json.dumps(cached), encoding="utf-8")
         snapshot = self.path / "artifacts" / "waypoint-last-route.json"
         snapshot.write_text(json.dumps({"version": 1, "route": cached, "sourcePath": str(source)}), encoding="utf-8")
-        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Other", 0, 0]]},
-                                          "direction": "forward", "nextIndex": 0}), encoding="utf-8")
+        self.write_checkpoint({"waypoints": [["Other", 0, 0]]}, "forward", 0)
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
         with patch("tkinter.filedialog.asksaveasfilename", return_value="") as chooser:

@@ -1,10 +1,12 @@
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.waypoint_progress import ProgressError, RouteProgress, write_json_atomic
+from scripts.waypoint_progress import (ProgressError, RouteProgress, invalidate_route_progress,
+                                       select_route_progress, write_json_atomic)
 
 
 IDENTITY = {"machine": "AMD-DESKTOP", "gameBuildSha256": "ABCD", "unitKey": "player"}
@@ -127,6 +129,129 @@ class ProgressTests(unittest.TestCase):
             self.assertEqual(loaded.document, document)
             loaded.save(path)
             self.assertEqual(json.loads(path.read_text(encoding="utf-8"))["route"], document)
+
+
+class RouteSelectionTests(unittest.TestCase):
+    other = {"waypoints": [["Other", 3, 0]]}
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.active = Path(temp.name) / "waypoint-current-progress.json"
+        self.archive = self.active.parent / "waypoint-progress"
+        self.cursor = RouteProgress(ROUTE, "reverse", IDENTITY)
+        self.cursor.begin({"x": 3.1, "z": 4, "y": 8})
+        self.cursor.confirm_arrival(0, self.cursor.ordered_points[0])
+        self.cursor.save(self.active)
+
+    def select(self, document, identity=IDENTITY):
+        return select_route_progress(self.active, self.archive, document, identity)
+
+    def test_return_to_stopped_reverse_and_consume_archive(self):
+        original = self.active.read_bytes()
+        self.assertEqual(1, self.select(ROUTE).next_index)
+        self.assertEqual(original, self.active.read_bytes())
+        self.assertFalse(self.archive.exists())
+        self.assertIsNone(self.select(self.other))
+        self.assertFalse(self.active.exists())
+        other = RouteProgress(self.other, "forward", IDENTITY)
+        other.begin({"x": 3, "z": 0})
+        other.save(self.active)
+        restored = self.select(ROUTE, {**IDENTITY, "machine": "amd-desktop"})
+        self.assertEqual(("reverse", 1, self.cursor.start), (restored.direction, restored.next_index, restored.start))
+        self.assertEqual(original, self.active.read_bytes())
+        self.assertEqual(1, len(list(self.archive.glob("*.json"))))  # Only the other route remains.
+        invalidate_route_progress(self.active, self.archive, ROUTE, IDENTITY)
+        self.assertIsNone(self.select(ROUTE))
+        self.assertEqual("forward", self.select(self.other).direction)
+
+    def test_changed_route_or_player_never_restores_original(self):
+        for changed in ({"waypoints": [["Z", 0, 0], *ROUTE["waypoints"][1:]]},
+                        {"waypoints": [["A", 1, 0], *ROUTE["waypoints"][1:]]},
+                        {"waypoints": list(reversed(ROUTE["waypoints"]))},
+                        {**ROUTE, "heights": [9, 9, 9]}):
+            with self.subTest(document=changed):
+                self.assertIsNone(self.select(changed))
+        for key in ("machine", "gameBuildSha256", "unitKey"):
+            with self.subTest(key=key):
+                other_identity = {**IDENTITY, key: "different"}
+                self.assertIsNone(self.select(ROUTE, other_identity))
+                invalidate_route_progress(self.active, self.archive, ROUTE, other_identity)
+        self.assertEqual(1, self.select(ROUTE).next_index)
+
+    def test_unknown_identity_shelves_and_never_promotes(self):
+        self.assertIsNone(self.select(ROUTE, None))
+        self.assertFalse(self.active.exists())
+        self.assertIsNone(self.select(ROUTE, None))
+        invalidate_route_progress(self.active, self.archive, ROUTE, None)
+        self.assertEqual(1, self.select(ROUTE).next_index)
+
+    def test_new_completed_cursor_supersedes_older_archive(self):
+        self.select(self.other)
+        for i in (1, 2):
+            self.cursor.confirm_arrival(i, self.cursor.ordered_points[i])
+        self.cursor.save(self.active)
+        self.select(self.other)
+        restored = self.select(ROUTE)
+        self.assertEqual([], restored.remaining_points())
+
+    def test_archive_write_failure_preserves_active(self):
+        before = self.active.read_bytes()
+        with patch("scripts.waypoint_progress.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaisesRegex(OSError, "disk full"):
+                self.select(self.other)
+        self.assertEqual(before, self.active.read_bytes())
+        self.assertEqual([], list(self.archive.iterdir()))
+
+    def test_concurrently_changed_active_is_never_removed(self):
+        def archive_then_advance(path, payload):
+            write_json_atomic(path, payload)
+            self.cursor.confirm_arrival(1, self.cursor.ordered_points[1])
+            updated = {**payload, "nextIndex": self.cursor.next_index}
+            write_json_atomic(self.active, updated)
+        with patch("scripts.waypoint_progress.write_json_atomic", side_effect=archive_then_advance):
+            with self.assertRaisesRegex(ProgressError, "changed during route switch"):
+                self.select(self.other)
+        self.assertEqual(2, RouteProgress.load(self.active, ROUTE, IDENTITY).next_index)
+
+    def test_invalid_archive_never_promotes(self):
+        self.select(self.other)
+        slot, = self.archive.glob("*.json")
+        corrupt = json.loads(slot.read_bytes())
+        corrupt["nextIndex"] = 99
+        write_json_atomic(slot, corrupt)
+        self.assertIsNone(self.select(ROUTE))
+        self.assertFalse(self.active.exists())
+
+    def test_promotion_failure_keeps_displaced_and_incoming_checkpoints(self):
+        self.select(self.other)
+        other = RouteProgress(self.other, identity=IDENTITY)
+        other.begin({"x": 3, "z": 0})
+        other.save(self.active)
+        before = self.active.read_bytes()
+        real_replace = os.replace
+
+        def fail_promotion(source, target):
+            if target == self.active:
+                raise OSError("file in use")
+            return real_replace(source, target)
+
+        with patch("scripts.waypoint_progress.os.replace", side_effect=fail_promotion):
+            with self.assertRaisesRegex(OSError, "file in use"):
+                self.select(ROUTE)
+        self.assertEqual(before, self.active.read_bytes())
+        self.assertEqual(1, self.select(ROUTE).next_index)
+
+    def test_invalidation_only_removes_selected_route_and_owner(self):
+        self.select(self.other)
+        other = RouteProgress(self.other, identity=IDENTITY)
+        other.begin({"x": 3, "z": 0})
+        other.save(self.active)
+        before = self.active.read_bytes()
+        invalidate_route_progress(self.active, self.archive, ROUTE, IDENTITY)
+        self.assertEqual(before, self.active.read_bytes())
+        self.assertIsNone(self.select(ROUTE))
+        self.assertEqual(0, self.select(self.other).next_index)
 
 
 if __name__ == "__main__":

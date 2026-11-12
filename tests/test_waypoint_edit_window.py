@@ -22,8 +22,7 @@ class WaypointEditTests(unittest.TestCase):
                          "heights": [10, 11], "recording": {"complete": True, "source": "retained"}}
         route = self.path / "source.json"
         route.write_text(json.dumps(self.document))
-        self.checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        self.checkpoint.write_text(json.dumps({"route": self.document, "direction": "forward", "nextIndex": 1}))
+        self.checkpoint = fixture.PlaybackWindowStateTests.write_checkpoint(self, self.document, "forward", 1)
         self.original = self.checkpoint.read_bytes()
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
@@ -180,7 +179,8 @@ class WaypointEditTests(unittest.TestCase):
         self.button("Update Selected").invoke()
         self.assertEqual(("New point", "2.500000", "0.000000"), self.table.item(added, "values"))
         self.assertEqual(["New point", "2.500000", "0.000000"], [w.get() for w in self.entries])
-        self.assertFalse(self.checkpoint.exists())
+        # The injected checkpoint belongs to the original route, not this edited route.
+        self.assertEqual(self.original, self.checkpoint.read_bytes())
 
 
 if __name__ == "__main__":

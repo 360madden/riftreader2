@@ -797,12 +797,16 @@ def launch_window(args):
     busy = False
     recording = False
     recording_progress = None
+    pending_recorded = None
     closing = False
     adapter = getattr(args, "initial_adapter", None)
     published_adapter = adapter
     foreground_stop = None
     last_pose = None
     last_y = None
+    verified_adapter = None
+    verified_at = None
+    identity_unavailable = False
     saved_view = None
     saved_rerun = None
     rerun_viewer = None
@@ -814,6 +818,7 @@ def launch_window(args):
     operation_gate = threading.Lock()
     record_stop, record_cancel = threading.Event(), threading.Event()
     checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
+    progress_archive = ROOT / "artifacts" / "waypoint-progress"
     last_route = ROOT / "artifacts" / "waypoint-last-route.json"
     route_metadata = {}
     point_receipts = {}
@@ -822,6 +827,7 @@ def launch_window(args):
     route_recovered = False
     playback_view = None
     playback_active = False
+    pending_progress_selection = False
     loading_route = False
     added_selection = None
     edit_history = []
@@ -872,7 +878,12 @@ def launch_window(args):
         if not loading_route:
             if not stop_markers():
                 raise WaypointError("Cannot stop markers; route unchanged")
-            checkpoint.unlink(missing_ok=True)
+            if table.get_children():
+                from scripts.waypoint_progress import invalidate_route_progress
+                # Editing the local route invalidates only the cursor belonging to
+                # its known player, even when the last pose is too old for Resume.
+                invalidate_route_progress(checkpoint, progress_archive, route_document(),
+                                          current_identity() or last_verified_owner)
             if clear_metadata:
                 route_metadata = {}
             playback_view = None
@@ -921,7 +932,9 @@ def launch_window(args):
         nonlocal route_metadata, added_selection
         if busy or closing or not edit_history:
             return "break"
-        document, indices = edit_history.pop()
+        document, indices = edit_history[-1]
+        invalidate_progress(clear_metadata=False)
+        edit_history.pop()
         if document["waypoints"]:
             show_document(document)
         else:
@@ -932,7 +945,6 @@ def launch_window(args):
         added_selection = None
         items = table.get_children()
         table.selection_set([items[index] for index in indices if index < len(items)])
-        invalidate_progress(clear_metadata=False)
         redraw()
         state.set("Route edit undone; save the route to keep these changes.")
         return "break"
@@ -973,20 +985,64 @@ def launch_window(args):
             loading_route = False
         redraw()
 
-    def restore_progress():
+    def current_identity():
+        if identity_unavailable:
+            return None
+        pose = getattr(adapter, "initial_pose", None)
+        acquired = verified_at if adapter is verified_adapter else getattr(pose, "acquired", None)
+        if type(acquired) not in (int, float) or not -.1 <= time.monotonic() - acquired <= 2:
+            return None
+        binding = getattr(adapter, "binding", None)
+        identity = binding.get("runtimeIdentity") if isinstance(binding, dict) else None
+        return deepcopy(identity) if isinstance(identity, dict) and all(
+            isinstance(identity.get(key), str) and identity[key]
+            for key in ("machine", "gameBuildSha256", "unitKey")) else None
+
+    last_verified_owner = current_identity()
+
+    def display_progress(progress):
         nonlocal playback_view
-        saved = json.loads(checkpoint.read_text(encoding="utf-8"))
-        if progress_route(route_document()) != progress_route(saved["route"]):
-            raise ValueError("Saved progress belongs to a different route")
-        count = len(saved["route"]["waypoints"])
-        index = saved["nextIndex"]
-        if (saved["direction"] not in ("forward", "reverse") or type(index) is not int
-                or not 0 <= index <= count):
-            raise ValueError("Invalid saved progress")
-        playback_view = {"direction": saved["direction"], "nextIndex": index}
+        count, index = len(progress.ordered_points), progress.next_index
+        playback_view = {"direction": progress.direction, "nextIndex": index}
         hint = "choose Play Forward or Play Reverse." if index == count else "choose Resume."
         progress_text.set(f"Saved progress: {index} / {count}; {hint}")
         redraw()
+
+    def restore_progress():
+        from scripts.waypoint_progress import RouteProgress
+        identity = current_identity()
+        if identity is None:
+            raise ValueError("Waiting for a verified player identity")
+        display_progress(RouteProgress.load(checkpoint, route_document(), identity))
+
+    def select_progress(document):
+        from scripts.waypoint_progress import select_route_progress
+        return select_route_progress(checkpoint, progress_archive, document, current_identity())
+
+    def select_pending_progress():
+        nonlocal pending_progress_selection, playback_view
+        if not pending_progress_selection or busy or current_identity() is None or not table.get_children():
+            return
+        try:
+            progress = select_progress(route_document())
+            pending_progress_selection = False
+            playback_view = None
+            if progress is not None:
+                display_progress(progress)
+            else:
+                progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
+                redraw()
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            state.set("Cannot restore saved progress: " + str(exc))
+
+    def prepared_document(document):
+        prepared = deepcopy(document)
+        prepared["waypoints"] = [[label, float(f"{x:.6f}"), float(f"{z:.6f}")]
+                                 for label, x, z in route_points(document["waypoints"])]
+        progress_route(prepared)
+        from scripts.waypoint_measurements import document_measurements
+        document_measurements(prepared)
+        return prepared
 
     def zoom(direction):
         nonlocal map_radius
@@ -1122,7 +1178,8 @@ def launch_window(args):
                 if reconnected or adapter is not published_adapter:
                     events.put({"status": "reconnected", "pid": adapter.pid})
                     published_adapter = adapter
-                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
+                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing,
+                          "acquired": pose.acquired}
                 if operation == "save" and isinstance(getattr(adapter, "binding", None), dict):
                     try:
                         from scripts.waypoint_measurements import measurement
@@ -1364,16 +1421,22 @@ def launch_window(args):
                 messagebox.showerror("Cannot save route", str(exc))
 
     def load_from(path):
+        nonlocal playback_view, pending_progress_selection
+        if busy or closing:
+            return
         try:
-            document = json.loads(Path(path).read_text(encoding="utf-8"))
-            route_points(document["waypoints"])
-            progress_route(document)
+            document = prepared_document(json.loads(Path(path).read_text(encoding="utf-8")))
+            if not stop_markers():
+                raise WaypointError("Cannot stop markers; route unchanged")
+            progress = select_progress(document)
             show_document(document)
             edit_history.clear()
-            try:
-                restore_progress()
-            except (OSError, ValueError, KeyError, TypeError):
-                invalidate_progress(clear_metadata=False)
+            pending_progress_selection = current_identity() is None
+            playback_view = None
+            if progress is not None:
+                display_progress(progress)
+            else:
+                progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
                 redraw()
             mark_saved(path)
             cache_route(document, "Route loaded: " + str(path))
@@ -1621,7 +1684,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, saved_view, saved_rerun, observing, next_live_at, playback_view, playback_active, marker_identity
+        nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1631,14 +1694,18 @@ def launch_window(args):
             if status == "reconnected":
                 if not stop_markers():
                     state.set("Cannot hide markers after RIFT reconnected.")
+                pending_progress_selection = bool(table.get_children())
                 window.title(f"RR2 Waypoints - {args.expected_host} / PID {event['pid']}")
                 state.set(f"Reconnected to RIFT PID {event['pid']}.")
                 continue
             if status == "halted":
                 last_pose = None
+                verified_adapter, verified_at = None, None
+                identity_unavailable = True
                 redraw()
             if status == "live-idle":
                 observing = False
+                select_pending_progress()
                 if closing and not busy:
                     window.destroy()
                     return
@@ -1646,6 +1713,8 @@ def launch_window(args):
             if status == "live-unavailable":
                 pose_text.set("Live position unavailable: " + event["reason"])
                 last_pose = None
+                verified_adapter, verified_at = None, None
+                identity_unavailable = True
                 redraw()
                 continue
             if status == "idle":
@@ -1665,6 +1734,7 @@ def launch_window(args):
                     except (OSError, ValueError, KeyError, TypeError):
                         playback_view = None
                         progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
+                select_pending_progress()
                 recording = False
                 recording_progress = None
                 record_end_button.configure(state="disabled")
@@ -1675,11 +1745,17 @@ def launch_window(args):
                 open_view_button.configure(state="normal" if saved_view else "disabled")
                 open_3d_button.configure(state="normal" if saved_rerun else "disabled")
                 redraw()
+                if pending_recorded is not None and not closing:
+                    events.put(dict(pending_recorded, status="recorded-ready"))
+                    pending_recorded = None
                 if closing and not observing:
                     window.destroy()
                     return
                 continue
             if status == "recorded-pending":
+                pending_recorded = event
+                continue
+            if status == "recorded-ready":
                 if record_cancel.is_set() or closing or (event.get("operation") == "teach" and stop.is_set()):
                     state.set("Recording cancelled; no route saved.")
                     continue
@@ -1689,15 +1765,23 @@ def launch_window(args):
                 output = ROOT / "artifacts" / ("recorded-route-" + uuid.uuid4().hex + ".json")
                 try:
                     write_json_atomic(output, event["document"])
-                    invalidate_progress()
-                    show_document(event["document"])
+                    document = prepared_document(event["document"])
+                    if not stop_markers():
+                        raise WaypointError("Cannot stop markers; route unchanged")
+                    progress = select_progress(document)
+                    show_document(document)
+                    pending_progress_selection = current_identity() is None
+                    playback_view = None
+                    if progress is not None:
+                        display_progress(progress)
                     edit_history.clear()
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     state.set("Cannot finish recording: " + str(exc))
                     continue
                 mark_saved(output)
                 cache_route(event["document"], "Recorded route saved: " + str(output))
-                progress_text.set("Recorded route ready; select playback direction.")
+                if progress is None:
+                    progress_text.set("Recorded route ready; select playback direction.")
                 continue
             if status == "view-saved":
                 saved_view = event["image"]
@@ -1743,6 +1827,12 @@ def launch_window(args):
                 if not x.get() and not z.get():
                     x.set(f"{point['x']:.6f}")
                     z.set(f"{point['z']:.6f}")
+                if status in ("refresh", "live", "save", "target", "map"):
+                    verified_adapter, verified_at = adapter, event.get("acquired")
+                    identity_unavailable = False
+                    owner = current_identity()
+                    if owner is not None:
+                        last_verified_owner = owner
                 if status in ("refresh", "live"):
                     try:
                         restore_progress()
@@ -1783,9 +1873,9 @@ def launch_window(args):
             log.configure(state="disabled")
         if marker_identity is not None:
             target = getattr(adapter, "target", {})
-            current_identity = (getattr(adapter, "pid", None), str(target.get("processStartUtcTicks")),
-                                str(target.get("executableSha256", "")).casefold(), target.get("hwnd"))
-            if current_identity != marker_identity:
+            current_marker_identity = (getattr(adapter, "pid", None), str(target.get("processStartUtcTicks")),
+                                       str(target.get("executableSha256", "")).casefold(), target.get("hwnd"))
+            if current_marker_identity != marker_identity:
                 stop_markers()
             if not markers.running():
                 if markers.exit_code and not markers.stop_requested:
@@ -1879,8 +1969,16 @@ def launch_window(args):
         except (OSError, ValueError, TypeError):
             pass  # Damaged history does not prevent route recovery.
     if args.route:
-        show_document(json.loads(args.route.read_text(encoding="utf-8")))
-        mark_saved(args.route)
+        try:
+            document = prepared_document(json.loads(args.route.read_text(encoding="utf-8")))
+            progress = select_progress(document)
+            show_document(document)
+            pending_progress_selection = current_identity() is None
+            if progress is not None:
+                display_progress(progress)
+            mark_saved(args.route)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            messagebox.showerror("Cannot load route", str(exc))
     restored_checkpoint = False
     if checkpoint.exists():
         try:
@@ -1893,6 +1991,8 @@ def launch_window(args):
                 show_document(saved["route"])
                 route_recovered = True
                 update_route_status()
+                restored_checkpoint = True
+                pending_progress_selection = current_identity() is None
             restore_progress()
             restored_checkpoint = True
         except (OSError, ValueError, KeyError, TypeError):
