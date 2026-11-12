@@ -1,5 +1,12 @@
 # Current status
 
+**11:19 EST NOVEMBER 12 — ENDPOINT DISTANCES VISIBLE:** On **AMD-DESKTOP**, the idle
+summary shows Start/End distances in original route order and the footer explains
+the 0.30-unit playback entry requirement. Twenty-three focused state tests passed,
+with root review. Actual 0.16/0.03 labels matched a fresh native read, the layout
+fits and genuine 7/7 progress is unchanged. App PID62852/window27203042, RIFT
+PID69312; no gameplay input. Goal remains active through 11:56 EST.
+
 **11:10 EST NOVEMBER 12 — POINT EDIT SHORTCUTS VERIFIED:** On **AMD-DESKTOP**,
 F2 edits the selected name, Alt+Up/Down reorder, list Delete removes points and
 Ctrl+Enter in Name/X/Z applies edits. Busy/closing guards and ordinary text editing

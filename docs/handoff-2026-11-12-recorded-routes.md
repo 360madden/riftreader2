@@ -423,6 +423,17 @@ an interrupted, unfinished checkpoint. Twelve focused CLI tests passed and root
 reviewed the patch. No live/native/UI/input operation was needed for these parser
 and documentation corrections; existing controller behavior is unchanged.
 
+**11:19 EST endpoint-entry hints accepted:** the existing idle summary now includes
+Start/End planar distances in original route order, including reverse playback
+views. Recording counters and busy summaries remain unchanged; no extra reader
+calls were added. The existing footer explains the 0.30-unit Forward/Start and
+Reverse/End requirement without changing backend admission or movement limits.
+Twenty-three focused window-state tests passed and root reviewed the patch.
+Actual displayed Start 0.16 / End 0.03 matched an independent fresh native pose
+calculation; both summary/footer fit and the completed checkpoint stayed exact.
+No gameplay input occurred. Current app PID62852/window27203042 is idle; RIFT
+PID69312 remains bound to the unchanged basis.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

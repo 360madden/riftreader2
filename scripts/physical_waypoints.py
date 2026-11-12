@@ -900,6 +900,7 @@ def launch_window(args):
         fit_button.configure(state="normal" if last_pose is not None else "disabled")
         undo_button.configure(state="normal" if edit_history and not busy and not closing else "disabled")
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
+        original_points = points[:]
         completed, active = None, None
         if playback_view is not None:
             if playback_view["direction"] == "reverse":
@@ -931,8 +932,14 @@ def launch_window(args):
                         f"   •   {recording_progress['sampleCount']} samples"
                         + ("   •   Stop Recording saves" if recording else "   •   STOP cancels"))
         else:
+            endpoints = ""
+            if not busy and not recording and original_points:
+                distances = [math.hypot(finite(row[2]) - last_pose[0], finite(row[3]) - last_pose[1])
+                             for row in (original_points[0], original_points[-1])]
+                endpoints = f"   •   Start: {distances[0]:.2f} • End: {distances[1]:.2f} units"
             summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
                         + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
+                        + endpoints
                         + ("   •   Shorten the route to run it" if distance > 20 else ""))
         if not busy:
             go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
@@ -1315,7 +1322,8 @@ def launch_window(args):
     progress_text = tk.StringVar(value="No playback started.")
     ttk.Label(recording_controls, textvariable=progress_text).pack(side="left", padx=8)
     log.pack(fill="x", pady=4)
-    ttk.Label(frame, text="During movement F8 stops without changing focus. Stop Recording saves; STOP cancels recording.").pack(anchor="w")
+    ttk.Label(frame, text="F8 stops movement. Stop Recording saves; STOP cancels recording. "
+              "Play starts within 0.30 units of Start (Forward) or End (Reverse).").pack(anchor="w")
     table.tag_configure("completed", foreground="#52806d")
     table.tag_configure("next", foreground="#ad6500")
 
