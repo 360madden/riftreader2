@@ -392,6 +392,89 @@ class ProbeTests(unittest.TestCase):
                              {"status": "insufficient-independent-copied-runs",
                               "runsWithCopiedSnapshots": 0})
 
+    def test_replay_retained_runs_never_touches_process_or_rescans(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                directory.mkdir()
+                index = self.copy(directory, self.index(request, request_path, published=1))
+                (directory / "index.json").write_text(json.dumps(index))
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke):
+                prior, _ = probe.collect(123, root / "source", max_scans=2,
+                                         gap_seconds=0)
+            def assess(before, after, _cli, output, **kwargs):
+                self.assertEqual(before.name, "run-01")
+                self.assertEqual(after.name, "run-02")
+                self.assertEqual(kwargs["session_id"], "a" * 32)
+                output.mkdir()
+                (output / "summary.json").write_text('{"status":"advanced"}')
+                return {"status": "advancing-reference-in-pairing-window",
+                        "diagnostics": {"advancing": 1},
+                        "pairingWindow": {"withinWindow": True}}
+            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+                 patch.object(probe, "pinned_selection") as selection, \
+                 patch.object(probe.subprocess, "run") as scanner, \
+                 patch.object(probe.assess_typed_wire_runs, "assess", side_effect=assess) as decoder:
+                path, result = probe.assess_saved(prior, root / "replayed", "a" * 32)
+                selection.assert_not_called()
+                scanner.assert_not_called()
+                decoder.assert_called_once()
+            self.assertEqual(result["sourceVerifiedRuns"], 2)
+            self.assertEqual(result["runsWithCopiedSnapshots"], 2)
+            self.assertEqual(result["status"], "advancing-reference-in-pairing-window")
+            self.assertEqual(result["sourceSummarySha256"], probe.digest(prior))
+            self.assertEqual(path.read_text(encoding="utf-8").strip(),
+                             json.dumps(result, indent=2))
+            copied = root / "source/run-01/capture-01.snapshot.json"
+            copied.write_bytes(copied.read_bytes() + b" ")
+            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+                 patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
+                with self.assertRaisesRegex(ValueError, "scan-copy-source-hash-mismatch"):
+                    probe.assess_saved(prior, root / "tampered", "a" * 32)
+                decoder.assert_not_called()
+            self.assertFalse((root / "tampered").exists())
+
+    def test_replay_zero_copied_frames_is_explicitly_insufficient(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                directory.mkdir()
+                (directory / "index.json").write_text(
+                    json.dumps(self.index(request, request_path)))
+                return subprocess.CompletedProcess(argv, 3, "", "")
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke):
+                prior, _ = probe.collect(123, root / "source", max_scans=1,
+                                         gap_seconds=0)
+            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+                 patch.object(probe, "pinned_selection") as selection, \
+                 patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
+                _, result = probe.assess_saved(prior, root / "offline", "a" * 32)
+                selection.assert_not_called()
+                decoder.assert_not_called()
+            self.assertEqual(result["status"], "insufficient-independent-copied-runs")
+            self.assertEqual(result["runsWithCopiedSnapshots"], 0)
+
+    def test_replay_bad_nonce_or_wrong_host_fails_before_file_reads(self):
+        with patch.object(probe.socket, "gethostname", return_value=probe.HOST):
+            with self.assertRaises(ValueError):
+                probe.assess_saved("absent.json", "output", "INVALID")
+        with patch.object(probe.socket, "gethostname", return_value="WRONG"):
+            with self.assertRaisesRegex(ValueError, "wrong-host"):
+                probe.assess_saved("absent.json", "output", "a" * 32)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -205,6 +205,95 @@ def resume_cursor(path, selection, reader_sha):
     return prior, hashlib.sha256(raw).hexdigest().upper()
 
 
+def assess_saved(summary_path, output_dir, session_id):
+    """Reassess source-verified retained RR2R1 runs without any process access.
+
+    The saved capture identity is historical, never a current-process pin.
+    Rechecks every original request, index and copied snapshot before decoding.
+    """
+    require_session_id(session_id)
+    require(socket.gethostname().upper() == HOST, "wrong-host")
+    summary_path = Path(summary_path)
+    raw = summary_path.read_bytes()
+    require(len(raw) <= 1_000_000, "saved-summary-too-large")
+    summary = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique)
+    require(isinstance(summary, dict)
+            and summary.get("schemaVersion") == 1
+            and summary.get("evidenceKind") == "amd-physical-rr2r1-prefix-scan/1"
+            and summary.get("ownerHost") == HOST,
+            "saved-summary-invalid")
+    target = summary.get("target")
+    require(isinstance(target, dict)
+            and type(target.get("processId")) is int and target["processId"] > 0
+            and type(target.get("processStartUtcTicks")) is int
+            and target["processStartUtcTicks"] > 0
+            and str(target.get("executableSha256", "")).upper() == BUILD_SHA,
+            "saved-target-invalid")
+    rows = summary.get("runs")
+    require(isinstance(rows, list) and 1 <= len(rows) <= 16,
+            "saved-runs-invalid")
+    copied = []
+    for number, row in enumerate(rows, 1):
+        require(isinstance(row, dict) and row.get("run") == number,
+                "saved-run-invalid")
+        request_path = summary_path.parent / f"request-{number:02d}.json"
+        request_raw = request_path.read_bytes()
+        require(len(request_raw) <= 16_384, "saved-request-too-large")
+        request = json.loads(request_raw.decode("utf-8-sig"), object_pairs_hook=unique)
+        request_sha = hashlib.sha256(request_raw).hexdigest().upper()
+        require(request.get("target") == target and request.get("marker") == MARKER
+                and request_sha == row.get("requestSha256"),
+                "saved-request-mismatch")
+        run_dir = summary_path.parent / f"run-{number:02d}"
+        verified = check_index(run_dir / "index.json", request, request_sha,
+                               {"target": target})
+        require(all(verified.get(key) == row.get(key) for key in (
+            "indexSha256", "status", "publishedSnapshots",
+            "sourceVerifiedSnapshots", "prefixCount", "startAddress",
+            "nextAddress", "scanStatus", "scanReason", "examinedBytes")),
+            "saved-index-mismatch")
+        if verified["sourceVerifiedSnapshots"] > 0:
+            copied.append(number)
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=False)
+    reference = {"status": "insufficient-independent-copied-runs",
+                 "runsWithCopiedSnapshots": len(copied)}
+    if len(copied) >= 2:
+        earlier, later = copied[-2:]
+        assessment_dir = output_dir / "reference-assessment"
+        result = assess_typed_wire_runs.assess(
+            summary_path.parent / f"run-{earlier:02d}",
+            summary_path.parent / f"run-{later:02d}",
+            ROOT / "src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll",
+            assessment_dir, maximum_run_gap_seconds=120.0,
+            session_id=session_id)
+        reference = {
+            "status": result["status"],
+            "runs": [earlier, later],
+            "summarySha256": digest(assessment_dir / "summary.json"),
+            "advancingComparisons": result["diagnostics"]["advancing"],
+            "withinPairingWindow": result["pairingWindow"]["withinWindow"],
+        }
+    result = {
+        "schemaVersion": 1,
+        "evidenceKind": "amd-physical-rr2r1-retained-assessment/1",
+        "status": reference["status"],
+        "ownerHost": HOST,
+        "historicalTarget": target,
+        "sourceSummarySha256": hashlib.sha256(raw).hexdigest().upper(),
+        "sourceVerifiedRuns": len(rows),
+        "runsWithCopiedSnapshots": len(copied),
+        "referenceAssessment": reference,
+        "qualification": "Offline retained Lua-reference assessment only; not live process freshness, loaded-addon attestation, native XYZ semantics or movement",
+    }
+    receipt = output_dir / "summary.json"
+    with receipt.open("x", encoding="utf-8") as out:
+        json.dump(result, out, indent=2, allow_nan=False)
+        out.write("\n")
+    return receipt, result
+
+
 def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None,
             session_id=None):
@@ -335,7 +424,10 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--physical-pid", required=True, type=int)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--physical-pid", type=int)
+    source.add_argument("--replay-summary", type=Path,
+                        help="Offline revalidate retained RR2R1 runs; requires --session-id")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-rr2r1-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=SCAN_BYTES)
@@ -347,16 +439,22 @@ def main(argv=None):
                         help="Exact already-bound RR2R1 reader nonce for offline pair assessment")
     args = parser.parse_args(argv)
     try:
-        path, result = collect(args.physical_pid, args.output_dir,
-                               scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
-                               max_scans=args.max_scans,
-                               resume_summary=args.resume_summary,
-                               session_id=args.session_id)
+        if args.replay_summary is not None:
+            require(args.session_id is not None, "replay-requires-session-id")
+            require(args.resume_summary is None, "replay-cannot-resume-scanning")
+            path, result = assess_saved(args.replay_summary, args.output_dir,
+                                        args.session_id)
+        else:
+            path, result = collect(args.physical_pid, args.output_dir,
+                                   scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
+                                   max_scans=args.max_scans,
+                                   resume_summary=args.resume_summary,
+                                   session_id=args.session_id)
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2
     print(json.dumps({"status": result["status"], "summary": str(path),
-                      "snapshots": [r["publishedSnapshots"] for r in result["runs"]],
+                      "snapshots": [r["publishedSnapshots"] for r in result.get("runs", [])],
                       "qualification": result["qualification"],
                       "referenceAssessment": result["referenceAssessment"]}))
     return 0
