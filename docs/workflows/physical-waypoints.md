@@ -51,6 +51,23 @@ fixed waypoint. It does not follow a moving entity or start a trip. An unavailab
 or expired target position, or a target more than one unit above/below the player,
 is refused. The point uses the same native candidate source as the target reader.
 
+**Walk + Record** walks the loaded point list and records Atank's actual observed
+path through the existing bounded controller. It honors **Face, then walk** and
+uses the same distance, pulse, time, identity and foreground guards as Run Route.
+On success it saves a `recorded-route-*.json`, loads the observed points, and puts
+the saved path in the log. **STOP/F8** cancels the walk and prevents publication
+of an unfinished recording, preserving the previous route and saved progress.
+The live distance/sample counter applies during this commanded teaching walk.
+
+The [GUI-taught route](../validation/gui-taught-route-2026-11-12.json) is a real
+14.13-unit nearby loop captured by this button: 49 samples, seven retained points
+and three corners. Its GUI reverse replay finished within 0.08405 units of the
+recorded start. Review current position and open ground before reusing it:
+
+```powershell
+Waypoints.cmd --route docs/validation/gui-taught-route-2026-11-12.json
+```
+
 **Record** passively observes the player's movement without sending input.
 While recording, the summary shows accumulated observed distance against the
 20-unit cap and the accepted sample count. Stop before the cap; the readout

@@ -221,6 +221,38 @@ The counter cleared after cancellation. Current app PID63676/window22811534 is
 idle with live pose enabled and the original 4/4 forward checkpoint; RIFT is
 PID19692 on the established left display. Fresh identity is required before input.
 
+**09:52–09:57 EST one-window teaching workflow accepted:** the new **Walk + Record**
+button reuses the existing `teach_route` backend, foreground/STOP guard, controller
+limits, atomic UI-thread publication and full input receipts. It honors Face, then
+walk, shows the actual recording counter, loads the observed route on success,
+and preserves the previous route/checkpoint if stopped. Queued publication is
+also cancelled by STOP/close. During review a misplaced event branch was caught
+before live use; it was fixed and a valid-existing-checkpoint regression added.
+The final affected GUI state/receipt suite passed **22 tests**; teaching/backend
+and passive-recording checks had also passed during integration.
+
+One click taught the loaded nearby loop: planned 13.97898 units, **49 native
+observations**, seven retained points, **14.13467 observed units**. All **31 pulses
+released**, with 4,097 ms requested hold; final arrival error was 0.08454 units.
+Receipt: `artifacts/waypoint-run-827413552d3b47e1be11acd260377ec3.json`.
+The actual recording is preserved in Git as
+[gui-taught-route-2026-11-12.json](validation/gui-taught-route-2026-11-12.json),
+copied exactly from `artifacts/recorded-route-58e5915c35d74f89932f43921b28dc80.json`.
+All seven XYZ/heights match native samples after six-decimal rounding; all 49
+source reports share PID19692/start/build/player identity. Maximum **sampled**
+deviation is 0.000424 units. Three corners are approximately 93.85, 81.31 and
+95.16 degrees; two other interior points preserve near-collinear segment boundaries.
+This does not establish the unobserved continuous path or obstacle clearance.
+
+Direct GUI **Play Reverse** then traversed Recorded 7→1, confirmed all seven points,
+and finished **0.08405 units** from the recorded start. All **33 pulses released**,
+4,571 ms requested hold. Receipt:
+`artifacts/waypoint-run-e6cb7e46f8104cc0b3326aa1427ed0cc.json`.
+The current owned app is PID77020/window98047460, idle with live pose enabled and
+the new seven-point route at **7/7 reverse**. RIFT remains PID19692; the unchanged
+basis was reused. Last settled pose was `(7421.592285,863.586548,2941.086182)`, body
+bearing -30.251161 degrees; reacquire it before input.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

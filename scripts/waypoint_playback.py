@@ -27,7 +27,7 @@ def teach_route(adapter, points, stop, emit, *, runner, face_waypoints=True):
     def progress(event):
         if event["status"] in ("leg", "arrived", "segment-arrived", "turning") and wrapped.latest is not None:
             recorder.observe(wrapped.latest, boundary=True)
-        emit(event)
+        emit(dict(event, recordingProgress=recorder.progress))
 
     legs = runner(wrapped, points, stop, progress, face_waypoints=face_waypoints)
     return legs, recorder.finish()

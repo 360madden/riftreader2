@@ -96,7 +96,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
     def test_waiting_disables_actions_but_keeps_route_editing(self):
         self.stack.enter_context(patch.object(app, "PhysicalAdapter", side_effect=ValueError("absent")))
         self.launch()
-        for label in ("Record", "Play Forward", "Play Reverse", "Resume"):
+        for label in ("Record", "Play Forward", "Play Reverse", "Resume", "Walk + Record"):
             self.assertEqual("disabled", str(self.button(label)["state"]))
         for label in ("Load", "Add X / Z"):
             self.assertNotEqual("disabled", str(self.button(label)["state"]))
@@ -151,6 +151,51 @@ class PlaybackWindowStateTests(unittest.TestCase):
                   if isinstance(w, ttk.Label) and w["textvariable"]]
         self.assertTrue(any("Saved progress: 4 / 4" in value for value in labels), labels)
         self.assertTrue(any("Remaining: 0.00" in value for value in labels), labels)
+
+    def test_teach_progress_without_playback_cursor_after_completed_checkpoint(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 2}))
+        original = checkpoint.read_bytes()
+        self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
+        release = threading.Event()
+        self.addCleanup(release.set)
+
+        def teach(adapter, points, stop, emit, **kwargs):
+            emit({"status": "moving", "position": {"x": .5, "y": 0, "z": 0}, "bearing": 0,
+                  "recordingProgress": {"sampleCount": 8, "observedPathLength": 1.25}})
+            if not release.wait(3):
+                raise AssertionError("fake teaching was not released")
+            raise app.Stopped("teaching cancelled")
+
+        self.stack.enter_context(patch("scripts.waypoint_playback.teach_route", side_effect=teach))
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={},
+                                    input_receipt_path=self.path / "pulses.jsonl"))
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        self.button("Walk + Record").invoke()
+        deadline = time.monotonic() + 2
+        found = False
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
+                      if isinstance(w, ttk.Label) and w["textvariable"]]
+            if any("Recording: 1.25 / 20 units" in value and "8 samples" in value for value in labels):
+                found = True
+                break
+            time.sleep(.01)
+        self.assertTrue(found, labels)
+        self.assertFalse(self.callback_errors)
+        self.button("STOP / F8").invoke()
+        release.set()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not t.is_alive() for t in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.assertFalse(self.callback_errors)
+        self.assertEqual(original, checkpoint.read_bytes())
 
     def test_explicit_different_route_cannot_resume(self):
         route = self.path / "route.json"

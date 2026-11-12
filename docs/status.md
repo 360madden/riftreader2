@@ -1,5 +1,16 @@
 # Current status
 
+**09:57 EST NOVEMBER 12 — WALK + RECORD WORKING IN THE WINDOW:** On **AMD-DESKTOP**,
+one button now walks the loaded points and saves/loads their actual observed path
+through the existing controller. A live loop captured 49 samples into seven points
+over 14.13467 units with all 31 pulses released. GUI reverse replay completed all
+seven points within 0.08405 units of the recorded start, all 33 pulses released.
+The actual route and provenance are preserved as
+[gui-taught-route-2026-11-12.json](validation/gui-taught-route-2026-11-12.json).
+STOP/queued-publication tests preserve the prior route and progress; 22 affected
+GUI tests passed after review. App PID77020 is idle at 7/7 reverse; RIFT PID19692
+is on the established left display, using the unchanged basis. Goal remains active.
+
 **09:35 EST NOVEMBER 12 — RECORDING SOURCE LOSS AND BUDGET:** On **AMD-DESKTOP**,
 normal RIFT exit during capture discarded the incomplete recording and preserved
 saved progress. The same app reconnected to Atank in PID19692 without restarting

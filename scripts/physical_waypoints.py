@@ -804,7 +804,7 @@ def launch_window(args):
             summary.set("Position unavailable; refresh to preview the route.")
             if not busy:
                 for button in (go_button, route_button, face_button, record_button,
-                               forward_button, reverse_button, resume_button):
+                               forward_button, reverse_button, resume_button, teach_button):
                     button.configure(state="disabled")
             return
         map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()))
@@ -814,9 +814,10 @@ def launch_window(args):
         planned_distance = route_length(*last_pose[:2], selected_points(True))
         selected = selected_points()
         chosen = route_length(*last_pose[:2], selected) if selected else None
-        if recording and recording_progress is not None:
+        if recording_progress is not None:
             summary.set(f"Recording: {recording_progress['observedPathLength']:.2f} / 20 units"
-                        f"   •   {recording_progress['sampleCount']} samples   •   Stop Recording saves")
+                        f"   •   {recording_progress['sampleCount']} samples"
+                        + ("   •   Stop Recording saves" if recording else "   •   STOP cancels"))
         else:
             summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
                         + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
@@ -824,6 +825,7 @@ def launch_window(args):
         if not busy:
             go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
             route_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
+            teach_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
             face_button.configure(state="normal" if len(selected) == 1 and .3 < chosen <= 20 else "disabled")
             record_button.configure(state="normal")
             forward_button.configure(state="normal" if points else "disabled")
@@ -847,7 +849,7 @@ def launch_window(args):
 
     def perform_operation(operation, points=None, face_walk=False):
         nonlocal adapter, published_adapter
-        retain = operation in ("go", "face", "play", "resume")
+        retain = operation in ("go", "face", "play", "resume", "teach")
         history, outcome, failure = [], None, None
         stop_verification = None
 
@@ -903,6 +905,12 @@ def launch_window(args):
                     raise WaypointError("Recording cancelled; no route saved")
                 document = recorder.finish()
                 events.put({"status": "recorded-pending", "document": document})
+            elif operation == "teach":
+                from scripts.waypoint_playback import teach_route
+                results, document = teach_route(adapter, points, stop, emit, runner=run_route,
+                                                face_waypoints=face_walk)
+                outcome = results
+                events.put({"status": "recorded-pending", "document": document, "operation": "teach"})
             elif operation in ("play", "resume"):
                 document, direction = points
                 results, cursor = play_route(adapter, document, stop, emit, runner=run_route,
@@ -962,7 +970,7 @@ def launch_window(args):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         if busy or closing:
             return
-        if operation == "go" and (not points or len(points) > 20):
+        if operation in ("go", "teach") and (not points or len(points) > 20):
             messagebox.showinfo("Choose waypoints", "Select a waypoint, or add up to 20 points for a route.")
             return
         if operation == "face" and (not points or len(points) != 1):
@@ -970,7 +978,10 @@ def launch_window(args):
             return
         busy = True
         stop.clear()
-        if operation in ("go", "face", "play", "resume"):
+        if operation == "teach":
+            record_cancel.clear()
+            record_stop.clear()
+        if operation in ("go", "face", "play", "resume", "teach"):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
             except Exception as exc:
@@ -988,6 +999,9 @@ def launch_window(args):
             redraw()
         for widget in editable:
             widget.configure(state="disabled")
+        if operation == "teach":
+            recording_progress = {"sampleCount": 0, "observedPathLength": 0.0}
+            redraw()
         if operation == "record":
             recording = True
             recording_progress = {"sampleCount": 0, "observedPathLength": 0.0}
@@ -995,7 +1009,7 @@ def launch_window(args):
             record_cancel.clear()
             record_end_button.configure(state="normal")
             redraw()
-        state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face", "play", "resume")
+        state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face", "play", "resume", "teach")
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Reading current RIFT pose…")
         threading.Thread(target=worker, args=(operation, points, walk_facing.get()), daemon=False).start()
@@ -1118,6 +1132,9 @@ def launch_window(args):
     face_option = ttk.Checkbutton(controls, text="Face, then walk", variable=walk_facing)
     face_option.pack(side="left", padx=(10, 0))
     editable.append(face_option)
+    teach_button = ttk.Button(controls, text="Walk + Record", command=lambda: start("teach", selected_points(True)))
+    teach_button.pack(side="left", padx=(10, 0))
+    editable.append(teach_button)
     tk.Button(controls, text="STOP / F8", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
               command=request_stop, width=16).pack(side="right")
     recording_controls = ttk.Frame(frame)
@@ -1205,7 +1222,7 @@ def launch_window(args):
                     return
                 continue
             if status == "recorded-pending":
-                if record_cancel.is_set() or closing:
+                if record_cancel.is_set() or closing or (event.get("operation") == "teach" and stop.is_set()):
                     state.set("Recording cancelled; no route saved.")
                     continue
                 # This runs on the UI thread: STOP/close cannot race publication.
@@ -1220,6 +1237,10 @@ def launch_window(args):
                     state.set("Cannot finish recording: " + str(exc))
                     continue
                 state.set("Recorded route saved: " + str(output))
+                log.configure(state="normal")
+                log.insert("end", "Recorded route saved: " + str(output) + "\n")
+                log.see("end")
+                log.configure(state="disabled")
                 progress_text.set("Recorded route ready; select playback direction.")
                 continue
             if status in ("run-receipt", "receipt-error"):
@@ -1238,6 +1259,8 @@ def launch_window(args):
                 if playback_view is not None:
                     playback_view["nextIndex"] = event["nextWaypoint"]
                     redraw()
+            if "recordingProgress" in event:
+                recording_progress = event["recordingProgress"]
             if "position" in event:
                 point = event["position"]
                 if status == "recording":

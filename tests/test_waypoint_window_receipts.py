@@ -1,5 +1,6 @@
 """Withdrawn Tk run-receipt callbacks with fake runners and no native input."""
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -88,6 +89,91 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual([self.result], receipt["completedLegs"])
         self.assertEqual(self.adapter.binding, receipt["calibrationBinding"])
         self.assertEqual(str(self.adapter.input_receipt_path), receipt["inputReceiptPath"])
+
+    def test_walk_and_record_uses_teaching_backend_and_saves_observed_route(self):
+        document = {"waypoints": [["Observed start", 0, 0], ["Observed corner", 1, 1]],
+                    "recording": {"complete": True, "sampleCount": 12}}
+        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text('{"old":true}')
+        with patch("scripts.waypoint_playback.teach_route", return_value=([self.result], document)) as teach:
+            receipt = self.invoke_and_wait("Walk + Record")
+        self.assertEqual("teach", receipt["operation"])
+        self.assertEqual([self.result], receipt["result"])
+        args, kwargs = teach.call_args
+        self.assertIs(self.adapter, args[0])
+        self.assertEqual([("Goal", "2", "0")], args[1])
+        self.assertIs(self.runner, kwargs["runner"])
+        self.assertTrue(kwargs["face_waypoints"])
+        saved = list((self.root_path / "artifacts").glob("recorded-route-*.json"))
+        self.assertEqual(1, len(saved))
+        self.assertEqual(document, json.loads(saved[0].read_text()))
+        self.assertFalse(checkpoint.exists())
+        self.assertEqual(["Observed start", "Observed corner"],
+                         [self.table.item(i, "values")[0] for i in self.table.get_children()])
+        log = next(w for w in self.widgets() if isinstance(w, fixture.tk.Text))
+        self.assertIn(str(saved[0]), log.get("1.0", "end"))
+
+    def test_walk_record_stop_and_queued_stop_do_not_publish_or_replace_prior_route(self):
+        for queued in (False, True):
+            with self.subTest(queued=queued):
+                ready, release = threading.Event(), threading.Event()
+                checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
+                checkpoint.write_text('{"old":true}')
+                prior_points = [self.table.item(i, "values") for i in self.table.get_children()]
+
+                def teach(adapter, points, stop, emit, **kwargs):
+                    emit({"status": "moving", "position": {"x": 1, "y": 0, "z": 0}, "bearing": 0,
+                          "recordingProgress": {"sampleCount": 8, "observedPathLength": 1.25}})
+                    ready.set()
+                    if not release.wait(2):
+                        raise AssertionError("fake teaching not released")
+                    if not queued:
+                        self.assertTrue(stop.is_set(), "teaching STOP must latch controller stop")
+                        raise app.Stopped("teaching stopped")
+                    return [self.result], {"waypoints": [["New", 0, 0], ["New end", 1, 0]]}
+
+                with patch("scripts.waypoint_playback.teach_route", side_effect=teach):
+                    self.button("Walk + Record").invoke()
+                    self.assertTrue(ready.wait(1))
+                    self.wait_for(lambda: any("Recording: 1.25 / 20 units" in self.window.getvar(w["textvariable"])
+                                             and "8 samples" in self.window.getvar(w["textvariable"])
+                                             for w in self.widgets() if isinstance(w, fixture.ttk.Label)
+                                             and w["textvariable"]))
+                    if queued:
+                        release.set()
+                        for thread in self.threads:
+                            thread.join(timeout=2)
+                            self.assertFalse(thread.is_alive())
+                    self.button("STOP / F8").invoke()
+                    release.set()
+                    self.wait_for(lambda: all(not t.is_alive() for t in self.threads))
+                    # Pump the queued publication/idle events.
+                    self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
+                self.assertEqual([], list((self.root_path / "artifacts").glob("recorded-route-*.json")))
+                self.assertEqual('{"old":true}', checkpoint.read_text())
+                self.assertEqual(prior_points, [self.table.item(i, "values") for i in self.table.get_children()])
+
+    def test_walk_record_close_before_queued_publication_discards_document(self):
+        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text('{"old":true}')
+        document = {"waypoints": [["New", 0, 0], ["New end", 1, 0]]}
+        with patch("scripts.waypoint_playback.teach_route", return_value=([self.result], document)):
+            self.button("Walk + Record").invoke()
+            for thread in self.threads:
+                thread.join(timeout=2)
+                self.assertFalse(thread.is_alive())
+            # No update() yet: the UI has not published the queued document.
+            self.window.tk.call(self.window.protocol("WM_DELETE_WINDOW"))
+
+            def destroyed():
+                try:
+                    return not self.window.winfo_exists()
+                except fixture.tk.TclError:
+                    return True
+
+            self.wait_for(destroyed)
+        self.assertEqual([], list((self.root_path / "artifacts").glob("recorded-route-*.json")))
+        self.assertEqual('{"old":true}', checkpoint.read_text())
 
     def test_face_and_playback_receipts_keep_operation_and_direction(self):
         face = self.invoke_and_wait("Face Selected")
