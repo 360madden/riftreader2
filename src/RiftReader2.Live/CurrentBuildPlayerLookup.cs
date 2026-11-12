@@ -29,6 +29,7 @@ internal sealed class CurrentBuildPlayerLookup
 
     internal ulong EntityAddress { get; private set; }
     internal ulong PlayerKey { get; private set; }
+    internal ulong PlayerSystemAddress { get; private set; }
 
     internal static CurrentBuildPlayerLookup Resolve(IReadOnlyNativeMemorySession session)
     {
@@ -47,6 +48,7 @@ internal sealed class CurrentBuildPlayerLookup
 
         var module = identity.ModuleBaseAddress;
         var system = Pointer(ReadU64(lookup.Take(checked(module + PlayerSystemRva), 8)));
+        lookup.PlayerSystemAddress = system;
         var key = ReadU64(lookup.Take(checked(system + 0x360), 8));
         if (key == 0)
             throw new InvalidDataException("Player unit key missing.");

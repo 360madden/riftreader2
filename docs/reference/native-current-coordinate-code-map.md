@@ -424,3 +424,23 @@ under `artifacts/facing-yaw-audit-20261111-220540/`. `roots.json` records all
 five checked root slots, `matched-fields-request.json` can be inspected for
 the three-sample acquisition, and `field-comparison.json` records the decoded
 values. Its absolute owner and component addresses belong to this epoch.
+
+### Controlled turn follow-up at 22:16 EST
+
+The current-build `+0x304` scalar failed to track the settled actor bearing.
+After a 100 ms A command it held +4.700097° while the secondary position matrix
+and actor matrix gave a bearing of +14.285591°. Following the 100 ms D return,
+the scalar remained +4.700097° while the matrix bearing reached -4.454790°.
+Separate later samples reproduced the 9.154887° disagreement. XYZ stayed fixed.
+The readable scalar and historical layout therefore do not establish a current
+body-heading source. The camera/aim point also stayed fixed across this pair.
+Receipts and raw observations are under
+`artifacts/direct-facing-turn-20261111-221641/`.
+
+`physical_rift.py --read-native facing` now returns the existing secondary
+matrix bearing as `bodyBearingDegreesCandidate`, the scalar separately as
+`playerSystemBearingDegreesCandidate`, and the signed source disagreement.
+Its raw report retains both orientation matrices, float32 source bits,
+player-system yaw and camera/aim point. The matrix source already has turn and
+travel observations. Camera-only separation and full restart remain open for
+this build. An unavailable matrix yields a null body bearing.

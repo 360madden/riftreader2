@@ -25,6 +25,7 @@ NATIVE_READS = {
     "position": "sample-current-position",
     "vitals": "sample-current-vitals",
     "orientation": "sample-current-orientation",
+    "facing": "sample-current-facing",
     "smoothed-scalar": "sample-current-smoothed-scalar",
     "actor-pose": "sample-current-actor-pose",
     "player-context": "sample-current-player-context",
@@ -35,6 +36,7 @@ NATIVE_RECEIPTS = {
     "position": "native-current-position-candidate-summary/1",
     "vitals": "native-current-vitals-candidate-summary/2",
     "orientation": "native-current-orientation-summary/1",
+    "facing": "native-current-facing-summary/1",
     "smoothed-scalar": "native-current-smoothed-scalar-summary/1",
     "actor-pose": "native-current-actor-pose-summary/1",
     "player-context": "native-current-player-context-candidate-summary/1",
@@ -100,6 +102,108 @@ def _utc_tick_order_key(value):
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "facing":
+        rows = report.get("observations")
+        if (report.get("schemaVersion") != 1 or report.get("status") != "complete"
+                or report.get("contractVersion") != "native-current-facing-candidate-samples/1"
+                or not isinstance(rows, list) or not 1 <= len(rows) <= 30
+                or report.get("requestedSamples") != len(rows)
+                or report.get("completedSamples") != len(rows)
+                or report.get("observation") != rows[-1]):
+            raise ValueError("invalid-native-facing-report")
+        owner = None
+        previous_end = None
+        bearings = []
+        system_bearings = []
+        aim_bearings = []
+        for row in rows:
+            if (not isinstance(row, dict) or row.get("identity") != report.get("identity")
+                    or row.get("headingQualified") is not False
+                    or row.get("cameraYawQualified") is not False
+                    or row.get("bearingConvention") != "degrees-from-positive-z-toward-positive-x"):
+                raise ValueError("invalid-native-facing-identity")
+            current_owner = tuple(row.get(field) for field in
+                                  ("playerKeyDecimal", "playerEntityDecimal", "playerSystemDecimal"))
+            if (any(not isinstance(value, str) or not value.isdecimal()
+                    or not 0 < int(value) < 2**64 or str(int(value)) != value
+                    for value in current_owner)
+                    or (owner is not None and current_owner != owner)):
+                raise ValueError("invalid-native-facing-owner")
+            owner = current_owner
+            started = _utc_tick_order_key(row.get("startedAtUtc"))
+            completed = _utc_tick_order_key(row.get("completedAtUtc"))
+            if started >= completed or (previous_end is not None and started <= previous_end):
+                raise ValueError("invalid-native-facing-time")
+            previous_end = completed
+            xyz, aim = row.get("positionCandidate"), row.get("cameraAimPointCandidate")
+            if not isinstance(xyz, dict) or not isinstance(aim, dict):
+                raise ValueError("invalid-native-facing-coordinates")
+            values = [row.get("playerSystemYawRadiansCandidate")] + [point.get(axis)
+                      for point in (aim, xyz) for axis in ("x", "y", "z")]
+            bits = row.get("rawBits")
+            if (not isinstance(bits, list) or len(bits) != 7
+                    or any(type(value) not in (int, float) or not math.isfinite(value)
+                           for value in values)
+                    or any(type(bit) is not int or not 0 <= bit < 2**32 for bit in bits)):
+                raise ValueError("invalid-native-facing-values")
+            for bit, value in zip(bits, values):
+                try:
+                    actual = struct.unpack("<I", struct.pack("<f", value))[0]
+                except (OverflowError, struct.error) as error:
+                    raise ValueError("invalid-native-facing-values") from error
+                if bit != actual and not (bit in (0, 0x80000000) and actual in (0, 0x80000000)):
+                    raise ValueError("invalid-native-facing-bits")
+            raw_values = [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in bits]
+            expected_system = (math.degrees(raw_values[0]) + 180) % 360 - 180
+            system_bearing = row.get("playerSystemBearingDegreesCandidate")
+            if (type(system_bearing) not in (float, int) or not math.isfinite(system_bearing)
+                    or not -180 <= system_bearing < 180 or abs(system_bearing - expected_system) > .00001):
+                raise ValueError("invalid-native-facing-bearing")
+            orientation = row.get("positionOrientationCandidate")
+            if (not isinstance(orientation, dict) or orientation.get("identity") != row["identity"]
+                    or orientation.get("unitKey") != current_owner[0]):
+                raise ValueError("invalid-native-facing-orientation-owner")
+            source = _native_values("orientation", {"observation": orientation})
+            secondary = source["secondaryPlanarDegreesCandidate"]
+            expected_body = (-secondary + 180) % 360 - 180 if secondary is not None else None
+            body = row.get("bodyBearingDegreesCandidate")
+            if ((expected_body is None and body is not None)
+                    or (expected_body is not None and
+                        (type(body) not in (float, int) or not math.isfinite(body)
+                         or abs(body - expected_body) > .00001))):
+                raise ValueError("invalid-native-facing-body-bearing")
+            expected_delta = (system_bearing - body + 180) % 360 - 180 if body is not None else None
+            delta = row.get("playerSystemMinusBodyDegreesCandidate")
+            if ((expected_delta is None and delta is not None)
+                    or (expected_delta is not None and
+                        (type(delta) not in (float, int) or not math.isfinite(delta)
+                         or abs(delta - expected_delta) > .00001))):
+                raise ValueError("invalid-native-facing-source-delta")
+            dx, dz = raw_values[1] - raw_values[4], raw_values[3] - raw_values[6]
+            camera = row.get("cameraAimBearingDegreesCandidate")
+            expected_camera = math.degrees(math.atan2(dx, dz)) if dx or dz else None
+            if ((expected_camera is None and camera is not None)
+                    or (expected_camera is not None and
+                        (type(camera) not in (float, int) or not math.isfinite(camera)
+                         or abs(camera - expected_camera) > .00001))):
+                raise ValueError("invalid-native-facing-camera-bearing")
+            bearings.append(body)
+            system_bearings.append(system_bearing)
+            aim_bearings.append(camera)
+        return {
+            "playerKey": owner[0], "playerSystemYawRadiansCandidate": values[0],
+            "playerSystemBearingDegreesCandidate": system_bearings[-1],
+            "bodyBearingDegreesCandidate": bearings[-1],
+            "playerSystemMinusBodyDegreesCandidate": delta,
+            "cameraAimBearingDegreesCandidate": aim_bearings[-1],
+            "positionXYZCandidate": xyz,
+            "bearingConvention": rows[-1]["bearingConvention"],
+            "bodyBearingSeriesDegreesCandidate": bearings,
+            "playerSystemBearingSeriesDegreesCandidate": system_bearings,
+            "cameraAimBearingSeriesDegreesCandidate": aim_bearings,
+            "sampleCount": len(rows), "sampledAtUtc": rows[-1]["completedAtUtc"],
+            "headingQualified": False, "cameraYawQualified": False,
+        }
     if kind == "orientation":
         observation = report.get("observation")
         if not isinstance(observation, dict):
@@ -636,7 +740,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="position-bracket-requires-actor-pose")
     if type(include_transform_sources) is not bool or (include_transform_sources and kind != "actor-pose"):
         return dict(selection, status="blocked", reason="transform-sources-require-actor-pose")
-    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "player-context") and (samples is not None or interval_ms is not None):
+    if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-supported-native-burst")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
             or (interval_ms is not None and (type(interval_ms) is not int or not 0 <= interval_ms <= 2000))):
@@ -674,7 +778,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
                * (interval_ms if interval_ms is not None else 500) / 1000
-               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "player-context") else 30)
+               if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False)
@@ -718,6 +822,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                     report["completedSamples"] != expected_count or
                     not isinstance(rows, list) or len(rows) != expected_count):
                 raise ValueError("incomplete-native-position-burst")
+        if kind == "facing" and report.get("completedSamples") != (1 if samples is None else samples):
+            raise ValueError("incomplete-native-facing-burst")
         if (kind == "player-context" and samples is not None and samples > 1
                 and (report.get("completedSamples") != samples or
                      not isinstance(report.get("observations"), list))):
@@ -762,9 +868,9 @@ def main(argv=None):
     parser.add_argument("--output", type=Path,
                         help="new JSON file for --read-native (default: unique artifacts path)")
     parser.add_argument("--samples", type=int,
-                        help="position/vitals/actor-pose/smoothed-scalar/orientation/player-context: 1-30 samples (default: 3 position, 1 otherwise)")
+                        help="bounded native sampling: 1-30 samples (default: 3 position, 1 otherwise)")
     parser.add_argument("--interval-ms", type=int,
-                        help="position/vitals/actor-pose/smoothed-scalar/orientation/player-context: 0-2000ms between reads (default: 500)")
+                        help="bounded native sampling: 0-2000ms between reads (facing default: 100, others: 500)")
     parser.add_argument("--include-position", action="store_true",
                         help="actor-pose only: bracket each pose with same-player native XYZ candidates")
     parser.add_argument("--include-transform-sources", action="store_true",
@@ -788,7 +894,7 @@ def main(argv=None):
     elif args.include_transform_sources and args.read_native != "actor-pose":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "transform-sources-require-actor-pose"}
-    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "player-context"):
+    elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
     else:

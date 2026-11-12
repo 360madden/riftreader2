@@ -30,6 +30,8 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 # Also: position, orientation, actor-pose, smoothed-scalar, player-context, selected-target, stats.
 # For read-only actor/model/render matrix candidates (NOT qualified body heading):
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose
+# Facing matrix plus direct player-system yaw and camera/aim-point candidates:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native facing --samples 5 --interval-ms 60
 # For a bounded passive actor/model/render pose time series under one native lease:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100
 # For four native entity-owned, unqualified smooth-state scalar candidates:
