@@ -503,3 +503,25 @@ a camera-specific unavailable result. Source assembly and reproduction are in
 `artifacts/camera-static-worker-20261111/`; live pointer, transform, origin and
 projection captures are in `artifacts/optical-camera-probe-20261111-223946/`.
 The screenshot is `artifacts/observe-wgc-e56fab3db2164e419502f0177bd3e42d/image.png`.
+
+### Camera-only changed-state check at 22:56 EST
+
+On the same AMD-DESKTOP process/build/epoch, a 60-pixel horizontal left-button
+drag changed the visible camera view and optical bearing from -4.455439379° to
+-21.644825877°, a -17.189386498° change. Atank's primary bearing remained
+-4.455308879°, secondary body bearing -4.454789606°, and position
+(7426.1885, 863.58655, 2946.8757). The player-system scalar and `+0x30C`
+point also stayed fixed. Thus the point does not track this optical-camera turn.
+
+A reverse 60-pixel drag restored all 15 camera transform/origin float32 source
+bits exactly to the pre-drag values. Each endpoint's sample burst was stable.
+The five pre-drag samples and both ten-sample post-drag bursts retained identical
+player-system source bits and body bearings. This demonstrates camera-only
+separation and a changed-state response for the selected optical source in this
+epoch. Full-game restart recovery and alternate view modes remain unverified.
+
+Raw native reports are
+`artifacts/physical-native-facing-f99b69f13e6b485090ab3d111da968a5.json`,
+`artifacts/physical-native-facing-e14cd713eddb4050882537995af1c240.json`, and
+`artifacts/physical-native-facing-263602871f364504ab0611900f149f80.json`.
+The Computer Use observations showed the expected view rotation and return.
