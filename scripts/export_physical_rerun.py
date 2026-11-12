@@ -12,6 +12,7 @@ import json
 import math
 import os
 from pathlib import Path
+import struct
 import sys
 from tempfile import TemporaryDirectory
 
@@ -31,6 +32,7 @@ LIMITATIONS = [
     "Viewer timeline carry-forward is display behavior, not a new observation.",
     "Initial viewer playback follows latest evidence; pause/scrub to inspect earlier samples.",
     "3D view uses +Y up for height; this display orientation is not a camera calibration.",
+    "Optional camera rays use display clip-W extent 20, not measured scene depth or game near/far planes.",
 ]
 
 
@@ -38,6 +40,50 @@ def timestamp_ns(value):
     parsed, remainder = plot.physical._utc_tick_order_key(value)
     delta = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
     return ((delta.days * 86400 + delta.seconds) * 1_000_000 + delta.microseconds) * 1000 + remainder * 100
+
+
+def native_view_rays(camera):
+    """Invert screen X/Y/W only; extent 20 is display geometry, never scene depth."""
+    result = {"status": "unavailable", "clipWDisplayExtent": 20.,
+              "label": "Native projection view rays — display extent 20 (clip W); no scene depth/occlusion",
+              "qualification": "Screen-edge visualization rays to an explicit clip-W display plane; not game near/far clipping planes, terrain or a camera calibration."}
+    try:
+        import numpy as np
+    except ImportError:
+        return dict(result, reason="numpy-unavailable")
+    try:
+        optical = plot.physical._optical_camera_values(camera)
+        plot.require(optical is not None and optical.get("status") == "available-candidate"
+                     and optical.get("projectionAvailableCandidate") is True, "native-camera-projection-unavailable")
+        transform = np.array([struct.unpack("<f", struct.pack("<I", bit))[0]
+                              for bit in camera["rawBits"]], dtype=np.float64)
+        matrix, viewport = plot.physical._optical_projection_values(camera, transform)
+        matrix = np.array(matrix, dtype=np.float64).reshape(4, 4)
+        origin, eye = transform[12:15], transform[9:12] + transform[12:15]
+        plot.require(np.isfinite(matrix).all() and np.isfinite(origin).all() and np.isfinite(eye).all(),
+                     "nonfinite-native-view-geometry")
+        axes, translation = matrix[[0, 1, 3], :3], matrix[[0, 1, 3], 3]
+        condition = float(np.linalg.cond(axes))
+        plot.require(math.isfinite(condition) and condition <= 1e6, "unstable-native-view-inverse")
+        implied_eye = np.linalg.solve(axes, -translation) + origin
+        eye_error = float(np.max(np.abs(implied_eye - eye)))
+        plot.require(math.isfinite(eye_error) and eye_error <= .001, "native-view-implied-eye-mismatch")
+        corners = []
+        for x, y in ((-1, 1), (1, 1), (1, -1), (-1, -1)):
+            clip_xyw = np.array([x * 20., y * 20., 20.])
+            world = np.linalg.solve(axes, clip_xyw - translation) + origin
+            plot.require(np.isfinite(world).all() and np.allclose(
+                axes @ (world - origin) + translation, clip_xyw, rtol=1e-8, atol=1e-7),
+                "native-view-inverse-roundtrip-failed")
+            corners.append(world.tolist())
+        left, right, top, bottom = viewport
+        result.update(status="available-candidate", nativeEyeXYZ=eye.tolist(), cornersXYZ=corners,
+            lineStrips=[[eye.tolist(), corner] for corner in corners] + [corners + [corners[0]]],
+            viewportRectNormalized=[left, 1-top, right, 1-bottom],
+            inverseConditionNumber=condition, impliedEyeMaximumError=eye_error)
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError, np.linalg.LinAlgError) as error:
+        result.update(reason=str(error) or type(error).__name__)
+    return result
 
 
 class RerunSink:
@@ -77,6 +123,11 @@ class RerunSink:
             archetype = rr.Points3D(data["positions"], labels=data["labels"], show_labels=True)
         elif kind == "route3d":
             archetype = rr.LineStrips3D([data["positions"]])
+        elif kind == "camera-rays3d":
+            archetype = rr.LineStrips3D(data["lineStrips"],
+                labels=["", "", "", "", "Camera view rays (display only)"], show_labels=True)
+        elif kind == "clear":
+            archetype = rr.Clear(recursive=True)
         elif kind == "bearing3d":
             archetype = rr.Arrows3D(origins=data["origins"], vectors=data["vectors"], labels=["Body bearing candidate (unit arrow)"])
         elif kind == "points2d":
@@ -122,7 +173,7 @@ def default_blueprint(rr, rrb, captures):
         auto_layout=False, auto_views=False)
 
 
-def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=()):
+def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=(), camera_rays=True):
     """Reuse the existing complete bracket/image/projection validator unchanged."""
     route = load_route(route_path)
     plot.require(route["identity"]["machine"].casefold() == plot.socket.gethostname().casefold(),
@@ -149,7 +200,9 @@ def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=())
                          and values["positionXYZCandidate"] == result["playerGround"]["worldXYZ"],
                          "native-source-changed-during-export")
             native.append({"side": side, "source": str(path),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "values": values})
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "values": values,
+                "cameraViewRays": native_view_rays(report["observation"].get("opticalCameraCandidate"))
+                    if camera_rays else {"status": "unavailable", "reason": "not-requested"}})
         if desktop:
             # Native sources keep their actual sample times. This bound only positions
             # composite pixels on a shared viewer timeline; it is not capture UTC.
@@ -169,7 +222,7 @@ def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=())
     return route, frames
 
 
-def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=()):
+def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=(), camera_rays=True):
     route_path, output = Path(route_path).resolve(), Path(output).resolve()
     plot.require(output.suffix.lower() == ".rrd" and not output.exists() and output.parent.is_dir(),
                  "new-rrd-output-required")
@@ -177,12 +230,14 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
     desktop_pairs = [Path(path).resolve() for path in desktop_pairs]
     # Existing renderer writes a scratch annotated PNG; it is discarded after validation.
     with TemporaryDirectory(prefix="rr2-rerun-", dir=output.parent) as scratch:
-        route, frames = prepare(route_path, observations, scratch, images=images, desktop_pairs=desktop_pairs)
+        route, frames = prepare(route_path, observations, scratch, images=images, desktop_pairs=desktop_pairs,
+                                camera_rays=camera_rays)
     result = {"status": "offline-rerun-evidence-export", "output": str(output), "inputSent": False,
               "route": route["path"], "routeSha256": route["sha256"],
               "recordingIdentity": route["recordingIdentity"], "observationCount": len(frames),
               "wgcObservationCount": len(observations), "desktopPairCount": len(desktop_pairs),
               "imagesIncluded": images, "limitations": LIMITATIONS}
+    result["cameraViewRaysRequested"] = camera_rays
     result["toolStatus"] = "optional Rerun 0.43.1 alpha SDK pilot; API pinned"
     sink = None
     created = False
@@ -228,6 +283,15 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
                 bearing = math.radians(values["bodyBearingDegreesCandidate"])
                 sink.log("world/player/bearing", "bearing3d", dict(origins=[xyz], vectors=[[math.sin(bearing), 0, math.cos(bearing)]]), at=at)
                 sink.log("evidence/native", "text", row, at=at)
+                rays = row["cameraViewRays"]
+                if rays["status"] == "available-candidate":
+                    sink.log("world/camera/eye", "points3d", dict(positions=[rays["nativeEyeXYZ"]],
+                        labels=["Native optical eye candidate"]), at=at)
+                    sink.log("world/camera/view_rays", "camera-rays3d", rays, at=at)
+                elif camera_rays:
+                    # A failed later sample must not leave an older camera shape
+                    # looking current through viewer timeline carry-forward.
+                    sink.log("world/camera", "clear", {}, at=at)
         sink.flush()
         sink.close()
         sink = None
@@ -253,10 +317,11 @@ def main(argv=None):
                         help="explicit retained DXcam/native candidate; capture UTC is only an upper bound")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--no-images", action="store_true", help="validate retained PNGs but omit image payloads")
+    parser.add_argument("--no-camera-rays", action="store_true", help="omit optional native projection display rays")
     args = parser.parse_args(argv)
     try:
         result = export(args.route, args.observation, args.output, images=not args.no_images,
-                        desktop_pairs=args.desktop_pair)
+                        desktop_pairs=args.desktop_pair, camera_rays=not args.no_camera_rays)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, ImportError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error), "inputSent": False}))
         return 2

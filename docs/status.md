@@ -1,5 +1,17 @@
 # Current status
 
+**15:35 EST NOVEMBER 12 — 3D VIEW NOW SHOWS NATIVE CAMERA VIEW RAYS:**
+On **AMD-DESKTOP**, retained PID17212 evidence exported through the actual Rerun
+SDK with the optical eye, four screen-corner rays and their display-plane loop.
+Root reviewed the paired 3D/screenshot render and upstream verification passed.
+The inverse uses the working native matrix X/Y/W rows and an explicit clip-W
+display extent of 20, without assuming FOV, scene depth or game clipping planes.
+Missing/invalid optional geometry preserves the route export and clears old
+camera geometry. All 22 exporter tests passed in the visualization environment;
+default Python passed 17 and skipped the five NumPy-only checks. No new live read
+or game input occurred. Preview: `artifacts/rerun-camera-rays-17212-labelled.png`;
+recording: `artifacts/rerun-camera-rays-17212-labelled.rrd`.
+
 **15:30 EST NOVEMBER 12 — RECENT ROUTES AND ONE-CLICK 3D VIEW WORK LIVE:**
 On **AMD-DESKTOP/PID17212**, Recent routes / Load recent restored the actual
 saved route and its genuine 7/7 reverse checkpoint. The picker retains eight

@@ -12,6 +12,15 @@ checks, without starting playback. Its history shares the existing last-route
 cache, and missing/broken history does not prevent route recovery. Live proof:
 `artifacts/route-controls-17212-validation.json`.
 
+The 3D pane also shows the retained native optical eye and screen-edge view rays.
+These invert the same matrix X/Y/W rows used by projection, using NumPy from the
+existing optional visualization environment. Their chosen clip-W display extent
+20 is visualization geometry, not measured scene depth or the game's near/far
+planes. Each shape retains the native sample timestamp and source/hash; invalid
+optional geometry clears the previous camera shape instead of hiding the route.
+Use exporter `--no-camera-rays` for a route-only 3D view. Root reviewed actual
+Rerun output under `artifacts/rerun-camera-rays-17212-labelled.{rrd,png}`.
+
 The existing native optical camera and combined projection matrix can project
 arbitrary world XYZ into normalized client coordinates. Client/frame geometry then
 maps those coordinates into a matching RIFT screenshot. This is separate from the

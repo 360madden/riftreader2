@@ -1,8 +1,10 @@
 """Actual retained-evidence validators with an injected sink; no SDK or viewer."""
 from copy import deepcopy
+import importlib.util
 import json
 import os
 from pathlib import Path
+import struct
 import types
 import unittest
 from unittest.mock import Mock, patch
@@ -11,6 +13,15 @@ from PIL import Image
 
 from scripts import export_physical_rerun as exporter
 from tests import test_plot_physical_waypoints as plot_fixtures
+from tests.test_physical_facing import optical_camera
+
+
+def replace_projection(camera, matrix, viewport=None):
+    values = list(matrix) + list(viewport or camera["viewportLeftRightTopBottom"])
+    exact = [struct.unpack("<f", struct.pack("<f", value))[0] for value in values]
+    camera["projectionRowMajor"] = exact[:16]
+    camera["viewportLeftRightTopBottom"] = exact[16:]
+    camera["projectionRawBits"] = [struct.unpack("<I", struct.pack("<f", value))[0] for value in exact]
 
 
 class FakeSink:
@@ -76,6 +87,58 @@ class ExportTests(unittest.TestCase):
         self.assertFalse(result["imagesIncluded"])
         self.assertFalse(any(event[1] == "png" for event in self.sinks[-1].events))
         self.assertTrue(any(event[1] == "points2d" for event in self.sinks[-1].events))
+
+    @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
+    def test_native_view_rays_use_exact_native_times_and_source_hashes(self):
+        self.run_export()
+        events = self.sinks[-1].events
+        rays = [event for event in events if event[1] == "camera-rays3d"]
+        self.assertEqual(len(rays), 2)
+        self.assertEqual([event[3]["at"] for event in rays], [
+            exporter.timestamp_ns(self.fixture.before["observation"]["completedAtUtc"]),
+            exporter.timestamp_ns(self.fixture.after["observation"]["completedAtUtc"])])
+        self.assertTrue(all(len(event[2]["lineStrips"]) == 5 for event in rays))
+        native = [event[2] for event in events if event[0] == "evidence/native"]
+        self.assertTrue(all(row["cameraViewRays"]["status"] == "available-candidate" for row in native))
+        self.assertEqual(native[0]["source"], str(self.root / "before.json"))
+        self.assertEqual(len(native[0]["sha256"]), 64)
+        self.assertIn("display extent 20 (clip W); no scene depth/occlusion", rays[0][2]["label"])
+
+    @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
+    def test_singular_optional_inverse_preserves_valid_route_and_clears_camera(self):
+        for filename in ("before.json", "after.json"):
+            path = self.root / filename
+            report = json.loads(path.read_text())
+            for row in [report["observation"], *report["observations"]]:
+                for name in ("opticalCameraCandidate", "opticalCameraAfterTargetCandidate"):
+                    camera = row[name]
+                    matrix = list(camera["projectionRowMajor"])
+                    matrix[:4] = matrix[4:8]
+                    replace_projection(camera, matrix)
+            path.write_text(json.dumps(report))
+        result = self.run_export()
+        self.assertEqual(result["status"], "offline-rerun-evidence-export")
+        events = self.sinks[-1].events
+        self.assertTrue(any(event[0] == "world/route/points" for event in events))
+        self.assertFalse(any(event[1] == "camera-rays3d" for event in events))
+        self.assertEqual(len([event for event in events if event[0] == "world/camera" and event[1] == "clear"]), 2)
+        row = next(event[2] for event in events if event[0] == "evidence/native")
+        self.assertEqual(row["cameraViewRays"]["reason"], "unstable-native-view-inverse")
+
+    def test_missing_numpy_or_disabled_camera_is_optional_for_fake_sink_export(self):
+        with patch.dict("sys.modules", {"numpy": None}):
+            result = self.run_export()
+        self.assertEqual(result["status"], "offline-rerun-evidence-export")
+        events = self.sinks[-1].events
+        row = next(event[2] for event in events if event[0] == "evidence/native")
+        self.assertEqual(row["cameraViewRays"]["reason"], "numpy-unavailable")
+        self.assertFalse(any(event[1] == "camera-rays3d" for event in events))
+        self.output.unlink()
+        self.run_export(camera_rays=False)
+        events = self.sinks[-1].events
+        self.assertFalse(any(event[0].startswith("world/camera") for event in events))
+        row = next(event[2] for event in events if event[0] == "evidence/native")
+        self.assertEqual(row["cameraViewRays"]["reason"], "not-requested")
 
     def test_multiple_observations_use_separate_capture_entities(self):
         result = self.run_export(observations=[self.observation, self.observation])
@@ -254,6 +317,66 @@ class ExportTests(unittest.TestCase):
         rr = types.SimpleNamespace(ViewCoordinates=types.SimpleNamespace(RIGHT_HAND_Y_UP="Y-up"))
         exporter.default_blueprint(rr, rrb, [("/captures/0001_desktop_upper_bound", 30)])
         self.assertEqual(rrb.Spatial2DView.call_args.kwargs["name"], "Desktop candidate 1 (UTC upper bound)")
+
+
+@unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
+class NativeViewRayTests(unittest.TestCase):
+    def test_screen_corners_and_known_xyz_roundtrip_for_asymmetric_offset_projection(self):
+        camera = optical_camera()
+        matrix = camera["projectionRowMajor"]
+        # Preserve the exact eye while introducing scale and principal-point offsets.
+        x = [1.7 * a + .2 * b for a, b in zip(matrix[:4], matrix[12:16])]
+        y = [.9 * a - .15 * b for a, b in zip(matrix[4:8], matrix[12:16])]
+        replace_projection(camera, x + y + matrix[8:], [.125, .875, .75, .125])
+        rays = exporter.native_view_rays(camera)
+        self.assertEqual(rays["status"], "available-candidate", rays)
+        self.assertEqual(rays["nativeEyeXYZ"], [7427., 871., 2936.])
+        expected = [(.125, .25), (.875, .25), (.875, .875), (.125, .875)]
+        for corner, (u, v) in zip(rays["cornersXYZ"], expected):
+            projected = exporter.plot.physical._project_world_point(camera, dict(zip("xyz", corner)))
+            self.assertAlmostEqual(projected["normalizedX"], u, places=10)
+            self.assertAlmostEqual(projected["normalizedY"], v, places=10)
+            self.assertAlmostEqual(projected["clipW"], 20., places=10)
+        # Pixel coordinates plus a known original clipW reconstruct this actual
+        # XYZ by interpolation on the display plane; this does not infer depth.
+        xyz = dict(x=7425., y=872., z=2946.)
+        projected = exporter.plot.physical._project_world_point(camera, xyz)
+        pixel = [1920 * projected["normalizedX"], 23 + 1009 * projected["normalizedY"]]
+        u = (pixel[0] / 1920 - .125) / .75
+        v = ((pixel[1] - 23) / 1009 - .25) / .625
+        weights = [(1-u)*(1-v), u*(1-v), u*v, (1-u)*v]
+        plane = [sum(weight * corner[axis] for weight, corner in zip(weights, rays["cornersXYZ"])) for axis in range(3)]
+        restored = [eye + (point-eye) * projected["clipW"] / 20
+                    for eye, point in zip(rays["nativeEyeXYZ"], plane)]
+        for actual, wanted in zip(restored, xyz.values()):
+            self.assertAlmostEqual(actual, wanted, places=5)
+
+    def test_implied_eye_mismatch_and_malformed_camera_only_withhold_rays(self):
+        camera = optical_camera()
+        matrix = list(camera["projectionRowMajor"])
+        matrix[3] += 1  # Native reader validates forward row, not this translation.
+        replace_projection(camera, matrix)
+        rays = exporter.native_view_rays(camera)
+        self.assertEqual(rays["status"], "unavailable")
+        self.assertEqual(rays["reason"], "native-view-implied-eye-mismatch")
+        self.assertNotIn("lineStrips", rays)
+        self.assertEqual(exporter.native_view_rays(None)["status"], "unavailable")
+        self.assertEqual(exporter.native_view_rays({"rawBits": [float("nan")]})["status"], "unavailable")
+
+    def test_sink_builds_five_line_strips_and_recursive_clear_with_existing_sdk_api(self):
+        # Test adapter calls, without constructing a real recording or viewer.
+        sdk = types.SimpleNamespace(LineStrips3D=Mock(return_value="lines"), Clear=Mock(return_value="clear"))
+        sink = object.__new__(exporter.RerunSink)
+        sink.rr, sink.recording = sdk, Mock()
+        rays = exporter.native_view_rays(optical_camera())
+        sink.log("world/camera/view_rays", "camera-rays3d", rays)
+        sdk.LineStrips3D.assert_called_once()
+        self.assertEqual(len(sdk.LineStrips3D.call_args.args[0]), 5)
+        self.assertEqual(len(sdk.LineStrips3D.call_args.kwargs["labels"]), 5)
+        self.assertEqual(sdk.LineStrips3D.call_args.kwargs["labels"][-1], "Camera view rays (display only)")
+        self.assertIn("display extent 20 (clip W); no scene depth/occlusion", rays["label"])
+        sink.log("world/camera", "clear", {})
+        sdk.Clear.assert_called_once_with(recursive=True)
 
 
 if __name__ == "__main__":
