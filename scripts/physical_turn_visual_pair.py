@@ -170,6 +170,7 @@ def local_return_offset(before, after, region):
                 matches.append(shift)
     return {"regionPixels": list(region), "attemptedPatches": len(xs) * len(ys),
             "matchedPatches": len(matches),
+            "zeroOffsetPatches": matches.count((0, 0)),
             "medianHorizontalPixels": median(dx for dx, _ in matches) if len(matches) >= 3 else None,
             "medianVerticalPixels": median(dy for _, dy in matches) if len(matches) >= 3 else None}
 
@@ -221,6 +222,8 @@ def visual_compare(before_png: Path, after_png: Path,
         "beforeReceiptSha256": before_receipt_sha,
         "afterReceiptSha256": after_receipt_sha,
         "captureGapSeconds": gap,
+        "frameWidth": width,
+        "frameHeight": height,
         "comparisonCropPixels": crop,
         "sampledPixels": sample_count,
         "changedPixelFractionCandidate": changed_fraction,

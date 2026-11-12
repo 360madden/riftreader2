@@ -196,3 +196,9 @@ The directory `artifacts/two-axis-20261111-212913/` contains both decisions and 
 As of `01b0587`, `scripts/physical_move_basis_waypoint.py` consumes the four measured vectors directly. For the return to the two-axis trial's starting position, the preview selected Q for 103 ms. The separate post-press read left a 0.44056-unit gap. Feedback proposed W for 70 ms, and a fresh preview agreed before that press. The final measured distance was 0.05358 units. Five later same-player actor-translation samples all matched the post-W horizontal endpoint.
 
 The first preview, input, position and feedback files are under `artifacts/cli-feedback-20261111-213237/`. The W step and `settled-actor.json` are under `artifacts/cli-return-20261111-213313/`. Both steps used the measured basis under `artifacts/strafe-pair-20261111-212614/basis-reviewed.json`. The final feedback status is `requires-independent-arrival-settle`; the later actor and XYZ readings corroborate the endpoint within the same client.
+
+## Visual check after the return
+
+The two WGC frames in `artifacts/visual-settle-20261111-213550/` were captured 1.381 seconds apart. Replay the comparison above with the `first` and `second` frame directories. All 18 accepted scenery patches had exactly zero offset. The actor region (890, 462, 1030, 665) also had 18 of 18 at zero. Coordinates refer to the 1920 by 1032 saved frame. The screenshots establish screen stability over that interval. The native samples supply the endpoint coordinates.
+
+For comparison, zero of the 17 accepted scenery patches had zero offset in the repeated A/D trial, and zero of 18 did in the fresh-baseline trial. Their median horizontal shifts were -25 and -9 pixels respectively.
