@@ -21,6 +21,8 @@ internal sealed record CurrentBuildFacingCandidate(
     public bool HeadingQualified => false;
     public bool CameraYawQualified => false;
     public CurrentBuildOpticalCameraCandidate? OpticalCameraCandidate { get; init; }
+    public CurrentBuildXyz? EntityPositionCandidate { get; init; }
+    public uint[]? EntityPositionRawBits { get; init; }
     public CurrentBuildPairedPositionObservation? TargetPositionPairCandidate { get; init; }
     public CurrentBuildOpticalCameraCandidate? OpticalCameraAfterTargetCandidate { get; init; }
     public bool? TargetProjectionCameraStableCandidate { get; init; }
@@ -82,6 +84,10 @@ internal static class CurrentBuildFacingCandidateReader
         var orientation = readOrientation(session);
         if (orientation.Identity != identity || orientation.UnitKey != owner.Key)
             throw new InvalidDataException("Facing orientation player or epoch mismatch.");
+        // Use the entity position component, rather than the downstream player-system
+        // copy, for current coordinate arithmetic. Reuse the existing type/backlink checks.
+        var entityPosition = CurrentBuildPositionCandidateReader.ReadOwned(session,
+            _ => new(owner.Key, entity, orientation.ComponentAddress, owner.Verify));
         var camera = CurrentBuildOpticalCameraCandidateReader.TryRead(session, system);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x304, 4), yaw);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x30C, 12), aim);
@@ -98,7 +104,11 @@ internal static class CurrentBuildFacingCandidateReader
             new(values[1], values[2], values[3]),
             dx == 0 && dz == 0 ? null : Math.Atan2(dx, dz) * 180 / Math.PI, orientation)
         {
-            OpticalCameraCandidate = camera
+            OpticalCameraCandidate = camera,
+            EntityPositionCandidate = entityPosition.Position,
+            EntityPositionRawBits = [BitConverter.SingleToUInt32Bits(entityPosition.Position.X),
+                                     BitConverter.SingleToUInt32Bits(entityPosition.Position.Y),
+                                     BitConverter.SingleToUInt32Bits(entityPosition.Position.Z)]
         };
     }
 }

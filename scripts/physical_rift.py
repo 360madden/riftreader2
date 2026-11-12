@@ -238,6 +238,23 @@ def _target_relative_arithmetic(player_xyz, target_xyz, primary, body):
             "headingQualified": False, "movementEligible": False}
 
 
+def _facing_entity_position(row):
+    point, bits = row.get("entityPositionCandidate"), row.get("entityPositionRawBits")
+    if point is None and bits is None:
+        return None
+    if (not isinstance(point, dict) or not isinstance(bits, list) or len(bits) != 3
+            or any(type(bit) is not int or not 0 <= bit < 2**32 for bit in bits)
+            or any(type(point.get(axis)) not in (int, float) or not math.isfinite(point[axis]) for axis in ("x", "y", "z"))):
+        raise ValueError("invalid-native-facing-entity-position")
+    try:
+        encoded = [struct.unpack("<I", struct.pack("<f", point[axis]))[0] for axis in ("x", "y", "z")]
+    except (OverflowError, struct.error) as error:
+        raise ValueError("invalid-native-facing-entity-position") from error
+    if any(a != b and {a, b} != {0, 0x80000000} for a, b in zip(encoded, bits)):
+        raise ValueError("invalid-native-facing-entity-position-bits")
+    return dict(zip(("x", "y", "z"), (struct.unpack("<f", struct.pack("<I", bit))[0] for bit in bits)))
+
+
 def _target_screen_point(row):
     pair = row.get("targetPositionPairCandidate")
     after_camera = row.get("opticalCameraAfterTargetCandidate")
@@ -246,7 +263,7 @@ def _target_screen_point(row):
         return None
     if (not isinstance(pair, dict) or pair.get("identity") != row["identity"]
             or pair.get("self", {}).get("unitKey") != row["playerKeyDecimal"]
-            or pair["self"].get("position") != row["positionCandidate"]
+            or pair["self"].get("position") != (row.get("entityPositionCandidate") or row["positionCandidate"])
             or pair.get("beforeGuardStatus") != pair.get("afterGuardStatus")
             or not isinstance(pair.get("targetStatus"), str) or type(stable) is not bool):
         raise ValueError("invalid-native-facing-target-owner")
@@ -280,8 +297,8 @@ def _target_screen_point(row):
         raise ValueError("invalid-native-facing-target-position")
     # Recover the float32 coordinates serialized by the native position reader.
     exact = {axis: struct.unpack("<f", struct.pack("<f", xyz[axis]))[0] for axis in ("x", "y", "z")}
-    player_xyz = dict(zip(("x", "y", "z"), (struct.unpack("<f", struct.pack("<I", bit))[0]
-                                             for bit in row["rawBits"][4:])))
+    player_xyz = _facing_entity_position(row) or dict(zip(("x", "y", "z"), (
+        struct.unpack("<f", struct.pack("<I", bit))[0] for bit in row["rawBits"][4:])))
     screen = (_project_world_point(camera, exact) if stable else
               {"status": "unavailable", "reason": "camera-not-stable-across-target-read"})
     return {"status": "candidate", "targetKey": key, "targetUnitIdCandidate": target["unitIdCandidate"],
@@ -403,8 +420,10 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             system_bearings.append(system_bearing)
             aim_bearings.append(camera)
             optical = _optical_camera_values(row.get("opticalCameraCandidate"))
+            entity_xyz = _facing_entity_position(row)
+            current_xyz = entity_xyz or dict(zip(("x", "y", "z"), raw_values[4:]))
             player_screen = _project_world_point(row.get("opticalCameraCandidate"),
-                                                dict(zip(("x", "y", "z"), raw_values[4:])))
+                                                current_xyz)
             target_screen = _target_screen_point(row)
         return {
             "playerKey": owner[0], "playerSystemYawRadiansCandidate": values[0],
@@ -418,7 +437,9 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             "opticalCamera": optical,
             "playerScreenPointCandidate": player_screen,
             "selectedTargetProjectionCandidate": target_screen,
-            "positionXYZCandidate": xyz,
+            "positionXYZCandidate": current_xyz,
+            "positionSource": "entity-owned-position-component+0x48" if entity_xyz else "legacy-player-system-snapshot+0x320",
+            "playerSystemPositionXYZCandidate": dict(zip(("x", "y", "z"), raw_values[4:])),
             "bearingConvention": rows[-1]["bearingConvention"],
             "bodyBearingSeriesDegreesCandidate": bearings,
             "playerSystemBearingSeriesDegreesCandidate": system_bearings,

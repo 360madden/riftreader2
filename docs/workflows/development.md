@@ -46,6 +46,13 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 The facing result includes `nativeValues.opticalCamera` for the supported selected
 view mode. It reports optical yaw/pitch and world eye position, or a camera-specific
 unavailable reason. The gameplay camera/aim-point snapshot is retained separately.
+`nativeValues.positionXYZCandidate` now uses the existing entity-owned position
+reader at component `+0x48`, with `positionSource` identifying that source. The
+downstream player-system copy remains in `playerSystemPositionXYZCandidate`.
+Raw `positionCandidate` retains its historical player-system meaning; raw
+`entityPositionCandidate` and `entityPositionRawBits` retain the independent read.
+Older reports without the entity fields use an explicitly labeled legacy snapshot.
+Projection and target-relative arithmetic use entity XYZ when present.
 `nativeValues.playerScreenPointCandidate` projects the captured facing XYZ into
 top-left normalized client coordinates. To project another supplied world point,
 add `--project-world X Y Z` to the facing command. The result appears under

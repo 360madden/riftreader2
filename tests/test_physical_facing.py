@@ -93,6 +93,23 @@ def report_with_target():
 
 
 class PhysicalFacingTests(unittest.TestCase):
+    def test_entity_position_drives_geometry_while_snapshot_is_retained(self):
+        source = report_with_target()
+        for row in source['observations']:
+            exact = [struct.unpack('<f', struct.pack('<I', bit))[0] for bit in row['rawBits'][4:]]
+            exact[0] += 1
+            row['entityPositionCandidate'] = dict(zip(('x', 'y', 'z'), exact))
+            row['entityPositionRawBits'] = [struct.unpack('<I', struct.pack('<f', v))[0] for v in exact]
+            row['targetPositionPairCandidate']['self']['position'] = row['entityPositionCandidate']
+        value = physical._native_values('facing', source)
+        self.assertEqual('entity-owned-position-component+0x48', value['positionSource'])
+        self.assertAlmostEqual(1, value['positionXYZCandidate']['x'] - value['playerSystemPositionXYZCandidate']['x'])
+        relative = value['selectedTargetProjectionCandidate']['relativeToPlayerCandidate']
+        self.assertEqual(-.1884765625, relative['deltaXYZCandidate']['x'])
+        source['observation']['entityPositionRawBits'] = [0, 0, 0]
+        with self.assertRaisesRegex(ValueError, 'entity-position-bits'):
+            physical._native_values('facing', source)
+
     def test_relative_geometry_cardinals_distance_and_wrapped_heading(self):
         origin = {'x': 10, 'y': 20, 'z': 30}
         for dx, dz, bearing, turn in ((0, 5, 0, 0), (5, 0, 90, 90),
@@ -214,6 +231,7 @@ class PhysicalFacingTests(unittest.TestCase):
         self.assertEqual(3, values['sampleCount'])
         self.assertFalse(values['headingQualified'])
         self.assertFalse(values['cameraYawQualified'])
+        self.assertEqual('legacy-player-system-snapshot+0x320', values['positionSource'])
 
     def test_divergent_scalar_is_exposed_beside_matrix_bearing(self):
         source = report()

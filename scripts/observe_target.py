@@ -87,8 +87,8 @@ def _capture_with_native_facing(expected_host, output, physical_pid):
             raise ValueError("native-frame-acquisition-order-mismatch")
         if time.perf_counter() - started > 5:
             raise ValueError("native-frame-acquisition-exceeded-five-seconds")
-        for field in ("playerKeyDecimal", "playerEntityDecimal", "playerSystemDecimal", "rawBits"):
-            if first[field] != last[field]:
+        for field in ("playerKeyDecimal", "playerEntityDecimal", "playerSystemDecimal", "rawBits", "entityPositionRawBits"):
+            if first.get(field) != last.get(field):
                 raise ValueError("player-changed-across-frame")
         for source in ("primary", "secondary"):
             if first["positionOrientationCandidate"][source]["rawBits"] != last["positionOrientationCandidate"][source]["rawBits"]:

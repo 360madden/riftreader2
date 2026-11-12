@@ -57,7 +57,8 @@ internal static class CurrentBuildFacingSampleCommand
                 if (pair.Identity != identity || after.Identity != identity ||
                     pair.Self.UnitKey != sample.PlayerKeyDecimal || after.PlayerKey != sample.PlayerKey ||
                     after.PlayerEntity != sample.PlayerEntity || after.PlayerSystem != sample.PlayerSystem ||
-                    pair.Self.Position != sample.PositionCandidate || after.PositionCandidate != sample.PositionCandidate ||
+                    pair.Self.Position != (sample.EntityPositionCandidate ?? sample.PositionCandidate) ||
+                    (after.EntityPositionCandidate ?? after.PositionCandidate) != (sample.EntityPositionCandidate ?? sample.PositionCandidate) ||
                     pair.StartedAtUtc < sample.CompletedAtUtc || pair.CompletedAtUtc > after.StartedAtUtc ||
                     timer.Elapsed.TotalMilliseconds > 2000)
                     throw new InvalidDataException("Facing/target identity, position or acquisition interval changed.");

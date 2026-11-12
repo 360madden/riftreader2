@@ -43,6 +43,16 @@ public sealed class CurrentBuildFacingTests
         Assert.Equal(90, divergent.PlayerSystemMinusBodyDegreesCandidate);
     }
 
+    [Fact]
+    public void PreservesDownstreamSnapshotSeparatelyFromEntityPosition()
+    {
+        var session = new Fake { ComponentPosition = new(101, 20, 200) };
+        var value = Read(session);
+        Assert.Equal(new CurrentBuildXyz(100, 20, 200), value.PositionCandidate);
+        Assert.Equal(new CurrentBuildXyz(101, 20, 200), value.EntityPositionCandidate);
+        Assert.Equal(BitConverter.SingleToUInt32Bits(101), value.EntityPositionRawBits![0]);
+    }
+
     [Theory]
     [InlineData(0x304)]
     [InlineData(0x30C)]
@@ -135,12 +145,13 @@ public sealed class CurrentBuildFacingTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
+    [InlineData(3)]
     public async Task OptionalTargetChecksOwnerAndCameraAcrossAcquisition(int fault)
     {
         var path = Path.Combine(Path.GetTempPath(), "rr2-facing-target-" + Guid.NewGuid().ToString("N") + ".json");
         try
         {
-            var session = new Fake();
+            var session = new Fake { ComponentPosition = new(fault == 3 ? 110 : 100, 20, 200) };
             var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456",
                 ["--output"] = path, ["--include-target"] = "true" };
             var reads = 0;
@@ -163,7 +174,7 @@ public sealed class CurrentBuildFacingTests
             {
                 var start = DateTimeOffset.UtcNow;
                 var self = new PairedPositionCandidateSample("candidate", fault == 2 ? "43" : "42",
-                    "u000000000000002A", new(100, 20, 200), start, start, 0, 0);
+                    "u000000000000002A", session.ComponentPosition, start, start, 0, 0);
                 var target = new PairedPositionCandidateSample("candidate", "99", "u0000000000000063",
                     new(110, 20, 210), start, DateTimeOffset.UtcNow, 0, 0);
                 return new(source.Identity, start, DateTimeOffset.UtcNow, "test", self, target,
@@ -182,7 +193,7 @@ public sealed class CurrentBuildFacingTests
             Assert.Equal(2, reads);
             using var report = JsonDocument.Parse(await File.ReadAllTextAsync(path));
             var observation = report.RootElement.GetProperty("observation");
-            Assert.Equal(fault == 0, observation.GetProperty("targetProjectionCameraStableCandidate").GetBoolean());
+            Assert.Equal(fault != 1, observation.GetProperty("targetProjectionCameraStableCandidate").GetBoolean());
             Assert.Equal("99", observation.GetProperty("targetPositionPairCandidate").GetProperty("target")
                 .GetProperty("unitKey").GetString());
         }
@@ -209,6 +220,7 @@ public sealed class CurrentBuildFacingTests
         public NativeProcessIdentity Identity { get; set; } = new(123, 456, "rift_x64.exe",
             CurrentBuildPlayerLookup.GameSha256, 0x140000000, 64 * 1024 * 1024);
         public byte[] Raw { get; } = new byte[0x400];
+        public CurrentBuildXyz ComponentPosition { get; init; } = new(100, 20, 200);
         public int? ChangeOnSecondRead { get; init; }
         public bool OwnerVerified { get; set; }
         public bool Disposed { get; private set; }
@@ -226,6 +238,17 @@ public sealed class CurrentBuildFacingTests
             BinaryPrimitives.WriteUInt32LittleEndian(Raw.AsSpan(offset), BitConverter.SingleToUInt32Bits(value));
         public NativeReadResult Read(ulong address, int length)
         {
+            const ulong component = 0x20060000;
+            if (address >= component && address + (ulong)length <= component + 0x110)
+            {
+                var data = new byte[0x110];
+                BinaryPrimitives.WriteUInt64LittleEndian(data, Identity.ModuleBaseAddress + 0x26B4FB0);
+                BinaryPrimitives.WriteUInt64LittleEndian(data.AsSpan(0x10), Entity);
+                BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x48), ComponentPosition.X);
+                BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x4C), ComponentPosition.Y);
+                BinaryPrimitives.WriteSingleLittleEndian(data.AsSpan(0x50), ComponentPosition.Z);
+                return new("success", data.AsSpan((int)(address - component), length).ToArray(), null, null);
+            }
             var offset = checked((int)(address - SystemAddress));
             var value = Raw.AsSpan(offset, length).ToArray();
             counts[offset] = counts.GetValueOrDefault(offset) + 1;

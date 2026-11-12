@@ -627,3 +627,35 @@ The source report is `artifacts/physical-native-facing-121b53826ba14f1ea6d60a623
 eligibility false. It does not bypass the world/zone requirements of the separate
 `xyz_relative_candidate` track-based reducer. Zero planar displacement and an
 exact 180° direction withhold signed turn angles.
+
+## Entity-owned XYZ in the facing workflow, November 11 at 23:36 EST
+
+The player-system `+0x320` copy updates independently of the 10° yaw deadband.
+After its entry gates, `0x589FC0` calls XYZ getter `0x698460` and copies X/Y at
+`0x58A4BD` and Z at `0x58A4D3`, before deciding whether to call full snapshot
+writer `0x57DD10`. Exact XYZ comparisons affect the `+0x32C` change flag, with no
+spatial tolerance delaying this ordinary copy. However, missing auxiliary state,
+the predicate at `0x735280`, or an incoming update scalar that has not advanced
+past `+0x300` can skip this route. This establishes possible downstream lag,
+not measured lag or a maximum age. Bounded exact-build findings and assembly are
+in `artifacts/xyz-cache-static-worker-20261111/`.
+
+Facing now reuses `CurrentBuildPositionCandidateReader.ReadOwned` on the same
+resolved position component as orientation. It verifies the exact-build component
+vtable and entity backlink, rechecks the consumed bytes and returns `+0x48` XYZ.
+The raw report adds `entityPositionCandidate` and three float32 source bits while
+retaining the old player-system `positionCandidate`. Compact `positionXYZCandidate`,
+player projection and target-relative geometry use entity XYZ, and `positionSource`
+names it. The cached copy remains separately visible. Target pairing checks actual
+entity XYZ rather than requiring equality with the downstream copy. Old reports
+without the new fields retain an explicitly labeled legacy-snapshot path.
+
+On the same AMD-DESKTOP epoch both sources agreed at
+(7424.455078125, 863.5865478515625, 2948.04931640625). The combined observation
+completed in 2.770 seconds with a stable native bracket. Reports are
+`artifacts/physical-native-facing-2e886a9cc2394a3eb1e1a3f9266bc92b.json` and
+`artifacts/physical-native-facing-a89e9534230a4a87bd34cdddc4081eff.json`.
+The visually reviewed frame is
+`artifacts/observe-wgc-0b1b1433b6a742d691c504b53363f9e6/image.png`.
+The component itself is stored data refreshed by game code, so passive absolute
+age and restart recovery remain unqualified. No game input was sent.
