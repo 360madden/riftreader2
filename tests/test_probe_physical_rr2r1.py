@@ -428,10 +428,25 @@ class ProbeTests(unittest.TestCase):
                 decoder.assert_called_once()
             self.assertEqual(result["sourceVerifiedRuns"], 2)
             self.assertEqual(result["runsWithCopiedSnapshots"], 2)
+            self.assertEqual([r["sourceVerifiedSnapshots"] for r in result["runDiagnostics"]], [1, 1])
             self.assertEqual(result["status"], "advancing-reference-in-pairing-window")
             self.assertEqual(result["sourceSummarySha256"], probe.digest(prior))
             self.assertEqual(path.read_text(encoding="utf-8").strip(),
                              json.dumps(result, indent=2))
+            # A nonce must never be invented merely to inspect retained sources.
+            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+                 patch.object(probe, "pinned_selection") as selection, \
+                 patch.object(probe.subprocess, "run") as scanner, \
+                 patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
+                source_only_path, source_only = probe.assess_saved(prior, root / "source-only")
+                selection.assert_not_called()
+                scanner.assert_not_called()
+                decoder.assert_not_called()
+            self.assertEqual(source_only["status"], "nonce-unavailable-source-only")
+            self.assertEqual(source_only["runsWithCopiedSnapshots"], 2)
+            self.assertEqual([r["sourceVerifiedSnapshots"] for r in source_only["runDiagnostics"]], [1, 1])
+            self.assertIn("no nonce decoding", source_only["qualification"])
+            self.assertEqual(json.loads(source_only_path.read_text()), source_only)
             copied = root / "source/run-01/capture-01.snapshot.json"
             copied.write_bytes(copied.read_bytes() + b" ")
             with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
@@ -466,6 +481,13 @@ class ProbeTests(unittest.TestCase):
                 decoder.assert_not_called()
             self.assertEqual(result["status"], "insufficient-independent-copied-runs")
             self.assertEqual(result["runsWithCopiedSnapshots"], 0)
+            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+                 patch.object(probe.assess_typed_wire_runs, "assess") as decoder:
+                _, no_nonce = probe.assess_saved(prior, root / "source-only")
+                decoder.assert_not_called()
+            self.assertEqual(no_nonce["status"], "insufficient-independent-copied-runs")
+            self.assertEqual(len(no_nonce["runDiagnostics"]), 1)
+            self.assertEqual(no_nonce["runDiagnostics"][0]["sourceVerifiedSnapshots"], 0)
 
     def test_replay_bad_nonce_or_wrong_host_fails_before_file_reads(self):
         with patch.object(probe.socket, "gethostname", return_value=probe.HOST):

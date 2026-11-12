@@ -205,13 +205,14 @@ def resume_cursor(path, selection, reader_sha):
     return prior, hashlib.sha256(raw).hexdigest().upper()
 
 
-def assess_saved(summary_path, output_dir, session_id):
-    """Reassess source-verified retained RR2R1 runs without any process access.
+def assess_saved(summary_path, output_dir, session_id=None):
+    """Audit retained RR2R1 sources offline; decode only with an authentic nonce.
 
     The saved capture identity is historical, never a current-process pin.
     Rechecks every original request, index and copied snapshot before decoding.
     """
-    require_session_id(session_id)
+    if session_id is not None:
+        require_session_id(session_id)
     require(socket.gethostname().upper() == HOST, "wrong-host")
     summary_path = Path(summary_path)
     raw = summary_path.read_bytes()
@@ -233,6 +234,7 @@ def assess_saved(summary_path, output_dir, session_id):
     require(isinstance(rows, list) and 1 <= len(rows) <= 16,
             "saved-runs-invalid")
     copied = []
+    run_diagnostics = []
     for number, row in enumerate(rows, 1):
         require(isinstance(row, dict) and row.get("run") == number,
                 "saved-run-invalid")
@@ -252,6 +254,14 @@ def assess_saved(summary_path, output_dir, session_id):
             "sourceVerifiedSnapshots", "prefixCount", "startAddress",
             "nextAddress", "scanStatus", "scanReason", "examinedBytes")),
             "saved-index-mismatch")
+        run_diagnostics.append({
+            "run": number,
+            "scanStatus": verified["scanStatus"],
+            "scanReason": verified["scanReason"],
+            "examinedBytes": verified["examinedBytes"],
+            "prefixCount": verified["prefixCount"],
+            "sourceVerifiedSnapshots": verified["sourceVerifiedSnapshots"],
+        })
         if verified["sourceVerifiedSnapshots"] > 0:
             copied.append(number)
 
@@ -259,7 +269,10 @@ def assess_saved(summary_path, output_dir, session_id):
     output_dir.mkdir(parents=True, exist_ok=False)
     reference = {"status": "insufficient-independent-copied-runs",
                  "runsWithCopiedSnapshots": len(copied)}
-    if len(copied) >= 2:
+    if len(copied) >= 2 and session_id is None:
+        reference = {"status": "nonce-unavailable-source-only",
+                     "runsWithCopiedSnapshots": len(copied)}
+    if len(copied) >= 2 and session_id is not None:
         earlier, later = copied[-2:]
         assessment_dir = output_dir / "reference-assessment"
         result = assess_typed_wire_runs.assess(
@@ -284,8 +297,12 @@ def assess_saved(summary_path, output_dir, session_id):
         "sourceSummarySha256": hashlib.sha256(raw).hexdigest().upper(),
         "sourceVerifiedRuns": len(rows),
         "runsWithCopiedSnapshots": len(copied),
+        "runDiagnostics": run_diagnostics,
         "referenceAssessment": reference,
-        "qualification": "Offline retained Lua-reference assessment only; not live process freshness, loaded-addon attestation, native XYZ semantics or movement",
+        "qualification": (
+            "Offline source-integrity audit only; no nonce decoding, authenticated freshness, current process, loaded-addon attestation, native XYZ semantics or movement"
+            if session_id is None else
+            "Offline retained Lua-reference assessment only; not live process freshness, loaded-addon attestation, native XYZ semantics or movement"),
     }
     receipt = output_dir / "summary.json"
     with receipt.open("x", encoding="utf-8") as out:
@@ -427,7 +444,7 @@ def main(argv=None):
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--physical-pid", type=int)
     source.add_argument("--replay-summary", type=Path,
-                        help="Offline revalidate retained RR2R1 runs; requires --session-id")
+                        help="Offline source audit; --session-id optionally enables strict nonce-bound pair assessment")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "artifacts" / ("physical-rr2r1-" + uuid.uuid4().hex))
     parser.add_argument("--scan-bytes", type=int, default=SCAN_BYTES)
@@ -440,7 +457,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.replay_summary is not None:
-            require(args.session_id is not None, "replay-requires-session-id")
             require(args.resume_summary is None, "replay-cannot-resume-scanning")
             path, result = assess_saved(args.replay_summary, args.output_dir,
                                         args.session_id)
