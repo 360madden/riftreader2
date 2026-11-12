@@ -1,6 +1,6 @@
 """Measured waypoint GUI provenance with fake poses and no native input."""
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import time
 from types import SimpleNamespace
@@ -168,6 +168,39 @@ class MeasurementWindowTests(unittest.TestCase):
         result = self.save_copy()
         self.assertNotIn("heights", result)
         self.assertNotIn("pointMeasurements", result)
+
+    def test_named_target_saves_separate_lookup_and_latest_xyz_receipts(self):
+        self.prepare()
+        now = datetime.now(timezone.utc)
+        stamp = lambda age: (now - timedelta(seconds=age)).isoformat()
+        key = "9223372045797034555"
+        self.adapter.pid = self.identity["processId"]
+        self.adapter.target = {"processId": self.adapter.pid, "hostName": self.identity["machine"],
+                               "processStartUtcTicks": self.identity["processStartUtcTicks"],
+                               "executableSha256": self.identity["gameBuildSha256"], "hwnd": 11}
+        def pose(x, age):
+            return app.Snapshot(app.Position(1, 17.25, 2), 3, time.monotonic()-age, f"target-{x}.json",
+                                {"status": "candidate", "targetKey": key, "sampledAtUtc": stamp(age),
+                                 "positionXYZCandidate": {"x": x, "y": 17.75, "z": 4.5}})
+        observations = iter([pose(1, .18), pose(2, .03)])
+        self.adapter.read = lambda **kwargs: next(observations)
+        self.adapter.read_target_name = lambda: {
+            "status": "complete", "workflow": "physical", "ownerHost": "AMD-DESKTOP",
+            "nativeRead": "target-name", "target": self.adapter.target,
+            "nativeOutput": "target-name.json", "nativeSourceSha256": "b"*64,
+            "nativeValues": {"status": "available-candidate", "selfKey": self.identity["unitKey"], "targetKey": key,
+                             "selectedBaseNameCandidate": "3rd Guard Soldier", "qualification": "cache-only raw candidate",
+                             "startedAtUtc": stamp(.14), "sampledAtUtc": stamp(.08)}}
+        self.button("Add Target").invoke()
+        self.wait_rows(1)
+        saved = self.save_copy()
+        self.assertEqual([["3rd Guard Soldier", 2, 4.5]], saved["waypoints"])
+        self.assertEqual([17.75], saved["heights"])
+        receipt, = saved["pointMeasurements"]
+        self.assertEqual(("target-2.json", stamp(.03), key), (receipt["source"], receipt["observedAtUtc"], receipt["targetKey"]))
+        candidate = receipt["nameCandidate"]
+        self.assertEqual(("target-name.json", stamp(.08), key, "b"*64),
+                         (candidate["source"], candidate["sampledAtUtc"], candidate["targetKey"], candidate["sourceSha256"]))
 
 
 if __name__ == "__main__":

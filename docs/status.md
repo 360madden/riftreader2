@@ -1,5 +1,22 @@
 # Current status
 
+**17:24 EST NOVEMBER 12 — NAMED TARGET WAYPOINT SAVED AND RELOADED:**
+On **AMD-DESKTOP/PID51524**, Add Target now reuses the existing native template
+name reader and labels the measured point **3rd Guard Soldier**. Save Route and
+Load recent preserved its XYZ, exact target key, and separate name/position
+sources; Save view placed the named gold beacon at the guard's foot circle.
+The read-only wrapper also followed selection to **Elite Practice Dummy** with
+a different exact key, then refused a cleared selection. Names remain cache-only
+base-name candidates: broader naming, passive freshness and full restart are
+unqualified. Lookup is explicit on Add Target, bracketed by fresh target poses;
+unavailable names keep the generic label, while changed targets reject the add.
+Seventy-three focused tests passed. No movement or attack was sent in this trial.
+The original seven-point route/cache and byte-identical genuine 7/7 forward
+checkpoint are restored; independent native XYZ/bearing and movement basis are
+unchanged. GUI PID4548 is idle with markers off. Evidence:
+`artifacts/named-target-waypoint-51524/validation.json`, named projection
+`artifacts/waypoint-view-350101e3ce774c879523c56bf1ffbbdf/projection/waypoints.png`.
+
 **17:07 EST NOVEMBER 12 — GENUINE STOP CURSOR SURVIVES ROUTE SWITCHING LIVE:**
 On **AMD-DESKTOP/PID51524**, desktop-tool F8 stopped forward playback at 2/7,
 with five released pulses and zero independently measured post-STOP drift. Normal

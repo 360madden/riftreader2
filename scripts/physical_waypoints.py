@@ -16,6 +16,7 @@ import json
 import math
 from pathlib import Path
 import queue
+import re
 import signal
 import subprocess
 import sys
@@ -139,6 +140,63 @@ def target_waypoint(snapshot):
     if abs(py - snapshot.position.y) > 1:
         raise WaypointError("Selected target is on a different height; choose a ground point.")
     return "Selected target", px, pz
+
+
+def _target_name_candidate(report, target, observer, first, last):
+    if (not isinstance(report, dict) or report.get("status") != "complete"
+            or report.get("workflow") != "physical"
+            or str(report.get("ownerHost", "")).casefold() != str(target.get("hostName", "")).casefold()
+            or report.get("nativeRead") != "target-name" or report.get("target") != target):
+        return None
+    try:
+        values = report["nativeValues"]
+        key, text = last["targetKey"], values["selectedBaseNameCandidate"]
+        source, digest = report["nativeOutput"], report["nativeSourceSha256"]
+        if (values["status"] != "available-candidate" or values["selfKey"] != observer["unitKey"]
+                or values["targetKey"] != key or any(not isinstance(k, str)
+                    or re.fullmatch(r"[1-9][0-9]{0,19}", k) is None or int(k) >= 2**64
+                    for k in (key, values["selfKey"]))
+                or observer["processId"] != target["processId"]
+                or str(observer["processStartUtcTicks"]) != str(target["processStartUtcTicks"])
+                or observer["gameBuildSha256"].casefold() != target["executableSha256"].casefold()
+                or observer["machine"].casefold() != target["hostName"].casefold()
+                or not isinstance(text, str) or not text.strip() or not text.isprintable() or len(text) > 80
+                or not isinstance(source, str) or not source.strip()
+                or re.fullmatch(r"[A-Fa-f0-9]{64}", digest) is None
+                or not isinstance(values["qualification"], str) or not values["qualification"].strip()):
+            return None
+        first_time, started, sampled, last_time = map(physical_rift._utc_tick_order_key, (
+            first["sampledAtUtc"], values["startedAtUtc"], values["sampledAtUtc"], last["sampledAtUtc"]))
+        if (not first_time <= started <= sampled <= last_time
+                or not -.1 <= (datetime.now(timezone.utc) - started[0]).total_seconds() <= 2):
+            return None
+        return {"text": text.strip(), "source": source, "sourceSha256": digest,
+                "startedAtUtc": values["startedAtUtc"], "sampledAtUtc": values["sampledAtUtc"],
+                "qualification": values["qualification"], "targetKey": key, "observerKey": values["selfKey"],
+                "processIdentity": deepcopy(target)}
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return None
+
+
+def _read_target_waypoint(adapter, pose):
+    waypoint = target_waypoint(pose)
+    read_name = getattr(adapter, "read_target_name", None)
+    if read_name is None:
+        return pose, waypoint, None
+    target = deepcopy(adapter.target)
+    observer = deepcopy(adapter.binding["runtimeIdentity"])
+    try:
+        report = read_name()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        report = None
+    current = adapter.read(include_target=True)
+    waypoint = target_waypoint(current)
+    if (adapter.target != target or adapter.binding["runtimeIdentity"] != observer
+            or not pose.selected_target.get("targetKey")
+            or pose.selected_target["targetKey"] != current.selected_target.get("targetKey")):
+        raise WaypointError("Selected target or player changed; try Add Target again.")
+    candidate = _target_name_candidate(report, target, observer, pose.selected_target, current.selected_target)
+    return current, waypoint, candidate
 
 
 @dataclass
@@ -415,6 +473,9 @@ class PhysicalAdapter:
     def calibrations(self, snapshot):
         # The empirical actor angle is the negative of our +Z -> +X bearing.
         return candidate_calibrations(self.basis, -snapshot.bearing)[0]
+
+    def read_target_name(self):
+        return physical_rift.read_native(self.selection, "target-name")
 
     def turn_rates(self):
         candidate = self.basis.get("turnCalibrationCandidate", {})
@@ -1179,6 +1240,8 @@ def launch_window(args):
                 if reconnected or adapter is not published_adapter:
                     events.put({"status": "reconnected", "pid": adapter.pid})
                     published_adapter = adapter
+                if operation == "target":
+                    pose, waypoint, name_candidate = _read_target_waypoint(adapter, pose)
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing,
                           "acquired": pose.acquired}
                 if operation == "save" and isinstance(getattr(adapter, "binding", None), dict):
@@ -1189,13 +1252,16 @@ def launch_window(args):
                     except (ValueError, KeyError, TypeError, AttributeError):
                         result["measurementReason"] = "Position provenance unavailable; point saved without height."
                 if operation == "target":
-                    result["waypoint"] = target_waypoint(pose)
+                    result["waypoint"] = waypoint
                     try:
                         from scripts.waypoint_measurements import measurement
                         result["measurement"] = measurement(
                             pose.selected_target["positionXYZCandidate"], adapter.binding, pose.source,
-                            datetime.now(timezone.utc).isoformat(), kind="native-selected-target-position",
+                            pose.selected_target["sampledAtUtc"], kind="native-selected-target-position",
                             target_key=pose.selected_target["targetKey"])
+                        if name_candidate is not None:
+                            result["measurement"]["nameCandidate"] = name_candidate
+                            result["waypoint"] = (name_candidate["text"], waypoint[1], waypoint[2])
                     except (ValueError, KeyError, TypeError, AttributeError):
                         result["measurementReason"] = "Target position saved without verified height provenance."
                 if operation == "map":

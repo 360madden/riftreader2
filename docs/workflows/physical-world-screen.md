@@ -15,7 +15,21 @@ refused before playback input. This adds no terrain/world-instance authority.
 **Add Target** also preserves the selected target's actual Y and exact uint64
 target key as a static measured point, with the observing player identity kept
 separately. It reuses existing target age/floor checks. A target that later moves
-leaves this saved location unchanged. Missing target-key/provenance information
+leaves this saved location unchanged. Add Target also attempts an explicit,
+read-only native base-name lookup between two fresh target-position reads. A
+matching candidate supplies the point label; unavailable names keep **Selected
+target**, and a changed selection/player rejects the add. The saved measurement
+keeps separate name source/hash/time and exact observer/target identity. Names
+remain cache-only candidates, without broad naming, passive freshness or full
+restart qualification. Save Route, reload and the named screenshot beacon passed
+on AMD-DESKTOP/PID51524 with **3rd Guard Soldier**; changing selection returned
+**Elite Practice Dummy**, and clearing selection refused retrieval. Seventy-three
+focused tests passed. Evidence:
+`artifacts/named-target-waypoint-51524/validation.json`,
+`artifacts/waypoint-view-350101e3ce774c879523c56bf1ffbbdf/projection/waypoints.png`.
+The wrapper is also available as `physical_rift.py --read-native target-name`.
+
+Missing target-key/provenance information
 keeps the existing 2D point and explains its unknown height. Thirty focused tests
 passed, including keys above JavaScript's exact integer range. After the user's
 restart, the actual Add Target -> Save view workflow passed on AMD-DESKTOP/PID51524

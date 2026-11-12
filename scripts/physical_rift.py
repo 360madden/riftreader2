@@ -33,6 +33,7 @@ NATIVE_READS = {
     "selected-target": "sample-current-selected-target",
     "stats": "sample-current-stats",
     "zone-context": "sample-current-zone-seed",
+    "target-name": "sample-current-target-template-name",
 }
 NATIVE_RECEIPTS = {
     "position": "native-current-position-candidate-summary/1",
@@ -46,6 +47,7 @@ NATIVE_RECEIPTS = {
     "selected-target": "native-current-selected-target-candidate-summary/1",
     "stats": "native-current-stats-summary/1",
     "zone-context": "native-current-zone-seed-summary/1",
+    "target-name": "native-target-template-name-summary/1",
 }
 NATIVE_EXE = (ROOT / "src" / "RiftReader2.Live" / "bin" / "Debug" /
               "net10.0-windows" / "win-x64" / "RiftReader2.Live.exe")
@@ -323,6 +325,69 @@ def _target_screen_point(row):
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "target-name":
+        row = report.get("observation")
+        qualification = "cache-only raw candidate; name publication, freshness and restart unverified"
+        def integer(value, low, high):
+            return type(value) is int and low <= value <= high
+        def pointer(value):
+            return integer(value, 0x10000, 0x7fffffffffff) and value % 8 == 0
+        def invalid():
+            raise ValueError("invalid-native-target-name-report")
+        if (type(report.get("schemaVersion")) is not int or report["schemaVersion"] != 1
+                or report.get("contractVersion") != "native-target-template-name-candidate/1"
+                or report.get("status") != "complete" or not isinstance(row, dict)
+                or row.get("qualification") != qualification):
+            invalid()
+        identity = row.get("identity")
+        if (not isinstance(identity, dict) or ("identity" in report and report["identity"] != identity)
+                or not integer(identity.get("processId"), 1, 2**31 - 1)
+                or not integer(identity.get("processStartUtcTicks"), 1, 2**63 - 1)
+                or not isinstance(identity.get("executableSha256"), str)
+                or re.fullmatch(r"[0-9A-Fa-f]{64}", identity["executableSha256"]) is None):
+            invalid()
+        start, end = (_utc_tick_order_key(row.get(n)) for n in ("startedAtUtc", "completedAtUtc"))
+        if (start > end or any(not integer(row.get(n), 1, 2**64 - 1) for n in ("selfKey", "targetKey"))
+                or not pointer(row.get("targetEntity")) or not pointer(row.get("collection"))
+                or not integer(row.get("templateKey"), 1, 2**32 - 1)
+                or not integer(row.get("selector"), 0, 65535) or not integer(row.get("tlsIndex"), 0, 1087)
+                or not integer(row.get("localizationMode"), -2**31, 2**31 - 1)
+                or not integer(row.get("formattingFlag"), 0, 2**32 - 1)):
+            invalid()
+        status = row.get("status")
+        record, key, text, dictionary = (row.get(n) for n in
+            ("recordAddress", "localizationKey", "fallbackText", "dictionary"))
+        if status in ("cache-miss", "null-holder", "null-record"):
+            if any(v is not None for v in (record, key, text, dictionary)):
+                invalid()
+        elif status in ("unverified-record-type", "null-name-child", "unverified-name-type"):
+            if not pointer(record) or any(v is not None for v in (key, text, dictionary)):
+                invalid()
+        elif status == "raw-candidate":
+            if (not pointer(record) or not integer(key, 0, 2**32 - 1) or not isinstance(text, str)
+                    or len(text.encode("utf-16-le")) > 254
+                    or (key == 0 and dictionary is not None) or (key != 0 and not isinstance(dictionary, dict))):
+                invalid()
+            if dictionary is not None:
+                if (dictionary.get("identity") != identity
+                        or not start <= _utc_tick_order_key(dictionary.get("startedAtUtc"))
+                        <= _utc_tick_order_key(dictionary.get("completedAtUtc")) <= end):
+                    invalid()
+        else:
+            invalid()
+        reason = status
+        if status == "raw-candidate":
+            reason = ("unsupported-localization-mode" if row["localizationMode"] != 1 else
+                      "formatting-required" if row["formattingFlag"] != 0 else
+                      "empty-fallback" if not text or not text.strip() else
+                      "unreadable-fallback" if not text.isprintable() else None)
+        return {"status": "available-candidate" if reason is None else "unavailable", "reason": reason,
+                "nativeStatus": status, "selfKey": str(row["selfKey"]), "targetKey": str(row["targetKey"]),
+                "selectedBaseNameCandidate": text if reason is None else None,
+                "rawFallbackNameCandidate": text, "templateKey": row["templateKey"],
+                "localizationKey": key, "localizationMode": row["localizationMode"],
+                "formattingFlag": row["formattingFlag"], "startedAtUtc": row["startedAtUtc"],
+                "sampledAtUtc": row["completedAtUtc"], "qualification": qualification}
     if kind == "zone-context":
         row = report.get("observation")
         qualification = "zone ID candidate only; API correspondence, name, freshness and restart unverified"
@@ -1171,11 +1236,11 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                * (interval_ms if interval_ms is not None else 500) / 1000
                if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") else 30)
     try:
-        zone_started = datetime.now(timezone.utc) if kind == "zone-context" else None
+        zone_started = datetime.now(timezone.utc) if kind in ("zone-context", "target-name") else None
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
                                    text=True, timeout=timeout, check=False,
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        zone_completed = datetime.now(timezone.utc) if kind == "zone-context" else None
+        zone_completed = datetime.now(timezone.utc) if kind in ("zone-context", "target-name") else None
     except (OSError, subprocess.TimeoutExpired) as exc:
         return dict(selection, status="blocked", reason="native-reader-launch-failed",
                     errorType=type(exc).__name__)
@@ -1193,7 +1258,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             or summary.get("recordType") != NATIVE_RECEIPTS[kind]
             or not isinstance(summary.get("output"), str)
             or Path(summary["output"]).resolve() != path.resolve()
-            or (kind not in ("stats", "zone-context") and summary.get("status") != "complete")
+            or (kind not in ("stats", "zone-context", "target-name") and summary.get("status") != "complete")
             or (kind == "stats" and summary.get("status") is not None)):
         return dict(selection, status="blocked", reason="invalid-native-reader-receipt")
     try:
@@ -1240,7 +1305,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             raise ValueError("incomplete-native-orientation-burst")
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources)
-        if kind == "zone-context":
+        if kind in ("zone-context", "target-name"):
             if (summary.get("status") != observation["status"]
                     or not _utc_tick_order_key(zone_started.isoformat()) <= _utc_tick_order_key(observation["startedAtUtc"])
                     <= _utc_tick_order_key(observation["completedAtUtc"]) <= _utc_tick_order_key(zone_completed.isoformat())):
@@ -1260,7 +1325,7 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
     return dict(selection, status="complete", nativeRead=kind,
                 nativeOutput=str(path), nativeSummary=summary, nativeValues=values,
                 qualification="candidate-only; changed-state/freshness/restart-unverified",
-                **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()} if kind == "zone-context" else {}),
+                **({"nativeSourceSha256": hashlib.sha256(report_bytes).hexdigest()} if kind in ("zone-context", "target-name") else {}),
                 **({"nativeBurstSummary": burst_summary} if burst_summary is not None else {}))
 
 
