@@ -320,6 +320,78 @@ class ProbeTests(unittest.TestCase):
                 for name in ("bad-index", "bad-epoch", "bad-reader"):
                     self.assertFalse((root / name).exists())
 
+    def test_invalid_session_nonce_fails_before_process_access(self):
+        with patch.object(probe, "pinned_selection") as select:
+            for invalid in ("abc", "A" * 32, "0" * 31, 123):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    probe.collect(123, Path("ignored"), session_id=invalid)
+            select.assert_not_called()
+
+    def test_bound_nonce_strict_assessment_uses_two_source_verified_runs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+            nonce = "a" * 32
+
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                self.assertEqual(request["marker"], "RR2R1|")
+                directory.mkdir()
+                index = self.copy(directory, self.index(request, request_path, published=1))
+                (directory / "index.json").write_text(json.dumps(index))
+                return subprocess.CompletedProcess(argv, 0, "", "")
+
+            def assess(before, after, cli, output, **kwargs):
+                self.assertEqual(before.name, "run-01")
+                self.assertEqual(after.name, "run-02")
+                self.assertEqual(kwargs["session_id"], nonce)
+                self.assertEqual(kwargs["maximum_run_gap_seconds"], 120.0)
+                self.assertEqual(cli.name, "RiftReader2.Cli.dll")
+                output.mkdir()
+                (output / "summary.json").write_text('{"status":"advanced"}')
+                return {"status": "advancing-reference-in-pairing-window",
+                        "diagnostics": {"advancing": 1},
+                        "pairingWindow": {"withinWindow": True}}
+
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke), \
+                 patch.object(probe.assess_typed_wire_runs, "assess", side_effect=assess) as strict:
+                path, summary = probe.collect(123, root / "capture", max_scans=2,
+                                              gap_seconds=0, session_id=nonce)
+            strict.assert_called_once()
+            reference = summary["referenceAssessment"]
+            self.assertEqual(reference["status"], "advancing-reference-in-pairing-window")
+            self.assertEqual(reference["runs"], [1, 2])
+            self.assertEqual(reference["advancingComparisons"], 1)
+            self.assertEqual(reference["summarySha256"],
+                             probe.digest(root / "capture/reference-assessment/summary.json"))
+            self.assertEqual(json.loads(path.read_text()), summary)
+
+    def test_nonce_without_two_copied_runs_never_calls_decoder(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                directory.mkdir()
+                (directory / "index.json").write_text(json.dumps(self.index(request, request_path)))
+                return subprocess.CompletedProcess(argv, 0, "", "")
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke), \
+                 patch.object(probe.assess_typed_wire_runs, "assess") as strict:
+                _, summary = probe.collect(123, root / "capture", max_scans=1,
+                                           gap_seconds=0, session_id="a" * 32)
+            strict.assert_not_called()
+            self.assertEqual(summary["referenceAssessment"],
+                             {"status": "insufficient-independent-copied-runs",
+                              "runsWithCopiedSnapshots": 0})
+
 
 if __name__ == "__main__":
     unittest.main()

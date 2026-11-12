@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts import physical_rift
+from scripts import assess_typed_wire_runs, physical_rift
+from scripts.inspect_typed_resource import require_session_id
 from scripts.compare_physical_player_context_pair import BUILD_SHA
 
 HOST = "AMD-DESKTOP"
@@ -205,7 +206,10 @@ def resume_cursor(path, selection, reader_sha):
 
 
 def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
-            max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None):
+            max_scans=SCAN_COUNT, gap_seconds=1.0, resume_summary=None,
+            session_id=None):
+    if session_id is not None:
+        require_session_id(session_id)
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
     require(type(scan_bytes) is int and 1_048_576 <= scan_bytes <= 536_870_912
             and scan_bytes % 4096 == 0
@@ -273,22 +277,52 @@ def collect(pid, output_dir, *, scan_bytes=SCAN_BYTES, scan_ms=SCAN_MS,
             cursor = checked_cursor(next_cursor, cursor)
         if number < max_scans and gap_seconds:
             time.sleep(gap_seconds)
+    # Only an explicit already-bound nonce enables strict offline RR2R1
+    # frame assessment; a copied prefix is never a decoded observation.
+    reference_assessment = None
+    if session_id is not None:
+        copied = [row for row in results if row["publishedSnapshots"] > 0]
+        if len(copied) < 2:
+            reference_assessment = {"status": "insufficient-independent-copied-runs",
+                                    "runsWithCopiedSnapshots": len(copied)}
+        else:
+            earlier, later = copied[-2:]
+            assessment_dir = output_dir / "reference-assessment"
+            assessment = assess_typed_wire_runs.assess(
+                output_dir / f"run-{earlier['run']:02d}",
+                output_dir / f"run-{later['run']:02d}",
+                ROOT / "src/RiftReader2.Cli/bin/Release/net10.0/RiftReader2.Cli.dll",
+                assessment_dir, maximum_run_gap_seconds=120.0,
+                session_id=session_id)
+            reference_assessment = {
+                "status": assessment["status"],
+                "runs": [earlier["run"], later["run"]],
+                "summarySha256": digest(assessment_dir / "summary.json"),
+                "advancingComparisons": assessment["diagnostics"]["advancing"],
+                "withinPairingWindow": assessment["pairingWindow"]["withinWindow"],
+            }
     summary = {
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2r1-prefix-scan/1",
         "status": "candidate-captures-available" if any(
             row["publishedSnapshots"] for row in results) else "no-copied-candidate-in-bounded-scopes",
-        "qualification": "prefix/snapshot evidence only; no decoded Lua frame, nonce/sequence, or freshness acceptance",
+        "qualification": (
+            "Optional nonce-selected strict offline Lua/API reference assessment; "
+            "no loaded-addon attestation, native XYZ meaning, atomic freshness or movement causation"
+            if session_id is not None else
+            "prefix/snapshot evidence only; no decoded Lua frame, nonce/sequence, or freshness acceptance"),
         "ownerHost": HOST,
         "target": request["target"],
         "readerSha256": reader_sha,
         "initialCursor": initial_cursor,
         "resumeSourceSha256": resume[1] if resume else None,
         "runs": results,
+        "referenceAssessment": reference_assessment,
         "limitations": [
             "Each no-snapshot scan advances the C# memory cursor; a candidate scan is repeated to seek an advancing frame.",
             "Only bounded private-memory portions were examined; zero prefixes do not imply addon absence. Introducing a new cursor does not prove complete process coverage.",
-            "Even two changing copied snapshots are not independently validated advancing RR2R1 frames.",
+            "Copied snapshots alone do not establish advancing RR2R1 frames; strict pair assessment requires the exact already-bound reader nonce.",
+            "A nonce-matching pair remains Lua/API reference evidence, not native XYZ meaning, loaded-addon attestation, atomic freshness, or movement causation.",
             "No addon command, reload, desktop focus, or game input was used.",
         ],
     }
@@ -309,18 +343,22 @@ def main(argv=None):
     parser.add_argument("--max-scans", type=int, default=SCAN_COUNT)
     parser.add_argument("--resume-summary", type=Path,
                         help="Prior exact-epoch scanner summary; its requests/index files are reverified")
+    parser.add_argument("--session-id",
+                        help="Exact already-bound RR2R1 reader nonce for offline pair assessment")
     args = parser.parse_args(argv)
     try:
         path, result = collect(args.physical_pid, args.output_dir,
                                scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
                                max_scans=args.max_scans,
-                               resume_summary=args.resume_summary)
+                               resume_summary=args.resume_summary,
+                               session_id=args.session_id)
     except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220]}))
         return 2
     print(json.dumps({"status": result["status"], "summary": str(path),
                       "snapshots": [r["publishedSnapshots"] for r in result["runs"]],
-                      "qualification": result["qualification"]}))
+                      "qualification": result["qualification"],
+                      "referenceAssessment": result["referenceAssessment"]}))
     return 0
 
 
