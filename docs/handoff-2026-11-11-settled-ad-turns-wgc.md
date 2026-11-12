@@ -107,3 +107,15 @@ python scripts/physical_turn_visual_pair.py --before-png "$d/baseline-frame/imag
 The region covers stationary scenery in these 1920 x 1032 frames. Select scenery appropriate to each new view. The local patch search measures small return offsets in pixels. For the first trial, the original screenshots were 77.49 seconds apart, beyond the standard 30-second comparison limit. The first row's pixel figure comes from a separate endpoint-only comparison after verifying the individual receipts and matching window identities.
 
 Across six pulses, settled actor-matrix rotation divided by measured hold midpoint ranged from 169.74 to 173.23 degrees per second. This empirical range is specific to the recorded trials. Windows key timing accounts for part of the residual, and the game-consumption time remains unknown.
+
+## Forward movement check at one facing
+
+After the three turn trials, one authorized 250 ms W pulse completed on AMD-DESKTOP. The first attempt lost foreground before input. Its blocked receipt is `artifacts/forward-pose-20261111-205300/pulse.json`. The successful receipt is `retry.json` in the same directory. The measured hold midpoint was 261.28 ms. Before and after observations matched player 239816685251645959 and recorded the same actor angle, -36.376393 degrees.
+
+Displacement was X +0.942871, Y 0, Z +1.280029. Measuring from positive Z toward positive X with atan2(dx, dz) gives +36.375404 degrees. Negating the actor angle predicts +36.376393 degrees. Replay the comparison with:
+
+```powershell
+python scripts/physical_move_key_calibration.py --receipt artifacts/forward-pose-20261111-205300/retry.json
+```
+
+The nominal difference is 0.00099 degrees. Under a round-to-nearest binary32 model, allowing each endpoint coordinate half its local floating-point spacing gives a travel-angle interval of 36.35602 to 36.39479 degrees. This interval covers coordinate rounding only. The experiment supports agreement at this facing to the resolution of the displacement measurement. A second facing with a separately measured displacement remains outstanding.
