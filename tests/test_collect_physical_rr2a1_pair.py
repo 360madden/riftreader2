@@ -208,6 +208,79 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                              "F"*64)
             self.assertEqual(result["scanIndexSha256"]["second"], "2"*64)
 
+    def test_focused_old_frames_retry_broad_and_rebracket(self):
+        # Eight copied snapshots can all be retained old producer frames.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "reader.exe"
+            reader.write_bytes(b"reader")
+            before, after, rebracket = (report(root, name) for name in
+                                        ("before", "after", "after-broad"))
+            first, focused, broad = (root / name for name in
+                                     ("first-index", "focused-index", "broad-index"))
+            i1 = {"indexSha256": "1"*64, "publishedSnapshots": 8}
+            old = {"indexSha256": "F"*64, "publishedSnapshots": 8}
+            new = {"indexSha256": "2"*64, "publishedSnapshots": 4}
+            with patch.object(capture.socket, "gethostname", return_value="AMD-DESKTOP"), \
+                 patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(capture.probe, "digest", return_value="A"*64), \
+                 patch.object(capture.probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(capture.bracket, "collect",
+                              side_effect=[before, after, rebracket]) as brackets, \
+                 patch.object(capture, "focused_second_pass",
+                              return_value=("0x31000000", 33_554_432)), \
+                 patch.object(capture, "scan_once",
+                              side_effect=[(first, i1), (focused, old),
+                                           (broad, new)]) as scans, \
+                 patch.object(capture.compare, "compare",
+                              side_effect=[ValueError(
+                                  "physical-rr2a1-pair-nonadvancing-or-overlapping-passes"),
+                                  success()]) as replay, \
+                 patch.object(capture.compare, "verify_capture_order",
+                              return_value={"status": "source-verified-order"}) as order:
+                path, result = capture.collect(1234, root / "result",
+                                               focus_second_pass=True)
+            self.assertTrue(path.is_file())
+            self.assertEqual(scans.call_count, 3)
+            self.assertEqual(brackets.call_count, 3)
+            self.assertEqual(replay.call_count, 2)
+            replay.assert_any_call(first, focused, before[0], after[0])
+            replay.assert_any_call(first, broad, before[0], rebracket[0])
+            order.assert_called_once_with(first, broad, before[0], rebracket[0])
+            self.assertEqual(scans.call_args_list[-1].kwargs["start_address"],
+                             "0x10000")
+            self.assertEqual(result["nativeBracketSha256"]["after"], "A"*64)
+            self.assertEqual(result["scanSnapshots"], [8, 4])
+            self.assertTrue(result["secondPassFocus"]["fallbackUsed"])
+            self.assertEqual(result["secondPassFocus"]["failedFocusedIndexSha256"],
+                             "F"*64)
+
+    def test_focused_identity_failure_never_retries_broad(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "reader.exe"
+            reader.write_bytes(b"reader")
+            before, after = (report(root, name) for name in ("before", "after"))
+            first, focused = root / "first-index", root / "focused-index"
+            receipt = {"indexSha256": "1"*64, "publishedSnapshots": 8}
+            with patch.object(capture.socket, "gethostname", return_value="AMD-DESKTOP"), \
+                 patch.object(capture.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(capture.probe, "digest", return_value="A"*64), \
+                 patch.object(capture.probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(capture.bracket, "collect",
+                              side_effect=[before, after]) as brackets, \
+                 patch.object(capture, "focused_second_pass",
+                              return_value=("0x31000000", 33_554_432)), \
+                 patch.object(capture, "scan_once",
+                              side_effect=[(first, receipt), (focused, receipt)]) as scans, \
+                 patch.object(capture.compare, "compare",
+                              side_effect=ValueError(
+                                  "physical-rr2a1-pair-process-or-player-identity-changed")):
+                with self.assertRaisesRegex(ValueError, "identity-changed"):
+                    capture.collect(1234, root / "result", focus_second_pass=True)
+            self.assertEqual(scans.call_count, 2)
+            self.assertEqual(brackets.call_count, 2)
+
     def test_partial_scan_failure_keeps_request_for_diagnosis(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

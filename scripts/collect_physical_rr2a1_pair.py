@@ -148,7 +148,29 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
     same_process(pid, selection, reader_sha)
 
     # Source replay must pass before we describe any Lua/native agreement.
-    paired = compare.compare(first, second, before, after)
+    try:
+        paired = compare.compare(first, second, before, after)
+    except ValueError as exc:
+        # A focused scan can copy eight *old* frames, so its successful copy
+        # count alone does not establish two newly advancing producer frames.
+        # Retry the original bounded broad scope once, then take a NEW final
+        # native bracket so source chronology remains valid.
+        stale_focused = str(exc) in (
+            "physical-rr2a1-pair-nonadvancing-or-overlapping-passes",
+            "physical-rr2a1-pair-insufficient-new-frames",
+        )
+        if not (focus is not None and failed_focused_index_sha is None
+                and stale_focused):
+            raise
+        failed_focused_index_sha = second_receipt["indexSha256"]
+        second, second_receipt = scan_once(
+            pid, selection, reader_sha, output_dir / "pass-02-broad",
+            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address="0x10000")
+        after, _ = bracket.collect(
+            pid, output_dir / "native-after-broad", samples=samples,
+            interval_ms=interval_ms)
+        same_process(pid, selection, reader_sha)
+        paired = compare.compare(first, second, before, after)
     paired["captureOrder"] = compare.verify_capture_order(first, second, before, after)
     summary = {
         "schemaVersion": 1,
