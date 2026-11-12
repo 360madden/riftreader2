@@ -110,6 +110,25 @@ public sealed class BoundedControlExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DefaultTimerSchedulesFractionalHoldRemainder()
+    {
+        var clock = new TimerRecordingClock();
+        var input = new RecordingInput();
+        input.OperationRecorded = operation =>
+        {
+            if (operation == "MoveRelative:10,-15")
+                clock.Advance(TimeSpan.FromMilliseconds(99.5));
+        };
+
+        var result = await new BoundedControlExecutor(input, clock).ExecuteAsync(
+            new([], 100, "right", DeltaX: 10, DeltaY: -15));
+
+        Assert.True(result.DeliverySucceeded);
+        Assert.Equal(TimeSpan.FromMilliseconds(1), Assert.Single(clock.DueTimes));
+        Assert.Contains("ButtonUp:right", input.ControlOperations);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_CountsCameraSetupAgainstHoldFromFirstSuccessfulPress()
     {
         var input = new RecordingInput();
@@ -388,7 +407,7 @@ public sealed class BoundedControlExecutorTests
             });
     }
 
-    private sealed class ManualTimeProvider : TimeProvider
+    private class ManualTimeProvider : TimeProvider
     {
         private long timestamp;
 
@@ -397,6 +416,19 @@ public sealed class BoundedControlExecutorTests
         public override long GetTimestamp() => timestamp;
 
         internal void Advance(TimeSpan duration) => timestamp = checked(timestamp + duration.Ticks);
+    }
+
+    private sealed class TimerRecordingClock : ManualTimeProvider
+    {
+        internal List<TimeSpan> DueTimes { get; } = [];
+
+        public override ITimer CreateTimer(TimerCallback callback, object? state,
+            TimeSpan dueTime, TimeSpan period)
+        {
+            DueTimes.Add(dueTime);
+            Advance(dueTime);
+            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+        }
     }
 
     private sealed class RecordingInput(params string[] failingOperations) : IControlInput
