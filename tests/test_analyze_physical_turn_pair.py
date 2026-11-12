@@ -243,9 +243,11 @@ class BurstStabilityTests(unittest.TestCase):
     def assess(self, angles, seconds=.4):
         from datetime import datetime, timedelta, timezone
         start = datetime(2026, 11, 11, tzinfo=timezone.utc)
+        stamps = [start + timedelta(seconds=seconds*i/max(1, len(angles)-1))
+                  for i in range(len(angles))]
         capture = {
             "matrices": [{"actor": {"angle": angle}} for angle in angles],
-            "times": [(start, start + timedelta(seconds=seconds))],
+            "times": [(stamp, stamp) for stamp in stamps],
         }
         return turn.burst_stability(capture, "actor")
 
@@ -258,6 +260,7 @@ class BurstStabilityTests(unittest.TestCase):
         self.assertFalse(self.assess([-40, -42, -44])["sampledPoseStableCandidate"])
         self.assertFalse(self.assess([-40])["sampledPoseStableCandidate"])
         self.assertFalse(self.assess([-40] * 5, .01)["sampledPoseStableCandidate"])
+        self.assertFalse(self.assess([-40] * 5, 4)["sampledPoseStableCandidate"])
         self.assertFalse(self.assess([None] * 5)["sampledPoseStableCandidate"])
 
     def test_wrap_boundary_has_small_angular_span(self):

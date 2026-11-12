@@ -416,6 +416,11 @@ public sealed class MoveKeyCommandTests
             Execution(delivered: true, released: true), 1, 1, 1);
         var result = MoveKeyCommand.SummarizeTurnRate(key, evidence, pose, 500);
         Assert.Equal("candidate-native-actor-matrix-turn-rate", result.Status);
+        var delayed = pose with { CaptureGapSeconds = 3.5 };
+        Assert.Equal("unavailable-timing",
+            MoveKeyCommand.SummarizeTurnRate(key, evidence, delayed, 500).Status);
+        Assert.Equal(expectedRate, MoveKeyCommand.SummarizeTurnRate(
+            key, evidence, delayed, 500, 3000).SignedDegreesPerSecondCandidate!.Value, 5);
         Assert.Equal(expectedRate, result.SignedDegreesPerSecondCandidate!.Value, 5);
         Assert.Equal(Math.Abs(expectedRate), result.MagnitudeDegreesPerSecondCandidate!.Value, 5);
         Assert.False(result.ActorHeadingQualified);

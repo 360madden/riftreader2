@@ -485,7 +485,9 @@ internal static class MoveKeyCommand
         var turnRateCandidate = options.MeasureActorPose && options.Keys.Length == 1
             && options.Keys[0] is "a" or "d"
             ? SummarizeTurnRate(options.Keys[0], insertion, poseFeedback,
-                TurnRateHoldCandidateMilliseconds(keyHoldWindows[0], inputCallTiming))
+                TurnRateHoldCandidateMilliseconds(keyHoldWindows[0], inputCallTiming),
+                (xyzSettleApplied ? options.XyzSettleMilliseconds : 0)
+                + (actorPoseSettleApplied ? options.ActorPoseSettleMilliseconds : 0))
             : null;
         Report(options.Json, new
         {
@@ -586,7 +588,7 @@ internal static class MoveKeyCommand
 
     internal static TurnRateCandidate SummarizeTurnRate(
         string key, KeyInsertionEvidence insertion, PoseFeedback? pose,
-        double observedMilliseconds)
+        double observedMilliseconds, int observationDelayMilliseconds = 0)
     {
         if (key is not ("a" or "d"))
             return new("not-turn-key", key, null, null, "Only A/D turn keys are eligible.");
@@ -599,7 +601,7 @@ internal static class MoveKeyCommand
         if (!double.IsFinite(observedMilliseconds) || observedMilliseconds < 20
             || observedMilliseconds > 4000 || pose.CaptureGapSeconds is not double gap
             || !double.IsFinite(gap) || gap <= 0
-            || gap > observedMilliseconds / 1000 + 2)
+            || gap > (observedMilliseconds + observationDelayMilliseconds) / 1000 + 2)
             return new("unavailable-timing", key, null, null,
                 "Observed hold or bracketing gap invalid for a turn-rate candidate.");
         if (pose.ActorMatrixBitsChanged != true

@@ -190,6 +190,10 @@ def burst_stability(capture, matrix_name):
     angles = [row[matrix_name]["angle"] if row[matrix_name] else None
               for row in capture["matrices"]]
     duration = (capture["times"][-1][1] - capture["times"][0][0]).total_seconds()
+    starts = [start for start, _ in capture["times"]]
+    intervals = [(later - earlier).total_seconds() for earlier, later in zip(starts, starts[1:])]
+    max_interval = max(intervals, default=None)
+    sample_span = (starts[-1] - starts[0]).total_seconds()
     span = None
     if all(angle is not None for angle in angles):
         # Smallest circular arc containing every sample, including wrap at +/-180.
@@ -200,8 +204,10 @@ def burst_stability(capture, matrix_name):
     return {
         "samples": len(angles),
         "observationSeconds": duration,
+        "maximumSampleIntervalSeconds": max_interval,
         "angularSpanDegreesCandidate": span,
-        "sampledPoseStableCandidate": (len(angles) >= 3 and duration >= .2
+        "sampledPoseStableCandidate": (len(angles) >= 3 and sample_span >= .2
+                                       and max_interval is not None and max_interval <= .25
                                        and span is not None and span < .01),
         "qualification": "Stability during sampled interval only; later settling and body yaw unverified.",
     }
