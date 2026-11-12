@@ -387,3 +387,40 @@ Concurrent host extraction is a suspected but **unproven** cause of the stalls. 
 - Lab1's historical eight-minute source-freshness gate failed. A later Lab2 current-game-epoch 480.057-second strict observer PASSED (684 advancing samples, max gap 4.21128 seconds), documented in `docs/status.md`, but its reader nonce expired at 16:14:53 UTC on 2026-11-01. Do not use stale source pins for input; reacquire a fresh, qualified reader and enforce exact controller/foreground/screenshot/lease gates.
 
 See [current health/resource code map](native-current-client-code-map.md) for the companion static fields and the distinct no-live-pointer limitation.
+
+## Player-system yaw and camera/aim point reacquisition, November 11 at 22:07 EST
+
+The historical V1 fields are readable through RR2's existing current-build
+player-system root. On physical AMD-DESKTOP, PID 18092, process start ticks
+639300391441133615 and the exact SHA 1935A05C... pinned by this map, both
+old root slots `module+0x32E0200` and `module+0x32EBC80` were null.
+`owner=QWORD(module+0x33623E0)` resolved normally. No game input was sent
+during this investigation.
+
+| Current owner field | Observed value or role |
+| --- | --- |
+| float32 `+0x304` | Historical body-yaw scalar, now -0.1022264063 radians |
+| float32 triplet `+0x30C/+0x310/+0x314` | Historical camera/aim point candidate |
+| float32 triplet `+0x320/+0x324/+0x328` | XYZ matched RR2's same-player position sample within 0.0001 units |
+| QWORD `+0x360` | Matched player key 239816685251645959 |
+| QWORD `+0x3F8` | Matched independently resolved player entity |
+
+Three bracketed samples found `degrees(float32(owner+0x304))=-5.857141638°`.
+This is the bearing convention from positive Z toward positive X. The actor
+matrix angle was +5.857142014°, so negating the actor angle agrees within
+0.000000376°. Deriving a bearing from the camera/aim point minus owner XYZ
+gave -8.178168873°. Keep that value classified as camera/aim until a current
+camera-only control establishes its meaning.
+
+The V1 October 18 body-yaw report already documents camera-only invariance,
+A/D and forward-travel checks, plus two restarts on SHA 7C356C9D.... Those
+results support the reused field hypothesis. Current-build changed-state
+tests of this scalar, camera-only separation and restart recovery remain open.
+The existing actor-matrix movement trials do not themselves exercise a direct
+`+0x304` reader.
+
+Reproducible bounded read requests, raw reports and the derived comparison are
+under `artifacts/facing-yaw-audit-20261111-220540/`. `roots.json` records all
+five checked root slots, `matched-fields-request.json` can be inspected for
+the three-sample acquisition, and `field-comparison.json` records the decoded
+values. Its absolute owner and component addresses belong to this epoch.
