@@ -22,7 +22,7 @@ from scripts import navigation_anchors as anchors
 from scripts import physical_route_preview as route
 from scripts.movement_controller import (
     Calibration, MovementError, MovementHalted, Position,
-    WaypointController, validate_noncollinear,
+    WaypointController, planar_distance, validate_noncollinear,
 )
 
 
@@ -190,6 +190,7 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
         },
         "decision": "within-tolerance-candidate" if action is None else "suggested-one-pulse",
         "arrivalTolerance": controller.tolerance,
+        "distanceBeforeCandidate": planar_distance(start, goal),
         "limitations": [
             "Explicit destination does not prove same-world navigation or arrival.",
             ("Only forward was observed at the later facing; S/Q/E are modeled rotations."

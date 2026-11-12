@@ -215,3 +215,14 @@ Independent 30-sample actor-pose bursts overlapped each physical 250 ms command.
 The final pose was 1.614° left of the pair baseline. All 60 sampled actor translations were identical at (7426.0845, 863.52655, 2946.9014). These bounds apply to the observed pose updates in this pair and process epoch. The last pre-release reads began about 2 ms before key-up returned.
 
 Across the four requested 250 ms A/D pairs, signed endpoint errors relative to each pair's own baseline were +0.234°, +2.080°, +1.012° and −1.614°. Mean absolute error was 1.235°, with the largest observed miss at 2.080°. The reversal in sign rules out a consistent overshoot direction in these four trials.
+## Short turns and return to the pre-W position
+
+Atank started the 20 ms D/A pair at +7.816°. D turned him +4.786° and A turned him −4.356°. Five later pose reads agreed at +8.246°. The two receipts are in `artifacts/fine-turn-20261111-214526/`. These are single measurements per direction at the minimum supported hold.
+
+At that facing, a 70 ms W press moved him 0.4663 units. A 147 ms S press moved him back 0.4984 units. The settled position was 0.03212 units from the pre-W target. Replay the offline waypoint decision with the saved three-sample position capture:
+
+```powershell
+python scripts/physical_move_basis_waypoint.py --basis artifacts/strafe-pair-20261111-212614/basis-reviewed.json --position artifacts/fine-forward-20261111-214630/return-position.json --target-x 7426.0845 --target-z 2946.9014
+```
+
+The preview returns `within-tolerance-candidate`, a null action, the measured planar distance and the controller's 0.30-unit arrival radius. The feedback tool separately uses 0.15 units to evaluate prediction error.
