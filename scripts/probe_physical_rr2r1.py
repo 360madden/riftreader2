@@ -84,11 +84,44 @@ def check_index(path, request, request_sha, selection):
     require(isinstance(scan.get("prefixAddresses"), list)
             and len(scan["prefixAddresses"]) <= 128,
             "scan-prefix-inventory-invalid")
+    # A copied-frame claim is not evidence unless its actual capture files are
+    # present and match the C# scanner's hashes and process identity. This gate
+    # also protects the RR2A1 physical collector, which reuses check_index().
+    candidates = index.get("candidates")
+    require(isinstance(candidates, list) and len(candidates) <= 128
+            and all(isinstance(row, dict) for row in candidates),
+            "scan-candidates-invalid")
+    complete = [row for row in candidates if row.get("status") == "complete"]
+    require(len(complete) == index["publishedSnapshots"],
+            "scan-copy-count-mismatch")
+    for number, row in enumerate(complete, 1):
+        for kind in ("request", "snapshot"):
+            name = row.get(kind + "File")
+            expected_hash = row.get(kind + "Sha256")
+            require(name == f"capture-{number:02d}.{kind}.json"
+                    and isinstance(expected_hash, str)
+                    and len(expected_hash) == 64
+                    and all(c in "0123456789ABCDEFabcdef" for c in expected_hash),
+                    "scan-copy-binding-invalid")
+            source = Path(path).parent / name
+            require(source.is_file() and not source.is_symlink(),
+                    "scan-copy-source-missing")
+            raw = source.read_bytes()
+            require(len(raw) <= 8_000_000
+                    and hashlib.sha256(raw).hexdigest().upper() == expected_hash.upper(),
+                    "scan-copy-source-hash-mismatch")
+            parsed = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique)
+            if kind == "snapshot":
+                require(parsed.get("status") == "complete"
+                        and parsed.get("evidenceKind") == "native-memory-snapshot/1"
+                        and parsed.get("identity") == observed,
+                        "scan-copy-snapshot-identity-mismatch")
     return {
         "status": index["status"],
         "indexSha256": hashlib.sha256(data).hexdigest().upper(),
         "prefixCount": len(scan["prefixAddresses"]),
         "publishedSnapshots": index["publishedSnapshots"],
+        "sourceVerifiedSnapshots": len(complete),
         "scanStatus": scan.get("status"),
         "scanReason": scan.get("reason"),
         "examinedBytes": scan.get("examinedBytes"),

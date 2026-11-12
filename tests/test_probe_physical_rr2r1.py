@@ -33,7 +33,27 @@ class ProbeTests(unittest.TestCase):
                      "startAddress": request.get("startAddress", "0x10000"),
                      "nextAddress": "0x20000", "examinedBytes": 1048576,
                      "prefixAddresses": [] if not published else ["0xABCDEF"]},
+            "candidates": [],
         }
+
+    def copy(self, directory, index):
+        """Build a synthetic C# copy with independently hashed source files."""
+        identity = index["identity"]
+        for number in range(1, index["publishedSnapshots"] + 1):
+            row = {"status": "complete"}
+            for kind, content in (
+                ("request", {"schemaVersion": 1, "target": identity}),
+                ("snapshot", {"schemaVersion": 1,
+                              "evidenceKind": "native-memory-snapshot/1",
+                              "status": "complete", "identity": identity, "chunks": []}),
+            ):
+                name = f"capture-{number:02d}.{kind}.json"
+                path = directory / name
+                path.write_text(json.dumps(content), encoding="utf-8")
+                row[kind + "File"] = name
+                row[kind + "Sha256"] = probe.digest(path)
+            index["candidates"].append(row)
+        return index
 
     def test_two_bounded_scans_reuse_reader_without_claiming_frame(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -53,8 +73,9 @@ class ProbeTests(unittest.TestCase):
                 self.assertFalse(directory.exists())
                 directory.mkdir()
                 calls.append(directory)
-                (directory / "index.json").write_text(json.dumps(
-                    self.index(request, request_path, published=len(calls) - 1)))
+                index = self.copy(directory, self.index(
+                    request, request_path, published=len(calls) - 1))
+                (directory / "index.json").write_text(json.dumps(index))
                 return subprocess.CompletedProcess(argv, 0, "", "")
             with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
                  patch.object(probe, "pinned_selection", return_value=SELECTION) as select, \
@@ -65,6 +86,7 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(select.call_count, 5)
             sleep.assert_called_once()
             self.assertEqual(result["status"], "candidate-captures-available")
+            self.assertEqual([r["sourceVerifiedSnapshots"] for r in result["runs"]], [0, 1])
             self.assertEqual([r["publishedSnapshots"] for r in result["runs"]], [0, 1])
             self.assertEqual([r["startAddress"] for r in result["runs"]],
                              ["0x10000", "0x20000"])
@@ -72,6 +94,46 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(json.loads(receipt.read_text()), result)
             self.assertEqual(result["readerSha256"],
                              hashlib.sha256(b"synthetic-reader").hexdigest().upper())
+
+    def test_copied_frame_claim_without_source_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request_path = root / "request.json"
+            request_path.write_text('{}', encoding="utf-8")
+            index = self.index({}, request_path, published=1)
+            index_path = root / "index.json"
+            index_path.write_text(json.dumps(index))
+            with self.assertRaisesRegex(ValueError, "scan-copy-count-mismatch"):
+                probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
+
+    def test_rejects_tampered_or_rebound_copied_sources(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request_path = root / "request.json"
+            request_path.write_text('{}', encoding="utf-8")
+            index = self.copy(root, self.index({}, request_path, published=1))
+            index_path = root / "index.json"
+            index_path.write_text(json.dumps(index))
+            self.assertEqual(probe.check_index(
+                index_path, {}, probe.digest(request_path), SELECTION)["sourceVerifiedSnapshots"], 1)
+            source = root / "capture-01.snapshot.json"
+            original = source.read_bytes()
+            source.write_bytes(original + b" ")
+            with self.assertRaisesRegex(ValueError, "scan-copy-source-hash-mismatch"):
+                probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
+            source.write_bytes(original)
+            index["candidates"][0]["snapshotFile"] = "../outside.snapshot.json"
+            index_path.write_text(json.dumps(index))
+            with self.assertRaisesRegex(ValueError, "scan-copy-binding-invalid"):
+                probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
+            index["candidates"][0]["snapshotFile"] = "capture-01.snapshot.json"
+            snapshot = json.loads(original)
+            snapshot["identity"]["processId"] = 999
+            source.write_text(json.dumps(snapshot))
+            index["candidates"][0]["snapshotSha256"] = probe.digest(source)
+            index_path.write_text(json.dumps(index))
+            with self.assertRaisesRegex(ValueError, "scan-copy-snapshot-identity-mismatch"):
+                probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
 
     def test_rejects_wrong_host_without_scanning(self):
         with patch.object(probe.socket, "gethostname", return_value="UNEXPECTED"), \
