@@ -108,7 +108,9 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual(1, len(saved))
         self.assertEqual(document, json.loads(saved[0].read_text()))
         snapshot = self.root_path / "artifacts" / "waypoint-last-route.json"
-        self.assertEqual(document, json.loads(snapshot.read_text(encoding="utf-8")))
+        saved_snapshot = json.loads(snapshot.read_text(encoding="utf-8"))
+        self.assertEqual(document, saved_snapshot["route"])
+        self.assertEqual(str(saved[0]), saved_snapshot["sourcePath"])
         self.assertFalse(checkpoint.exists())
         self.assertEqual(["Observed start", "Observed corner"],
                          [self.table.item(i, "values")[0] for i in self.table.get_children()])

@@ -307,7 +307,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         with patch("tkinter.filedialog.askopenfilename", return_value=str(path)):
             self.button("Load").invoke()
         cache = self.path / "artifacts" / "waypoint-last-route.json"
-        self.assertEqual(document, json.loads(cache.read_text(encoding="utf-8")))
+        self.assertEqual(document, json.loads(cache.read_text(encoding="utf-8"))["route"])
         self.cleanup_gui()
         self.roots.clear()
         self.threads.clear()
@@ -315,6 +315,10 @@ class PlaybackWindowStateTests(unittest.TestCase):
         table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
         self.assertEqual(2, len(table.get_children()))
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        with patch("tkinter.filedialog.asksaveasfilename") as chooser:
+            self.button("Save Route").invoke()
+        chooser.assert_not_called()
+        self.assertEqual(document, json.loads(path.read_text(encoding="utf-8")))
 
     def test_checkpoint_and_explicit_route_take_precedence_over_cache(self):
         cache = self.path / "artifacts" / "waypoint-last-route.json"
@@ -384,7 +388,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         saved = json.loads(output.read_text(encoding="utf-8"))
         snapshot = self.path / "artifacts" / "waypoint-last-route.json"
         self.assertEqual(document, saved)
-        self.assertEqual(saved, json.loads(snapshot.read_text(encoding="utf-8")))
+        self.assertEqual(saved, json.loads(snapshot.read_text(encoding="utf-8"))["route"])
 
     def test_recovered_route_asks_for_save_destination(self):
         snapshot = self.path / "artifacts" / "waypoint-last-route.json"
@@ -397,6 +401,66 @@ class PlaybackWindowStateTests(unittest.TestCase):
             self.button("Save Route").invoke()
         dialog.assert_called_once()
         self.assertEqual(document, json.loads(output.read_text(encoding="utf-8")))
+
+    def test_changed_source_remains_recovered_and_save_asks(self):
+        document = {"waypoints": [["Recorded", 0, 0]]}
+        source = self.path / "changed.json"
+        source.write_text(json.dumps({"waypoints": [["Changed", 0, 0]]}), encoding="utf-8")
+        snapshot = self.path / "artifacts" / "waypoint-last-route.json"
+        snapshot.write_text(json.dumps({"version": 1, "route": document, "sourcePath": str(source)}), encoding="utf-8")
+        before = source.read_bytes()
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        with patch("tkinter.filedialog.asksaveasfilename", return_value="") as chooser:
+            self.button("Save Route").invoke()
+        chooser.assert_called_once()
+        self.assertEqual(before, source.read_bytes())
+
+    def test_missing_source_and_matching_checkpoint_stay_unbound(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
+        snapshot = self.path / "artifacts" / "waypoint-last-route.json"
+        snapshot.write_text(json.dumps({"version": 1, "route": document,
+                                        "sourcePath": str(self.path / "missing.json")}), encoding="utf-8")
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
+        with patch("tkinter.filedialog.asksaveasfilename", return_value="") as chooser:
+            self.button("Save Route").invoke()
+        chooser.assert_called_once()
+
+    def test_checkpoint_mismatch_does_not_bind_cached_source(self):
+        cached = {"waypoints": [["Cached", 0, 0]]}
+        source = self.path / "source.json"
+        source.write_text(json.dumps(cached), encoding="utf-8")
+        snapshot = self.path / "artifacts" / "waypoint-last-route.json"
+        snapshot.write_text(json.dumps({"version": 1, "route": cached, "sourcePath": str(source)}), encoding="utf-8")
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Other", 0, 0]]},
+                                          "direction": "forward", "nextIndex": 0}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        with patch("tkinter.filedialog.asksaveasfilename", return_value="") as chooser:
+            self.button("Save Route").invoke()
+        chooser.assert_called_once()
+
+    def test_unc_source_is_not_read_during_recovery(self):
+        document = {"waypoints": [["Cached", 0, 0]]}
+        snapshot = self.path / "artifacts" / "waypoint-last-route.json"
+        snapshot.write_text(json.dumps({"version": 1, "route": document,
+                                        "sourcePath": r"\\other-host\share\route.json"}), encoding="utf-8")
+        original_read = Path.read_text
+        def guarded_read(path, *args, **kwargs):
+            if str(path).startswith("\\\\"):
+                raise AssertionError("recovery attempted a remote read")
+            return original_read(path, *args, **kwargs)
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        with patch.object(Path, "read_text", guarded_read):
+            self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        with patch("tkinter.filedialog.asksaveasfilename", return_value="") as chooser:
+            self.button("Save Route").invoke()
+        chooser.assert_called_once()
 
     def test_failed_route_replacement_preserves_existing_saved_route(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 10]}

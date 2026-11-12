@@ -745,8 +745,21 @@ def launch_window(args):
 
     def mark_saved(path):
         nonlocal route_path, route_dirty, route_recovered
-        route_path, route_dirty, route_recovered = Path(path), False, False
+        route_path, route_dirty, route_recovered = Path(path).absolute(), False, False
         update_route_status()
+
+    def local_source_path(value):
+        # Inspect drive type before opening any remembered path; never probe a
+        # UNC path or a mapped network drive during automatic recovery.
+        import ctypes
+        if not isinstance(value, str) or not value:
+            return None
+        path = Path(value)
+        if not path.is_absolute() or not path.drive or path.drive.startswith("\\\\"):
+            return None
+        if ctypes.windll.kernel32.GetDriveTypeW(str(path.anchor)) not in (2, 3):
+            return None
+        return path
 
     def invalidate_progress(*, clear_metadata=True):
         nonlocal route_metadata, playback_view, route_dirty
@@ -811,7 +824,9 @@ def launch_window(args):
 
     def cache_route(document, success):
         try:
-            write_json_atomic(last_route, document)
+            source = local_source_path(str(route_path)) if route_path is not None else None
+            write_json_atomic(last_route, {"version": 1, "route": document,
+                                           "sourcePath": str(source) if source else None})
             text = success
         except (OSError, ValueError, TypeError) as exc:
             text = success + "; last-route snapshot could not be saved: " + str(exc)
@@ -1469,11 +1484,24 @@ def launch_window(args):
             restored_checkpoint = True
         except (OSError, ValueError, KeyError, TypeError):
             progress_text.set("Saved progress unavailable; load a route to continue.")
-    if not args.route and not restored_checkpoint and last_route.exists():
+    cached_document = cached_source = None
+    if not args.route and last_route.exists():
         try:
-            document = json.loads(last_route.read_text(encoding="utf-8"))
-            progress_route(document)
-            show_document(document)
+            snapshot = json.loads(last_route.read_text(encoding="utf-8"))
+            if isinstance(snapshot, dict) and "waypoints" not in snapshot:
+                if snapshot.get("version") != 1:
+                    raise ValueError("Invalid last-route snapshot")
+                cached_document, cached_source = snapshot["route"], snapshot.get("sourcePath")
+            else:
+                cached_document = snapshot
+            progress_route(cached_document)
+        except (OSError, ValueError, KeyError, TypeError):
+            cached_document = None
+            if not restored_checkpoint:
+                progress_text.set("Last saved route unavailable; load a route to continue.")
+    if not args.route and not restored_checkpoint and cached_document is not None:
+        try:
+            show_document(cached_document)
             route_recovered = True
             update_route_status()
             playback_view = None
@@ -1481,6 +1509,14 @@ def launch_window(args):
             redraw()
         except (OSError, ValueError, KeyError, TypeError):
             progress_text.set("Last saved route unavailable; load a route to continue.")
+    if not args.route and cached_document is not None and cached_source:
+        try:
+            source = local_source_path(cached_source)
+            if (source is not None and json.loads(json.dumps(route_document())) == cached_document
+                    and json.loads(source.read_text(encoding="utf-8")) == cached_document):
+                mark_saved(source)
+        except (OSError, ValueError, KeyError, TypeError):
+            pass  # Keep recovered content unbound if the source is unavailable or changed.
     poll()
     start("refresh")
     window.mainloop()

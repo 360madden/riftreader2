@@ -364,6 +364,24 @@ backup after confirming unchanged actor/epoch. Current app PID48384/window199278
 is idle on `artifacts/waypoint-ready-route-69312.json`; RIFT PID69312 and basis
 unchanged.
 
+**10:55 EST remembered source file, offline-qualified:** the atomic last-route
+snapshot now contains version/route/sourcePath, retaining legacy plain-route reads.
+On default startup, source association is restored only when the displayed full
+document, cached route and current local file match exactly. Explicit `--route`
+and checkpoint precedence remain intact; missing/changed/malformed sources and
+different checkpoint routes stay unbound. UNC/mapped network paths are rejected
+before source reads. Exports keep the original route document without UI keys.
+Forty-six focused fake-reader Tk tests passed. Root review and an independent
+bounded integration review found no actionable defect.
+
+Physical Escape stopped Computer Use before the real-window reopen check. Desktop
+interaction remains paused while the user discusses its need; no subsequent UI
+action or gameplay input was sent. This source-file restoration is therefore
+**offline-tested, not yet observed in the real window**. App PID47376 was started
+with the ready-route copy before Escape; a later process-only check confirms it
+still has the RR2/PID69312 window title. Do not infer fresh pose or UI state from
+that process check. The underlying route/restart workflow was already live-tested.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

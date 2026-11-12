@@ -1,5 +1,15 @@
 # Current status
 
+**10:55 EST NOVEMBER 12 — SOURCE FILE RECOVERY IMPLEMENTED:** On **AMD-DESKTOP**,
+default reopening can retain quick Save's source path only when the restored route,
+snapshot and local file match. Changed/missing sources remain unbound; legacy
+snapshots still load. Forty-six focused Tk tests and root/independent code review
+passed. Real-window source recovery is pending: physical Escape stopped Computer
+Use, and desktop checks remain paused. No subsequent UI/game input was sent. App
+PID47376 is running with RR2/PID69312 title; current pose/UI were not re-observed.
+Core record/replay/STOP/full-game restart had already passed live. Next: finish
+preview zoom controls with offline checks while desktop interaction stays paused.
+
 **10:47 EST NOVEMBER 12 — ROUTE EDIT UNDO WORKS:** On **AMD-DESKTOP**, Undo restores
 the last 20 route edits, including full metadata/order/selection; it keeps the
 current file and leaves playback progress cleared. Ctrl+Z is scoped to the point
