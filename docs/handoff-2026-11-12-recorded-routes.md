@@ -307,6 +307,25 @@ checkpoint was unchanged. Receipt:
 `artifacts/waypoint-run-090351fe1eff47238a88a8e1f13a6db4.json`.
 Joey selected **Improve everyday route controls** for the remaining goal time.
 
+**10:35 EST everyday waypoint editing:** **Update Selected** now edits Name/X/Z
+without removing/recreating a point or changing its order. Single-row selection
+fills all three fields. Validation occurs before mutation; no-ops at the stored
+six-decimal precision preserve checkpoint and metadata. Renames preserve heights
+and recording provenance but reset playback progress; coordinate changes discard
+recording metadata. Edits do not change the last saved snapshot until Save.
+Automatic point additions retain the next generated Point N default. Five focused
+fake-Tk tests passed, including immediately editing an automatically added row.
+
+In the real window, selecting Recorded 7 populated its name; Update without edits
+preserved the exact 7/7 checkpoint. Renaming it to Loop finish and saving
+`artifacts/waypoint-renamed-live-69312.json` changed only that name, retaining the
+entire recorded document otherwise. No gameplay input occurred. The original route
+was reloaded; the genuine prior checkpoint was restored byte-for-byte after
+verifying unchanged actor/epoch, using `artifacts/waypoint-edit-before-69312.progress.json`
+and its before-pose evidence. Current app is PID60252/window75110102; RIFT remains
+PID69312, idle at 7/7 forward with the unchanged basis. Next: direct Save/Save As
+and a visible unsaved-route indication, per Joey's everyday-controls preference.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

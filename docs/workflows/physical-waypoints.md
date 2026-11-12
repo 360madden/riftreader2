@@ -54,6 +54,12 @@ previous snapshot intact. Reopening before first playback passed a live seven-po
 case on AMD-DESKTOP with no checkpoint and no game input.
 **Up / Down** reorder the selected point; **Clear** empties the list. A completed
 run reports the number of visited waypoints and final distance explicitly.
+To edit a waypoint, select its row, adjust **Name / X / Z**, then choose
+**Update Selected**. It keeps the point's order and selection. Renaming preserves
+recorded heights/provenance; changing coordinates converts the route to manually
+edited points and discards recording metadata. An actual edit clears playback
+progress and remains unsaved until **Save Route**. An unchanged update, including
+coordinates that round to the same six-decimal values, preserves progress.
 **Add Target** saves the selected entity's freshly read ground position as a
 fixed waypoint. It does not follow a moving entity or start a trip. An unavailable
 or expired target position, or a target more than one unit above/below the player,

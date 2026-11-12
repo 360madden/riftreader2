@@ -8,12 +8,12 @@ topic below instead of loading every document for each task.
 | Direction | [Project brief](project-brief.md) | User goals and scope. |
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
-| Live prototype | [Physical waypoints](workflows/physical-waypoints.md) | One-click window, route preview, facing/forward travel, STOP and same-build restart recovery. |
+| Live prototype | [Physical waypoints](workflows/physical-waypoints.md) | Record or teach a route, save/load, forward/reverse replay, STOP/Resume and same-build restart recovery. |
 | Continuity | [Movement handoff](workflows/movement-handoff-2026-10-29.md) | Verified partial trial, cleanup, exact build, reusable bootstrap and remaining acquisition work. |
 | Postmortem | [Move-key focus failure and recovery (2026-11-11)](validation/move-key-focus-failure-postmortem-2026-11-11.md) | Full assistant failure analysis, known-good A/B evidence, successful fix, and prevention rules. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |
 | Planning | [Current discovery roadmap](planning/discovery-roadmap-2026-11-06.md) | Parallel development packages, concrete worker ownership, useful outputs and real dependencies. |
-| Planning | [Five-hour recorded-route goal](planning/five-hour-recorded-routes-2026-11-12.md) | Proposed record/replay/resume roadmap and pasteable goal; implementation has not started. |
+| Planning | [Five-hour recorded-route goal](planning/five-hour-recorded-routes-2026-11-12.md) | Active goal; core workflow and follow-ups verified live. Current evidence is in the linked recorded-route handoff. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
 | Planning | [Bidirectional hybrid prompt and two-lab roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md) | Saved implementation prompt; both labs authorized for parallel discovery/validation; return-channel feasibility first. |
 | Planning | [Two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md) | Fresh VM/guest limits, ownership and first manual-feedback acceptance. |

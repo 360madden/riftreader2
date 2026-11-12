@@ -1,5 +1,14 @@
 # Current status
 
+**10:35 EST NOVEMBER 12 — SELECTED WAYPOINT EDITING WORKS:** On **AMD-DESKTOP**,
+select a row, edit Name/X/Z and choose Update Selected. Actual edits reset progress;
+renaming preserves recording provenance/heights, while coordinate changes become
+manual points. No-ops retain progress. Five focused tests passed; live no-op and
+rename/Save preserved the expected full document with no game input. Original route
+and genuine 7/7 forward checkpoint were restored afterward, with unchanged Atank
+pose/basis. App PID60252, RIFT PID69312. Next: direct Save/Save As and visible
+unsaved status. The five-hour goal remains active through 11:56 EST.
+
 **10:26 EST NOVEMBER 12 — SEVEN-POINT RESTART/RESUME AND HALT EVIDENCE:** On
 **AMD-DESKTOP**, RIFT PID19692 exited normally with the GUI-taught route at 3/7;
 the same window reconnected to PID69312 with unchanged checkpoint, position and

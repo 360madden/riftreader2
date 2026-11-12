@@ -728,6 +728,7 @@ def launch_window(args):
     playback_view = None
     playback_active = False
     loading_route = False
+    added_selection = None
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
     def invalidate_progress(*, clear_metadata=True):
@@ -740,12 +741,15 @@ def launch_window(args):
             progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
 
     def add_point(label, px, pz):
+        nonlocal added_selection
         if len(table.get_children()) >= 20:
             state.set("Waypoint list is full; remove a point before adding another.")
             return
         invalidate_progress()
         item = table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
+        added_selection = item
         table.selection_set(item)
+        name.set(f"Point {len(table.get_children()) + 1}")
         x.set(f"{finite(px):.6f}")
         z.set(f"{finite(pz):.6f}")
         redraw()
@@ -1044,6 +1048,34 @@ def launch_window(args):
         except (ValueError, TypeError):
             messagebox.showerror("Invalid coordinates", "Enter finite X and Z coordinates.")
 
+    def update_selected():
+        nonlocal added_selection
+        selected = table.selection()
+        if len(selected) != 1:
+            state.set("Select one waypoint to update.")
+            return
+        try:
+            label, px, pz = route_points([(name.get() or "Waypoint", x.get(), z.get())])[0]
+        except (ValueError, TypeError):
+            messagebox.showerror("Invalid coordinates", "Enter finite X and Z coordinates.")
+            return
+        old = table.item(selected[0], "values")
+        if selected[0] == added_selection and name.get() == f"Point {len(table.get_children()) + 1}":
+            label = old[0]
+        px, pz = float(f"{px:.6f}"), float(f"{pz:.6f}")
+        coordinates_changed = (px, pz) != (finite(old[1]), finite(old[2]))
+        if label == old[0] and not coordinates_changed:
+            state.set("Waypoint unchanged.")
+            return
+        invalidate_progress(clear_metadata=coordinates_changed)
+        table.item(selected[0], values=(label, f"{px:.6f}", f"{pz:.6f}"))
+        added_selection = None
+        name.set(label)
+        x.set(f"{px:.6f}")
+        z.set(f"{pz:.6f}")
+        redraw()
+        state.set("Waypoint updated; save the route to keep this edit.")
+
     def save_route():
         path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="rift-waypoints.json")
         if path:
@@ -1126,7 +1158,8 @@ def launch_window(args):
                             ("Remove", remove_points),
                             ("Load", load_route), ("Save Route", save_route),
                             ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
-                            ("Clear", clear_points), ("Add Target", lambda: start("target")))):
+                            ("Clear", clear_points), ("Add Target", lambda: start("target")),
+                            ("Update Selected", update_selected))):
         button = ttk.Button(buttons if index < 5 else buttons_second, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
         editable.append(button)
@@ -1321,18 +1354,28 @@ def launch_window(args):
             threading.Thread(target=worker, args=("live",), daemon=False).start()
         window.after(80, poll)
 
-    def select_point(_):
+    def select_point(_, *, force_name=False):
+        nonlocal added_selection
         selected = selected_points()
         if len(selected) == 1:
+            if force_name or table.selection()[0] != added_selection:
+                added_selection = None
+                name.set(selected[0][0])
             x.set(selected[0][1])
             z.set(selected[0][2])
         redraw()
+
+    def select_clicked(event):
+        nonlocal added_selection
+        added_selection = None
+        select_point(event, force_name=True)
 
     window.protocol("WM_DELETE_WINDOW", close)
     window.bind("<Escape>", lambda _: request_stop())
     canvas.bind("<Configure>", redraw)
     canvas.bind("<Button-1>", map_click)
     table.bind("<<TreeviewSelect>>", select_point)
+    table.bind("<ButtonRelease-1>", select_clicked)
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
     restored_checkpoint = False

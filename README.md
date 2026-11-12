@@ -98,10 +98,13 @@ control qualification; a captured physical screenshot alone does not prove them.
 ## 🚀 Quick start
 
 For the physical waypoint prototype, double-click **[`Waypoints.cmd`](Waypoints.cmd)**
-on the local RIFT host. Save or click nearby points, then use **Go Selected** or
-**Run Route**; **F8** stops the run. It currently supports supervised open-ground
-travel up to 20 units, with automatic same-build/player restart recovery and a
-freshly pinned game process on each connection.
+on the local RIFT host. Save or click nearby points and choose **Walk + Record**
+to teach their actual path, or use **Record / Stop Recording** to observe normal
+movement. **Save Route / Load** retain the path; **Play Forward / Play Reverse**
+replay it from the appropriate endpoint. **F8** stops playback, and **Resume**
+explicitly continues unfinished progress after a stop or same-build/player RIFT
+restart. The window reconnects while idle and freshly pins the new game process.
+Travel is limited to 20 units on supervised open ground, without obstacle avoidance.
 See the [waypoint guide](docs/workflows/physical-waypoints.md) for setup, measured
 results and restart/obstacle limitations. Launching the window sends no game input.
 
