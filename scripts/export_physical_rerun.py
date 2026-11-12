@@ -106,9 +106,10 @@ class RerunSink:
             self.close()
             raise
 
-    def configure_view(self, captures, *, display_camera=None):
+    def configure_view(self, captures, *, display_camera=None, nearby_samples=False):
         import rerun.blueprint as rrb
-        self.recording.send_blueprint(default_blueprint(self.rr, rrb, captures, display_camera=display_camera),
+        self.recording.send_blueprint(default_blueprint(self.rr, rrb, captures, display_camera=display_camera,
+                                                       nearby_samples=nearby_samples),
                                       make_active=True, make_default=True)
 
     def log(self, entity, kind, data, *, at=None, static=False):
@@ -119,11 +120,13 @@ class RerunSink:
         rr = self.rr
         if kind == "text":
             archetype = rr.TextDocument(json.dumps(data, indent=2, allow_nan=False))
+        elif kind == "markdown":
+            archetype = rr.TextDocument(data, media_type="text/markdown")
         elif kind == "points3d":
             archetype = rr.Points3D(data["positions"], labels=data["labels"],
                                     show_labels=data.get("show_labels", True))
         elif kind == "point-labels3d":
-            archetype = rr.Points3D.from_fields(labels=data["labels"], show_labels=True)
+            archetype = rr.Points3D.from_fields(labels=data["labels"], show_labels=False)
         elif kind == "route3d":
             archetype = rr.LineStrips3D([data["positions"]])
         elif kind == "camera-rays3d":
@@ -157,7 +160,7 @@ class RerunSink:
                     os.environ[key] = value
 
 
-def default_blueprint(rr, rrb, captures, *, display_camera=None):
+def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=False):
     """File-only 0.43.1 blueprint: explicit views and latest-data following.
 
     TimePanel cannot encode a cursor position. Following is the supported
@@ -174,6 +177,8 @@ def default_blueprint(rr, rrb, captures, *, display_camera=None):
     views = [rrb.Spatial2DView(origin=entity, name=(f"Desktop candidate {index + 1} (UTC upper bound)"
              if entity.endswith("_desktop_upper_bound") else f"Capture {index + 1}"))
              for index, (entity, _) in enumerate(captures)]
+    if nearby_samples:
+        views.append(rrb.TextDocumentView(origin="/nearby_samples", name="Nearby samples"))
     views.append(rrb.TextDocumentView(origin="/evidence", name="Source metadata"))
     active = max(range(len(captures)), key=lambda index: captures[index][1]) if captures else 0
     return rrb.Blueprint(rrb.Horizontal(world, rrb.Tabs(*views, active_tab=active), column_shares=[1, 1]),
@@ -375,6 +380,43 @@ def unit_scene_display_camera(route, scans, frames):
                     "from admitted route/unit/view-ray bounds; not an exact viewport fit or scene-depth claim.")
 
 
+def nearby_samples_markdown(scan, *, include_names=False):
+    """Read-only retained evidence table, without changing acquisition timestamps."""
+    def escape(value):
+        text = str(value)
+        for character in "\\`*_[]<>|":
+            text = text.replace(character, "\\" + character)
+        return text.replace("\n", " ").replace("\r", " ")
+    names = scan["names"]
+    lines = ["# Retained nearby samples — candidates", "",
+        "Stored positions and cached names were observed independently. This is not live tracking, "
+        "unit classification, terrain or clearance evidence.", "",
+        f"Position scan completed: `{scan['completedAtUtc']}`.", ""]
+    if names["status"] == "saved":
+        lines += [f"Name batch completed: `{names['sampledAtUtc']}`." if include_names
+                  else "Names are not yet available at this position-scan time.", ""]
+    else:
+        lines += ["Names unavailable: " + escape(names.get("reason", "not-retained")) + ".", ""]
+    if not scan["units"]:
+        return "\n".join(lines + ["No nonself samples within the displayed 35-unit distance limit."])
+    lines += ["| Name candidate | Distance (native units) | XYZ candidate | Unit key |",
+              "| --- | ---: | --- | --- |"]
+    for unit in scan["units"]:
+        name = unit.get("nameCandidate") if include_names else None
+        label = name["baseNameCandidate"] if name else "—"
+        xyz = ", ".join(f"{unit['positionXYZCandidate'][axis]:.3f}" for axis in ("x", "y", "z"))
+        lines.append(f"| {escape(label)} | {unit['horizontalDistanceCandidate']:.3f} | {xyz} | `{unit['unitKey']}` |")
+    lines += ["", "## Observation times (UTC)", "",
+              "Exact position times remain separate from later name times; latest samples carry forward in this recording.", ""]
+    name_rows = {row["unitKey"]: row for row in names.get("rows", [])} if include_names else {}
+    for unit in scan["units"]:
+        name = name_rows.get(unit["unitKey"])
+        suffix = (f"name `{name['sampledAtUtc']}`" +
+                  (" (unavailable: " + escape(name["reason"]) + ")" if name["status"] != "available-candidate" else "")) if name else "name unavailable at this time"
+        lines.append(f"- `{unit['unitKey']}`: position `{unit['sampledAtUtc']}`; {suffix}.")
+    return "\n".join(lines)
+
+
 def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=(), camera_rays=True,
            unit_samples=()):
     route_path, output = Path(route_path).resolve(), Path(output).resolve()
@@ -410,7 +452,7 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
         sink.configure_view([(f"/captures/{number:04d}" + ("_desktop_upper_bound" if frame["desktop"] else ""),
                               timestamp_ns(frame["evidenceAtUtc"]))
                              for number, frame in enumerate(frames, 1)],
-                            **({"display_camera": display_camera} if display_camera is not None else {}))
+                            **({"display_camera": display_camera, "nearby_samples": True} if unit_scans else {}))
         sink.log("evidence/sources", "text", result, static=True)
         positions = [[p["xyz"][axis] for axis in ("x", "y", "z")] for p in route["points"]]
         labels = [f'{p["number"]}: {p["label"]}' for p in route["points"]]
@@ -458,6 +500,11 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
             sink.log("world/loaded_units", "clear", {}, at=timestamp_ns(scan["startedAtUtc"]))
             sink.log(f"evidence/unit_samples/{number:04d}", "text", scan,
                      at=timestamp_ns(scan["completedAtUtc"]))
+            sink.log("nearby_samples", "markdown", nearby_samples_markdown(scan),
+                     at=timestamp_ns(scan["completedAtUtc"]))
+            if scan["names"]["status"] == "saved":
+                sink.log("nearby_samples", "markdown", nearby_samples_markdown(scan, include_names=True),
+                         at=timestamp_ns(scan["names"]["sampledAtUtc"]))
             for unit in scan["units"]:
                 sink.log(f"world/loaded_units/{unit['unitKey']}", "points3d",
                          dict(positions=[[unit["positionXYZCandidate"][axis] for axis in ("x", "y", "z")]],

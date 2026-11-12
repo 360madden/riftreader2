@@ -106,7 +106,12 @@ Optional acquisition failure reports a reason while preserving the core view.
 The viewer's initial display camera includes the admitted geometry; use ordinary
 Rerun zoom/orbit controls to inspect it. Unit labels start hidden to keep the
 route readable, with keys and positions retained in Source metadata. Available
-template base-name candidates instead get visible labels ending **(candidate)**.
+template base-name candidates remain attached to their 3D entities for inspection.
+The built-in **Nearby samples** tab gives a readable table of names, direct
+distances, XYZ and lossless keys, with exact position/name UTC receipts below it.
+All unit text starts hidden in 3D to keep the route readable; the screenshot stays
+the default tab. The table appears first at the position scan's completion time
+without future names, then updates only when the name batch has completed.
 One explicit-key batch names only the same selected subset, without selecting
 game targets or scanning more units. `unit-names-native.json` and
 `unit-names-sample.json` retain independent source/hash/time evidence. The
@@ -126,6 +131,11 @@ Evidence: `artifacts/waypoint-view-2eb2952a1f2447e9a6dbda8105af9353/validation.j
 the same bundle contains reviewed `scene-named-units.png`, saved through the
 pinned ViewerClient after actual GUI loading. These independent name candidates
 do not qualify current XYZ, classification, public/API names or restart durability.
+The later readable-table export of that retained post-restart evidence passed
+actual viewer inspection and RRD verification without new game reads:
+`artifacts/waypoint-view-2fc85909747547b38581791abb744acb/nearby-table-validation.json`.
+Its `view-nearby-table.rrd` and reviewed `scene-nearby-table.png` show the current
+layout; both cache-miss reasons remain visible in the observation-time receipts.
 
 Actual GUI Save view -> Open 3D view passed on AMD-DESKTOP/PID51524 at 16:47 EST:
 412 examined entries produced 150 position candidates; 18 were displayed.

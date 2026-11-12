@@ -1,5 +1,18 @@
 # Current status
 
+**18:10 EST NOVEMBER 12 — READABLE NEARBY SAMPLES TAB REPLACES NAME CLUTTER:**
+The pinned Rerun viewer now uses its built-in document tab for a compact nearby
+table: candidate name, direct distance, XYZ and lossless key, followed by separate
+position/name UTC receipts and unavailable reasons. Unit names remain in 3D entity
+metadata but their text starts hidden, clearing the route scene. The screenshot
+remains the default tab; exports without unit samples keep their prior layout.
+Thirty-seven exporter tests passed in the visualization environment. Root exported
+the retained PID40452 evidence without new game reads, verified the new RRD, then
+opened the actual viewer and inspected all 18 rows, 16 names and both cache-miss
+reasons. The viewer closed normally; its owned processes ended. Evidence:
+`artifacts/waypoint-view-2fc85909747547b38581791abb744acb/nearby-table-validation.json`,
+with `view-nearby-table.rrd` and reviewed `scene-nearby-table.png` in that bundle.
+
 **18:07 EST NOVEMBER 12 — NORMAL CLOSE PROTECTS UNSAVED BEACONS:**
 Close now latches STOP, waits for worker/foreground cleanup and the owned marker
 child, then offers Save / No / Cancel for dirty routes. Cancel or failed/cancelled

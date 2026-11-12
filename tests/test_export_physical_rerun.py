@@ -32,9 +32,10 @@ class FakeSink:
         Path(path).write_bytes(b"fake-rrd-test-payload")
     def log(self, entity, kind, data, **kwargs):
         self.events.append((entity, kind, data, kwargs))
-    def configure_view(self, captures, *, display_camera=None):
+    def configure_view(self, captures, *, display_camera=None, nearby_samples=False):
         self.captures = captures
         self.display_camera = display_camera
+        self.nearby_samples = nearby_samples
     def flush(self):
         self.flushed = True
     def close(self):
@@ -180,7 +181,51 @@ class ExportTests(unittest.TestCase):
         sink = object.__new__(exporter.RerunSink)
         sink.rr, sink.recording = Mock(), Mock()
         sink.log("world/test", "point-labels3d", label[2])
-        sink.rr.Points3D.from_fields.assert_called_once_with(labels=label[2]["labels"], show_labels=True)
+        sink.rr.Points3D.from_fields.assert_called_once_with(labels=label[2]["labels"], show_labels=False)
+
+    def test_nearby_table_defers_names_and_preserves_actual_times_and_label_metadata(self):
+        path, _, _ = self.named_unit_wrapper()
+        result = self.run_export(unit_samples=[path])
+        scan = result["unitSamples"][0]
+        tables = [event for event in self.sinks[-1].events if event[0] == "nearby_samples"]
+        self.assertEqual(len(tables), 2)
+        self.assertEqual(tables[0][3]["at"], exporter.timestamp_ns(scan["completedAtUtc"]))
+        self.assertEqual(tables[1][3]["at"], exporter.timestamp_ns(scan["names"]["sampledAtUtc"]))
+        self.assertNotIn("3rd Guard Soldier", tables[0][2])
+        self.assertIn("3rd Guard Soldier", tables[1][2])
+        self.assertIn("18446744073709551615", tables[1][2])
+        self.assertIn(scan["units"][0]["sampledAtUtc"], tables[1][2])
+        self.assertIn(scan["units"][0]["nameCandidate"]["sampledAtUtc"], tables[1][2])
+        self.assertIn("not live tracking", tables[1][2])
+        self.assertTrue(self.sinks[-1].nearby_samples)
+        sink = object.__new__(exporter.RerunSink)
+        sink.rr, sink.recording = Mock(), Mock()
+        sink.log("nearby_samples", "markdown", tables[1][2])
+        sink.rr.TextDocument.assert_called_once_with(tables[1][2], media_type="text/markdown")
+
+    def test_nearby_table_escapes_candidate_text_and_handles_missing_names_and_empty_subset(self):
+        path, _, _ = self.named_unit_wrapper()
+        scan = self.run_export(unit_samples=[path])["unitSamples"][0]
+        scan["units"][0]["nameCandidate"]["baseNameCandidate"] = "[Guard](https://bad) | *name*"
+        text = exporter.nearby_samples_markdown(scan, include_names=True)
+        self.assertIn(r"\[Guard\]", text)
+        self.assertIn(r"\| \*name\*", text)
+        self.assertNotIn("[Guard](", text)
+        scan["units"] = []
+        scan["names"] = dict(status="unavailable", reason="cache-unavailable")
+        text = exporter.nearby_samples_markdown(scan)
+        self.assertIn("No nonself samples", text)
+        self.assertIn("cache-unavailable", text)
+
+    def test_nearby_tab_adds_without_replacing_capture_default_and_is_absent_without_units(self):
+        rr, rrb = Mock(), Mock()
+        exporter.default_blueprint(rr, rrb, [("/captures/0001", 10)], nearby_samples=True)
+        document_origins = [call.kwargs["origin"] for call in rrb.TextDocumentView.call_args_list]
+        self.assertEqual(document_origins, ["/nearby_samples", "/evidence"])
+        self.assertEqual(rrb.Tabs.call_args.kwargs["active_tab"], 0)
+        rrb.reset_mock()
+        exporter.default_blueprint(rr, rrb, [("/captures/0001", 10)])
+        self.assertEqual([call.kwargs["origin"] for call in rrb.TextDocumentView.call_args_list], ["/evidence"])
 
     def test_optional_names_invalid_evidence_preserves_position_export(self):
         for fault in ("hash", "epoch", "player", "key", "entity", "time", "values"):
