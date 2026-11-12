@@ -68,6 +68,8 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
         self.assertEqual(result["status"], "offline-physical-waypoint-feedback-candidate")
         self.assertEqual(result["comparison"], "candidate-consistent")
         self.assertEqual(result["decision"], "observation-only")
+        self.assertIsNone(result["postPositionSampleCount"])
+        self.assertIsNone(result["postPositionSampleSpanSeconds"])
         self.assertEqual(result["key"], "w")
         self.assertEqual(result["requestedHoldMilliseconds"], 100)
         self.assertEqual(result["observedHoldMilliseconds"], 110)
@@ -197,6 +199,8 @@ class PhysicalStepFeedbackTests(unittest.TestCase):
     def test_separate_stationary_post_capture_matches_helper_candidate(self):
         self.save_post(x=-.661, z=-.082)
         result = self.assess(post=True)
+        self.assertEqual(result["postPositionSampleCount"], 2)
+        self.assertAlmostEqual(result["postPositionSampleSpanSeconds"], .110)
         self.assertTrue(result["postPositionMatchesReceiptCandidate"])
         self.assertRegex(result["postPositionReportSha256"], "^[0-9A-F]{64}$")
         self.assertGreater(result["postCaptureGapSeconds"], 0)
