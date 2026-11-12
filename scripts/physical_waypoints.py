@@ -640,7 +640,10 @@ def launch_window(args):
             elif operation == "face":
                 run_facing(adapter, stop, events.put, point=points[0][1:])
             else:
-                run_route(adapter, points, stop, events.put, face_waypoints=face_walk)
+                results = run_route(adapter, points, stop, events.put, face_waypoints=face_walk)
+                events.put({"status": "route-complete", "waypointCount": len(results),
+                            "position": results[-1]["position"], "bearing": results[-1]["bearing"],
+                            "distance": results[-1]["distance"]})
         except Exception as exc:
             stopped_position = stopped_bearing = None
             if isinstance(exc, Stopped) and adapter is not None:
@@ -724,12 +727,31 @@ def launch_window(args):
         table.delete(*table.selection())
         redraw()
 
+    def move_point(direction):
+        selected = table.selection()
+        if len(selected) != 1:
+            state.set("Select one waypoint to move up or down.")
+            return
+        item = selected[0]
+        index = max(0, min(len(table.get_children()) - 1, table.index(item) + direction))
+        table.move(item, "", index)
+        table.see(item)
+        redraw()
+
+    def clear_points():
+        table.delete(*table.get_children())
+        name.set("Point 1")
+        redraw()
+        state.set("Waypoint list cleared.")
+
     buttons = ttk.Frame(frame)
     buttons.pack(fill="x", pady=4)
     for label, callback in (("Refresh", lambda: start("refresh")),
                             ("Save Current", lambda: start("save")), ("Add X / Z", add_entered),
                             ("Remove", remove_points),
-                            ("Load", load_route), ("Save Route", save_route)):
+                            ("Load", load_route), ("Save Route", save_route),
+                            ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
+                            ("Clear", clear_points)):
         button = ttk.Button(buttons, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
         editable.append(button)
@@ -815,7 +837,10 @@ def launch_window(args):
             if "waypoint" in event:
                 add_point(*event["waypoint"])
                 name.set(f"Point {len(table.get_children()) + 1}")
-            text = (f"{status}: {event['reason']}" if "reason" in event else
+            text = (f"Route complete — {event['waypointCount']} waypoint{'s' if event['waypointCount'] != 1 else ''}, "
+                    f"{event['distance']:.3f} units from the final point."
+                    if status == "route-complete" else
+                    f"{status}: {event['reason']}" if "reason" in event else
                     f"{status}: {abs(event['headingError']):.2f}° from requested facing" if "headingError" in event else
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
                     f"{status}: {event.get('name', '')}" if status == "leg" else

@@ -97,6 +97,13 @@ control qualification; a captured physical screenshot alone does not prove them.
 
 ## 🚀 Quick start
 
+For the physical waypoint prototype, double-click **[`Waypoints.cmd`](Waypoints.cmd)**
+on the local RIFT host. Save or click nearby points, then use **Go Selected** or
+**Run Route**; **F8** stops the run. It currently supports supervised open-ground
+travel up to 20 units with a movement basis pinned to the current game process.
+See the [waypoint guide](docs/workflows/physical-waypoints.md) for setup, measured
+results and restart/obstacle limitations. Launching the window sends no game input.
+
 ### 1. Prerequisites
 
 | Tool | Version / purpose |

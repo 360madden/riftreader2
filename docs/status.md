@@ -1,5 +1,36 @@
 # Current status
 
+**02:54 EST NOVEMBER 12 — PHYSICAL WAYPOINT PROTOTYPE WORKING:** On verified
+**AMD-DESKTOP**, double-click `Waypoints.cmd` to open the local physical RIFT
+waypoint window. Save the current point, click the local preview or enter X/Z;
+Go Selected / Run Route use the existing feedback controller. Face Selected and
+Face, then walk use measured A/D rates with fresh body-facing feedback. Live pose
+updates while idle; route JSON can be loaded/saved, reordered and cleared.
+The longest GUI trial completed a **13.66-unit, three-point triangle**, returning
+**0.150 units** from its start in approximately one minute: 27 released pulses,
+3,700 ms requested hold, no target loss. Separate facing restored the pre-route
+bearing within **0.361 degrees**, without XYZ movement. See the
+[waypoint guide](workflows/physical-waypoints.md) for commands and receipts.
+
+An earlier GUI-focus STOP really left Atank moving; Joey confirmed no manual
+input. The native helper now retains release timelines, latches blur and attempts
+an owned-window release-only fallback after global key-up. F8/click STOP and a
+targeted mid-hold blur trial subsequently left the player stationary. The GUI
+preserves game focus during STOP and waits for cleanup on close. Generic Computer
+Use activation of RIFT caused a black/stale window again; the existing BlackBox
+recovery restored fresh WGC frames without restarting the game. **Use native
+move-key focus and WGC screenshots; keep Computer Use on the waypoint window.**
+
+Current-epoch open-ground prototype only: 20-unit planned-route cap, bounded
+pulses, exclusive input ownership, fresh exact PID/start/build/player checks;
+no obstacle routing or full-game restart qualification. The basis deliberately
+rejects a new process epoch. Native read-only identity checks reduced measured
+per-check delay from 411 ms to 230–234 ms. Focused checks: 117 native control
+tests, 24 waypoint tests, 21 frame/observation tests and 14 WGC self-checks passed;
+these are scoped checks, not a full-repository gate. The physical process was
+PID18092/start639300391441133615; reacquire identity before new actions. LEGION,
+VMs and peer edits were left untouched. Historical notes below predate this work.
+
 **19:25 EST NOVEMBER 11 — PHYSICAL TURN SCREENSHOT COMPARISON READY OFFLINE:** Added `scripts/physical_turn_visual_pair.py` to compare two saved WGC probe PNGs with their source-hashed JSON receipts. It refuses mismatched PID/start/executable SHA/HWND, wrong image hash/size, duplicate JSON keys, stale/reversed times and unusable/blank captures; returns sampled central-scene change fraction without claiming actor or camera yaw. **8/8 synthetic tests passed** on AMD-DESKTOP with Pillow 13.0.0. This complements the concurrent `tools/physical-wgc-probe` rather than duplicating it; an isolated overlapping C# prototype from this effort was recoverably retired. **No live capture, RIFT input or GUI lock recovery attempted.** The active desktop quarantine remains untouched. Next: once independently recovered/eligible, acquire genuine before/after physical RIFT stills and pair them with bounded A/D and native actor-pose observations.
 
 **14:25 EST NOVEMBER 11 — C# KEY-DOWN/KEY-UP TIMING INSTRUMENTED; 3-GENERATION IMPORTER VERIFIED:** On locally verified AMD-DESKTOP, extended the existing bounded `move-key` helper (no new controller) with `keySendEvents` recording each successful/failed SendInput key-down/up call's start/return UTC and a monotonic `keyHoldWindows` min/max/midpoint estimate, including unconditional watchdog-thread release. The estimate brackets Windows insertion (not exact game consumption) and refuses missing/failed/replayed/overlapping up/down events; A/D `turnRateCandidate` now prefers this estimated hold, requiring clock consistency, instead of whole executor overhead. Updated `physical_move_key_calibration.py` to use the new midpoint when valid and to keep original and intermediate envelope-only receipts labeled by precision; real original W400 receipt replay succeeded. **49/49 focused C# tests, 28/28 Python tests, full .NET Live suite 1196/1196 passed**. Physical RIFT `move-key` preview with `--measure-actor-pose` returned `inputSent=false`. No new game input; desktop-capture quarantine still present/unmodified; other developers' files untouched. See [move-key quickstart](move-key-quickstart.md). Next: only once reviewed screenshot ownership can be established, collect one paired physical A/D movement/angle observation using exact input-time bounds and independently observed view change.

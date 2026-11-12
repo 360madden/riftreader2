@@ -24,6 +24,8 @@ Select a point and choose **Go Selected**,
 or choose **Run Route** to visit the list in order. **Load** and **Save Route**
 use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
+**Up / Down** reorder the selected point; **Clear** empties the list. A completed
+run reports the number of visited waypoints and final distance explicitly.
 
 **Face Selected** turns toward a waypoint without walking. **Face, then walk**
 aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E
@@ -155,3 +157,12 @@ the eight-pulse, 150-ms per-press and shared trip input budgets. F8 interrupted
 another facing phase before W; subsequent XYZ and bearing drift were both zero.
 Resuming finished 0.037 units from the saved start. The separate facing command
 restored the earlier bearing within 2.63 degrees without changing XYZ.
+
+A longer three-point triangle covered 13.66 planned units using **Run Route**
+with forward-facing travel. It completed in approximately one minute with
+27 pulses (14 W, 9 A, 4 D), 3,700 ms total requested hold, all native releases
+successful and no target loss. Atank returned 0.150 units from the saved start.
+Separate settled observations confirmed the endpoint. Five subsequent D turns
+restored the pre-route bearing within 0.361 degrees without XYZ movement.
+Route input receipt: `artifacts/waypoint-input-7aaf3780a54e4a3da35eb9030dcf56d3.jsonl`;
+facing receipt: `artifacts/waypoint-run-314b50d1257b4cce97ec8c9c98c5ad4b.json`.
