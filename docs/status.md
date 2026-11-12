@@ -1,5 +1,13 @@
 # Current status
 
+**11:10 EST NOVEMBER 12 — POINT EDIT SHORTCUTS VERIFIED:** On **AMD-DESKTOP**,
+F2 edits the selected name, Alt+Up/Down reorder, list Delete removes points and
+Ctrl+Enter in Name/X/Z applies edits. Busy/closing guards and ordinary text editing
+remain intact. Eighteen focused tests and live F2/no-op apply/reorder/Undo/Save
+passed, with root review and no game input. Full route/cache are exact; genuine
+7/7 forward progress restored separately after actor/epoch verification. App
+PID62516/window5313042, RIFT PID69312. Goal active through 11:56 EST.
+
 **11:01 EST NOVEMBER 12 — DEFAULT FILE REOPEN AND ZOOM VERIFIED:** On
 **AMD-DESKTOP**, normal default app reopening restored the matching source filename,
 Saved status and genuine 7/7 forward checkpoint. Quick Save worked without a

@@ -691,11 +691,13 @@ def launch_window(args):
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
     live_pose = tk.BooleanVar(value=True)
+    point_entries = []
     for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
         ttk.Label(coordinates, text=label).pack(side="left", padx=(0, 5))
         entry = ttk.Entry(coordinates, textvariable=variable, width=width)
         entry.pack(side="left", padx=(0, 10))
         editable.append(entry)
+        point_entries.append(entry)
     ttk.Checkbutton(coordinates, text="Live pose (2 s)", variable=live_pose).pack(side="left", padx=(16, 0))
     summary = tk.StringVar(value="Refresh position to preview the route.")
     ttk.Label(frame, textvariable=summary).pack(anchor="w", pady=(5, 0))
@@ -1484,6 +1486,28 @@ def launch_window(args):
             save_route(save_as)
         return "break"
 
+    def edit_point_shortcut(_):
+        if not busy and not closing and len(table.selection()) == 1:
+            select_point(None, force_name=True)
+            point_entries[0].focus_set()
+            point_entries[0].selection_range(0, "end")
+        return "break"
+
+    def move_point_shortcut(_, direction):
+        if not busy and not closing:
+            move_point(direction)
+        return "break"
+
+    def remove_points_shortcut(_):
+        if not busy and not closing:
+            remove_points()
+        return "break"
+
+    def update_selected_shortcut(_):
+        if not busy and not closing:
+            update_selected()
+        return "break"
+
     window.bind("<Control-s>", lambda _: save_shortcut())
     window.bind("<Control-Shift-S>", lambda _: save_shortcut(True))
     window.protocol("WM_DELETE_WINDOW", close)
@@ -1493,6 +1517,12 @@ def launch_window(args):
     table.bind("<<TreeviewSelect>>", select_point)
     table.bind("<ButtonRelease-1>", select_clicked)
     table.bind("<Control-z>", undo_edit)
+    table.bind("<F2>", edit_point_shortcut)
+    table.bind("<Alt-Up>", lambda event: move_point_shortcut(event, -1))
+    table.bind("<Alt-Down>", lambda event: move_point_shortcut(event, 1))
+    table.bind("<Delete>", remove_points_shortcut)
+    for entry in point_entries:
+        entry.bind("<Control-Return>", update_selected_shortcut)
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
         mark_saved(args.route)

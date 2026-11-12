@@ -77,6 +77,10 @@ route unsaved. It keeps the current filename and leaves saved files unchanged.
 Playback progress stays cleared; Undo never revives an old cursor. Loading another
 route or completing a recording clears edit history; saving keeps it. History is
 held only while the window is open.
+In the waypoint list, **F2** selects the point's name for editing,
+**Alt+Up / Alt+Down** reorder it, and **Delete** removes selected points.
+In Name/X/Z fields, **Ctrl+Enter** applies Update Selected. These shortcuts are
+disabled during active work; normal text-field Delete/navigation stay unchanged.
 **Add Target** saves the selected entity's freshly read ground position as a
 fixed waypoint. It does not follow a moving entity or start a trip. An unavailable
 or expired target position, or a target more than one unit above/below the player,

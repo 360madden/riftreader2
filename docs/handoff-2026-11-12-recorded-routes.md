@@ -401,6 +401,20 @@ is idle on the ready-route copy; RIFT PID69312 remains bound. The complete contr
 layout and STOP help are visible. Last displayed pose remained
 `(7421.672363,863.586548,2940.903809)`, bearing 61.29 degrees.
 
+**11:10 EST keyboard point controls accepted:** list-scoped F2 prefills/selects
+the point's Name; Alt+Up/Down reorder and Delete removes selected rows. Entry-scoped
+Ctrl+Enter applies Update Selected. All new paths reuse existing callbacks, guard
+busy/closing and preserve normal Entry navigation/Delete. Eighteen focused
+keyboard/edit/Undo fake-Tk tests passed; root reviewed the patch.
+
+After a local idle-input check, live F2 selected Recorded 7's name and unchanged
+Ctrl+Enter preserved the exact 7/7 checkpoint. Alt+Up reordered it, Ctrl+Z restored
+the original order/metadata/selection while keeping progress cleared, and Ctrl+S
+saved the exact original document. No gameplay input occurred. The genuine prior
+checkpoint was restored separately after unchanged actor/epoch verification.
+App PID62516/window5313042 is idle on the ready-route copy, RIFT PID69312 and basis
+unchanged. Desktop checks remain root-owned and conditional on noninterference.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads
