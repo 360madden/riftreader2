@@ -41,12 +41,20 @@ class ProbeTests(unittest.TestCase):
         identity = index["identity"]
         for number in range(1, index["publishedSnapshots"] + 1):
             row = {"status": "complete"}
+            request_content = {"schemaVersion": 1,
+                               "evidenceKind": "native-memory-snapshot-request/1",
+                               "target": index["request"].get("target", identity)}
             for kind, content in (
-                ("request", {"schemaVersion": 1, "target": identity}),
+                ("request", request_content),
                 ("snapshot", {"schemaVersion": 1,
                               "evidenceKind": "native-memory-snapshot/1",
-                              "status": "complete", "identity": identity, "chunks": []}),
+                              "status": "complete", "identity": identity,
+                              "source": {"requestEvidenceKind": "native-memory-snapshot-request/1",
+                                         "requestSha256": row.get("requestSha256")},
+                              "chunks": []}),
             ):
+                if kind == "snapshot":
+                    content["source"]["requestSha256"] = row["requestSha256"]
                 name = f"capture-{number:02d}.{kind}.json"
                 path = directory / name
                 path.write_text(json.dumps(content), encoding="utf-8")
@@ -134,6 +142,40 @@ class ProbeTests(unittest.TestCase):
             index_path.write_text(json.dumps(index))
             with self.assertRaisesRegex(ValueError, "scan-copy-snapshot-identity-mismatch"):
                 probe.check_index(index_path, {}, probe.digest(request_path), SELECTION)
+
+    def test_copied_request_target_and_snapshot_source_must_match(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            request_path = root / "request.json"
+            request = {"target": {"processId": 123,
+                                   "processStartUtcTicks": int(TARGET["processStartUtcTicks"]),
+                                   "executableSha256": probe.BUILD_SHA}}
+            request_path.write_text(json.dumps(request))
+            index = self.copy(root, self.index(request, request_path, published=1))
+            index_path = root / "index.json"
+            index_path.write_text(json.dumps(index))
+            self.assertEqual(probe.check_index(
+                index_path, request, probe.digest(request_path), SELECTION)["sourceVerifiedSnapshots"], 1)
+            source_path = root / "capture-01.request.json"
+            snapshot_path = root / "capture-01.snapshot.json"
+            source = json.loads(source_path.read_text())
+            source["target"]["processId"] = 999
+            source_path.write_text(json.dumps(source))
+            index["candidates"][0]["requestSha256"] = probe.digest(source_path)
+            snapshot = json.loads(snapshot_path.read_text())
+            snapshot["source"]["requestSha256"] = probe.digest(source_path)
+            snapshot_path.write_text(json.dumps(snapshot))
+            index["candidates"][0]["snapshotSha256"] = probe.digest(snapshot_path)
+            index_path.write_text(json.dumps(index))
+            with self.assertRaisesRegex(ValueError, "scan-copy-request-target-mismatch"):
+                probe.check_index(index_path, request, probe.digest(request_path), SELECTION)
+            source["target"]["processId"] = 123
+            source_path.write_text(json.dumps(source))
+            index["candidates"][0]["requestSha256"] = probe.digest(source_path)
+            # Deliberately leave the snapshot pointing to the prior request digest.
+            index_path.write_text(json.dumps(index))
+            with self.assertRaisesRegex(ValueError, "scan-copy-source-request-mismatch"):
+                probe.check_index(index_path, request, probe.digest(request_path), SELECTION)
 
     def test_rejects_wrong_host_without_scanning(self):
         with patch.object(probe.socket, "gethostname", return_value="UNEXPECTED"), \

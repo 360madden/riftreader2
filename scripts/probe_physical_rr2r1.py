@@ -111,11 +111,27 @@ def check_index(path, request, request_sha, selection):
                     and hashlib.sha256(raw).hexdigest().upper() == expected_hash.upper(),
                     "scan-copy-source-hash-mismatch")
             parsed = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=unique)
-            if kind == "snapshot":
+            if kind == "request":
+                expected_target = {
+                    "processId": target["processId"],
+                    "processStartUtcTicks": int(target["processStartUtcTicks"]),
+                    "executableSha256": BUILD_SHA,
+                }
+                require(parsed.get("schemaVersion") == 1
+                        and parsed.get("evidenceKind") == "native-memory-snapshot-request/1"
+                        and parsed.get("target") == expected_target,
+                        "scan-copy-request-target-mismatch")
+            else:
                 require(parsed.get("status") == "complete"
                         and parsed.get("evidenceKind") == "native-memory-snapshot/1"
                         and parsed.get("identity") == observed,
                         "scan-copy-snapshot-identity-mismatch")
+                source = parsed.get("source")
+                require(isinstance(source, dict)
+                        and source.get("requestEvidenceKind") == "native-memory-snapshot-request/1"
+                        and str(source.get("requestSha256", "")).upper()
+                            == str(row["requestSha256"]).upper(),
+                        "scan-copy-source-request-mismatch")
     return {
         "status": index["status"],
         "indexSha256": hashlib.sha256(data).hexdigest().upper(),
