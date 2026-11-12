@@ -1,9 +1,7 @@
 """A prepared RR2 movement capture can be previewed in one command result."""
 import base64
-from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 import hashlib
-import io
 import json
 from pathlib import Path
 import tempfile
@@ -170,69 +168,23 @@ class QuickMovementReviewTests(unittest.TestCase):
         self.assertIn("invalid-preview-crop", review["quickReview"]["reason"])
         self.assertEqual(review["sessionPlan"], str(self.session_path))
 
-    def test_prepare_requires_quick_preview_when_detail_crop_requested(self):
-        from scripts.run_movement_session import main, MovementSessionError
-        args = ["run_movement_session.py", "prepare", "--managed-lab", "lab2",
-                "--feedback-pin", "pin.json", "--output", "session",
-                "--mode", "turn", "--keys", "a",
-                "--review-detail-crop", "100", "50", "1100", "150"]
-        with mock.patch("sys.argv", args), mock.patch(
-                "scripts.run_movement_session.prepare") as prepare:
-            with self.assertRaisesRegex(MovementSessionError, "requires --quick-preview"):
-                main()
-            prepare.assert_not_called()
-        parsed = build_parser().parse_args(args[1:] + ["--quick-preview"])
-        self.assertEqual(parsed.review_detail_crop, [100, 50, 1100, 150])
-        self.assertTrue(parsed.quick_preview)
-
-    def test_prepare_cli_includes_paired_review_in_same_result(self):
-        from scripts.run_movement_session import main
-        args = ["run_movement_session.py", "prepare", "--managed-lab", "lab2",
-                "--feedback-pin", "pin.json", "--output", "session",
-                "--mode", "turn", "--keys", "a", "--quick-preview",
-                "--review-detail-crop", "100", "50", "1100", "150"]
-        output = io.StringIO()
-        with mock.patch("sys.argv", args), mock.patch(
-                "scripts.run_movement_session.prepare", return_value=self.prepared
-                ) as prepare, redirect_stdout(output):
-            self.assertEqual(main(), 0)
-        prepare.assert_called_once()
-        result = json.loads(output.getvalue())
-        self.assertEqual(result["quickReview"]["status"], "ready")
-        self.assertEqual(result["quickReview"]["preview"]["previewFormat"], "webp")
-        self.assertEqual(result["quickReview"]["detailPreview"]["previewFormat"], "jpeg")
-        self.assertEqual(result["quickReview"]["detailPreview"]["sourceCrop"],
-                         [100, 50, 1100, 150])
-        self.assertEqual(result["quickReview"]["reviewExpiresInSeconds"], 0)
-
-    def test_prepare_cli_supports_high_resolution_review_and_rejects_bad_combinations(self):
+    def test_retired_prepare_cli_blocks_preview_options_before_prepare(self):
         from scripts.run_movement_session import main, MovementSessionError
         base = ["run_movement_session.py", "prepare", "--managed-lab", "lab2",
                 "--feedback-pin", "pin.json", "--output", "session",
                 "--mode", "turn", "--keys", "a"]
-        flag = "--review-preserve-resolution"
-        for extra, reason in (([flag], "requires --quick-preview"),
-                              (["--quick-preview", flag, "--review-detail-crop",
-                                "100", "50", "1100", "150"], "conflicts")):
-            with self.subTest(extra=extra), mock.patch("sys.argv", base + extra), mock.patch(
+        for extras in (["--quick-preview", "--review-detail-crop", "100", "50", "1100", "150"],
+                       ["--quick-preview", "--review-preserve-resolution"]):
+            with self.subTest(extras=extras), mock.patch("sys.argv", base + extras), mock.patch(
                     "scripts.run_movement_session.prepare") as prepare:
-                with self.assertRaisesRegex(MovementSessionError, reason):
+                with self.assertRaisesRegex(MovementSessionError, "vmware-retired-use-physical-rift"):
                     main()
                 prepare.assert_not_called()
-        output = io.StringIO()
-        with mock.patch("sys.argv", base + ["--quick-preview", flag]), mock.patch(
-                "scripts.run_movement_session.prepare", return_value=self.prepared
-                ) as prepare, redirect_stdout(output):
-            self.assertEqual(main(), 0)
-        prepare.assert_called_once()
-        review = json.loads(output.getvalue())["quickReview"]
-        self.assertEqual(review["status"], "ready")
-        self.assertEqual(review["preview"]["previewDimensions"], [1000, 580])
-        self.assertEqual(review["preview"]["previewFormat"], "jpeg")
-        self.assertNotIn("detailPreview", review)
-        self.assertEqual(add_quick_review(self.prepared, detail_crop=(0, 0, 100, 100),
-                                          preserve_resolution=True)["quickReview"]["status"],
-                         "unavailable")
+
+    def test_offline_review_rejects_crop_with_preserved_resolution(self):
+        review = add_quick_review(self.prepared, detail_crop=(0, 0, 100, 100),
+                                  preserve_resolution=True)
+        self.assertEqual(review["quickReview"]["status"], "unavailable")
 
     def test_opt_in_only_for_prepare(self):
         args = build_parser().parse_args([
