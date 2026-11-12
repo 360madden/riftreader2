@@ -193,6 +193,34 @@ This proves the tested GUI→CLI and CLI→GUI handoffs; it was a terminal Ctrl+
 test, not a user pressing a physical keyboard. The basis stayed unchanged.
 Current app is PID71280/window15534380, idle at 4/4 forward, RIFT PID79136.
 
+**09:25–09:29 EST recording source-loss case:** RIFT PID79136 exited normally
+while passive Record was active. The recorder halted on the disappearing player
+source, published no route, and left the saved checkpoint/input files unchanged.
+The same app stayed open with Record/movement disabled. Normal Glyph launch and
+Atank entry created PID19692/start `639300903700108811`/HWND42537680. That same app
+reconnected while idle, without restarting capture or joining process epochs.
+Checkpoint and recording/input file sets remained unchanged; Atank's XYZ was
+exactly identical and bearing differed by only -0.000295 degrees after loading.
+Basis SHA stayed unchanged. Evidence: `artifacts/record-restart-before-79136.json`,
+`record-restart-after-exit-79136.json`, `record-restart-after-reconnect-19692.json`.
+Fresh rendered view after restoring DISPLAY5:
+`artifacts/observe-wgc-cce1f1661cf7404d95d3302595b3f563/image.png`.
+
+**09:33–09:35 EST recording budget readout accepted:** Record previously kept
+displaying the old completed playback's Remaining 0/20. It now shows actual
+accumulated recording distance and accepted sample count through the existing
+capture events, with no new reads or changed limits. Ten recorder tests and
+fifteen GUI callback/state tests passed. Live capture displayed **1.03/20 units,
+210 samples**, matching a **1.02585-unit** observed step from one released 150-ms
+W pulse. Receipt: `artifacts/waypoint-run-61bce31e61b44cb581c07d20de1d1511.json`.
+STOP cancelled the temporary recording and preserved the saved route/checkpoint.
+A bounded return with two released S pulses finished **0.05912 units** from the
+original position; receipt `artifacts/waypoint-run-a8a884991e5c48d284fdf29790721177.json`.
+Checks and observed UI text: `artifacts/record-budget-validation-19692.json`.
+The counter cleared after cancellation. Current app PID63676/window22811534 is
+idle with live pose enabled and the original 4/4 forward checkpoint; RIFT is
+PID19692 on the established left display. Fresh identity is required before input.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

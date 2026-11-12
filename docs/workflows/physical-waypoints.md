@@ -52,10 +52,16 @@ or expired target position, or a target more than one unit above/below the playe
 is refused. The point uses the same native candidate source as the target reader.
 
 **Record** passively observes the player's movement without sending input.
+While recording, the summary shows accumulated observed distance against the
+20-unit cap and the accepted sample count. Stop before the cap; the readout
+updates after each capture burst and does not enlarge the recording limits.
 After moving along a short open-ground path, choose **Stop Recording** to finish,
 save a new `artifacts/recorded-route-*.json`, and load its points into the window.
 **STOP** cancels recording without saving; capture or identity errors also leave
-the recording incomplete. Passive GUI recording passed one live two-corner
+the recording incomplete.
+If RIFT exits during capture, that recording is discarded. Idle reconnection
+does not restart recording or join observations from different process epochs.
+Passive GUI recording passed one live two-corner
 open-ground case on AMD-DESKTOP: 732 samples became four actual points across
 10.2944 units. The reusable
 [passive route](../validation/passive-recorded-route-2026-11-12.json) retains its

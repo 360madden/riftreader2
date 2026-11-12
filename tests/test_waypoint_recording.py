@@ -18,6 +18,22 @@ class RecorderTests(unittest.TestCase):
                          "runtimeIdentity": {"processId": 20}}
         self.rec = RouteRecorder(self.identity, max_age_seconds=10)
 
+    def test_progress_tracks_observations_and_is_independent(self):
+        self.assertEqual(self.rec.progress, {"sampleCount": 0, "observedPathLength": 0})
+        self.rec.observe(pose(0, 0, 98))
+        self.assertEqual(self.rec.progress, {"sampleCount": 1, "observedPathLength": 0})
+        self.rec.observe(pose(3, 4, 99))
+        progress = self.rec.progress
+        self.assertEqual(progress, {"sampleCount": 2, "observedPathLength": 5})
+        progress["sampleCount"] = 999
+        progress["observedPathLength"] = -1
+        self.assertEqual(self.rec.progress, {"sampleCount": 2, "observedPathLength": 5})
+        self.rec.observe(pose(3, 5, 100))
+        self.assertEqual(self.rec.progress, {"sampleCount": 3, "observedPathLength": 6})
+        finished = self.rec.finish()["recording"]
+        self.assertEqual(self.rec.progress["sampleCount"], finished["sampleCount"])
+        self.assertEqual(self.rec.progress["observedPathLength"], finished["observedPathLength"])
+
     def test_corners_start_end_and_identity_copied(self):
         for p in (pose(0, 0, 95), pose(1, .01, 96), pose(2, 0, 97),
                   pose(2, 1, 98), pose(2, 2, 99), pose(3, 2, 100)):

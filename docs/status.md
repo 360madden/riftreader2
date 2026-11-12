@@ -1,5 +1,15 @@
 # Current status
 
+**09:35 EST NOVEMBER 12 — RECORDING SOURCE LOSS AND BUDGET:** On **AMD-DESKTOP**,
+normal RIFT exit during capture discarded the incomplete recording and preserved
+saved progress. The same app reconnected to Atank in PID19692 without restarting
+capture; XYZ and the movement basis stayed unchanged. Recording now shows its
+actual distance/sample budget instead of the previous playback's remaining length.
+The readout matched a live 1.03-unit step; cancellation kept the saved route and
+a two-pulse return finished 0.05912 units from the starting point. Ten recorder
+and fifteen GUI tests passed. App PID63676 is idle at 4/4; see the
+[recorded-route handoff](handoff-2026-11-12-recorded-routes.md) for source evidence.
+
 **09:18 EST NOVEMBER 12 — CLI/WINDOW RESUME HANDOFF WORKING:** On **AMD-DESKTOP**,
 the public CLI resumed a GUI checkpoint at 2/4 and finished within 0.12380 units.
 Terminal Ctrl+C then stopped a new CLI run with all nine pulses released and

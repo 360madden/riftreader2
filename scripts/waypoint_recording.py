@@ -50,6 +50,11 @@ class RouteRecorder:
         self._failed = False
         self._finished = False
 
+    @property
+    def progress(self):
+        """Return a snapshot of samples and accumulated observed path length."""
+        return {"sampleCount": len(self._points), "observedPathLength": self._length}
+
     def observe(self, snapshot, boundary=False):
         if self._failed or self._finished:
             raise RecordingError("Recording is no longer active")

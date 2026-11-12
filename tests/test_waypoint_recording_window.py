@@ -171,6 +171,19 @@ class RecordingWindowTests(unittest.TestCase):
         self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
         self.assertEqual([], self.saved())
 
+    def test_recording_displays_actual_capture_budget_then_clears_on_cancel(self):
+        self.start_pending_recording()
+        def label_values():
+            return [str(self.window.getvar(w["textvariable"])) for w in self.widgets()
+                    if isinstance(w, ttk.Label) and w["textvariable"]]
+        self.assertTrue(any("Recording: 2.00 / 20 units" in value and "3 samples" in value
+                            for value in label_values()), label_values())
+        self.button("STOP / F8").invoke()
+        self.release_capture.set()
+        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
+        self.assertFalse(any(value.startswith("Recording:") for value in label_values()))
+        self.assertEqual([], self.saved())
+
     def test_close_waits_for_pending_capture_and_discards_recording(self):
         self.start_pending_recording()
         self.close()

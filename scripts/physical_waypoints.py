@@ -711,6 +711,7 @@ def launch_window(args):
     events, stop = queue.Queue(), threading.Event()
     busy = False
     recording = False
+    recording_progress = None
     closing = False
     adapter = getattr(args, "initial_adapter", None)
     published_adapter = adapter
@@ -813,9 +814,13 @@ def launch_window(args):
         planned_distance = route_length(*last_pose[:2], selected_points(True))
         selected = selected_points()
         chosen = route_length(*last_pose[:2], selected) if selected else None
-        summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
-                    + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
-                    + ("   •   Shorten the route to run it" if distance > 20 else ""))
+        if recording and recording_progress is not None:
+            summary.set(f"Recording: {recording_progress['observedPathLength']:.2f} / 20 units"
+                        f"   •   {recording_progress['sampleCount']} samples   •   Stop Recording saves")
+        else:
+            summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
+                        + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
+                        + ("   •   Shorten the route to run it" if distance > 20 else ""))
         if not busy:
             go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
             route_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
@@ -892,7 +897,7 @@ def launch_window(args):
                     for pose in observe_batch(adapter, samples=6):
                         recorder.observe(pose)
                     events.put({"status": "recording", "position": asdict(pose.position),
-                                "bearing": pose.bearing})
+                                "bearing": pose.bearing, **recorder.progress})
                     record_stop.wait(.15)
                 if record_cancel.is_set():
                     raise WaypointError("Recording cancelled; no route saved")
@@ -954,7 +959,7 @@ def launch_window(args):
             events.put({"status": "live-idle" if operation == "live" else "idle"})
 
     def start(operation, points=None):
-        nonlocal busy, foreground_stop, recording, playback_view, playback_active
+        nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         if busy or closing:
             return
         if operation == "go" and (not points or len(points) > 20):
@@ -985,9 +990,11 @@ def launch_window(args):
             widget.configure(state="disabled")
         if operation == "record":
             recording = True
+            recording_progress = {"sampleCount": 0, "observedPathLength": 0.0}
             record_stop.clear()
             record_cancel.clear()
             record_end_button.configure(state="normal")
+            redraw()
         state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face", "play", "resume")
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Reading current RIFT pose…")
@@ -1148,7 +1155,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, foreground_stop, last_pose, observing, next_live_at, playback_view, playback_active
+        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, observing, next_live_at, playback_view, playback_active
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1188,6 +1195,7 @@ def launch_window(args):
                         playback_view = None
                         progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
                 recording = False
+                recording_progress = None
                 record_end_button.configure(state="disabled")
                 for widget in editable:
                     widget.configure(state="normal")
@@ -1232,6 +1240,9 @@ def launch_window(args):
                     redraw()
             if "position" in event:
                 point = event["position"]
+                if status == "recording":
+                    recording_progress = {"sampleCount": event["sampleCount"],
+                                          "observedPathLength": event["observedPathLength"]}
                 last_pose = (point["x"], point["z"], event.get("bearing", last_pose[2] if last_pose else 0))
                 pose_text.set(f"Position X={point['x']:.6f}  Y={point['y']:.6f}  Z={point['z']:.6f}"
                               f"   facing={last_pose[2]:.2f}°   updated {time.strftime('%H:%M:%S')}")
