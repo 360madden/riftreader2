@@ -50,6 +50,11 @@ def finite(value, reason):
     return float(value)
 
 
+def native_coordinate(value):
+    number = finite(value, "helper-native-position-invalid")
+    return struct.unpack("<f", struct.pack("<f", number))[0]
+
+
 def utc(value):
     require(isinstance(value, str) and len(value) <= 48, "invalid-helper-sample-time")
     try:
@@ -74,7 +79,8 @@ def forward_pose_comparison(receipt, dx, dz):
     angles = []
     owners = []
     intervals = []
-    for key in ("beforePose", "afterPose"):
+    endpoints_match = True
+    for key, endpoint in (("beforePose", xyz["beforeXYZ"]), ("afterPose", xyz["afterXYZ"])):
         row = pose.get(key)
         require(isinstance(row, dict), "helper-pose-unavailable")
         ident = row.get("identity")
@@ -83,6 +89,16 @@ def forward_pose_comparison(receipt, dx, dz):
                 and ident.get("executableSha256") == receipt["executableSha256"]
                 and row.get("playerKeyDecimal") == xyz["beforeXYZ"]["unitKey"],
                 "helper-pose-owner-mismatch")
+        bracket = row.get("positionBracketCandidate")
+        if bracket is not None:
+            require(isinstance(bracket, dict) and bracket.get("playerKeyDecimal") == row["playerKeyDecimal"],
+                    "helper-pose-bracket-owner-mismatch")
+            for side in ("before", "after"):
+                sample = bracket.get(side)
+                require(isinstance(sample, dict), "helper-pose-bracket-unavailable")
+                for axis in ("x", "z"):
+                    if native_coordinate(sample.get(axis)) != native_coordinate(endpoint[axis]):
+                        endpoints_match = False
         owner = tuple(row.get(k) for k in ("playerEntityDecimal", "actorComponentDecimal",
                                            "positionComponentDecimal"))
         require(all(isinstance(v, str) and UNIT.fullmatch(v) for v in owner),
@@ -98,7 +114,7 @@ def forward_pose_comparison(receipt, dx, dz):
             <= tick(timing["startedAtUtc"]) and tick(timing["completedAtUtc"])
             <= tick(xyz["afterXYZ"]["startedAtUtc"]) <= tick(xyz["afterXYZ"]["completedAtUtc"])
             <= intervals[1][0] <= intervals[1][1], "helper-pose-timing-mismatch")
-    if None in angles or math.hypot(dx, dz) == 0:
+    if not endpoints_match or None in angles or math.hypot(dx, dz) == 0:
         return None
     travel = math.degrees(math.atan2(dx, dz))
     return {"travelDegreesFromPositiveZTowardPositiveX": travel,
@@ -245,10 +261,6 @@ def from_helper_receipt(path: Path):
     require(type(keys_before) is str and UNIT.fullmatch(keys_before)
             and int(keys_before) < 2**64 and after.get("unitKey") == keys_before,
             "helper-native-player-changed")
-    def native_coordinate(value):
-        number = finite(value, "helper-native-position-invalid")
-        return struct.unpack("<f", struct.pack("<f", number))[0]
-
     point = []
     for item in (before, after):
         a, b = utc(item.get("startedAtUtc")), utc(item.get("completedAtUtc"))

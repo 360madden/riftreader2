@@ -125,6 +125,14 @@ class HelperCalibrationTests(unittest.TestCase):
         result = self.analyze()["forwardPoseComparisonCandidate"]
         self.assertAlmostEqual(result["travelDegreesFromPositiveZTowardPositiveX"], bearing)
         self.assertAlmostEqual(result["travelMinusNegatedBeforeActorDegrees"], 0, places=4)
+        changed = deepcopy(r)
+        endpoint = changed["xyzFeedback"]["afterXYZ"]
+        changed["poseFeedback"]["afterPose"]["positionBracketCandidate"] = {
+            "playerKeyDecimal": "42", "before": endpoint, "after": dict(endpoint, z=endpoint["z"] + 1)}
+        self.save(changed)
+        result = self.analyze()
+        self.assertNotIn("forwardPoseComparisonCandidate", result)
+        self.assertGreater(result["horizontalDisplacementCandidate"], 0)
         for field, value, reason in (("playerKeyDecimal", "43", "owner-mismatch"),
                                      ("startedAtUtc", "2026-11-11T14:54:05.600Z", "timing-mismatch")):
             changed = deepcopy(r)
