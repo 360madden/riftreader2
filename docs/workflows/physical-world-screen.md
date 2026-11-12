@@ -84,6 +84,12 @@ and waits for active work, foreground cleanup and the marker child before prompt
 Cancel leaves the stopped app open without resuming playback. Failed saves and
 cancelled Save As also keep the edits. Actual Cancel and explicit No passed on
 AMD-DESKTOP/PID40452; see `artifacts/unsaved-close-live-40452/validation.json`.
+Default startup also restores a cached route's matching archived progress when
+no active checkpoint exists, after fresh player identity. An unavailable/stale
+identity defers recovery; malformed active checkpoint bytes stay intact. This
+does not start playback. The actual alternate-`--route` -> close -> default launch
+sequence restored the byte-identical main checkpoint on PID40452 without a reload
+click: `artifacts/cached-archive-startup-live-40452/validation.json`.
 
 The 3D pane also shows the retained native optical eye and screen-edge view rays.
 These invert the same matrix X/Y/W rows used by projection, using NumPy from the

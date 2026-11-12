@@ -2136,18 +2136,36 @@ def launch_window(args):
                 cached_document, cached_source = snapshot["route"], snapshot.get("sourcePath")
             else:
                 cached_document = snapshot
-            progress_route(cached_document)
+            cached_document = prepared_document(cached_document)
+            if "pointMeasurements" in cached_document:
+                from scripts.waypoint_measurements import document_measurements
+                raw = cached_document["pointMeasurements"]
+                measured = document_measurements(cached_document)
+                if (not isinstance(raw, list) or len(raw) != len(cached_document["waypoints"])
+                        or any(receipt is not None and parsed is None for receipt, parsed in zip(raw, measured))):
+                    raise WaypointError("Invalid cached waypoint measurement list")
         except (OSError, ValueError, KeyError, TypeError):
             cached_document = None
             if not restored_checkpoint:
                 progress_text.set("Last saved route unavailable; load a route to continue.")
     if not args.route and not restored_checkpoint and cached_document is not None:
         try:
+            # A corrupt active checkpoint stays available for diagnosis. With
+            # no active cursor, recover this cached route's archived progress
+            # only after the whole document and current owner are verified.
+            progress = None
+            if not checkpoint.exists():
+                pending_progress_selection = current_identity() is None
+                if not pending_progress_selection:
+                    progress = select_progress(cached_document)
             show_document(cached_document)
             route_recovered = True
             update_route_status()
             playback_view = None
-            progress_text.set("Last saved route restored; choose Play Forward or Play Reverse.")
+            if progress is not None:
+                display_progress(progress)
+            else:
+                progress_text.set("Last saved route restored; choose Play Forward or Play Reverse.")
             redraw()
         except (OSError, ValueError, KeyError, TypeError):
             progress_text.set("Last saved route unavailable; load a route to continue.")

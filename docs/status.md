@@ -1,5 +1,19 @@
 # Current status
 
+**18:12 EST NOVEMBER 12 — DEFAULT STARTUP NOW RECOVERS CACHED ROUTE'S ARCHIVE:**
+The startup gap exposed by close acceptance is fixed. When no active checkpoint
+exists, default cached-route restoration validates the route/receipts and selects
+its matching archive only with fresh owner identity; unknown/stale identity defers
+to the existing idle selector. Explicit route precedence and malformed active
+checkpoint preservation remain intact; playback never starts automatically.
+Eight focused new tests passed, with 36 startup/cache tests passing during the
+combined development run. On AMD-DESKTOP/PID40452, root repeated explicit named
+route startup -> normal close -> default startup. The main cache stayed byte-identical,
+and the new app automatically restored the exact genuine 7/7 checkpoint, consuming
+its matching archive. No reload click, game input or recalibration was needed.
+GUI PID35100 is idle on the main route, markers off. Evidence:
+`artifacts/cached-archive-startup-live-40452/validation.json`.
+
 **18:10 EST NOVEMBER 12 — READABLE NEARBY SAMPLES TAB REPLACES NAME CLUTTER:**
 The pinned Rerun viewer now uses its built-in document tab for a compact nearby
 table: candidate name, direct distance, XYZ and lossless key, followed by separate
