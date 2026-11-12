@@ -144,6 +144,27 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                 proc.assert_called_once()
                 self.assertEqual(index.call_count, 1)
 
+    def test_focus_uses_only_complete_markers_in_current_pinned_index(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "index.json"
+            path.write_text(json.dumps({"candidates": [
+                {"markerAddress": "0x318371E0", "status": "prefix-not-plausible"},
+                {"markerAddress": "0x31B05D40", "status": "complete",
+                 "snapshotSha256": "A"*64},
+                {"markerAddress": "0x31D598E0", "status": "complete",
+                 "snapshotSha256": "B"*64}]}))
+            with patch.object(capture.probe, "digest", return_value="C"*64):
+                self.assertEqual(capture.focused_second_pass(
+                    path, {"indexSha256": "C"*64}), ("0x31A05000", 33_554_432))
+                with self.assertRaisesRegex(ValueError, "index-changed"):
+                    capture.focused_second_pass(path, {"indexSha256": "D"*64})
+            path.write_text(json.dumps({"candidates": [
+                {"markerAddress": "0x31B05D40", "status": "complete",
+                 "snapshotSha256": "A"*64}]}))
+            with patch.object(capture.probe, "digest", return_value="C"*64):
+                self.assertIsNone(capture.focused_second_pass(
+                    path, {"indexSha256": "C"*64}))
+
     def test_partial_scan_failure_keeps_request_for_diagnosis(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

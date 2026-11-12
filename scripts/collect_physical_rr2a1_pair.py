@@ -41,7 +41,8 @@ def same_process(pid, original, reader_sha):
     return current
 
 
-def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms):
+def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms,
+              start_address="0x10000"):
     same_process(pid, selection, reader_sha)
     directory.mkdir(parents=True, exist_ok=False)
     target = selection["target"]
@@ -53,7 +54,7 @@ def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms):
             "processStartUtcTicks": int(target["processStartUtcTicks"]),
             "executableSha256": target["executableSha256"].upper(),
         },
-        "startAddress": "0x10000",
+        "startAddress": start_address,
         "maxScanBytes": scan_bytes,
         "maxDurationMilliseconds": scan_ms,
         "maxRegionCount": 32768,
@@ -79,8 +80,26 @@ def scan_once(pid, selection, reader_sha, directory, *, scan_bytes, scan_ms):
     return scan_dir / "index.json", receipt
 
 
+def focused_second_pass(index_path, receipt):
+    """Use only this run's source-pinned copied markers, never a saved address."""
+    require(probe.digest(index_path) == receipt["indexSha256"],
+            "first-scan-index-changed")
+    index = json.loads(index_path.read_text(encoding="utf-8"),
+                       object_pairs_hook=probe.unique)
+    addresses = [int(row["markerAddress"], 16)
+                 for row in index.get("candidates", [])
+                 if row.get("status") == "complete" and row.get("snapshotSha256")]
+    if len(addresses) < 2:
+        return None
+    start = max(0x10000, min(addresses) - 1_048_576) & ~4095
+    # One-epoch memory locality only; any missing data fails the usual replay.
+    if max(addresses) + 1_048_576 - start > 33_554_432:
+        return None
+    return f"0x{start:X}", 33_554_432
+
+
 def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
-            samples=3, interval_ms=150):
+            samples=3, interval_ms=150, focus_second_pass=False):
     require(socket.gethostname().upper() == HOST, "wrong-host")
     require(type(pid) is int and 0 < pid < 2**31, "explicit-pid-required")
     require(type(scan_bytes) is int and
@@ -88,7 +107,8 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
             scan_bytes % 4096 == 0 and
             type(scan_ms) is int and 1000 <= scan_ms <= 30_000 and
             type(samples) is int and 1 <= samples <= 30 and
-            type(interval_ms) is int and 0 <= interval_ms <= 2000,
+            type(interval_ms) is int and 0 <= interval_ms <= 2000 and
+            type(focus_second_pass) is bool,
             "invalid-collection-bounds")
     selection = probe.pinned_selection(pid)
     reader = physical_rift.NATIVE_EXE
@@ -106,9 +126,14 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
     first, first_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-01",
         scan_bytes=scan_bytes, scan_ms=scan_ms)
+    focus = (focused_second_pass(first, first_receipt)
+             if focus_second_pass else None)
+    if focus is not None and focus[1] > scan_bytes:
+        focus = None  # Never exceed the caller's scan-byte budget.
     second, second_receipt = scan_once(
         pid, selection, reader_sha, output_dir / "pass-02",
-        scan_bytes=scan_bytes, scan_ms=scan_ms)
+        scan_bytes=focus[1] if focus else scan_bytes, scan_ms=scan_ms,
+        start_address=focus[0] if focus else "0x10000")
     after, _ = bracket.collect(
         pid, output_dir / "native-after", samples=samples,
         interval_ms=interval_ms)
@@ -134,6 +159,10 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         },
         "scanSnapshots": [first_receipt["publishedSnapshots"],
                           second_receipt["publishedSnapshots"]],
+        "secondPassFocus": {"requested": focus_second_pass,
+                            "used": focus is not None,
+                            "startAddress": focus[0] if focus else "0x10000",
+                            "maxScanBytes": focus[1] if focus else scan_bytes},
         "comparison": paired,
         "qualification": ("Real independent RR2A1 baseline Lua frames and native "
                           "candidate brackets in one verified physical process "
@@ -156,12 +185,15 @@ def main(argv=None):
     parser.add_argument("--scan-ms", type=int, default=15_000)
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--interval-ms", type=int, default=150)
+    parser.add_argument("--focus-second-pass", action="store_true",
+                        help="Re-scan first-pass marker window (same-epoch experiment)")
     args = parser.parse_args(argv)
     try:
         path, result = collect(
             args.physical_pid, args.output_dir,
             scan_bytes=args.scan_bytes, scan_ms=args.scan_ms,
-            samples=args.samples, interval_ms=args.interval_ms)
+            samples=args.samples, interval_ms=args.interval_ms,
+            focus_second_pass=args.focus_second_pass)
     except (OSError, ValueError, KeyError, TypeError, OverflowError,
             subprocess.TimeoutExpired) as exc:
         print(json.dumps({"status": "blocked", "reason": str(exc)[:220],
