@@ -143,3 +143,14 @@ One D press requested for 50 ms had Windows hold bounds of 57.51–60.80 ms (mid
 At the corrected facing, one 100 ms W press moved Atank 0.65907 horizontal units. Paired position samples showed the same selected dummy at the same coordinates before and after, with its distance dropping from 5.417 to 4.758 units. Two separate 100 ms S presses then moved Atank back 0.32489 and 0.35197 units. The final horizontal distance from the pre-W player position was 0.01781 units. The hold midpoints were 107.07 ms for W, then 108.44 and 112.08 ms for S. All three receipts report successful release.
 
 The retained sources are `artifacts/aligned-step-20261111-210654/w.json`, `artifacts/aligned-backstep-20261111-211022/s.json` and `artifacts/return-backstep-20261111-211119/s.json`. Each directory also has before and after self/target position samples. Compare the first before sample to the last after sample for return error. All three presses used one actor facing and process epoch. The result supports separate forward and backward speed estimates. A single continuous 200 ms S hold was not tested in this trial.
+
+## Continuous and controller-bounded returns
+
+Each trial below started from a fresh baseline and used one requested 100 ms W press. Horizontal residuals compare the final self X/Z with that trial's own pre-W position.
+
+| Trial directory under artifacts | Requested S hold | Forward travel | Backward travel | Residual |
+| --- | ---: | ---: | ---: | ---: |
+| `continuous-return-20261111-211219` | 200 ms | 0.65555 | 0.64691 | 0.00873 |
+| `bounded-return-20261111-211335` | 150 ms | 0.66215 | 0.49862 | 0.16353 |
+
+The live 150 ms trial used the key and duration chosen in a preceding offline replay. Replaying its own records afterward through WaypointController, with the earlier 100 ms W and S calibrations, also selected S for 150 ms and predicted 0.21272 units remaining. The post-S sample moved the replay to confirming-arrival. A subsequent acquisition in `confirm.json` produced the same coordinates and the second confirmation required for arrived. This exercises feedback against saved physical observations. Selecting and executing a controller decision within the same live trial remains open.
