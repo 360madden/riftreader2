@@ -1,5 +1,15 @@
 # Current status
 
+**09:18 EST NOVEMBER 12 — CLI/WINDOW RESUME HANDOFF WORKING:** On **AMD-DESKTOP**,
+the public CLI resumed a GUI checkpoint at 2/4 and finished within 0.12380 units.
+Terminal Ctrl+C then stopped a new CLI run with all nine pulses released and
+zero measured post-stop drift. GUI Refresh picked up its saved 2/4 cursor;
+explicit GUI Resume finished within 0.06348 units. CLI failures now retain durable
+run/input/checkpoint evidence, and Refresh reconciles matching saved progress.
+Twenty-eight focused tests and these live cases passed. App PID71280 is idle at
+4/4; the movement basis is unchanged. Exact evidence and limitations are in the
+[recorded-route handoff](handoff-2026-11-12-recorded-routes.md). Goal remains active.
+
 **08:45 EST NOVEMBER 12 — COLD START AND F8/RESUME VERIFIED:** On **AMD-DESKTOP**,
 the waypoint app opened before RIFT existed, stayed waiting through character
 selection, then reconnected the same app window to Atank in new PID79136 without

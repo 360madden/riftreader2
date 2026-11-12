@@ -125,6 +125,33 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
 
+    def test_refresh_reconciles_checkpoint_completed_by_external_cli(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0], ["C", 2, 0], ["D", 3, 0]]}
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        saved = {"route": document, "direction": "reverse", "nextIndex": 2}
+        checkpoint.write_text(json.dumps(saved))
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
+        saved["nextIndex"] = 4
+        checkpoint.write_text(json.dumps(saved))
+        unchanged = checkpoint.read_bytes()
+        self.button("Refresh").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not t.is_alive() for t in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        self.assertEqual(unchanged, checkpoint.read_bytes())
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        self.assertEqual(4, len(table.get_children()))
+        labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
+                  if isinstance(w, ttk.Label) and w["textvariable"]]
+        self.assertTrue(any("Saved progress: 4 / 4" in value for value in labels), labels)
+        self.assertTrue(any("Remaining: 0.00" in value for value in labels), labels)
+
     def test_explicit_different_route_cannot_resume(self):
         route = self.path / "route.json"
         route.write_text(json.dumps({"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 12]}), encoding="utf-8")

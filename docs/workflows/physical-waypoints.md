@@ -219,7 +219,12 @@ For the same backend without the window:
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --go 7422.455078125 2948.04931640625 --execute
 ```
 
-Successful CLI runs retain the native input receipts under `artifacts/waypoint-run-*.json`.
+CLI outcomes retain run receipts under `artifacts/waypoint-run-*.json`. Failed or
+stopped runs retain the original reason, completed-leg events, checkpoint and
+native pulse-file paths. STOP also retains the same two-pose `stopVerification`
+as the window; missing observations remain explicitly unavailable. If the receipt
+cannot be written, the final CLI JSON reports `receiptError` alongside the action
+failure. Successful receipt contents retain their existing format.
 
 Run a saved multi-point route through the same backend:
 
@@ -240,6 +245,10 @@ python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 
 Omit `--reverse` for forward playback. Resume must use the saved direction and
 checkpoint. Without `--progress`, the checkpoint uses the route path with a
 `.progress.json` suffix. `--execute` is required for each commanded trip.
+To resume a checkpoint created by the window, use the same loaded route and
+`--progress artifacts/waypoint-current-progress.json`, with its saved direction.
+Leave the window idle while CLI input runs. Afterward, **Refresh** or an idle live
+pose update reloads matching saved progress without replacing the loaded route.
 
 This requires explicit `--execute` and preserves every leg in one receipt. The
 same ownership, progress, release and whole-trip limits apply. **F8** cancels CLI

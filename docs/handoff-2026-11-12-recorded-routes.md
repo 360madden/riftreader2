@@ -163,6 +163,36 @@ for these tests. Current owned app is PID76124/window5248196, idle at 4/4;
 RIFT is still PID79136. This is failure-safe replacement evidence, not a tested
 guarantee against every filesystem or power-loss scenario.
 
+**09:11–09:18 EST CLI/window handoff accepted:** GUI STOP saved cursor 2/4 reverse
+and zero measured post-stop drift; receipt
+`artifacts/waypoint-run-6f2046f5d78a49098a647615eb263c2c.json`.
+The public CLI resumed that same checkpoint, visiting only Recorded 2 and 1:
+six released pulses, 803 ms requested hold, **0.12380-unit** endpoint error.
+Receipt: `artifacts/waypoint-run-a96934030e634d2d8d9a55408ba97ff7.json`;
+stdout retained at `artifacts/cli-resume-79136.stdout.jsonl`.
+
+That trial exposed two omissions now fixed: CLI failures did not retain run/input
+receipt paths or measured STOP evidence, and GUI Refresh kept a stale cursor after
+CLI changed the checkpoint. CLI failures now save original reason, all emitted
+events/completed legs, checkpoint/input paths, binding and structured STOP evidence.
+The same existing two-read STOP helper is shared with the GUI, without changing
+timing or thresholds; ordinary errors add no reads. Successful CLI receipt schemas
+are unchanged. Refresh/idle pose updates reconcile only matching saved progress,
+without deleting malformed/unrelated checkpoint files or replacing the loaded route.
+**28 focused CLI/GUI state/GUI receipt tests passed.**
+
+Live terminal Ctrl+C through ConPTY then stopped a forward CLI run at 2/4. All
+nine pulses released (1,329 ms total), and the saved `stopVerification` retained
+two identical native poses with zero XYZ/yaw drift. Receipt:
+`artifacts/waypoint-run-9874cb2240d14437a19f0d9d07772c05.json`.
+GUI Refresh updated its former completed display to the actual 2/4 forward cursor
+and enabled Resume. Explicit GUI Resume visited only Recorded 3 and 4, finishing
+**0.06348 units** from the endpoint, six released pulses and 765 ms hold; receipt
+`artifacts/waypoint-run-195ed726ea194085b9e385f863e199e1.json`.
+This proves the tested GUI→CLI and CLI→GUI handoffs; it was a terminal Ctrl+C
+test, not a user pressing a physical keyboard. The basis stayed unchanged.
+Current app is PID71280/window15534380, idle at 4/4 forward, RIFT PID79136.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

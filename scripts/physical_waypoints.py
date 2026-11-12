@@ -220,6 +220,32 @@ def pose_drift(first, second):
             abs(heading_error(second.bearing, first.bearing)))
 
 
+def verify_stopped_pose(adapter):
+    """Measure two post-STOP poses; native key-release evidence stays separate."""
+    evidence = {"status": "unavailable", "samples": [], "xyzDrift": None,
+                "yawDriftDegrees": None, "maxXyzDrift": .05, "maxYawDriftDegrees": .5,
+                "qualification": "Two native candidate poses after STOP; separate from per-pulse key-release evidence"}
+    try:
+        time.sleep(.35)
+        first = adapter.read()
+        evidence["samples"].append({"source": first.source, "position": asdict(first.position),
+                                    "bearing": first.bearing, "acquired": first.acquired})
+        time.sleep(.25)
+        second = adapter.read()
+        evidence["samples"].append({"source": second.source, "position": asdict(second.position),
+                                    "bearing": second.bearing, "acquired": second.acquired})
+        drift, yaw = pose_drift(first, second)
+        evidence.update(xyzDrift=drift, yawDriftDegrees=yaw,
+                        status="movement-detected" if drift > .05 or yaw > .5 else "pass")
+        if drift > .05:
+            evidence["reason"] = f"Movement still detected after STOP ({drift:.3f} units); recovery required"
+        elif yaw > .5:
+            evidence["reason"] = f"Facing still changing after STOP ({yaw:.2f}°); recovery required"
+    except Exception as exc:
+        evidence.update(status="unavailable", reason=str(exc))
+    return evidence
+
+
 def read_stationary(adapter, stop):
     if stop.is_set():
         raise Stopped("Stopped; no further input")
@@ -892,34 +918,14 @@ def launch_window(args):
             original_reason = str(exc)
             stopped_position = stopped_bearing = None
             if isinstance(exc, Stopped) and adapter is not None:
-                stop_verification = {"status": "unavailable", "samples": [],
-                                     "xyzDrift": None, "yawDriftDegrees": None,
-                                     "maxXyzDrift": .05, "maxYawDriftDegrees": .5,
-                                     "qualification": "Two native candidate poses after STOP; separate from per-pulse key-release evidence"}
-                try:
-                    time.sleep(.35)
-                    first = adapter.read()
-                    stop_verification["samples"].append({"source": first.source,
-                        "position": asdict(first.position), "bearing": first.bearing,
-                        "acquired": first.acquired})
-                    time.sleep(.25)
-                    second = adapter.read()
-                    stop_verification["samples"].append({"source": second.source,
-                        "position": asdict(second.position), "bearing": second.bearing,
-                        "acquired": second.acquired})
-                    drift, yaw_drift = pose_drift(first, second)
-                    stop_verification.update(xyzDrift=drift, yawDriftDegrees=yaw_drift,
-                                             status="movement-detected" if drift > .05 or yaw_drift > .5 else "pass")
-                    if drift > .05:
-                        exc = WaypointError(f"Movement still detected after STOP ({drift:.3f} units); recovery required")
-                    elif yaw_drift > .5:
-                        exc = WaypointError(f"Facing still changing after STOP ({yaw_drift:.2f}°); recovery required")
-                    else:
-                        stopped_position = asdict(second.position)
-                        stopped_bearing = second.bearing
-                except Exception as observation_error:
-                    stop_verification.update(status="unavailable", reason=str(observation_error))
-                    exc = WaypointError("STOP requested; stationary check unavailable: " + str(observation_error))
+                stop_verification = verify_stopped_pose(adapter)
+                if stop_verification["status"] == "pass":
+                    stopped_position = stop_verification["samples"][-1]["position"]
+                    stopped_bearing = stop_verification["samples"][-1]["bearing"]
+                elif stop_verification["status"] == "unavailable":
+                    exc = WaypointError("STOP requested; stationary check unavailable: " + stop_verification["reason"])
+                else:
+                    exc = WaypointError(stop_verification["reason"])
             failure = {"status": "live-unavailable" if operation == "live" else
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
                        "originalReason": original_reason,
@@ -1232,6 +1238,13 @@ def launch_window(args):
                 if not x.get() and not z.get():
                     x.set(f"{point['x']:.6f}")
                     z.set(f"{point['z']:.6f}")
+                if status in ("refresh", "live"):
+                    try:
+                        restore_progress()
+                    except (OSError, ValueError, KeyError, TypeError):
+                        playback_view = None
+                        progress_text.set("Saved progress unavailable; load a matching route to continue."
+                                          if checkpoint.exists() else "No saved progress; choose Play Forward or Play Reverse.")
                 redraw()
             if status in ("live", "recording"):
                 continue
@@ -1291,6 +1304,7 @@ def launch_window(args):
 
 
 def main(argv=None):
+    from scripts.waypoint_progress import write_json_atomic
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True, choices=physical_rift.SUPPORTED_HOSTS)
     parser.add_argument("--physical-pid", required=True, type=int)
@@ -1318,12 +1332,17 @@ def main(argv=None):
     if not args.execute:
         parser.error("--go / --face-bearing / --run-route requires --execute; omit them to open the window")
     stop = threading.Event()
+    adapter, checkpoint = None, None
+    history = []
+
+    def emit(event):
+        history.append(dict(event))
+        print(json.dumps({k: v for k, v in event.items() if k not in ("actions", "segments")}), flush=True)
+
     try:
         if args.record_to is not None and args.record_to.exists():
             raise WaypointError("Recording output already exists; choose a new path")
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
-        emit = lambda event: print(json.dumps({k: v for k, v in event.items()
-                                               if k not in ("actions", "segments")}), flush=True)
         with cli_stop_controls(stop):
             if args.run_route is not None or args.play_route is not None or args.record_to is not None:
                 path = args.play_route or args.run_route
@@ -1363,7 +1382,27 @@ def main(argv=None):
         return 0
     except (Exception, KeyboardInterrupt) as exc:
         stop.set()
-        print(json.dumps({"status": "halted", "reason": str(exc)}), flush=True)
+        original_reason = str(exc)
+        verification = verify_stopped_pose(adapter) if isinstance(exc, Stopped) and adapter is not None else None
+        reason = original_reason
+        if verification and verification["status"] != "pass":
+            reason = ("STOP requested; stationary check unavailable: " + verification["reason"]
+                      if verification["status"] == "unavailable" else verification["reason"])
+        failure = {"status": "stopped" if isinstance(exc, Stopped) and verification and verification["status"] == "pass" else "halted",
+                   "reason": reason, "originalReason": original_reason,
+                   "inputReceiptPath": str(adapter.input_receipt_path) if adapter is not None and hasattr(adapter, "input_receipt_path") else None,
+                   "checkpointPath": str(checkpoint) if checkpoint is not None else None}
+        receipt = {**failure, "failure": dict(failure), "events": history,
+                   "completedLegs": [event for event in history if event.get("status") == "arrived"],
+                   "calibrationBinding": getattr(adapter, "binding", None), "stopVerification": verification,
+                   "releaseVerification": "see individual native pulse receipts for key release; measured stationary evidence is separate in stopVerification"}
+        output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
+        try:
+            write_json_atomic(output, receipt)
+            failure["receipt"] = str(output)
+        except (OSError, ValueError, TypeError) as write_error:
+            failure["receiptError"] = str(write_error)
+        print(json.dumps(failure), flush=True)
         return 2
 
 
