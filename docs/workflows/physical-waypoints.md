@@ -18,6 +18,23 @@ or choose **Run Route** to visit the list in order. **Load** and **Save Route**
 use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
 
+**Face Selected** turns toward a waypoint without walking. **Face, then walk**
+aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E
+controller approaches the point with the current facing. Facing uses the retained
+same-epoch settled A/D measurements as seeds and checks the observed response
+after every release. Alignment allows eight 20–150-ms presses and 20 seconds,
+stopping within 4 degrees. It refuses unexpected XYZ movement during a turn.
+Turns share the trip's hold/pulse budget; facing mode uses segments up to 3.5
+units long. The existing translation controller retains its own limits.
+
+For a requested facing without walking:
+
+```powershell
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 18092 --face-bearing -4.7 --execute
+```
+
+Add `--face-waypoints` to a CLI `--go` or a GUI launch to enable forward walking.
+
 Each route is limited to 20 world units of planned travel, 64 pulses, 9 seconds
 total key hold and 120 seconds overall. Long waypoints are split into targets
 at most 4 units apart. Each target retains the existing controller's six-pulse,
@@ -35,7 +52,7 @@ not change foreground. The waypoint window uses `WS_EX_NOACTIVATE` during the
 trip so an ordinary STOP click also preserves foreground; editing is disabled
 until cleanup. The current pulse finishes its bounded release; another pulse
 is never sent. Closing waits for cleanup, and STOP checks for actual stationary
-native positions. Only the first actual pulse can request RIFT foreground.
+native XYZ and body bearing. Only the first actual pulse can request RIFT foreground.
 
 Foreground loss aborts the run. The native helper sends unconditional global
 key-up, then may additionally post one release-only `WM_KEYUP` to the exact
@@ -96,3 +113,23 @@ The local preview was exercised by saving the current point, clicking a point
 from that clicked point and the preview recentered from the new observation.
 Returning to the saved start finished 0.023 units from it. The GUI's Save Route
 dialog wrote both points to `artifacts/waypoint-map-demo-4c6a750f.json` for reuse.
+
+Use the native helper for physical game focus and the WGC observer for game
+screenshots. Generic Computer Use activation restored the maximized game into
+its smaller normal window during a focus test, leaving fresh WGC frames
+unavailable. Reusing the existing BlackBox recovery script on the verified
+AMD-DESKTOP display (`DISPLAY5`), with a 1936×1048 normal window, restored fresh
+1922×1041 WGC frames without restarting the game or sending movement input.
+Keep Computer Use interactions on the waypoint window; avoid activating,
+dragging or restoring the physical RIFT window through that API.
+
+Facing live use on the same process epoch: **Face Selected** aligned to the
+sideways waypoint within 0.98 degrees without XYZ movement. Forward mode reached
+it with two W presses, 0.088 units away. A combined turn-around-and-W sequence
+finished 0.122 units from its waypoint. An initial 12-second facing timeout
+expired after a successful 0.28-degree alignment, before any W; the separate
+facing phase now allows 20 seconds for process checks and settling while retaining
+the eight-pulse, 150-ms per-press and shared trip input budgets. F8 interrupted
+another facing phase before W; subsequent XYZ and bearing drift were both zero.
+Resuming finished 0.037 units from the saved start. The separate facing command
+restored the earlier bearing within 2.63 degrees without changing XYZ.

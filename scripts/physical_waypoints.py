@@ -29,6 +29,7 @@ from scripts.movement_controller import Position, WaypointController, planar_dis
 from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalClientReservation
 from scripts.physical_move_basis_waypoint import read_basis, candidate_calibrations
 from scripts.waypoint_map import LocalMap, draw_route, route_length
+from scripts.waypoint_heading import choose_turn, heading_error
 
 DEFAULT_BASIS = ROOT / "config/physical-movement-basis.amd-desktop.json"
 
@@ -142,6 +143,15 @@ def finite(value):
     return result
 
 
+def spatial_distance(a, b):
+    return math.dist((a.x, a.y, a.z), (b.x, b.y, b.z))
+
+
+def pose_drift(first, second):
+    return (spatial_distance(first.position, second.position),
+            abs(heading_error(second.bearing, first.bearing)))
+
+
 class PhysicalAdapter:
     """Exact-epoch reads and guarded, released native pulses; never retry input."""
 
@@ -189,11 +199,22 @@ class PhysicalAdapter:
         bearing = finite(values["bodyBearingDegreesCandidate"])
         point = values["positionXYZCandidate"]
         return Snapshot(Position(*(finite(point[k]) for k in ("x", "y", "z"))),
-                        bearing, time.monotonic(), capture["nativeOutput"])
+                        bearing, time.monotonic() - max(0, age), capture["nativeOutput"])
 
     def calibrations(self, snapshot):
         # The empirical actor angle is the negative of our +Z -> +X bearing.
         return candidate_calibrations(self.basis, -snapshot.bearing)[0]
+
+    def turn_rates(self):
+        candidate = self.basis.get("turnCalibrationCandidate", {})
+        try:
+            rates = {key: finite(candidate["rates"][key]["degreesPerMillisecondCandidate"])
+                     for key in ("a", "d")}
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WaypointError("Turn calibration unavailable for this process") from exc
+        if not .05 <= rates["a"] <= .5 or not -.5 <= rates["d"] <= -.05:
+            raise WaypointError("Turn calibration direction or speed invalid")
+        return rates
 
     def pulse(self, action, *, focus):
         command = [str(physical_rift.NATIVE_EXE), "move-key", "--pid", str(self.pid),
@@ -238,8 +259,92 @@ class PhysicalAdapter:
         return receipt
 
 
+def align_heading(adapter, target, current, stop, lease, budget, emit, *, focus=True):
+    """Use measured A/D speeds as seeds; each released turn needs actual feedback."""
+    rates = adapter.turn_rates()
+    started = time.monotonic()
+    anchor = current.position
+    actions = []
+    for _ in range(8):
+        if stop.is_set():
+            raise Stopped("Stopped; no further input")
+        if time.monotonic() - started > 20:
+            raise WaypointError("Facing exceeded its 20-second budget")
+        if budget is not None:
+            budget.check()
+        lease.check()
+        if time.monotonic() - current.acquired > 2:
+            current = adapter.read()
+        if time.monotonic() - current.acquired > 2:
+            raise WaypointError("Pose expired before turn input")
+        if spatial_distance(anchor, current.position) > .10:
+            raise WaypointError("Player moved during facing; stopped")
+        if time.monotonic() - started > 20:
+            raise WaypointError("Facing exceeded its 20-second budget")
+        if budget is not None:
+            budget.check()
+        action = choose_turn(current.bearing, target, rates)
+        if action is None:
+            return current, actions
+        if stop.is_set():
+            raise Stopped("Stopped; no further input")
+        if budget is not None:
+            budget.check(action)
+        if time.monotonic() - current.acquired > 2 or time.monotonic() - started > 20:
+            raise WaypointError("Pose or facing time budget expired before turn input")
+        receipt = adapter.pulse(action, focus=focus and not actions)
+        actions.append(receipt)
+        if budget is not None:
+            budget.pulses += 1
+            budget.hold_ms += action.hold_ms
+        if stop.wait(.5):
+            raise Stopped("Stopped; turn key-up accepted")
+        after = adapter.read()
+        if spatial_distance(anchor, after.position) > .10:
+            raise WaypointError("Turning moved the player; stopped")
+        actual = heading_error(after.bearing, current.bearing)
+        error = heading_error(target, after.bearing)
+        if actual * rates[action.key] <= 0 or abs(actual) < .25:
+            raise WaypointError("Turn response disagrees with the measured direction; stopped")
+        if abs(error) > 4 and abs(error) >= abs(action.error_degrees) - .5:
+            raise WaypointError("Turn did not improve facing; stopped")
+        current = after
+        emit({"status": "turning", "position": asdict(current.position), "bearing": current.bearing,
+              "headingError": error, "key": action.key, "holdMs": action.hold_ms})
+    if time.monotonic() - started <= 20 and abs(heading_error(target, current.bearing)) <= 4:
+        return current, actions
+    raise WaypointError("Facing reached its eight-pulse budget")
+
+
+def run_facing(adapter, stop, emit=lambda event: None, *, bearing=None, point=None):
+    if (bearing is None) == (point is None):
+        raise WaypointError("Choose one facing angle or waypoint")
+    with adapter.reserve() as lease:
+        current = adapter.read()
+        if point is not None:
+            px, pz = (finite(value) for value in point)
+            distance = math.hypot(px-current.position.x, pz-current.position.z)
+            if distance > 20:
+                raise WaypointError("Facing waypoint exceeds 20 units")
+            bearing = (math.degrees(math.atan2(px-current.position.x, pz-current.position.z))
+                       if distance > .3 else current.bearing)
+        target = heading_error(finite(bearing), 0)
+        started = time.monotonic()
+        current, actions = align_heading(adapter, target, current, stop, lease,
+                                        TripBudget(started), emit)
+        result = {"status": "facing", "position": asdict(current.position),
+                  "bearing": current.bearing, "targetBearing": target,
+                  "headingError": heading_error(target, current.bearing),
+                  "pulses": len(actions), "totalHoldMs": sum(row["holdMilliseconds"] for row in actions),
+                  "elapsedSeconds": round(time.monotonic()-started, 3),
+                  "allPulsesReleased": True, "actions": actions,
+                  "qualification": "Current-epoch candidate body facing; restart qualification pending"}
+        emit(result)
+        return result
+
+
 def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=True,
-            reservation=None, budget=None):
+            reservation=None, budget=None, face_waypoints=False):
     """One existing bounded controller, with a fresh feedback read per pulse."""
     def check_stop():
         if stop.is_set():
@@ -252,7 +357,17 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
     with (adapter.reserve() if reservation is None else nullcontext(reservation)) as lease:
         start = current = adapter.read()
         goal = Position(finite(goal_x), start.position.y, finite(goal_z))
+        # Validate the original translation bounds before any optional turn.
         controller = WaypointController(adapter.calibrations(start), start.position, goal)
+        leg_started = time.monotonic()
+        turns = []
+        if face_waypoints and planar_distance(current.position, goal) > .30:
+            target = math.degrees(math.atan2(goal.x-current.position.x, goal.z-current.position.z))
+            current, turns = align_heading(adapter, target, current, stop, lease, budget, emit, focus=focus)
+        calibrations = adapter.calibrations(current)
+        if face_waypoints:
+            calibrations = {"w": calibrations["w"]}
+        controller.calibrations = calibrations
         started = time.monotonic()
         emit({"status": "moving", "position": asdict(current.position), "bearing": current.bearing,
               "distance": planar_distance(current.position, goal)})
@@ -262,6 +377,8 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
             if time.monotonic() - current.acquired > 2:
                 current = adapter.read()
             controller.calibrations = adapter.calibrations(current)
+            if face_waypoints:
+                controller.calibrations = {"w": controller.calibrations["w"]}
             action = controller.decide(current.position, time.monotonic() - started)
             if action is None:
                 # Two independent, released stationary observations confirm arrival.
@@ -276,9 +393,11 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
                 result = {"status": "arrived", "start": asdict(start.position),
                           "goal": asdict(goal), "position": asdict(settled.position),
                           "distance": planar_distance(settled.position, goal), "bearing": settled.bearing,
-                          "pulses": len(actions), "totalHoldMs": controller.total_hold_ms,
-                          "elapsedSeconds": round(time.monotonic() - started, 3),
-                          "allPulsesReleased": True, "actions": actions,
+                          "pulses": len(turns) + len(actions), "turnPulses": len(turns),
+                          "movementPulses": len(actions),
+                          "totalHoldMs": controller.total_hold_ms + sum(row["holdMilliseconds"] for row in turns),
+                          "elapsedSeconds": round(time.monotonic() - leg_started, 3),
+                          "allPulsesReleased": True, "actions": turns + actions,
                           "qualification": "Supervised open-ground prototype; candidate native pose, no obstacle routing"}
                 emit(result)
                 return result
@@ -287,7 +406,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
                 raise WaypointError("Pose expired before input")
             if budget is not None:
                 budget.check(action)
-            receipt = adapter.pulse(action, focus=focus and not actions)
+            receipt = adapter.pulse(action, focus=focus and not turns and not actions)
             actions.append(receipt)
             if budget is not None:
                 budget.pulses += 1
@@ -310,7 +429,7 @@ def route_points(rows):
     return [(str(row[0])[:80], finite(row[1]), finite(row[2])) for row in rows]
 
 
-def run_route(adapter, points, stop, emit=lambda event: None):
+def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=False):
     """Follow up to 20 units of route using <=4-unit intermediate targets.
 
     The original controller's six-action, 900-ms, 12-second and corridor limits
@@ -336,7 +455,7 @@ def run_route(adapter, points, stop, emit=lambda event: None):
             start = current.position
             goal = Position(px, start.y, pz)
             distance = planar_distance(start, goal)
-            count = max(1, math.ceil(distance / 4))
+            count = max(1, math.ceil(distance / (3.5 if face_waypoints else 4)))
             segments = []
             emit({"status": "leg", "name": label, "segmentCount": count})
             for index in range(1, count + 1):
@@ -353,12 +472,15 @@ def run_route(adapter, points, stop, emit=lambda event: None):
                     emit(event)
 
                 segment = run_leg(adapter, sx, sz, stop, progress,
-                                  focus=not movement_started, reservation=lease, budget=budget)
+                                  focus=not movement_started, reservation=lease, budget=budget,
+                                  face_waypoints=face_waypoints)
                 segments.append(segment)
                 movement_started = movement_started or segment["pulses"] > 0
             result = dict(segments[-1], start=asdict(start), goal=asdict(goal),
                           pulses=sum(row["pulses"] for row in segments),
                           totalHoldMs=sum(row["totalHoldMs"] for row in segments),
+                          turnPulses=sum(row["turnPulses"] for row in segments),
+                          movementPulses=sum(row["movementPulses"] for row in segments),
                           elapsedSeconds=round(sum(row["elapsedSeconds"] for row in segments), 3),
                           segments=segments, actions=[action for row in segments for action in row["actions"]])
             results.append(result)
@@ -383,6 +505,7 @@ def launch_window(args):
     coordinates = ttk.Frame(frame)
     coordinates.pack(fill="x", pady=5)
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
+    walk_facing = tk.BooleanVar(value=args.face_waypoints)
     for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
         ttk.Label(coordinates, text=label).pack(side="left", padx=(0, 5))
         entry = ttk.Entry(coordinates, textvariable=variable, width=width)
@@ -441,6 +564,7 @@ def launch_window(args):
         if not busy:
             go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
             route_button.configure(state="normal" if points and distance <= 20 else "disabled")
+            face_button.configure(state="normal" if len(selected) == 1 and .3 < chosen <= 20 else "disabled")
 
     def map_click(event):
         if busy or map_view is None:
@@ -448,7 +572,7 @@ def launch_window(args):
         px, pz = map_view.canvas_to_world(event.x, event.y)
         start("map", (map_view, px, pz, name.get() or "Waypoint"))
 
-    def worker(operation, points=None):
+    def worker(operation, points=None, face_walk=False):
         nonlocal adapter
         try:
             if adapter is None:
@@ -465,18 +589,23 @@ def launch_window(args):
                     else:
                         result["waypoint"] = (label, px, pz)
                 events.put(result)
+            elif operation == "face":
+                run_facing(adapter, stop, events.put, point=points[0][1:])
             else:
-                run_route(adapter, points, stop, events.put)
+                run_route(adapter, points, stop, events.put, face_waypoints=face_walk)
         except Exception as exc:
             stopped_position = stopped_bearing = None
             if isinstance(exc, Stopped) and adapter is not None:
                 try:
+                    time.sleep(.35)
                     first = adapter.read()
                     time.sleep(.25)
                     second = adapter.read()
-                    drift = planar_distance(first.position, second.position)
+                    drift, yaw_drift = pose_drift(first, second)
                     if drift > .05:
                         exc = WaypointError(f"Movement still detected after STOP ({drift:.3f} units); recovery required")
+                    elif yaw_drift > .5:
+                        exc = WaypointError(f"Facing still changing after STOP ({yaw_drift:.2f}°); recovery required")
                     else:
                         stopped_position = asdict(second.position)
                         stopped_bearing = second.bearing
@@ -495,9 +624,12 @@ def launch_window(args):
         if operation == "go" and (not points or len(points) > 20):
             messagebox.showinfo("Choose waypoints", "Select a waypoint, or add up to 20 points for a route.")
             return
+        if operation == "face" and (not points or len(points) != 1):
+            state.set("Select one waypoint to face.")
+            return
         busy = True
         stop.clear()
-        if operation == "go":
+        if operation in ("go", "face"):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
             except Exception as exc:
@@ -506,8 +638,9 @@ def launch_window(args):
                 return
         for widget in editable:
             widget.configure(state="disabled")
-        state.set("Reading current RIFT pose…" if operation != "go" else "Starting route — STOP prevents the next pulse.")
-        threading.Thread(target=worker, args=(operation, points), daemon=False).start()
+        state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face")
+                  else "Reading current RIFT pose…")
+        threading.Thread(target=worker, args=(operation, points, walk_facing.get()), daemon=False).start()
 
     def request_stop():
         stop.set()
@@ -554,14 +687,20 @@ def launch_window(args):
     controls = ttk.Frame(frame)
     controls.pack(fill="x", pady=8)
     for label, callback in (("Go Selected", lambda: start("go", selected_points())),
-                            ("Run Route", lambda: start("go", selected_points(True)))):
+                            ("Run Route", lambda: start("go", selected_points(True))),
+                            ("Face Selected", lambda: start("face", selected_points()))):
         button = ttk.Button(controls, text=label, command=callback)
         button.pack(side="left", padx=(0, 6))
         editable.append(button)
         if label == "Go Selected":
             go_button = button
-        else:
+        elif label == "Run Route":
             route_button = button
+        else:
+            face_button = button
+    face_option = ttk.Checkbutton(controls, text="Face, then walk", variable=walk_facing)
+    face_option.pack(side="left", padx=(10, 0))
+    editable.append(face_option)
     tk.Button(controls, text="STOP / F8", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
               command=request_stop, width=16).pack(side="right")
     log.pack(fill="x", pady=4)
@@ -610,6 +749,7 @@ def launch_window(args):
                 add_point(*event["waypoint"])
                 name.set(f"Point {len(table.get_children()) + 1}")
             text = (f"{status}: {event['reason']}" if "reason" in event else
+                    f"{status}: {abs(event['headingError']):.2f}° from requested facing" if "headingError" in event else
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
                     f"{status}: {event.get('name', '')}" if status == "leg" else
                     f"Position X={x.get()}  Z={z.get()}  facing={event.get('bearing', 0):.2f}°")
@@ -640,20 +780,26 @@ def main(argv=None):
     parser.add_argument("--physical-pid", required=True, type=int)
     parser.add_argument("--basis", type=Path, default=DEFAULT_BASIS)
     parser.add_argument("--route", type=Path, help="load a waypoint JSON into the window without running it")
-    parser.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
+    mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
+    parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
-    if args.go is None:
+    if args.go is None and args.face_bearing is None:
         launch_window(args)
         return 0
     if not args.execute:
-        parser.error("--go requires --execute; omit --go to open the waypoint window")
+        parser.error("--go / --face-bearing requires --execute; omit both to open the window")
     stop = threading.Event()
     try:
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
-        result = run_route(adapter, [("Waypoint", *args.go)], stop,
-                           lambda event: print(json.dumps({k: v for k, v in event.items()
-                                                           if k not in ("actions", "segments")}), flush=True))[0]
+        emit = lambda event: print(json.dumps({k: v for k, v in event.items()
+                                               if k not in ("actions", "segments")}), flush=True)
+        result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
+                  if args.face_bearing is not None else
+                  run_route(adapter, [("Waypoint", *args.go)], stop, emit,
+                            face_waypoints=args.face_waypoints)[0])
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps({"status": result["status"], "receipt": str(output)}))
