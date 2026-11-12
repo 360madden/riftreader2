@@ -245,11 +245,15 @@ def from_helper_receipt(path: Path):
     require(type(keys_before) is str and UNIT.fullmatch(keys_before)
             and int(keys_before) < 2**64 and after.get("unitKey") == keys_before,
             "helper-native-player-changed")
+    def native_coordinate(value):
+        number = finite(value, "helper-native-position-invalid")
+        return struct.unpack("<f", struct.pack("<f", number))[0]
+
     point = []
     for item in (before, after):
         a, b = utc(item.get("startedAtUtc")), utc(item.get("completedAtUtc"))
         require(a <= b and (b-a).total_seconds() <= 5, "helper-native-sample-interval-invalid")
-        pos = movement.Position(*(finite(item.get(axis), "helper-native-position-invalid")
+        pos = movement.Position(*(native_coordinate(item.get(axis))
                                   for axis in ("x", "y", "z")))
         point.append((a, b, pos))
     capture_gap = (point[1][0] - point[0][1]).total_seconds()
@@ -312,10 +316,7 @@ def from_helper_receipt(path: Path):
         ],
     }
     if keys == ["w"] and receipt.get("poseFeedback") is not None:
-        def native_coordinate(value):
-            return struct.unpack("<f", struct.pack("<f", value))[0]
-        pose = forward_pose_comparison(receipt, native_coordinate(b.x) - native_coordinate(a.x),
-                                      native_coordinate(b.z) - native_coordinate(a.z))
+        pose = forward_pose_comparison(receipt, dx, dz)
         if pose is not None:
             result["forwardPoseComparisonCandidate"] = pose
     return result

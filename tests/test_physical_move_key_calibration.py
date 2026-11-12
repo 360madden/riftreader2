@@ -249,6 +249,17 @@ class HelperCalibrationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "movement-key"):
                 self.analyze()
 
+    def test_short_decimal_coordinates_recover_native_distance(self):
+        report = receipt()
+        feedback = report["xyzFeedback"]
+        feedback["beforeXYZ"].update(x=7423.489, z=2944.0254)
+        feedback["afterXYZ"].update(x=7424.4316, z=2945.3054)
+        feedback["deltaXYZ"].update(x=0.94287109375, z=1.280029296875)
+        feedback["planarDisplacementCandidate"] = 1.5898053026353975
+        self.save(report)
+        self.assertAlmostEqual(feedback["planarDisplacementCandidate"],
+                               self.analyze()["horizontalDisplacementCandidate"], places=12)
+
     def test_rejects_native_owner_delta_and_time_mismatches(self):
         for update, expected in (
             (lambda r: r["xyzFeedback"]["afterXYZ"].update(unitKey="99"), "player-changed"),
