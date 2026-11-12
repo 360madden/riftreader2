@@ -30,8 +30,10 @@ def pass_report(start, end, *, epoch=1, scan="A", clock_start=10.0,
                                   {"x": 10.002, "y": 20., "z": 30.}],
         "nativePositionCandidate": {"x": 10., "y": 20., "z": 30.},
         "maxAbsCoordinateDifferenceCandidate": {"x": .002, "y": 0., "z": 0.},
-        "frameEvidence": [{"frameSha256": f"{scan}{start}"},
-                          {"frameSha256": f"{scan}{end}"}],
+        "frameEvidence": [{"sequence": start, "clockCandidate": clock_start,
+                           "frameSha256": f"{scan}{start}"},
+                          {"sequence": end, "clockCandidate": clock_start + 1.0,
+                           "frameSha256": f"{scan}{end}"}],
         "sourceSha256": {"scanIndex": scan * 64, "scanRequest": "C" * 64,
                          "nativeBracketSummary": "D" * 64},
     }
@@ -56,6 +58,55 @@ class TwoPassTests(unittest.TestCase):
         self.assertEqual(output["status"], "candidate-only")
         self.assertIn("remains unbound", output["qualification"])
 
+    def test_retained_overlapping_frames_do_not_block_two_newer_frames(self):
+        first, second = self.sample()
+        second["firstSequence"] = 2
+        second["firstClockCandidate"] = 11.0
+        second["lastClockCandidate"] = 21.0
+        second["luaFrameCount"] = 3
+        second["frameEvidence"] = [
+            {"sequence": 2, "clockCandidate": 11.0,
+             "frameSha256": first["frameEvidence"][-1]["frameSha256"]},
+            {"sequence": 3, "clockCandidate": 20.0, "frameSha256": "B3"},
+            {"sequence": 4, "clockCandidate": 21.0, "frameSha256": "B4"}]
+        second["luaPositionCandidates"] = [
+            {"x": 10.002, "y": 20., "z": 30.},
+            {"x": 10.003, "y": 20., "z": 30.},
+            {"x": 10.004, "y": 20., "z": 30.}]
+        with patch.object(pair.lua, "replay", side_effect=[first, second]):
+            out = pair.compare("first", "second", "native")
+        self.assertEqual(out["status"], "candidate-only")
+        self.assertEqual(out["frameCounts"], [2, 2])
+        self.assertEqual(out["rawFrameCounts"], [2, 3])
+        self.assertEqual(out["discardedOverlapFrames"], 1)
+        self.assertEqual(out["sequenceWindows"], [[1, 2], [3, 4]])
+        self.assertEqual(out["rawSequenceWindows"], [[1, 2], [2, 4]])
+        self.assertAlmostEqual(out["betweenPassLuaXYZDifferenceCandidate"]["x"], 0.001)
+
+    def test_overlap_does_not_count_as_newer_or_ignore_stale_clock(self):
+        first, second = self.sample()
+        second["firstSequence"] = 2
+        second["frameEvidence"][0]["sequence"] = 2
+        second["frameEvidence"][0]["clockCandidate"] = 11.0
+        for frames, reason in (
+            ([{"sequence": 2, "clockCandidate": 11.0, "frameSha256": "B2"},
+              {"sequence": 3, "clockCandidate": 12.0, "frameSha256": "B3"}],
+             "insufficient-new-frames"),
+            ([{"sequence": 3, "clockCandidate": 10.5, "frameSha256": "B3"},
+              {"sequence": 4, "clockCandidate": 21.0, "frameSha256": "B4"}],
+             "nonadvancing-or-overlapping-passes"),
+        ):
+            left, right = deepcopy(first), deepcopy(second)
+            right["frameEvidence"] = frames
+            right["firstSequence"] = frames[0]["sequence"]
+            right["lastSequence"] = frames[-1]["sequence"]
+            right["firstClockCandidate"] = frames[0]["clockCandidate"]
+            right["lastClockCandidate"] = frames[-1]["clockCandidate"]
+            with self.subTest(reason=reason), patch.object(
+                    pair.lua, "replay", side_effect=[left, right]):
+                with self.assertRaisesRegex(ValueError, reason):
+                    pair.compare("first", "second", "native")
+
     def test_rejects_changed_epoch_and_identity(self):
         for mutation, error in (
             ({"luaEpochCandidate": 2}, "lua-epoch-changed"),
@@ -75,7 +126,12 @@ class TwoPassTests(unittest.TestCase):
             ({"firstSequence": 2}, "nonadvancing-or-overlapping"),
             ({"firstClockCandidate": 11.0}, "nonadvancing-or-overlapping"),
             ({"sourceSha256": deepcopy(a["sourceSha256"])}, "same-scan-source"),
-            ({"frameEvidence": deepcopy(a["frameEvidence"])}, "reused-frame"),
+            ({"frameEvidence": [
+                dict(b["frameEvidence"][0],
+                     frameSha256=a["frameEvidence"][0]["frameSha256"]),
+                dict(b["frameEvidence"][1],
+                     frameSha256=a["frameEvidence"][1]["frameSha256"])]},
+             "reused-frame"),
         ):
             left, right = deepcopy(a), deepcopy(b)
             right.update(mutation)

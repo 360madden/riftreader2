@@ -134,6 +134,14 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
         pid, selection, reader_sha, output_dir / "pass-02",
         scan_bytes=focus[1] if focus else scan_bytes, scan_ms=scan_ms,
         start_address=focus[0] if focus else "0x10000")
+    failed_focused_index_sha = None
+    if focus is not None and second_receipt["publishedSnapshots"] < 2:
+        # Marker memory may move between independent reads. Keep the failed
+        # focused receipt intact and try the original bounded broad route once.
+        failed_focused_index_sha = second_receipt["indexSha256"]
+        second, second_receipt = scan_once(
+            pid, selection, reader_sha, output_dir / "pass-02-broad",
+            scan_bytes=scan_bytes, scan_ms=scan_ms, start_address="0x10000")
     after, _ = bracket.collect(
         pid, output_dir / "native-after", samples=samples,
         interval_ms=interval_ms)
@@ -161,6 +169,10 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
                           second_receipt["publishedSnapshots"]],
         "secondPassFocus": {"requested": focus_second_pass,
                             "used": focus is not None,
+                            "selected": focus is not None and
+                                        failed_focused_index_sha is None,
+                            "fallbackUsed": failed_focused_index_sha is not None,
+                            "failedFocusedIndexSha256": failed_focused_index_sha,
                             "startAddress": focus[0] if focus else "0x10000",
                             "maxScanBytes": focus[1] if focus else scan_bytes},
         "comparison": paired,

@@ -49,16 +49,34 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
             "lua-epoch-changed")
     require(first["sourceSha256"]["scanIndex"] != second["sourceSha256"]["scanIndex"],
             "same-scan-source")
-    require(first["lastSequence"] < second["firstSequence"]
-            and first["lastClockCandidate"] < second["firstClockCandidate"],
+    require(first["lastSequence"] < second["lastSequence"]
+            and first["lastClockCandidate"] < second["lastClockCandidate"],
             "nonadvancing-or-overlapping-passes")
+    # A focused re-scan can copy still-retained old Lua frames alongside newer
+    # frames. Exclude the overlapping prefix, but require two independently
+    # advancing frames after the entire first pass, not just a new scan index.
+    frames = second["frameEvidence"]
+    require(len(frames) == second["luaFrameCount"] ==
+            len(second["luaPositionCandidates"]) and frames
+            and frames[0]["sequence"] == second["firstSequence"]
+            and frames[-1]["sequence"] == second["lastSequence"]
+            and frames[0]["clockCandidate"] == second["firstClockCandidate"]
+            and frames[-1]["clockCandidate"] == second["lastClockCandidate"],
+            "nonadvancing-or-overlapping-passes")
+    overlap = sum(f["sequence"] <= first["lastSequence"] for f in frames)
+    fresh = frames[overlap:]
+    require(len(fresh) >= 2, "insufficient-new-frames")
+    require(all(type(f["sequence"]) is int and
+                f["sequence"] > first["lastSequence"] and
+                type(f["clockCandidate"]) in (int, float) and
+                math.isfinite(f["clockCandidate"]) and
+                f["clockCandidate"] > first["lastClockCandidate"]
+                for f in fresh), "nonadvancing-or-overlapping-passes")
     require(not ({f["frameSha256"] for f in first["frameEvidence"]} &
-                 {f["frameSha256"] for f in second["frameEvidence"]}),
-            "reused-frame")
-    require(first["luaFrameCount"] >= 2 and second["luaFrameCount"] >= 2,
-            "insufficient-independent-frames")
+                 {f["frameSha256"] for f in fresh}), "reused-frame")
+    require(first["luaFrameCount"] >= 2, "insufficient-independent-frames")
     first_end = first["luaPositionCandidates"][-1]
-    second_start = second["luaPositionCandidates"][0]
+    second_start = second["luaPositionCandidates"][overlap]
     lua_delta = {axis: second_start[axis] - first_end[axis]
                  for axis in ("x", "y", "z")}
     native_first, native_second = (first["nativePositionCandidate"],
@@ -83,11 +101,15 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
         "luaProtocol": "RR2A1-unbound",
         "luaPlayerIdCandidate": first["luaPlayerIdCandidate"],
         "luaEpochCandidate": first["luaEpochCandidate"],
-        "frameCounts": [first["luaFrameCount"], second["luaFrameCount"]],
+        "frameCounts": [first["luaFrameCount"], len(fresh)],
+        "rawFrameCounts": [first["luaFrameCount"], second["luaFrameCount"]],
+        "discardedOverlapFrames": overlap,
         "sequenceWindows": [[first["firstSequence"], first["lastSequence"]],
-                            [second["firstSequence"], second["lastSequence"]]],
+                            [fresh[0]["sequence"], fresh[-1]["sequence"]]],
+        "rawSequenceWindows": [[first["firstSequence"], first["lastSequence"]],
+                               [second["firstSequence"], second["lastSequence"]]],
         "clockWindows": [[first["firstClockCandidate"], first["lastClockCandidate"]],
-                         [second["firstClockCandidate"], second["lastClockCandidate"]]],
+                         [fresh[0]["clockCandidate"], fresh[-1]["clockCandidate"]]],
         "betweenPassLuaXYZDifferenceCandidate": lua_delta,
         "betweenPassNativeXYZDifferenceCandidate": native_delta,
         "maxAbsLuaNativeCoordinateDifferenceCandidate": across_max,
@@ -96,7 +118,8 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
             "second": second["sourceSha256"],
         },
         "qualification": ("Two independently source-verified RR2A1 Lua baseline passes "
-                          "have increasing sequence and clock values within one candidate "
+                          "contain at least two new frames with increasing sequence and "
+                          "clock after discarding any retained overlap in one candidate "
                           "Lua epoch, matching native player ID and XYZ candidates. "
                           "RR2A1 remains unbound; no nonce, producer authenticity, "
                           "atomic freshness, changed-state causation or restart proof."),

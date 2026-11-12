@@ -142,7 +142,7 @@ def replay(index_path, native_summary_path):
         "maxAbsCoordinateDifferenceCandidate": maxima,
         "sourceSha256": {"scanIndex": index_sha, "scanRequest": request_sha,
                          "nativeBracketSummary": native_sha},
-        "frameEvidence": [{"sequence": f["sequence"],
+        "frameEvidence": [{"sequence": f["sequence"], "clockCandidate": f["clock"],
                            "snapshotSha256": f["snapshotSha256"],
                            "frameSha256": f["frameSha256"]} for f in frames],
         "qualification": ("Independent Lua API and native source values in the same "
