@@ -8,13 +8,68 @@ five-hour goal after pushing. This is an interruption checkpoint, not completion
 of that goal. Original activation was 11:56:02 UTC; original planned end was
 16:56:02 UTC. Consult the live goal state before continuing.
 
+## Continued progress after the interruption
+
+**08:25 EST / 13:25 UTC:** RIFT was already running as fresh PID19440 when work
+resumed; its build and Atank identity matched. The latest native capture fix has
+now passed a live moving-player trial. GUI **Record → Stop Recording** saved
+732 valid samples as four actual points over **10.2944 units**, preserving both
+corners. Two observations used two acquisition attempts; 730 used one. None were
+skipped. Maximum sample gap was 0.9845 seconds, during no XYZ movement. All sources
+share PID19440/start `639300852881240356`, build and player identity.
+
+The actual passive recording is preserved as
+[passive-recorded-route-2026-11-12.json](validation/passive-recorded-route-2026-11-12.json).
+Its original local file is
+`artifacts/recorded-route-d5d30434ce344153ad529b7e97a6b8d7.json`;
+the compact local audit is the same filename stem with `-validation.json`.
+All four retained XYZ/heights equal actual samples after six-decimal rounding.
+Maximum **sampled** point-to-saved-polyline deviation is 0.00095 units; corner
+changes are approximately 82.3 and 93.4 degrees. This does not prove an unobserved
+continuous path or obstacle clearance.
+
+Direct GUI **Play Reverse** on that passive recording completed at **0.15947
+units** with 26 released pulses (7 A, 7 D, 12 W), 3,526 ms requested hold; receipt
+`artifacts/waypoint-run-25c26e81d2fa4a52b2cfad6b403466ef.json`.
+GUI **Play Forward**, with Face then walk unchecked, completed at **0.28199
+units** with 17 released pulses (8 S, 5 E, 4 W), 2,261 ms requested hold and
+unchanged bearing. Receipt:
+`artifacts/waypoint-run-831bda478c77430dad981b8687008d4d.json`.
+The slower-direction segmentation therefore also passed a live route.
+
+Normal GUI **Save Route** preserved the entire recording document exactly,
+including metadata and heights, at
+`artifacts/saved-passive-route-20261112-1322-f31b.json`. Load restored its four
+ordered points. That live round trip exposed a UI issue: loading an identical
+route cleared even matching progress and left stale completion text. The focused
+fix now retains/restores matching progress for both Load and explicit `--route`
+startup, resets changed-route progress, and reports successful Save Route paths.
+Six fake-reader Tk cases passed, followed by **15 combined GUI callback tests**.
+
+**08:32 EST live saved-file check:** a reverse playback stopped at cursor 2/4
+while the next arrival was geometrically close but not yet settled/confirmed.
+Receipt: `artifacts/waypoint-run-235994c357e54f398742429b984fb786.json`.
+App PID74672 closed normally in the background, without restarting RIFT; new app
+PID48904 launched with `--route artifacts/saved-passive-route-20261112-1322-f31b.json`
+and restored Resume at 2/4. Loading that same file again kept both cursor and
+checkpoint SHA256 unchanged (`384717BBC20F4E4D736B45D56145C45D4CBF729C059C8B202C1DB4A124B8E1E4`).
+Explicit Resume confirmed the unfinished point with zero pulses, then completed
+the last leg within **0.18620 units**, four released W pulses and 522 ms requested
+hold. Receipt: `artifacts/waypoint-run-d7eaf590e6864ec6b72a470002cd04fa.json`.
+The matching-file progress fix therefore passed this live case.
+
+The interruption/cleanup and unverified-capture notes below describe the earlier
+checkpoint. At this continued checkpoint the owned app PID48904 is open/idle,
+RIFT PID19440 is present, and the last observed pose is
+`(7423.585938, 863.586548, 2937.702148)`, bearing 65.748527 degrees. Reacquire it.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads
 routes, replays forward/reverse, checkpoints confirmed arrivals, and explicitly
 resumes the unfinished waypoint across an app restart and a genuine RIFT restart.
-The main implementation checkpoint is `9fceb14`; the commit containing this
-handoff adds the capture-race and slow-direction fixes described below.
+The main implementation checkpoint is `9fceb14`; `e5ab946` adds the capture-race
+and slow-direction fixes and the initial interruption handoff.
 
 Start with `Waypoints.cmd`. The default launcher can wait before RIFT exists and
 bind a unique ready client while idle. Nothing moves on launch or reconnect.
@@ -55,7 +110,7 @@ Build SHA is `1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`;
 Atank unit key is `239816685251645959`. Reacquire all live identities; old process
 IDs and component addresses are not reusable bindings.
 
-## Remaining live gap and concrete fixes
+## Live gap at the initial interruption and concrete fixes
 
 **Passive GUI recording through a full moving path has not passed live acceptance.**
 Several attempts correctly discarded incomplete recordings. Findings and fixes:
@@ -125,12 +180,14 @@ claim of full-repository validation or live acceptance of the latest capture fix
 
 1. Verify AMD-DESKTOP and fresh Git/process state. Keep the root as the sole live
    input coordinator; no Workbridge, LEGION or VMs.
-2. Start RIFT normally; do not reuse old command-line authentication material.
-   Require a fresh rendered game view and native identity before movement.
-3. Use the latest built reader and GUI. Qualify passive Record → bounded nearby
-   teaching walk → Stop Recording; inspect retained corners and `captureAttempts`.
-   A capture/identity failure must still leave no complete recording.
-4. Reverse-replay that newly passive-recorded route and verify settled endpoint
-   error within 0.30. Also live-check the slow-direction segmentation when useful.
+2. Require a fresh rendered game view and native identity before movement. Start
+   RIFT normally only if needed; do not reuse authentication command lines.
+3. Core recorded-route and matching-file workflows have the specific live results
+   above. The remaining launcher follow-up worth qualifying is cold start before
+   RIFT, followed by a ready-client binding in that same window; its waiting UI
+   and refusal behavior have already been observed/tested.
+4. Do not repeat already-passing route trials without a change, failure or
+   unresolved concern. Passive capture, its reverse/forward playback, and slow
+   segmentation now have the specific live evidence recorded above.
 5. Continue the active five-hour goal using the existing roadmap; do not mark it
    complete just because an interruption handoff and push were requested.

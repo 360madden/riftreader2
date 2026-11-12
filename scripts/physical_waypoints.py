@@ -641,6 +641,7 @@ def launch_window(args):
     from scripts.waypoint_observation import observe_batch
     from scripts.waypoint_recording import RouteRecorder
     from scripts.waypoint_playback import play_route
+    from scripts.waypoint_progress import _route as progress_route
 
     window.title(f"RR2 Waypoints — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
@@ -700,12 +701,14 @@ def launch_window(args):
     loading_route = False
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
-    def invalidate_progress():
+    def invalidate_progress(*, clear_metadata=True):
         nonlocal route_metadata, playback_view
         if not loading_route:
             checkpoint.unlink(missing_ok=True)
-            route_metadata = {}
+            if clear_metadata:
+                route_metadata = {}
             playback_view = None
+            progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
 
     def add_point(label, px, pz):
         if len(table.get_children()) >= 20:
@@ -737,6 +740,21 @@ def launch_window(args):
             name.set(f"Point {len(table.get_children()) + 1}")
         finally:
             loading_route = False
+        redraw()
+
+    def restore_progress():
+        nonlocal playback_view
+        saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+        if progress_route(route_document()) != progress_route(saved["route"]):
+            raise ValueError("Saved progress belongs to a different route")
+        count = len(saved["route"]["waypoints"])
+        index = saved["nextIndex"]
+        if (saved["direction"] not in ("forward", "reverse") or type(index) is not int
+                or not 0 <= index <= count):
+            raise ValueError("Invalid saved progress")
+        playback_view = {"direction": saved["direction"], "nextIndex": index}
+        hint = "choose Play Forward or Play Reverse." if index == count else "choose Resume."
+        progress_text.set(f"Saved progress: {index} / {count}; {hint}")
         redraw()
 
     def redraw(*_):
@@ -967,7 +985,11 @@ def launch_window(args):
     def save_route():
         path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="rift-waypoints.json")
         if path:
-            Path(path).write_text(json.dumps(route_document(), indent=2), encoding="utf-8")
+            try:
+                Path(path).write_text(json.dumps(route_document(), indent=2), encoding="utf-8")
+                state.set("Route saved: " + str(path))
+            except (ValueError, TypeError, OSError) as exc:
+                messagebox.showerror("Cannot save route", str(exc))
 
     def load_route():
         path = filedialog.askopenfilename(filetypes=[("Waypoint JSON", "*.json")])
@@ -976,8 +998,14 @@ def launch_window(args):
         try:
             document = json.loads(Path(path).read_text(encoding="utf-8"))
             route_points(document["waypoints"])
-            invalidate_progress()
+            progress_route(document)
             show_document(document)
+            try:
+                restore_progress()
+            except (OSError, ValueError, KeyError, TypeError):
+                invalidate_progress(clear_metadata=False)
+                redraw()
+            state.set("Route loaded: " + str(path))
         except (ValueError, KeyError, TypeError, OSError) as exc:
             messagebox.showerror("Cannot load route", str(exc))
 
@@ -1221,15 +1249,12 @@ def launch_window(args):
     table.bind("<<TreeviewSelect>>", select_point)
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
-    elif checkpoint.exists():
+    if checkpoint.exists():
         try:
             saved = json.loads(checkpoint.read_text(encoding="utf-8"))
-            show_document(saved["route"])
-            playback_view = {"direction": saved["direction"], "nextIndex": int(saved["nextIndex"])}
-            redraw()
-            count = len(saved["route"]["waypoints"])
-            hint = "choose Play Forward or Play Reverse." if saved["nextIndex"] == count else "choose Resume."
-            progress_text.set(f"Saved progress: {saved['nextIndex']} / {count}; {hint}")
+            if not args.route:
+                show_document(saved["route"])
+            restore_progress()
         except (OSError, ValueError, KeyError, TypeError):
             progress_text.set("Saved progress unavailable; load a route to continue.")
     poll()

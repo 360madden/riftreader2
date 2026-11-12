@@ -46,11 +46,15 @@ is refused. The point uses the same native candidate source as the target reader
 After moving along a short open-ground path, choose **Stop Recording** to finish,
 save a new `artifacts/recorded-route-*.json`, and load its points into the window.
 **STOP** cancels recording without saving; capture or identity errors also leave
-the recording incomplete. Passive GUI recording has not yet passed live acceptance.
+the recording incomplete. Passive GUI recording passed one live two-corner
+open-ground case on AMD-DESKTOP: 732 samples became four actual points across
+10.2944 units. The reusable
+[passive route](../validation/passive-recorded-route-2026-11-12.json) retains its
+original provenance; review fresh position and terrain before replaying it.
 Paced native capture can reacquire a changing pose payload up to three attempts
 within 100 ms, retaining the same owner/epoch checks and reporting
-`captureAttempts`; this latest fix has focused test coverage and still needs a
-moving-player trial. Interrupted work and the reusable taught route are preserved
+`captureAttempts`. In that live capture, two rows needed a second attempt and
+730 completed on the first. Interrupted work and the reusable taught route are preserved
 in [the recorded-route handoff](../handoff-2026-11-12-recorded-routes.md).
 
 **Play Forward** starts near the recorded first endpoint; **Play Reverse** starts
@@ -59,7 +63,11 @@ near its last endpoint. Playback checkpoints each confirmed waypoint to
 the window can restore the checkpoint's route; choose **Resume** explicitly to
 continue the unfinished leg. A fresh stationary pose must be near that leg, and
 the host, build and player must match. Reconnection never starts or resumes a trip.
-Editing the route invalidates its saved progress. Existing route and input limits
+Loading or explicitly opening the same waypoint names/coordinates/heights restores
+matching progress; changing the route invalidates it. Backend identity/checkpoint
+validation still runs before any input. A live saved-file restart/Load/Resume case
+preserved its 2/4 cursor and finished within 0.18620 units with four released W
+pulses. Existing route and input limits
 still apply, and routes have no obstacle avoidance.
 
 On AMD-DESKTOP, a controlled taught route retained four points from 30 observed
@@ -78,7 +86,11 @@ movement basis. An explicit **Resume** completed only the final leg, ending
 requested hold. The interrupted and resumed run receipts are
 `artifacts/waypoint-run-dc32b7e0c93747ccbe11baca1e305f79.json` and
 `artifacts/waypoint-run-8d88bf44e6034217ba570b18b6dfd731.json`. This covers
-that same-build/player restart case; passive GUI recording remains unverified.
+that same-build/player restart case. Later direct GUI reverse/forward replays of
+the passive-recorded route ended 0.15947/0.28199 units from their endpoints, with
+26/17 released pulses. The forward case used fixed-facing S/E/W travel, exercising
+the slow-direction segmentation. These are specific open-ground cases, not a
+qualification of arbitrary routes or terrain.
 
 **Face Selected** turns toward a waypoint without walking. **Face, then walk**
 aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E

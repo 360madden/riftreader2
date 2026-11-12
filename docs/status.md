@@ -1,5 +1,18 @@
 # Current status
 
+**08:25 EST NOVEMBER 12 — PASSIVE RECORD/REPLAY WORKING:** On **AMD-DESKTOP**,
+the updated native reader let GUI Record → Stop Recording save 732 valid samples
+as four actual points with both corners, over 10.2944 units. Two samples reacquired
+changing pose bytes and then passed; owner/epoch checks were retained. Direct GUI
+reverse playback finished within **0.15947 units**; fixed-facing forward playback
+finished within **0.28199 units**, including slower S travel under the unchanged
+budgets. All 26 reverse and 17 forward pulses released. The passive route is saved
+in Git, and ordinary Save Route preserved its full document. Matching-file Load
+and explicit-route app restart subsequently retained an unfinished 2/4 cursor;
+Resume completed within **0.18620 units**, four released W pulses. See the updated
+[recorded-route handoff](handoff-2026-11-12-recorded-routes.md) for exact receipts,
+qualification limits, current process state and the active goal's next work.
+
 **NOVEMBER 12 — RECORDED ROUTES / INTERRUPTION CHECKPOINT:** On **AMD-DESKTOP**,
 controller teaching retained both corners of a 9.998-unit path; forward/reverse
 playback worked. GUI STOP retained reverse progress at 3/4; app restart and a full
