@@ -65,7 +65,9 @@ class OwnedWaypointMarkers:
                 self.child = None
         return self.child is not None
 
-    def start(self, document, adapter):
+    def start(self, document, adapter, *, target_beacon=False):
+        if type(target_beacon) is not bool:
+            raise WaypointError("Invalid target beacon option")
         if self.running():
             raise WaypointError("Markers are already open or closing")
         from scripts.live_physical_waypoints import load_route
@@ -97,6 +99,8 @@ class OwnedWaypointMarkers:
                    "--route", str(route_path), "--duration", "600", "--max-age", ".35", "--presenter", presenter,
                    "--output", str(self.output), "--stop-file", str(self.stop_path),
                    "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
+        if target_beacon:
+            command.append("--target-beacon")
         self.child = self.popen(command, cwd=self.root,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.stop_requested = False
@@ -753,6 +757,7 @@ def launch_window(args):
     coordinates.pack(fill="x", pady=5)
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
+    target_beacon = tk.BooleanVar(value=False)
     live_pose = tk.BooleanVar(value=True)
     point_entries = []
     for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
@@ -1415,7 +1420,10 @@ def launch_window(args):
             state.set("Wait for the current RIFT connection before showing markers.")
             return
         try:
-            markers.start(route_document(), adapter)
+            if target_beacon.get():
+                markers.start(route_document(), adapter, target_beacon=True)
+            else:
+                markers.start(route_document(), adapter)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
                                target["executableSha256"].casefold(), target["hwnd"])
@@ -1494,6 +1502,9 @@ def launch_window(args):
     open_view_button.pack(side="left", padx=(0, 6))
     editable.append(open_view_button)
     ttk.Label(view_controls, text="Save view brings RIFT forward.").pack(side="left", padx=8)
+    target_option = ttk.Checkbutton(view_controls, text="Include selected target in markers", variable=target_beacon)
+    target_option.pack(side="left", padx=(12, 0))
+    editable.append(target_option)
     log.pack(fill="x", pady=4)
     ttk.Label(frame, text="F8 stops movement. Stop Recording saves; STOP cancels recording. "
               "Play starts within 0.30 units of Start (Forward) or End (Reverse).").pack(anchor="w")
@@ -1678,6 +1689,7 @@ def launch_window(args):
                 marker_button.configure(text="Show markers", state="normal" if not busy else "disabled")
             elif markers.stop_requested:
                 marker_button.configure(text="Markers closing…", state="disabled")
+        target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
         if live_pose.get() and not busy and not observing and not closing and time.monotonic() >= next_live_at:
             observing = True
             next_live_at = time.monotonic() + 2

@@ -34,6 +34,40 @@ labels; 26 affected renderer/backend checks passed.
 The earlier black/no-advancing-frame condition and optional HWND pilot are
 described in the tools note.
 
+For a selected-target beacon, enable **Include selected target in markers** before
+choosing Show markers. The option is disabled while that child is open; Hide
+markers allows changing it. A selected unit with fresh, stable, on-screen native
+position data within 35 horizontal units gets a magenta diamond, decorative
+1.5-unit beam and distance label. Selection clearing removes the target marker;
+route numbering, saved progress and movement remain separate. Names, world/zone
+identity, passive position freshness, occlusion and target/model height are not
+qualified. The displayed beam height is a display choice.
+
+The CLI equivalent is `--target-beacon`. It adds `--include-target true` to each
+existing finite native stream burst. Default capture remains unchanged; the
+optional target lookup follows the selected key's single bounded bucket rather
+than enumerating nearby units. Each row retains its session/lease and camera
+bracket checks, then releases ownership before output. Expired rows are withheld.
+The presenter also rechecks freshness and window geometry after painting, before
+showing. Optional target corruption cannot repair a malformed base report or
+bypass the non-stream camera bracket.
+
+On AMD-DESKTOP/PID17212, root selected the nearby friendly guard without combat:
+key `9223372045797034555`, measured horizontal distance 7.4406. The first 45-second
+Qt pilot presented 214 frames and the actual composite showed the target beacon
+at the guard beside the route markers. Root then used the real checkbox and
+Show/Hide buttons: the 140.76-second child presented 606 frames, selection/clearing
+was observed, and retained cleared-state pixels show the green route without the
+target beacon. Hide ended with `stop-requested`; both launcher/worker PIDs were
+observed absent. Player-position bits, body bearing, basis and completed checkpoint
+were unchanged, and no held inputs remained. Focused checks: 28 native facing/
+stream and 62 feed/presenter/GUI lifecycle tests. Evidence:
+`artifacts/target-beacon-stream-first-17212.jsonl`,
+`artifacts/target-beacon-live-composite-17212/first.png`,
+`artifacts/target-beacon-gui-cleared-sustained-17212/last.png`,
+`artifacts/waypoint-markers-summary-4372ab1b47884465b8fd8f4f68ee028f.json`,
+`artifacts/target-beacon-gui-final-17212-validation.json`.
+
 Use the exact local host/process and a stationary camera. Capture through the
 existing guarded observation path, saving its returned JSON in UTF-8:
 

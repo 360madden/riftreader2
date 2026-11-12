@@ -24,7 +24,8 @@ internal static class CurrentBuildFacingStreamCommand
         CancellationToken ct, Func<int, long, TimeSpan, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
         Func<IReadOnlyNativeMemorySession, CancellationToken, CurrentBuildFacingCandidate> read,
-        Func<TimeSpan>? elapsed = null)
+        Func<TimeSpan>? elapsed = null,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? readTarget = null)
     {
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
@@ -33,6 +34,9 @@ internal static class CurrentBuildFacingStreamCommand
             throw new ArgumentException("Facing stream requires --pid and --start-ticks.");
         var count = BoundedInt(options, "--samples", 20, 1, 30);
         var interval = BoundedInt(options, "--interval-ms", 50, 20, 200);
+        var includeTarget = options.TryGetValue("--include-target", out var rawTarget) &&
+            (rawTarget == "true" ? true : rawTarget == "false" ? false :
+             throw new ArgumentException("--include-target must be true or false."));
         var stopwatch = Stopwatch.StartNew();
         elapsed ??= () => stopwatch.Elapsed;
         var deadline = TimeSpan.FromSeconds(2);
@@ -70,7 +74,14 @@ internal static class CurrentBuildFacingStreamCommand
                     !string.Equals(currentIdentity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase) ||
                     (identity is not null && currentIdentity != identity))
                     throw new InvalidDataException("Facing stream session identity mismatch.");
+                var bracketTimer = Stopwatch.StartNew();
                 sample = read(session, ct);
+                if (includeTarget)
+                {
+                    var pair = readTarget is null ? CurrentBuildPairedPositionCandidateReader.Read(session) : readTarget(session);
+                    var after = read(session, ct);
+                    sample = CurrentBuildFacingSampleCommand.AttachTargetBracket(sample, pair, after, currentIdentity, bracketTimer.Elapsed);
+                }
                 if (sample.Identity != currentIdentity || session.Identity != currentIdentity || sample.PlayerKey == 0 ||
                     (key is not null && (sample.PlayerKey != key || sample.PlayerEntity != entity || sample.PlayerSystem != system)))
                     throw new InvalidDataException("Facing stream owner or process epoch changed.");

@@ -41,8 +41,10 @@ public sealed class CurrentBuildFacingStreamTests
         public Func<int, Session>? Create;
         public Func<TimeSpan>? Elapsed;
         public Func<Session, CurrentBuildFacingCandidate>? Read;
+        public Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? ReadTarget;
+        public Dictionary<string, string> OptionsOverride = new(Options);
         public Task<int> Run(TextWriter writer, CancellationToken ct = default) =>
-            CurrentBuildFacingStreamCommand.RunAsync(Options, writer, ct,
+            CurrentBuildFacingStreamCommand.RunAsync(OptionsOverride, writer, ct,
                 async (_, _, remaining, token) => { Assert.InRange(remaining.TotalMilliseconds, 0.001, 2000);
                     await Gate.WaitAsync(token); Assert.False(Held); Held = true; Acquires++;
                     return new Lease(() => {
@@ -51,7 +53,7 @@ public sealed class CurrentBuildFacingStreamTests
                     }); },
                 (_, _, _) => { var session = Create?.Invoke(Sessions.Count) ?? new Session(); Sessions.Add(session);
                     return Task.FromResult<IReadOnlyNativeMemorySession>(session); },
-                (session, _) => Read?.Invoke((Session)session) ?? Sample((Session)session), Elapsed);
+                (session, _) => Read?.Invoke((Session)session) ?? Sample((Session)session), Elapsed, ReadTarget);
     }
     private sealed class CheckingWriter(Harness harness) : StringWriter
     {
@@ -113,6 +115,63 @@ public sealed class CurrentBuildFacingStreamTests
         await Assert.ThrowsAsync<IOException>(() => h.Run(new StringWriter()));
         Assert.False(h.Held); Assert.Empty(h.Sessions); Assert.Equal(1, h.Releases);
     }
+    [Fact]
+    public async Task OptionalTargetAbsentAndUnstableCameraRemainExplicit()
+    {
+        var h = new Harness(); h.OptionsOverride["--include-target"] = "true"; var targetReads = 0;
+        h.ReadTarget = source => {
+            targetReads++; var now = DateTimeOffset.UtcNow;
+            var self = new PairedPositionCandidateSample("candidate", "42", "u000000000000002A", new(0, 0, 0), now, now, 0, 0);
+            return new(source.Identity, now, now, "test", self, null, "unavailable", "same", "same", 0, null, null);
+        };
+        var writer = new CheckingWriter(h); Assert.Equal(0, await h.Run(writer));
+        Assert.Equal(2, targetReads); Assert.Equal(2, h.Releases);
+        using var row = JsonDocument.Parse(writer.ToString().Split('\n')[0]);
+        var observation = row.RootElement.GetProperty("observation");
+        Assert.Equal("target-unavailable", observation.GetProperty("targetPositionPairCandidate").GetProperty("status").GetString());
+        Assert.False(observation.GetProperty("targetProjectionCameraStableCandidate").GetBoolean());
+    }
+
+    [Fact]
+    public async Task MovingCameraMarksTargetProjectionUnstable()
+    {
+        var h = new Harness(); h.OptionsOverride["--include-target"] = "true"; var reads = 0;
+        h.Read = session => {
+            reads++;
+            var camera = new CurrentBuildOpticalCameraCandidate("available-candidate", null, "300000",
+                new float[9], new float[3], new float[3], Enumerable.Repeat((uint)reads, 15).ToArray(), 0, 0, new double[3])
+                { ProjectionRowMajor = new float[16], ViewportLeftRightTopBottom = new float[4], ProjectionRawBits = new uint[20] };
+            return Sample(session) with { OpticalCameraCandidate = camera };
+        };
+        h.ReadTarget = source => {
+            var now = DateTimeOffset.UtcNow;
+            var self = new PairedPositionCandidateSample("candidate", "42", "u000000000000002A", new(0, 0, 0), now, now, 0, 0);
+            var target = new PairedPositionCandidateSample("candidate", "99", "u0000000000000063", new(1, 0, 1), now, now, 0, 0);
+            return new(source.Identity, now, now, "test", self, target, "candidate", "same", "same", 0, 0, 0);
+        };
+        var writer = new StringWriter(); Assert.Equal(0, await h.Run(writer));
+        using var row = JsonDocument.Parse(writer.ToString().Split('\n')[0]);
+        var observation = row.RootElement.GetProperty("observation");
+        Assert.Equal("paired-candidate", observation.GetProperty("targetPositionPairCandidate").GetProperty("status").GetString());
+        Assert.False(observation.GetProperty("targetProjectionCameraStableCandidate").GetBoolean());
+    }
+
+    [Fact]
+    public async Task TargetFalseSkipsPairAndChangedTargetOwnerRejectsRow()
+    {
+        var h = new Harness(); h.OptionsOverride["--include-target"] = "false";
+        h.ReadTarget = _ => throw new Exception("target read must not occur");
+        Assert.Equal(0, await h.Run(new StringWriter()));
+        h = new Harness(); h.OptionsOverride["--include-target"] = "true";
+        h.ReadTarget = source => {
+            var now = DateTimeOffset.UtcNow;
+            var self = new PairedPositionCandidateSample("candidate", "99", "u0000000000000063", new(0, 0, 0), now, now, 0, 0);
+            return new(source.Identity, now, now, "test", self, null, "unavailable", "same", "same", 0, null, null);
+        };
+        var writer = new StringWriter(); await Assert.ThrowsAsync<InvalidDataException>(() => h.Run(writer));
+        Assert.Equal("", writer.ToString()); Assert.False(h.Held); Assert.Equal(1, h.Releases);
+    }
+
     private sealed class BrokenWriter : StringWriter
     { public override Task WriteLineAsync(string? value) => Task.FromException(new IOException("closed")); }
     [Fact]

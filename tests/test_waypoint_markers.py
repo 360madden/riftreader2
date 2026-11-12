@@ -41,6 +41,7 @@ class OwnedMarkerTests(unittest.TestCase):
         command = self.popen.call_args.args[0]
         self.assertEqual(str(Path(sys.executable).with_name("pythonw.exe")), command[0])
         self.assertEqual("native", command[command.index("--presenter") + 1])
+        self.assertNotIn("--target-beacon", command)
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),
                                ("--max-age", ".35"), ("--duration", "600")):
@@ -67,6 +68,14 @@ class OwnedMarkerTests(unittest.TestCase):
         command = self.popen.call_args.args[0]
         self.assertEqual(str(executable), command[0])
         self.assertEqual("qt", command[command.index("--presenter") + 1])
+
+    def test_target_beacon_opt_in_keeps_route_and_process_binding(self):
+        self.markers.start(self.route, self.adapter, target_beacon=True)
+        command = self.popen.call_args.args[0]
+        self.assertEqual(1, command.count("--target-beacon"))
+        self.assertEqual("1234", command[command.index("--expect-start-ticks") + 1])
+        path = Path(command[command.index("--route") + 1])
+        self.assertEqual(self.route, json.loads(path.read_text()))
 
     def test_unrecorded_or_missing_height_route_is_refused(self):
         for route in ({"waypoints": [["A", 1, 2]]}, {**self.route, "heights": [5, None]}):

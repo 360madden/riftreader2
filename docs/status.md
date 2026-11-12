@@ -1,5 +1,21 @@
 # Current status
 
+**14:48 EST NOVEMBER 12 — OPTIONAL SELECTED-TARGET BEACON PASSED LIVE:**
+On **AMD-DESKTOP/PID17212**, the existing waypoint overlay can show a selected unit
+as a magenta diamond/beam and distance label, using the existing bounded target
+lookup and camera bracket. Enable Include selected target in markers before Show;
+the stream option is off by default. A nearby friendly guard projected at 7.4406
+native units. Root observed the real GUI checkbox, appearance on selection and
+removal on clearing while the route continued. The GUI child presented 606 frames
+in 140.76 s, then Hide ended `stop-requested`; both owned child processes were
+absent. Position raw bits/body bearing, basis and 7/7 checkpoint remain unchanged;
+fresh inspection found no held inputs. Native focused checks: 28 passed; affected
+Python checks: 62 passed. Root review also fixed malformed-base fallback repair
+and expiration during painting. This is display evidence, without world/zone,
+passive target freshness, occlusion or terrain/clearance qualification.
+App PID74016 is idle, target cleared, markers stopped. Evidence and usage:
+[world-to-screen workflow](workflows/physical-world-screen.md).
+
 **14:31 EST NOVEMBER 12 — SAVE VIEW / OPEN VIEW PASSED LIVE:**
 On **AMD-DESKTOP**, normal RIFT exit/relaunch restored the black game surface.
 Old PID38136 was observed absent before launch. New PID17212/start

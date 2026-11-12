@@ -61,12 +61,13 @@ def load_route(path):
 class ProjectionProvider:
     """One pinned selection, serial reads and plain packets; no overlay calls."""
     def __init__(self, selection, route, snapshot, *, read=None, clock=time.monotonic,
-                 utcnow=lambda: datetime.now(timezone.utc), max_age=.8):
+                 utcnow=lambda: datetime.now(timezone.utc), max_age=.8, target_beacon=False):
         require(selection.get("status") == "ready", "physical-selection-not-ready")
         self.selection, self.route = deepcopy(selection), deepcopy(route)
         self.target = self.selection["target"]
         self.snapshot, self.read = snapshot, read or physical.read_native
         self.clock, self.utcnow, self.max_age = clock, utcnow, max_age
+        self.target_beacon = target_beacon
         identity = route["identity"]
         require(identity["machine"].casefold() == self.target["hostName"].casefold()
                 and identity["gameBuildSha256"].casefold() == self.target["executableSha256"].casefold(),
@@ -93,12 +94,32 @@ class ProjectionProvider:
                 and str(identity.get("processStartUtcTicks")) == str(self.target["processStartUtcTicks"])
                 and str(identity.get("executableSha256", "")).casefold() == self.target["executableSha256"].casefold(),
                 "native-identity-mismatch")
-        values = physical._native_values("facing", report)
-        require(values["sampleCount"] == 1, "single-native-facing-sample-required")
-        require(values["playerKey"] == self.route["identity"]["unitKey"], "recorded-player-mismatch")
         row = report["observation"]
         if not stream:
-            require(row.get("targetProjectionCameraStableCandidate") is True, "native-camera-not-stable")
+            require(row.get("targetProjectionCameraStableCandidate") is True
+                    and physical._same_optical_projection_snapshot(row.get("opticalCameraCandidate"),
+                                                                   row.get("opticalCameraAfterTargetCandidate")),
+                    "native-camera-not-stable")
+        try:
+            values = physical._native_values("facing", report)
+        except (ValueError, KeyError, TypeError):
+            if not self.target_beacon:
+                raise
+            # Invalid optional target data must not suppress a valid player/route
+            # frame; the original non-target fields still pass all reducer checks.
+            clean = deepcopy(report)
+            rows = clean.get("observations")
+            observation = clean.get("observation")
+            if not isinstance(rows, list) or not rows or not isinstance(observation, dict) or observation != rows[-1]:
+                raise
+            for clean_row in [observation, *rows]:
+                if isinstance(clean_row, dict):
+                    for key in ("targetPositionPairCandidate", "opticalCameraAfterTargetCandidate",
+                                "targetProjectionCameraStableCandidate"):
+                        clean_row.pop(key, None)
+            values = physical._native_values("facing", clean)
+        require(values["sampleCount"] == 1, "single-native-facing-sample-required")
+        require(values["playerKey"] == self.route["identity"]["unitKey"], "recorded-player-mismatch")
         optical = values.get("opticalCamera")
         require(isinstance(optical, dict) and optical.get("status") == "available-candidate"
                 and optical.get("projectionAvailableCandidate") is True, "full-camera-projection-required")
@@ -116,9 +137,30 @@ class ProjectionProvider:
             points.append({"number": point["number"], "label": point["label"],
                 "ground": physical._project_world_point(camera, xyz),
                 "beaconTop": physical._project_world_point(camera, dict(x=xyz["x"], y=xyz["y"] + 1.5, z=xyz["z"]))})
-        return {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
-                "clientRect": list(after["clientRect"]), "points": points,
-                "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"])}
+        frame = {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
+                 "clientRect": list(after["clientRect"]), "points": points,
+                 "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"])}
+        target = values.get("selectedTargetProjectionCandidate")
+        if self.target_beacon and isinstance(target, dict) and target.get("status") == "candidate" \
+                and target.get("cameraStableCandidate") is True:
+            try:
+                xyz, player, ground = target["positionXYZCandidate"], values["positionXYZCandidate"], target["screenPointCandidate"]
+                distance = math.hypot(xyz["x"] - player["x"], xyz["z"] - player["z"])
+                target_age = (self.utcnow() - datetime.fromisoformat(target["sampledAtUtc"].replace("Z", "+00:00"))).total_seconds()
+                if (distance <= 35 and -.1 <= target_age <= self.max_age
+                        and ground.get("status") == "available-candidate" and ground.get("insideViewportCandidate") is True
+                        and all(type(ground.get(k)) in (int, float) and math.isfinite(ground[k])
+                                for k in ("normalizedX", "normalizedY", "clipW"))
+                        and 0 <= ground["normalizedX"] <= 1 and 0 <= ground["normalizedY"] <= 1
+                        and ground["clipW"] > 1e-5):
+                    frame["selectedTarget"] = {"status": "candidate", "targetKey": target["targetKey"],
+                        "positionXYZCandidate": deepcopy(xyz), "distance": distance,
+                        "cameraStableCandidate": True, "sampledAtUtc": target["sampledAtUtc"],
+                        "ground": deepcopy(ground), "beaconTop": physical._project_world_point(
+                            camera, dict(x=xyz["x"], y=xyz["y"] + 1.5, z=xyz["z"]))}
+            except (ValueError, TypeError, KeyError, OverflowError):
+                pass  # Optional target data never replaces or invalidates route markers.
+        return frame
 
     def stream_frame(self, packet, before, *, previous_end=None):
         require(packet.get("recordType") == "native-current-facing-stream-row/1"
@@ -163,9 +205,12 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
     require(before.get("foreground") is True, "target-not-foreground")
     require(type(samples) is int and 1 <= samples <= 30, "stream-samples-invalid")
     require(provider.target["hostName"].casefold() == socket.gethostname().casefold(), "host-mismatch")
-    child = popen([str(physical.NATIVE_EXE), "sample-current-facing-stream", "--pid",
+    command = [str(physical.NATIVE_EXE), "sample-current-facing-stream", "--pid",
         str(provider.target["processId"]), "--start-ticks", str(provider.target["processStartUtcTicks"]),
-        "--samples", str(samples), "--interval-ms", "50"], cwd=ROOT, stdout=subprocess.PIPE,
+        "--samples", str(samples), "--interval-ms", "50"]
+    if provider.target_beacon:
+        command.extend(["--include-target", "true"])
+    child = popen(command, cwd=ROOT, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     lines = queue.Queue(maxsize=32)
     stderr = bytearray()
@@ -334,7 +379,7 @@ def apply_saved_progress(frame, progress_file, route):
 
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
-        presenter="native", progress_file=None):
+        presenter="native", progress_file=None, target_beacon=False):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 < duration <= 600, "duration-must-be-positive-at-most-600")
@@ -362,7 +407,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
                 and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
-    provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age)
+    provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age, target_beacon=target_beacon)
     window_options = {}
     if presenter == "qt":
         try:
@@ -447,6 +492,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "counts": counts, "latestNativeReport": provider.latest_native, "inputSent": False,
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,
         "presenter": presenter,
+        "targetBeaconEnabled": target_beacon,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
         "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
         "progressFile": str(progress_file) if progress_file is not None else None,
@@ -475,13 +521,14 @@ def main(argv=None):
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
     parser.add_argument("--stop-file", type=Path)
     parser.add_argument("--progress-file", type=Path, help="optional absolute saved checkpoint; display only")
+    parser.add_argument("--target-beacon", action="store_true", help="show fresh selected-target candidate")
     args = parser.parse_args(argv)
     try:
         result = run(args.expected_host, args.physical_pid, args.route, duration=args.duration,
                      max_age=args.max_age, output=args.output, reader=args.reader,
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
-                     progress_file=args.progress_file)
+                     progress_file=args.progress_file, target_beacon=args.target_beacon)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

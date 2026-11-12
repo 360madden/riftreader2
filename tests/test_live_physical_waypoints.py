@@ -53,6 +53,73 @@ class FeedTests(unittest.TestCase):
         self.assertLess(packet["points"][0]["beaconTop"]["normalizedY"], .5)
         self.assertEqual(provider.route["recordingIdentity"]["runtimeIdentity"]["processId"], 999)
         self.read.assert_called_once_with(self.selection, "facing", samples=1, include_target=True)
+        self.assertNotIn("selectedTarget", packet)
+
+    def test_target_beacon_is_opt_in_fresh_and_clears_with_target(self):
+        provider = self.provider(clock=lambda: 10.)
+        provider.target_beacon = True
+        frame = provider.acquire()
+        target = frame["selectedTarget"]
+        self.assertEqual(("candidate", "99", True),
+                         (target["status"], target["targetKey"], target["cameraStableCandidate"]))
+        self.assertEqual({"x": 7427., "y": 871., "z": 2946.}, target["positionXYZCandidate"])
+        self.assertLess(target["distance"], 35)
+        self.native["observation"]["targetPositionPairCandidate"]["target"] = None
+        self.path.write_text(json.dumps(self.native))
+        self.assertNotIn("selectedTarget", provider.acquire())
+        self.assertEqual(1, len(frame["points"]))
+
+    def test_target_out_of_range_or_invalid_is_omitted_without_hiding_route(self):
+        provider = self.provider(clock=lambda: 10.)
+        provider.target_beacon = True
+        for change in (lambda target: target["position"].update(x=7500),
+                       lambda target: target.update(unitKey="not-a-key")):
+            report = report_with_target()
+            report["observations"] = [report["observation"]]
+            report["requestedSamples"] = report["completedSamples"] = 1
+            change(report["observation"]["targetPositionPairCandidate"]["target"])
+            frame = provider.build_frame(report, 10., self.snapshot.return_value)
+            self.assertNotIn("selectedTarget", frame)
+            self.assertEqual(1, len(frame["points"]))
+
+    def test_target_fallback_never_repairs_malformed_base_observation_array(self):
+        provider = self.provider(clock=lambda: 10.)
+        provider.target_beacon = True
+        malformed = deepcopy(self.native)
+        malformed["observation"]["targetPositionPairCandidate"]["target"]["unitKey"] = "invalid"
+        malformed["observations"] = [deepcopy(malformed["observation"]), malformed["observation"]]
+        with self.assertRaises(ValueError):
+            provider.build_frame(malformed, 10., self.snapshot.return_value, stream=True)
+        malformed = deepcopy(self.native)
+        malformed["observations"] = [deepcopy(malformed["observation"])]
+        malformed["observation"]["targetPositionPairCandidate"]["target"]["unitKey"] = "invalid"
+        with self.assertRaises(ValueError):
+            provider.build_frame(malformed, 10., self.snapshot.return_value, stream=True)
+
+    def test_target_fallback_cannot_hide_unstable_nonstream_camera(self):
+        provider = self.provider(clock=lambda: 10.)
+        provider.target_beacon = True
+        malformed = deepcopy(self.native)
+        after = malformed["observation"]["opticalCameraAfterTargetCandidate"]
+        after["cameraAddressDecimal"] = str(int(after["cameraAddressDecimal"]) + 1)
+        self.assertTrue(malformed["observation"]["targetProjectionCameraStableCandidate"])
+        with self.assertRaisesRegex(ValueError, "native-camera-not-stable"):
+            provider.build_frame(malformed, 10., self.snapshot.return_value)
+
+    def test_unstable_stale_and_offscreen_target_never_carries_forward(self):
+        provider = self.provider(clock=lambda: 10.)
+        provider.target_beacon = True
+        values = live.physical._native_values("facing", self.native)
+        mutations = (lambda target: target.update(cameraStableCandidate=False),
+                     lambda target: target.update(sampledAtUtc="2020-01-01T00:00:00Z"),
+                     lambda target: target["screenPointCandidate"].update(insideViewportCandidate=False))
+        for mutate in mutations:
+            bad = deepcopy(values)
+            mutate(bad["selectedTargetProjectionCandidate"])
+            with patch.object(live.physical, "_native_values", return_value=bad):
+                frame = provider.build_frame(self.native, 10., self.snapshot.return_value, stream=True)
+            self.assertNotIn("selectedTarget", frame)
+            self.assertEqual(1, len(frame["points"]))
 
     def test_background_target_never_starts_read(self):
         self.snapshot.return_value["foreground"] = False
@@ -303,6 +370,26 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(counts["acquired"], 1)
         self.assertIn("native diagnostic", provider.stream_stderr)
         self.assertTrue(child.stdout.closed)
+
+    def test_stream_target_flag_is_opt_in_and_emits_candidate(self):
+        packet = self.stream_packet()
+        packet["observation"] = deepcopy(self.native["observation"])
+        end = dict(recordType="native-current-facing-stream-end/1", status="complete",
+                   requestedSamples=1, completedSamples=1)
+        for enabled in (False, True):
+            provider = self.provider(clock=lambda: 10.)
+            provider.target_beacon = enabled
+            child = self.child([packet, end])
+            launch = Mock(return_value=child)
+            channel = queue.Queue(maxsize=1)
+            with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"):
+                live.stream_burst(provider, channel, threading.Event(), dict(acquired=0), popen=launch, samples=1)
+            command = launch.call_args.args[0]
+            self.assertEqual(enabled, "--include-target" in command)
+            if enabled:
+                self.assertEqual("true", command[command.index("--include-target") + 1])
+            frame = channel.get_nowait()["frame"]
+            self.assertEqual(enabled, "selectedTarget" in frame)
 
     def test_stream_rejects_sequence_replay_and_old_rows(self):
         packet = self.stream_packet()

@@ -60,24 +60,7 @@ internal static class CurrentBuildFacingSampleCommand
             {
                 var pair = readTarget is null ? CurrentBuildPairedPositionCandidateReader.Read(session) : readTarget(session);
                 var after = read(session);
-                if (pair.Identity != identity || after.Identity != identity ||
-                    pair.Self.UnitKey != sample.PlayerKeyDecimal || after.PlayerKey != sample.PlayerKey ||
-                    after.PlayerEntity != sample.PlayerEntity || after.PlayerSystem != sample.PlayerSystem ||
-                    pair.Self.Position != (sample.EntityPositionCandidate ?? sample.PositionCandidate) ||
-                    (after.EntityPositionCandidate ?? after.PositionCandidate) != (sample.EntityPositionCandidate ?? sample.PositionCandidate) ||
-                    pair.StartedAtUtc < sample.CompletedAtUtc || pair.CompletedAtUtc > after.StartedAtUtc ||
-                    timer.Elapsed.TotalMilliseconds > 2000)
-                    throw new InvalidDataException("Facing/target identity, position or acquisition interval changed.");
-                var firstCamera = sample.OpticalCameraCandidate;
-                var lastCamera = after.OpticalCameraCandidate;
-                var stable = CurrentBuildOpticalCameraCandidateReader.SameProjectionSnapshot(firstCamera, lastCamera);
-                sample = sample with
-                {
-                    CompletedAtUtc = after.CompletedAtUtc,
-                    TargetPositionPairCandidate = pair,
-                    OpticalCameraAfterTargetCandidate = lastCamera,
-                    TargetProjectionCameraStableCandidate = stable
-                };
+                sample = AttachTargetBracket(sample, pair, after, identity, timer.Elapsed);
             }
             if (sample.Identity != identity || session.Identity != identity || sample.PlayerKey == 0 ||
                 (index > 0 && (sample.PlayerKey != observations[0].PlayerKey ||
@@ -117,6 +100,27 @@ internal static class CurrentBuildFacingSampleCommand
             output = Path.GetFullPath(path)
         }, new JsonSerializerOptions(JsonFormat.Options) { WriteIndented = false }));
         return 0;
+    }
+
+    internal static CurrentBuildFacingCandidate AttachTargetBracket(
+        CurrentBuildFacingCandidate sample, CurrentBuildPairedPositionObservation pair,
+        CurrentBuildFacingCandidate after, RiftReader2.Domain.NativeProcessIdentity identity, TimeSpan elapsed)
+    {
+        if (pair.Identity != identity || after.Identity != identity ||
+            pair.Self.UnitKey != sample.PlayerKeyDecimal || after.PlayerKey != sample.PlayerKey ||
+            after.PlayerEntity != sample.PlayerEntity || after.PlayerSystem != sample.PlayerSystem ||
+            pair.Self.Position != (sample.EntityPositionCandidate ?? sample.PositionCandidate) ||
+            (after.EntityPositionCandidate ?? after.PositionCandidate) != (sample.EntityPositionCandidate ?? sample.PositionCandidate) ||
+            pair.StartedAtUtc < sample.CompletedAtUtc || pair.CompletedAtUtc > after.StartedAtUtc ||
+            elapsed.TotalMilliseconds > 2000)
+            throw new InvalidDataException("Facing/target identity, position or acquisition interval changed.");
+        return sample with {
+            CompletedAtUtc = after.CompletedAtUtc,
+            TargetPositionPairCandidate = pair,
+            OpticalCameraAfterTargetCandidate = after.OpticalCameraCandidate,
+            TargetProjectionCameraStableCandidate = CurrentBuildOpticalCameraCandidateReader.SameProjectionSnapshot(
+                sample.OpticalCameraCandidate, after.OpticalCameraCandidate)
+        };
     }
 
     private static int BoundedInt(IReadOnlyDictionary<string, string> options, string name,

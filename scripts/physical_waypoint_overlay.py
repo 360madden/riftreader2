@@ -467,18 +467,35 @@ class PhysicalWaypointOverlay:
                     color = {"pending": "#b39852", "next": "#7cffff", "completed": "#65c88a"}.get(route_state, "#ffd54f")
                     if route_state == "next":
                         text = "NEXT " + text
-                    markers.append((ground, top, text, color, 4 if route_state == "next" else 2))
+                    markers.append((ground, top, text, color, 4 if route_state == "next" else 2, "route"))
+            target = frame.get("selectedTarget")
+            if isinstance(target, dict):
+                try:
+                    key, distance = target["targetKey"], target["distance"]
+                    if (target.get("status") == "candidate" and target.get("cameraStableCandidate") is True
+                            and isinstance(key, str) and key.isdecimal() and 0 < int(key) < 2**64
+                            and str(int(key)) == key and type(distance) in (int, float)
+                            and math.isfinite(distance) and 0 <= distance <= 35):
+                        ground = _projection(target["ground"], *rect[2:])
+                        top = _projection(target["beaconTop"], *rect[2:])
+                        if ground is not None:
+                            markers.append((ground, top, f"Target · {distance:.1f}", "#ff58db", 2, "target"))
+                except (ValueError, KeyError, TypeError, OverflowError):
+                    pass  # An invalid optional target does not hide route markers.
             labels = _label_layout([(marker[0], marker[2]) for marker in markers], *rect[2:], font)
-            for (_, _, _, color, _), (text, box, anchor) in zip(markers, labels):
+            for (_, _, _, color, _, _), (text, box, anchor) in zip(markers, labels):
                 endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
                 draw.line((*anchor, *endpoint), fill=color, width=1)
                 draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
                                     anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
             # Rings/beacons are painted last so label lanes never move or erase
             # the exact world-to-screen reference pixels.
-            for ground, top, text, color, width in markers:
+            for ground, top, text, color, width, kind in markers:
                 x, y = ground
-                draw.ellipse((x-7, y-7, x+7, y+7), outline=color, width=width)
+                if kind == "target":
+                    draw.line((x, y-8, x+8, y, x, y+8, x-8, y, x, y-8), fill=color, width=width)
+                else:
+                    draw.ellipse((x-7, y-7, x+7, y+7), outline=color, width=width)
                 if top is not None:
                     draw.line((*ground, *top), fill=color, width=width)
             player = _projection(frame["playerGround"], *rect[2:])
@@ -487,6 +504,11 @@ class PhysicalWaypointOverlay:
                 draw.line((x-6, y, x+6, y), fill="#51e5ff", width=2)
                 draw.line((x, y-6, x, y+6), fill="#51e5ff", width=2)
             self.window.paint(image)
+            # Rendering and a synchronous paint can consume the remaining TTL
+            # or span a window change; revalidate before making pixels visible.
+            self._validate(frame)
+            if not 0 <= time.monotonic() - frame["acquiredMonotonic"] <= self.max_age:
+                raise ValueError("Stale or future overlay frame")
             self.window.show(rect)
             self.frame, self.reason = deepcopy(frame), None
             return True

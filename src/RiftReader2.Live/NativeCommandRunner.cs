@@ -65,7 +65,7 @@ public static class NativeCommandRunner
             if (args[0] == "sample-current-orientation")
                 return await CurrentBuildOrientationSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms"), output, cancellationToken);
             if (args[0] == "sample-current-facing-stream")
-                return await CurrentBuildFacingStreamCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--samples", "--interval-ms"), output, cancellationToken);
+                return await CurrentBuildFacingStreamCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--samples", "--interval-ms", "--include-target"), output, cancellationToken);
             if (args[0] == "sample-current-facing")
                 return await CurrentBuildFacingSampleCommand.RunAsync(ParseOptions(args[1..], "--pid", "--start-ticks", "--output", "--samples", "--interval-ms", "--include-target"), output, cancellationToken);
             if (args[0] == "sample-current-smoothed-scalar")

@@ -85,6 +85,59 @@ class PresenterTests(unittest.TestCase):
                 self.assertEqual((81, 229, 255), image.getpixel((768, 648)))
                 self.assertEqual((1, 2, 3), image.getpixel((10, 10)))
 
+    def test_optional_target_is_distinct_and_disappears_on_next_frame(self):
+        f = frame()
+        f["selectedTarget"] = {"status": "candidate", "targetKey": "99", "distance": 3.2,
+                               "cameraStableCandidate": True, "ground": projection(.7, .5),
+                               "beaconTop": projection(.7, .4)}
+        with patch.object(overlay, "_label_layout", wraps=overlay._label_layout) as layout:
+            self.assertTrue(self.presenter.present(f))
+        self.assertEqual("Target · 3.2", layout.call_args.args[0][-1][1])
+        self.assertEqual((255, 88, 219), self.presenter.window.images[-1].getpixel((int(.7*1920), 432)))
+        del f["selectedTarget"]
+        self.assertTrue(self.presenter.present(f))
+        self.assertEqual((1, 2, 3), self.presenter.window.images[-1].getpixel((int(.7*1920), 432)))
+
+    def test_invalid_optional_target_keeps_route_visible(self):
+        f = frame()
+        f["selectedTarget"] = {"status": "candidate", "targetKey": "invalid", "distance": 1,
+                               "cameraStableCandidate": True, "ground": projection(), "beaconTop": projection()}
+        self.assertTrue(self.presenter.present(f))
+        self.assertEqual((255, 213, 79), self.presenter.window.images[-1].getpixel((960, 540)))
+
+    def test_expired_or_changed_frame_during_paint_is_never_shown(self):
+        original = self.presenter.window.paint
+        def slow_paint(image):
+            original(image)
+            if image is not None:
+                self.clock.return_value = 101.
+        self.presenter.window.paint = slow_paint
+        self.assertFalse(self.presenter.present(frame()))
+        self.api.show.assert_not_called()
+        self.assertIsNone(self.presenter.frame)
+        self.assertIn("Stale", self.presenter.reason)
+        self.clock.return_value = 100.
+        def changed_geometry(image):
+            original(image)
+            if image is not None:
+                self.api.snapshot.return_value = {"clientRect": [-1919, -20, 1920, 1080], "foreground": True}
+        self.presenter.window.paint = changed_geometry
+        self.assertFalse(self.presenter.present(frame()))
+        self.api.show.assert_not_called()
+        self.assertIn("geometry", self.presenter.reason)
+        self.clock.return_value = 100.
+        self.presenter.window.paint = original
+        snapshots = []
+        def slow_snapshot(_):
+            snapshots.append(True)
+            if len(snapshots) == 2:
+                self.clock.return_value = 101.
+            return {"clientRect": [-1920, -20, 1920, 1080], "foreground": True}
+        self.api.snapshot.side_effect = slow_snapshot
+        self.assertFalse(self.presenter.present(frame()))
+        self.api.show.assert_not_called()
+        self.assertIn("Stale", self.presenter.reason)
+
     def test_invalid_present_route_state_refuses_frame(self):
         for state in (None, "unknown", "NEXT", 1, [], {}):
             f = frame()
