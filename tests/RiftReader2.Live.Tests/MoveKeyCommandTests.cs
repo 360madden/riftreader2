@@ -7,6 +7,100 @@ namespace RiftReader2.Live.Tests;
 
 public sealed class MoveKeyCommandTests
 {
+    private static string[] FocusOnlyArguments => ["--pid", "123", "--focus-only",
+        "--expect-start-ticks", "123456", "--expect-sha256", new string('A', 64),
+        "--expect-hwnd", "0x123", "--json"];
+
+    [Fact]
+    public void FocusOnlyIsExplicitAndHasNoKeysOrExecution()
+    {
+        var options = MoveKeyCommand.Parse(FocusOnlyArguments);
+        Assert.True(options.FocusOnly);
+        Assert.True(options.Focus);
+        Assert.False(options.Execute);
+        Assert.False(options.InspectOnly);
+        Assert.Empty(options.Keys);
+        foreach (var required in new[] { "--pid", "--expect-start-ticks", "--expect-sha256", "--expect-hwnd" })
+        {
+            var args = FocusOnlyArguments.ToList();
+            var index = args.IndexOf(required);
+            args.RemoveRange(index, 2);
+            Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(args.ToArray()));
+        }
+    }
+
+    [Theory]
+    [InlineData("--key", "w")]
+    [InlineData("--hold-ms", "100")]
+    [InlineData("--xyz-settle-ms", "0")]
+    [InlineData("--actor-pose-settle-ms", "0")]
+    [InlineData("--execute", null)]
+    [InlineData("--measure-xyz", null)]
+    [InlineData("--measure-actor-pose", null)]
+    [InlineData("--release-only", null)]
+    [InlineData("--inspect", null)]
+    [InlineData("--no-focus", null)]
+    [InlineData("--focus", null)]
+    public void FocusOnlyRejectsOtherActionFlags(string option, string? value)
+    {
+        string[] extra = value is null ? [option] : [option, value];
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse([.. FocusOnlyArguments, .. extra]));
+    }
+
+    private static DesktopTarget FocusTarget(bool foreground = false) => new(
+        "AMD-DESKTOP", 123, 123456, "0x123", "rift_x64.exe", new string('A', 64),
+        foreground, -1928, 22, 1936, 1048);
+
+    [Fact]
+    public async Task FocusOnlyChecksHeldInputsBeforeRequestAndPreservesTargetGeometry()
+    {
+        var calls = new List<string>();
+        var target = FocusTarget();
+        var attempt = new MoveKeyCommand.FocusAttempt("0x456", 456, true, true, true, "0x123", 123);
+        var result = await MoveKeyCommand.FocusOnlyAsync(target,
+            () => { calls.Add("inspect"); return target with { IsForeground = true }; },
+            () => { calls.Add("held"); return []; },
+            () => { calls.Add("focus"); return attempt; },
+            _ => { calls.Add("wait"); return Task.FromResult(true); }, CancellationToken.None);
+        Assert.Equal(new[] { "held", "focus", "wait", "inspect", "held" }, calls);
+        Assert.Equal(target with { IsForeground = true }, result.Target);
+        Assert.Equal(attempt, result.Attempt);
+        Assert.Empty(result.DesktopInputsDown);
+    }
+
+    [Fact]
+    public async Task FocusOnlyRefusesHeldInputsWithoutRequestingForeground()
+    {
+        var failure = await Assert.ThrowsAsync<InvalidOperationException>(() => MoveKeyCommand.FocusOnlyAsync(
+            FocusTarget(), () => throw new InvalidOperationException("unexpected inspect"), () => ["w"],
+            () => throw new InvalidOperationException("unexpected focus"),
+            _ => throw new InvalidOperationException("unexpected wait"), CancellationToken.None));
+        Assert.Equal("Desktop inputs already held: w", failure.Message);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task FocusOnlyRefusesFailedFocusOrChangedGeometry(bool focusSucceeded, bool changedGeometry)
+    {
+        var target = FocusTarget();
+        await Assert.ThrowsAsync<InvalidOperationException>(() => MoveKeyCommand.FocusOnlyAsync(target,
+            () => target with { IsForeground = true, ClientX = changedGeometry ? 0 : target.ClientX },
+            () => [], () => new("0x456", 456, true, true, focusSucceeded, "0x123", 123),
+            _ => Task.FromResult(focusSucceeded), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task FocusOnlyAlreadyForegroundDoesNotRequestActivation()
+    {
+        var target = FocusTarget(true);
+        var result = await MoveKeyCommand.FocusOnlyAsync(target, () => target, () => [],
+            () => throw new InvalidOperationException("unexpected focus"),
+            _ => throw new InvalidOperationException("unexpected wait"), CancellationToken.None);
+        Assert.Equal(target, result.Target);
+        Assert.Null(result.Attempt);
+    }
+
     [Theory]
     [InlineData("0xE0842", 919618L)]
     [InlineData("0Xe0842", 919618L)]

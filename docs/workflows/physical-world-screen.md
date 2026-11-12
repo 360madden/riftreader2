@@ -50,6 +50,59 @@ feet. This is one stationary-view candidate, not a calibrated pixel-error claim.
 These are local artifacts; the portable measured route remains tracked under
 `docs/validation/gui-taught-route-2026-11-12.json`.
 
+## Off-center native unit check
+
+A second read-only capture on PID69312 at 17:08 UTC bracketed WGC with two
+bounded unit-manager scans. Both scans and all four optical-camera snapshots
+matched, player position bits were unchanged, and the whole bracket took 2.88 s.
+The scan examined 414 entries and found 152 position candidates; 18 nearby,
+unchanged, in-view unit candidates were plotted. Root visually reviewed the
+crosses against several dummy bases and soldier ground positions across the
+image. This supports off-center geometric alignment in this view, without a
+calibrated pixel-error or unit-type/name claim. Stored positions may be stale;
+matching keys/bits alone do not prove visible presence.
+
+Evidence: `artifacts/unit-screen-bracket-97090a9f867c4248bb8844f04b83778b/`
+contains `bracket.json`, original `frame/image.png`, `units.png`, and
+`projected.json`. No selection, casting, movement or focus change was sent.
+
+Six serialized full camera/target reads took 0.282–0.698 s (median 0.474 s),
+recorded in `artifacts/projection-read-latency-bbb7bc2180ed4d47b5a56d7a63e378e1.json`.
+This motivated the bounded immediate-emission native stream below.
+
+## Bounded camera stream and explicit focus
+
+The native `sample-current-facing-stream` command accepts exact `--pid` and
+`--start-ticks`, `--samples` (1–30), and `--interval-ms` (20–200). It emits each full
+candidate immediately as NDJSON after strict process revalidation, then a count
+receipt. It holds the existing read lease for at most a two-second acquisition
+window; an individual synchronous operation may finish later. A deadline returns
+`duration-limit` rather than claiming the requested sample count completed.
+Each row retains capture timestamps and `captureElapsedMilliseconds`. Consumers
+must check identity, age and current window geometry, and release between bursts.
+
+On the current PID69312, 20 rows arrived about 95 ms apart, each 38–50 ms old at
+emission. The Python feed then consumed a real 18-row duration-limited burst,
+validated every projection and ended with a 0.160-second-old final frame. No keys
+were sent. Evidence: `artifacts/projection-native-stream-3375b1ff3a514c8aac03a4301b2114ab.json`
+and `artifacts/live-projection-provider-361e2912dbb740f0a6ee864bbc82c318.json`.
+
+The existing native control command now has an explicit no-key focus action:
+
+```text
+RiftReader2.Live.exe move-key --focus-only --pid PID --expect-start-ticks TICKS --expect-sha256 SHA256 --expect-hwnd HWND --json
+```
+
+It requires every expected identity field, the existing exclusive control lock,
+no held desktop inputs, and unchanged target geometry after activation. It cannot
+be combined with movement, release or measurement flags. Root exercised it on
+AMD-DESKTOP after checking desktop inactivity: RIFT became foreground, its client
+remained at `(-1920,29,1920,1009)`, no inputs were held and `inputSent:false`.
+Evidence: `artifacts/overlay-focus-only-first-69312.json`. Focus is an explicit
+action; the projection feed itself never requests foreground. The stream and
+existing/new focus-command tests passed 96 focused native cases; four stream
+cases also passed after adding per-row elapsed metadata.
+
 ## Remaining qualification
 
 This output is an annotation of a retained frame, not a live desktop overlay.

@@ -20,7 +20,8 @@ internal static class MoveKeyCommand
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
         int XyzSettleMilliseconds, bool MeasureActorPose, int ActorPoseSettleMilliseconds = 0,
-        bool ReleaseOnly = false, bool InspectOnly = false, long? ExpectedHwnd = null);
+        bool ReleaseOnly = false, bool InspectOnly = false, long? ExpectedHwnd = null,
+        bool FocusOnly = false);
 
     // A timed envelope around the bounded input executor, NOT exact down/up
     // timestamps or proof that the RIFT game consumed the injected key.
@@ -178,7 +179,7 @@ internal static class MoveKeyCommand
             "Measured key-hold and current-build actor-matrix angle only; not an independently validated actor turn rate.";
     }
 
-    private sealed record FocusAttempt(
+    internal sealed record FocusAttempt(
         string PreviousForegroundWindow, uint PreviousForegroundProcessId,
         bool AttachedForegroundThread, bool AttachedTargetThread,
         bool ForegroundRequestAccepted,
@@ -213,7 +214,8 @@ internal static class MoveKeyCommand
 
     private const string Usage =
         "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose] [--actor-pose-settle-ms 500]"
-        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--expect-hwnd HWND] [--release-only] [--inspect]";
+        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--expect-hwnd HWND] [--release-only] [--inspect]"
+        + " | move-key --focus-only --pid PID --expect-start-ticks TICKS --expect-sha256 HASH --expect-hwnd HWND [--json]";
 
     internal static long ParseWindowHandle(string value)
     {
@@ -242,6 +244,7 @@ internal static class MoveKeyCommand
         bool focus = true, execute = false, json = false, measureXyz = false, measureActorPose = false;
         bool releaseOnly = false;
         bool inspectOnly = false;
+        bool focusOnly = false;
         long? expectedTicks = null;
         long? expectedHwnd = null;
         string? expectedSha = null;
@@ -253,7 +256,7 @@ internal static class MoveKeyCommand
             if (!seen.Add(option))
                 throw new InvalidDataException($"Repeated option: {option}");
             if (option is "--focus" or "--no-focus" or "--execute" or "--json" or "--measure-xyz"
-                or "--measure-actor-pose" or "--release-only" or "--inspect")
+                or "--measure-actor-pose" or "--release-only" or "--inspect" or "--focus-only")
             {
                 if (option == "--focus") focus = true;
                 if (option == "--no-focus") focus = false;
@@ -263,6 +266,7 @@ internal static class MoveKeyCommand
                 if (option == "--measure-actor-pose") measureActorPose = true;
                 if (option == "--release-only") releaseOnly = true;
                 if (option == "--inspect") inspectOnly = true;
+                if (option == "--focus-only") focusOnly = true;
                 continue;
             }
             if (i + 1 >= args.Length)
@@ -316,7 +320,16 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("--focus and --no-focus cannot be combined.");
         if (pid is null)
             throw new InvalidDataException("Exact --pid is required.");
-        if (inspectOnly)
+        if (focusOnly)
+        {
+            if (seen.Any(option => option is not ("--focus-only" or "--pid" or "--expect-start-ticks"
+                or "--expect-sha256" or "--expect-hwnd" or "--json")))
+                throw new InvalidDataException("--focus-only cannot request keys, execution, measurements, holds, release, inspection or focus modifiers.");
+            if (expectedTicks is null || expectedSha is null || expectedHwnd is null)
+                throw new InvalidDataException("--focus-only requires --expect-start-ticks, --expect-sha256 and --expect-hwnd.");
+            keys = [];
+        }
+        else if (inspectOnly)
         {
             if (keys is not null || execute || releaseOnly || measureXyz || measureActorPose
                 || seen.Contains("--hold-ms") || seen.Contains("--focus"))
@@ -339,7 +352,7 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("--release-only requires one key, no hold and no movement measurements.");
         return new Options(pid.Value, keys, hold, focus, execute, json,
             expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose, actorPoseSettleMilliseconds,
-            releaseOnly, inspectOnly, expectedHwnd);
+            releaseOnly, inspectOnly, expectedHwnd, focusOnly);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -348,7 +361,7 @@ internal static class MoveKeyCommand
         try
         {
             var options = Parse(args);
-            if (!options.Execute && !options.InspectOnly)
+            if (!options.Execute && !options.InspectOnly && !options.FocusOnly)
             {
                 Report(options.Json, new
                 {
@@ -420,6 +433,19 @@ internal static class MoveKeyCommand
             return inspected;
         }
         var target = Inspect();
+        if (options.FocusOnly)
+        {
+            var focused = await FocusOnlyAsync(target, Inspect, WindowsControlDesktop.ReadPressedInputs,
+                () => RequestForegroundWithAttachedThreads(new IntPtr(ParseWindowHandle(target.WindowHandle)), options.Pid),
+                cancellation => WaitForForegroundAsync(Inspect, 600, cancellation), token);
+            Report(options.Json, new
+            {
+                status = "focused-target", target = focused.Target, inputSent = false,
+                focusRequested = true, focusAttempt = focused.Attempt,
+                desktopInputsDown = focused.DesktopInputsDown
+            });
+            return 0;
+        }
         if (options.InspectOnly)
         {
             Report(options.Json, new
@@ -598,6 +624,29 @@ internal static class MoveKeyCommand
             keyReleaseFallbacks = input.ReleaseFallbacks
         });
         return success ? 0 : 2;
+    }
+
+    internal static async Task<(DesktopTarget Target, FocusAttempt? Attempt, string[] DesktopInputsDown)> FocusOnlyAsync(
+        DesktopTarget target, Func<DesktopTarget> inspect, Func<string[]> readPressedInputs,
+        Func<FocusAttempt> requestFocus, Func<CancellationToken, Task<bool>> waitForForeground,
+        CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var held = readPressedInputs();
+        if (held.Length != 0)
+            throw new InvalidOperationException("Desktop inputs already held: " + string.Join(", ", held));
+        FocusAttempt? attempt = null;
+        if (!target.IsForeground)
+        {
+            attempt = requestFocus();
+            if (!await waitForForeground(token))
+                throw new InvalidOperationException("RIFT focus failed; no input sent.");
+        }
+        token.ThrowIfCancellationRequested();
+        var ready = inspect();
+        if (!ready.IsForeground || target with { IsForeground = true } != ready)
+            throw new InvalidOperationException("Selected RIFT window, identity or geometry changed during focus; no input sent.");
+        return (ready, attempt, readPressedInputs());
     }
 
     private static async Task<XyzSample> CaptureXyzAsync(
