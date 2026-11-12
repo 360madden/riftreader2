@@ -77,6 +77,7 @@ class QtOwnedWindow:
         self.app = _application()
         self.widget, self.hwnd = None, None
         self.destroyed, self.error, self.loop, self.on_close = False, None, None, None
+        self._presented_rect = None
         self.callbacks, self.counter = {}, 0
         try:
             self.widget = _OverlayWidget(self._closed_by_window)
@@ -129,13 +130,26 @@ class QtOwnedWindow:
         if (not isinstance(physicalrect, (list, tuple)) or len(physicalrect) != 4
                 or any(type(v) is not int for v in physicalrect) or min(physicalrect[2:]) <= 0):
             raise ValueError("Invalid physical overlay rectangle")
+        cached = self.widget.image
+        self.widget.image = None
         try:
+            if self._presented_rect != tuple(physicalrect):
+                self.hide()  # Never stretch an old frame during native placement.
             self.widget.show()  # Qt's precreation no-focus flags govern first show.
             if int(self.widget.winId()) != self.hwnd:
                 raise ValueError("Qt recreated the overlay HWND")
             self.api.show(self.hwnd, physicalrect)  # OWN HWND only, signed pixels.
-            if self._physical_rect() != list(physicalrect):
+            actual = self._physical_rect()
+            if actual != list(physicalrect):
                 raise ValueError("Qt overlay physical geometry mismatch")
+            ratio = self.widget.devicePixelRatioF()
+            if (not math.isfinite(ratio) or ratio <= 0
+                    or abs(self.widget.width() * ratio - actual[2]) > 1
+                    or abs(self.widget.height() * ratio - actual[3]) > 1):
+                raise ValueError("Qt overlay logical geometry has not settled to physical client")
+            self.widget.image = cached
+            self._presented_rect = tuple(physicalrect)
+            self.widget.update()
         except Exception:
             self.hide()
             raise
@@ -144,6 +158,7 @@ class QtOwnedWindow:
         self._main()
         if not self.destroyed and self.widget is not None:
             self.widget.hide()
+            self._presented_rect = None
             if self.hwnd is not None:
                 self.api.hide(self.hwnd)
 

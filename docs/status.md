@@ -1,5 +1,20 @@
 # Current status
 
+**13:59 EST NOVEMBER 12 — FIRST-SHOW SCALING FIXED; ACTIVE OVERLAY RESTART PASSED:**
+On **AMD-DESKTOP**, a real 125% process-scale probe exposed one prematurely scaled
+first Qt frame. Image admission now waits for logical/physical size agreement;
+the fixed run presented 26 correctly sized frames, with all seven anchors within
+two pixels and foreground preserved. Actual mixed-DPI monitor transition remains
+untested. Root also normally exited RIFT PID60384 while its marker feed was open:
+the feed self-stopped with `target-process-ended`, without waiting for reconnect.
+New PID38136/start `639301065710306685` has unchanged XYZ/optical bearing, negligible
+body delta and byte-identical basis/checkpoint. Same app PID60252 reconnected;
+explicit Show displayed completed green markers (147 frames/40.1 s), and Hide
+stopped the child. No movement keys were sent; inspection found no held inputs.
+Sixty-three focused checks passed. [Details and evidence](workflows/physical-world-screen.md).
+App is idle at genuine 7/7 forward, markers stopped, RIFT on DISPLAY5.
+Extended goal remains active through **19:44 EST**.
+
 **13:49 EST NOVEMBER 12 — PROGRESS-COLORED WORLD BEACONS WORK:** On
 **AMD-DESKTOP/PID60384**, the live Qt overlay now reads the existing validated
 checkpoint: cyan/thicker NEXT, green completed, muted-gold pending, preserving

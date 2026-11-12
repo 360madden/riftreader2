@@ -246,6 +246,17 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
         child.stderr.close()
 
 
+def _pinned_process_ended(target, alive=None):
+    """Only a confirmed ended/replaced process epoch is terminal; errors stay unknown."""
+    if alive is None:
+        from scripts.waypoint_connection import process_epoch_alive
+        alive = process_epoch_alive
+    try:
+        return alive(target["processId"], target["processStartUtcTicks"]) is False
+    except Exception:
+        return False
+
+
 def stream_feed(provider, channel, stop, counts):
     while not stop.is_set():
         counts["attempts"] += 1
@@ -255,6 +266,9 @@ def stream_feed(provider, channel, stop, counts):
             counts["failures"] += 1
             counts["latestFailure"] = str(error)
             if not stop.is_set():
+                if _pinned_process_ended(provider.target):
+                    _latest(channel, {"terminal": True, "reason": "target-process-ended"})
+                    return
                 _latest(channel, {"reason": str(error)})
         stop.wait(.15)
 
@@ -279,6 +293,9 @@ def feed(provider, channel, stop, counts):
             counts["failures"] += 1
             counts["latestFailure"] = str(error)
             if not stop.is_set():
+                if _pinned_process_ended(provider.target):
+                    _latest(channel, {"terminal": True, "reason": "target-process-ended"})
+                    return
                 _latest(channel, {"reason": str(error)})
         stop.wait(.05)
 
@@ -385,6 +402,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
             packet = None
         try:
             if packet is not None:
+                if packet.get("terminal") is True:
+                    cancel(packet["reason"])
+                    return
                 if "frame" in packet:
                     age = time.monotonic() - packet["frame"]["acquiredMonotonic"]
                     if 0 <= age <= max_age:

@@ -301,6 +301,42 @@ Normal launch placed the new window on the other display; the existing BlackBox
 helper restored DISPLAY5 without game input before capture tests.
 
 Mixed-DPI changes still need current overlay qualification.
+
+### Scaled first show and active-child restart
+
+A Windows Qt run with process-local `QT_SCALE_FACTOR=1.25` exposed a first-show
+race: the native client was already 1920x1009, but Qt still used its default
+640x480 logical size for the first frame. The presenter now keeps its image blank
+during placement and refuses a frame until logical dimensions multiplied by
+device pixel ratio agree with the physical client within one pixel. It hides
+before changed geometry and never divides signed desktop origins by scale or
+pumps global events. The fixed six-second real run presented 26 correctly sized
+frames, preserved target foreground/geometry and produced a 1920x1009 owned-window
+capture with all seven ground anchors within two pixels of expected projection.
+Three frames/errors were withheld, including the premature first presentation.
+Evidence: `artifacts/qt-scale125-proof-60384/` (before fix) and
+`artifacts/qt-scale125-fixed-60384/validation.json`, `presentations.json` and
+`owned-window.png`. This qualifies process-local scaling, not a physical
+transition between monitors with different Windows DPI settings.
+
+Root then normally exited PID60384 with the GUI-owned marker feed already open
+(50 presentations). The feed now stops on a confirmed ended pinned process epoch,
+using the existing read-only epoch check; its actual reason was
+`target-process-ended` and both child processes disappeared before relaunch.
+Unknown state, foreground loss and geometry changes continue to hide/retry.
+Normal Glyph launch produced PID38136/start `639301065710306685`; the same GUI
+reconnected without automatically starting markers. Atank's XYZ and optical
+bearing were unchanged; body bearing differed by -0.000482 degrees. Checkpoint
+and basis remained byte-identical. The standard helper restored DISPLAY5 after
+normal launch selected the other display. Explicit Show then presented 147
+frames over 40.1 seconds with the original completed route in green; Hide stopped
+it. Foreground/staleness withholding remains expected. Sixty-three focused
+feed/presenter/progress/connection/Qt checks passed, including 11 offscreen Qt
+checks also run at 125%. Evidence: `artifacts/qt-active-restart-before-60384.json`,
+`artifacts/qt-active-restart-after-38136.json`,
+`artifacts/waypoint-markers-summary-93c884f92e0f4531ab5a9a1fd4e52c06.json` and
+`artifacts/waypoint-markers-summary-dd70b32c9bc04cd7a92337912ab6216d.json`.
+
 Projection inside the viewport does not establish visibility: depth, occlusion,
 terrain and obstacle clearance are not checked. World/zone identity is currently
 unavailable, so matching host/build/player alone cannot establish the same world.

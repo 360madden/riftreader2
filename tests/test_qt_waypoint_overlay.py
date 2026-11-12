@@ -34,6 +34,10 @@ class QtWindowTests(unittest.TestCase):
                       u=NS(GetClientRect=rect, ClientToScreen=origin))
         self.window = overlay.QtOwnedWindow(self.api, "RR2 Waypoint Overlay | PID 123")
         self.addCleanup(self.window.destroy)
+        def place(hwnd, physicalrect):
+            ratio = self.window.widget.devicePixelRatioF()
+            self.window.widget.resize(round(physicalrect[2] / ratio), round(physicalrect[3] / ratio))
+        self.api.show.side_effect = place
 
     def test_precreation_flags_hidden_initial_state_and_signed_physical_show(self):
         hwnd, flags, translucent, no_activate, visible = self.creation[0]
@@ -123,6 +127,45 @@ class QtWindowTests(unittest.TestCase):
             self.window.show([-1910, -20, 320, 240])
         self.assertFalse(self.window.widget.isVisible())
         self.api.hide.assert_called_with(self.window.hwnd)
+
+    def test_first_stale_logical_geometry_withholds_image_then_fresh_frame_can_show(self):
+        image = Image.new("RGB", (320, 240), (255, 213, 79))
+        self.window.paint(image)
+        self.api.show.side_effect = None  # Native physical rect changes; Qt remains stale.
+        self.window.widget.resize(640, 480)
+        with self.assertRaisesRegex(ValueError, "logical geometry"):
+            self.window.show(self.rect)
+        self.assertFalse(self.window.widget.isVisible())
+        self.assertIsNone(self.window.widget.image)
+        ratio = self.window.widget.devicePixelRatioF()
+        self.window.widget.resize(round(320 / ratio), round(240 / ratio))
+        # Only a new frame supplies an image after refused placement.
+        self.window.paint(image)
+        self.window.show(self.rect)
+        self.assertTrue(self.window.widget.isVisible())
+        self.assertEqual((255, 213, 79, 255), self.window.widget.image.pixelColor(0, 0).getRgb())
+
+    def test_blank_during_placement_restored_without_global_event_processing(self):
+        self.window.paint(Image.new("RGB", (320, 240), (255, 213, 79)))
+        original = self.api.show.side_effect
+        def place(hwnd, physicalrect):
+            self.assertIsNone(self.window.widget.image)
+            original(hwnd, physicalrect)
+        self.api.show.side_effect = place
+        with patch.object(self.window.app, "processEvents") as process:
+            self.window.show(self.rect)
+            self.window.show(self.rect)
+        process.assert_not_called()
+        self.assertIsNotNone(self.window.widget.image)
+
+    def test_fractional_scale_geometry_allows_only_one_physical_pixel_rounding(self):
+        self.window.widget.resize(256, 192)
+        self.api.show.side_effect = None
+        with patch.object(self.window.widget, "devicePixelRatioF", return_value=1.25):
+            self.window.show(self.rect)
+            self.window.widget.resize(255, 192)  # 1.25 physical pixels short.
+            with self.assertRaisesRegex(ValueError, "logical geometry"):
+                self.window.show(self.rect)
 
     def test_gui_thread_guards_run_before_bridge_or_widget_changes(self):
         errors = []

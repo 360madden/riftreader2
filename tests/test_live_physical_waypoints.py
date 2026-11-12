@@ -368,6 +368,94 @@ class FeedTests(unittest.TestCase):
         self.assertTrue(child.terminated)
         self.assertTrue(channel.empty())
 
+    def test_epoch_confirmation_distinguishes_ended_alive_and_unknown(self):
+        for result, expected in ((False, True), (True, False), (None, False)):
+            alive = Mock(return_value=result)
+            self.assertIs(live._pinned_process_ended(IDENTITY, alive), expected)
+            alive.assert_called_once_with(IDENTITY["processId"], IDENTITY["processStartUtcTicks"])
+        self.assertFalse(live._pinned_process_ended(IDENTITY, Mock(side_effect=OSError("unknown"))))
+
+    def test_both_worker_modes_publish_terminal_once_without_stopping_main_consumer(self):
+        for worker in (live.feed, live.stream_feed):
+            with self.subTest(worker=worker.__name__):
+                provider = Mock(target=IDENTITY)
+                provider.acquire.side_effect = ValueError("original acquisition failure")
+                channel, stop = queue.Queue(maxsize=1), threading.Event()
+                channel.put({"frame": {"old": True}})
+                counts = dict(attempts=0, acquired=0, failures=0, latestFailure=None)
+                with patch.object(live, "_pinned_process_ended", return_value=True), \
+                     patch.object(live, "stream_burst", side_effect=ValueError("original acquisition failure")):
+                    worker(provider, channel, stop, counts)
+                self.assertFalse(stop.is_set())
+                self.assertEqual(channel.get_nowait(), dict(terminal=True, reason="target-process-ended"))
+                self.assertTrue(channel.empty())
+                self.assertEqual(counts["attempts"], 1)
+                self.assertEqual(counts["failures"], 1)
+                self.assertEqual(counts["latestFailure"], "original acquisition failure")
+
+    def test_both_worker_modes_keep_transient_or_unknown_state_nonterminal(self):
+        for worker in (live.feed, live.stream_feed):
+            for alive in (Mock(return_value=True), Mock(side_effect=OSError("cannot establish epoch"))):
+                with self.subTest(worker=worker.__name__, alive=alive):
+                    provider = Mock(target=IDENTITY)
+                    provider.acquire.side_effect = ValueError("target-not-foreground")
+                    channel, stop = queue.Queue(maxsize=1), threading.Event()
+                    counts = dict(attempts=0, acquired=0, failures=0, latestFailure=None)
+                    actual_helper = live._pinned_process_ended
+                    def check(target):
+                        return actual_helper(target, alive)
+                    # One ordinary retry wait ends the injected worker test.
+                    with patch.object(live, "_pinned_process_ended", side_effect=check), \
+                         patch.object(live, "stream_burst", side_effect=ValueError("target-not-foreground")), \
+                         patch.object(stop, "wait", side_effect=lambda _: stop.set()) as wait:
+                        worker(provider, channel, stop, counts)
+                    self.assertEqual(channel.get_nowait(), {"reason": "target-not-foreground"})
+                    wait.assert_called_once()
+                    self.assertEqual(counts["failures"], 1)
+
+    def test_terminal_packet_causes_main_hide_join_close(self):
+        events = []
+        class Window:
+            def protocol(self, name, callback):
+                pass
+            def after(self, delay, callback):
+                if delay == 0:
+                    self.poll = callback
+                else:
+                    raise AssertionError("Terminal packet must not schedule another poll")
+            def quit(self):
+                events.append("quit")
+        class Overlay:
+            def __init__(self, target, max_age):
+                self.window = Window()
+            def run(self):
+                self.window.poll()
+            def hide(self, reason):
+                events.append("hide:" + reason)
+            def close(self):
+                events.append("close")
+        class Worker:
+            def __init__(self, **kwargs):
+                self.channel, self.stop = kwargs["args"][1:3]
+            def start(self):
+                live._latest(self.channel, {"terminal": True, "reason": "target-process-ended"})
+                if self.stop.is_set():
+                    raise AssertionError("Main must be allowed to consume terminal packet")
+            def join(self):
+                if not self.stop.is_set():
+                    raise AssertionError("Main must cancel before joining")
+                events.append("join")
+        presenter = types.SimpleNamespace(PhysicalWaypointOverlay=Overlay, target_snapshot=self.snapshot)
+        with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
+             patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=self.selection), \
+             patch.object(live.threading, "Thread", Worker), \
+             patch.object(live.time, "monotonic", return_value=10.):
+            result = live.run("AMD-DESKTOP", 123, self.route_path)
+        self.assertEqual(result["reason"], "target-process-ended")
+        self.assertLess(events.index("hide:target-process-ended"), events.index("join"))
+        self.assertLess(events.index("join"), events.index("close"))
+
 
 if __name__ == "__main__":
     unittest.main()
