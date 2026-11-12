@@ -760,6 +760,7 @@ def launch_window(args):
     target_beacon = tk.BooleanVar(value=False)
     live_pose = tk.BooleanVar(value=True)
     view_bring_forward = tk.BooleanVar(value=False)
+    view_include_units = tk.BooleanVar(value=False)
     point_entries = []
     for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
         ttk.Label(coordinates, text=label).pack(side="left", padx=(0, 5))
@@ -1210,19 +1211,20 @@ def launch_window(args):
                 outcome = run_facing(adapter, stop, emit, point=points[0][1:])
             elif operation == "view":
                 from scripts.save_physical_route_view import save_route_view
-                document, pid, target, capture_backend = points
+                document, pid, target, capture_backend, include_units = points
                 if adapter.pid != pid or adapter.target != target:
                     raise WaypointError("RIFT connection changed; refresh before saving a view")
                 output = ROOT / "artifacts" / ("waypoint-view-" + uuid.uuid4().hex)
                 result = save_route_view(args.expected_host, pid, document, output,
-                                         expected_target=target, export_rerun=True, capture_backend=capture_backend)
+                                         expected_target=target, export_rerun=True, capture_backend=capture_backend,
+                                         **({"include_units": True} if include_units else {}))
                 if (result.get("status") != "saved-route-view-candidate" or not result.get("image")
                         or result.get("inputSent") is not False or type(result.get("focusChanged")) is not bool
                         or (capture_backend == "wgc" and result.get("focusChanged") is not False)):
                     raise WaypointError(str(result.get("reason", "View capture unavailable"))
                                         + "; details: " + str(result.get("directory", output)))
                 events.put({"status": "view-saved", "image": str(result["image"]),
-                            "rerun": result.get("rerun", {})})
+                            "rerun": result.get("rerun", {}), "unitSample": result.get("unitSample")})
             elif operation == "record":
                 recorder = RouteRecorder(adapter.binding)
                 while not record_stop.is_set() and not record_cancel.is_set():
@@ -1515,7 +1517,7 @@ def launch_window(args):
             document = deepcopy(route_document())
             document["waypoints"] = [list(row) for row in document["waypoints"]]
             start("view", (document, adapter.pid, deepcopy(adapter.target),
-                           "desktop" if view_bring_forward.get() else "wgc"))
+                           "desktop" if view_bring_forward.get() else "wgc", view_include_units.get()))
         except (ValueError, KeyError, TypeError) as exc:
             state.set("Cannot save view: " + str(exc))
 
@@ -1652,6 +1654,9 @@ def launch_window(args):
     view_focus_option = ttk.Checkbutton(view_controls, text="Bring RIFT forward for capture", variable=view_bring_forward)
     view_focus_option.pack(side="left", padx=8)
     editable.append(view_focus_option)
+    view_units_option = ttk.Checkbutton(view_controls, text="Nearby units in 3D", variable=view_include_units)
+    view_units_option.pack(side="left", padx=8)
+    editable.append(view_units_option)
     target_option = ttk.Checkbutton(view_controls, text="Include selected target in markers", variable=target_beacon)
     target_option.pack(side="left", padx=(12, 0))
     editable.append(target_option)
@@ -1791,6 +1796,11 @@ def launch_window(args):
                           "; Rerun " + str(rerun.get("status", "unavailable"))
                           + (": " + str(rerun["reason"]) if rerun.get("reason") else ""))
                 text = "View saved: " + saved_view + suffix
+                unit_sample = event.get("unitSample")
+                if isinstance(unit_sample, dict) and unit_sample.get("status") == "unavailable":
+                    text += " · Nearby units unavailable"
+                    if unit_sample.get("reason"):
+                        text += " (" + str(unit_sample["reason"]) + ")"
                 state.set(text)
                 log.configure(state="normal")
                 log.insert("end", text + "\n")

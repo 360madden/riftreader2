@@ -13,6 +13,7 @@ from PIL import Image
 from scripts import save_physical_route_view as saved
 from tests import test_plot_physical_waypoints as fixtures
 from tests.test_physical_zone_context import report as zone_report
+from tests.test_physical_unit_positions import report as units_report
 
 
 def zone_reader(test, *, change_after=None, events=None):
@@ -90,6 +91,81 @@ class SaveViewTests(unittest.TestCase):
             output=self.output / "capture", physical_pid=self.target["processId"],
             native_facing=True, physical_capture_backend="wgc")
         self.process.assert_not_called()
+
+    def test_optional_unit_sample_retained_and_passed_to_rerun(self):
+        self.python.write_bytes(b"not-executed")
+        calls = []
+        def read(selection, kind, *, output, **kwargs):
+            calls.append(kind)
+            if kind == "zone-context":
+                return {"status": "blocked", "reason": "optional-zone-unavailable"}
+            self.assertEqual(kwargs, {"unit_limit": 512, "start_bucket": 0})
+            report = units_report()
+            key = self.document["recording"]["identity"]["runtimeIdentity"]["unitKey"]
+            report["observation"]["selfKey"] = key
+            report["observation"]["rows"][0]["unitKey"] = key
+            report["observation"]["rows"][0]["unitIdCandidate"] = f"u{int(key):016X}"
+            output.write_text(json.dumps(report))
+            return dict(status="complete", workflow="physical", ownerHost="AMD-DESKTOP",
+                        nativeRead=kind, target=deepcopy(self.target), nativeOutput=str(output),
+                        nativeValues=saved.physical_rift._native_values(kind, report))
+        self.context.side_effect = read
+        def export(command, **kwargs):
+            self.assertEqual(command[command.index("--unit-sample") + 1], str(self.output / "units-sample.json"))
+            out = self.output / "view.rrd"
+            out.write_bytes(b"rrd")
+            return types.SimpleNamespace(returncode=0, stdout=json.dumps(
+                dict(status="offline-rerun-evidence-export", output=str(out))))
+        self.process.side_effect = export
+        result = self.save(include_units=True)
+        self.assertEqual(result["status"], "saved-route-view-candidate", result)
+        self.assertEqual(calls, ["zone-context", "zone-context", "unit-positions"])
+        sample = result["unitSample"]
+        self.assertEqual(sample["status"], "saved")
+        wrapper = json.loads(Path(sample["path"]).read_text())
+        self.assertEqual(wrapper["nativeSourceSha256"], hashlib.sha256(Path(sample["source"]).read_bytes()).hexdigest())
+        self.assertEqual(result["rerun"]["status"], "saved")
+
+    def test_optional_unit_failure_or_identity_mismatch_keeps_core_and_omits_sample(self):
+        self.python.write_bytes(b"not-executed")
+        for fault in ("unavailable", "target", "owner", "player"):
+            with self.subTest(fault=fault):
+                def read(selection, kind, *, output, **kwargs):
+                    if kind == "zone-context" or fault == "unavailable":
+                        return {"status": "blocked", "reason": "scan-unavailable"}
+                    report = units_report()
+                    key = self.document["recording"]["identity"]["runtimeIdentity"]["unitKey"]
+                    if fault != "player":
+                        report["observation"]["selfKey"] = key
+                        report["observation"]["rows"][0]["unitKey"] = key
+                        report["observation"]["rows"][0]["unitIdCandidate"] = f"u{int(key):016X}"
+                    output.write_text(json.dumps(report))
+                    return dict(status="complete", workflow="physical", ownerHost="OTHER" if fault == "owner" else "AMD-DESKTOP",
+                                nativeRead=kind, target=dict(self.target, hwnd=999) if fault == "target" else deepcopy(self.target),
+                                nativeOutput=str(output), nativeValues=saved.physical_rift._native_values(kind, report))
+                self.context.side_effect = read
+                directory = self.root / fault
+                def export(command, **kwargs):
+                    self.assertNotIn("--unit-sample", command)
+                    out = directory / "view.rrd"
+                    out.write_bytes(b"rrd")
+                    return types.SimpleNamespace(returncode=0, stdout=json.dumps(
+                        dict(status="offline-rerun-evidence-export", output=str(out))))
+                self.process.side_effect = export
+                result = self.save(output=directory, include_units=True)
+                self.assertEqual(result["status"], "saved-route-view-candidate", result)
+                self.assertEqual(result["unitSample"]["status"], "unavailable")
+                self.assertTrue(result["unitSample"]["reason"])
+                self.assertEqual(result["rerun"]["status"], "saved")
+                self.assertTrue(Path(result["image"]).is_file())
+                self.assertFalse((directory / "units-sample.json").exists())
+
+    def test_unit_option_defaults_off_and_requires_boolean(self):
+        result = self.save(export_rerun=False)
+        self.assertNotIn("unitSample", result)
+        self.assertEqual([c.args[1] for c in self.context.call_args_list], ["zone-context", "zone-context"])
+        invalid = self.save(output=self.root / "invalid-option", include_units=1)
+        self.assertEqual(invalid["reason"], "invalid-include-units-option")
 
     def test_stale_or_incomplete_expected_identity_and_wrong_host_prevent_capture(self):
         for field, value in (("hwnd", 999), ("processStartUtcTicks", "123"),

@@ -79,8 +79,33 @@ class ViewWindowTests(unittest.TestCase):
         self.assertEqual(self.target, kwargs["expected_target"])
         self.assertIsNot(self.target, kwargs["expected_target"])
         self.assertTrue(kwargs["export_rerun"])
+        self.assertFalse(kwargs.get("include_units", False))
         self.assertEqual("wgc", kwargs["capture_backend"])
         self.assertTrue(any("Rerun unavailable: not installed" in value for value in self.labels()))
+
+    def test_nearby_units_are_requested_only_on_save_and_unavailable_keeps_view(self):
+        self.prepare()
+        backend = Mock(return_value={"status": "saved-route-view-candidate", "image": str(self.path / "view.png"),
+                                     "inputSent": False, "focusChanged": False,
+                                     "rerun": {"status": "saved", "path": "scene.rrd"},
+                                     "unitSample": {"status": "unavailable", "reason": "sample expired"}})
+        window = self.roots[0]
+        option = next(w for w in self.widgets(window) if isinstance(w, fixture.ttk.Checkbutton)
+                      and str(w["text"]) == "Nearby units in 3D")
+        self.assertFalse(option.instate(["selected"]))
+        with patch.dict(sys.modules, {"scripts.save_physical_route_view": SimpleNamespace(save_route_view=backend)}):
+            option.invoke()
+            backend.assert_not_called()
+            self.button("Save view").invoke()
+            self.assertTrue(option.instate(["disabled"]))
+            window.setvar(str(option.cget("variable")), False)
+            self.wait_idle()
+        self.assertIs(backend.call_args.kwargs["include_units"], True)
+        self.assertFalse(option.instate(["disabled"]))
+        self.assertFalse(self.button("Open view").instate(["disabled"]))
+        self.assertFalse(self.button("Open 3D view").instate(["disabled"]))
+        self.assertTrue(any("View saved" in value and "Nearby units unavailable (sample expired)" in value
+                            for value in self.labels()))
 
     def test_explicit_focus_capture_failure_keeps_prior_view(self):
         self.prepare()

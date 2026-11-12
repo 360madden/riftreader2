@@ -106,9 +106,9 @@ class RerunSink:
             self.close()
             raise
 
-    def configure_view(self, captures):
+    def configure_view(self, captures, *, display_camera=None):
         import rerun.blueprint as rrb
-        self.recording.send_blueprint(default_blueprint(self.rr, rrb, captures),
+        self.recording.send_blueprint(default_blueprint(self.rr, rrb, captures, display_camera=display_camera),
                                       make_active=True, make_default=True)
 
     def log(self, entity, kind, data, *, at=None, static=False):
@@ -120,7 +120,8 @@ class RerunSink:
         if kind == "text":
             archetype = rr.TextDocument(json.dumps(data, indent=2, allow_nan=False))
         elif kind == "points3d":
-            archetype = rr.Points3D(data["positions"], labels=data["labels"], show_labels=True)
+            archetype = rr.Points3D(data["positions"], labels=data["labels"],
+                                    show_labels=data.get("show_labels", True))
         elif kind == "route3d":
             archetype = rr.LineStrips3D([data["positions"]])
         elif kind == "camera-rays3d":
@@ -154,14 +155,20 @@ class RerunSink:
                     os.environ[key] = value
 
 
-def default_blueprint(rr, rrb, captures):
+def default_blueprint(rr, rrb, captures, *, display_camera=None):
     """File-only 0.43.1 blueprint: explicit views and latest-data following.
 
     TimePanel cannot encode a cursor position. Following is the supported
     file-only way to start at the end; no data timestamps are altered.
     """
+    camera_options = {}
+    if display_camera is not None:
+        camera_options["eye_controls"] = rrb.EyeControls3D(kind=rrb.Eye3DKind.Orbital,
+            position=display_camera["position"], look_target=display_camera["lookTarget"],
+            eye_up=[0, 1, 0], spin_speed=0)
     world = rrb.Spatial3DView(origin="/world", name="Native XYZ route (+Y height)",
-        spatial_information=rrb.SpatialInformation.from_fields(axes=rr.ViewCoordinates.RIGHT_HAND_Y_UP))
+        spatial_information=rrb.SpatialInformation.from_fields(axes=rr.ViewCoordinates.RIGHT_HAND_Y_UP),
+        **camera_options)
     views = [rrb.Spatial2DView(origin=entity, name=(f"Desktop candidate {index + 1} (UTC upper bound)"
              if entity.endswith("_desktop_upper_bound") else f"Capture {index + 1}"))
              for index, (entity, _) in enumerate(captures)]
@@ -222,7 +229,103 @@ def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=(),
     return route, frames
 
 
-def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=(), camera_rays=True):
+def prepare_unit_samples(paths, route, frames):
+    """Admit independent retained scans, without borrowing a frame's bracket."""
+    def saved(path):
+        path = Path(path).resolve()
+        plot.require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 8 * 1024 * 1024,
+                     "unit-sample-source-missing-or-oversized")
+        raw = path.read_bytes()
+        document = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=plot.unique_fields,
+                              parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite-json")))
+        plot.require(isinstance(document, dict), "unit-sample-object-required")
+        return document, dict(path=str(path), sha256=hashlib.sha256(raw).hexdigest())
+
+    def epoch(identity):
+        return identity.get("processId"), str(identity.get("processStartUtcTicks")), str(identity.get("executableSha256", "")).casefold()
+
+    scans = []
+    for path in paths:
+        wrapper, wrapper_source = saved(path)
+        plot.require(wrapper.get("status") == "complete" and wrapper.get("workflow") == "physical"
+                     and wrapper.get("nativeRead") == "unit-positions", "complete-unit-sample-wrapper-required")
+        target = wrapper.get("target", {})
+        expected = route["identity"]
+        plot.require(isinstance(target, dict)
+                     and str(target.get("hostName", "")).casefold() == expected["machine"].casefold()
+                     and str(wrapper.get("ownerHost", "")).casefold() == expected["machine"].casefold()
+                     and str(target.get("executableSha256", "")).casefold() == expected["gameBuildSha256"].casefold(),
+                     "unit-sample-route-host-build-mismatch")
+        plot.require(type(target.get("processId")) is int and target["processId"] > 0
+                     and str(target.get("processStartUtcTicks", "")).isdecimal()
+                     and int(target["processStartUtcTicks"]) > 0
+                     and type(target.get("hwnd")) is int and target["hwnd"] > 0,
+                     "unit-sample-target-identity-required")
+        native_path = Path(wrapper["nativeOutput"])
+        if not native_path.is_absolute():
+            native_path = Path(wrapper_source["path"]).parent / native_path
+        report, source = saved(native_path)
+        values = plot.physical._native_values("unit-positions", report)
+        row = report["observation"]
+        plot.require(epoch(row["identity"]) == epoch(target), "unit-sample-wrapper-native-epoch-mismatch")
+        plot.require(values["selfKey"] == expected["unitKey"], "unit-sample-route-player-mismatch")
+        plot.require(all(epoch(frame["projection"]["identity"]) == epoch(target) for frame in frames),
+                     "unit-sample-capture-epoch-mismatch")
+        if "nativeSourceSha256" in wrapper:
+            plot.require(str(wrapper["nativeSourceSha256"]).casefold() == source["sha256"],
+                         "unit-sample-native-source-hash-mismatch")
+        selected = sorted((unit for unit in values["units"] if unit["unitKey"] != values["selfKey"]
+                           and unit["horizontalDistanceCandidate"] <= 35),
+                          key=lambda unit: (unit["horizontalDistanceCandidate"], int(unit["unitKey"])))[:18]
+        raw_rows = {unit["unitKey"]: unit for unit in row["rows"]}
+        selected = [{**unit, "rawBits": raw_rows[unit["unitKey"]]["rawBits"],
+                     "entityAddressDecimal": raw_rows[unit["unitKey"]]["entityAddressDecimal"],
+                     "startedAtUtc": raw_rows[unit["unitKey"]]["startedAtUtc"]}
+                    for unit in selected]
+        scans.append(dict(wrapperSource=wrapper_source, nativeSource=source, identity=row["identity"],
+            target=target, selfKey=values["selfKey"], startedAtUtc=row["startedAtUtc"],
+            completedAtUtc=row["completedAtUtc"], units=selected, limit=18, maxDistance=35,
+            sourceHashKind="retained-file-sha256-at-export-not-acquisition-proof",
+            coverage={key: values[key] for key in ("unitsExamined", "positionsFound", "unitsWithoutPosition",
+                "unavailableUnits", "unavailableChains", "bucketsExamined", "bucketCount", "startBucket",
+                "unitLimitReached", "worldCoverage", "worldIdentityStatus")},
+            timeKind="independent-sequential-native-row-acquisition-completion",
+            qualification="Independent loaded-unit stored-position candidates; not screenshot aligned. "
+                "Latest sample carries forward in the offline timeline, not live tracking or passive-freshness proof. "
+                "Names/types, world instance, terrain, collision and occlusion unavailable."))
+    scans.sort(key=lambda scan: timestamp_ns(scan["startedAtUtc"]))
+    for first, second in zip(scans, scans[1:]):
+        plot.require(timestamp_ns(first["completedAtUtc"]) <= timestamp_ns(second["startedAtUtc"]),
+                     "unit-sample-overlapping-scans")
+    return scans
+
+
+def unit_scene_display_camera(route, scans, frames):
+    """Conservative viewer pose from admitted geometry, independent of game camera."""
+    points = [[point["xyz"][axis] for axis in ("x", "y", "z")] for point in route["points"]]
+    points.extend([unit["positionXYZCandidate"][axis] for axis in ("x", "y", "z")]
+                  for scan in scans for unit in scan["units"])
+    for frame in frames:
+        for native in frame["native"]:
+            rays = native["cameraViewRays"]
+            if rays["status"] == "available-candidate":
+                points.extend([rays["nativeEyeXYZ"], *rays["cornersXYZ"]])
+    plot.require(points and all(len(p) == 3 and all(type(v) in (int, float) and math.isfinite(v)
+                 for v in p) for p in points), "finite-display-camera-geometry-required")
+    lower = [min(p[axis] for p in points) for axis in range(3)]
+    upper = [max(p[axis] for p in points) for axis in range(3)]
+    center = [(a + b) / 2 for a, b in zip(lower, upper)]
+    radius = max(1., max(math.dist(center, point) for point in points))
+    position = [c + radius * offset for c, offset in zip(center, (3, 4, 3))]
+    plot.require(all(math.isfinite(v) for v in [*center, radius, *position]), "finite-display-camera-required")
+    return dict(position=position, lookTarget=center, eyeUp=[0, 1, 0], radius=radius,
+                boundsMin=lower, boundsMax=upper, includedPointCount=len(points),
+                qualification="Display viewer camera only, not the game camera. Conservative oblique pose "
+                    "from admitted route/unit/view-ray bounds; not an exact viewport fit or scene-depth claim.")
+
+
+def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=(), camera_rays=True,
+           unit_samples=()):
     route_path, output = Path(route_path).resolve(), Path(output).resolve()
     plot.require(output.suffix.lower() == ".rrd" and not output.exists() and output.parent.is_dir(),
                  "new-rrd-output-required")
@@ -232,6 +335,8 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
     with TemporaryDirectory(prefix="rr2-rerun-", dir=output.parent) as scratch:
         route, frames = prepare(route_path, observations, scratch, images=images, desktop_pairs=desktop_pairs,
                                 camera_rays=camera_rays)
+    unit_scans = prepare_unit_samples(unit_samples, route, frames)
+    display_camera = unit_scene_display_camera(route, unit_scans, frames) if unit_scans else None
     result = {"status": "offline-rerun-evidence-export", "output": str(output), "inputSent": False,
               "route": route["path"], "routeSha256": route["sha256"],
               "recordingIdentity": route["recordingIdentity"], "observationCount": len(frames),
@@ -239,6 +344,10 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
               "wgcObservationCount": len(observations), "desktopPairCount": len(desktop_pairs),
               "imagesIncluded": images, "limitations": LIMITATIONS}
     result["cameraViewRaysRequested"] = camera_rays
+    result["unitSampleCount"] = len(unit_scans)
+    result["unitSamples"] = unit_scans
+    if display_camera is not None:
+        result["displayCamera"] = display_camera
     result["toolStatus"] = "optional Rerun 0.43.1 alpha SDK pilot; API pinned"
     sink = None
     created = False
@@ -249,7 +358,8 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
         sink = sink_factory(output)
         sink.configure_view([(f"/captures/{number:04d}" + ("_desktop_upper_bound" if frame["desktop"] else ""),
                               timestamp_ns(frame["evidenceAtUtc"]))
-                             for number, frame in enumerate(frames, 1)])
+                             for number, frame in enumerate(frames, 1)],
+                            **({"display_camera": display_camera} if display_camera is not None else {}))
         sink.log("evidence/sources", "text", result, static=True)
         positions = [[p["xyz"][axis] for axis in ("x", "y", "z")] for p in route["points"]]
         labels = [f'{p["number"]}: {p["label"]}' for p in route["points"]]
@@ -293,6 +403,15 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
                     # A failed later sample must not leave an older camera shape
                     # looking current through viewer timeline carry-forward.
                     sink.log("world/camera", "clear", {}, at=at)
+        for number, scan in enumerate(unit_scans, 1):
+            sink.log("world/loaded_units", "clear", {}, at=timestamp_ns(scan["startedAtUtc"]))
+            sink.log(f"evidence/unit_samples/{number:04d}", "text", scan,
+                     at=timestamp_ns(scan["completedAtUtc"]))
+            for unit in scan["units"]:
+                sink.log(f"world/loaded_units/{unit['unitKey']}", "points3d",
+                         dict(positions=[[unit["positionXYZCandidate"][axis] for axis in ("x", "y", "z")]],
+                              labels=[f"Loaded unit {unit['unitIdCandidate'][-6:]} (sample)"], show_labels=False),
+                         at=timestamp_ns(unit["sampledAtUtc"]))
         sink.flush()
         sink.close()
         sink = None
@@ -316,13 +435,16 @@ def main(argv=None):
     parser.add_argument("--observation", type=Path, action="append", default=[])
     parser.add_argument("--desktop-pair", type=Path, action="append", default=[],
                         help="explicit retained DXcam/native candidate; capture UTC is only an upper bound")
+    parser.add_argument("--unit-sample", type=Path, action="append", default=[],
+                        help="retained physical unit-positions wrapper; independent 3D samples only")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--no-images", action="store_true", help="validate retained PNGs but omit image payloads")
     parser.add_argument("--no-camera-rays", action="store_true", help="omit optional native projection display rays")
     args = parser.parse_args(argv)
     try:
         result = export(args.route, args.observation, args.output, images=not args.no_images,
-                        desktop_pairs=args.desktop_pair, camera_rays=not args.no_camera_rays)
+                        desktop_pairs=args.desktop_pair, camera_rays=not args.no_camera_rays,
+                        unit_samples=args.unit_sample)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, ImportError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error), "inputSent": False}))
         return 2

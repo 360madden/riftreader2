@@ -123,7 +123,41 @@ def _compare_zone_context(before, after):
     return result
 
 
-def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop=False):
+def _unit_sample(selection, route, directory):
+    """Retain one independent optional scan bound to the captured process and player."""
+    source, wrapper = directory / "units-native.json", directory / "units-sample.json"
+    entry = {"status": "unavailable"}
+    try:
+        receipt = physical_rift.read_native(selection, "unit-positions", output=source,
+                                            unit_limit=512, start_bucket=0)
+        require(receipt.get("status") == "complete", receipt.get("reason", "unit-acquisition-unavailable"))
+        require(receipt.get("workflow") == "physical" and receipt.get("nativeRead") == "unit-positions"
+                and str(receipt.get("ownerHost", "")).casefold() == route["identity"]["machine"].casefold(),
+                "unit-wrapper-identity-mismatch")
+        target = selection["target"]
+        require(receipt.get("target") == target, "unit-target-identity-mismatch")
+        require(receipt.get("nativeOutput") == str(source), "unit-source-path-mismatch")
+        raw = source.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        report = plot_physical_waypoints._read(source)
+        values = physical_rift._native_values("unit-positions", report)
+        identity = report["observation"]["identity"]
+        require(identity["processId"] == target["processId"]
+                and str(identity["processStartUtcTicks"]) == target["processStartUtcTicks"]
+                and identity["executableSha256"].casefold() == target["executableSha256"].casefold(),
+                "unit-source-identity-mismatch")
+        require(values == receipt.get("nativeValues"), "unit-source-values-mismatch")
+        require(values["selfKey"] == route["identity"]["unitKey"], "unit-route-player-mismatch")
+        retained = deepcopy(receipt)
+        retained["nativeSourceSha256"] = digest
+        write_json_atomic(wrapper, retained)
+        entry.update(status="saved", path=str(wrapper), source=str(source), sha256=digest)
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+        entry["reason"] = str(error)
+    return entry
+
+
+def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop=False, unit_sample=None):
     if not enabled:
         return {"status": "unavailable", "reason": "not-requested"}
     if not VISUALIZATION_PYTHON.is_file():
@@ -132,9 +166,12 @@ def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop
     environment = dict(os.environ, CI="1")
     environment.pop("FORCE_RERUN_ANALYTICS", None)
     try:
-        completed = subprocess.run([str(VISUALIZATION_PYTHON), str(ROOT / "scripts/export_physical_rerun.py"),
+        command = [str(VISUALIZATION_PYTHON), str(ROOT / "scripts/export_physical_rerun.py"),
             "--route", str(route_path), "--desktop-pair" if desktop else "--observation", str(observation_path),
-            "--output", str(output)],
+            "--output", str(output)]
+        if unit_sample is not None:
+            command.extend(["--unit-sample", str(unit_sample)])
+        completed = subprocess.run(command,
             cwd=ROOT, capture_output=True, text=True, timeout=60, check=False, env=environment,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         lines = completed.stdout.splitlines()
@@ -220,7 +257,7 @@ def _desktop_capture(host, pid, pinned, directory, result):
 
 
 def save_route_view(expected_host, physical_pid, document, output, *, expected_target, export_rerun=True,
-                    capture_backend="wgc"):
+                    capture_backend="wgc", include_units=False):
     """Return saved-route-view-candidate or blocked, retaining acquired evidence.
 
     Output is a fresh absolute directory. Full recorded heights and exact caller
@@ -239,6 +276,7 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
                 and expected_host.upper() in ("AMD-DESKTOP", "LEGION"), "host-mismatch")
         require(type(physical_pid) is int and 1 <= physical_pid <= 4294967295, "explicit-physical-pid-required")
         require(type(export_rerun) is bool, "invalid-export-rerun-option")
+        require(type(include_units) is bool, "invalid-include-units-option")
         require(capture_backend in ("wgc", "desktop"), "explicit-capture-backend-required")
         pinned = deepcopy(expected_target)
         require(isinstance(pinned, dict) and set(pinned) == TARGET_FIELDS
@@ -289,17 +327,20 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
             zone_after = _zone_context(selection, route, directory / "zone-after.json")
             result["zoneContextCandidate"] = _compare_zone_context(zone_before, zone_after)
         require(result["zoneContextCandidate"]["status"] != "changed-candidates", "context-changed-candidate")
+        if include_units:
+            result["unitSample"] = _unit_sample(selection, route, directory)
+        unit_sample = result.get("unitSample", {}).get("path")
         if capture_backend == "desktop":
             projection = plot_physical_waypoints.render_desktop_pair(observation_path, route_path, directory / "projection")
             result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
                           projection=projection["report"])
-            result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun, desktop=True)
+            result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun, desktop=True, unit_sample=unit_sample)
             write_json_atomic(directory / "view.json", result)
             return result
         projection = plot_physical_waypoints.render(observation_path, route_path, directory / "projection")
         result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
                       projection=projection["report"])
-        result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun)
+        result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun, unit_sample=unit_sample)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, subprocess.TimeoutExpired) as error:
         result.update(status="blocked", reason=str(error))
     if created:

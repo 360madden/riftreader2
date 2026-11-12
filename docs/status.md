@@ -1,5 +1,27 @@
 # Current status
 
+**16:50 EST NOVEMBER 12 — NEARBY UNIT SAMPLES WORK IN THE SAVED 3D SCENE:**
+On **AMD-DESKTOP/PID51524**, the new unchecked-by-default **Nearby units in 3D**
+control passed actual Save view -> Open 3D view acceptance. A bounded native scan
+examined 412 entries and found 150 positions; the nearest 18 nonself candidates
+within 35 units appear in Rerun beside the route, camera rays and retained image.
+Each point keeps its original row timestamp and lossless key; source hashes,
+capture epoch/player and coverage are checked. No unit marks are placed onto the
+screenshot, and these samples do not establish terrain, obstacles, classification,
+passive freshness or world instance. Optional scan failure preserves the core view.
+Thirty exporter, 23 backend and three GUI tests passed. RRD verification and
+actual viewer zoom worked; the viewer closed normally. WGC capture sent no input
+or focus request; player pose, basis and original route cache remained unchanged.
+GUI PID46196 is idle, markers off, with the original seven-point route. Evidence:
+`artifacts/waypoint-view-36c62fcf466947ceb889b5fd214e651b/validation.json`.
+
+The saved target point also passed actual Qt overlay acceptance after clearing
+the game target: its static gold Point 8 beacon remained visible, with the
+dynamic target option off. Hide stopped the presenter, and the original route
+was reloaded. Composite proof:
+`artifacts/static-target-beacon-51524-cleared/last.png`; that directory's
+`validation.json` retains counts, foreground withholding and unchanged pose/cache.
+
 **16:37 EST NOVEMBER 12 — STATIC TARGET BEACON SAVED AND VISUALLY VERIFIED:**
 On **AMD-DESKTOP/PID51524**, actual Add Target -> Save view retained the friendly
 guard's measured XYZ and exact key `9223372045797034558` separately from Atank's

@@ -31,6 +31,16 @@ with `projection/waypoints.png`, `route.json` and `view.rrd` in that bundle.
 This verifies a static saved-point projection, without live-follow, passive
 freshness, world-instance, terrain or occlusion qualification.
 
+The live Qt check also passed on PID51524: after Add Target -> Show markers,
+clearing the game selection left the gold saved Point 8 beacon visible. The
+optional dynamic target layer was off. The independent desktop composite
+`artifacts/static-target-beacon-51524-cleared/last.png` shows the saved location;
+`first.png` caught a withheld interval. Hide stopped the presenter normally after
+180 accepted presentations over 42.06 seconds, including foreground-withholding
+intervals. Atank's position/facing, original cache and movement basis were unchanged.
+See that directory's `validation.json` and
+`artifacts/waypoint-markers-summary-164d40d2354f448a924f398f2631640c.json`.
+
 Live proof on AMD-DESKTOP/PID17212: actual Save Current appended Point 8 with
 Y `863.5865478515625`; Save view rendered all eight and its RRD passed verification.
 The live Qt beacon at Atank's feet is visible in
@@ -61,6 +71,38 @@ planes. Each shape retains the native sample timestamp and source/hash; invalid
 optional geometry clears the previous camera shape instead of hiding the route.
 Use exporter `--no-camera-rays` for a route-only 3D view. Root reviewed actual
 Rerun output under `artifacts/rerun-camera-rays-17212-labelled.{rrd,png}`.
+
+**Nearby units in 3D** is an optional, initially unchecked Save view control.
+Enable it, click **Save view**, then **Open 3D view**. It acquires one bounded
+read-only unit-manager sample after the screenshot/native bracket and retains
+`units-native.json` plus its hashed `units-sample.json` wrapper. The 3D scene
+shows the nearest 18 nonself position candidates within 35 native units from
+that sampled subset, at their original per-unit acquisition times. Keys remain
+lossless strings; source hashes, exact capture process epoch, observing player
+and scan coverage are retained. Units are not drawn onto the screenshot.
+Optional acquisition failure reports a reason while preserving the core view.
+The viewer's initial display camera includes the admitted geometry; use ordinary
+Rerun zoom/orbit controls to inspect it. Unit labels start hidden to keep the
+route readable, with keys and positions retained in Source metadata.
+
+Actual GUI Save view -> Open 3D view passed on AMD-DESKTOP/PID51524 at 16:47 EST:
+412 examined entries produced 150 position candidates; 18 were displayed.
+The actual Rerun window showed route, units, view rays and screenshot, and zoom
+worked. The RRD passed upstream verification; the viewer closed normally.
+Capture was focus-neutral and sent no input; player pose, basis and original
+route cache were unchanged. Evidence:
+`artifacts/waypoint-view-36c62fcf466947ceb889b5fd214e651b/validation.json`.
+Initial headless screenshots can precede complete asset loading; actual viewer
+inspection established the paired display. Thirty exporter, 23 backend and
+three GUI tests passed. These independent samples are not continuous tracking,
+unit classification, a complete world inventory, terrain or obstacle geometry,
+occlusion checks, or proof of matching world instance. Timeline carry-forward
+shows the last stored sample rather than a fresh observation.
+
+For an existing retained physical `unit-positions` wrapper, the offline exporter
+also accepts repeatable `--unit-sample ABSOLUTE_WRAPPER_JSON`. This performs no
+new game read. A sample from a different process epoch than a supplied capture
+is rejected before creating the RRD.
 
 The existing native optical camera and combined projection matrix can project
 arbitrary world XYZ into normalized client coordinates. Client/frame geometry then

@@ -1,7 +1,9 @@
 """Actual retained-evidence validators with an injected sink; no SDK or viewer."""
 from copy import deepcopy
+import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import struct
@@ -30,8 +32,9 @@ class FakeSink:
         Path(path).write_bytes(b"fake-rrd-test-payload")
     def log(self, entity, kind, data, **kwargs):
         self.events.append((entity, kind, data, kwargs))
-    def configure_view(self, captures):
+    def configure_view(self, captures, *, display_camera=None):
         self.captures = captures
+        self.display_camera = display_camera
     def flush(self):
         self.flushed = True
     def close(self):
@@ -87,6 +90,158 @@ class ExportTests(unittest.TestCase):
         self.assertFalse(result["imagesIncluded"])
         self.assertFalse(any(event[1] == "png" for event in self.sinks[-1].events))
         self.assertTrue(any(event[1] == "points2d" for event in self.sinks[-1].events))
+
+    def unit_wrapper(self, name="units", *, wrong_epoch=False, camera_changed=False):
+        from tests.test_physical_unit_positions import report
+        raw = report()
+        row = raw["observation"]
+        key = self.fixture.route["recording"]["identity"]["runtimeIdentity"]["unitKey"]
+        row["selfKey"] = row["rows"][0]["unitKey"] = key
+        row["rows"][0]["unitIdCandidate"] = f"u{int(key):016X}"
+        target = deepcopy(self.fixture.observation["target"])
+        if wrong_epoch:
+            target["processStartUtcTicks"] = str(int(target["processStartUtcTicks"]) + 1)
+        row["identity"] = dict(processId=target["processId"], processStartUtcTicks=int(target["processStartUtcTicks"]),
+                               executableSha256=target["executableSha256"])
+        if camera_changed:
+            row["opticalCameraAfterCandidate"]["cameraAddressDecimal"] = "2096815868168"
+            row["cameraStableCandidate"] = False
+        native_path = self.root / (name + "-raw.json")
+        native_path.write_text(json.dumps(raw))
+        wrapper = dict(status="complete", workflow="physical", nativeRead="unit-positions",
+                       ownerHost="AMD-DESKTOP", target=target, nativeOutput=native_path.name)
+        path = self.root / (name + "-wrapper.json")
+        path.write_text(json.dumps(wrapper))
+        return path, native_path, raw, wrapper
+
+    def test_unit_samples_keep_independent_times_keys_hashes_and_camera_change(self):
+        path, native, raw, wrapper = self.unit_wrapper(camera_changed=True)
+        result = self.run_export(unit_samples=[path])
+        scan = result["unitSamples"][0]
+        self.assertEqual(result["unitSampleCount"], 1)
+        self.assertEqual(len(scan["units"]), 1)  # self excluded
+        self.assertEqual(scan["units"][0]["unitKey"], "18446744073709551615")
+        self.assertEqual(scan["nativeSource"]["sha256"], hashlib.sha256(native.read_bytes()).hexdigest())
+        self.assertEqual(scan["wrapperSource"]["sha256"], hashlib.sha256(path.read_bytes()).hexdigest())
+        event = next(e for e in self.sinks[-1].events if e[0].startswith("world/loaded_units/") and e[1] == "points3d")
+        self.assertEqual(event[2]["positions"], [[7430., 871., 2950.]])
+        self.assertFalse(event[2]["show_labels"])  # Nearby samples must not obscure the route.
+        self.assertEqual(event[3]["at"], exporter.timestamp_ns(raw["observation"]["rows"][1]["completedAtUtc"]))
+        self.assertNotEqual(event[3]["at"], exporter.timestamp_ns("2026-11-11T19:00:00.25Z"))
+        self.assertIn("not screenshot aligned", scan["qualification"])
+        self.assertIn("carries forward", scan["qualification"])
+        self.assertEqual(scan["coverage"]["unitsExamined"], 3)
+
+    def test_unit_sample_capture_epoch_refuses_before_output_creation(self):
+        path, _, _, _ = self.unit_wrapper(wrong_epoch=True)
+        with self.assertRaisesRegex(ValueError, "capture-epoch-mismatch"):
+            self.run_export(unit_samples=[path])
+        self.assertFalse(self.output.exists())
+        self.assertFalse(self.sinks)
+        # A route-only scene has no capture epoch to equate; stable actor/build still required.
+        self.assertEqual(self.run_export(observations=[], unit_samples=[path])["unitSampleCount"], 1)
+
+    def test_unit_sample_wrong_observer_host_build_hash_and_bits_refuse(self):
+        path, native, raw, wrapper = self.unit_wrapper()
+        for fault in ("host", "build", "observer", "bits", "epoch", "hash"):
+            a, b = deepcopy(raw), deepcopy(wrapper)
+            if fault == "host": b["ownerHost"] = "OTHER"
+            if fault == "build": b["target"]["executableSha256"] = "b" * 64
+            if fault == "observer": a["observation"]["selfKey"] = "42"
+            if fault == "bits": a["observation"]["rows"][1]["rawBits"] = [0, 0, 0]
+            if fault == "epoch": a["observation"]["identity"]["processId"] += 1
+            if fault == "hash": b["nativeSourceSha256"] = "0" * 64
+            path.write_text(json.dumps(b)); native.write_text(json.dumps(a))
+            with self.subTest(fault=fault), self.assertRaises(ValueError):
+                self.run_export(unit_samples=[path])
+            self.assertFalse(self.output.exists())
+
+    def test_unit_samples_sort_scans_and_clear_previous_subtree(self):
+        first, _, _, _ = self.unit_wrapper()
+        second, native, raw, _ = self.unit_wrapper("later")
+        row = raw["observation"]
+        for value in [row, *row["rows"]]:
+            for field in ("startedAtUtc", "completedAtUtc"):
+                value[field] = value[field].replace("04:00:00", "04:00:01")
+        native.write_text(json.dumps(raw))
+        self.run_export(unit_samples=[second, first])
+        events = self.sinks[-1].events
+        clears = [e for e in events if e[0] == "world/loaded_units"]
+        self.assertEqual([e[1] for e in clears], ["clear", "clear"])
+        self.assertLess(clears[0][3]["at"], clears[1][3]["at"])
+        self.assertTrue(all(e[3].get("static") is not True for e in clears))
+        self.output.unlink()
+        with self.assertRaisesRegex(ValueError, "overlapping-scans"):
+            self.run_export(unit_samples=[first, first])
+
+    def test_unit_sample_subset_is_nearest_18_within_35(self):
+        from tests.test_physical_unit_positions import bits
+        path, native, raw, _ = self.unit_wrapper()
+        row = raw["observation"]
+        template = deepcopy(row["rows"][1])
+        row["rows"] = [row["rows"][0]]
+        for i in range(25):
+            unit = deepcopy(template)
+            distance = i + 1 if i < 24 else 36
+            unit.update(unitKey=str(i + 100), unitIdCandidate=f"u{i + 100:016X}",
+                        positionCandidate=dict(x=7427 + distance, y=871, z=2946), horizontalDistanceCandidate=distance)
+            unit["startedAtUtc"] = unit["completedAtUtc"]
+            unit["rawBits"] = bits(unit["positionCandidate"])
+            row["rows"].append(unit)
+        row["examined"] = len(row["rows"]) + row["noPosition"]
+        native.write_text(json.dumps(raw))
+        scan = self.run_export(unit_samples=[path])["unitSamples"][0]
+        self.assertEqual(len(scan["units"]), 18)
+        self.assertEqual([u["horizontalDistanceCandidate"] for u in scan["units"]], list(range(1, 19)))
+
+    def test_unit_sample_outside_distance_still_clears_old_scan(self):
+        from tests.test_physical_unit_positions import bits
+        path, native, raw, _ = self.unit_wrapper()
+        unit = raw["observation"]["rows"][1]
+        unit.update(positionCandidate=dict(x=7463, y=871, z=2946), horizontalDistanceCandidate=36)
+        unit["rawBits"] = bits(unit["positionCandidate"])
+        native.write_text(json.dumps(raw))
+        scan = self.run_export(observations=[], unit_samples=[path])["unitSamples"][0]
+        self.assertEqual(scan["units"], [])
+        events = self.sinks[-1].events
+        self.assertTrue(any(e[0] == "world/loaded_units" and e[1] == "clear" for e in events))
+        self.assertFalse(any(e[0].startswith("world/loaded_units/") for e in events))
+
+    def test_unit_scene_display_camera_bounds_all_admitted_geometry(self):
+        route = dict(points=[dict(xyz=dict(x=-2, y=0, z=1)), dict(xyz=dict(x=2, y=0, z=1))])
+        scans = [dict(units=[dict(positionXYZCandidate=dict(x=0, y=0, z=5))])]
+        frames = [dict(native=[dict(cameraViewRays=dict(status="available-candidate",
+                  nativeEyeXYZ=[0, 4, 0], cornersXYZ=[[-6, -2, 2], [6, -2, 2], [6, 2, 2], [-6, 2, 2]]))])]
+        camera = exporter.unit_scene_display_camera(route, scans, frames)
+        self.assertEqual(camera["boundsMin"], [-6, -2, 0])
+        self.assertEqual(camera["boundsMax"], [6, 4, 5])
+        self.assertEqual(camera["lookTarget"], [0, 1, 2.5])
+        self.assertEqual(camera["includedPointCount"], 8)
+        self.assertAlmostEqual(camera["radius"], math.sqrt(36 + 9 + .25))
+        self.assertEqual(camera["position"], [c + o * camera["radius"] for c, o in zip([0, 1, 2.5], [3, 4, 3])])
+        self.assertIn("not the game camera", camera["qualification"])
+        single = exporter.unit_scene_display_camera(dict(points=[dict(xyz=dict(x=1, y=2, z=3))]), [], [])
+        self.assertEqual(single["radius"], 1.)
+        self.assertEqual(single["position"], [4., 6., 6.])
+        frames[0]["native"][0]["cameraViewRays"]["nativeEyeXYZ"][0] = float("nan")
+        with self.assertRaisesRegex(ValueError, "finite-display-camera"):
+            exporter.unit_scene_display_camera(route, scans, frames)
+
+    def test_explicit_display_camera_only_for_unit_scenes_passes_to_blueprint(self):
+        path, _, _, _ = self.unit_wrapper()
+        result = self.run_export(unit_samples=[path])
+        camera = result["displayCamera"]
+        self.assertEqual(self.sinks[-1].display_camera, camera)
+        rrb = Mock()
+        rr = Mock()
+        exporter.default_blueprint(rr, rrb, [], display_camera=camera)
+        rrb.EyeControls3D.assert_called_once_with(kind=rrb.Eye3DKind.Orbital,
+            position=camera["position"], look_target=camera["lookTarget"], eye_up=[0, 1, 0], spin_speed=0)
+        self.assertEqual(rrb.Spatial3DView.call_args.kwargs["eye_controls"], rrb.EyeControls3D.return_value)
+        self.output.unlink()
+        result = self.run_export(observations=[])
+        self.assertNotIn("displayCamera", result)
+        self.assertIsNone(self.sinks[-1].display_camera)
 
     @unittest.skipUnless(importlib.util.find_spec("numpy"), "optional NumPy environment required")
     def test_native_view_rays_use_exact_native_times_and_source_hashes(self):
