@@ -1,5 +1,19 @@
 # Current status
 
+**11:44 EST NOVEMBER 12 — GOAL EXTENDED EIGHT HOURS; WORLD-TO-SCREEN NEXT:** On
+**AMD-DESKTOP**, Joey extended the active goal through **19:44 EST November 12 /
+00:44 UTC November 13**. Do not stop at the original 11:56 EST deadline. The next
+priority is verified 3D world-to-screen projection and waypoint markers/beacons,
+using existing camera/matrix readers, guarded WGC brackets and frame mapping.
+Two source inventories found the reusable path; a worker is implementing a small
+offline screenshot marker renderer while root obtains fresh projection evidence.
+The current recorded-route version passed a final reverse replay at **0.04980
+units**, all **34 pulses released**, 4,568 ms requested hold; stationary XYZ/yaw
+drift were zero and desktop inspection showed no held inputs. Receipt:
+`artifacts/waypoint-run-4e2adb29a285458f80183f9c8d88522f.json`;
+validation `artifacts/final-replay-69312-validation.json`. App PID56956 is idle at
+7/7 reverse, RIFT PID69312. Root alone coordinates live work and avoids user input.
+
 **11:29 EST NOVEMBER 12 — FINAL PLAYBACK CONTROLS AND INTEGRATION GATE:** On
 **AMD-DESKTOP**, initial Forward/Reverse availability now reflects observed endpoint,
 height and directed route-length checks. Fresh backend admission is retained.

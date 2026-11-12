@@ -1,5 +1,26 @@
 # Five-hour goal: record, replay and resume nearby routes
 
+## Active extension — November 12, 11:44 EST
+
+Joey extended the active goal for **another eight hours from 16:44 UTC**, through
+**00:44 UTC November 13 / 19:44 EST November 12**. This later instruction replaces
+the original 16:56 UTC stopping time; do not close the active goal at that old time.
+The recorded-route baseline is working and pushed (`ec55989`); its final current-
+version reverse replay finished within 0.04980 units with all 34 pulses released.
+
+The next requested result is **3D world-to-screen projection and screen-aligned
+waypoint markers/beacons**. Reuse the existing native optical camera/matrix reader,
+`physical_rift._project_world_point`, guarded native/WGC brackets and physical
+client/frame mapping. First verify saved waypoint alignment on a fresh screenshot,
+then make a no-focus/click-through overlay usable, and qualify camera/window/restart
+changes. Preserve genuine XYZ/height/world provenance and withhold stale projection.
+Projected visibility does not establish occlusion, traversability or obstacle
+clearance; use the resulting observations to inform later mapping/vision work.
+Keep the existing single-machine, input-ownership and movement limits. The root
+alone owns live/Desktop/game actions, conditional on noninterference with Joey.
+The goal remains active; available goal tools expose status, not a duration editor,
+so this user-approved extension is durable here and in current status.
+
 Status: goal activated November 12 at 11:56:02 UTC. Interruption checkpoint and
 verified results: [recorded-route handoff](../handoff-2026-11-12-recorded-routes.md).
 The user requested continuing the goal after saving and pushing that checkpoint.

@@ -10,6 +10,18 @@ of that goal. Original activation was 11:56:02 UTC; original planned end was
 
 ## Continued progress after the interruption
 
+**Extension notice (11:44 EST):** Joey extended the active goal through 19:44 EST
+November 12 / 00:44 UTC November 13, adding 3D world-to-screen waypoint markers and
+beacons as the next priority. The original 11:56 EST end time below is historical.
+The recorded-route baseline remains complete; the overall extended goal is active.
+Final current-version reverse replay visited Recorded 7→1, error 0.04979769 units,
+34 released pulses / 4,568 ms requested hold, unchanged basis. Receipt
+`artifacts/waypoint-run-4e2adb29a285458f80183f9c8d88522f.json`; stationary/identity
+validation `artifacts/final-replay-69312-validation.json`; rendered after view
+`artifacts/observe-wgc-8cd124cd0c4747cf9b61579be8f3647b/image.png`.
+App PID56956 is idle at genuine 7/7 reverse, RIFT PID69312; final observed pose
+`(7421.6259765625,863.5865478515625,2941.055908203125)`, bearing -29.84653754 degrees.
+
 **08:25 EST / 13:25 UTC:** RIFT was already running as fresh PID19440 when work
 resumed; its build and Atank identity matched. The latest native capture fix has
 now passed a live moving-player trial. GUI **Record → Stop Recording** saved
