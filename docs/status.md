@@ -1,5 +1,15 @@
 # Current status
 
+**11:29 EST NOVEMBER 12 — FINAL PLAYBACK CONTROLS AND INTEGRATION GATE:** On
+**AMD-DESKTOP**, initial Forward/Reverse availability now reflects observed endpoint,
+height and directed route-length checks. Fresh backend admission is retained.
+Root review fixed malformed height preview handling; the final offline gate passed
+**171 tests** (153 waypoint + 18 controller/launcher). A real UI-only open-route case
+enabled only Reverse at its end. The original seven-point route/cache and genuine
+7/7 forward checkpoint are restored; fresh native XYZ/yaw drift were both zero.
+App PID56956/window6557616 is idle, RIFT PID69312. No gameplay input was sent.
+Code work is ready; final evidence/cleanup/handoff continue to the 11:56 EST goal end.
+
 **11:19 EST NOVEMBER 12 — ENDPOINT DISTANCES VISIBLE:** On **AMD-DESKTOP**, the idle
 summary shows Start/End distances in original route order and the footer explains
 the 0.30-unit playback entry requirement. Twenty-three focused state tests passed,

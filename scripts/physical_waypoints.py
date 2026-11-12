@@ -734,6 +734,7 @@ def launch_window(args):
     published_adapter = adapter
     foreground_stop = None
     last_pose = None
+    last_y = None
     map_view = None
     observing = False
     next_live_at = time.monotonic() + 2
@@ -947,8 +948,26 @@ def launch_window(args):
             teach_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
             face_button.configure(state="normal" if len(selected) == 1 and .3 < chosen <= 20 else "disabled")
             record_button.configure(state="normal")
-            forward_button.configure(state="normal" if points else "disabled")
-            reverse_button.configure(state="normal" if points else "disabled")
+            def can_play(reverse=False):
+                if not original_points:
+                    return False
+                rows = [row[1:] for row in (reversed(original_points) if reverse else original_points)]
+                endpoint = rows[0]
+                if math.hypot(finite(endpoint[1]) - last_pose[0], finite(endpoint[2]) - last_pose[1]) > .30 + 1e-9:
+                    return False
+                heights = route_metadata.get("heights")
+                if heights is not None:
+                    if not isinstance(heights, list) or len(heights) != len(original_points):
+                        return False
+                    try:
+                        height = heights[-1 if reverse else 0]
+                        if height is not None and (last_y is None or abs(last_y - finite(height)) > 1):
+                            return False
+                    except (TypeError, ValueError, IndexError):
+                        return False
+                return route_length(*last_pose[:2], rows) <= 20
+            forward_button.configure(state="normal" if can_play() else "disabled")
+            reverse_button.configure(state="normal" if can_play(True) else "disabled")
             resumable = (playback_view is not None and checkpoint.exists()
                          and 0 <= playback_view["nextIndex"] < len(points))
             resume_button.configure(state="normal" if resumable else "disabled")
@@ -1338,7 +1357,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, observing, next_live_at, playback_view, playback_active
+        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, observing, next_live_at, playback_view, playback_active
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1431,6 +1450,7 @@ def launch_window(args):
                     recording_progress = {"sampleCount": event["sampleCount"],
                                           "observedPathLength": event["observedPathLength"]}
                 last_pose = (point["x"], point["z"], event.get("bearing", last_pose[2] if last_pose else 0))
+                last_y = point["y"]
                 pose_text.set(f"Position X={point['x']:.6f}  Y={point['y']:.6f}  Z={point['z']:.6f}"
                               f"   facing={last_pose[2]:.2f}°   updated {time.strftime('%H:%M:%S')}")
                 if not x.get() and not z.get():

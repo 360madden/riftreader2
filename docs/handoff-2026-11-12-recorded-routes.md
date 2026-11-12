@@ -434,6 +434,25 @@ calculation; both summary/footer fit and the completed checkpoint stayed exact.
 No gameplay input occurred. Current app PID62852/window27203042 is idle; RIFT
 PID69312 remains bound to the unchanged basis.
 
+**11:29 EST initial playback availability accepted:** Forward/Reverse now reflect
+the original endpoint's observed 0.30-unit radius, recorded height within one unit
+and directed planned distance within 20 units. This uses existing pose events and
+adds no reads; Resume/Go/Run and backend admission/limits are unchanged. Root review
+caught malformed explicit-route height metadata breaking redraw; a list/length
+check and regression now disable Play safely. Preview-valid→stale-backend refusal
+coverage remains. Forty focused state/receipt cases plus that regression passed.
+
+The final combined offline gate passed **153 waypoint tests + 18 controller/launcher
+tests = 171**, using fake adapters/withdrawn Tk/synthetic callbacks without real
+native reads or desktop input. Live Load of `artifacts/waypoint-play-availability-case-69312.json`
+(manual two-point UI case, never played) showed Start 3.60 / End 0.03, Forward
+disabled and Reverse enabled. Reloading the original ready-route copy restored
+the full document/cache; the genuine prior checkpoint was restored after fresh
+native XYZ and yaw both showed zero drift. No gameplay input occurred. App
+PID56956/window6557616 is idle on the original seven-point route; RIFT PID69312.
+No code changes are planned after this gate; remaining work is final evidence,
+release/readiness verification and the concise handoff at the goal's actual end.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

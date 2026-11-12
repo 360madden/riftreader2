@@ -101,6 +101,87 @@ class PlaybackWindowStateTests(unittest.TestCase):
         for label in ("Load", "Add X / Z"):
             self.assertNotEqual("disabled", str(self.button(label)["state"]))
 
+    def test_play_buttons_follow_original_endpoints_without_extra_reads(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 4, 0]], "heights": [10, 11]}), encoding="utf-8")
+        current = {"pose": app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")}
+        reader = unittest.mock.Mock(side_effect=lambda **kwargs: current["pose"])
+        self.launch(SimpleNamespace(read=reader, pid=123), route)
+        self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
+        before = reader.call_count
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table.selection_set(table.get_children()[0])
+        self.roots[0].update()
+        self.assertEqual(before, reader.call_count)
+        current["pose"] = app.Snapshot(app.Position(4, 11, 0), 0, time.monotonic(), "fake")
+        self.button("Refresh").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertNotEqual("disabled", str(self.button("Play Reverse")["state"]))
+
+    def test_play_endpoint_height_and_point_three_boundary(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 2, 0]], "heights": [10, 10]}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(.3000000005, 11, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
+
+    def test_play_rejects_height_even_for_short_route(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 2, 0]], "heights": [10, 10]}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 11.0001, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+
+    def test_malformed_height_metadata_keeps_window_open_and_play_disabled(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 2, 0]], "heights": {}}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
+        reader = unittest.mock.Mock(return_value=pose)
+        self.launch(SimpleNamespace(read=reader, pid=123), route)
+        self.assertTrue(self.roots[0].winfo_exists())
+        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
+        self.assertEqual(1, reader.call_count)
+
+    def test_play_rejects_just_outside_endpoint_radius(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 2, 0]]}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(.300001, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+
+    def test_play_accepts_exact_twenty_unit_route(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 20, 0]]}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
+
+    def test_play_rejects_wrong_height_and_route_over_twenty(self):
+        route = self.path / "route.json"
+        route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 21, 0]], "heights": [10, 10]}), encoding="utf-8")
+        current = {"pose": app.Snapshot(app.Position(0, 12, 0), 0, time.monotonic(), "fake")}
+        self.launch(SimpleNamespace(read=lambda **kwargs: current["pose"], pid=123), route)
+        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
+        # Correct the height; excessive route length still blocks forward play.
+        current["pose"] = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
+        self.button("Refresh").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+
     def test_complete_checkpoint_cannot_resume(self):
         path = self.path / "artifacts" / "waypoint-current-progress.json"
         path.write_text(json.dumps({"route": {"waypoints": [["A", 0, 0], ["B", 1, 0]]},
@@ -247,10 +328,14 @@ class PlaybackWindowStateTests(unittest.TestCase):
         checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 2}), encoding="utf-8")
         original = checkpoint.read_bytes()
         self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
-        self.stack.enter_context(patch("scripts.waypoint_playback.play_route", side_effect=ValueError("wrong endpoint")))
-        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
-        adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={})
+        current = {"pose": app.Snapshot(app.Position(1, 0, 0), 0, time.monotonic(), "fake")}
+        def reject_changed_pose(adapter, *args, **kwargs):
+            self.assertEqual(0, adapter.read().position.x)
+            raise ValueError("wrong endpoint after pose changed")
+        play = self.stack.enter_context(patch("scripts.waypoint_playback.play_route", side_effect=reject_changed_pose))
+        adapter = SimpleNamespace(read=lambda **kwargs: current["pose"], pid=123, binding={})
         self.launch(adapter)
+        current["pose"] = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.button("Play Reverse").invoke()
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
@@ -266,6 +351,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
                 break
             time.sleep(.01)
         self.assertEqual(original, checkpoint.read_bytes())
+        play.assert_called_once()
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]

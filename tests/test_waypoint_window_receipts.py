@@ -188,6 +188,9 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual("face", face["operation"])
         self.assertEqual("full-turn", face["result"]["sentinel"])
         self.table.insert("", "end", values=("Unfinished", "3", "0"))
+        self.adapter.read = lambda **kwargs: self.pose(2)
+        self.button("Refresh").invoke()
+        self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
         checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
         checkpoint.write_text(json.dumps({"direction": "reverse", "nextIndex": 1}))
         forward = self.invoke_and_wait("Play Forward")

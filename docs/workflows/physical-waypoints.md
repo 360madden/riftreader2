@@ -36,6 +36,9 @@ and the route distance. While idle, **Start / End** show the observed planar dis
 and last points in the saved order. Forward playback starts within 0.30 units of
 Start; reverse playback starts within 0.30 units of End. These hints do not replace
 the backend's fresh position, height, identity and route-budget checks.
+Initial Play buttons are disabled if the observed endpoint is too far away, its
+recorded height differs by more than one unit, or the directed route exceeds 20
+units. The backend repeats admission checks using a fresh stationary pose.
 
 **+ / −** change preview radius through 2, 5, 10 and 20 units; **Fit** chooses a
 radius for the loaded points around the observed player. Rings show half/full radius.
