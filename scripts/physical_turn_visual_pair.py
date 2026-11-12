@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 import sys
 
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageStat
 
 Image.MAX_IMAGE_PIXELS = 4096 * 2160
 MAX_PNG_BYTES = 12 * 1024 * 1024
@@ -143,7 +143,14 @@ def visual_compare(before_png: Path, after_png: Path,
                   if max(channels[i:i+3]) >= 24)
     mean_abs_channel_delta = sum(channels) / len(channels)
     changed_fraction = changed / sample_count
-    candidate = changed_fraction >= .18 and mean_abs_channel_delta >= 15
+    # Apply one shared gain to differences, preserving exposure differences between
+    # frames. Cap the gain so near-black sensor noise cannot be amplified freely.
+    pair_brightness = sum(ImageStat.Stat(left).mean + ImageStat.Stat(right).mean) / 6
+    exposure_gain = min(4.0, max(1.0, 128 / max(pair_brightness, 1.0)))
+    adjusted_fraction = sum(1 for i in range(0, len(channels), 3)
+                            if max(channels[i:i+3]) * exposure_gain >= 24) / sample_count
+    adjusted_mean = mean_abs_channel_delta * exposure_gain
+    candidate = adjusted_fraction >= .18 and adjusted_mean >= 15
     return {
         "schemaVersion": 1,
         "status": "offline-visual-change-candidate",
@@ -158,6 +165,9 @@ def visual_compare(before_png: Path, after_png: Path,
         "sampledPixels": sample_count,
         "changedPixelFractionCandidate": changed_fraction,
         "meanAbsoluteChannelDeltaCandidate": mean_abs_channel_delta,
+        "comparisonExposureGain": exposure_gain,
+        "exposureAdjustedChangedPixelFractionCandidate": adjusted_fraction,
+        "exposureAdjustedMeanAbsoluteChannelDeltaCandidate": adjusted_mean,
         "visibleViewChangeCandidate": candidate,
         "inputSent": False,
         "gameResponseVerified": False,

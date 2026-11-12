@@ -19,7 +19,7 @@ internal static class MoveKeyCommand
     internal sealed record Options(
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
-        int XyzSettleMilliseconds, bool MeasureActorPose);
+        int XyzSettleMilliseconds, bool MeasureActorPose, int ActorPoseSettleMilliseconds = 0);
 
     // A timed envelope around the bounded input executor, NOT exact down/up
     // timestamps or proof that the RIFT game consumed the injected key.
@@ -211,7 +211,7 @@ internal static class MoveKeyCommand
     }
 
     private const string Usage =
-        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose]"
+        "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose] [--actor-pose-settle-ms 500]"
         + " [--expect-start-ticks TICKS] [--expect-sha256 HASH]";
 
     internal static Options Parse(string[] args)
@@ -220,6 +220,7 @@ internal static class MoveKeyCommand
         string[]? keys = null;
         int hold = 1000;
         int xyzSettleMilliseconds = 0;
+        int actorPoseSettleMilliseconds = 0;
         bool focus = true, execute = false, json = false, measureXyz = false, measureActorPose = false;
         long? expectedTicks = null;
         string? expectedSha = null;
@@ -264,6 +265,11 @@ internal static class MoveKeyCommand
                         out xyzSettleMilliseconds) || xyzSettleMilliseconds > 2000)
                         throw new InvalidDataException("XYZ settle must be 0..2000 milliseconds.");
                     break;
+                case "--actor-pose-settle-ms":
+                    if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture,
+                        out actorPoseSettleMilliseconds) || actorPoseSettleMilliseconds > 1000)
+                        throw new InvalidDataException("Actor pose settle must be 0..1000 milliseconds.");
+                    break;
                 case "--expect-start-ticks":
                     if (!long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
                         || ticks <= 0 || ticks > DateTime.MaxValue.Ticks)
@@ -288,8 +294,10 @@ internal static class MoveKeyCommand
         BoundedControlExecutor.Validate(new ControlAction(keys, hold));
         if (seen.Contains("--xyz-settle-ms") && !measureXyz)
             throw new InvalidDataException("--xyz-settle-ms requires --measure-xyz.");
+        if (seen.Contains("--actor-pose-settle-ms") && !measureActorPose)
+            throw new InvalidDataException("--actor-pose-settle-ms requires --measure-actor-pose.");
         return new Options(pid.Value, keys, hold, focus, execute, json,
-            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose);
+            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose, actorPoseSettleMilliseconds);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -306,7 +314,8 @@ internal static class MoveKeyCommand
                     processId = options.Pid, keys = options.Keys, holdMilliseconds = options.HoldMilliseconds,
                     focusRequested = options.Focus, measureXyzRequested = options.MeasureXyz,
                     measureActorPoseRequested = options.MeasureActorPose,
-                    xyzSettleMilliseconds = options.XyzSettleMilliseconds, inputSent = false,
+                    xyzSettleMilliseconds = options.XyzSettleMilliseconds,
+                    actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds, inputSent = false,
                     instruction = "Add --execute to send one bounded manual pulse."
                 });
                 return 0;
@@ -445,6 +454,7 @@ internal static class MoveKeyCommand
             }
         }
         PoseFeedback? poseFeedback = null;
+        var actorPoseSettleApplied = false;
         if (beforePose is not null)
         {
             // Actor pose is observational only. Never extend an uncertain key
@@ -457,6 +467,11 @@ internal static class MoveKeyCommand
             {
                 try
                 {
+                    if (options.ActorPoseSettleMilliseconds > 0)
+                    {
+                        await Task.Delay(options.ActorPoseSettleMilliseconds, token);
+                        actorPoseSettleApplied = true;
+                    }
                     var afterPose = await CaptureActorPoseAsync(options.Pid, startTicks, token);
                     poseFeedback = ComparePose(beforePose, afterPose);
                 }
@@ -492,6 +507,7 @@ internal static class MoveKeyCommand
             observedMilliseconds = Math.Round(result.ObservedDuration.TotalMilliseconds, 1),
             inputCallTiming, keySendEvents, keyHoldWindows,
             xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
+            actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds, actorPoseSettleApplied,
             gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error
         });
         return success ? 0 : 2;

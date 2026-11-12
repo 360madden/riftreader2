@@ -7,6 +7,38 @@ namespace RiftReader2.Live.Tests;
 
 public sealed class MoveKeyCommandTests
 {
+    [Theory]
+    [InlineData("0", 0)]
+    [InlineData("500", 500)]
+    [InlineData("1000", 1000)]
+    public void ParsesOptionalActorPoseDelay(string value, int expected)
+    {
+        var options = MoveKeyCommand.Parse(["--pid", "123", "--key", "a",
+            "--measure-actor-pose", "--actor-pose-settle-ms", value]);
+        Assert.Equal(expected, options.ActorPoseSettleMilliseconds);
+        Assert.False(options.Execute);
+    }
+
+    [Theory]
+    [InlineData("-1")]
+    [InlineData("1001")]
+    [InlineData("abc")]
+    public void RejectsInvalidActorPoseDelay(string value)
+    {
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--key", "a", "--measure-actor-pose",
+             "--actor-pose-settle-ms", value]));
+    }
+
+    [Fact]
+    public void ActorPoseDelayRequiresPoseMeasurement()
+    {
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--key", "a", "--actor-pose-settle-ms", "500"]));
+        Assert.Equal(0, MoveKeyCommand.Parse(["--pid", "123", "--key", "a"])
+            .ActorPoseSettleMilliseconds);
+    }
+
     [Fact]
     public void InputCallTimingProvidesUsableUtcEnvelopeWithoutClaimingKeyDownOrGameResponse()
     {

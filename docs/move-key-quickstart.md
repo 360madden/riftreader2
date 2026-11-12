@@ -50,3 +50,9 @@ Offline checks (never send game input):
 dotnet test .\tests\RiftReader2.Live.Tests\RiftReader2.Live.Tests.csproj --no-restore --filter FullyQualifiedName~MoveKeyCommandTests
 C:\Python314\python.exe -m unittest discover -s tests -p test_physical_one_pulse_runner.py
 ```
+
+### Delayed actor-pose observation
+
+Use `--measure-actor-pose --actor-pose-settle-ms 500` to wait 500 ms after a successfully completed and released pulse before reading the after-pose. The optional delay accepts 0..1000 ms and defaults to zero. Receipts report `actorPoseSettleMilliseconds` and `actorPoseSettleApplied`. When XYZ settling is also requested, the pose delay follows the XYZ observation.
+
+This is a fixed observation delay. Check repeated read-only pose samples when evidence of stability is needed. The physical November 11 trials showed roughly 4–5 degrees of further actor-matrix change after the immediate sample. Turn rates continue to use the measured key-hold window. A failed release or lost target withholds the after-pose.

@@ -87,6 +87,25 @@ class VisualPairTests(unittest.TestCase):
         self.assertFalse(result["cameraHeadingQualified"])
         self.assertFalse(result["inputSent"])
 
+    def test_dark_changed_scene_uses_bounded_common_exposure_gain(self):
+        for path in (self.before, self.after):
+            with Image.open(path) as image:
+                image.point(lambda value: value // 7).save(path)
+        make_receipt(self.bjson, self.before, 0)
+        make_receipt(self.ajson, self.after, 2)
+        result = self.assess()
+        self.assertTrue(result["visibleViewChangeCandidate"])
+        self.assertLess(result["meanAbsoluteChannelDeltaCandidate"], 15)
+        self.assertGreater(result["exposureAdjustedMeanAbsoluteChannelDeltaCandidate"], 15)
+        self.assertEqual(result["comparisonExposureGain"], 4)
+
+    def test_dark_identical_scene_and_small_noise_do_not_claim_change(self):
+        for path, color in ((self.before, (8, 8, 8)), (self.after, (9, 9, 9))):
+            Image.new("RGB", (320, 200), color).save(path)
+        make_receipt(self.bjson, self.before, 0)
+        make_receipt(self.ajson, self.after, 2)
+        self.assertFalse(self.assess()["visibleViewChangeCandidate"])
+
     def test_unchanged_scene_does_not_claim_change(self):
         draw_scene(self.after, 0)
         self.areport = make_receipt(self.ajson, self.after, 2)
