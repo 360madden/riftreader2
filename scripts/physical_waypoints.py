@@ -30,7 +30,7 @@ from scripts import physical_rift
 from scripts.movement_controller import Position, WaypointController, planar_distance
 from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalClientReservation
 from scripts.physical_move_basis_waypoint import read_basis, candidate_calibrations
-from scripts.waypoint_map import LocalMap, draw_route, route_length
+from scripts.waypoint_map import LocalMap, ZOOM_RADII, draw_route, fit_route_radius, route_length
 from scripts.waypoint_heading import choose_turn, heading_error
 from scripts.waypoint_seed_feedback import verify_translation, verify_turn
 
@@ -710,7 +710,18 @@ def launch_window(args):
     map_frame.pack(side="right", fill="both")
     canvas = tk.Canvas(map_frame, width=330, height=310, bg="#101c25", highlightthickness=0)
     canvas.pack(fill="both", expand=True)
-    ttk.Label(map_frame, text="Click to add • facing up • rings 5 / 10 units").pack(anchor="w", pady=(4, 0))
+    map_hint = ttk.Frame(map_frame)
+    map_hint.pack(fill="x", pady=(4, 0))
+    ttk.Label(map_hint, text="Click to add").pack(side="left", padx=(0, 6))
+    map_radius = 10
+    radius_text = tk.StringVar(value="10 units")
+    zoom_in = ttk.Button(map_hint, text="+", width=2, command=lambda: zoom(-1))
+    zoom_in.pack(side="left")
+    zoom_out = ttk.Button(map_hint, text="-", width=2, command=lambda: zoom(1))
+    zoom_out.pack(side="left", padx=3)
+    fit_button = ttk.Button(map_hint, text="Fit", width=3, command=lambda: fit_zoom())
+    fit_button.pack(side="left")
+    ttk.Label(map_hint, textvariable=radius_text).pack(side="left", padx=6)
     events, stop = queue.Queue(), threading.Event()
     busy = False
     recording = False
@@ -865,8 +876,25 @@ def launch_window(args):
         progress_text.set(f"Saved progress: {index} / {count}; {hint}")
         redraw()
 
+    def zoom(direction):
+        nonlocal map_radius
+        index = ZOOM_RADII.index(map_radius)
+        map_radius = ZOOM_RADII[max(0, min(len(ZOOM_RADII) - 1, index + direction))]
+        redraw()
+
+    def fit_zoom():
+        nonlocal map_radius
+        if last_pose is None:
+            return
+        map_radius = fit_route_radius(*last_pose[:2], selected_points(True))
+        redraw()
+
     def redraw(*_):
         nonlocal map_view
+        radius_text.set(f"{map_radius:g} units")
+        zoom_in.configure(state="disabled" if map_radius == ZOOM_RADII[0] else "normal")
+        zoom_out.configure(state="disabled" if map_radius == ZOOM_RADII[-1] else "normal")
+        fit_button.configure(state="normal" if last_pose is not None else "disabled")
         undo_button.configure(state="normal" if edit_history and not busy and not closing else "disabled")
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
         completed, active = None, None
@@ -888,7 +916,7 @@ def launch_window(args):
                                forward_button, reverse_button, resume_button, teach_button):
                     button.configure(state="disabled")
             return
-        map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()))
+        map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()), map_radius)
         draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active)
         remaining = points[index:] if playback_view is not None else points
         distance = route_length(*last_pose[:2], [row[1:] for row in remaining])

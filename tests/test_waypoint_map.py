@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from scripts.waypoint_map import LocalMap, draw_route, route_length
+from scripts.waypoint_map import LocalMap, ZOOM_RADII, draw_route, fit_route_radius, route_length
 
 
 class LocalMapTests(unittest.TestCase):
@@ -20,11 +20,38 @@ class LocalMapTests(unittest.TestCase):
     def test_round_trip_retains_world_point_across_headings_and_canvas_sizes(self):
         for bearing in (-179.9, -90, -4.7, 0, 67, 179.9):
             for width, height in ((300, 300), (350, 260), (600, 400)):
-                view = LocalMap(7424.7, 2946.2, bearing, width, height)
-                for px, pz in ((7424.7, 2946.2), (7418.4, 2950.1), (7429, 2944)):
-                    x, z = view.canvas_to_world(*view.world_to_canvas(px, pz))
-                    self.assertAlmostEqual(x, px, places=9)
-                    self.assertAlmostEqual(z, pz, places=9)
+                for radius in ZOOM_RADII:
+                    view = LocalMap(7424.7, 2946.2, bearing, width, height, radius)
+                    for px, pz in ((7424.7, 2946.2), (7418.4, 2950.1), (7429, 2944)):
+                        x, z = view.canvas_to_world(*view.world_to_canvas(px, pz))
+                        self.assertAlmostEqual(x, px, places=9)
+                        self.assertAlmostEqual(z, pz, places=9)
+
+    def test_fit_nearby_loop_empty_and_far_points(self):
+        loop = [("Start", 100, 200), ("Corner", 101, 201), ("Far", 104, 200),
+                ("Return", 101, 200)]
+        self.assertEqual(5, fit_route_radius(100, 200, loop))
+        self.assertEqual(2, fit_route_radius(100, 200, []))
+        self.assertEqual(2, fit_route_radius(100, 200, [("Here", 100, 200)]))
+        self.assertEqual(10, fit_route_radius(0, 0, [("Needs room", 5, 0)]))
+        self.assertEqual(20, fit_route_radius(0, 0, [("Beyond preview", 50, 0)]))
+        for bad in (float("nan"), float("inf")):
+            with self.assertRaises(ValueError):
+                fit_route_radius(0, 0, [("Invalid", bad, 0)])
+
+    def test_ring_labels_follow_radius_and_default_stays_five_ten(self):
+        class Canvas:
+            def __init__(self): self.calls = []
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: self.calls.append((name, args, kwargs))
+        for radius, labels in ((2, ["1", "2"]), (5, ["2.5", "5"]),
+                               (10, ["5", "10"]), (20, ["10", "20"])):
+            canvas = Canvas()
+            draw_route(canvas, LocalMap(0, 0, 0, 300, 300, radius), [], set())
+            actual = [kwargs["text"] for name, args, kwargs in canvas.calls
+                      if name == "create_text" and kwargs.get("fill") == "#8b9da9"]
+            self.assertEqual(labels, actual)
+        self.assertEqual(10, LocalMap(0, 0, 0, 300, 300).radius)
 
     def test_playback_states_and_reversed_order_keep_selection_visible(self):
         class Canvas:

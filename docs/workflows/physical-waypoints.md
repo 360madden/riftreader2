@@ -32,7 +32,10 @@ pythonw scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid
 The window reads the current position and facing. **Save Current** adds a point;
 clicking the local route preview adds a waypoint, and **Add X / Z** adds entered
 coordinates. The preview faces forward, shows 5/10-unit rings, selected points
-and the route distance. Each click checks a fresh pose; if the player moved or
+and the route distance. **+ / −** change preview radius through 2, 5, 10 and 20
+units; **Fit** chooses a radius for the loaded points around the observed player.
+Farther points can remain outside the maximum 20-unit preview. Zoom only redraws
+the display, preserving world coordinates and movement limits. Each click checks a fresh pose; if the player moved or
 turned, it refreshes the preview and requires another click. It shows waypoint
 geometry only, without terrain or obstacle information.
 

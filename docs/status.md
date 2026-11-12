@@ -1,5 +1,15 @@
 # Current status
 
+**11:01 EST NOVEMBER 12 — DEFAULT FILE REOPEN AND ZOOM VERIFIED:** On
+**AMD-DESKTOP**, normal default app reopening restored the matching source filename,
+Saved status and genuine 7/7 forward checkpoint. Quick Save worked without a
+chooser. New +/−/Fit controls redraw the preview at 2/5/10/20 units; live zoom
+spread the recorded corners and Fit restored the full view. Thirty-two combined
+preview/window-state tests passed, with root review. Route/cache/checkpoint stayed
+exact and no gameplay input was sent. App PID45976/window27071970 is idle; RIFT
+PID69312. These checks resumed under Joey's noninterference condition. Goal active
+through 11:56 EST.
+
 **10:55 EST NOVEMBER 12 — SOURCE FILE RECOVERY IMPLEMENTED:** On **AMD-DESKTOP**,
 default reopening can retain quick Save's source path only when the restored route,
 snapshot and local file match. Changed/missing sources remain unbound; legacy

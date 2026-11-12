@@ -2,6 +2,27 @@
 from dataclasses import dataclass
 import math
 
+ZOOM_RADII = (2, 5, 10, 20)
+
+
+def fit_route_radius(x, z, points):
+    """Fit (name, X, Z) points around the player with 10% radial headroom.
+
+    Empty routes use radius 2. Radius is capped at 20, so farther points can
+    remain offscreen; this preview does not change movement limits.
+    """
+    x, z = float(x), float(z)
+    if not math.isfinite(x) or not math.isfinite(z):
+        raise ValueError("Preview origin must be finite")
+    farthest = 0.0
+    for _, px, pz in points:
+        px, pz = float(px), float(pz)
+        if not math.isfinite(px) or not math.isfinite(pz):
+            raise ValueError("Preview points must be finite")
+        farthest = max(farthest, math.hypot(px - x, pz - z))
+    required = farthest * 1.1
+    return next((radius for radius in ZOOM_RADII if radius >= required), ZOOM_RADII[-1])
+
 
 @dataclass(frozen=True)
 class LocalMap:
@@ -48,11 +69,11 @@ def draw_route(canvas, view, points, selected, *, completed=None, active=None):
                            text="Refresh position to show waypoints", fill="#b2bec9")
         return
     cx, cy = view.width/2, view.height/2
-    for distance in (5, 10):
+    for distance in (view.radius / 2, view.radius):
         radius = view.scale * distance
         canvas.create_oval(cx-radius, cy-radius, cx+radius, cy+radius,
                            outline="#354957", dash=(3, 4))
-        canvas.create_text(cx+radius-10, cy+10, text=str(distance), fill="#8b9da9")
+        canvas.create_text(cx+radius-10, cy+10, text=f"{distance:g}", fill="#8b9da9")
     canvas.create_line(cx, 18, cx, view.height-18, fill="#253843")
     canvas.create_line(18, cy, view.width-18, cy, fill="#253843")
     canvas.create_text(cx, 13, text="FORWARD", fill="#b2bec9", font=("Segoe UI", 9))

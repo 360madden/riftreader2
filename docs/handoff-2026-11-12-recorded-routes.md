@@ -382,6 +382,25 @@ with the ready-route copy before Escape; a later process-only check confirms it
 still has the RR2/PID69312 window title. Do not infer fresh pose or UI state from
 that process check. The underlying route/restart workflow was already live-tested.
 
+**11:01 EST source recovery and preview zoom accepted live:** following Joey's
+authorization for noninterfering window checks, the current app saved the versioned
+snapshot with its matching local source path. Normal closure/reopening with the
+default launcher restored the filename, Saved status and genuine 7/7 forward cursor.
+Save Route then saved directly without a chooser. This qualifies the formerly
+pending real-window source association case; legacy/changed-source refusal cases
+remain covered by the focused tests.
+
+The existing preview hint row now has +/−/Fit and a radius label (2/5/10/20 units).
+Zoom is display-only, with dynamic half/full-radius rings and unchanged world
+coordinates/click freshness guards/input limits. Eight pure map tests and three
+fake-Tk zoom tests passed; 32 combined preview/window-state tests passed after
+integration. Live + changed 10→5 and spread the actual corners; Fit returned 10.
+Route/export/cache/checkpoint equality checks stayed exact and no gameplay input
+was sent. Root reviewed both worker patches. Current app PID45976/window27071970
+is idle on the ready-route copy; RIFT PID69312 remains bound. The complete control
+layout and STOP help are visible. Last displayed pose remained
+`(7421.672363,863.586548,2940.903809)`, bearing 61.29 degrees.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads
