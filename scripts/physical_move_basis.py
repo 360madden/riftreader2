@@ -159,7 +159,7 @@ def analyze(paths, *, later_forward=None):
         "limitations": [
             "Same process/player/build does not prove unchanged facing, zone or world instance.",
             "Observed XYZ vectors are native-memory candidates; game consumption is unverified.",
-            "No actor-yaw sample accompanies these historical key receipts.",
+            "This geometry comparison does not establish actor-facing continuity between receipts.",
             "A matching cardinal pattern is not approval to execute navigation.",
             "Long key holds are observations, not a validated linear model for short pulses.",
             "Optional later-facing reprojection assumes rigid rotation and proportional speeds; not observed.",
