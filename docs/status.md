@@ -1,5 +1,23 @@
 # Current status
 
+**13:40 EST NOVEMBER 12 — RERUN OFFLINE VIEWER WORKS; PLAYBACK/OVERLAY COEXIST:**
+On **AMD-DESKTOP**, GitHub research produced an optional pinned Rerun 0.43.1
+exporter using existing recorded routes and verified native/WGC sources. A real
+`.rrd` passed upstream verification and root reviewed the actual headless render:
+3D route/player beside the retained RIFT screenshot with projected points.
+Sixteen focused exporter/projection tests passed. Usage and limitations:
+[third-party tools](reference/third-party-workflow-tools-2026-11-12.md).
+Separately, full seven-point CLI playback ran alongside the Qt feed: 35 released
+pulses, 4,593 ms requested hold, 66.947 s, endpoint error 0.04649 units. The feed
+presented 303 frames in 91.0 s; 38 withholdings were recorded (latest expired row).
+Two settled native poses showed zero XYZ/yaw drift; desktop inspection found no
+held inputs. Receipts: `artifacts/waypoint-run-086261cb6e1b424ca4e30b7eb9dfd586.json`,
+`artifacts/qt-playback-concurrent-60384-overlay.json` and
+`artifacts/qt-playback-concurrent-60384-settled.json`. GUI Play/Resume coexistence
+is implemented with STOP also closing markers; focused checks/live acceptance
+are in progress. Current Atank is at the recorded end, bearing 63.11642 degrees;
+all owned marker children are stopped. Extended goal continues through 19:44 EST.
+
 **13:32 EST NOVEMBER 12 — NEW-PROCESS PROJECTION AND FENCED DXCAM EVENT:** On
 **AMD-DESKTOP**, normal full RIFT exit/relaunch changed PID69312 to PID60384.
 Atank's XYZ stayed identical, body bearing differed by 0.00042 degrees, and saved
