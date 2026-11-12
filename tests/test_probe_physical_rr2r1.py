@@ -320,6 +320,36 @@ class ProbeTests(unittest.TestCase):
                 for name in ("bad-index", "bad-epoch", "bad-reader"):
                     self.assertFalse((root / name).exists())
 
+    def test_resume_rejects_false_initial_cursor_before_scanning(self):
+        """A valid receipt chain cannot be relabeled to claim a different start."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                directory.mkdir()
+                index = self.index(request, request_path)
+                index["scan"]["nextAddress"] = "0x20000"
+                (directory / "index.json").write_text(json.dumps(index))
+                return subprocess.CompletedProcess(argv, 3, "", "")
+
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke) as scan:
+                prior, summary = probe.collect(123, root / "first", max_scans=1,
+                                               gap_seconds=0)
+                self.assertEqual(scan.call_count, 1)
+                summary["initialCursor"] = "0x30000"
+                prior.write_text(json.dumps(summary), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "resume-request-chain-mismatch"):
+                    probe.collect(123, root / "bad-resume", max_scans=1,
+                                  gap_seconds=0, resume_summary=prior)
+                self.assertEqual(scan.call_count, 1)
+            self.assertFalse((root / "bad-resume").exists())
+
     def test_invalid_session_nonce_fails_before_process_access(self):
         with patch.object(probe, "pinned_selection") as select:
             for invalid in ("abc", "A" * 32, "0" * 31, 123):

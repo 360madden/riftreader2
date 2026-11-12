@@ -182,6 +182,7 @@ def resume_cursor(path, selection, reader_sha):
     require(isinstance(rows, list) and 1 <= len(rows) <= 16,
             "resume-runs-invalid")
     prior = None
+    initial_cursor = checked_cursor(summary.get("initialCursor"))
     for number, row in enumerate(rows, 1):
         require(isinstance(row, dict) and row.get("run") == number and
                 row.get("publishedSnapshots") == 0, "resume-run-unusable")
@@ -193,7 +194,8 @@ def resume_cursor(path, selection, reader_sha):
         require(request.get("target") == expected and request.get("marker") == MARKER and
                 request.get("startAddress") == row.get("startAddress") and
                 request_sha == row.get("requestSha256") and
-                (prior is None or request["startAddress"] == prior),
+                request["startAddress"] == (
+                    initial_cursor if prior is None else prior),
                 "resume-request-chain-mismatch")
         receipt_path = path.parent / f"run-{number:02d}" / "index.json"
         verified = check_index(receipt_path, request, request_sha, selection)
