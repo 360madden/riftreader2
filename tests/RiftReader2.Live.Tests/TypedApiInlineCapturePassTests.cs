@@ -12,13 +12,15 @@ public sealed class TypedApiInlineCapturePassTests
     private static readonly byte[] Plausible = Encoding.ASCII.GetBytes("RRAPIVAL2|{");
     private static readonly byte[] StaticMarker = Encoding.ASCII.GetBytes("RRAPIVAL2|");
 
-    [Fact]
-    public void Run_ReferenceMarkerPropagatesThroughScoutAndPlausibilityGate()
+    [Theory]
+    [InlineData("RR2R1|")]
+    [InlineData("RR2A1|")]
+    public void Run_ReferenceMarkerPropagatesThroughScoutAndPlausibilityGate(string marker)
     {
         var data = Memory();
-        Encoding.ASCII.GetBytes("RR2R1|{").CopyTo(data.AsSpan((int)(FirstMarker - Base)));
+        Encoding.ASCII.GetBytes(marker + "{").CopyTo(data.AsSpan((int)(FirstMarker - Base)));
         Plausible.CopyTo(data.AsSpan(40_000));
-        var result = TypedApiInlineCapturePass.Run("RR2R1|",
+        var result = TypedApiInlineCapturePass.Run(marker,
             Regions(), Base, ScanBytes, 128, 2,
             (address, buffer, length) =>
             {
@@ -33,7 +35,7 @@ public sealed class TypedApiInlineCapturePassTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("RR2A1|")]
+    [InlineData("RR2A2|")]
     [InlineData("RR2R1")]
     public void MatcherRejectsUnsupportedMarkers(string marker) =>
         Assert.Throws<ArgumentException>(() => new TypedApiPrefixMatcher(marker));
