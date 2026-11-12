@@ -137,6 +137,30 @@ supply RIFT terrain from screenshots or sparse route/unit positions.
 manager, but the existing pinned local environments work; migrating them does
 not resolve the present capture or geometry gap.
 
+## RIFT-specific source leads checked November 12
+
+[TelaraFly](https://github.com/imathrowback/telarafly) is an existing RIFT world
+and model viewer, with a [2025 release](https://github.com/imathrowback/telarafly/releases/tag/2025)
+adding basic export support. This is a stronger future geometry lead than
+building a RIFT asset reader from scratch. Its
+[OBJ exporter](https://github.com/imathrowback/telarafly/blob/master/Assets/Export/ObjExporterScript2.cs)
+temporarily zeros the export root and negates Z, so exported coordinates are not
+automatically live RIFT XYZ. The inspected caller exports wardrobe models;
+complete world/terrain export still needs confirmation. Current-build support is
+unproven, and no repository license was detected. Verify file permissions before
+copying source. Any future evaluation should explicitly disable optional remote
+PAK loading and use pinned local assets.
+
+[riftools MapGen](https://github.com/imathrowback/riftools/blob/master/mapgen/src/org/imathrowback/mapgen/MapGen.java)
+is a more direct map-context lead: `-listWorlds`, `-writeMapInfo`, zone/scene XYZ
+polygons and teleport records in `<world>.data.json`, plus extraction of map-image
+DDS tiles. The repository was last pushed May 10, 2026, with no detected license.
+This supplies potential map imagery/context, not collision geometry or a navmesh.
+Before displaying it with live waypoints, validate current asset build, world,
+origin, axes and scale against known live poses. Neither project was downloaded,
+installed or run for this source-only review. Keep these as future reuse leads;
+the current goal does not add terrain extraction or navigation-mesh generation.
+
 ## Optional offline Rerun evidence viewer
 
 `scripts/export_physical_rerun.py` converts a complete recorded route and optional
