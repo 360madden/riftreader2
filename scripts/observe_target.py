@@ -42,6 +42,73 @@ def _capture_physical(expected_host, output, allow_foreground_change, physical_p
                             physical_pid=physical_pid)
 
 
+def _capture_with_native_facing(expected_host, output, physical_pid):
+    """Bracket one focus-neutral frame with the existing exact-process readers."""
+    from scripts import physical_rift
+    from scripts.observe_gpu import capture_gpu
+    selection = physical_rift.select_physical(expected_host, physical_pid)
+    if selection["status"] != "ready":
+        return selection
+    started = time.perf_counter()
+    before = physical_rift.read_native(selection, "facing", samples=1, include_target=True)
+    directory = output or ROOT / "artifacts" / ("observe-wgc-" + uuid.uuid4().hex)
+    result = capture_gpu(expected_host, directory, physical_pid=selection["target"]["processId"])
+    if result.get("status") == "blocked":
+        return result
+    bracket = {"status": "unavailable", "beforeOutput": before.get("nativeOutput"),
+               "qualification": "sequential native/frame candidates; no occlusion or restart qualification"}
+    result["nativeFacing"] = bracket
+    if before.get("status") != "complete":
+        bracket["reason"] = "native-before-unavailable"
+        bracket["nativeReason"] = before.get("reason")
+        return result
+    after = physical_rift.read_native(selection, "facing", samples=1, include_target=True)
+    bracket["afterOutput"] = after.get("nativeOutput")
+    if after.get("status") != "complete":
+        bracket["reason"] = "native-after-unavailable"
+        bracket["nativeReason"] = after.get("reason")
+        return result
+    try:
+        reports = [json.loads(Path(read["nativeOutput"]).read_text(encoding="utf-8")) for read in (before, after)]
+        values = [physical_rift._native_values("facing", report) for report in reports]
+        first, last = [report["observation"] for report in reports]
+        frame = json.loads(Path(result["receipt"]).read_text(encoding="utf-8"))
+        target = result["target"]
+        identity = reports[0]["identity"]
+        if (reports[1]["identity"] != identity or target["processId"] != identity["processId"]
+                or target["processStartUtcTicks"] != str(identity["processStartUtcTicks"])
+                or target["executableSha256"].casefold() != identity["executableSha256"].casefold()
+                or target["hwnd"] != selection["target"]["hwnd"]
+                or frame["imageSha256"].casefold() != result["imageSha256"].casefold()):
+            raise ValueError("native-frame-identity-mismatch")
+        stamp = physical_rift._utc_tick_order_key
+        if not (stamp(first["completedAtUtc"]) <= stamp(frame["capturedStartedAtUtc"])
+                <= stamp(frame["capturedCompletedAtUtc"]) <= stamp(last["startedAtUtc"])):
+            raise ValueError("native-frame-acquisition-order-mismatch")
+        if time.perf_counter() - started > 5:
+            raise ValueError("native-frame-acquisition-exceeded-five-seconds")
+        for field in ("playerKeyDecimal", "playerEntityDecimal", "playerSystemDecimal", "rawBits"):
+            if first[field] != last[field]:
+                raise ValueError("player-changed-across-frame")
+        for source in ("primary", "secondary"):
+            if first["positionOrientationCandidate"][source]["rawBits"] != last["positionOrientationCandidate"][source]["rawBits"]:
+                raise ValueError("facing-changed-across-frame")
+        if (first.get("opticalCameraCandidate", {}).get("status") != "available-candidate"
+                or first["opticalCameraCandidate"] != last.get("opticalCameraCandidate")
+                or first.get("targetProjectionCameraStableCandidate") is not True
+                or last.get("targetProjectionCameraStableCandidate") is not True):
+            raise ValueError("camera-unavailable-or-changed-across-frame")
+        target_fields = ("status", "reason", "targetKey", "positionXYZCandidate", "screenPointCandidate", "guardStatus")
+        target_values = [{key: (value.get("selectedTargetProjectionCandidate") or {}).get(key)
+                          for key in target_fields} for value in values]
+        if target_values[0] != target_values[1]:
+            raise ValueError("target-changed-across-frame")
+        bracket.update(status="stable-bracket-candidate", values=values[-1])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+        bracket["reason"] = str(error) if isinstance(error, ValueError) else "invalid-native-frame-bracket"
+    return result
+
+
 def _preview(result, width):
     from scripts.quick_review_capture import preview
     return preview(Path(result["image"]), result["imageSha256"], width)
@@ -55,7 +122,7 @@ def _paired_preview(result, width, crop):
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
             preview_detail_crop=None, host_preview=False, physical_pid=None,
-            historical_vm=False, physical_capture_backend=None):
+            historical_vm=False, physical_capture_backend=None, native_facing=False):
     started = time.perf_counter()
     if target_id not in TARGETS:
         raise ValueError("unknown-target")
@@ -73,6 +140,9 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
             raise ValueError("physical-pid-incompatible-target")
         if type(physical_pid) is not int or not 1 <= physical_pid <= 4294967295:
             raise ValueError("invalid-physical-pid")
+    if type(native_facing) is not bool or (native_facing and
+            (workflow != "physical" or allow_foreground_change or host_preview or native_vitals)):
+        raise ValueError("native-facing-requires-focus-neutral-physical-capture")
     if type(preview_width) is not int or not 500 <= preview_width <= 1600:
         raise ValueError("invalid-preview-width")
     if preview_detail_crop is not None:
@@ -109,7 +179,9 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     if workflow == "vmware":
         result = _capture_vmware(target_id, output, native_vitals)
     else:
-        if physical_capture_backend == "wgc":
+        if native_facing:
+            result = _capture_with_native_facing(owner_host, output, physical_pid)
+        elif physical_capture_backend == "wgc":
             from scripts.observe_gpu import capture_gpu
             directory = output or ROOT / "artifacts" / ("observe-wgc-" + uuid.uuid4().hex)
             result = capture_gpu(owner_host, directory, physical_pid=physical_pid)
@@ -142,6 +214,8 @@ def main(argv=None):
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--output", type=Path, help="fresh absolute directory; omitted creates a unique artifact path")
     parser.add_argument("--native-vitals", action="store_true", help="historical Lab 2 only; retain existing candidate qualifications")
+    parser.add_argument("--native-facing", action="store_true",
+                        help="physical only: bracket a focus-neutral WGC frame with native facing and target reads")
     parser.add_argument("--allow-historical-vm", action="store_true",
                         help="explicit archival diagnostic opt-in for retired VMware lab targets")
     parser.add_argument("--host-preview", action="store_true",
@@ -167,7 +241,8 @@ def main(argv=None):
                           host_preview=args.host_preview,
                           physical_pid=args.physical_pid,
                           historical_vm=args.allow_historical_vm,
-                          physical_capture_backend=args.physical_capture_backend)
+                          physical_capture_backend=args.physical_capture_backend,
+                          native_facing=args.native_facing)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,

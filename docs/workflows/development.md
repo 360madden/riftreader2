@@ -61,6 +61,22 @@ withholds the screen point; a changed player owner or position rejects the combi
 sample. The fallback target-key branch remains explicitly labeled. Target freshness,
 hover independence, occlusion and restart recovery are separate qualifications.
 
+For one read-only screenshot plus a matching native position/facing/target snapshot
+on AMD-DESKTOP, use the existing observation entry point:
+
+```powershell
+python scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --native-facing
+```
+
+This selects the WGC probe and brackets the image with native reads. It never
+focuses RIFT or sends input. `nativeFacing.status` is `stable-bracket-candidate`
+only when process/window identity, player sources, orientation, camera and target
+match across the frame within five seconds and acquisition timestamps are ordered.
+Then `nativeFacing.values` contains the native values associated with that image.
+Otherwise the screenshot remains available and `nativeFacing` gives an unavailable
+reason plus any completed raw report paths. These sequential reads cannot exclude
+ABA changes or establish frame freshness, occlusion or restart recovery.
+
 For a **single-command, read-only** distance/progress preview against an existing
 named anchor (replace the example catalog and ID with actual saved values):
 

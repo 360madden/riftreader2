@@ -71,25 +71,30 @@ def optical_camera():
     }
 
 
+def report_with_target():
+    source = report()
+    for row in source['observations']:
+        row['opticalCameraCandidate'] = optical_camera()
+        row['opticalCameraAfterTargetCandidate'] = optical_camera()
+        row['targetProjectionCameraStableCandidate'] = True
+        started = datetime.fromisoformat(row['startedAtUtc'].replace('Z', '+00:00'))
+        begin = (started + timedelta(milliseconds=1)).isoformat()
+        end = (started + timedelta(milliseconds=5)).isoformat()
+        target = {'status': 'candidate', 'unitKey': '99', 'unitIdCandidate': 'u0000000000000063',
+                  'position': {'x': 7427, 'y': 871, 'z': 2946},
+                  'startedAtUtc': begin, 'completedAtUtc': end}
+        row['targetPositionPairCandidate'] = {
+            'identity': row['identity'], 'startedAtUtc': begin, 'completedAtUtc': end,
+            'self': {'unitKey': row['playerKeyDecimal'], 'position': row['positionCandidate']},
+            'target': target, 'beforeGuardStatus': 'fallback-key-candidate',
+            'afterGuardStatus': 'fallback-key-candidate', 'targetStatus': 'candidate',
+            'acquisitionSpanMilliseconds': 4}
+    return source
+
+
 class PhysicalFacingTests(unittest.TestCase):
     def test_selected_target_projection_requires_stable_camera_and_matching_self(self):
-        source = report()
-        for row in source['observations']:
-            row['opticalCameraCandidate'] = optical_camera()
-            row['opticalCameraAfterTargetCandidate'] = optical_camera()
-            row['targetProjectionCameraStableCandidate'] = True
-            started = datetime.fromisoformat(row['startedAtUtc'].replace('Z', '+00:00'))
-            begin = (started + timedelta(milliseconds=1)).isoformat()
-            end = (started + timedelta(milliseconds=5)).isoformat()
-            target = {'status': 'candidate', 'unitKey': '99', 'unitIdCandidate': 'u0000000000000063',
-                      'position': {'x': 7427, 'y': 871, 'z': 2946},
-                      'startedAtUtc': begin, 'completedAtUtc': end}
-            row['targetPositionPairCandidate'] = {
-                'identity': row['identity'], 'startedAtUtc': begin, 'completedAtUtc': end,
-                'self': {'unitKey': row['playerKeyDecimal'], 'position': row['positionCandidate']},
-                'target': target, 'beforeGuardStatus': 'fallback-key-candidate',
-                'afterGuardStatus': 'fallback-key-candidate', 'targetStatus': 'candidate',
-                'acquisitionSpanMilliseconds': 4}
+        source = report_with_target()
         value = physical._native_values('facing', source)['selectedTargetProjectionCandidate']
         self.assertEqual('99', value['targetKey'])
         self.assertAlmostEqual(.5, value['screenPointCandidate']['normalizedX'])

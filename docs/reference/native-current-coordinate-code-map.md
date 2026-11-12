@@ -593,3 +593,26 @@ the original dummy key and stable camera brackets. Its normalized target X
 updated to 0.392033850 for the new aspect ratio, near frame pixel (753, 476),
 matching the recovered image's ring. The report is
 `artifacts/physical-native-facing-bc5908bfc17849a9a50bd606490cd068.json`.
+
+### Focus-neutral combined observation at 23:24 EST
+
+The common observation command now accepts `--native-facing` on the physical
+route. It binds a fresh local process, takes a native facing/target read, captures
+one WGC frame, then takes another native read. It retains the screenshot even
+when native association is unavailable. Publishing associated values requires
+the same process/start/SHA/window, ordered acquisition timestamps, no more than
+five seconds overall, and matching player owner/source bits, both orientation
+matrices, optical camera and gated target candidate across the frame. It never
+activates or sends input to the game window.
+
+The live AMD-DESKTOP run completed in 2.923 seconds on the existing game epoch.
+After Joey's latest movement, the stable facing source was -0.424314° and XYZ
+(7424.455078125, 863.5865478515625, 2948.04931640625). The selected dummy still
+resolved to `u8000000215000A28`; its normalized point (0.331034932, 0.488188525)
+matches the yellow ring in the new view. Screenshot
+`artifacts/observe-wgc-a791e958e1244968bff9681a0eaeba9e/image.png` was visually
+reviewed. The native bracket reports are
+`artifacts/physical-native-facing-182e59e190b94cb28afe5d6537ba50df.json` and
+`artifacts/physical-native-facing-ea88cf0668f743bd94f79cb12f9f2d26.json`.
+This remains a sequential candidate association, with ABA, renderer freshness,
+occlusion and full restart qualification open.
