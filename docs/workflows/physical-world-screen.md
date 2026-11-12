@@ -90,6 +90,14 @@ identity defers recovery; malformed active checkpoint bytes stay intact. This
 does not start playback. The actual alternate-`--route` -> close -> default launch
 sequence restored the byte-identical main checkpoint on PID40452 without a reload
 click: `artifacts/cached-archive-startup-live-40452/validation.json`.
+Actual close during playback also passed on PID40452 using a separate renamed
+copy of the reviewed courtyard route: close stopped at 3/7 with 11 released pulses
+and zero post-stop drift; Save preserved the unsaved label and closed the helper.
+Default reopening restored the exact cursor. Explicit Resume visited only the
+four unfinished points, reaching 0.09695962-unit endpoint error with 21 released
+pulses / 2,618 ms requested hold, max 150 ms. Separate final poses settled identically;
+the basis and restored original checkpoint were unchanged, with no held inputs.
+Evidence: `artifacts/close-playback-live-40452/validation.json`.
 
 The 3D pane also shows the retained native optical eye and screen-edge view rays.
 These invert the same matrix X/Y/W rows used by projection, using NumPy from the

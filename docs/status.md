@@ -1,5 +1,21 @@
 # Current status
 
+**18:20 EST NOVEMBER 12 — CLOSE DURING PLAYBACK, SAVE AND EXPLICIT RESUME PASSED:**
+On AMD-DESKTOP/PID40452, a separate renamed copy of the reviewed seven-point
+courtyard route was played with an unsaved endpoint label. Normal helper close
+stopped at genuine 3/7: 11 pulses / 1,503 ms requested hold, all released, with
+zero independently measured XYZ/yaw drift. The save prompt appeared after cleanup;
+Yes preserved the edit and closed the app. Default reopening restored the exact
+3/7 checkpoint without input. Explicit Resume visited only Recorded 4/5/6 and the
+renamed finish, completing at **0.09695962 units** with 21 released pulses /
+2,618 ms requested hold, maximum 150 ms. Separate final native samples had zero
+XYZ/yaw drift; inspection found no held inputs, and the movement basis is unchanged.
+The original route and its byte-identical genuine checkpoint are restored; recent
+history legitimately includes the saved trial. App PID44864 is idle, markers off.
+Evidence: `artifacts/close-playback-live-40452/validation.json`; receipts
+`artifacts/waypoint-run-147b60d3f3a042bc84d329f475c3f4ab.json` (close STOP),
+`artifacts/waypoint-run-b3eb05b640bf41dcb84c16727ef0eb16.json` (Resume).
+
 **18:12 EST NOVEMBER 12 — DEFAULT STARTUP NOW RECOVERS CACHED ROUTE'S ARCHIVE:**
 The startup gap exposed by close acceptance is fixed. When no active checkpoint
 exists, default cached-route restoration validates the route/receipts and selects
