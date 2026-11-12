@@ -235,6 +235,7 @@ def assess_saved(summary_path, output_dir, session_id=None):
             "saved-runs-invalid")
     copied = []
     run_diagnostics = []
+    expected_cursor = checked_cursor(summary.get("initialCursor"))
     for number, row in enumerate(rows, 1):
         require(isinstance(row, dict) and row.get("run") == number,
                 "saved-run-invalid")
@@ -243,6 +244,8 @@ def assess_saved(summary_path, output_dir, session_id=None):
         require(len(request_raw) <= 16_384, "saved-request-too-large")
         request = json.loads(request_raw.decode("utf-8-sig"), object_pairs_hook=unique)
         request_sha = hashlib.sha256(request_raw).hexdigest().upper()
+        require(expected_cursor is not None and request.get("startAddress") == expected_cursor,
+                "saved-cursor-chain-mismatch")
         require(request.get("target") == target and request.get("marker") == MARKER
                 and request_sha == row.get("requestSha256"),
                 "saved-request-mismatch")
@@ -264,6 +267,10 @@ def assess_saved(summary_path, output_dir, session_id=None):
         })
         if verified["sourceVerifiedSnapshots"] > 0:
             copied.append(number)
+        if verified["publishedSnapshots"] == 0:
+            following = verified["nextAddress"]
+            expected_cursor = (checked_cursor(following, expected_cursor)
+                               if following is not None else None)
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=False)

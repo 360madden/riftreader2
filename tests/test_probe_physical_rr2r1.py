@@ -489,6 +489,39 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(len(no_nonce["runDiagnostics"]), 1)
             self.assertEqual(no_nonce["runDiagnostics"][0]["sourceVerifiedSnapshots"], 0)
 
+    def test_replay_rejects_changed_initial_cursor_despite_valid_scan_sources(self):
+        """A source-audited replay cannot silently re-label its scan coverage."""
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            reader = root / "RiftReader2.Live.exe"
+            reader.write_bytes(b"synthetic-reader")
+
+            def invoke(argv, **_kwargs):
+                request_path, directory = Path(argv[3]), Path(argv[5])
+                request = json.loads(request_path.read_text())
+                directory.mkdir()
+                index = self.index(request, request_path)
+                index["scan"]["nextAddress"] = hex(int(request["startAddress"], 16) + 0x10000)
+                (directory / "index.json").write_text(json.dumps(index))
+                return subprocess.CompletedProcess(argv, 3, "", "")
+
+            with patch.object(probe.physical_rift, "NATIVE_EXE", reader), \
+                 patch.object(probe, "pinned_selection", return_value=SELECTION), \
+                 patch.object(probe.subprocess, "run", side_effect=invoke):
+                summary_path, summary = probe.collect(123, root / "source", max_scans=2,
+                                                     gap_seconds=0)
+            self.assertEqual(summary["initialCursor"], "0x10000")
+            summary["initialCursor"] = "0x30000"
+            summary_path.write_text(json.dumps(summary), encoding="utf-8")
+            with patch.object(probe.socket, "gethostname", return_value=probe.HOST), \
+                 patch.object(probe, "pinned_selection") as selection, \
+                 patch.object(probe.subprocess, "run") as scanner:
+                with self.assertRaisesRegex(ValueError, "saved-cursor-chain-mismatch"):
+                    probe.assess_saved(summary_path, root / "replay")
+                selection.assert_not_called()
+                scanner.assert_not_called()
+            self.assertFalse((root / "replay").exists())
+
     def test_replay_bad_nonce_or_wrong_host_fails_before_file_reads(self):
         with patch.object(probe.socket, "gethostname", return_value=probe.HOST):
             with self.assertRaises(ValueError):
