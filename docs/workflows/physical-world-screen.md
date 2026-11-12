@@ -5,6 +5,13 @@ arbitrary world XYZ into normalized client coordinates. Client/frame geometry th
 maps those coordinates into a matching RIFT screenshot. This is separate from the
 flat, player-facing map in the waypoint window.
 
+**Preferred live presenter: Qt/PySide6-Essentials.** The waypoint window chooses
+the installed `.local/overlay-venv` and its Qt presenter automatically. Local setup
+and the GitHub tool comparison are in
+[third-party workflow tools](../reference/third-party-workflow-tools-2026-11-12.md).
+The existing native presenter remains an explicit fallback. Both reuse the same
+recorded XYZ, native camera projector, identity/freshness checks and stop lifecycle.
+
 Use the exact local host/process and a stationary camera. Capture through the
 existing guarded observation path, saving its returned JSON in UTF-8:
 
@@ -134,7 +141,7 @@ The offline renderer above annotates a retained frame. A separate live desktop
 overlay is now available:
 
 ```powershell
-python scripts/live_physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid PID --route docs/validation/gui-taught-route-2026-11-12.json --reader stream --duration 60 --max-age 0.35 --output artifacts/new-overlay-summary.json
+.\.local\overlay-venv\Scripts\python.exe scripts/live_physical_waypoints.py --presenter qt --expected-host AMD-DESKTOP --physical-pid PID --route docs/validation/gui-taught-route-2026-11-12.json --reader stream --duration 60 --max-age 0.35 --output artifacts/new-overlay-summary.json
 ```
 
 Use a fresh explicit PID and a new summary path. Focus RIFT separately to display
@@ -169,13 +176,21 @@ An owning application can also pass all three `--expect-start-ticks`,
 unique file. The main thread hides markers immediately, cancels and joins its
 reader, then destroys its window. No forced termination or game key is needed.
 
-The owned window is created with native Win32 no-activation, transparent,
-layered and tool-window styles from its first creation. The Tk prototype was
-discarded after a real startup check showed its first wrapper taking foreground
-before styles could be applied. The shipped native window uses no activation
-veto, focus repair or hook. Pillow renders its cached image; a 50 ms watchdog
-checks the target and frame age. Closing hides immediately, cancels acquisition,
-joins its owned reader and destroys its own window/resources.
+The preferred Qt window declares input transparency, no focus, frameless/topmost
+tool behavior and a translucent background before native creation. QWidget,
+QPainter and QTimer own the window/paint/event lifecycle; RR2's small own-window
+bridge places it in signed physical pixels. Pillow retains the shared marker
+rendering. A 50 ms watchdog checks the target and frame age. Closing hides
+immediately, cancels acquisition, joins its owned reader and destroys its owned
+widget/resources. No activation veto, focus repair or hook is used. The earlier
+Tk prototype was discarded after a real startup check showed its first wrapper
+taking foreground; the validated custom native shell is retained as fallback.
+
+The real Qt first-show check preserved foreground and exact physical geometry;
+its actual GUI Show/Hide run displayed 685 frames then stopped cleanly. A camera
+drag at a marker anchor reached RIFT, changed optical bearing by 8.59424 degrees,
+and left XYZ/body bearing unchanged. Detailed receipts and dependency versions
+are in the third-party tools note linked above.
 
 On current AMD-DESKTOP/PID69312, a 30-second stream displayed 245 frames with no
 reported failures at a 0.35-second age limit. A separate six-second instrumented

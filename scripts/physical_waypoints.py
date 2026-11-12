@@ -87,12 +87,14 @@ class OwnedWaypointMarkers:
                 or identity["gameBuildSha256"].casefold() != target["executableSha256"].casefold()
                 or type(target["hwnd"]) is not int or target["hwnd"] <= 0):
             raise WaypointError("Current RIFT identity is unavailable")
-        executable = Path(sys.executable).with_name("pythonw.exe")
+        qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
+        presenter = "qt" if qt_executable.is_file() else "native"
+        executable = qt_executable if presenter == "qt" else Path(sys.executable).with_name("pythonw.exe")
         command = [str(executable), str(self.root / "scripts" / "live_physical_waypoints.py"),
                    "--expected-host", identity["machine"], "--physical-pid", str(adapter.pid),
                    "--expect-start-ticks", str(target["processStartUtcTicks"]),
                    "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]),
-                   "--route", str(route_path), "--duration", "600", "--max-age", ".35",
+                   "--route", str(route_path), "--duration", "600", "--max-age", ".35", "--presenter", presenter,
                    "--output", str(self.output), "--stop-file", str(self.stop_path)]
         self.child = self.popen(command, cwd=self.root,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))

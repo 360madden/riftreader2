@@ -1,5 +1,19 @@
 # Current status
 
+**13:15 EST NOVEMBER 12 — MATURE THIRD-PARTY TOOLS ADOPTED:** On **AMD-DESKTOP**,
+GitHub/official-source review selected PySide6-Essentials 6.12.0 for the preferred
+overlay and DXcam 0.3.0 for a bounded persistent-capture diagnostic. Both are
+installed in ignored `.local/overlay-venv`; requirements are pinned. The real Qt
+GUI Show/Hide run displayed 685 frames and stopped cleanly; a camera drag through
+the marker area changed the view 8.59424 degrees without moving/turning Atank.
+DXcam captured RIFT plus Qt markers on the exact DISPLAY5 crop: 30 frames,
+0.509 s cold initialization, 17.27 ms median warm wait, 1.93 s acquisition/checks.
+Its report remains explicitly diagnostic: no camera bracket or verified timestamp
+age yet. Root reviewed the actual images and 63 focused checks passed. See
+[tool choices and receipts](reference/third-party-workflow-tools-2026-11-12.md).
+Existing guarded WGC remains authoritative. Goal continues through **19:44 EST**;
+full-RIFT-restart qualification for Qt and simultaneous playback are still pending.
+
 **12:53 EST NOVEMBER 12 — RESIZE QUALIFIED; WINDOW RECOVERED:** On **AMD-DESKTOP**,
 the live overlay followed 1600x900 to 1920x1009 in one uninterrupted run: 60 frames,
 one expected geometry-change withholding, foreground preserved. The compact,

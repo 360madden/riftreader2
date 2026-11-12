@@ -16,6 +16,7 @@ TARGET = dict(hostName="AMD-DESKTOP", processId=123, processStartUtcTicks="63930
 class FakeWindow:
     def __init__(self, api, title):
         self.calls, self.callbacks = [], {}
+        self.api = api
         self.hwnd, self.images = api.own_window(42), []
         self.title = title
     def __getattr__(self, name):
@@ -25,6 +26,8 @@ class FakeWindow:
         return len(self.callbacks)
     def after_cancel(self, identifier): self.callbacks.pop(identifier, None)
     def paint(self, image): self.images.append(image)
+    def show(self, rect): self.api.show(self.hwnd, rect)
+    def hide(self): self.api.hide(self.hwnd)
 
 
 def projection(x=.5, y=.5):

@@ -303,12 +303,14 @@ def _hwnd_argument(value):
 
 
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
-        expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None):
+        expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
+        presenter="native"):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 < duration <= 600, "duration-must-be-positive-at-most-600")
     require(type(max_age) in (int, float) and math.isfinite(max_age) and .1 <= max_age <= 2, "max-age-must-be-0.1-through-2")
     require(reader in ("single", "stream"), "invalid-reader-mode")
+    require(presenter in ("native", "qt"), "invalid-presenter")
     expected = _expected_target(expected_start_ticks, expected_sha256, expected_hwnd)
     if stop_file is not None:
         stop_file = Path(stop_file)
@@ -328,7 +330,15 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
     provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age)
-    overlay = PhysicalWaypointOverlay(selection["target"], max_age=max_age)
+    window_options = {}
+    if presenter == "qt":
+        try:
+            from scripts.qt_waypoint_overlay import QtOwnedWindow
+        except ImportError as error:
+            raise ValueError("Qt overlay unavailable; use the isolated overlay environment "
+                             "with requirements-overlay.txt: " + str(error)) from error
+        window_options["window_factory"] = QtOwnedWindow
+    overlay = PhysicalWaypointOverlay(selection["target"], max_age=max_age, **window_options)
     stop, channel = threading.Event(), queue.Queue(maxsize=1)
     counts = {"attempts": 0, "acquired": 0, "presented": 0, "failures": 0, "latestFailure": None}
     worker = threading.Thread(target=stream_feed if reader == "stream" else feed,
@@ -397,6 +407,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "durationSeconds": time.monotonic() - started, "maxAgeSeconds": max_age,
         "counts": counts, "latestNativeReport": provider.latest_native, "inputSent": False,
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,
+        "presenter": presenter,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
         "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
@@ -416,6 +427,7 @@ def main(argv=None):
     parser.add_argument("--max-age", type=float, default=.8)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--reader", choices=("single", "stream"), default="stream")
+    parser.add_argument("--presenter", choices=("native", "qt"), default="native")
     parser.add_argument("--expect-start-ticks")
     parser.add_argument("--expect-sha256")
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
@@ -425,7 +437,7 @@ def main(argv=None):
         result = run(args.expected_host, args.physical_pid, args.route, duration=args.duration,
                      max_age=args.max_age, output=args.output, reader=args.reader,
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
-                     expected_hwnd=args.expect_hwnd, stop_file=args.stop_file)
+                     expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

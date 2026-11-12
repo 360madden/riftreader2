@@ -288,6 +288,14 @@ class _OwnedWindow:
         if self.hwnd and not self.destroyed:
             self.u.InvalidateRect(self.hwnd, None, True)
 
+    def show(self, rect):
+        self._main()
+        self.api.show(self.hwnd, rect)
+
+    def hide(self):
+        self._main()
+        self.api.hide(self.hwnd)
+
     def after(self, milliseconds, callback, *args):
         self._main()
         if self.destroyed:
@@ -392,7 +400,7 @@ def _label_layout(labels, width, height, font):
 
 
 class PhysicalWaypointOverlay:
-    def __init__(self, target, *, max_age=.8):
+    def __init__(self, target, *, max_age=.8, window_factory=None):
         self.target = _target(target)
         if type(max_age) not in (int, float) or not math.isfinite(max_age) or max_age <= 0:
             raise ValueError("Invalid overlay freshness limit")
@@ -400,7 +408,8 @@ class PhysicalWaypointOverlay:
         self.frame, self.closed, self.reason = None, False, "waiting-for-frame"
         self.api, self.window, self.hwnd, self.timer = _native(), None, None, None
         try:
-            self.window = _OwnedWindow(self.api, f"RR2 Waypoint Overlay | PID {self.target['processId']}")
+            factory = window_factory or _OwnedWindow
+            self.window = factory(self.api, f"RR2 Waypoint Overlay | PID {self.target['processId']}")
             self.hwnd = self.window.hwnd
             self.window.protocol("WM_DELETE_WINDOW", self.close)
             self.timer = self.window.after(50, self._tick)
@@ -470,7 +479,7 @@ class PhysicalWaypointOverlay:
                 draw.line((x-6, y, x+6, y), fill="#51e5ff", width=2)
                 draw.line((x, y-6, x, y+6), fill="#51e5ff", width=2)
             self.window.paint(image)
-            self.api.show(self.hwnd, rect)
+            self.window.show(rect)
             self.frame, self.reason = deepcopy(frame), None
             return True
         except (ValueError, KeyError, TypeError, OSError) as exc:
@@ -481,7 +490,7 @@ class PhysicalWaypointOverlay:
         self._main()
         if not self.closed:
             try:
-                self.api.hide(self.hwnd)
+                self.window.hide()
             finally:
                 self.window.paint(None)
                 self.frame, self.reason = None, str(reason)
