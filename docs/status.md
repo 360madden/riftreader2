@@ -1,5 +1,15 @@
 # Current status
 
+**08:45 EST NOVEMBER 12 — COLD START AND F8/RESUME VERIFIED:** On **AMD-DESKTOP**,
+the waypoint app opened before RIFT existed, stayed waiting through character
+selection, then reconnected the same app window to Atank in new PID79136 without
+starting movement or changing the basis. Physical F8 stopped a forward replay
+during facing at cursor 1/4; all four turn pulses released and subsequent native
+poses were stationary. Explicit Resume completed the remaining three points
+within **0.05712 units**, with 22 released pulses. Exact evidence and STOP latency
+limits are in the [recorded-route handoff](handoff-2026-11-12-recorded-routes.md).
+The five-hour goal remains active following the user's continuation instruction.
+
 **08:25 EST NOVEMBER 12 — PASSIVE RECORD/REPLAY WORKING:** On **AMD-DESKTOP**,
 the updated native reader let GUI Record → Stop Recording save 732 valid samples
 as four actual points with both corners, over 10.2944 units. Two samples reacquired

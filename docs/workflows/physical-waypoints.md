@@ -15,6 +15,11 @@ does not resume an interrupted trip or start movement.
 The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
 For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
 
+Cold-start behavior passed a live AMD-DESKTOP case on November 12: the same app
+opened with RIFT absent, waited through character selection, then bound the new
+Atank process and restored readiness without movement. Its completed route stayed
+loaded and the movement basis was unchanged.
+
 For explicit CLI calls, obtain the current PID with the read-only readiness
 check. An old PID remains deliberately pinned and is refused after it exits.
 Use the default `Waypoints.cmd` launcher for automatic idle reconnection.
@@ -180,6 +185,11 @@ trip so an ordinary STOP click also preserves foreground; editing is disabled
 until cleanup. The current pulse finishes its bounded release; another pulse
 is never sent. Closing waits for cleanup, and STOP checks for actual stationary
 native XYZ and body bearing. Only the first actual pulse can request RIFT foreground.
+An already dispatched child may still be performing identity/focus checks when
+STOP arrives; it finishes that one bounded pulse and release. GUI run receipts
+retain the existing two post-STOP observations in `stopVerification`, including
+source paths, candidate poses, XYZ/yaw drift and pass/movement-detected/unavailable
+status. This is separate from native key-release evidence in the pulse receipts.
 
 Foreground loss aborts the run. The native helper sends unconditional global
 key-up, then may additionally post one release-only `WM_KEYUP` to the exact

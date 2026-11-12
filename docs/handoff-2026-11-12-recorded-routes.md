@@ -58,10 +58,36 @@ the last leg within **0.18620 units**, four released W pulses and 522 ms request
 hold. Receipt: `artifacts/waypoint-run-d7eaf590e6864ec6b72a470002cd04fa.json`.
 The matching-file progress fix therefore passed this live case.
 
+**08:42 EST cold-start acceptance:** RIFT PID19440 exited normally, then app
+PID78236/window3938168 opened with no game present and restored the completed
+4/4 route. Record/Play/Resume/Go stayed disabled while waiting, including at
+character selection. After normal Glyph launch and Atank entry, that same app
+bound RIFT PID79136/start `639300875003883614`/HWND5967620 and displayed a fresh
+pose without starting movement. Read-only `--check` reported `inputSent=false`
+and the unchanged basis SHA. WGC: `artifacts/observe-wgc-024d2b76681a417f889f782877c21b75/image.png`.
+Before any later playback, native XYZ was exactly the prior settled position;
+the body-bearing difference was approximately 0.00051 degrees. Source and binding:
+`artifacts/cold-start-79136-before-f8.json`.
+
+**08:44 EST physical F8 check:** Play Forward confirmed the first endpoint,
+then physical F8 stopped the next leg during facing at cursor 1/4. Four D pulses
+released; two STOP observations and a later independent native observation agreed
+on unchanged XYZ and bearing -44.461653 degrees. Stopped receipt:
+`artifacts/waypoint-run-f3a6c155226a40bbb62d0cf752a8af89.json`.
+Explicit GUI Resume completed the remaining three points with 22 released pulses,
+2,908 ms requested hold and final error **0.05712 units**. Receipt:
+`artifacts/waypoint-run-d82e504aa9ed4cdf84811967fdae377d.json`.
+F8 prevents the next pulse; an already dispatched native child, including its
+startup checks, finishes its one bounded pulse and release before STOP completes.
+The subsequent receipt-only change retains those existing two STOP observations
+under `stopVerification`, with source paths, poses, XYZ/yaw drift, thresholds and
+explicit pass/movement-detected/unavailable status. Seven focused fake-Tk receipt
+tests passed; this changes neither reads nor input timing. Older receipts above
+predate that structured field and must not be described as containing it.
+
 The interruption/cleanup and unverified-capture notes below describe the earlier
-checkpoint. At this continued checkpoint the owned app PID48904 is open/idle,
-RIFT PID19440 is present, and the last observed pose is
-`(7423.585938, 863.586548, 2937.702148)`, bearing 65.748527 degrees. Reacquire it.
+checkpoint. The continued app is PID78236 and RIFT is PID79136; these are historical
+identifiers to reacquire before further input, not durable selectors.
 
 ## Working result and use
 

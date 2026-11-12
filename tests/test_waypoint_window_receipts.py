@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
 from tests import test_waypoint_recording_window as fixture
@@ -74,8 +74,11 @@ class WindowReceiptTests(unittest.TestCase):
         before = len(self.receipts())
         self.button(label).invoke()
         self.wait_for(lambda: len(self.receipts()) > before)
-        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
-        return json.loads(max(self.receipts(), key=lambda p: p.stat().st_mtime_ns).read_text())
+        latest = max(self.receipts(), key=lambda p: p.stat().st_mtime_ns)
+        self.wait_for(lambda: any(str(latest) in self.window.getvar(w["textvariable"])
+                                 for w in self.widgets() if isinstance(w, fixture.ttk.Label)
+                                 and w["textvariable"]))
+        return json.loads(latest.read_text())
 
     def test_successful_go_preserves_full_result_events_binding_and_pulses(self):
         receipt = self.invoke_and_wait("Go Selected")
@@ -104,6 +107,35 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual("stopped", receipt["status"])
         self.assertEqual("operator stopped this trip", receipt["failure"]["originalReason"])
         self.assertEqual(str(self.adapter.input_receipt_path), receipt["failure"]["inputReceiptPath"])
+        verification = receipt["stopVerification"]
+        self.assertEqual("pass", verification["status"])
+        self.assertEqual(2, len(verification["samples"]))
+        self.assertEqual(["fake-native.json"] * 2, [s["source"] for s in verification["samples"]])
+        self.assertEqual((0., 0.), (verification["xyzDrift"], verification["yawDriftDegrees"]))
+        self.assertEqual((.05, .5), (verification["maxXyzDrift"], verification["maxYawDriftDegrees"]))
+
+    def test_stop_retains_changing_pose_evidence(self):
+        self.runner.side_effect = app.Stopped("operator stopped")
+        self.adapter.read = Mock(side_effect=[self.pose(0), self.pose(.1)])
+        receipt = self.invoke_and_wait("Go Selected")
+        self.assertEqual("halted", receipt["status"])
+        verification = receipt["stopVerification"]
+        self.assertEqual("movement-detected", verification["status"])
+        self.assertAlmostEqual(.1, verification["xyzDrift"])
+        self.assertEqual([0., .1], [s["position"]["x"] for s in verification["samples"]])
+        self.assertEqual(2, self.adapter.read.call_count)
+
+    def test_stop_retains_partial_evidence_when_second_read_unavailable(self):
+        self.runner.side_effect = app.Stopped("operator stopped")
+        self.adapter.read = Mock(side_effect=[self.pose(0), app.WaypointError("native lease unavailable")])
+        receipt = self.invoke_and_wait("Go Selected")
+        verification = receipt["stopVerification"]
+        self.assertEqual("unavailable", verification["status"])
+        self.assertEqual(1, len(verification["samples"]))
+        self.assertEqual("native lease unavailable", verification["reason"])
+        self.assertIsNone(verification["xyzDrift"])
+        self.assertIsNone(verification["yawDriftDegrees"])
+        self.assertEqual(2, self.adapter.read.call_count)
 
     def test_action_failure_retains_reason_and_completed_leg_evidence(self):
         def partial_failure(adapter, points, stop, emit, **kwargs):

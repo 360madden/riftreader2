@@ -817,6 +817,7 @@ def launch_window(args):
         nonlocal adapter, published_adapter
         retain = operation in ("go", "face", "play", "resume")
         history, outcome, failure = [], None, None
+        stop_verification = None
 
         def emit(event):
             if retain:
@@ -887,12 +888,24 @@ def launch_window(args):
             original_reason = str(exc)
             stopped_position = stopped_bearing = None
             if isinstance(exc, Stopped) and adapter is not None:
+                stop_verification = {"status": "unavailable", "samples": [],
+                                     "xyzDrift": None, "yawDriftDegrees": None,
+                                     "maxXyzDrift": .05, "maxYawDriftDegrees": .5,
+                                     "qualification": "Two native candidate poses after STOP; separate from per-pulse key-release evidence"}
                 try:
                     time.sleep(.35)
                     first = adapter.read()
+                    stop_verification["samples"].append({"source": first.source,
+                        "position": asdict(first.position), "bearing": first.bearing,
+                        "acquired": first.acquired})
                     time.sleep(.25)
                     second = adapter.read()
+                    stop_verification["samples"].append({"source": second.source,
+                        "position": asdict(second.position), "bearing": second.bearing,
+                        "acquired": second.acquired})
                     drift, yaw_drift = pose_drift(first, second)
+                    stop_verification.update(xyzDrift=drift, yawDriftDegrees=yaw_drift,
+                                             status="movement-detected" if drift > .05 or yaw_drift > .5 else "pass")
                     if drift > .05:
                         exc = WaypointError(f"Movement still detected after STOP ({drift:.3f} units); recovery required")
                     elif yaw_drift > .5:
@@ -901,6 +914,7 @@ def launch_window(args):
                         stopped_position = asdict(second.position)
                         stopped_bearing = second.bearing
                 except Exception as observation_error:
+                    stop_verification.update(status="unavailable", reason=str(observation_error))
                     exc = WaypointError("STOP requested; stationary check unavailable: " + str(observation_error))
             failure = {"status": "live-unavailable" if operation == "live" else
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
@@ -917,7 +931,8 @@ def launch_window(args):
                            "completedLegs": [event for event in history if event.get("status") == "arrived"],
                            "calibrationBinding": getattr(adapter, "binding", None),
                            "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None,
-                           "releaseVerification": ("see individual pulse receipts; game stop may be unverified"
+                           "stopVerification": stop_verification,
+                           "releaseVerification": ("see individual native pulse receipts for key release; measured stationary evidence is separate in stopVerification"
                                                    if failure else "see completed result and pulse receipts")}
                 receipt_path = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
                 try:
