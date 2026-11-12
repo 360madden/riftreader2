@@ -66,6 +66,23 @@ Evidence: `artifacts/unit-screen-bracket-97090a9f867c4248bb8844f04b83778b/`
 contains `bracket.json`, original `frame/image.png`, `units.png`, and
 `projected.json`. No selection, casting, movement or focus change was sent.
 
+The reusable offline renderer accepts a saved `{before, frame, after}` bracket,
+where the sides are the existing `read_native(..., "unit-positions")` results and
+the frame is the existing `capture_gpu` result:
+
+```powershell
+python scripts/plot_physical_units.py --bracket artifacts/unit-screen-bracket-97090a9f867c4248bb8844f04b83778b/bracket.json --output artifacts/new-unit-preview
+```
+
+It independently verifies native identities, four equal camera snapshots, image
+hash, acquisition order and unchanged unit position bits, then writes `units.png`
+and `units.json` with source hashes and explicit withheld-unit reasons. Defaults
+are 18 markers within 35 horizontal units; `--limit` and `--max-distance` can
+reduce or expand the bounded view. Root ran the real retained bracket, reviewed
+the 18-marker result under `artifacts/unit-screen-reusable-first-69312/`, and the
+12 focused saved-file tests passed. These remain unit candidates, without names,
+type classification, current-position freshness, occlusion or obstacle clearance.
+
 Six serialized full camera/target reads took 0.282–0.698 s (median 0.474 s),
 recorded in `artifacts/projection-read-latency-bbb7bc2180ed4d47b5a56d7a63e378e1.json`.
 This motivated the bounded immediate-emission native stream below.
