@@ -4,9 +4,9 @@ Recorded November 11, 2026, Eastern time.
 
 ## Checkout and host
 
-Actual machine verified AMD-DESKTOP. Repository C:\work\riftreader2, branch codex/modular-foundation, HEAD cacdf91e8dac3ba68c926eccc401815b6167d867. Follow AGENTS.md and reacquire process/build/window/player identity before live work. Physical hosts only. This session operated AMD-DESKTOP.
+Actual machine verified AMD-DESKTOP. Repository C:\work\riftreader2, branch codex/modular-foundation, Initial handoff HEAD cacdf91e8dac3ba68c926eccc401815b6167d867. Follow-up implementation through 35b5309. Follow AGENTS.md and reacquire process/build/window/player identity before live work. Physical hosts only. This session operated AMD-DESKTOP.
 
-Concurrent modified files at final check were scripts/fresh_native_actor_pose.py, scripts/observe_physical.py, tests/test_fresh_native_actor_pose.py, tests/test_observe_physical.py, and Application/Domain/Infrastructure packages.lock.json. Untracked energy/anchor scripts and test also remain. Preserve all peer work and index. This session made no implementation changes or commits.
+Concurrent modified files at final check were scripts/fresh_native_actor_pose.py, scripts/observe_physical.py, tests/test_fresh_native_actor_pose.py, tests/test_observe_physical.py, and Application/Domain/Infrastructure packages.lock.json. Untracked energy/anchor scripts and test also remain. Preserve all peer work and index. This list describes the initial handoff. Follow-up implementation is summarized below.
 
 ## Workbridge recovery and operational caveat
 
@@ -76,14 +76,34 @@ Procedure chose a 500 ms wait after each pulse, then five read-only pose samples
 
 Screenshots baseline.png, a.png and d.png were visually inspected. Dummies shift right after A and return near baseline after D with a small remaining offset.
 
-## Interpretation and next work
+## Third pair after Atank moved
 
-WGC now provides usable physical game pixels. Immediate actor-matrix readings undercount these settled changes by roughly 4–5 degrees. Wait and measure stability for future comparisons. Angles remain native actor-matrix candidates; body/camera separation and independently calibrated body yaw are outstanding. Same-process repeatability is supported only by these two pairs. No restart qualification or general navigation readiness established.
+On AMD-DESKTOP the fresh baseline XYZ was (7423.489, 863.5859, 2944.0254). Each recorded position bracket stayed at those coordinates. The earlier trials used (7425.1733, 863.58105, 2942.7314). Compare each trial with its own baseline.
 
-User authorized the specific short A/D trials and read-only follow-ups. Further live input needs task-appropriate authorization. No more input was sent after the repeated D pulse.
+| Trial | Settled A/D return relative to baseline | Median horizontal scenery displacement |
+| --- | ---: | ---: |
+| First | +0.234 degrees | -3 px, 14 of 18 patches |
+| Repeated | +2.080 degrees | -25 px, 17 of 18 patches |
+| Fresh baseline | +1.012 degrees | -9 px, 18 of 18 patches |
 
-Useful next steps when requested:
-1. Recheck Workbridge process ownership/startup health and scheduled task durability.
-2. Reuse the existing probe and native pose sampler with fresh pins.
-3. For repeatability experiments, retain settled readings and actual SendInput hold bounds, and account for hold-duration variability.
-4. Investigate why the offline visual comparator misses these obvious scene shifts if improving that tool is requested.
+The third pair used a 250 ms requested hold and a 500 ms delayed pose observation. The settled readings were -37.3880 degrees before A, -80.8510 degrees after A, and -36.3764 degrees after D. Five-sample bursts confirmed each reading. Input receipts and source frames are under `artifacts/rebased-ad-20261111-203431/`. All three trials used the same player and process epoch. Independent body yaw and camera yaw in degrees remain open.
+
+## Local capture and offline replay
+
+From the repository root on AMD-DESKTOP, use the local WGC observer with a freshly selected RIFT PID. Build instructions are in [the probe README](../tools/physical-wgc-probe/README.md). The observer captures one still without changing focus.
+
+```powershell
+python scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --physical-pid <CURRENT_PID> --physical-capture-backend wgc
+```
+
+To replay the third pair without accessing RIFT, run:
+
+```powershell
+$d = 'artifacts/rebased-ad-20261111-203431'
+python scripts/analyze_physical_turn_pair.py --before "$d/baseline.json" --after "$d/d.json"
+python scripts/physical_turn_visual_pair.py --before-png "$d/baseline-frame/image.png" --after-png "$d/d-frame/image.png" --before-receipt "$d/baseline-frame/image.png.json" --after-receipt "$d/d-frame/image.png.json" --landmark-region 688 296 1248 408
+```
+
+The region covers stationary scenery in these 1920 x 1032 frames. Select scenery appropriate to each new view. The local patch search measures small return offsets in pixels. For the first trial, the original screenshots were 77.49 seconds apart, beyond the standard 30-second comparison limit. The first row's pixel figure comes from a separate endpoint-only comparison after verifying the individual receipts and matching window identities.
+
+Across six pulses, settled actor-matrix rotation divided by measured hold midpoint ranged from 169.74 to 173.23 degrees per second. This empirical range is specific to the recorded trials. Windows key timing accounts for part of the residual, and the game-consumption time remains unknown.
