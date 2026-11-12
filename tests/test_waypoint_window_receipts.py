@@ -241,6 +241,24 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual("next leg drifted", receipt["failure"]["reason"])
         self.assertEqual([self.result], receipt["completedLegs"])
         self.assertEqual(str(self.adapter.input_receipt_path), receipt["inputReceiptPath"])
+        self.assertEqual("pass", receipt["stopVerification"]["status"])
+        self.assertIn("after halt", receipt["stopVerification"]["qualification"])
+
+    def test_action_failure_preserves_reason_when_halt_measurement_unavailable(self):
+        self.runner.side_effect = app.WaypointError("foreground lost")
+        self.adapter.read = Mock(side_effect=ValueError("native unavailable"))
+        receipt = self.invoke_and_wait("Go Selected")
+        self.assertEqual("halted", receipt["status"])
+        self.assertEqual("foreground lost", receipt["failure"]["reason"])
+        self.assertEqual("unavailable", receipt["stopVerification"]["status"])
+        self.assertEqual(1, self.adapter.read.call_count)
+
+    def test_refresh_error_does_not_measure_halt(self):
+        self.adapter.read = Mock(side_effect=ValueError("native unavailable"))
+        with patch.object(app, "verify_stopped_pose") as verify:
+            self.button("Refresh").invoke()
+            self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
+        verify.assert_not_called()
 
     def test_rejected_action_does_not_reference_previous_input_receipt(self):
         previous = self.invoke_and_wait("Go Selected")

@@ -109,6 +109,11 @@ validation still runs before any input. A live saved-file restart/Load/Resume ca
 preserved its 2/4 cursor and finished within 0.18620 units with four released W
 pulses. Existing route and input limits
 still apply, and routes have no obstacle avoidance.
+Failed movement actions also retain two post-halt candidate pose observations when
+available, through the existing `stopVerification` receipt field. A failure keeps
+its original reason and halted status even if those observations are stationary;
+an unavailable read remains explicit. These observations are separate from native
+per-pulse key-release evidence. Passive/idle read failures do not add this check.
 
 On AMD-DESKTOP, a controlled taught route retained four points from 30 observed
 samples across 9.998 units with 19 released pulses. Reverse playback completed

@@ -1,5 +1,16 @@
 # Current status
 
+**10:26 EST NOVEMBER 12 — SEVEN-POINT RESTART/RESUME AND HALT EVIDENCE:** On
+**AMD-DESKTOP**, RIFT PID19692 exited normally with the GUI-taught route at 3/7;
+the same window reconnected to PID69312 with unchanged checkpoint, position and
+basis. Explicit Resume visited only Recorded 4–7, ending 0.02991 units from the
+endpoint with all 24 pulses released. The preceding automated STOP click caused
+a foreground halt; it is recorded honestly as such. Ordinary movement halts now
+retain the existing stationary measurements too, without changing their failure
+reason. Twenty-four focused tests and a live zero-input distance refusal passed.
+App PID47320 is idle at 7/7 forward. Joey chose everyday route controls as the
+next useful work; the five-hour goal remains active through 11:56 EST.
+
 **10:16 EST NOVEMBER 12 — SAVED ROUTE RESTORES BEFORE FIRST PLAY:** On
 **AMD-DESKTOP**, default app restart now restores the last successfully loaded,
 saved or recorded route even before a playback checkpoint exists. The full

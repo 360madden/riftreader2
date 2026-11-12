@@ -274,6 +274,39 @@ Before-state evidence is `artifacts/route-restore-before-19692.json`. Current ap
 PID47320 is idle with live pose enabled; RIFT remains PID19692 on the established
 left display. Basis and last settled pose above are unchanged. Goal remains active.
 
+**10:23 EST seven-point restart/resume accepted:** the GUI-taught route was played
+forward and halted at 3/7 when the automated STOP click activated the waypoint
+window before its callback. This was a **foreground halt**, not a verified STOP;
+receipt `artifacts/waypoint-run-48a3e2885f0d462ab139429ab6d3e9f8.json` preserves that
+reason. All sent pulses released, the next attempt was blocked before input, and
+separate native observations showed zero XYZ/yaw drift. The genuine checkpoint
+remained at 3/7. Normal exit ended PID19692; Glyph launch/Atank entry created
+PID69312/start `639300936028818696`/HWND33818696. The same app PID47320 reconnected
+without movement, with byte-identical checkpoint, zero XYZ displacement and the
+unchanged basis. Local before/after evidence is `artifacts/seven-restart-before-19692.json`
+and `artifacts/seven-restart-after-69312.json`; restored WGC view is
+`artifacts/observe-wgc-d9ff7558baf748bda6be990396075199/image.png`.
+
+Explicit GUI Resume visited **only Recorded 4–7**, finishing **0.02991 units** from
+the endpoint. All 24 pulses released, 3,001 ms requested hold, and every pulse has
+reused-seed feedback. Receipt:
+`artifacts/waypoint-run-d8685dfa2a804a6cbd3a61c33ef8eaef.json`.
+The current app PID47320 is idle at 7/7 forward; RIFT PID69312 is on the established
+left display. This extends restart evidence to the seven-point, three-corner route
+produced by Walk + Record. It does not extend terrain or changed-build scope.
+
+**10:26 EST post-halt evidence:** GUI movement failures and CLI failures after
+adapter initialization now retain the existing two-pose verification for ordinary
+halts as well as STOP. Non-STOP reasons/status remain unchanged, and the receipt
+labels post-halt candidate measurements separately from key-release evidence.
+Passive/live read errors do not trigger this extra measurement. All 24 focused
+GUI receipt/CLI tests passed. A live CLI 21-unit request was refused before input,
+kept its original distance-limit reason, and retained two identical poses with
+zero XYZ/yaw drift; no input receipt file was created and the completed 7/7 GUI
+checkpoint was unchanged. Receipt:
+`artifacts/waypoint-run-090351fe1eff47238a88a8e1f13a6db4.json`.
+Joey selected **Improve everyday route controls** for the remaining goal time.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

@@ -71,11 +71,22 @@ class WaypointCliTests(unittest.TestCase):
         self.assertIn("native unavailable", receipt["reason"])
         self.assertEqual(1, adapter.read.call_count)
 
-    def test_cli_ordinary_error_keeps_original_reason_without_stop_reads(self):
-        receipt, adapter = self.failed_playback(ValueError("wrong route"), [])
+    def test_cli_ordinary_error_keeps_reason_and_measures_post_halt(self):
+        first = waypoint.Snapshot(waypoint.Position(1, 2, 3), 4, 10, "first.json")
+        second = waypoint.Snapshot(waypoint.Position(1, 2, 3), 4, 11, "second.json")
+        receipt, adapter = self.failed_playback(ValueError("wrong route"), [first, second])
         self.assertEqual("wrong route", receipt["reason"])
-        self.assertIsNone(receipt["stopVerification"])
-        adapter.read.assert_not_called()
+        self.assertEqual("halted", receipt["status"])
+        self.assertEqual("pass", receipt["stopVerification"]["status"])
+        self.assertIn("after halt", receipt["stopVerification"]["qualification"])
+        self.assertEqual(2, adapter.read.call_count)
+
+    def test_cli_ordinary_error_preserves_reason_when_measurement_unavailable(self):
+        receipt, adapter = self.failed_playback(ValueError("foreground lost"), [ValueError("native unavailable")])
+        self.assertEqual("foreground lost", receipt["reason"])
+        self.assertEqual("halted", receipt["status"])
+        self.assertEqual("unavailable", receipt["stopVerification"]["status"])
+        self.assertEqual(1, adapter.read.call_count)
 
     def test_cli_receipt_write_failure_does_not_mask_action_failure(self):
         adapter = SimpleNamespace(input_receipt_path=self.test_root / "pulses.jsonl")

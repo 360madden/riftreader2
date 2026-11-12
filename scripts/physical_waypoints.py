@@ -220,11 +220,11 @@ def pose_drift(first, second):
             abs(heading_error(second.bearing, first.bearing)))
 
 
-def verify_stopped_pose(adapter):
-    """Measure two post-STOP poses; native key-release evidence stays separate."""
+def verify_stopped_pose(adapter, *, after="STOP"):
+    """Measure two post-action poses; native key-release evidence stays separate."""
     evidence = {"status": "unavailable", "samples": [], "xyzDrift": None,
                 "yawDriftDegrees": None, "maxXyzDrift": .05, "maxYawDriftDegrees": .5,
-                "qualification": "Two native candidate poses after STOP; separate from per-pulse key-release evidence"}
+                "qualification": f"Two native candidate poses after {after}; separate from per-pulse key-release evidence"}
     try:
         time.sleep(.35)
         first = adapter.read()
@@ -238,9 +238,9 @@ def verify_stopped_pose(adapter):
         evidence.update(xyzDrift=drift, yawDriftDegrees=yaw,
                         status="movement-detected" if drift > .05 or yaw > .5 else "pass")
         if drift > .05:
-            evidence["reason"] = f"Movement still detected after STOP ({drift:.3f} units); recovery required"
+            evidence["reason"] = f"Movement still detected after {after} ({drift:.3f} units); recovery required"
         elif yaw > .5:
-            evidence["reason"] = f"Facing still changing after STOP ({yaw:.2f}°); recovery required"
+            evidence["reason"] = f"Facing still changing after {after} ({yaw:.2f}°); recovery required"
     except Exception as exc:
         evidence.update(status="unavailable", reason=str(exc))
     return evidence
@@ -943,14 +943,15 @@ def launch_window(args):
         except Exception as exc:
             original_reason = str(exc)
             stopped_position = stopped_bearing = None
-            if isinstance(exc, Stopped) and adapter is not None:
-                stop_verification = verify_stopped_pose(adapter)
-                if stop_verification["status"] == "pass":
+            if retain and adapter is not None:
+                is_stop = isinstance(exc, Stopped)
+                stop_verification = verify_stopped_pose(adapter, after="STOP" if is_stop else "halt")
+                if is_stop and stop_verification["status"] == "pass":
                     stopped_position = stop_verification["samples"][-1]["position"]
                     stopped_bearing = stop_verification["samples"][-1]["bearing"]
-                elif stop_verification["status"] == "unavailable":
+                elif is_stop and stop_verification["status"] == "unavailable":
                     exc = WaypointError("STOP requested; stationary check unavailable: " + stop_verification["reason"])
-                else:
+                elif is_stop and stop_verification["status"] != "pass":
                     exc = WaypointError(stop_verification["reason"])
             failure = {"status": "live-unavailable" if operation == "live" else
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
@@ -1443,9 +1444,10 @@ def main(argv=None):
     except (Exception, KeyboardInterrupt) as exc:
         stop.set()
         original_reason = str(exc)
-        verification = verify_stopped_pose(adapter) if isinstance(exc, Stopped) and adapter is not None else None
+        is_stop = isinstance(exc, Stopped)
+        verification = verify_stopped_pose(adapter, after="STOP" if is_stop else "halt") if adapter is not None else None
         reason = original_reason
-        if verification and verification["status"] != "pass":
+        if is_stop and verification and verification["status"] != "pass":
             reason = ("STOP requested; stationary check unavailable: " + verification["reason"]
                       if verification["status"] == "unavailable" else verification["reason"])
         failure = {"status": "stopped" if isinstance(exc, Stopped) and verification and verification["status"] == "pass" else "halted",
