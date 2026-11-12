@@ -698,6 +698,7 @@ def launch_window(args):
     checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
     route_metadata = {}
     playback_view = None
+    playback_active = False
     loading_route = False
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
@@ -829,6 +830,9 @@ def launch_window(args):
                 if operation not in ("refresh", "save", "map", "live", "target"):
                     raise WaypointError("RIFT is not connected; wait for a fresh pose")
                 adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
+            if retain:
+                adapter.input_receipt_path = ROOT / "artifacts" / ("waypoint-input-" + uuid.uuid4().hex + ".jsonl")
+                adapter.last_input_receipt = None
             if operation in ("refresh", "save", "map", "live", "target"):
                 adapter, pose, reconnected = idle_read(
                     adapter, args.expected_host, args.basis, physical_rift.select_physical,
@@ -931,6 +935,7 @@ def launch_window(args):
                            "completedLegs": [event for event in history if event.get("status") == "arrived"],
                            "calibrationBinding": getattr(adapter, "binding", None),
                            "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None,
+                           "inputReceiptPresent": bool(adapter and adapter.input_receipt_path.exists()),
                            "stopVerification": stop_verification,
                            "releaseVerification": ("see individual native pulse receipts for key release; measured stationary evidence is separate in stopVerification"
                                                    if failure else "see completed result and pulse receipts")}
@@ -943,7 +948,7 @@ def launch_window(args):
             events.put({"status": "live-idle" if operation == "live" else "idle"})
 
     def start(operation, points=None):
-        nonlocal busy, foreground_stop, recording, playback_view
+        nonlocal busy, foreground_stop, recording, playback_view, playback_active
         if busy or closing:
             return
         if operation == "go" and (not points or len(points) > 20):
@@ -954,14 +959,6 @@ def launch_window(args):
             return
         busy = True
         stop.clear()
-        if operation in ("play", "resume"):
-            playback_view = {"direction": points[1], "nextIndex": 0}
-            if operation == "resume":
-                try:
-                    playback_view["nextIndex"] = int(json.loads(checkpoint.read_text(encoding="utf-8"))["nextIndex"])
-                except (OSError, ValueError, KeyError, TypeError):
-                    pass  # Backend validates the checkpoint before any input.
-            redraw()
         if operation in ("go", "face", "play", "resume"):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
@@ -969,6 +966,15 @@ def launch_window(args):
                 busy = False
                 state.set("Cannot start safely: " + str(exc))
                 return
+        if operation in ("play", "resume"):
+            playback_active = True
+            playback_view = {"direction": points[1], "nextIndex": 0}
+            if operation == "resume":
+                try:
+                    playback_view["nextIndex"] = int(json.loads(checkpoint.read_text(encoding="utf-8"))["nextIndex"])
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass  # Backend validates the checkpoint before any input.
+            redraw()
         for widget in editable:
             widget.configure(state="disabled")
         if operation == "record":
@@ -1136,7 +1142,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, foreground_stop, last_pose, observing, next_live_at, playback_view
+        nonlocal busy, recording, foreground_stop, last_pose, observing, next_live_at, playback_view, playback_active
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1168,6 +1174,13 @@ def launch_window(args):
                         continue
                     foreground_stop = None
                 busy = False
+                if playback_active:
+                    playback_active = False
+                    try:
+                        restore_progress()
+                    except (OSError, ValueError, KeyError, TypeError):
+                        playback_view = None
+                        progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
                 recording = False
                 record_end_button.configure(state="disabled")
                 for widget in editable:

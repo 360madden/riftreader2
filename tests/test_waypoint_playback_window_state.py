@@ -169,6 +169,62 @@ class PlaybackWindowStateTests(unittest.TestCase):
         values = [str(self.roots[0].getvar(label)) for label in labels]
         self.assertTrue(any("No saved progress; choose Play" in value for value in values), values)
 
+    def test_rejected_play_restores_completed_checkpoint_view(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 2}), encoding="utf-8")
+        original = checkpoint.read_bytes()
+        self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
+        self.stack.enter_context(patch("scripts.waypoint_playback.play_route", side_effect=ValueError("wrong endpoint")))
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={})
+        self.launch(adapter)
+        self.button("Play Reverse").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.button("Refresh").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.assertEqual(original, checkpoint.read_bytes())
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
+                  if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
+        values = [str(self.roots[0].getvar(label)) for label in labels]
+        self.assertTrue(any("Saved progress: 2 / 2" in value for value in values), values)
+
+    def test_partial_play_keeps_new_checkpoint_cursor(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 2}), encoding="utf-8")
+        def partial(adapter, route, stop, emit, **kwargs):
+            checkpoint.write_text(json.dumps({"route": document, "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+            emit({"status": "arrived", "nextWaypoint": 1, "waypointCount": 2})
+            raise ValueError("later leg failed")
+        self.stack.enter_context(patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)))
+        self.stack.enter_context(patch("scripts.waypoint_playback.play_route", side_effect=partial))
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={}))
+        self.button("Play Forward").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.roots[0].update()
+            if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
+                break
+            time.sleep(.01)
+        self.assertEqual(1, json.loads(checkpoint.read_text(encoding="utf-8"))["nextIndex"])
+        labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
+                  if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
+        values = [str(self.roots[0].getvar(label)) for label in labels]
+        self.assertTrue(any("Saved progress: 1 / 2" in value for value in values), values)
+
 
 if __name__ == "__main__":
     unittest.main()

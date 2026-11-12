@@ -64,6 +64,7 @@ class WindowReceiptTests(unittest.TestCase):
         return {"status": "faced", "actions": [{"key": "a"}], "sentinel": "full-turn"}
 
     def playback(self, adapter, document, stop, emit, **kwargs):
+        kwargs["checkpoint"].write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 1}))
         emit(self.result)
         return [self.result], SimpleNamespace(next_index=1, ordered_points=document["waypoints"])
 
@@ -148,6 +149,14 @@ class WindowReceiptTests(unittest.TestCase):
         self.assertEqual("next leg drifted", receipt["failure"]["reason"])
         self.assertEqual([self.result], receipt["completedLegs"])
         self.assertEqual(str(self.adapter.input_receipt_path), receipt["inputReceiptPath"])
+
+    def test_rejected_action_does_not_reference_previous_input_receipt(self):
+        previous = self.invoke_and_wait("Go Selected")
+        self.runner.side_effect = app.WaypointError("wrong endpoint")
+        rejected = self.invoke_and_wait("Go Selected")
+        self.assertNotEqual(previous["inputReceiptPath"], rejected["inputReceiptPath"])
+        self.assertFalse(rejected["inputReceiptPresent"])
+        self.assertFalse(Path(rejected["inputReceiptPath"]).exists())
 
     def test_write_failure_remains_visible_with_original_action_failure(self):
         self.runner.side_effect = app.WaypointError("blocked by drift")

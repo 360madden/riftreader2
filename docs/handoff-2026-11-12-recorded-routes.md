@@ -89,6 +89,40 @@ The interruption/cleanup and unverified-capture notes below describe the earlier
 checkpoint. The continued app is PID78236 and RIFT is PID79136; these are historical
 identifiers to reacquire before further input, not durable selectors.
 
+**08:48–08:50 EST interruption cases:** the updated app PID67052 received
+physical F8 during fixed-facing reverse translation after one released 150-ms S
+pulse. Cursor stayed 1/4; the new structured `stopVerification` retained two
+identical native poses (zero XYZ/yaw drift). Receipt:
+`artifacts/waypoint-run-29d66be1770c45368a513b4f64936bb3.json`.
+Record → STOP cancellation then left checkpoint SHA256
+`513038a272956c552e7185bc5b7844845ddee2f23b97cf960a7bde18b1dd8f12`
+unchanged and created no recording file. Explicit Resume completed with 14
+released pulses, 1,962 ms requested hold and **0.17762-unit** endpoint error;
+receipt `artifacts/waypoint-run-3dda97a1b2e341258ab30f44d01afe60.json`.
+
+A deliberately wrong-endpoint Play Reverse correctly refused before movement
+and preserved the completed checkpoint byte-for-byte, but exposed a UI defect:
+the preview switched to a provisional zero cursor and enabled Resume while the
+old completion label remained. Receipt:
+`artifacts/waypoint-run-2c197459066b4ad58ba234fb883b6d29.json`.
+The app also reused a cumulative input receipt path across actions: that rejected
+run's referenced file contains earlier inputs, ending at 13:49:10 UTC, not new
+inputs from the rejected request. Do not infer new movement merely from that
+older referenced file's existence.
+
+**08:53 EST refusal fix accepted:** sixteen focused fake-reader Tk tests passed.
+The GUI now reconciles playback display from the actual saved checkpoint when
+the operation becomes idle, retaining both previous completed progress after an
+entry refusal and newly saved partial progress after interruption. Foreground
+setup failure keeps the prior display. Each GUI input operation also has a unique
+input receipt path; `inputReceiptPresent` reports whether it wrote pulse evidence.
+The owned app restarted normally as PID74388/window5510068. Repeating the wrong-
+endpoint request preserved checkpoint bytes, restored 4/4 and zero remaining
+distance, and left Resume disabled after a fresh pose. No input file was created,
+and native XYZ/bearing were unchanged. Receipt:
+`artifacts/waypoint-run-131259ab7d7b44378765cb53e081d710.json`.
+RIFT remains PID79136. Reacquire all runtime identities before new input.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

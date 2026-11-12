@@ -9,6 +9,12 @@ poses were stationary. Explicit Resume completed the remaining three points
 within **0.05712 units**, with 22 released pulses. Exact evidence and STOP latency
 limits are in the [recorded-route handoff](handoff-2026-11-12-recorded-routes.md).
 The five-hour goal remains active following the user's continuation instruction.
+Later F8 during translation stopped after one released S pulse with zero measured
+XYZ/yaw drift. Recording cancellation preserved unfinished progress, and Resume
+finished within 0.17762 units. A live wrong-endpoint refusal exposed and then
+qualified a GUI fix: completed checkpoint, preview and Resume now agree after
+refusal. GUI actions also retain separate input receipt paths. Sixteen focused
+GUI tests passed; exact receipts are in the same handoff.
 
 **08:25 EST NOVEMBER 12 — PASSIVE RECORD/REPLAY WORKING:** On **AMD-DESKTOP**,
 the updated native reader let GUI Record → Stop Recording save 732 valid samples

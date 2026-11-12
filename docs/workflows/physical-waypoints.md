@@ -190,6 +190,10 @@ STOP arrives; it finishes that one bounded pulse and release. GUI run receipts
 retain the existing two post-STOP observations in `stopVerification`, including
 source paths, candidate poses, XYZ/yaw drift and pass/movement-detected/unavailable
 status. This is separate from native key-release evidence in the pulse receipts.
+Each GUI input operation has its own `waypoint-input-*.jsonl` path; run receipts
+include `inputReceiptPresent`. A refusal before input leaves that path absent.
+After playback becomes idle, the preview and Resume button reconcile with the
+saved checkpoint, including when an entry request is refused.
 
 Foreground loss aborts the run. The native helper sends unconditional global
 key-up, then may additionally post one release-only `WM_KEYUP` to the exact
