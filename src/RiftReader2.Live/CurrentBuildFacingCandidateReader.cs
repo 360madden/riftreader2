@@ -20,6 +20,7 @@ internal sealed record CurrentBuildFacingCandidate(
     public string BearingConvention => "degrees-from-positive-z-toward-positive-x";
     public bool HeadingQualified => false;
     public bool CameraYawQualified => false;
+    public CurrentBuildOpticalCameraCandidate? OpticalCameraCandidate { get; init; }
     public double? PrimaryBearingDegreesCandidate =>
         PositionOrientationCandidate.Primary is { Status: "structural-y-planar-matrix-candidate", RowMajorF32: { } matrix }
             ? Wrap180(Math.Atan2(matrix[2], matrix[8]) * 180 / Math.PI) : null;
@@ -78,6 +79,7 @@ internal static class CurrentBuildFacingCandidateReader
         var orientation = readOrientation(session);
         if (orientation.Identity != identity || orientation.UnitKey != owner.Key)
             throw new InvalidDataException("Facing orientation player or epoch mismatch.");
+        var camera = CurrentBuildOpticalCameraCandidateReader.TryRead(session, system);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x304, 4), yaw);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x30C, 12), aim);
         CurrentBuildPlayerLookup.RequireSame(CurrentBuildPlayerLookup.Exact(session, system + 0x320, 12), xyz);
@@ -91,6 +93,9 @@ internal static class CurrentBuildFacingCandidateReader
         return new(identity, started, DateTimeOffset.UtcNow, owner.Key, entity, system, bits,
             values[0], wrapped, new(values[4], values[5], values[6]),
             new(values[1], values[2], values[3]),
-            dx == 0 && dz == 0 ? null : Math.Atan2(dx, dz) * 180 / Math.PI, orientation);
+            dx == 0 && dz == 0 ? null : Math.Atan2(dx, dz) * 180 / Math.PI, orientation)
+        {
+            OpticalCameraCandidate = camera
+        };
     }
 }

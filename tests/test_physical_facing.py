@@ -52,6 +52,33 @@ def report():
 
 
 class PhysicalFacingTests(unittest.TestCase):
+    def test_optical_camera_origin_and_angles_are_validated(self):
+        values = [0, 0, -1, 0, 1, 0, 1, 0, 0, 3, 39, -8, 7424, 832, 2944]
+        camera = {
+            'status': 'available-candidate', 'unavailableReason': None,
+            'sourceRootRva': '0x3362848', 'selectedModeCameraGetterRva': '0xF88580',
+            'cameraYawQualified': False, 'rotationRowMajor': values[:9],
+            'rendererEyeXYZ': values[9:12], 'renderOriginXYZ': values[12:],
+            'rawBits': [struct.unpack('<I', struct.pack('<f', v))[0] for v in values],
+            'bearingDegreesCandidate': 0, 'pitchDegreesCandidate': 0,
+            'worldEyeXYZ': [7427, 871, 2936],
+        }
+        source = report()
+        for row in source['observations']:
+            row['opticalCameraCandidate'] = camera
+        parsed = physical._native_values('facing', source)['opticalCamera']
+        self.assertEqual([7427, 871, 2936], parsed['worldEyeXYZ'])
+        self.assertFalse(parsed['cameraYawQualified'])
+        for field, value in (('rawBits', [0] * 15), ('bearingDegreesCandidate', 10),
+                             ('worldEyeXYZ', [7424, 832, 2944])):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                physical._optical_camera_values(dict(camera, **{field: value}))
+        missing = physical._optical_camera_values({
+            'status': 'unavailable', 'unavailableReason': 'unsupported mode',
+            'sourceRootRva': '0x3362848', 'selectedModeCameraGetterRva': '0xF88580',
+            'cameraYawQualified': False})
+        self.assertEqual('unavailable', missing['status'])
+
     def test_float32_rounded_camera_coordinates_keep_exact_angle(self):
         values = physical._native_values('facing', report())
         self.assertAlmostEqual(values['playerSystemBearingDegreesCandidate'], -5.857141638, places=7)

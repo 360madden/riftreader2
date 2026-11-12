@@ -468,3 +468,38 @@ helper `0x7A5930`. This establishes a player-side point snapshot. Optical camera
 ownership remains open. Full bounded disassembly, source hashes and reproduction
 instructions are in `artifacts/yaw-static-worker-20261111/findings.md` and
 `bounded-assembly.txt` in that directory.
+
+## Selected optical-camera source, November 11 at 22:39 EST
+
+The current gameplay projection camera resolves through
+`QWORD(module+0x3362848) -> QWORD(owner+0x78) -> QWORD(wrapper+0x28)`.
+The expected wrapper and NiCamera vtables are module RVAs `0x27106A8` and
+`0x274D630`. The selected view provider independently comes from
+`QWORD(QWORD(module+0x33724F0)+0x1B0)`. In the captured mode its vtable is
+`module+0x2710320`, and slot `+0xB8` points to `0xF88580`. That getter returns
+the same camera chain. RR2 verifies those identities through reads, then rechecks
+the consumed pointers and transform bytes before returning a candidate.
+
+The optical forward vector is the first column of the world rotation at camera
+`+0xD4/+0xE0/+0xEC`. Bearing from positive Z toward positive X is
+`atan2(forwardX, forwardZ)`. Pitch is
+`atan2(forwardY, hypot(forwardX, forwardZ))`. Camera translation at
+`+0xF8/+0xFC/+0x100` uses renderer-relative coordinates. Add the player-system
+`+0x438` triplet to obtain world-space eye position. The world-to-screen path
+subtracts that same triplet before projecting world points.
+
+On AMD-DESKTOP PID 18092, exact SHA 1935A05C... and the existing process epoch,
+the camera bearing was -4.455439° and pitch -27.213866°. The origin was
+(7424, 832, 2944), giving eye XYZ (7427.049316, 870.826843, 2935.827881).
+The projection matrix at `+0x138` reproduced the optical forward vector in its
+last row. Subtracting the origin and projecting Atank's native XYZ gave normalized
+screen coordinates (0.500000, 0.622156), inside his visible model in the saved
+1266 by 713 WGC frame. This corroborates the captured view. Camera-only motion
+and restart reacquisition remain unverified.
+
+The normal `physical_rift.py --read-native facing` command exposes this as
+`opticalCamera`. Unsupported selected modes and inconsistent camera reads return
+a camera-specific unavailable result. Source assembly and reproduction are in
+`artifacts/camera-static-worker-20261111/`; live pointer, transform, origin and
+projection captures are in `artifacts/optical-camera-probe-20261111-223946/`.
+The screenshot is `artifacts/observe-wgc-e56fab3db2164e419502f0177bd3e42d/image.png`.

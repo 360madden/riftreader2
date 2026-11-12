@@ -43,6 +43,10 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 # Add --physical-pid PID if more than one local RIFT instance is running.
 ```
 
+The facing result includes `nativeValues.opticalCamera` for the supported selected
+view mode. It reports optical yaw/pitch and world eye position, or a camera-specific
+unavailable reason. The gameplay camera/aim-point snapshot is retained separately.
+
 For a **single-command, read-only** distance/progress preview against an existing
 named anchor (replace the example catalog and ID with actual saved values):
 

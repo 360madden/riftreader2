@@ -100,6 +100,64 @@ def _utc_tick_order_key(value):
     return parsed, remainder
 
 
+def _optical_camera_values(camera):
+    if camera is None:
+        return None
+    if (not isinstance(camera, dict) or camera.get("cameraYawQualified") is not False
+            or camera.get("sourceRootRva") != "0x3362848"
+            or camera.get("selectedModeCameraGetterRva") != "0xF88580"):
+        raise ValueError("invalid-native-optical-camera-source")
+    if camera.get("status") == "unavailable":
+        if (not isinstance(camera.get("unavailableReason"), str) or not camera["unavailableReason"]
+                or any(camera.get(field) is not None for field in
+                       ("rawBits", "bearingDegreesCandidate", "pitchDegreesCandidate", "worldEyeXYZ"))):
+            raise ValueError("invalid-native-optical-camera-unavailable")
+        return {"status": "unavailable", "reason": camera["unavailableReason"]}
+    fields = (("rotationRowMajor", 9), ("rendererEyeXYZ", 3), ("renderOriginXYZ", 3))
+    if (camera.get("status") != "available-candidate"
+            or any(not isinstance(camera.get(name), list) or len(camera[name]) != count
+                   for name, count in fields)):
+        raise ValueError("invalid-native-optical-camera-transform")
+    values = [value for name, _ in fields for value in camera[name]]
+    bits = camera.get("rawBits")
+    if (not isinstance(bits, list) or len(bits) != 15
+            or any(type(bit) is not int or not 0 <= bit < 2**32 for bit in bits)
+            or any(type(value) not in (int, float) or not math.isfinite(value) for value in values)):
+        raise ValueError("invalid-native-optical-camera-values")
+    try:
+        encoded = [struct.unpack("<I", struct.pack("<f", value))[0] for value in values]
+    except (OverflowError, struct.error) as error:
+        raise ValueError("invalid-native-optical-camera-values") from error
+    if any(a != b and not (a in (0, 0x80000000) and b in (0, 0x80000000))
+           for a, b in zip(encoded, bits)):
+        raise ValueError("invalid-native-optical-camera-bits")
+    raw = [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in bits]
+    for row in range(3):
+        for other in range(3):
+            dot = sum(raw[row * 3 + col] * raw[other * 3 + col] for col in range(3))
+            if abs(dot - (1 if row == other else 0)) > .001:
+                raise ValueError("invalid-native-optical-camera-rotation")
+    horizontal = math.hypot(raw[0], raw[6])
+    expected_yaw = math.degrees(math.atan2(raw[0], raw[6])) if horizontal >= 1e-8 else None
+    for field, expected in (("bearingDegreesCandidate", expected_yaw),
+                            ("pitchDegreesCandidate", math.degrees(math.atan2(raw[3], horizontal)))):
+        actual = camera.get(field)
+        if ((expected is None and actual is not None)
+                or (expected is not None and
+                    (type(actual) not in (int, float) or not math.isfinite(actual)
+                     or abs(actual - expected) > .00001))):
+            raise ValueError("invalid-native-optical-camera-angle")
+    eye = camera.get("worldEyeXYZ")
+    if (not isinstance(eye, list) or len(eye) != 3
+            or any(type(value) not in (int, float) or not math.isfinite(value)
+                   or abs(value - raw[9 + index] - raw[12 + index]) > .00001
+                   for index, value in enumerate(eye))):
+        raise ValueError("invalid-native-optical-camera-world-eye")
+    return {"status": "available-candidate", "bearingDegreesCandidate": camera["bearingDegreesCandidate"],
+            "pitchDegreesCandidate": camera["pitchDegreesCandidate"], "worldEyeXYZ": eye,
+            "cameraYawQualified": False}
+
+
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
     if kind == "facing":
@@ -210,6 +268,7 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             primary_bearings.append(primary)
             system_bearings.append(system_bearing)
             aim_bearings.append(camera)
+            optical = _optical_camera_values(row.get("opticalCameraCandidate"))
         return {
             "playerKey": owner[0], "playerSystemYawRadiansCandidate": values[0],
             "playerSystemBearingDegreesCandidate": system_bearings[-1],
@@ -219,6 +278,7 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             "playerSystemMinusPrimaryDegreesCandidate": primary_delta,
             "playerSystemMinusBodyDegreesCandidate": delta,
             "cameraAimBearingDegreesCandidate": aim_bearings[-1],
+            "opticalCamera": optical,
             "positionXYZCandidate": xyz,
             "bearingConvention": rows[-1]["bearingConvention"],
             "bodyBearingSeriesDegreesCandidate": bearings,

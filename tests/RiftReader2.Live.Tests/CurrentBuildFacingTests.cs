@@ -35,6 +35,7 @@ public sealed class CurrentBuildFacingTests
         Assert.Equal(new CurrentBuildXyz(100, 20, 200), value.PositionCandidate);
         Assert.False(value.HeadingQualified);
         Assert.False(value.CameraYawQualified);
+        Assert.Equal("unavailable", value.OpticalCameraCandidate!.Status);
         session.Float(0x304, 0);
         var divergent = Read(session);
         Assert.Equal(0, divergent.PlayerSystemBearingDegreesCandidate);
