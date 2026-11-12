@@ -464,7 +464,5 @@ class PhysicalWaypointOverlay:
     def run(self):
         self._main()
         if not self.closed:
-            try:
-                self.window.mainloop()
-            finally:
-                self.close()
+            # The feed owns reader cancellation/join before destroying this HWND.
+            self.window.mainloop()

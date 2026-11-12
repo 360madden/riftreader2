@@ -92,8 +92,11 @@ This motivated the bounded immediate-emission native stream below.
 The native `sample-current-facing-stream` command accepts exact `--pid` and
 `--start-ticks`, `--samples` (1–30), and `--interval-ms` (20–200). It emits each full
 candidate immediately as NDJSON after strict process revalidation, then a count
-receipt. It holds the existing read lease for at most a two-second acquisition
-window; an individual synchronous operation may finish later. A deadline returns
+receipt. Each row opens a fresh read-only session under the existing read lease,
+disposes that session and releases the lease before output or the inter-row
+delay. This lets other readers proceed even if the output pipe stalls. The whole
+stream has a two-second acquisition window; an individual synchronous operation
+may finish later. A deadline returns
 `duration-limit` rather than claiming the requested sample count completed.
 Each row retains capture timestamps and `captureElapsedMilliseconds`. Consumers
 must check identity, age and current window geometry, and release between bursts.
@@ -118,7 +121,12 @@ remained at `(-1920,29,1920,1009)`, no inputs were held and `inputSent:false`.
 Evidence: `artifacts/overlay-focus-only-first-69312.json`. Focus is an explicit
 action; the projection feed itself never requests foreground. The stream and
 existing/new focus-command tests passed 96 focused native cases; four stream
-cases also passed after adding per-row elapsed metadata.
+cases also passed after adding per-row elapsed metadata. After changing lease
+ownership to individual rows, the current native stream/focus suites passed 98
+cases. Six real competing single reads all completed in 0.325–0.683 seconds while
+the overlay ran. One over-age overlay row was withheld, and the owned stop-file
+request ended the run cleanly. Evidence:
+`artifacts/overlay-reader-interleave-1bb809eea62e46e2bbd816a2f8c3325e/`.
 
 ## Remaining qualification
 
@@ -135,6 +143,12 @@ maximum 600) and Ctrl+C closes it. `--reader single` retains the slower existing
 reader. In either mode, changed foreground/identity/geometry, expired evidence or
 unavailable projection hides markers. Only complete recorded routes with actual
 heights matching the host/build/player are admitted.
+
+An owning application can also pass all three `--expect-start-ticks`,
+`--expect-sha256` and `--expect-hwnd` values to bind startup to its admitted epoch.
+`--stop-file ABSOLUTE_NEW_PATH` lets that owner stop the child by creating the
+unique file. The main thread hides markers immediately, cancels and joins its
+reader, then destroys its window. No forced termination or game key is needed.
 
 The owned window is created with native Win32 no-activation, transparent,
 layered and tool-window styles from its first creation. The Tk prototype was
@@ -154,8 +168,21 @@ world-height beacon lines and the cyan player reference. Evidence:
 `artifacts/native-overlay-stream-proof-ad0a5c1917784094bd992531cec98472/`.
 The presenter/feed focused tests passed 31 cases after native-window replacement.
 
-Camera pan, actual cross-process click routing, resize/DPI changes and full-game
-restart still need current qualification. Labels near coincident route endpoints
+The per-row-lease version then ran for 86.7 seconds through a real camera-only
+drag, displaying 504 frames with zero reported failures. Dragging from the painted
+third waypoint ring at frame `(963,753)` to `(1023,753)` reached RIFT and changed
+the optical bearing from -29.84676 to -47.03573 degrees (17.18897 degrees). Atank's
+XYZ and body bearing were unchanged. Root reviewed the settled markers following
+the new view, and a fresh native/WGC/native bracket was stable. This is actual
+cross-process click/drag routing through a painted marker, without gameplay keys
+or character movement. The owned stop file then ended the feed. Evidence:
+`artifacts/overlay-camera-pan-validation-69312.json`,
+`artifacts/overlay-camera-pan-desktop-69312.png`,
+`artifacts/overlay-camera-pan-observation-69312.json`, and
+`artifacts/overlay-camera-guard-69312-1736.json`.
+
+Resize/DPI changes and full-game restart still need current qualification.
+Labels near coincident route endpoints
 can overlap; this does not change the projected anchor positions.
 Projection inside the viewport does not establish visibility: depth, occlusion,
 terrain and obstacle clearance are not checked. World/zone identity is currently

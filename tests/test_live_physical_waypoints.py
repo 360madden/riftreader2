@@ -166,6 +166,76 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(json.loads(output.read_text())["counts"]["attempts"], 0)
         select.assert_called_once_with("AMD-DESKTOP", 123)
 
+    def test_expected_identity_and_stop_startup_refuse_before_overlay(self):
+        expected = dict(expected_start_ticks=IDENTITY["processStartUtcTicks"],
+                        expected_sha256=IDENTITY["executableSha256"], expected_hwnd=IDENTITY["hwnd"])
+        overlay = Mock()
+        presenter = types.SimpleNamespace(PhysicalWaypointOverlay=overlay, target_snapshot=self.snapshot)
+        existing = self.root / "existing.stop"
+        existing.write_text("stop")
+        cases = [dict(expected_start_ticks=IDENTITY["processStartUtcTicks"]),
+                 dict(expected, expected_start_ticks="0"), dict(expected, expected_sha256="bad"),
+                 dict(expected, expected_hwnd=True), dict(expected, expected_hwnd=0),
+                 dict(expected, expected_start_ticks="123"), dict(expected, expected_sha256="b" * 64),
+                 dict(expected, expected_hwnd=999), dict(stop_file=existing), dict(stop_file=Path("relative.stop"))]
+        with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
+             patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=self.selection):
+            for kwargs in cases:
+                with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
+                    live.run("AMD-DESKTOP", 123, self.route_path, **kwargs)
+        overlay.assert_not_called()
+        self.assertEqual(existing.read_text(), "stop")
+
+    def test_stop_file_appearance_hides_joins_closes_and_preserves_file(self):
+        stop_path, events = self.root / "request.stop", []
+        class Window:
+            def protocol(self, name, callback):
+                pass
+            def after(self, delay, callback):
+                if delay == 0:
+                    self.poll = callback
+            def quit(self):
+                events.append("quit")
+        class Overlay:
+            def __init__(self, target, max_age):
+                self.window = Window()
+            def run(self):
+                stop_path.write_text("stop")
+                self.window.poll()
+            def hide(self, reason):
+                events.append("hide:" + reason)
+            def close(self):
+                events.append("close")
+        class Worker:
+            def __init__(self, **kwargs):
+                self.stop = kwargs["args"][2]
+            def start(self):
+                pass
+            def join(self):
+                if not self.stop.is_set():
+                    raise AssertionError("Reader must receive cancellation before join")
+                events.append("join")
+        presenter = types.SimpleNamespace(PhysicalWaypointOverlay=Overlay, target_snapshot=self.snapshot)
+        with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
+             patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=self.selection), \
+             patch.object(live.threading, "Thread", Worker), \
+             patch.object(live.time, "monotonic", return_value=10.):
+            result = live.run("AMD-DESKTOP", 123, self.route_path, stop_file=stop_path,
+                expected_start_ticks=IDENTITY["processStartUtcTicks"],
+                expected_sha256=IDENTITY["executableSha256"].upper(), expected_hwnd=IDENTITY["hwnd"])
+        self.assertEqual(result["reason"], "stop-requested")
+        self.assertEqual(result["stopFile"], str(stop_path))
+        self.assertEqual(result["expectedTarget"]["hwnd"], IDENTITY["hwnd"])
+        self.assertLess(events.index("hide:stop-requested"), events.index("join"))
+        self.assertLess(events.index("join"), events.index("close"))
+        self.assertEqual(stop_path.read_text(), "stop")
+
+    def test_hwnd_cli_accepts_decimal_and_hex(self):
+        self.assertEqual(live._hwnd_argument("456"), 456)
+        self.assertEqual(live._hwnd_argument("0x1c8"), 456)
+
     def stream_packet(self):
         row = deepcopy(self.native["observation"])
         # Streaming has no target-pair scan; the raw camera is independently valid.

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using RiftReader2.Application;
+using RiftReader2.Domain;
 using RiftReader2.Infrastructure;
 
 namespace RiftReader2.Live;
@@ -13,14 +14,14 @@ internal static class CurrentBuildFacingStreamCommand
 
     internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output,
         CancellationToken ct) => RunAsync(options, output, ct,
-            static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(pid, ticks,
-                CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(2), token),
+            static async (pid, ticks, remaining, token) => await NativeReadFileLease.AcquireAsync(pid, ticks,
+                CurrentBuildPlayerLookup.GameSha256, remaining, token),
             static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(pid, ticks,
                 CurrentBuildPlayerLookup.GameSha256, token),
             static (session, token) => CurrentBuildFacingCandidateReader.ReadStableObservation(session, token));
 
     internal static async Task<int> RunAsync(IReadOnlyDictionary<string, string> options, TextWriter output,
-        CancellationToken ct, Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
+        CancellationToken ct, Func<int, long, TimeSpan, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
         Func<IReadOnlyNativeMemorySession, CancellationToken, CurrentBuildFacingCandidate> read,
         Func<TimeSpan>? elapsed = null)
@@ -35,13 +36,7 @@ internal static class CurrentBuildFacingStreamCommand
         var stopwatch = Stopwatch.StartNew();
         elapsed ??= () => stopwatch.Elapsed;
         var deadline = TimeSpan.FromSeconds(2);
-        ct.ThrowIfCancellationRequested();
-        await using var lease = await acquireLease(pid, ticks, ct);
-        await using var session = await open(pid, ticks, ct);
-        var identity = session.Identity;
-        if (identity.ProcessId != pid || identity.ProcessStartUtcTicks != ticks ||
-            !string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Facing stream session identity mismatch.");
+        NativeProcessIdentity? identity = null;
         ulong? key = null, entity = null, system = null;
         var completed = 0;
         for (var i = 0; i < count; i++)
@@ -56,20 +51,45 @@ internal static class CurrentBuildFacingStreamCommand
                 if (elapsed() >= deadline) break;
             }
             var captureTimer = Stopwatch.StartNew();
-            var sample = read(session, ct);
-            if (sample.Identity != identity || session.Identity != identity || sample.PlayerKey == 0 ||
-                (key is not null && (sample.PlayerKey != key || sample.PlayerEntity != entity || sample.PlayerSystem != system)))
-                throw new InvalidDataException("Facing stream owner or process epoch changed.");
-            key ??= sample.PlayerKey; entity ??= sample.PlayerEntity; system ??= sample.PlayerSystem;
-            if (await session.RevalidateAsync(ct) is not null || session.Identity != identity)
-                throw new InvalidDataException("Facing stream process revalidation failed.");
+            var remainingLease = deadline - elapsed();
+            if (remainingLease <= TimeSpan.Zero) break;
+            IAsyncDisposable lease;
+            try { lease = await acquireLease(pid, ticks, remainingLease, ct); }
+            catch (TimeoutException) when (elapsed() >= deadline) { break; }
+            CurrentBuildFacingCandidate sample;
+            NativeProcessIdentity currentIdentity;
+            await using (lease)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (elapsed() >= deadline) break;
+                await using var session = await open(pid, ticks, ct);
+                ct.ThrowIfCancellationRequested();
+                if (elapsed() >= deadline) break;
+                currentIdentity = session.Identity;
+                if (currentIdentity.ProcessId != pid || currentIdentity.ProcessStartUtcTicks != ticks ||
+                    !string.Equals(currentIdentity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256, StringComparison.OrdinalIgnoreCase) ||
+                    (identity is not null && currentIdentity != identity))
+                    throw new InvalidDataException("Facing stream session identity mismatch.");
+                sample = read(session, ct);
+                if (sample.Identity != currentIdentity || session.Identity != currentIdentity || sample.PlayerKey == 0 ||
+                    (key is not null && (sample.PlayerKey != key || sample.PlayerEntity != entity || sample.PlayerSystem != system)))
+                    throw new InvalidDataException("Facing stream owner or process epoch changed.");
+                if (elapsed() >= deadline) break;
+                if (await session.RevalidateAsync(ct) is not null || session.Identity != currentIdentity)
+                    throw new InvalidDataException("Facing stream process revalidation failed.");
+                ct.ThrowIfCancellationRequested();
+                if (elapsed() >= deadline) break;
+                identity ??= currentIdentity;
+                key ??= sample.PlayerKey; entity ??= sample.PlayerEntity; system ??= sample.PlayerSystem;
+            }
+            // Output, serialization and potentially stalled pipes never hold the native lease.
             ct.ThrowIfCancellationRequested();
             if (elapsed() >= deadline) break;
             var observation = JsonSerializer.SerializeToElement(sample, Compact);
             var captureElapsedMilliseconds = captureTimer.Elapsed.TotalMilliseconds;
             await output.WriteLineAsync(JsonSerializer.Serialize(new {
                 recordType = "native-current-facing-stream-row/1", sequence = completed,
-                status = "candidate", identity, observation, captureElapsedMilliseconds,
+                status = "candidate", identity = currentIdentity, observation, captureElapsedMilliseconds,
                 emittedAtUtc = DateTimeOffset.UtcNow
             }, Compact));
             await output.FlushAsync(ct);

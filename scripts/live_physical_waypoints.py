@@ -1,4 +1,4 @@
-"""Bounded read-only native waypoint projection feed for a separate Tk overlay.
+"""Bounded read-only native waypoint projection feed for an owned overlay.
 
 Candidate software projections only: world/zone, occlusion and terrain unverified.
 """
@@ -12,6 +12,7 @@ import json
 import math
 from pathlib import Path
 import queue
+import re
 import socket
 import subprocess
 import sys
@@ -57,7 +58,7 @@ def load_route(path):
 
 
 class ProjectionProvider:
-    """One pinned selection, serial reads and plain packets; never calls Tk."""
+    """One pinned selection, serial reads and plain packets; no overlay calls."""
     def __init__(self, selection, route, snapshot, *, read=None, clock=time.monotonic,
                  utcnow=lambda: datetime.now(timezone.utc), max_age=.8):
         require(selection.get("status") == "ready", "physical-selection-not-ready")
@@ -281,12 +282,38 @@ def feed(provider, channel, stop, counts):
         stop.wait(.05)
 
 
-def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream"):
+def _expected_target(start_ticks, sha256, hwnd):
+    supplied = [value is not None for value in (start_ticks, sha256, hwnd)]
+    require(not any(supplied) or all(supplied), "all-target-expectations-required-together")
+    if not any(supplied):
+        return None
+    require(type(start_ticks) in (str, int) and re.fullmatch(r"[0-9]+", str(start_ticks)) is not None
+            and 0 < int(start_ticks) <= 3155378975999999999, "invalid-expected-start-ticks")
+    require(isinstance(sha256, str) and re.fullmatch(r"[0-9a-fA-F]{64}", sha256) is not None,
+            "invalid-expected-sha256")
+    require(type(hwnd) is int and 0 < hwnd < 2**64, "invalid-expected-hwnd")
+    return {"processStartUtcTicks": str(int(start_ticks)), "executableSha256": sha256.lower(), "hwnd": hwnd}
+
+
+def _hwnd_argument(value):
+    try:
+        return int(value, 16 if value.lower().startswith("0x") else 10)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("HWND must be a decimal integer or 0x hexadecimal integer") from error
+
+
+def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
+        expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 < duration <= 600, "duration-must-be-positive-at-most-600")
     require(type(max_age) in (int, float) and math.isfinite(max_age) and .1 <= max_age <= 2, "max-age-must-be-0.1-through-2")
     require(reader in ("single", "stream"), "invalid-reader-mode")
+    expected = _expected_target(expected_start_ticks, expected_sha256, expected_hwnd)
+    if stop_file is not None:
+        stop_file = Path(stop_file)
+        require(stop_file.is_absolute() and stop_file.parent.is_dir() and not stop_file.exists(),
+                "new-absolute-stop-file-required")
     if output is not None:
         output = Path(output).resolve()
         require(not output.exists() and output.parent.is_dir(), "new-output-json-required")
@@ -294,6 +321,11 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     selection = physical.select_physical(expected_host, physical_pid)
     require(selection.get("status") == "ready", selection.get("reason", "physical-selection-not-ready"))
     require(selection["target"]["processId"] == physical_pid, "selected-pid-mismatch")
+    if expected is not None:
+        target = selection["target"]
+        require(str(target.get("processStartUtcTicks")) == expected["processStartUtcTicks"]
+                and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
+                and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
     provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age)
     overlay = PhysicalWaypointOverlay(selection["target"], max_age=max_age)
@@ -313,6 +345,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     def poll():
         nonlocal latest_acquired
         if stop.is_set():
+            return
+        if stop_file is not None and stop_file.exists():
+            cancel("stop-requested")
             return
         if time.monotonic() - started >= duration:
             cancel("duration-complete")
@@ -363,6 +398,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "counts": counts, "latestNativeReport": provider.latest_native, "inputSent": False,
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
+        "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
             "World/zone identity unavailable; matching host/build/player does not prove same world.",
             "Occlusion, depth and terrain not checked.", "Historical recording process epoch preserved."]}
@@ -380,10 +416,16 @@ def main(argv=None):
     parser.add_argument("--max-age", type=float, default=.8)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--reader", choices=("single", "stream"), default="stream")
+    parser.add_argument("--expect-start-ticks")
+    parser.add_argument("--expect-sha256")
+    parser.add_argument("--expect-hwnd", type=_hwnd_argument)
+    parser.add_argument("--stop-file", type=Path)
     args = parser.parse_args(argv)
     try:
         result = run(args.expected_host, args.physical_pid, args.route, duration=args.duration,
-                     max_age=args.max_age, output=args.output, reader=args.reader)
+                     max_age=args.max_age, output=args.output, reader=args.reader,
+                     expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
+                     expected_hwnd=args.expect_hwnd, stop_file=args.stop_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():
