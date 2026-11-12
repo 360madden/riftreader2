@@ -1115,7 +1115,8 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
                if kind in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") else 30)
     try:
         completed = subprocess.run(command, cwd=ROOT, capture_output=True,
-                                   text=True, timeout=timeout, check=False)
+                                   text=True, timeout=timeout, check=False,
+                                   creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except (OSError, subprocess.TimeoutExpired) as exc:
         return dict(selection, status="blocked", reason="native-reader-launch-failed",
                     errorType=type(exc).__name__)
