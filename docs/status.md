@@ -1,5 +1,23 @@
 # Current status
 
+**13:32 EST NOVEMBER 12 — NEW-PROCESS PROJECTION AND FENCED DXCAM EVENT:** On
+**AMD-DESKTOP**, normal full RIFT exit/relaunch changed PID69312 to PID60384.
+Atank's XYZ stayed identical, body bearing differed by 0.00042 degrees, and saved
+7/7 reverse progress and movement basis remained byte-identical. The same waypoint
+app automatically reconnected; explicit Show launched the pinned Qt child and
+Hide stopped it after 194 presentations in 57.8 seconds. Withholding occurred
+while RIFT lacked foreground or samples expired; continuous rendering is not
+claimed. A redundant GUI cached-pose gate was removed because this read-only
+child obtains its own fresh target/player/camera rows. Actual new-process Show/Hide
+passed, and 18 focused pair/marker tests passed. Fresh WGC bracket:
+`artifacts/qt-restart-wgc-observation-60384.json`; marker summary:
+`artifacts/waypoint-markers-summary-c00e8ebf22b648808ba68acd591bfcb9.json`.
+The new fenced DXcam/native pair succeeded with 5–7 ms backend-event age bounds,
+not a fresh-game-render guarantee. GitHub research also selected an optional
+offline Rerun visualization pilot; exporter/runtime review is pending. See the
+[tool reference](reference/third-party-workflow-tools-2026-11-12.md).
+Goal remains active through **19:44 EST**; simultaneous playback is still pending.
+
 **13:15 EST NOVEMBER 12 — MATURE THIRD-PARTY TOOLS ADOPTED:** On **AMD-DESKTOP**,
 GitHub/official-source review selected PySide6-Essentials 6.12.0 for the preferred
 overlay and DXcam 0.3.0 for a bounded persistent-capture diagnostic. Both are

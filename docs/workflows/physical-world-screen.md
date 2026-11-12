@@ -246,7 +246,21 @@ the game. Evidence: `artifacts/overlay-after-window-drag-recovery-69312.json` an
 origin is `(-1920,53)`; the pre-test origin was `(-1920,29)`. The standard recovery
 helper centers the window, so this is the original size/display, not exact origin.
 
-Mixed-DPI changes and full-game restart still need current overlay qualification.
+The subsequent full-game exit/relaunch changed PID69312 to PID60384. The waypoint
+app automatically reconnected with its original saved route and byte-identical
+7/7 checkpoint/basis. Explicit Show/Hide launched a new epoch-pinned Qt child,
+presented 194 frames in 57.8 seconds and stopped cleanly. Withholding occurred
+while RIFT lacked foreground or samples expired; this is not continuous-rendering
+qualification. Fresh native XYZ matched exactly and body bearing differed by
+0.00042 degrees. The old overlay was already stopped before exit, so an active
+child across the restart was not tested. Evidence:
+`artifacts/qt-restart-before-69312.json`, `artifacts/qt-restart-after-60384.json`,
+`artifacts/qt-restart-wgc-observation-60384.json`, and
+`artifacts/waypoint-markers-summary-c00e8ebf22b648808ba68acd591bfcb9.json`.
+Normal launch placed the new window on the other display; the existing BlackBox
+helper restored DISPLAY5 without game input before capture tests.
+
+Mixed-DPI changes still need current overlay qualification.
 Projection inside the viewport does not establish visibility: depth, occlusion,
 terrain and obstacle clearance are not checked. World/zone identity is currently
 unavailable, so matching host/build/player alone cannot establish the same world.

@@ -8,6 +8,9 @@ benefits are reliable overlay lifecycle and persistent desktop capture.
 |---|---|---|
 | [Qt / PySide6-Essentials](https://github.com/pyside/pyside-setup) | Preferred overlay backend | Official Python bindings, active upstream; latest checked commit November 12. Installed/pinned 6.12.0 (Python 3.14 supported). Replaces custom window/paint/timer dispatch with QWidget, QPainter and QTimer, while RR2 retains its target/projection checks. |
 | [DXcam](https://github.com/ra1nty/DXcam) | Adopt bounded capture diagnostic; next persistent-capture candidate | MIT, 0.3.0 release March 12 with an actual cp314 Windows x64 wheel. Real 30-frame pilot captured RIFT plus the Qt overlay, including the correct negative-origin monitor crop. |
+| [Rerun](https://github.com/rerun-io/rerun) | Optional offline visualization pilot underway | MIT/Apache-2.0; official 0.43.1 release November 11. SDK/Viewer has a compatible Windows stable-ABI wheel. A separate ignored environment installed successfully on Python 3.14; exporter/runtime review remains pending. Useful for viewing recorded XYZ routes, actor poses and verified screenshots together. Upstream labels the package Alpha; pin the version and keep it outside live control. |
+| [Recast / Detour](https://github.com/recastnavigation/recastnavigation) | Reuse when actual environment geometry is available | Established mesh generation/path queries, Zlib license. It consumes triangle geometry; screenshots and waypoint dots alone do not provide the required walkable surface. Installing it now would not supply obstacle avoidance. |
+| [OpenCV](https://github.com/opencv/opencv) | Keep for a concrete vision task | Active Apache-2.0 project. Reuse its calibration/features/image processing when needed; current native camera/matrix projection already works, so replacing that path would add conversion work without a demonstrated gain. |
 | [ClickableTransparentOverlay](https://github.com/zaafar/ClickableTransparentOverlay) | Keep as a .NET/ImGui alternative | Apache-2.0; latest checked release/default-branch commit 11.1.0, January 6, 2025. External Direct3D11 overlay, but no-focus setup needs a native adapter and this Python feed would need an additional bridge. Qt is a smaller fit here. |
 | [GameOverlay.Net](https://github.com/michel-pi/GameOverlay.Net) / [Overlay.NET](https://github.com/lolp1/Overlay.NET) | Do not select | GameOverlay.Net is archived; Overlay.NET's checked default-branch commit is from 2019. Neither improves the maintained-toolkit choice. |
 
@@ -71,6 +74,22 @@ camera bracketing remain unqualified. The pinned 0.3.0 adapter uses a small priv
 atomic nonblocking frame/tick peek because the public timestamp getter waits
 indefinitely. Keep that version boundary explicit. Existing guarded WGC remains
 authoritative while persistent-capture integration is qualified.
+
+The newer `scripts/probe_dxcam_native_pair.py` diagnostic verifies direct integer
+QPC compatibility with Python's monotonic clock, warms capture, fences out buffered
+events older than the first native read, and compares native camera/player state
+before and after the accepted desktop event. The first post-restart PID60384 run
+completed in 2.225 s, with a 0.890 s native pair and backend-event age bounds
+5.018–6.833 ms; stop/release succeeded. Evidence:
+`artifacts/dxcam-native-pair-first-60384/pair.json` and `frame.png`.
+Thirteen injected checks passed. Its result is explicitly
+`stable-native-composite-event-candidate`: LastMouseUpdateTime fallback still
+prevents a fresh-RIFT-render claim, and endpoint equality cannot exclude ABA
+changes. This does not replace authoritative WGC receipts.
+
+```powershell
+.\.local\overlay-venv\Scripts\python.exe scripts/probe_dxcam_native_pair.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --display '\\.\DISPLAY5' --output artifacts/new-native-event-pair --timeout 10
+```
 
 No generic workflow/agent framework, detection stack or navigation mesh was added.
 Those need a concrete next capability and usable environment geometry first.

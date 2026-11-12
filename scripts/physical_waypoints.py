@@ -796,7 +796,6 @@ def launch_window(args):
     foreground_stop = None
     last_pose = None
     last_y = None
-    last_pose_acquired = None
     markers = OwnedWaypointMarkers(ROOT)
     marker_identity = None
     map_view = None
@@ -1080,8 +1079,7 @@ def launch_window(args):
                 if reconnected or adapter is not published_adapter:
                     events.put({"status": "reconnected", "pid": adapter.pid})
                     published_adapter = adapter
-                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing,
-                          "acquired": pose.acquired}
+                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
                 if operation == "target":
                     result["waypoint"] = target_waypoint(pose)
                 if operation == "map":
@@ -1372,9 +1370,10 @@ def launch_window(args):
             if stop_markers():
                 state.set("Hiding markers…")
             return
-        if (busy or closing or observing or adapter is None or last_pose_acquired is None
-                or not -.1 <= time.monotonic() - last_pose_acquired <= 2):
-            state.set("Refresh the current RIFT position before showing markers.")
+        # This read-only child performs its own fresh epoch/player/camera reads.
+        # It need not wait for, or use the cached pose from, an idle GUI refresh.
+        if busy or closing or adapter is None:
+            state.set("Wait for the current RIFT connection before showing markers.")
             return
         try:
             markers.start(route_document(), adapter)
@@ -1466,7 +1465,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, last_pose_acquired, observing, next_live_at, playback_view, playback_active, marker_identity
+        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, observing, next_live_at, playback_view, playback_active, marker_identity
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1478,7 +1477,6 @@ def launch_window(args):
                 continue
             if status == "halted":
                 last_pose = None
-                last_pose_acquired = None
                 redraw()
             if status == "live-idle":
                 observing = False
@@ -1489,7 +1487,6 @@ def launch_window(args):
             if status == "live-unavailable":
                 pose_text.set("Live position unavailable: " + event["reason"])
                 last_pose = None
-                last_pose_acquired = None
                 redraw()
                 continue
             if status == "idle":
@@ -1570,7 +1567,6 @@ def launch_window(args):
                     x.set(f"{point['x']:.6f}")
                     z.set(f"{point['z']:.6f}")
                 if status in ("refresh", "live"):
-                    last_pose_acquired = event.get("acquired")
                     try:
                         restore_progress()
                     except (OSError, ValueError, KeyError, TypeError):
