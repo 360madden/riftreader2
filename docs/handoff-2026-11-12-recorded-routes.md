@@ -123,6 +123,27 @@ and native XYZ/bearing were unchanged. Receipt:
 `artifacts/waypoint-run-131259ab7d7b44378765cb53e081d710.json`.
 RIFT remains PID79136. Reacquire all runtime identities before new input.
 
+**08:55–08:58 EST close-during-playback recovery:** normal CloseMainWindow on
+the exact owned app PID74388 during fixed-facing translation requested STOP and
+waited for cleanup; the process exited without forced termination. All six S
+pulses released, cursor stayed 1/4 forward, and two retained post-STOP poses had
+zero XYZ/yaw drift. Receipt:
+`artifacts/waypoint-run-e393c4a5323b401889757798bf390e40.json`.
+New app PID71916/window21104234 restored 1/4 and stayed idle. Explicit Resume
+completed the remaining three points with nine released pulses, 1,177 ms hold,
+and **0.07079-unit** endpoint error. Receipt:
+`artifacts/waypoint-run-58c06c6da5864b17af716fb96f95bf40.json`.
+
+The game window had moved to the main display during the Computer Use F8 focus
+tests. With no action active, the existing BlackBox restore ran under the exact
+physical reservation and returned RIFT to `\\.\DISPLAY5`, rect
+`(-1928,22)-(8,1070)`, without a game restart or gameplay input. Fresh WGC showed
+Atank rendered normally: `artifacts/observe-wgc-3f9d0facd0d340b0bcc42e218ce09c58/image.png`.
+Native inspection reported `desktopInputsDown=[]`; basis SHA is still unchanged.
+Current checkpoint is 4/4 forward and app PID71916 is idle. Fresh native pose was
+`(7421.657715, 863.586548, 2941.027100)`, bearing 60.980718 degrees, with identity
+and source saved in `artifacts/recorded-route-checkpoint-1358-79136.json`.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads
@@ -242,10 +263,10 @@ claim of full-repository validation or live acceptance of the latest capture fix
    input coordinator; no Workbridge, LEGION or VMs.
 2. Require a fresh rendered game view and native identity before movement. Start
    RIFT normally only if needed; do not reuse authentication command lines.
-3. Core recorded-route and matching-file workflows have the specific live results
-   above. The remaining launcher follow-up worth qualifying is cold start before
-   RIFT, followed by a ready-client binding in that same window; its waiting UI
-   and refusal behavior have already been observed/tested.
+3. Core recorded-route, matching-file, cold-start launcher and interruption
+   workflows have the specific live results above. All three roadmap follow-ups
+   now work; keep the active goal's remaining work tied to a useful unresolved
+   case or the user's next priority, rather than repeating passing routes.
 4. Do not repeat already-passing route trials without a change, failure or
    unresolved concern. Passive capture, its reverse/forward playback, and slow
    segmentation now have the specific live evidence recorded above.

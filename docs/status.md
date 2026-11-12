@@ -15,6 +15,11 @@ finished within 0.17762 units. A live wrong-endpoint refusal exposed and then
 qualified a GUI fix: completed checkpoint, preview and Resume now agree after
 refusal. GUI actions also retain separate input receipt paths. Sixteen focused
 GUI tests passed; exact receipts are in the same handoff.
+Normal app closure during translation subsequently released all six pulses and
+saved 1/4 progress. Reopening stayed idle; explicit Resume completed within
+0.07079 units. RIFT was restored to its established left display, with a fresh
+rendered capture and no held desktop inputs. App PID71916 is idle at 4/4;
+reacquire its game identity before input.
 
 **08:25 EST NOVEMBER 12 — PASSIVE RECORD/REPLAY WORKING:** On **AMD-DESKTOP**,
 the updated native reader let GUI Record → Stop Recording save 732 valid samples
