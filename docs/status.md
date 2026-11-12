@@ -1,5 +1,24 @@
 # Current status
 
+**17:57 EST NOVEMBER 12 — NEARBY NAME/SCENE RETRIEVAL SURVIVED FULL RIFT RESTART:**
+On AMD-DESKTOP, normal Exit Game ended PID51524; Glyph launched PID40452/start
+`639301206978915233`, HWND9246620. The same app PID13008 reconnected automatically
+with Atank's identical XYZ, 0.000579-degree body-bearing difference and unchanged
+movement basis. Genuine 7/7 forward progress and route cache remain byte-identical.
+The existing BlackBox helper restored DISPLAY5 with the original 1280x720 client;
+startup LuaPad/rewards/casting panels were closed through their normal controls.
+Fresh actual Save view -> Open 3D view retained 18 unit positions and **16 name
+candidates**, with two cache misses. All 18 entity addresses differ from the old
+process: this acquisition resolved new owners rather than reusing saved pointers.
+The bounded scan examined 416 entries / 154 positions. WGC projection aligned all
+seven route points; the RRD verified and actual named viewer display passed.
+The viewer closed normally; no owned viewer processes or held inputs remain.
+No movement/attack was sent. App is idle on the main route, markers/unit option off.
+Evidence: `artifacts/unit-names-restart-2026-11-12/validation.json`; bundle
+`artifacts/waypoint-view-2fc85909747547b38581791abb744acb/`, including
+`scene-named-units-restarted.png`. This is one reproduced same-build recovery case,
+not general restart reliability, API naming, passive freshness or world-instance proof.
+
 **17:50 EST NOVEMBER 12 — NEARBY NAME CANDIDATES WORK IN THE SAVED 3D VIEW:**
 On AMD-DESKTOP/PID51524, actual Nearby units in 3D -> Save view -> Open 3D view
 retained 18 nearby positions and eight name candidates; ten cache misses stayed

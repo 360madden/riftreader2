@@ -154,6 +154,19 @@ The first physical 18-key batch returned eight names and ten cache misses in
 0.461 seconds native / 0.724 seconds wrapper, without input or target selection.
 Evidence: `artifacts/loaded-unit-names-51524-first/names-wrapper.json`.
 
+One same-build full-game restart also passed: normal PID51524 exit was observed
+before Glyph launched PID40452. The same app reconnected without recalibration;
+fresh Save view and actual Open 3D view retained 16 names / two cache misses from
+18 positions. All 18 entity addresses changed across the process boundary, while
+Atank's XYZ, movement basis, genuine checkpoint and route cache were preserved.
+The existing BlackBox helper restored the original display/client dimensions.
+The new RRD passed verification, its seven route projections aligned visually,
+and the viewer closed normally. No movement/attack or held inputs remained.
+Evidence: `artifacts/unit-names-restart-2026-11-12/validation.json` and bundle
+`artifacts/waypoint-view-2fc85909747547b38581791abb744acb/`.
+This reproduces on-demand retrieval in one new process; it does not qualify
+arbitrary updates, public/API name semantics, passive freshness or world instance.
+
 The existing native optical camera and combined projection matrix can project
 arbitrary world XYZ into normalized client coordinates. Client/frame geometry then
 maps those coordinates into a matching RIFT screenshot. This is separate from the
