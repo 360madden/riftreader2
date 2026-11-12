@@ -7,13 +7,14 @@ open-ground trip. No memory writes, addon, service, Workbridge or mesh required.
 from __future__ import annotations
 
 import argparse
-from contextlib import nullcontext
+from contextlib import closing, contextmanager, nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
 import math
 from pathlib import Path
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -86,7 +87,7 @@ class TripBudget:
 
 
 class ForegroundStop:
-    """Own-window no-activate mode and a temporary F8 STOP registration."""
+    """Temporary F8 STOP; optionally preserve focus for the GUI's STOP button."""
 
     def __init__(self, window, stop, events):
         import ctypes
@@ -107,54 +108,86 @@ class ForegroundStop:
         self.api.GetMessageW.restype = ctypes.c_int
         self.api.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
         self.kernel.GetCurrentThreadId.restype = wintypes.DWORD
-        window.update_idletasks()
-        self.handle = self.api.GetAncestor(window.winfo_id(), 2)
-        self.original_style = self.api.GetWindowLongPtrW(self.handle, -20)
-        ctypes.set_last_error(0)
-        self.api.SetWindowLongPtrW(self.handle, -20, self.original_style | 0x08000000)
-        if ctypes.get_last_error():
-            raise WaypointError("Could not enable a STOP window that preserves RIFT focus")
+        self.handle = None
+        if window is not None:
+            window.update_idletasks()
+            self.handle = self.api.GetAncestor(window.winfo_id(), 2)
+            self.original_style = self.api.GetWindowLongPtrW(self.handle, -20)
+            ctypes.set_last_error(0)
+            self.api.SetWindowLongPtrW(self.handle, -20, self.original_style | 0x08000000)
+            if ctypes.get_last_error():
+                raise WaypointError("Could not enable a STOP window that preserves RIFT focus")
         self.thread_id = None
+        self.registered = False
         self.ready = threading.Event()
         self.cancelled = threading.Event()
 
         def listen():
             self.thread_id = self.kernel.GetCurrentThreadId()
-            registered = bool(self.api.RegisterHotKey(None, 1, 0x4000, 0x77))
-            self.ready.set()
-            if self.cancelled.is_set():
-                if registered:
-                    self.api.UnregisterHotKey(None, 1)
-                return
-            if not registered:
-                events.put({"status": "notice", "reason": "F8 unavailable; use the STOP button."})
-                return
+            registered = False
             try:
+                registered = bool(self.api.RegisterHotKey(None, 1, 0x4000, 0x77))
+                self.registered = registered
+                self.ready.set()
+                if self.cancelled.is_set():
+                    return
+                if not registered:
+                    events.put({"status": "notice", "reason": "F8 unavailable; use the STOP button."})
+                    return
                 message = wintypes.MSG()
                 while self.api.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
                     if message.message == 0x0312:
                         stop.set()
                         events.put({"status": "stopping", "reason": "F8 STOP requested; waiting for the bounded pulse to finish."})
+            except Exception:
+                stop.set()
+                events.put({"status": "notice", "reason": "F8 listener failed; STOP requested."})
             finally:
-                self.api.UnregisterHotKey(None, 1)
+                if registered:
+                    self.api.UnregisterHotKey(None, 1)
+                    if not self.cancelled.is_set():
+                        stop.set()
+                        events.put({"status": "notice", "reason": "F8 listener exited; STOP requested."})
+                self.registered = False
+                self.ready.set()
 
         self.thread = threading.Thread(target=listen, daemon=True)
         self.thread.start()
-        if not self.ready.wait(1):
-            self.cancelled.set()
-            self.api.SetWindowLongPtrW(self.handle, -20, self.original_style)
-            raise WaypointError("F8 listener startup did not complete; no movement started")
+        try:
+            if not self.ready.wait(1):
+                raise WaypointError("F8 listener startup did not complete; no movement started")
+            if window is None and not self.registered:
+                raise WaypointError("F8 is unavailable; CLI input was not started")
+        except BaseException:
+            self.close()
+            raise
 
     def close(self):
         self.cancelled.set()
-        if self.thread.is_alive() and self.thread_id:
-            posted = self.api.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
-            if not posted and self.thread.is_alive():
-                raise WaypointError("Waiting for F8 listener shutdown")
-            self.thread.join(timeout=1)
-            if self.thread.is_alive():
-                raise WaypointError("Waiting for F8 listener shutdown")
-        self.api.SetWindowLongPtrW(self.handle, -20, self.original_style)
+        try:
+            if self.thread.is_alive() and self.thread_id:
+                posted = self.api.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
+                if not posted and self.thread.is_alive():
+                    raise WaypointError("Waiting for F8 listener shutdown")
+                self.thread.join(timeout=1)
+                if self.thread.is_alive():
+                    raise WaypointError("Waiting for F8 listener shutdown")
+        finally:
+            if self.handle is not None:
+                self.api.SetWindowLongPtrW(self.handle, -20, self.original_style)
+
+
+@contextmanager
+def cli_stop_controls(stop):
+    # Raising KeyboardInterrupt inside subprocess.run can kill the child before
+    # its unconditional key-up. Let it finish; the shared latch blocks the next
+    # action just as GUI STOP does. Install before listener construction, too.
+    previous = signal.signal(signal.SIGINT, lambda *_: stop.set())
+    try:
+        with closing(ForegroundStop(None, stop, queue.Queue())):
+            yield
+    finally:
+        signal.signal(signal.SIGINT, previous)
 
 
 def finite(value):
@@ -928,22 +961,23 @@ def main(argv=None):
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
         emit = lambda event: print(json.dumps({k: v for k, v in event.items()
                                                if k not in ("actions", "segments")}), flush=True)
-        if args.run_route is not None:
-            points = route_points(json.loads(args.run_route.read_text(encoding="utf-8"))["waypoints"])
-            started = time.monotonic()
-            legs = run_route(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
-            result = {"status": "arrived", "waypointCount": len(legs),
-                      "position": legs[-1]["position"], "bearing": legs[-1]["bearing"],
-                      "distance": legs[-1]["distance"], "legs": legs,
-                      "pulses": sum(leg["pulses"] for leg in legs),
-                      "totalHoldMs": sum(leg["totalHoldMs"] for leg in legs),
-                      "elapsedSeconds": round(time.monotonic()-started, 3),
-                      "allPulsesReleased": True}
-        else:
-            result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
-                      if args.face_bearing is not None else
-                      run_route(adapter, [("Waypoint", *args.go)], stop, emit,
-                                face_waypoints=args.face_waypoints)[0])
+        with cli_stop_controls(stop):
+            if args.run_route is not None:
+                points = route_points(json.loads(args.run_route.read_text(encoding="utf-8"))["waypoints"])
+                started = time.monotonic()
+                legs = run_route(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
+                result = {"status": "arrived", "waypointCount": len(legs),
+                          "position": legs[-1]["position"], "bearing": legs[-1]["bearing"],
+                          "distance": legs[-1]["distance"], "legs": legs,
+                          "pulses": sum(leg["pulses"] for leg in legs),
+                          "totalHoldMs": sum(leg["totalHoldMs"] for leg in legs),
+                          "elapsedSeconds": round(time.monotonic()-started, 3),
+                          "allPulsesReleased": True}
+            else:
+                result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
+                          if args.face_bearing is not None else
+                          run_route(adapter, [("Waypoint", *args.go)], stop, emit,
+                                    face_waypoints=args.face_waypoints)[0])
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps({"status": result["status"], "receipt": str(output)}))

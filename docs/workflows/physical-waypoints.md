@@ -111,9 +111,21 @@ python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 
 ```
 
 This requires explicit `--execute` and preserves every leg in one receipt. The
-same ownership, progress, release and whole-trip limits apply. **Ctrl+C** cancels
-CLI execution; **F8** is the GUI's temporary hotkey. Omit `--face-waypoints` to
+same ownership, progress, release and whole-trip limits apply. **F8** cancels CLI
+execution without changing game focus; **Ctrl+C** also cancels. CLI input refuses
+to start if its temporary F8 listener is unavailable. Omit `--face-waypoints` to
 use the W/S/Q/E movement basis while keeping the current facing.
+
+CLI Ctrl+C uses a temporary SIGINT handler that latches STOP instead of raising
+inside `subprocess.run`; this lets the native child's key-up finish. An unexpected
+F8-listener exit also latches STOP. Startup failure requests listener shutdown,
+and cleanup restores the GUI's original window style even if shutdown reports
+an error. Native listener checks covered registration conflict, owned hotkey
+messages, unexpected exit, startup-timeout cleanup and subsequent re-registration.
+A controlled live trial raised SIGINT during one native W subprocess: it finished
+and released, no second pulse was dispatched, and separate native reads found the
+player settled. This was a programmatic SIGINT test, not a physical Ctrl+C press.
+Receipt: `artifacts/waypoint-cli-sigint-trial.json`.
 
 A live two-point CLI route went one unit forward and returned home with one W
 and two S presses (450 ms requested hold total). Outbound error was 0.0102 units;

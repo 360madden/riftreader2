@@ -13,6 +13,9 @@ or attack was attempted.
 CLI `--run-route PATH --execute` now runs saved routes through the same controller
 and retains all named legs. A one-unit outbound/return trial finished 0.00414 units
 from home using three released W/S pulses, with unchanged bearing.
+CLI F8 now shares the existing listener; SIGINT latches STOP without killing the
+native child before key-up. A programmatic SIGINT during one real W subprocess
+finished its release, dispatched no second pulse and left the player settled.
 The longest GUI trial completed a **13.66-unit, three-point triangle**, returning
 **0.150 units** from its start in approximately one minute: 27 released pulses,
 3,700 ms requested hold, no target loss. Separate facing restored the pre-route
@@ -33,7 +36,7 @@ pulses, exclusive input ownership, fresh exact PID/start/build/player checks;
 no obstacle routing or full-game restart qualification. The basis deliberately
 rejects a new process epoch. Native read-only identity checks reduced measured
 per-check delay from 411 ms to 230–234 ms. Focused checks: 117 native control
-tests, 30 waypoint tests, 21 frame/observation tests and 14 WGC self-checks passed;
+tests, 33 waypoint tests, 21 frame/observation tests and 14 WGC self-checks passed;
 these are scoped checks, not a full-repository gate. The physical process was
 PID18092/start639300391441133615; reacquire identity before new actions. LEGION,
 VMs and peer edits were left untouched. Historical notes below predate this work.
