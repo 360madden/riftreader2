@@ -1106,7 +1106,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(json.loads(output.getvalue())["nativeRead"], "stats")
         reader.assert_called_once_with({"status": "ready"}, "stats", None,
                                        samples=None, interval_ms=None, include_position=False,
-                                        include_transform_sources=False)
+                                    include_transform_sources=False, include_target=False)
 
     def test_cli_default_is_current_physical_host_and_json(self):
         with patch.object(physical.socket, "gethostname", return_value="AMD-DESKTOP"), \

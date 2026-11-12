@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Diagnostics;
 using System.Text.Json;
 using RiftReader2.Application;
 using RiftReader2.Infrastructure;
@@ -19,7 +20,8 @@ internal static class CurrentBuildFacingSampleCommand
         TextWriter output, CancellationToken ct,
         Func<int, long, CancellationToken, Task<IAsyncDisposable>> acquireLease,
         Func<int, long, CancellationToken, Task<IReadOnlyNativeMemorySession>> open,
-        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> read)
+        Func<IReadOnlyNativeMemorySession, CurrentBuildFacingCandidate> read,
+        Func<IReadOnlyNativeMemorySession, CurrentBuildPairedPositionObservation>? readTarget = null)
     {
         if (!options.TryGetValue("--pid", out var rawPid) ||
             !int.TryParse(rawPid, NumberStyles.None, CultureInfo.InvariantCulture, out var pid) || pid <= 0 ||
@@ -29,6 +31,9 @@ internal static class CurrentBuildFacingSampleCommand
             throw new ArgumentException("Facing requires --pid, --start-ticks and --output.");
         var count = BoundedInt(options, "--samples", 1, 1, 30);
         var interval = BoundedInt(options, "--interval-ms", 100, 0, 2000);
+        var includeTarget = options.TryGetValue("--include-target", out var rawTarget) &&
+            (rawTarget == "true" ? true : rawTarget == "false" ? false :
+             throw new ArgumentException("--include-target must be true or false."));
         ct.ThrowIfCancellationRequested();
         if (File.Exists(path)) throw new IOException("Facing output already exists.");
         await using var lease = await acquireLease(pid, ticks, ct);
@@ -43,7 +48,35 @@ internal static class CurrentBuildFacingSampleCommand
         {
             ct.ThrowIfCancellationRequested();
             if (index > 0 && interval > 0) await Task.Delay(interval, ct);
+            var timer = Stopwatch.StartNew();
             var sample = read(session);
+            if (includeTarget)
+            {
+                var pair = readTarget is null ? CurrentBuildPairedPositionCandidateReader.Read(session) : readTarget(session);
+                var after = read(session);
+                if (pair.Identity != identity || after.Identity != identity ||
+                    pair.Self.UnitKey != sample.PlayerKeyDecimal || after.PlayerKey != sample.PlayerKey ||
+                    after.PlayerEntity != sample.PlayerEntity || after.PlayerSystem != sample.PlayerSystem ||
+                    pair.Self.Position != sample.PositionCandidate || after.PositionCandidate != sample.PositionCandidate ||
+                    pair.StartedAtUtc < sample.CompletedAtUtc || pair.CompletedAtUtc > after.StartedAtUtc ||
+                    timer.Elapsed.TotalMilliseconds > 2000)
+                    throw new InvalidDataException("Facing/target identity, position or acquisition interval changed.");
+                var firstCamera = sample.OpticalCameraCandidate;
+                var lastCamera = after.OpticalCameraCandidate;
+                var stable = firstCamera is { Status: "available-candidate", RawBits: { } firstBits,
+                                               ProjectionRawBits: { } firstProjection } &&
+                             lastCamera is { Status: "available-candidate", RawBits: { } lastBits,
+                                              ProjectionRawBits: { } lastProjection } &&
+                             firstCamera.CameraAddressDecimal == lastCamera.CameraAddressDecimal &&
+                             firstBits.AsSpan().SequenceEqual(lastBits) && firstProjection.AsSpan().SequenceEqual(lastProjection);
+                sample = sample with
+                {
+                    CompletedAtUtc = after.CompletedAtUtc,
+                    TargetPositionPairCandidate = pair,
+                    OpticalCameraAfterTargetCandidate = lastCamera,
+                    TargetProjectionCameraStableCandidate = stable
+                };
+            }
             if (sample.Identity != identity || session.Identity != identity || sample.PlayerKey == 0 ||
                 (index > 0 && (sample.PlayerKey != observations[0].PlayerKey ||
                                sample.PlayerEntity != observations[0].PlayerEntity ||
@@ -68,7 +101,8 @@ internal static class CurrentBuildFacingSampleCommand
             {
                 "Owner and consumed bytes are rechecked; sequential reads cannot exclude ABA.",
                 "The player-system scalar can differ from the position orientation during and after input.",
-                "Current camera-only separation, passive freshness and restart recovery remain unqualified.",
+                "Source-specific current-session evidence does not establish restart recovery or alternate view modes.",
+                "Optional target projection uses sequential positions bracketed by camera reads; it is not atomic or an occlusion test.",
                 "Executable SHA256 identifies on-disk bytes; loaded module bytes are not hashed."
             }
         };

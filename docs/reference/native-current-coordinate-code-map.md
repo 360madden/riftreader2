@@ -551,3 +551,45 @@ Raw before/after facing, paired XYZ and comparison are in
 `artifacts/camera-projection-20261111-2304/`. The screenshot is
 `artifacts/observe-wgc-fb32edf8b4b14576ba1a697cec9293df/image.png`.
 This is current-epoch corroboration, with restart recovery still open.
+
+### Selected-target retrieval and switch check at 23:12 EST
+
+`physical_rift.py --read-native facing --include-target` now reacquires the
+existing guarded paired-position candidate between two facing/camera reads in
+one native lease/session. It checks the same process, self key, entity, system,
+self XYZ and bounded acquisition interval. The raw report retains both camera
+observations. A different camera address, transform/origin bits or projection
+bits withholds the target screen point. A changed player owner/position rejects
+the combined sample. A target-unavailable result remains available independently
+of body/camera heading. The command sends no input or foreground changes.
+
+On the existing AMD-DESKTOP epoch, one click on a neighboring normal practice
+dummy changed the candidate key from `u8000000215000A28` to `u8000000215000A3F`.
+Its world XYZ became (7430.041015625, 863.5260009765625, 2949.11328125), and its
+normalized screen point became (0.313871349, 0.494203504), near frame pixel
+(398, 368), matching the displayed ground ring. Clicking the original dummy
+restored key `u8000000215000A28` and its previous point (0.389312709, 0.448609753).
+All three five-sample bursts had stable camera brackets, unchanged player XYZ
+and body bearing, and the explicit `fallback-key-candidate` guard status.
+
+Reports are `artifacts/physical-native-facing-f65b2abdf3fe47a795f1b0d35bb785d4.json`,
+`artifacts/physical-native-facing-c9256f2e4c1f4631b572b9965fd4a7c1.json`, and
+`artifacts/physical-native-facing-5cb0cf5f37e042fb8ea96b18e56e1d1b.json`.
+The changed-target frame is
+`artifacts/observe-wgc-771f8b8601be443b8fd77c2e14eff967/image.png`.
+
+Hover independence was not established. An optional follow-up title-bar click
+coincided with loss of the usable RIFT window and WGC frames. Joey reported that
+RIFT minimized and stuck, and recovered it using the separate Blackbox project.
+Desktop input was stopped. Do not repeat that title-bar interaction as a camera
+or target test; preserve the successful measurements from before the interruption.
+
+At 23:17 EST Joey requested a new screenshot after recovery. The read-only WGC
+probe succeeded on the same PID/start/SHA/HWND, now with a 1920 by 1032 frame
+and 1920 by 1009 client. The recovered image is
+`artifacts/observe-wgc-26ac22730beb454e816be8a204fa41ba/image.png`.
+A fresh three-sample combined native read also succeeded without input, retaining
+the original dummy key and stable camera brackets. Its normalized target X
+updated to 0.392033850 for the new aspect ratio, near frame pixel (753, 476),
+matching the recovered image's ring. The report is
+`artifacts/physical-native-facing-bc5908bfc17849a9a50bd606490cd068.json`.

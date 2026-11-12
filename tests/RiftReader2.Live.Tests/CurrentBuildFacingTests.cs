@@ -131,6 +131,74 @@ public sealed class CurrentBuildFacingTests
         finally { Directory.Delete(directory, true); }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task OptionalTargetChecksOwnerAndCameraAcrossAcquisition(int fault)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "rr2-facing-target-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var session = new Fake();
+            var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456",
+                ["--output"] = path, ["--include-target"] = "true" };
+            var reads = 0;
+            CurrentBuildFacingCandidate Facing(IReadOnlyNativeMemorySession source)
+            {
+                reads++;
+                float[] transform = [0, 0, -1, 0, 1, 0, 1, 0, 0, 3, 39, -8, 7424, 832, 2944];
+                float[] projection = [-1, 0, 0, 3, 0, 1, 0, -39, 0, 0, 1, 8, 0, 0, 1, 8, 0, 1, 1, 0];
+                var camera = new CurrentBuildOpticalCameraCandidate("available-candidate", null,
+                    fault == 1 && reads == 2 ? "300008" : "300000", transform[..9], transform[9..12],
+                    transform[12..15], transform.Select(BitConverter.SingleToUInt32Bits).ToArray(),
+                    0, 0, [7427, 871, 2936])
+                {
+                    ProjectionRowMajor = projection[..16], ViewportLeftRightTopBottom = projection[16..],
+                    ProjectionRawBits = projection.Select(BitConverter.SingleToUInt32Bits).ToArray()
+                };
+                return Read((Fake)source) with { OpticalCameraCandidate = camera };
+            }
+            CurrentBuildPairedPositionObservation Target(IReadOnlyNativeMemorySession source)
+            {
+                var start = DateTimeOffset.UtcNow;
+                var self = new PairedPositionCandidateSample("candidate", fault == 2 ? "43" : "42",
+                    "u000000000000002A", new(100, 20, 200), start, start, 0, 0);
+                var target = new PairedPositionCandidateSample("candidate", "99", "u0000000000000063",
+                    new(110, 20, 210), start, DateTimeOffset.UtcNow, 0, 0);
+                return new(source.Identity, start, DateTimeOffset.UtcNow, "test", self, target,
+                    "candidate", "fallback-key-candidate", "fallback-key-candidate", 0, 0, 0);
+            }
+            var run = CurrentBuildFacingSampleCommand.RunAsync(options, new StringWriter(), CancellationToken.None,
+                (_, _, _) => Task.FromResult<IAsyncDisposable>(new Lease(() => Assert.True(session.Disposed))),
+                (_, _, _) => Task.FromResult<IReadOnlyNativeMemorySession>(session), Facing, Target);
+            if (fault == 2)
+            {
+                await Assert.ThrowsAsync<InvalidDataException>(() => run);
+                Assert.False(File.Exists(path));
+                return;
+            }
+            Assert.Equal(0, await run);
+            Assert.Equal(2, reads);
+            using var report = JsonDocument.Parse(await File.ReadAllTextAsync(path));
+            var observation = report.RootElement.GetProperty("observation");
+            Assert.Equal(fault == 0, observation.GetProperty("targetProjectionCameraStableCandidate").GetBoolean());
+            Assert.Equal("99", observation.GetProperty("targetPositionPairCandidate").GetProperty("target")
+                .GetProperty("unitKey").GetString());
+        }
+        finally { if (File.Exists(path)) File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task CommandRouterAcceptsTargetFlagBeforeCheckingRequiredIdentity()
+    {
+        var error = new StringWriter();
+        Assert.Equal(2, await NativeCommandRunner.RunAsync(
+            ["sample-current-facing", "--include-target", "true"], TextWriter.Null, error));
+        Assert.Contains("Facing requires --pid", error.ToString());
+        Assert.DoesNotContain("Unknown option", error.ToString());
+    }
+
     private sealed class Lease(Action release) : IAsyncDisposable
     {
         public ValueTask DisposeAsync() { release(); return ValueTask.CompletedTask; }

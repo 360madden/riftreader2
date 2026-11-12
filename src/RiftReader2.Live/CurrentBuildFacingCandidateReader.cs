@@ -21,6 +21,9 @@ internal sealed record CurrentBuildFacingCandidate(
     public bool HeadingQualified => false;
     public bool CameraYawQualified => false;
     public CurrentBuildOpticalCameraCandidate? OpticalCameraCandidate { get; init; }
+    public CurrentBuildPairedPositionObservation? TargetPositionPairCandidate { get; init; }
+    public CurrentBuildOpticalCameraCandidate? OpticalCameraAfterTargetCandidate { get; init; }
+    public bool? TargetProjectionCameraStableCandidate { get; init; }
     public double? PrimaryBearingDegreesCandidate =>
         PositionOrientationCandidate.Primary is { Status: "structural-y-planar-matrix-candidate", RowMajorF32: { } matrix }
             ? Wrap180(Math.Atan2(matrix[2], matrix[8]) * 180 / Math.PI) : null;

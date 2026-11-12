@@ -53,6 +53,13 @@ add `--project-world X Y Z` to the facing command. The result appears under
 and float32 bits. `insideViewportCandidate` checks screen bounds only and cannot
 establish occlusion. Multiply normalized coordinates by the current client size;
 window borders and the title bar are outside that coordinate system.
+Add `--include-target` to the facing command to reacquire the existing gated
+target-position candidate in the same native session. The compact
+`selectedTargetProjectionCandidate` retains target key, world XYZ, guard status
+and screen point. Camera reads bracket the target acquisition. A changed camera
+withholds the screen point; a changed player owner or position rejects the combined
+sample. The fallback target-key branch remains explicitly labeled. Target freshness,
+hover independence, occlusion and restart recovery are separate qualifications.
 
 For a **single-command, read-only** distance/progress preview against an existing
 named anchor (replace the example catalog and ID with actual saved values):

@@ -1,6 +1,7 @@
 """Direct-facing projection, raw float32 checks and the public physical command."""
 from copy import deepcopy
 from contextlib import redirect_stdout
+from datetime import datetime, timedelta
 import io
 import json
 import math
@@ -57,6 +58,7 @@ def optical_camera():
     viewport = [0, 1, 1, 0]
     return {
         'status': 'available-candidate', 'unavailableReason': None,
+        'cameraAddressDecimal': '2096815868160',
         'sourceRootRva': '0x3362848', 'selectedModeCameraGetterRva': '0xF88580',
         'cameraYawQualified': False, 'rotationRowMajor': transform[:9],
         'rendererEyeXYZ': transform[9:12], 'renderOriginXYZ': transform[12:],
@@ -70,6 +72,42 @@ def optical_camera():
 
 
 class PhysicalFacingTests(unittest.TestCase):
+    def test_selected_target_projection_requires_stable_camera_and_matching_self(self):
+        source = report()
+        for row in source['observations']:
+            row['opticalCameraCandidate'] = optical_camera()
+            row['opticalCameraAfterTargetCandidate'] = optical_camera()
+            row['targetProjectionCameraStableCandidate'] = True
+            started = datetime.fromisoformat(row['startedAtUtc'].replace('Z', '+00:00'))
+            begin = (started + timedelta(milliseconds=1)).isoformat()
+            end = (started + timedelta(milliseconds=5)).isoformat()
+            target = {'status': 'candidate', 'unitKey': '99', 'unitIdCandidate': 'u0000000000000063',
+                      'position': {'x': 7427, 'y': 871, 'z': 2946},
+                      'startedAtUtc': begin, 'completedAtUtc': end}
+            row['targetPositionPairCandidate'] = {
+                'identity': row['identity'], 'startedAtUtc': begin, 'completedAtUtc': end,
+                'self': {'unitKey': row['playerKeyDecimal'], 'position': row['positionCandidate']},
+                'target': target, 'beforeGuardStatus': 'fallback-key-candidate',
+                'afterGuardStatus': 'fallback-key-candidate', 'targetStatus': 'candidate',
+                'acquisitionSpanMilliseconds': 4}
+        value = physical._native_values('facing', source)['selectedTargetProjectionCandidate']
+        self.assertEqual('99', value['targetKey'])
+        self.assertAlmostEqual(.5, value['screenPointCandidate']['normalizedX'])
+        self.assertAlmostEqual(.5, value['screenPointCandidate']['normalizedY'])
+        row = source['observations'][-1]
+        row['opticalCameraAfterTargetCandidate']['cameraAddressDecimal'] = '2096815868168'
+        with self.assertRaisesRegex(ValueError, 'camera-bracket'):
+            physical._native_values('facing', source)
+        row['targetProjectionCameraStableCandidate'] = False
+        value = physical._native_values('facing', source)['selectedTargetProjectionCandidate']
+        self.assertEqual('camera-not-stable-across-target-read', value['screenPointCandidate']['reason'])
+        row['targetPositionPairCandidate']['target'] = None
+        value = physical._native_values('facing', source)['selectedTargetProjectionCandidate']
+        self.assertEqual('target-position-unavailable', value['reason'])
+        row['targetPositionPairCandidate']['self']['unitKey'] = '100'
+        with self.assertRaisesRegex(ValueError, 'target-owner'):
+            physical._native_values('facing', source)
+
     def test_world_projection_subtracts_origin_and_flips_screen_y(self):
         camera = optical_camera()
         center = physical._project_world_point(camera, {'x': 7427, 'y': 871, 'z': 2946})
