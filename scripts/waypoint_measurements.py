@@ -2,6 +2,12 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import math
+import re
+
+
+TARGET_POSITION_QUALIFICATION = (
+    "Static selected-target native-position candidate; no live-follow or passive-freshness "
+    "qualification; world, terrain and occlusion unverified.")
 
 
 def _require(condition, reason):
@@ -43,7 +49,16 @@ def _position(position):
 def _receipt(receipt, xyz=None):
     _require(isinstance(receipt, dict) and type(receipt.get("version")) is int
              and receipt["version"] == 1 and receipt.get("kind") in
-             ("native-player-position", "recorded-route-point"), "point-measurement-required")
+             ("native-player-position", "native-selected-target-position", "recorded-route-point"),
+             "point-measurement-required")
+    if receipt["kind"] == "native-selected-target-position":
+        target_key = receipt.get("targetKey")
+        _require(isinstance(target_key, str) and re.fullmatch(r"[1-9][0-9]{0,19}", target_key) is not None
+                 and int(target_key) <= 18446744073709551615, "measurement-target-key-required")
+        _require(receipt.get("qualification") == TARGET_POSITION_QUALIFICATION,
+                 "measurement-target-qualification-required")
+    else:
+        _require("targetKey" not in receipt, "measurement-target-key-kind-mismatch")
     _identity(receipt.get("identity"))
     measured = _position(receipt.get("position"))
     _require(isinstance(receipt.get("source"), str) and bool(receipt["source"].strip()),
@@ -60,10 +75,16 @@ def _receipt(receipt, xyz=None):
     return deepcopy(receipt)
 
 
-def measurement(position, identity, source, observed_at):
+def measurement(position, identity, source, observed_at, *, kind="native-player-position", target_key=None):
     """Build one native-position receipt; no I/O or claims about continuous motion."""
-    return _receipt(dict(version=1, kind="native-player-position", position=_position(position),
-                         identity=deepcopy(identity), source=source, observedAtUtc=observed_at))
+    _require(kind in ("native-player-position", "native-selected-target-position"), "measurement-kind-unsupported")
+    receipt = dict(version=1, kind=kind, position=_position(position),
+                   identity=deepcopy(identity), source=source, observedAtUtc=observed_at)
+    if kind == "native-selected-target-position":
+        receipt.update(targetKey=target_key, qualification=TARGET_POSITION_QUALIFICATION)
+    else:
+        _require(target_key is None, "measurement-target-key-kind-mismatch")
+    return _receipt(receipt)
 
 
 def _points(document):

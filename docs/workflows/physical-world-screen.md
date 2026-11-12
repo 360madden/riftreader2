@@ -12,6 +12,15 @@ observations with their original sources and intervals, without claiming a newly
 continuous path. Known measured points from another host/build/player are also
 refused before playback input. This adds no terrain/world-instance authority.
 
+**Add Target** also preserves the selected target's actual Y and exact uint64
+target key as a static measured point, with the observing player identity kept
+separately. It reuses existing target age/floor checks. A target that later moves
+leaves this saved location unchanged. Missing target-key/provenance information
+keeps the existing 2D point and explains its unknown height. Thirty focused tests
+passed, including keys above JavaScript's exact integer range. The real button
+saved 8/8 heights on PID17212; paired image acceptance was interrupted by physical
+Escape and the subsequent user-handled black-client restart, so it remains pending.
+
 Live proof on AMD-DESKTOP/PID17212: actual Save Current appended Point 8 with
 Y `863.5865478515625`; Save view rendered all eight and its RRD passed verification.
 The live Qt beacon at Atank's feet is visible in

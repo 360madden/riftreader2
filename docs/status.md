@@ -1,5 +1,24 @@
 # Current status
 
+**16:04 EST NOVEMBER 12 — USER RESTART REBOUND WITHOUT RECALIBRATION:**
+On **AMD-DESKTOP**, Joey recovered another black-client episode by reloading
+RIFT. Old PID17212 ended; PID51524/start639301139727197117/HWND36770560 is freshly
+admitted with the same executable build and Atank key. The readiness check reused
+the unchanged movement basis; native XYZ is unchanged and the original genuine
+7/7 reverse checkpoint is restored. App PID70220 now shows PID51524, the original
+seven-point route and live pose, with markers off and playback idle. No movement
+or focus request was sent by the readiness/native reads. Binding evidence:
+`artifacts/user-restart-51524-cc4057b6/binding.json`.
+
+Add Target also now retains static measured XYZ plus lossless targetKey, separate
+from observing-player identity. Thirty focused tests passed; the actual pre-restart
+button saved the friendly guard with 8/8 measured heights and kept the 20-unit
+movement limit. Its paired capture was interrupted by physical Escape, so that
+specific visual acceptance remains pending. Incident notes/config backup:
+`artifacts/rift-black-client-2026-11-12-1557/`; no cause or capture-library blame is
+established. Our owned helper was closed during the user's restart and original
+checkpoint restored byte-for-byte before rebinding.
+
 **15:51 EST NOVEMBER 12 — SAVE CURRENT NOW PRODUCES USABLE 3D BEACONS:**
 On **AMD-DESKTOP/PID17212**, Save Current retained fresh native XYZ/source/
 identity/time rather than discarding height. Root appended one point to the

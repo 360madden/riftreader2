@@ -1132,6 +1132,14 @@ def launch_window(args):
                         result["measurementReason"] = "Position provenance unavailable; point saved without height."
                 if operation == "target":
                     result["waypoint"] = target_waypoint(pose)
+                    try:
+                        from scripts.waypoint_measurements import measurement
+                        result["measurement"] = measurement(
+                            pose.selected_target["positionXYZCandidate"], adapter.binding, pose.source,
+                            datetime.now(timezone.utc).isoformat(), kind="native-selected-target-position",
+                            target_key=pose.selected_target["targetKey"])
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        result["measurementReason"] = "Target position saved without verified height provenance."
                 if operation == "map":
                     view, px, pz, label = points
                     moved = math.hypot(view.x - pose.position.x, view.z - pose.position.z) > .05
@@ -1752,7 +1760,10 @@ def launch_window(args):
                     redraw()
                 name.set(f"Point {len(table.get_children()) + 1}")
             if "waypoint" in event:
-                add_point(*event["waypoint"])
+                item = add_point(*event["waypoint"])
+                if item is not None and event.get("measurement") is not None:
+                    point_receipts[item] = event["measurement"]
+                    redraw()
                 name.set(f"Point {len(table.get_children()) + 1}")
             text = (f"Route complete — {event['waypointCount']} waypoint{'s' if event['waypointCount'] != 1 else ''}, "
                     f"{event['distance']:.3f} units from the final point."
@@ -1762,7 +1773,7 @@ def launch_window(args):
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
                     f"{status}: {event.get('name', '')}" if status == "leg" else
                     event.get("measurementReason", "Saved current position.") if status == "save" else
-                    "Saved the target's current ground position." if status == "target" else
+                    event.get("measurementReason", "Saved the target's current ground position.") if status == "target" else
                     "Waypoint added from the preview." if status == "map" else
                     "Position refreshed.")
             state.set(text)

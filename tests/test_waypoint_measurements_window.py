@@ -1,5 +1,6 @@
 """Measured waypoint GUI provenance with fake poses and no native input."""
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import time
 from types import SimpleNamespace
@@ -132,6 +133,41 @@ class MeasurementWindowTests(unittest.TestCase):
         self.assertEqual(["recorded-route-point", "recorded-route-point"],
                          [receipt["kind"] for receipt in result["pointMeasurements"]])
         self.assertEqual("route-observation-interval", result["pointMeasurements"][0]["sourceTimeKind"])
+
+    def test_add_target_saves_own_xyz_and_lossless_target_identity(self):
+        self.prepare()
+        key = "18446744073709551614"
+        target = {"status": "candidate", "targetKey": key,
+                  "positionXYZCandidate": {"x": 3.125, "y": 17.75, "z": 4.5},
+                  "sampledAtUtc": datetime.now(timezone.utc).isoformat()}
+        pose = app.Snapshot(app.Position(1, 17.25, 2), 3, time.monotonic(), "target-native.json", target)
+        self.adapter.read = lambda **kwargs: pose
+        self.button("Add Target").invoke(); self.wait_rows(1)
+        result = self.save_copy()
+        self.assertEqual([["Selected target", 3.125, 4.5]], result["waypoints"])
+        self.assertEqual([17.75], result["heights"])
+        receipt = result["pointMeasurements"][0]
+        self.assertEqual("native-selected-target-position", receipt["kind"])
+        self.assertEqual(key, receipt["targetKey"])
+        self.assertEqual(self.identity, receipt["identity"]["runtimeIdentity"])
+        self.assertEqual(target["positionXYZCandidate"], receipt["position"])
+        self.assertEqual("target-native.json", receipt["source"])
+        self.assertNotIn("recording", result)
+
+    def test_unavailable_target_is_not_added_and_missing_key_stays_unmeasured(self):
+        self.prepare()
+        unavailable = app.Snapshot(app.Position(1, 17.25, 2), 3, time.monotonic(), "target-native.json", None)
+        self.adapter.read = lambda **kwargs: unavailable
+        self.button("Add Target").invoke(); self.wait_rows(0)
+        self.assertEqual(0, len(self.table.get_children()))
+        target = {"status": "candidate", "positionXYZCandidate": {"x": 3, "y": 17.5, "z": 4},
+                  "sampledAtUtc": datetime.now(timezone.utc).isoformat()}
+        pose = app.Snapshot(app.Position(1, 17.25, 2), 3, time.monotonic(), "target-native.json", target)
+        self.adapter.read = lambda **kwargs: pose
+        self.button("Add Target").invoke(); self.wait_rows(1)
+        result = self.save_copy()
+        self.assertNotIn("heights", result)
+        self.assertNotIn("pointMeasurements", result)
 
 
 if __name__ == "__main__":

@@ -28,6 +28,46 @@ class MeasurementTests(unittest.TestCase):
         retained["identity"]["runtimeIdentity"]["processId"] = 999
         self.assertEqual(self.receipt["identity"]["runtimeIdentity"]["processId"], 10)
 
+    def test_selected_target_receipt_preserves_static_xyz_observer_and_lossless_key(self):
+        position = deepcopy(self.xyz)
+        receipt = measurement(position, self.identity, "target-native.json", "2026-11-12T20:00:00Z",
+                              kind="native-selected-target-position", target_key="9223372045797034555")
+        position["y"] = 999
+        document = dict(self.document, pointMeasurements=[receipt])
+        parsed = parse_projection_route(document)
+        retained = parsed["recordingIdentity"]["pointMeasurements"][0]
+        self.assertEqual(retained["targetKey"], "9223372045797034555")
+        self.assertIsInstance(retained["targetKey"], str)
+        self.assertEqual(retained["position"], self.xyz)
+        self.assertEqual(parsed["identity"], self.identity["runtimeIdentity"])
+        self.assertEqual(document_measurements(json.loads(json.dumps(document))), [receipt])
+        self.assertIn("Static selected-target", retained["qualification"])
+        self.assertIn("no live-follow", retained["qualification"])
+        self.assertNotIn("recording", document)
+
+    def test_selected_target_key_requires_positive_canonical_uint64_string(self):
+        for key in (None, True, False, 42, 42., -1, "-1", "0", "01", " 42", "+42", "4.2",
+                    "18446744073709551616", "", "9" * 200):
+            with self.subTest(key=key), self.assertRaisesRegex(ValueError, "target-key-required"):
+                measurement(self.xyz, self.identity, "target.json", "2026-11-12T20:00:00Z",
+                            kind="native-selected-target-position", target_key=key)
+
+    def test_selected_target_malformed_saved_receipt_and_other_kind_key_refuse(self):
+        receipt = measurement(self.xyz, self.identity, "target.json", "2026-11-12T20:00:00Z",
+                              kind="native-selected-target-position", target_key="18446744073709551615")
+        for change in (lambda r: r.update(targetKey=9223372045797034555.),
+                       lambda r: r.pop("qualification"), lambda r: r.update(kind="native-player-position")):
+            invalid = deepcopy(receipt)
+            change(invalid)
+            document = dict(self.document, pointMeasurements=[invalid])
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                parse_projection_route(document)
+            self.assertEqual(document_measurements(document), [None])
+        with self.assertRaisesRegex(ValueError, "kind-mismatch"):
+            measurement(self.xyz, self.identity, "a", "2026-11-12T20:00:00Z", target_key="42")
+        with self.assertRaisesRegex(ValueError, "kind-unsupported"):
+            measurement(self.xyz, self.identity, "a", "2026-11-12T20:00:00Z", kind="unknown")
+
     def test_epochs_may_differ_but_host_build_player_must_match(self):
         second = deepcopy(self.receipt)
         second["identity"]["runtimeIdentity"]["processId"] = 20
