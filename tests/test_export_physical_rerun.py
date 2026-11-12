@@ -114,6 +114,100 @@ class ExportTests(unittest.TestCase):
         path.write_text(json.dumps(wrapper))
         return path, native_path, raw, wrapper
 
+    def named_unit_wrapper(self, *, fault=None):
+        from tests.test_physical_unit_names import report
+        path, native, positions, wrapper = self.unit_wrapper()
+        unit = positions["observation"]["rows"][1]
+        raw = report(keys=[unit["unitKey"]], timestamp="2026-11-12T04:00:00.2Z")
+        row = raw["observation"]
+        row["identity"] = deepcopy(positions["observation"]["identity"])
+        row["selfKey"] = positions["observation"]["selfKey"]
+        row["rows"][0]["entityAddressDecimal"] = unit["entityAddressDecimal"]
+        row["rows"][0]["fallbackText"] = "3rd Guard Soldier"
+        if fault == "epoch": row["identity"]["processId"] += 1
+        if fault == "player": row["selfKey"] = "42"
+        if fault == "key": row["rows"][0]["unitKey"] = "99"
+        if fault == "entity": row["rows"][0]["entityAddressDecimal"] = str(int(unit["entityAddressDecimal"]) + 8)
+        if fault == "time":
+            for value in [row, row["rows"][0]]:
+                value["startedAtUtc"] = value["completedAtUtc"] = "2026-11-12T04:00:00.05Z"
+        names_native = self.root / "names-raw.json"
+        names_native.write_text(json.dumps(raw))
+        digest = hashlib.sha256(names_native.read_bytes()).hexdigest()
+        receipt = dict(status="complete", workflow="physical", nativeRead="unit-names", ownerHost="AMD-DESKTOP",
+                       target=deepcopy(wrapper["target"]), nativeOutput=str(names_native), nativeSourceSha256=digest,
+                       nativeValues=exporter.plot.physical._native_values("unit-names", raw))
+        if fault == "values": receipt["nativeValues"]["rows"][0]["baseNameCandidate"] = "Forged"
+        names_wrapper = self.root / "names-wrapper.json"
+        names_wrapper.write_text(json.dumps(receipt))
+        wrapper["nameSample"] = dict(status="saved", path=str(names_wrapper), source=str(names_native),
+                                     sha256="0"*64 if fault == "hash" else digest)
+        path.write_text(json.dumps(wrapper))
+        return path, names_native, names_wrapper
+
+    def test_optional_name_cache_miss_keeps_generic_unlabeled_point(self):
+        path, native, wrapper_path = self.named_unit_wrapper()
+        raw = json.loads(native.read_text())
+        raw["observation"]["rows"][0].update(status="cache-miss", fallbackText=None, localizationKey=None)
+        native.write_text(json.dumps(raw))
+        wrapper = json.loads(wrapper_path.read_text())
+        wrapper.update(nativeSourceSha256=hashlib.sha256(native.read_bytes()).hexdigest(),
+                       nativeValues=exporter.plot.physical._native_values("unit-names", raw))
+        wrapper_path.write_text(json.dumps(wrapper))
+        position = json.loads(path.read_text())
+        position["nameSample"]["sha256"] = wrapper["nativeSourceSha256"]
+        path.write_text(json.dumps(position))
+        scan = self.run_export(unit_samples=[path])["unitSamples"][0]
+        self.assertEqual(scan["names"]["rows"][0]["reason"], "cache-miss")
+        self.assertNotIn("nameCandidate", scan["units"][0])
+        self.assertFalse(any(event[1] == "point-labels3d" for event in self.sinks[-1].events))
+
+    def test_optional_names_join_owners_hashes_and_label_only_at_name_time(self):
+        path, native, wrapper = self.named_unit_wrapper()
+        result = self.run_export(unit_samples=[path])
+        scan = result["unitSamples"][0]
+        self.assertEqual(scan["names"]["status"], "saved")
+        self.assertEqual(scan["names"]["nativeSource"]["sha256"], hashlib.sha256(native.read_bytes()).hexdigest())
+        self.assertEqual(scan["names"]["wrapperSource"]["sha256"], hashlib.sha256(wrapper.read_bytes()).hexdigest())
+        name = scan["units"][0]["nameCandidate"]
+        self.assertEqual(name["baseNameCandidate"], "3rd Guard Soldier")
+        events = self.sinks[-1].events
+        point = next(e for e in events if e[0].startswith("world/loaded_units/") and e[1] == "points3d")
+        label = next(e for e in events if e[1] == "point-labels3d")
+        self.assertEqual(label[2], dict(labels=["3rd Guard Soldier (candidate)"]))
+        self.assertGreater(label[3]["at"], point[3]["at"])
+        self.assertEqual(label[3]["at"], exporter.timestamp_ns(name["sampledAtUtc"]))
+        sink = object.__new__(exporter.RerunSink)
+        sink.rr, sink.recording = Mock(), Mock()
+        sink.log("world/test", "point-labels3d", label[2])
+        sink.rr.Points3D.from_fields.assert_called_once_with(labels=label[2]["labels"], show_labels=True)
+
+    def test_optional_names_invalid_evidence_preserves_position_export(self):
+        for fault in ("hash", "epoch", "player", "key", "entity", "time", "values"):
+            with self.subTest(fault=fault):
+                path, _, _ = self.named_unit_wrapper(fault=fault)
+                result = self.run_export(unit_samples=[path])
+                scan = result["unitSamples"][0]
+                self.assertEqual(scan["names"]["status"], "unavailable")
+                self.assertTrue(scan["names"]["reason"])
+                self.assertEqual(len(scan["units"]), 1)
+                self.assertNotIn("nameCandidate", scan["units"][0])
+                self.assertFalse(any(e[1] == "point-labels3d" for e in self.sinks[-1].events))
+                self.output.unlink()
+
+    def test_names_cannot_repopulate_a_subsequent_scan_after_clear(self):
+        path, _, _ = self.named_unit_wrapper()
+        second, native, raw, _ = self.unit_wrapper("second")
+        # Retain a valid scan starting after first position but before its names complete.
+        raw["observation"]["startedAtUtc"] = "2026-11-12T04:00:00.15Z"
+        raw["observation"]["completedAtUtc"] = "2026-11-12T04:00:00.3Z"
+        for row in raw["observation"]["rows"]:
+            row["startedAtUtc"] = row["completedAtUtc"] = "2026-11-12T04:00:00.16Z"
+        native.write_text(json.dumps(raw))
+        scan = self.run_export(unit_samples=[path, second])["unitSamples"][0]
+        self.assertEqual(scan["names"]["reason"], "unit-names-overlap-next-position-scan")
+        self.assertNotIn("nameCandidate", scan["units"][0])
+
     def test_unit_samples_keep_independent_times_keys_hashes_and_camera_change(self):
         path, native, raw, wrapper = self.unit_wrapper(camera_changed=True)
         result = self.run_export(unit_samples=[path])

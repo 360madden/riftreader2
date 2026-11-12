@@ -123,6 +123,51 @@ def _compare_zone_context(before, after):
     return result
 
 
+def _unit_names_sample(selection, values, positions, directory):
+    """One optional explicit batch for only the positions already chosen for display."""
+    source, wrapper = directory / "unit-names-native.json", directory / "unit-names-sample.json"
+    entry = {"status": "unavailable"}
+    chosen = sorted((row for row in values["units"] if row["unitKey"] != values["selfKey"]
+                     and row["horizontalDistanceCandidate"] <= 35),
+                    key=lambda row: (row["horizontalDistanceCandidate"], int(row["unitKey"])))[:18]
+    keys = [row["unitKey"] for row in chosen]
+    if not keys:
+        return dict(entry, reason="no-displayed-units")
+    try:
+        receipt = physical_rift.read_native(selection, "unit-names", output=source, unit_keys=keys)
+        write_json_atomic(wrapper, receipt)
+        entry["receiptPath"] = str(wrapper)
+        require(receipt.get("status") == "complete", receipt.get("reason", "unit-names-unavailable"))
+        require(receipt.get("workflow") == "physical" and receipt.get("nativeRead") == "unit-names"
+                and receipt.get("target") == selection["target"]
+                and str(receipt.get("ownerHost", "")).casefold() == selection["target"]["hostName"].casefold(),
+                "unit-names-wrapper-identity-mismatch")
+        require(receipt.get("nativeOutput") == str(source), "unit-names-source-path-mismatch")
+        raw = source.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        require(receipt.get("nativeSourceSha256") == digest, "unit-names-source-hash-mismatch")
+        report = json.loads(raw.decode("utf-8-sig"), object_pairs_hook=plot_physical_waypoints.unique_fields,
+                            parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite-json")))
+        names = physical_rift._native_values("unit-names", report)
+        identity, target = report["observation"]["identity"], selection["target"]
+        require(identity["processId"] == target["processId"]
+                and str(identity["processStartUtcTicks"]) == target["processStartUtcTicks"]
+                and identity["executableSha256"].casefold() == target["executableSha256"].casefold(),
+                "unit-names-source-identity-mismatch")
+        require(names == receipt.get("nativeValues") and names["selfKey"] == values["selfKey"]
+                and [row["unitKey"] for row in names["rows"]] == keys, "unit-names-source-values-mismatch")
+        stamp = physical_rift._utc_tick_order_key
+        require(stamp(positions["completedAtUtc"]) <= stamp(names["startedAtUtc"]),
+                "unit-names-acquisition-order-mismatch")
+        owners = {row["unitKey"]: row["entityAddressDecimal"] for row in positions["rows"]}
+        require(all(row["status"] != "available-candidate" or owners[row["unitKey"]] == row["entityAddressDecimal"]
+                    for row in names["rows"]), "unit-names-position-owner-mismatch")
+        entry.update(status="saved", path=str(wrapper), source=str(source), sha256=digest)
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+        entry["reason"] = str(error)
+    return entry
+
+
 def _unit_sample(selection, route, directory):
     """Retain one independent optional scan bound to the captured process and player."""
     source, wrapper = directory / "units-native.json", directory / "units-sample.json"
@@ -150,8 +195,10 @@ def _unit_sample(selection, route, directory):
         require(values["selfKey"] == route["identity"]["unitKey"], "unit-route-player-mismatch")
         retained = deepcopy(receipt)
         retained["nativeSourceSha256"] = digest
+        names = _unit_names_sample(selection, values, report["observation"], directory)
+        retained["nameSample"] = names
         write_json_atomic(wrapper, retained)
-        entry.update(status="saved", path=str(wrapper), source=str(source), sha256=digest)
+        entry.update(status="saved", path=str(wrapper), source=str(source), sha256=digest, names=names)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         entry["reason"] = str(error)
     return entry

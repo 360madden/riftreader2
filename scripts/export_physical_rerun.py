@@ -122,6 +122,8 @@ class RerunSink:
         elif kind == "points3d":
             archetype = rr.Points3D(data["positions"], labels=data["labels"],
                                     show_labels=data.get("show_labels", True))
+        elif kind == "point-labels3d":
+            archetype = rr.Points3D.from_fields(labels=data["labels"], show_labels=True)
         elif kind == "route3d":
             archetype = rr.LineStrips3D([data["positions"]])
         elif kind == "camera-rays3d":
@@ -244,6 +246,49 @@ def prepare_unit_samples(paths, route, frames):
     def epoch(identity):
         return identity.get("processId"), str(identity.get("processStartUtcTicks")), str(identity.get("executableSha256", "")).casefold()
 
+    def names_for(link, position_wrapper, scan):
+        result = dict(status="unavailable", reason="not-retained")
+        if not isinstance(link, dict) or link.get("status") != "saved":
+            result["reason"] = link.get("reason", "not-retained") if isinstance(link, dict) else "not-retained"
+            return result
+        result["sourceLink"] = dict(link)
+        try:
+            def relative(value, parent):
+                path = Path(value)
+                return path if path.is_absolute() else Path(parent).parent / path
+            wrapper, wrapper_source = saved(relative(link["path"], position_wrapper["path"]))
+            plot.require(wrapper.get("status") == "complete" and wrapper.get("workflow") == "physical"
+                         and wrapper.get("nativeRead") == "unit-names" and wrapper.get("target") == scan["target"]
+                         and str(wrapper.get("ownerHost", "")).casefold() == scan["target"]["hostName"].casefold(),
+                         "unit-names-wrapper-identity-mismatch")
+            raw, source = saved(relative(wrapper["nativeOutput"], wrapper_source["path"]))
+            plot.require(source["path"] == str(relative(link["source"], position_wrapper["path"]).resolve())
+                         and source["sha256"] == str(link["sha256"]).casefold()
+                         and source["sha256"] == str(wrapper.get("nativeSourceSha256", "")).casefold(),
+                         "unit-names-source-hash-mismatch")
+            names = plot.physical._native_values("unit-names", raw)
+            plot.require(names == wrapper.get("nativeValues"), "unit-names-source-values-mismatch")
+            plot.require(epoch(raw["observation"]["identity"]) == epoch(scan["identity"])
+                         and names["selfKey"] == scan["selfKey"], "unit-names-source-identity-mismatch")
+            plot.require([row["unitKey"] for row in names["rows"]] == [unit["unitKey"] for unit in scan["units"]],
+                         "unit-names-requested-keys-mismatch")
+            plot.require(timestamp_ns(scan["completedAtUtc"]) <= timestamp_ns(names["startedAtUtc"]),
+                         "unit-names-acquisition-order-mismatch")
+            for unit, name in zip(scan["units"], names["rows"]):
+                if name["status"] == "available-candidate":
+                    plot.require(unit["entityAddressDecimal"] == name["entityAddressDecimal"],
+                                 "unit-names-position-owner-mismatch")
+                    plot.require(timestamp_ns(unit["sampledAtUtc"]) <= timestamp_ns(name["startedAtUtc"]),
+                                 "unit-names-acquisition-order-mismatch")
+            result = dict(status="saved", wrapperSource=wrapper_source, nativeSource=source, **names)
+            # Validate the entire optional batch before publishing any joined name.
+            for unit, name in zip(scan["units"], names["rows"]):
+                if name["status"] == "available-candidate":
+                    unit["nameCandidate"] = dict(name, qualification=names["qualification"])
+        except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+            result["reason"] = str(error)
+        return result
+
     scans = []
     for path in paths:
         wrapper, wrapper_source = saved(path)
@@ -292,11 +337,17 @@ def prepare_unit_samples(paths, route, frames):
             timeKind="independent-sequential-native-row-acquisition-completion",
             qualification="Independent loaded-unit stored-position candidates; not screenshot aligned. "
                 "Latest sample carries forward in the offline timeline, not live tracking or passive-freshness proof. "
-                "Names/types, world instance, terrain, collision and occlusion unavailable."))
+                "Unit classification, world instance, terrain, collision and occlusion unavailable."))
+        scans[-1]["names"] = names_for(wrapper.get("nameSample"), wrapper_source, scans[-1])
     scans.sort(key=lambda scan: timestamp_ns(scan["startedAtUtc"]))
     for first, second in zip(scans, scans[1:]):
         plot.require(timestamp_ns(first["completedAtUtc"]) <= timestamp_ns(second["startedAtUtc"]),
                      "unit-sample-overlapping-scans")
+        names = first["names"]
+        if names["status"] == "saved" and timestamp_ns(names["sampledAtUtc"]) > timestamp_ns(second["startedAtUtc"]):
+            names.update(status="unavailable", reason="unit-names-overlap-next-position-scan")
+            for unit in first["units"]:
+                unit.pop("nameCandidate", None)
     return scans
 
 
@@ -412,6 +463,11 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
                          dict(positions=[[unit["positionXYZCandidate"][axis] for axis in ("x", "y", "z")]],
                               labels=[f"Loaded unit {unit['unitIdCandidate'][-6:]} (sample)"], show_labels=False),
                          at=timestamp_ns(unit["sampledAtUtc"]))
+                name = unit.get("nameCandidate")
+                if name is not None:
+                    sink.log(f"world/loaded_units/{unit['unitKey']}", "point-labels3d",
+                             dict(labels=[name["baseNameCandidate"] + " (candidate)"]),
+                             at=timestamp_ns(name["sampledAtUtc"]))
         sink.flush()
         sink.close()
         sink = None

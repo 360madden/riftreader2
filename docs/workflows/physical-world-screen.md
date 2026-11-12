@@ -100,7 +100,27 @@ and scan coverage are retained. Units are not drawn onto the screenshot.
 Optional acquisition failure reports a reason while preserving the core view.
 The viewer's initial display camera includes the admitted geometry; use ordinary
 Rerun zoom/orbit controls to inspect it. Unit labels start hidden to keep the
-route readable, with keys and positions retained in Source metadata.
+route readable, with keys and positions retained in Source metadata. Available
+template base-name candidates instead get visible labels ending **(candidate)**.
+One explicit-key batch names only the same selected subset, without selecting
+game targets or scanning more units. `unit-names-native.json` and
+`unit-names-sample.json` retain independent source/hash/time evidence. The
+position wrapper links them as `nameSample`. Rerun adds label-only updates at
+the actual name-row timestamp; an older stored XYZ is never retimestamped by a
+later name. Wrong epoch/player/key/entity/hash/order withholds optional names,
+and a name batch crossing the next position scan is also withheld. Cache misses
+remain generic points; failed optional naming preserves the core view and units.
+
+Actual named-scene acceptance passed on AMD-DESKTOP/PID51524 at 17:46 EST:
+420 examined entries yielded 158 position candidates, of which 18 nearby units
+were displayed. Eight had name candidates and ten had cache misses. RRD verification,
+actual viewer display/zoom and normal close passed; WGC preserved focus and sent
+no input. Player pose/basis, main route/cache and genuine checkpoint were unchanged.
+Fifty-nine backend/exporter checks passed in the visualization environment.
+Evidence: `artifacts/waypoint-view-2eb2952a1f2447e9a6dbda8105af9353/validation.json`;
+the same bundle contains reviewed `scene-named-units.png`, saved through the
+pinned ViewerClient after actual GUI loading. These independent name candidates
+do not qualify current XYZ, classification, public/API names or restart durability.
 
 Actual GUI Save view -> Open 3D view passed on AMD-DESKTOP/PID51524 at 16:47 EST:
 412 examined entries produced 150 position candidates; 18 were displayed.

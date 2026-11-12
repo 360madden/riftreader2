@@ -1,5 +1,24 @@
 # Current status
 
+**17:50 EST NOVEMBER 12 — NEARBY NAME CANDIDATES WORK IN THE SAVED 3D VIEW:**
+On AMD-DESKTOP/PID51524, actual Nearby units in 3D -> Save view -> Open 3D view
+retained 18 nearby positions and eight name candidates; ten cache misses stayed
+generic points. The scan examined 420 entries and found 158 position candidates.
+Names were acquired separately over 0.475 seconds and enter Rerun as label-only
+updates at their actual row times, preserving the older XYZ timestamps. Exact
+epoch/player/key/entity, hashes and acquisition order are checked; bad optional
+names preserve unit geometry. Names crossing the next scan are withheld.
+Fifty-nine focused backend/exporter tests passed in the visualization environment.
+The RRD passed upstream verify; actual viewer inspection/zoom showed the named
+points and paired screenshot. A painted screenshot was retained through the
+pinned ViewerClient; the viewer closed normally and its owned processes ended.
+WGC sent no input/focus change. Native player pose/basis and genuine 7/7 checkpoint
+are unchanged. GUI PID13008 is idle on the main route, markers and optional unit
+capture off. Evidence:
+`artifacts/waypoint-view-2eb2952a1f2447e9a6dbda8105af9353/validation.json`,
+preview `scene-named-units.png` in that bundle. This is independent candidate data,
+not screenshot-aligned unit marks, current XYZ, classification or world/terrain proof.
+
 **17:44 EST NOVEMBER 12 — EXPLICIT NEARBY UNIT NAMES RETRIEVED WITHOUT SELECTION:**
 On AMD-DESKTOP/PID51524, the new `unit-names` physical read resolved 18 exact keys
 already returned by a fresh bounded position sample. Eight returned template

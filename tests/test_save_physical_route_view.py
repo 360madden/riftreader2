@@ -99,6 +99,9 @@ class SaveViewTests(unittest.TestCase):
             calls.append(kind)
             if kind == "zone-context":
                 return {"status": "blocked", "reason": "optional-zone-unavailable"}
+            if kind == "unit-names":
+                self.assertEqual(kwargs, {"unit_keys": [str(2**64 - 1)]})
+                return {"status": "blocked", "reason": "optional-names-unavailable"}
             self.assertEqual(kwargs, {"unit_limit": 512, "start_bucket": 0})
             report = units_report()
             key = self.document["recording"]["identity"]["runtimeIdentity"]["unitKey"]
@@ -119,9 +122,12 @@ class SaveViewTests(unittest.TestCase):
         self.process.side_effect = export
         result = self.save(include_units=True)
         self.assertEqual(result["status"], "saved-route-view-candidate", result)
-        self.assertEqual(calls, ["zone-context", "zone-context", "unit-positions"])
+        self.assertEqual(calls, ["zone-context", "zone-context", "unit-positions", "unit-names"])
         sample = result["unitSample"]
         self.assertEqual(sample["status"], "saved")
+        self.assertEqual(sample["names"]["status"], "unavailable")
+        self.assertEqual(sample["names"]["reason"], "optional-names-unavailable")
+        self.assertTrue(Path(sample["names"]["receiptPath"]).is_file())
         wrapper = json.loads(Path(sample["path"]).read_text())
         self.assertEqual(wrapper["nativeSourceSha256"], hashlib.sha256(Path(sample["source"]).read_bytes()).hexdigest())
         self.assertEqual(result["rerun"]["status"], "saved")
@@ -166,6 +172,42 @@ class SaveViewTests(unittest.TestCase):
         self.assertEqual([c.args[1] for c in self.context.call_args_list], ["zone-context", "zone-context"])
         invalid = self.save(output=self.root / "invalid-option", include_units=1)
         self.assertEqual(invalid["reason"], "invalid-include-units-option")
+
+    def test_unit_names_batch_is_exact_displayed_subset_and_retained_separately(self):
+        from tests.test_physical_unit_names import report as names_report
+        positions = units_report()
+        values = saved.physical_rift._native_values("unit-positions", positions)
+        key = str(2**64 - 1)
+        names = names_report(keys=[key])
+        names["observation"]["rows"][0]["entityAddressDecimal"] = positions["observation"]["rows"][1]["entityAddressDecimal"]
+        def read(selection, kind, *, output, unit_keys):
+            self.assertEqual(kind, "unit-names")
+            self.assertEqual(unit_keys, [key])
+            output.write_text(json.dumps(names))
+            return dict(status="complete", workflow="physical", ownerHost="AMD-DESKTOP", nativeRead=kind,
+                target=deepcopy(self.target), nativeOutput=str(output),
+                nativeSourceSha256=hashlib.sha256(output.read_bytes()).hexdigest(),
+                nativeValues=saved.physical_rift._native_values(kind, names))
+        self.context.side_effect = read
+        self.output.mkdir()
+        entry = saved._unit_names_sample(dict(target=self.target), values, positions["observation"], self.output)
+        self.assertEqual(entry["status"], "saved", entry)
+        self.assertEqual(Path(entry["path"]).name, "unit-names-sample.json")
+        self.assertEqual(Path(entry["source"]).name, "unit-names-native.json")
+        receipt = json.loads(Path(entry["path"]).read_text())
+        self.assertEqual(receipt["nativeSourceSha256"], entry["sha256"])
+        self.assertEqual(receipt["nativeValues"]["rows"][0]["unitKey"], key)
+
+    def test_bad_optional_names_leave_saved_positions_and_core_view(self):
+        # Existing successful position fixture, then an unavailable name batch.
+        # The integration test above already proves the core/RRD path survives this case.
+        positions = units_report()
+        values = saved.physical_rift._native_values("unit-positions", positions)
+        self.context.return_value = dict(status="blocked", reason="cache-unavailable")
+        entry = saved._unit_names_sample(dict(target=self.target), values, positions["observation"], self.root)
+        self.assertEqual(entry["status"], "unavailable")
+        self.assertEqual(entry["reason"], "cache-unavailable")
+        self.assertEqual(json.loads(Path(entry["receiptPath"]).read_text())["status"], "blocked")
 
     def test_stale_or_incomplete_expected_identity_and_wrong_host_prevent_capture(self):
         for field, value in (("hwnd", 999), ("processStartUtcTicks", "123"),
