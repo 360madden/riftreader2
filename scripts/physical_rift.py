@@ -152,10 +152,13 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             elif angle is not None:
                 raise ValueError("invalid-native-orientation-angle")
             matrices[name], angles[name], states[name] = values, angle, matrix["status"]
+        angular_difference = _candidate_angle_steps([angles["secondary"], angles["primary"]])
         result = {"unitKey": key, "headingQualified": False,
                   "refreshHandleRaw": refresh_handle, "refreshFlagRaw": refresh_flag,
                   "primaryPlanarDegreesCandidate": angles["primary"],
                   "secondaryPlanarDegreesCandidate": angles["secondary"],
+                  "primaryMinusSecondaryDegreesCandidate": (
+                      angular_difference[0] if angular_difference is not None else None),
                   "primaryMatrixStatus": states["primary"],
                   "secondaryMatrixStatus": states["secondary"],
                   "primarySecondaryMaxAbsElementDeltaCandidate": max(
@@ -204,6 +207,10 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             result["primarySecondaryMaxAbsElementDeltaSeriesCandidate"] = [
                 row["primarySecondaryMaxAbsElementDeltaCandidate"] for row in series
             ]
+            differences = [row["primaryMinusSecondaryDegreesCandidate"] for row in series]
+            result["primaryMinusSecondaryDegreesSeriesCandidate"] = differences
+            result["primarySecondaryMaxAbsAngleDeltaDegreesCandidate"] = (
+                max(abs(value) for value in differences) if None not in differences else None)
             result["refreshFlagSeriesRaw"] = [row["refreshFlagRaw"] for row in series]
             result["refreshHandleSeriesRaw"] = [row["refreshHandleRaw"] for row in series]
         return result

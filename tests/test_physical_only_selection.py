@@ -168,6 +168,7 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertEqual(values["unitKey"], "239816685251645959")
         self.assertEqual(values["primaryPlanarDegreesCandidate"], 0)
         self.assertEqual(values["secondaryPlanarDegreesCandidate"], 90)
+        self.assertEqual(values["primaryMinusSecondaryDegreesCandidate"], -90)
         self.assertEqual(values["primarySecondaryMaxAbsElementDeltaCandidate"], 1)
         self.assertIs(values["headingQualified"], False)
         for mismatch in ({"unitKey": "0"},
@@ -229,6 +230,27 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         self.assertAlmostEqual(values["orientationSignedTravelDegreesCandidate"]["secondary"], 20,
                                delta=0.0001)
         self.assertIs(values["headingQualified"], False)
+
+        lagging = [{**row, "secondary": candidate(0x94, angle)}
+                   for row, angle in zip(rows, (0, 10, 30))]
+        divergence = physical._native_values("orientation", {
+            **report, "observations": lagging, "observation": lagging[-1]})
+        for actual, expected in zip(divergence["primaryMinusSecondaryDegreesSeriesCandidate"],
+                                    (10, 10, 0)):
+            self.assertAlmostEqual(actual, expected, delta=.0001)
+        self.assertAlmostEqual(divergence["primarySecondaryMaxAbsAngleDeltaDegreesCandidate"],
+                               10, delta=.0001)
+        for primary, secondary, expected in ((179, -179, -2), (-179, 179, 2), (0, 180, None)):
+            altered = [{**row, "primary": candidate(0x60, primary),
+                        "secondary": candidate(0x94, secondary)} for row in rows]
+            delta = physical._native_values("orientation", {
+                **report, "observations": altered, "observation": altered[-1]})
+            if expected is None:
+                self.assertIsNone(delta["primaryMinusSecondaryDegreesCandidate"])
+                self.assertIsNone(delta["primarySecondaryMaxAbsAngleDeltaDegreesCandidate"])
+            else:
+                self.assertAlmostEqual(delta["primaryMinusSecondaryDegreesCandidate"],
+                                       expected, delta=.0001)
 
         # Fast .NET sampling can separate reads by 100 ns: Python datetime alone
         # truncates the seventh fractional digit and falsely rejects valid order.
