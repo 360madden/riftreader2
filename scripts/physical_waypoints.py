@@ -1182,7 +1182,7 @@ def launch_window(args):
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
             return
-        if operation in ("go", "face", "play", "resume", "teach", "record") and markers.running():
+        if operation in ("go", "face", "teach", "record") and markers.running():
             if stop_markers():
                 state.set("Markers are closing; try the action again when they are hidden.")
             return
@@ -1225,14 +1225,16 @@ def launch_window(args):
         threading.Thread(target=worker, args=(operation, points, walk_facing.get()), daemon=False).start()
 
     def request_stop():
+        stop.set()
         if recording:
             record_cancel.set()
             record_stop.set()
             state.set("Recording cancelled — no route will be saved.")
             return
-        stop.set()
-        state.set("STOP requested — waiting for the current bounded pulse to release." if busy
-                  else "Stopped — no input active.")
+        markers_stopped = stop_markers()
+        text = ("STOP requested — waiting for the current bounded pulse to release." if busy
+                else "Stopped — no input active.")
+        state.set(text if markers_stopped else text + " Could not hide markers.")
 
     def add_entered():
         try:
@@ -1469,6 +1471,9 @@ def launch_window(args):
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
+            if status in ("stopping", "notice") and stop.is_set() and markers.running():
+                if not stop_markers():
+                    event = dict(event, reason=event.get("reason", "STOP requested.") + " Could not hide markers.")
             if status == "reconnected":
                 if not stop_markers():
                     state.set("Cannot hide markers after RIFT reconnected.")

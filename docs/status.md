@@ -1,5 +1,20 @@
 # Current status
 
+**13:42 EST NOVEMBER 12 — GUI PLAY/F8/RESUME WITH QT MARKERS VERIFIED:** On
+**AMD-DESKTOP/PID60384**, recorded Play/Resume now keep the owned Qt beacons.
+Root saw actual beacons during GUI reverse turning; F8 stopped input and closed
+the child, preserving 1/7. Show + Resume then ran only Recorded 6 through 1:
+0.05944-unit final error, 27 released pulses, 3,626 ms requested hold, each at most
+150 ms requested. The marker feed displayed 258 frames over 71.5 s with expected
+foreground/staleness withholding; Hide stopped it. Two final poses showed zero
+XYZ/yaw drift and inspection found no held desktop inputs. Forty-three focused
+GUI/marker/playback-state/connection tests passed. Receipts and usage:
+[projection workflow](workflows/physical-world-screen.md). App PID77652 is idle
+at genuine 7/7 reverse; Atank is `(7421.620117,863.586548,2941.043457)`, body bearing
+`-29.84201` degrees. All marker children are stopped; source route/basis preserved.
+The optional Rerun exporter and the fenced capture diagnostic are pushed. Extended
+goal remains active through **19:44 EST**.
+
 **13:40 EST NOVEMBER 12 — RERUN OFFLINE VIEWER WORKS; PLAYBACK/OVERLAY COEXIST:**
 On **AMD-DESKTOP**, GitHub research produced an optional pinned Rerun 0.43.1
 exporter using existing recorded routes and verified native/WGC sources. A real

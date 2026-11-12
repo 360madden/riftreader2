@@ -1,0 +1,97 @@
+"""Playback/marker coordination using withdrawn Tk and fake child/readers."""
+import json
+import threading
+import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
+
+from scripts import physical_waypoints as app
+from tests import test_waypoint_recording_window as fixture
+
+
+@unittest.skipIf(fixture.tk is None, "Tk unavailable")
+class MarkerPlaybackTests(unittest.TestCase):
+    pose = staticmethod(fixture.RecordingWindowTests.pose)
+    batch = fixture.RecordingWindowTests.batch
+    widgets = fixture.RecordingWindowTests.widgets
+    button = fixture.RecordingWindowTests.button
+    wait_for = fixture.RecordingWindowTests.wait_for
+
+    def setUp(self):
+        self.marker = SimpleNamespace(running=Mock(return_value=True), stop=Mock(),
+                                      stop_requested=False, exit_code=None)
+        self.marker_patch = patch.object(app, "OwnedWaypointMarkers", return_value=self.marker)
+        self.marker_patch.start()
+        self.addCleanup(self.marker_patch.stop)
+        self.entered, self.stopped = threading.Event(), threading.Event()
+        def playback(adapter, document, stop, emit, **kwargs):
+            self.entered.set()
+            if stop.wait(3):
+                self.stopped.set()
+            raise app.Stopped("fake stop")
+        self.play_patch = patch("scripts.waypoint_playback.play_route", side_effect=playback)
+        self.play_mock = self.play_patch.start()
+        self.addCleanup(self.play_patch.stop)
+        fixture.RecordingWindowTests.setUp(self)
+        self.no_input.side_effect = lambda *_: SimpleNamespace(close=lambda: None)
+        self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview))
+        self.table.insert("", "end", values=("Start", "0", "0"))
+        self.table.insert("", "end", values=("End", "1", "0"))
+        self.table.selection_set(self.table.get_children()[0])
+        self.window.update()
+
+    def cleanup_windows(self):
+        self.no_input.reset_mock()
+        fixture.RecordingWindowTests.cleanup_windows(self)
+
+    def test_play_keeps_markers_and_stop_latches_before_signal_failure(self):
+        def fail_stop():
+            self.assertTrue(self.stopped.wait(1), "movement STOP must latch before marker signal")
+            raise OSError("signal unavailable")
+        self.marker.stop.side_effect = fail_stop
+        self.button("Play Forward").invoke()
+        self.assertTrue(self.entered.wait(2))
+        self.marker.stop.assert_not_called()
+        self.button("STOP / F8").invoke()
+        self.assertTrue(self.stopped.wait(1))
+        self.marker.stop.assert_called_once()
+        self.assertTrue(self.marker.running())
+        self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
+
+    def test_go_still_requests_marker_stop_and_waits(self):
+        self.button("Go Selected").invoke()
+        self.marker.stop.assert_called_once()
+        self.assertFalse(self.entered.is_set())
+
+    def test_resume_keeps_marker_child_until_stop(self):
+        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Start", 0, 0], ["End", 1, 0]]},
+                                          "direction": "forward", "nextIndex": 1}), encoding="utf-8")
+        self.button("Refresh").invoke()
+        self.wait_for(lambda: str(self.button("Resume")["state"]) != "disabled")
+        self.button("Resume").invoke()
+        self.assertTrue(self.entered.wait(2))
+        self.assertTrue(self.play_mock.call_args.kwargs["resume"])
+        self.marker.stop.assert_not_called()
+        self.button("STOP / F8").invoke()
+        self.assertTrue(self.stopped.wait(1))
+        self.marker.stop.assert_called_once()
+        self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
+
+    def test_f8_stop_event_also_requests_marker_shutdown(self):
+        listener = {}
+        def foreground(window, stop, events):
+            listener.update(stop=stop, events=events)
+            return SimpleNamespace(close=lambda: None)
+        self.no_input.side_effect = foreground
+        self.button("Play Forward").invoke()
+        self.assertTrue(self.entered.wait(2))
+        listener["stop"].set()
+        listener["events"].put({"status": "stopping", "reason": "F8 STOP requested"})
+        self.wait_for(lambda: self.marker.stop.called)
+        self.assertTrue(self.stopped.wait(1))
+        self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
+
+
+if __name__ == "__main__":
+    unittest.main()

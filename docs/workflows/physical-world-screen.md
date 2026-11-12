@@ -152,13 +152,30 @@ unavailable projection hides markers. Only complete recorded routes with actual
 heights matching the host/build/player are admitted.
 
 The waypoint window also has **Show markers / Hide markers** beside the recording
-controls. Load a complete recorded route, let its current position refresh, press
+controls. Load a complete recorded route, wait for its RIFT connection, press
 Show markers, then return to RIFT. Markers use the route's real saved heights and
 hide while another application is foreground. Hide markers, editing/replacing the
 route, reconnection and closing the waypoint window stop its one owned child;
-it never restarts automatically. Movement and recording currently close markers
-first and ask you to retry after that child exits. Simultaneous automatic playback
-and marker acquisition has not yet been qualified.
+it never restarts automatically. Recorded Play Forward/Reverse and Resume can
+keep markers running. STOP/F8 latches movement cancellation first, then requests
+owned marker shutdown. Go/Face/Walk + Record/passive Record still close markers
+first and ask you to retry after that child exits.
+
+On PID60384, root replayed the complete route alongside Qt acquisition: endpoint
+error 0.04649, 35 released pulses/4,593 ms requested hold, 303 presentations during
+the combined 91-second feed. An actual GUI Play Reverse then displayed beacons
+during turning; F8 stopped the action and closed the marker child. Two poses
+showed zero XYZ/yaw drift, and saved progress was 1/7. Root used Show + Resume:
+only Recorded 6 through 1 ran, completing at 0.05944 units with 27 released pulses,
+3,626 ms requested hold, maximum requested pulse 150 ms. That feed displayed 258
+frames over 71.5 s, with foreground/staleness withholding; smooth rendering is
+not claimed. Hide stopped it. Final poses again had zero drift and desktop
+inspection found no held inputs. Forty-three focused GUI/lifecycle/connection
+checks passed. Receipts:
+`artifacts/waypoint-run-a79b6be79c6541daa143cc9e025a4fb2.json`,
+`artifacts/waypoint-run-b2907d4ce7ec4326a2a23237619dbc71.json`,
+`artifacts/waypoint-markers-summary-321484257f5e43be9ffaef62975f22e8.json`, and
+`artifacts/qt-gui-resume-60384-validation.json`.
 
 Root exercised the real buttons on AMD-DESKTOP/app PID53272. The child was pinned
 to PID69312/start/build/HWND, displayed 101 frames in the current camera view, and
