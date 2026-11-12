@@ -31,6 +31,14 @@ class MatrixSourceAliasTests(unittest.TestCase):
     def compare(self):
         return alias.compare(self.orientation_path, self.pose_path)
 
+    def test_one_tick_between_sources_is_ordered(self):
+        ori = report("orientation", [1], [10])
+        pose = report("actor-pose", [1], [10])
+        ori["observation"]["completedAtUtc"] = "2026-11-11T02:00:01.0000011Z"
+        pose["observation"]["startedAtUtc"] = "2026-11-11T02:00:01.0000012Z"
+        self.save(ori, pose)
+        self.assertEqual(1e-7, self.compare()["captureGapSeconds"])
+
     def test_exact_raw_bit_equality_is_candidate_only(self):
         r = self.compare()
         self.assertEqual("stable-separate-captures-same-matrix-bits-candidate", r["status"])

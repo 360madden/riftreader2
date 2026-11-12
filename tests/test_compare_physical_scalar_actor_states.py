@@ -69,6 +69,19 @@ class CrossEpochScalarPoseTests(unittest.TestCase):
         return check.compare(*(self.paths[key] for key in
                                ("old_scalar", "old_pose", "new_scalar", "new_pose")))
 
+    def test_one_tick_scalar_to_pose_and_equal_endpoint(self):
+        row = self.new_scalar["observations"][-1]
+        row["completedAtUtc"] = "2026-11-11T02:00:13.0000001Z"
+        self.new_scalar["observation"] = deepcopy(row)
+        first = self.new_pose["observations"][0]
+        first["startedAtUtc"] = "2026-11-11T02:00:13.0000002Z"
+        self.store()
+        self.assertEqual(1e-7, check.pair(self.paths["new_scalar"], self.paths["new_pose"])["gapSeconds"])
+        first["startedAtUtc"] = row["completedAtUtc"]
+        self.store()
+        with self.assertRaisesRegex(ValueError, "captures-too-far-apart"):
+            check.pair(self.paths["new_scalar"], self.paths["new_pose"])
+
     def test_unchanged_scalar_across_distinct_actor_angles_is_not_heading_proof(self):
         result = self.compare()
         self.assertTrue(result["unchangedScalarDespiteDifferentActorAngleCandidate"])

@@ -75,7 +75,8 @@ def read_scalar(path):
         if component is None:
             key, entity, component = row_owner
         require(row_owner == (key, entity, component), "scalar-owner-changed")
-        start, end = turn._utc(row["startedAtUtc"]), turn._utc(row["completedAtUtc"])
+        start = turn._utc_tick_order_key(row["startedAtUtc"])
+        end = turn._utc_tick_order_key(row["completedAtUtc"])
         require(start <= end and (prev_end is None or start > prev_end),
                 "scalar-time-order-invalid")
         prev_end = end
@@ -99,9 +100,9 @@ def pair(scalar_path, pose_path, *, max_gap_seconds=30.0):
     require(s["identity"] == p["identity"] and s["key"] == p["key"],
             "scalar-pose-process-player-mismatch")
     require(s["entity"] == p["owner"][0], "scalar-pose-entity-mismatch")
-    gap = ((p["times"][0][0] - s["times"][1]).total_seconds()
-           if s["times"][1] < p["times"][0][0] else
-           (s["times"][0] - p["times"][-1][1]).total_seconds())
+    gap = (turn.elapsed_seconds(s["times"][1], p["exactTimes"][0][0])
+           if s["times"][1] < p["exactTimes"][0][0] else
+           turn.elapsed_seconds(p["exactTimes"][-1][1], s["times"][0]))
     require(0 < gap <= max_gap_seconds, "scalar-pose-captures-too-far-apart")
     matrices = [row["actor"] for row in p["matrices"]]
     require(all(m is not None and m["angle"] is not None for m in matrices),
@@ -123,8 +124,8 @@ def compare(old_scalar, old_pose, new_scalar, new_pose, *, max_pair_gap_seconds=
     require((a["key"], a["entity"], a["component"]) == (b["key"], b["entity"], b["component"])
             and (x["key"], x["owner"]) == (y["key"], y["owner"]),
             "scalar-pose-owner-changed")
-    require(max(a["times"][1], x["times"][-1][1])
-            < min(b["times"][0], y["times"][0][0]),
+    require(max(a["times"][1], x["exactTimes"][-1][1])
+            < min(b["times"][0], y["exactTimes"][0][0]),
             "scalar-pose-epochs-not-ordered")
     sha = [a["sourceSha256"], b["sourceSha256"], x["sha256"], y["sha256"]]
     require(len(set(sha)) == 4, "scalar-pose-identical-sources")

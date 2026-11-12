@@ -214,6 +214,14 @@ def burst_stability(capture, matrix_name):
     }
 
 
+def elapsed_seconds(earlier, later):
+    start, start_remainder = later
+    end, end_remainder = earlier
+    elapsed = start - end
+    micros = (elapsed.days * 86400 + elapsed.seconds) * 1_000_000 + elapsed.microseconds
+    return (micros * 10 + start_remainder - end_remainder) / 10_000_000
+
+
 def compare(before_path, after_path, *, max_gap_seconds=120.0):
     _require(type(max_gap_seconds) in (int, float) and math.isfinite(max_gap_seconds)
              and 0 < max_gap_seconds <= 3600, "invalid-turn-gap-limit")
@@ -223,11 +231,7 @@ def compare(before_path, after_path, *, max_gap_seconds=120.0):
     _require(before["identity"] == after["identity"], "turn-process-epoch-changed")
     _require(before["key"] == after["key"] and before["owner"] == after["owner"],
              "turn-player-or-component-changed")
-    start, start_remainder = after["exactTimes"][0][0]
-    end, end_remainder = before["exactTimes"][-1][1]
-    elapsed = start - end
-    micros = (elapsed.days * 86400 + elapsed.seconds) * 1_000_000 + elapsed.microseconds
-    gap = (micros * 10 + start_remainder - end_remainder) / 10_000_000
+    gap = elapsed_seconds(before["exactTimes"][-1][1], after["exactTimes"][0][0])
     _require(gap > 0, "turn-capture-time-order-invalid")
     _require(gap <= max_gap_seconds, "turn-capture-gap-exceeded")
     first, next_start, next_end = (before["matrices"][-1],

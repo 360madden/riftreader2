@@ -36,7 +36,7 @@ def compare(orientation_path: Path, pose_path: Path, *, max_gap_seconds: float =
             "alias-player-mismatch")
     require(str(orientation["owner"][0]) == pose["owner"][2],
             "alias-position-component-mismatch")
-    gap = (pose["times"][0][0] - orientation["times"][-1][1]).total_seconds()
+    gap = turn.elapsed_seconds(orientation["exactTimes"][-1][1], pose["exactTimes"][0][0])
     require(0 < gap <= max_gap_seconds, "alias-bursts-not-contemporaneous")
     require(orientation["sha256"] != pose["sha256"], "alias-source-not-distinct")
 
