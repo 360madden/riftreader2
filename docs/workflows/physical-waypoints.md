@@ -39,6 +39,11 @@ geometry only, without terrain or obstacle information.
 Select a point and choose **Go Selected**,
 or choose **Run Route** to visit the list in order. **Load** and **Save Route**
 use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
+The filename/status line shows **Saved** or **Unsaved changes**. **Save Route**
+writes directly to the currently loaded/saved file; **Save As** chooses another
+file. **Ctrl+S / Ctrl+Shift+S** provide the same actions while idle. A route restored
+only from progress or the last-route snapshot has no source filename, so its first
+save asks for one. Cancelling or failing a Save As keeps the current file and edits.
 GUI Save Route and completed recording publication write a synced sibling
 temporary file before replacing the destination, reusing checkpoint persistence.
 A failed write or replace leaves the previous saved route intact and reports the

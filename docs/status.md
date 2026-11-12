@@ -1,5 +1,14 @@
 # Current status
 
+**10:42 EST NOVEMBER 12 — EVERYDAY FILE CONTROLS WORK:** On **AMD-DESKTOP**,
+Save Route writes the current file, Save As creates a copy, and the window shows
+Saved/Unsaved changes. Ctrl+S/Ctrl+Shift+S work while idle. Twenty-nine focused
+tests passed; actual recovered Save, dirty edit, Save As cancellation and direct
+Ctrl+S save all worked without gameplay input. The complete layout now shows the
+STOP/recording help text. App PID76408 is idle at genuine 7/7 forward on the exact
+original route copy `artifacts/waypoint-ready-route-69312.json`; cache, Atank pose
+and basis are unchanged. RIFT PID69312. Goal remains active through 11:56 EST.
+
 **10:35 EST NOVEMBER 12 — SELECTED WAYPOINT EDITING WORKS:** On **AMD-DESKTOP**,
 select a row, edit Name/X/Z and choose Update Selected. Actual edits reset progress;
 renaming preserves recording provenance/heights, while coordinate changes become

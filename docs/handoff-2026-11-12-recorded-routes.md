@@ -326,6 +326,27 @@ and its before-pose evidence. Current app is PID60252/window75110102; RIFT remai
 PID69312, idle at 7/7 forward with the unchanged basis. Next: direct Save/Save As
 and a visible unsaved-route indication, per Joey's everyday-controls preference.
 
+**10:42 EST everyday file controls:** **Save Route** now atomically writes back to
+the current file; **Save As** chooses a copy, with current folder/name defaults.
+The window shows its basename and Saved/Unsaved changes. Load, explicit `--route`,
+recording publication and successful saves establish a path; cache/checkpoint-only
+recovery asks on first Save. Failed/cancelled Save As preserves path and dirty
+state. Window-scoped Ctrl+S/Ctrl+Shift+S are disabled while busy/closing. Twenty-nine
+focused fake-reader Tk tests passed. Default height was increased so the bottom
+STOP/recording help text remains visible; the complete actual layout was checked.
+
+Live recovered Save created `artifacts/waypoint-file-controls-live-69312.json`
+without changing the completed checkpoint. A rename marked Unsaved changes;
+Ctrl+Shift+S opened the correct defaults, cancellation kept the file and edits,
+then Ctrl+S saved directly without a dialog. Only the intended endpoint name
+changed; all recording metadata remained exact. No gameplay input occurred.
+The original recording was copied exactly to `artifacts/waypoint-ready-route-69312.json`;
+new app PID76408/window14748952 opened it explicitly. The genuine original 7/7
+forward checkpoint was restored after verifying unchanged actor/epoch, and Save
+Route refreshed the snapshot to the original document. App is idle, RIFT PID69312
+and basis unchanged. This working route copy avoids editing the tracked evidence
+file during ordinary saves.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

@@ -380,11 +380,23 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), source)
         output = self.path / "saved.json"
         with patch("tkinter.filedialog.asksaveasfilename", return_value=str(output)):
-            self.button("Save Route").invoke()
+            self.button("Save As").invoke()
         saved = json.loads(output.read_text(encoding="utf-8"))
         snapshot = self.path / "artifacts" / "waypoint-last-route.json"
         self.assertEqual(document, saved)
         self.assertEqual(saved, json.loads(snapshot.read_text(encoding="utf-8")))
+
+    def test_recovered_route_asks_for_save_destination(self):
+        snapshot = self.path / "artifacts" / "waypoint-last-route.json"
+        document = {"waypoints": [["Recovered", 0, 0]]}
+        snapshot.write_text(json.dumps(document), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        output = self.path / "recovered.json"
+        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(output)) as dialog:
+            self.button("Save Route").invoke()
+        dialog.assert_called_once()
+        self.assertEqual(document, json.loads(output.read_text(encoding="utf-8")))
 
     def test_failed_route_replacement_preserves_existing_saved_route(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 10]}
@@ -398,7 +410,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         with patch("tkinter.filedialog.asksaveasfilename", return_value=str(destination)), \
              patch("scripts.waypoint_progress.os.replace", side_effect=OSError("simulated replace failure")), \
              patch("tkinter.messagebox.showerror") as error:
-            self.button("Save Route").invoke()
+            self.button("Save As").invoke()
         self.assertEqual(original, destination.read_bytes())
         error.assert_called_once()
         self.assertIn("simulated replace failure", error.call_args.args[1])

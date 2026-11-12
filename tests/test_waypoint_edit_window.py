@@ -45,12 +45,57 @@ class WaypointEditTests(unittest.TestCase):
     def save_document(self):
         destination = self.path / "saved.json"
         with patch("tkinter.filedialog.asksaveasfilename", return_value=str(destination)):
-            self.button("Save Route").invoke()
+            self.button("Save As").invoke()
         return json.loads(destination.read_text())
 
     def assert_unsaved_cache(self):
         current = self.cache.read_bytes() if self.cache.exists() else None
         self.assertEqual(self.cache_before, current)
+
+    def route_label(self):
+        labels = [str(w.cget("textvariable")) for w in self.widgets(self.root)
+                  if isinstance(w, fixture.ttk.Label) and w.cget("textvariable")]
+        return next(str(self.root.getvar(value)) for value in labels
+                    if str(self.root.getvar(value)).startswith(("source.json ", "saved.json ")))
+
+    def test_quick_save_uses_loaded_path_and_tracks_real_edits(self):
+        self.prepare()
+        self.assertEqual("source.json — Saved", self.route_label())
+        self.button("Update Selected").invoke()
+        self.button("Up").invoke()
+        self.assertEqual("source.json — Saved", self.route_label())
+        self.enter("Renamed", "0", "0")
+        self.button("Update Selected").invoke()
+        self.assertEqual("source.json — Unsaved changes", self.route_label())
+        with patch("tkinter.filedialog.asksaveasfilename") as dialog:
+            self.button("Save Route").invoke()
+        dialog.assert_not_called()
+        saved = json.loads((self.path / "source.json").read_text())
+        self.assertEqual("Renamed", saved["waypoints"][0][0])
+        self.assertEqual(self.document["heights"], saved["heights"])
+        self.assertEqual(self.document["recording"], saved["recording"])
+        self.assertEqual("source.json — Saved", self.route_label())
+
+    def test_save_as_cancel_and_failure_keep_path_and_dirty_state(self):
+        self.prepare()
+        self.enter("Changed", "0", "0")
+        self.button("Update Selected").invoke()
+        original = (self.path / "source.json").read_bytes()
+        with patch("tkinter.filedialog.asksaveasfilename", return_value="") as dialog:
+            self.button("Save As").invoke()
+        self.assertEqual("source.json", dialog.call_args.kwargs["initialfile"])
+        self.assertEqual(str(self.path), dialog.call_args.kwargs["initialdir"])
+        self.assertEqual("source.json — Unsaved changes", self.route_label())
+        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(self.path / "saved.json")), \
+             patch("scripts.waypoint_progress.os.replace", side_effect=OSError("disk denied")), \
+             patch("tkinter.messagebox.showerror") as error:
+            self.button("Save As").invoke()
+        error.assert_called_once()
+        self.assertEqual(original, (self.path / "source.json").read_bytes())
+        self.assertEqual("source.json — Unsaved changes", self.route_label())
+        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(self.path / "saved.json")):
+            self.button("Save As").invoke()
+        self.assertEqual("saved.json — Saved", self.route_label())
 
     def test_rename_preserves_metadata_order_and_selection_but_invalidates_progress(self):
         self.prepare()

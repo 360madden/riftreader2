@@ -671,7 +671,7 @@ def launch_window(args):
 
     window.title(f"RR2 Waypoints — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
-    window.geometry("1060x770")
+    window.geometry("1060x860")
     frame = ttk.Frame(window, padding=14)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
@@ -682,6 +682,8 @@ def launch_window(args):
     ttk.Label(frame, textvariable=state, wraplength=1000).pack(anchor="w", pady=5)
     pose_text = tk.StringVar(value="Position is loading…")
     ttk.Label(frame, textvariable=pose_text).pack(anchor="w", pady=(0, 3))
+    route_status = tk.StringVar(value="New route — Unsaved")
+    ttk.Label(frame, textvariable=route_status).pack(anchor="w", pady=(0, 3))
     editable = []
     coordinates = ttk.Frame(frame)
     coordinates.pack(fill="x", pady=5)
@@ -725,19 +727,34 @@ def launch_window(args):
     checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
     last_route = ROOT / "artifacts" / "waypoint-last-route.json"
     route_metadata = {}
+    route_path = None
+    route_dirty = False
+    route_recovered = False
     playback_view = None
     playback_active = False
     loading_route = False
     added_selection = None
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
+    def update_route_status():
+        title = route_path.name if route_path is not None else "Recovered route" if route_recovered else "New route"
+        status = "Unsaved changes" if route_dirty else "Saved" if route_path is not None else "Unsaved"
+        route_status.set(f"{title} — {status}")
+
+    def mark_saved(path):
+        nonlocal route_path, route_dirty, route_recovered
+        route_path, route_dirty, route_recovered = Path(path), False, False
+        update_route_status()
+
     def invalidate_progress(*, clear_metadata=True):
-        nonlocal route_metadata, playback_view
+        nonlocal route_metadata, playback_view, route_dirty
         if not loading_route:
             checkpoint.unlink(missing_ok=True)
             if clear_metadata:
                 route_metadata = {}
             playback_view = None
+            route_dirty = True
+            update_route_status()
             progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
 
     def add_point(label, px, pz):
@@ -1076,12 +1093,18 @@ def launch_window(args):
         redraw()
         state.set("Waypoint updated; save the route to keep this edit.")
 
-    def save_route():
-        path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="rift-waypoints.json")
+    def save_route(save_as=False):
+        path = route_path
+        if save_as or path is None:
+            options = {"defaultextension": ".json", "initialfile": path.name if path else "rift-waypoints.json"}
+            if path is not None:
+                options["initialdir"] = str(path.parent)
+            path = filedialog.asksaveasfilename(**options)
         if path:
             try:
                 document = route_document()
                 write_json_atomic(path, document)
+                mark_saved(path)
                 cache_route(document, "Route saved: " + str(path))
             except (ValueError, TypeError, OSError) as exc:
                 messagebox.showerror("Cannot save route", str(exc))
@@ -1100,6 +1123,7 @@ def launch_window(args):
             except (OSError, ValueError, KeyError, TypeError):
                 invalidate_progress(clear_metadata=False)
                 redraw()
+            mark_saved(path)
             cache_route(document, "Route loaded: " + str(path))
         except (ValueError, KeyError, TypeError, OSError) as exc:
             messagebox.showerror("Cannot load route", str(exc))
@@ -1156,7 +1180,7 @@ def launch_window(args):
     for index, (label, callback) in enumerate((("Refresh", lambda: start("refresh")),
                             ("Save Current", lambda: start("save")), ("Add X / Z", add_entered),
                             ("Remove", remove_points),
-                            ("Load", load_route), ("Save Route", save_route),
+                            ("Load", load_route), ("Save Route", save_route), ("Save As", lambda: save_route(True)),
                             ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
                             ("Clear", clear_points), ("Add Target", lambda: start("target")),
                             ("Update Selected", update_selected))):
@@ -1284,6 +1308,7 @@ def launch_window(args):
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     state.set("Cannot finish recording: " + str(exc))
                     continue
+                mark_saved(output)
                 cache_route(event["document"], "Recorded route saved: " + str(output))
                 progress_text.set("Recorded route ready; select playback direction.")
                 continue
@@ -1370,6 +1395,13 @@ def launch_window(args):
         added_selection = None
         select_point(event, force_name=True)
 
+    def save_shortcut(save_as=False):
+        if not busy and not closing:
+            save_route(save_as)
+        return "break"
+
+    window.bind("<Control-s>", lambda _: save_shortcut())
+    window.bind("<Control-Shift-S>", lambda _: save_shortcut(True))
     window.protocol("WM_DELETE_WINDOW", close)
     window.bind("<Escape>", lambda _: request_stop())
     canvas.bind("<Configure>", redraw)
@@ -1378,6 +1410,7 @@ def launch_window(args):
     table.bind("<ButtonRelease-1>", select_clicked)
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
+        mark_saved(args.route)
     restored_checkpoint = False
     if checkpoint.exists():
         try:
@@ -1388,6 +1421,8 @@ def launch_window(args):
                         or not 0 <= saved["nextIndex"] <= len(saved["route"]["waypoints"])):
                     raise ValueError("Invalid saved progress")
                 show_document(saved["route"])
+                route_recovered = True
+                update_route_status()
             restore_progress()
             restored_checkpoint = True
         except (OSError, ValueError, KeyError, TypeError):
@@ -1397,6 +1432,8 @@ def launch_window(args):
             document = json.loads(last_route.read_text(encoding="utf-8"))
             progress_route(document)
             show_document(document)
+            route_recovered = True
+            update_route_status()
             playback_view = None
             progress_text.set("Last saved route restored; choose Play Forward or Play Reverse.")
             redraw()
