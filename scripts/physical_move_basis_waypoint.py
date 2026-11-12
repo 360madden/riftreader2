@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Offline one-step RR2 waypoint preview from a measured physical key basis.
 
-Never sends input. The later-facing strafe vectors are an unverified model;
-the output is a candidate calculation, never an executable action approval.
+Optional actor-pose input models the current cardinal directions using measured
+key speeds. Output is candidate arithmetic and never sends input.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import navigation_anchors as anchors
 from scripts import physical_route_preview as route
+from scripts import analyze_physical_turn_pair as turn
 from scripts.movement_controller import (
     Calibration, MovementError, MovementHalted, Position,
     WaypointController, planar_distance, validate_noncollinear,
@@ -97,7 +98,7 @@ def read_basis(path):
     return b, hashlib.sha256(raw).hexdigest().upper()
 
 
-def candidate_calibrations(b):
+def candidate_calibrations(b, actor_degrees=None):
     """Build unqualified 100-ms reference vectors; never create input authority."""
     if "laterW" in b["samples"]:
         model = b["laterFacingReprojectionCandidate"]["modeledVectors"]
@@ -110,6 +111,11 @@ def candidate_calibrations(b):
     else:
         vectors = {key: (number(row.get("vxCandidate")), number(row.get("vzCandidate")))
                    for key, row in b["samples"].items()}
+    if actor_degrees is not None:
+        for key, offset in {"w": 0, "s": 180, "q": 90, "e": -90}.items():
+            speed = math.hypot(*vectors[key])
+            bearing = math.radians(offset - actor_degrees)
+            vectors[key] = (speed * math.sin(bearing), speed * math.cos(bearing))
     calibrations = {}
     for key, (x, z) in vectors.items():
         require(math.hypot(x, z) > 0, "waypoint-basis-vector-zero")
@@ -119,7 +125,31 @@ def candidate_calibrations(b):
     return calibrations, vectors
 
 
-def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
+def actor_direction_model(path, native):
+    pose = turn._load(path)
+    ident = native["identity"]
+    require(pose["kind"] == "actor-pose", "waypoint-actor-pose-required")
+    require(all(pose["identity"][key] == ident[key]
+                for key in ("processId", "processStartUtcTicks"))
+            and pose["identity"]["executableSha256"].casefold()
+            == ident["executableSha256"].casefold()
+            and pose["key"] == native["unitKey"], "waypoint-pose-identity-mismatch")
+    stability = turn.burst_stability(pose, "actor")
+    require(stability["sampledPoseStableCandidate"], "waypoint-pose-not-stable")
+    position_at = datetime.fromisoformat(native["firstSampleUtc"].replace("Z", "+00:00"))
+    gap = (position_at - pose["times"][-1][1]).total_seconds()
+    require(0 <= gap <= 2, "waypoint-pose-position-gap-invalid")
+    return {
+        "status": "actor-pose-cardinal-direction-model-candidate",
+        "actorPoseReportSha256": pose["sha256"],
+        "actorDegreesCandidate": pose["matrices"][-1]["actor"]["angle"],
+        "poseToPositionGapSeconds": gap,
+        "stability": stability,
+        "qualification": "Cardinal directions from actor angle; speeds reused from the basis.",
+    }
+
+
+def preview(basis_path, position_path, goal_x, goal_z, goal_y=None, *, actor_pose_path=None):
     b, basis_sha = read_basis(basis_path)
     native, position_sha = route._read_native(Path(position_path))
     ident = b["identity"]
@@ -146,7 +176,9 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
                     number(goal_z))
     require(abs(goal.y - start.y) <= 1.5, "waypoint-vertical-target-unqualified")
     # Unqualified source velocities are reused only for pure candidate arithmetic.
-    calibrations, vectors = candidate_calibrations(b)
+    direction_model = actor_direction_model(actor_pose_path, native) if actor_pose_path else None
+    actor_degrees = direction_model["actorDegreesCandidate"] if direction_model else None
+    calibrations, vectors = candidate_calibrations(b, actor_degrees)
     try:
         controller = WaypointController(calibrations, start, goal)
         action = controller.decide(start, 0.0)
@@ -191,12 +223,14 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
         "decision": "within-tolerance-candidate" if action is None else "suggested-one-pulse",
         "arrivalTolerance": controller.tolerance,
         "distanceBeforeCandidate": planar_distance(start, goal),
+        "directionModelCandidate": direction_model,
         "limitations": [
             "Explicit destination does not prove same-world navigation or arrival.",
             ("Only forward was observed at the later facing; S/Q/E are modeled rotations."
              if "laterW" in b["samples"] else "All four vectors come from separate measured pulses."),
             "Current native XYZ is cached candidate data, not independently refreshed gameplay state.",
             "Linear speed scaling to 20-150 ms is unqualified; this never executes input.",
+            "Optional actor directions assume cardinal movement and retained per-key speeds.",
         ],
     }
 
@@ -205,13 +239,16 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--basis", type=Path, required=True)
     p.add_argument("--position", type=Path, required=True)
+    p.add_argument("--actor-pose", type=Path,
+                   help="model directions from a stable actor-pose burst ending up to 2 s before position")
     p.add_argument("--target-x", type=float, required=True)
     p.add_argument("--target-z", type=float, required=True)
     p.add_argument("--target-y", type=float)
     p.add_argument("--out", type=Path)
     a = p.parse_args(argv)
     try:
-        result = preview(a.basis, a.position, a.target_x, a.target_z, a.target_y)
+        result = preview(a.basis, a.position, a.target_x, a.target_z, a.target_y,
+                         actor_pose_path=a.actor_pose)
         rendered = json.dumps(result, sort_keys=True, allow_nan=False)
         if a.out is not None:
             with a.out.open("x", encoding="utf-8") as stream:

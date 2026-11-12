@@ -11,6 +11,7 @@ import unittest
 
 from scripts import physical_move_basis_waypoint as waypoint
 from tests.test_physical_waypoint_decision import BUILD, UNIT, START_TICKS, position
+from tests.test_analyze_physical_turn_pair import IDENTITY, report
 
 
 def basis():
@@ -176,6 +177,64 @@ class PhysicalBasisWaypointTests(unittest.TestCase):
         with contextlib.redirect_stdout(StringIO()) as stream:
             self.assertEqual(waypoint.main(args + ["--out", str(output)]), 2)
         self.assertEqual("blocked", json.loads(stream.getvalue())["status"])
+
+    def pose(self, angles):
+        identity = dict(IDENTITY, executableSha256=BUILD)
+        value = report("actor-pose", [1, 2, 3], angles, identity=identity)
+        for row, fraction in zip(value["observations"], (400, 600, 800)):
+            row["startedAtUtc"] = f"2026-11-11T07:06:41.{fraction}Z"
+            row["completedAtUtc"] = f"2026-11-11T07:06:41.{fraction + 1}Z"
+        value["observation"] = deepcopy(value["observations"][-1])
+        path = self.root / "pose.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        return path
+
+    def test_actor_pose_reorients_all_keys_across_quadrants(self):
+        # Existing calibration points W southwest. Current yaw 90 puts W west,
+        # Q north, E south and S east while keeping each measured key speed.
+        pose = self.pose([90, 90, 90])
+        for key, x, z in (("w", -.6, 0), ("q", 0, .6),
+                          ("e", 0, -.6), ("s", .4, 0)):
+            with self.subTest(key=key):
+                result = waypoint.preview(self.basis_path, self.native_path, x, z,
+                                          actor_pose_path=pose)
+                self.assertEqual(key, result["candidateAction"]["key"])
+                self.assertAlmostEqual(0, result["candidateAction"]
+                                       ["predictedAfterDistanceCandidate"], places=2)
+                self.assertFalse(result["inputSent"])
+                self.assertFalse(result["headingQualified"])
+        pose = self.pose([-179.999, 180, 179.999])
+        result = waypoint.preview(self.basis_path, self.native_path, 0, -.6,
+                                  actor_pose_path=pose)
+        self.assertEqual("w", result["candidateAction"]["key"])
+        self.assertTrue(result["directionModelCandidate"]["stability"]
+                        ["sampledPoseStableCandidate"])
+
+    def test_actor_model_refuses_motion_wrong_epoch_or_old_pose(self):
+        pose = self.pose([90, 91, 92])
+        with self.assertRaisesRegex(ValueError, "waypoint-pose-not-stable"):
+            waypoint.preview(self.basis_path, self.native_path, -.6, 0,
+                             actor_pose_path=pose)
+        pose = self.pose([90, 90, 90])
+        wrong_epoch = json.loads(pose.read_text(encoding="utf-8"))
+        wrong_epoch["identity"]["processStartUtcTicks"] += 1
+        for row in wrong_epoch["observations"]:
+            row["identity"]["processStartUtcTicks"] += 1
+        wrong_epoch["observation"] = deepcopy(wrong_epoch["observations"][-1])
+        pose.write_text(json.dumps(wrong_epoch), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "waypoint-pose-identity-mismatch"):
+            waypoint.preview(self.basis_path, self.native_path, -.6, 0,
+                             actor_pose_path=pose)
+        pose = self.pose([90, 90, 90])
+        for first, second in (("45.000", "45.200"), ("41.600", "41.700")):
+            native = position()
+            for row, stamp in zip(native["observations"], (first, second)):
+                row["startedAtUtc"] = f"2026-11-11T07:06:{stamp}Z"
+                row["completedAtUtc"] = f"2026-11-11T07:06:{stamp[:-1]}1Z"
+            self.native_path.write_text(json.dumps(native), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "waypoint-pose-position-gap-invalid"):
+                waypoint.preview(self.basis_path, self.native_path, -.6, 0,
+                                 actor_pose_path=pose)
 
 
 if __name__ == "__main__":
