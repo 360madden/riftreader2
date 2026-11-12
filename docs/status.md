@@ -1,5 +1,14 @@
 # Current status
 
+**03:23 EST NOVEMBER 12 — CLOSING HANDOFF:** The working physical waypoint
+prototype is open and idle on **AMD-DESKTOP**, pythonw PID61684, with the tested
+triangle loaded. Fresh WGC/native before/after reads agree on Atank's settled
+XYZ (7424.674805, 863.586121, 2946.075439), body bearing −5.457765°; exact game
+identity is unchanged and native inspection reports no held desktop inputs.
+Start here: [physical waypoint handoff](handoff-2026-11-12-physical-waypoints.md).
+The implementation, live results, launch commands, restart/obstacle limitations
+and preserved concurrent edits are recorded there. No route starts on launch.
+
 **02:54 EST NOVEMBER 12 — PHYSICAL WAYPOINT PROTOTYPE WORKING:** On verified
 **AMD-DESKTOP**, double-click `Waypoints.cmd` to open the local physical RIFT
 waypoint window. Save the current point, click the local preview or enter X/Z;

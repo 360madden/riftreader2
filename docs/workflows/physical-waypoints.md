@@ -64,7 +64,8 @@ preview updated to the new -16.51-degree bearing while an edited X coordinate
 remained unchanged.
 
 Each route is limited to 20 world units of planned travel, 64 pulses, 9 seconds
-total key hold and 120 seconds overall. Long waypoints are split into targets
+total requested key hold and 120 seconds overall. Actual Windows insertion-time
+bounds remain in the native pulse receipts. Long waypoints are split into targets
 at most 4 units apart. Each target retains the existing controller's six-pulse,
 900-ms hold, 12-second and 6-unit radius limits. Input ownership and the trip
 budget span every target and waypoint; only the first actual pulse can focus
