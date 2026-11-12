@@ -32,6 +32,8 @@ python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native vitals
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose
 # Facing matrix plus direct player-system yaw and camera/aim-point candidates:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native facing --samples 5 --interval-ms 60
+# Bounded loaded-unit positions, distances from self and candidate screen points:
+python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --read-native unit-positions --unit-limit 512
 # For a bounded passive actor/model/render pose time series under one native lease:
 python scripts/physical_rift.py --expected-host AMD-DESKTOP --read-native actor-pose --samples 10 --interval-ms 100
 # For four native entity-owned, unqualified smooth-state scalar candidates:
@@ -53,6 +55,16 @@ Raw `positionCandidate` retains its historical player-system meaning; raw
 `entityPositionCandidate` and `entityPositionRawBits` retain the independent read.
 Older reports without the entity fields use an explicitly labeled legacy snapshot.
 Projection and target-relative arithmetic use entity XYZ when present.
+
+`unit-positions` reuses the exact-build unit-manager topology and typed position
+reader. It examines at most 512 entries under a 2 MiB read budget and retains
+unit keys as text. `nativeValues.units` is sorted by horizontal distance from
+the captured self position and includes normalized screen points when the camera
+matches before/after the scan. `--start-bucket N` selects the starting bucket;
+the report exposes scan limits, buckets examined, absent position components and
+unavailable rows/chains. This is a loaded-manager subset with sequential samples,
+not a complete world inventory, unit classification, occlusion or freshness proof.
+Camera changes withhold screen points while retaining the position candidates.
 `nativeValues.playerScreenPointCandidate` projects the captured facing XYZ into
 top-left normalized client coordinates. To project another supplied world point,
 add `--project-world X Y Z` to the facing command. The result appears under

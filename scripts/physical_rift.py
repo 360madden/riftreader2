@@ -26,6 +26,7 @@ NATIVE_READS = {
     "vitals": "sample-current-vitals",
     "orientation": "sample-current-orientation",
     "facing": "sample-current-facing",
+    "unit-positions": "sample-current-unit-positions",
     "smoothed-scalar": "sample-current-smoothed-scalar",
     "actor-pose": "sample-current-actor-pose",
     "player-context": "sample-current-player-context",
@@ -37,6 +38,7 @@ NATIVE_RECEIPTS = {
     "vitals": "native-current-vitals-candidate-summary/2",
     "orientation": "native-current-orientation-summary/1",
     "facing": "native-current-facing-summary/1",
+    "unit-positions": "native-current-unit-positions-summary/1",
     "smoothed-scalar": "native-current-smoothed-scalar-summary/1",
     "actor-pose": "native-current-actor-pose-summary/1",
     "player-context": "native-current-player-context-candidate-summary/1",
@@ -238,21 +240,37 @@ def _target_relative_arithmetic(player_xyz, target_xyz, primary, body):
             "headingQualified": False, "movementEligible": False}
 
 
+def _xyz_from_raw_bits(point, bits, reason):
+    if (not isinstance(point, dict) or not isinstance(bits, list) or len(bits) != 3
+            or any(type(bit) is not int or not 0 <= bit < 2**32 for bit in bits)
+            or any(type(point.get(axis)) not in (int, float) or not math.isfinite(point[axis]) for axis in ("x", "y", "z"))):
+        raise ValueError(reason)
+    try:
+        encoded = [struct.unpack("<I", struct.pack("<f", point[axis]))[0] for axis in ("x", "y", "z")]
+    except (OverflowError, struct.error) as error:
+        raise ValueError(reason) from error
+    if any(a != b and {a, b} != {0, 0x80000000} for a, b in zip(encoded, bits)):
+        raise ValueError(reason + "-bits")
+    return dict(zip(("x", "y", "z"), (struct.unpack("<f", struct.pack("<I", bit))[0] for bit in bits)))
+
+
 def _facing_entity_position(row):
     point, bits = row.get("entityPositionCandidate"), row.get("entityPositionRawBits")
     if point is None and bits is None:
         return None
-    if (not isinstance(point, dict) or not isinstance(bits, list) or len(bits) != 3
-            or any(type(bit) is not int or not 0 <= bit < 2**32 for bit in bits)
-            or any(type(point.get(axis)) not in (int, float) or not math.isfinite(point[axis]) for axis in ("x", "y", "z"))):
-        raise ValueError("invalid-native-facing-entity-position")
-    try:
-        encoded = [struct.unpack("<I", struct.pack("<f", point[axis]))[0] for axis in ("x", "y", "z")]
-    except (OverflowError, struct.error) as error:
-        raise ValueError("invalid-native-facing-entity-position") from error
-    if any(a != b and {a, b} != {0, 0x80000000} for a, b in zip(encoded, bits)):
-        raise ValueError("invalid-native-facing-entity-position-bits")
-    return dict(zip(("x", "y", "z"), (struct.unpack("<f", struct.pack("<I", bit))[0] for bit in bits)))
+    return _xyz_from_raw_bits(point, bits, "invalid-native-facing-entity-position")
+
+
+def _same_optical_projection_snapshot(camera, after_camera):
+    before = _optical_camera_values(camera)
+    after = _optical_camera_values(after_camera)
+    address = camera.get("cameraAddressDecimal") if isinstance(camera, dict) else None
+    return bool(before and after and before["status"] == after["status"] == "available-candidate"
+                and before["projectionAvailableCandidate"] and after["projectionAvailableCandidate"]
+                and isinstance(address, str) and address.isdecimal() and 0 < int(address) < 2**64
+                and str(int(address)) == address and address == after_camera.get("cameraAddressDecimal")
+                and camera["rawBits"] == after_camera["rawBits"]
+                and camera["projectionRawBits"] == after_camera["projectionRawBits"])
 
 
 def _target_screen_point(row):
@@ -273,15 +291,7 @@ def _target_screen_point(row):
             or type(span) not in (int, float) or not math.isfinite(span) or not 0 <= span <= 1000):
         raise ValueError("invalid-native-facing-target-interval")
     camera = row.get("opticalCameraCandidate")
-    before = _optical_camera_values(camera)
-    after = _optical_camera_values(after_camera)
-    address = camera.get("cameraAddressDecimal") if isinstance(camera, dict) else None
-    expected_stable = bool(before and after and before["status"] == after["status"] == "available-candidate"
-                           and before["projectionAvailableCandidate"] and after["projectionAvailableCandidate"]
-                           and isinstance(address, str) and address.isdecimal() and 0 < int(address) < 2**64
-                           and str(int(address)) == address and address == after_camera.get("cameraAddressDecimal")
-                           and camera["rawBits"] == after_camera["rawBits"]
-                           and camera["projectionRawBits"] == after_camera["projectionRawBits"])
+    expected_stable = _same_optical_projection_snapshot(camera, after_camera)
     if stable != expected_stable:
         raise ValueError("invalid-native-facing-target-camera-bracket")
     target = pair.get("target")
@@ -311,6 +321,73 @@ def _target_screen_point(row):
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
     """Project immediate useful values; preserve exact large unit keys as text."""
+    if kind == "unit-positions":
+        observation = report.get("observation")
+        if (report.get("schemaVersion") != 1 or report.get("status") != "complete"
+                or report.get("contractVersion") != "native-current-unit-positions-candidate-sample/1"
+                or not isinstance(observation, dict) or not isinstance(observation.get("identity"), dict)):
+            raise ValueError("invalid-native-unit-positions-report")
+        key = observation.get("selfKey")
+        if not isinstance(key, str) or not key.isdecimal() or not 0 < int(key) < 2**64 or str(int(key)) != key:
+            raise ValueError("invalid-native-unit-positions-self")
+        self_xyz = _xyz_from_raw_bits(observation.get("selfPositionCandidate"), observation.get("selfPositionRawBits"),
+                                     "invalid-native-unit-positions-self")
+        limit, examined, absent, unavailable, chains, visited, start, buckets, byte_count = (
+            observation.get(name) for name in ("unitLimit", "examined", "noPosition", "unavailable",
+                                               "unavailableChains", "bucketsExamined", "startBucket", "bucketCount", "readBytes"))
+        rows = observation.get("rows")
+        limited = observation.get("unitLimitReached")
+        if (any(type(n) is not int for n in (limit, examined, absent, unavailable, chains, visited, start, buckets, byte_count))
+                or not 1 <= limit <= 512 or not 0 <= examined <= limit or not 1 <= buckets <= 4096
+                or not 0 <= start < buckets or not 1 <= visited <= buckets or not 0 <= chains <= visited
+                or min(absent, unavailable) < 0 or not 0 < byte_count <= 2 * 1024 * 1024
+                or type(limited) is not bool or (limited and examined != limit)
+                or (not limited and visited != buckets) or not isinstance(rows, list)
+                or len(rows) + absent + unavailable != examined
+                or observation.get("worldIdentityStatus") != "unavailable"):
+            raise ValueError("invalid-native-unit-positions-coverage")
+        begin = _utc_tick_order_key(observation.get("startedAtUtc"))
+        end = _utc_tick_order_key(observation.get("completedAtUtc"))
+        if begin >= end:
+            raise ValueError("invalid-native-unit-positions-time")
+        camera = observation.get("opticalCameraCandidate")
+        stable = observation.get("cameraStableCandidate")
+        if type(stable) is not bool or stable != _same_optical_projection_snapshot(
+                camera, observation.get("opticalCameraAfterCandidate")):
+            raise ValueError("invalid-native-unit-positions-camera")
+        units, keys, previous = [], set(), begin
+        for row in rows:
+            unit_key = row.get("unitKey")
+            address = row.get("entityAddressDecimal")
+            if (not isinstance(unit_key, str) or not unit_key.isdecimal() or not 0 < int(unit_key) < 2**64
+                    or str(int(unit_key)) != unit_key or unit_key in keys
+                    or row.get("unitIdCandidate") != f"u{int(unit_key):016X}"
+                    or not isinstance(address, str) or not address.isdecimal()
+                    or not 0x10000 <= int(address) <= 0x7FFFFFFFFFFF - 0x110 or int(address) % 8):
+                raise ValueError("invalid-native-unit-position-owner")
+            keys.add(unit_key)
+            start_time, end_time = (_utc_tick_order_key(row.get(name)) for name in ("startedAtUtc", "completedAtUtc"))
+            if not previous <= start_time <= end_time <= end:
+                raise ValueError("invalid-native-unit-position-time")
+            previous = end_time
+            xyz = _xyz_from_raw_bits(row.get("positionCandidate"), row.get("rawBits"), "invalid-native-unit-position")
+            distance = math.hypot(xyz["x"] - self_xyz["x"], xyz["z"] - self_xyz["z"])
+            actual = row.get("horizontalDistanceCandidate")
+            if type(actual) not in (int, float) or not math.isfinite(actual) or abs(actual - distance) > 1e-6:
+                raise ValueError("invalid-native-unit-position-distance")
+            units.append({"unitKey": unit_key, "unitIdCandidate": row["unitIdCandidate"],
+                          "positionXYZCandidate": xyz, "horizontalDistanceCandidate": distance,
+                          "screenPointCandidate": _project_world_point(camera, xyz) if stable else
+                          {"status": "unavailable", "reason": "camera-not-stable-across-unit-scan"},
+                          "sampledAtUtc": row["completedAtUtc"]})
+        return {"selfKey": key, "selfPositionXYZCandidate": self_xyz,
+                "unitsExamined": examined, "positionsFound": len(units), "unitsWithoutPosition": absent,
+                "unavailableUnits": unavailable, "unavailableChains": chains, "bucketsExamined": visited,
+                "bucketCount": buckets, "startBucket": start, "unitLimitReached": limited,
+                "cameraStableCandidate": stable, "opticalCamera": _optical_camera_values(camera),
+                "units": sorted(units, key=lambda row: (row["horizontalDistanceCandidate"], row["unitKey"])),
+                "sampledAtUtc": observation["completedAtUtc"], "worldIdentityStatus": "unavailable",
+                "worldCoverage": "bounded-unit-manager-subset"}
     if kind == "facing":
         rows = report.get("observations")
         if (report.get("schemaVersion") != 1 or report.get("status") != "complete"
@@ -966,7 +1043,8 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
 
 
 def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
-                include_position=False, include_transform_sources=False, include_target=False):
+                include_position=False, include_transform_sources=False, include_target=False,
+                unit_limit=None, start_bucket=None):
     """Read a candidate from the exact selected LOCAL physical process, without input."""
     if selection.get("status") != "ready":
         return selection
@@ -985,6 +1063,11 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         return dict(selection, status="blocked", reason="transform-sources-require-actor-pose")
     if type(include_target) is not bool or (include_target and kind != "facing"):
         return dict(selection, status="blocked", reason="target-projection-requires-facing")
+    if ((unit_limit is not None or start_bucket is not None) and kind != "unit-positions"):
+        return dict(selection, status="blocked", reason="unit-scan-options-require-unit-positions")
+    if ((unit_limit is not None and (type(unit_limit) is not int or not 1 <= unit_limit <= 512))
+            or (start_bucket is not None and (type(start_bucket) is not int or not 0 <= start_bucket < 2**64))):
+        return dict(selection, status="blocked", reason="invalid-unit-scan-options")
     if kind not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context") and (samples is not None or interval_ms is not None):
         return dict(selection, status="blocked", reason="sampling-options-require-supported-native-burst")
     if ((samples is not None and (type(samples) is not int or not 1 <= samples <= 30))
@@ -1021,6 +1104,10 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
         command.extend(("--include-transform-sources", "true"))
     if include_target:
         command.extend(("--include-target", "true"))
+    if unit_limit is not None:
+        command.extend(("--unit-limit", str(unit_limit)))
+    if start_bucket is not None:
+        command.extend(("--start-bucket", str(start_bucket)))
     # Long, explicitly requested intervals must not hit the wrapper's timeout.
     timeout = (30 + ((samples if samples is not None else
                       (3 if kind == "position" else 1)) - 1)
@@ -1092,6 +1179,9 @@ def read_native(selection, kind, output=None, *, samples=None, interval_ms=None,
             raise ValueError("incomplete-native-orientation-burst")
         values = _native_values(kind, report, expect_position=include_position,
                                 expect_translation_sources=include_transform_sources)
+        if kind == "unit-positions" and (observation["unitLimit"] != (512 if unit_limit is None else unit_limit)
+                or observation["startBucket"] != (0 if start_bucket is None else start_bucket) % observation["bucketCount"]):
+            raise ValueError("native-unit-position-options-mismatch")
         if include_target and any(row.get("targetPositionPairCandidate") is None
                                   for row in report["observations"]):
             raise ValueError("missing-native-facing-target")
@@ -1127,6 +1217,8 @@ def main(argv=None):
                         help="actor-pose only: read secondary XYZ and both actor transform offsets")
     parser.add_argument("--include-target", action="store_true",
                         help="facing only: project selected target position with a camera stability bracket")
+    parser.add_argument("--unit-limit", type=int, help="unit-positions only: bounded 1-512 examined units (default 512)")
+    parser.add_argument("--start-bucket", type=int, help="unit-positions only: first unit-manager bucket (default 0)")
     parser.add_argument("--anchor-catalog", type=Path,
                         help="with native position: offline compare XYZ to named-anchor catalog")
     parser.add_argument("--anchor-id",
@@ -1155,6 +1247,9 @@ def main(argv=None):
     elif args.include_target and args.read_native != "facing":
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "target-projection-requires-facing"}
+    elif (args.unit_limit is not None or args.start_bucket is not None) and args.read_native != "unit-positions":
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "unit-scan-options-require-unit-positions"}
     elif (args.samples is not None or args.interval_ms is not None) and args.read_native not in ("position", "vitals", "actor-pose", "smoothed-scalar", "orientation", "facing", "player-context"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "sampling-options-require-position-vitals-or-actor-pose"}
@@ -1163,11 +1258,13 @@ def main(argv=None):
     if args.output is not None and args.read_native is None:
         result = dict(result, status="blocked", reason="output-requires-native-read")
     elif args.read_native:
+        scan_options = ({"unit_limit": args.unit_limit, "start_bucket": args.start_bucket}
+                        if args.unit_limit is not None or args.start_bucket is not None else {})
         result = read_native(result, args.read_native, args.output,
                              samples=args.samples, interval_ms=args.interval_ms,
                               include_position=args.include_position,
                               include_transform_sources=args.include_transform_sources,
-                              include_target=args.include_target)
+                              include_target=args.include_target, **scan_options)
     if anchor_requested and result["status"] == "complete":
         from scripts import physical_route_preview
         try:

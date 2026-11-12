@@ -64,12 +64,7 @@ internal static class CurrentBuildFacingSampleCommand
                     throw new InvalidDataException("Facing/target identity, position or acquisition interval changed.");
                 var firstCamera = sample.OpticalCameraCandidate;
                 var lastCamera = after.OpticalCameraCandidate;
-                var stable = firstCamera is { Status: "available-candidate", RawBits: { } firstBits,
-                                               ProjectionRawBits: { } firstProjection } &&
-                             lastCamera is { Status: "available-candidate", RawBits: { } lastBits,
-                                              ProjectionRawBits: { } lastProjection } &&
-                             firstCamera.CameraAddressDecimal == lastCamera.CameraAddressDecimal &&
-                             firstBits.AsSpan().SequenceEqual(lastBits) && firstProjection.AsSpan().SequenceEqual(lastProjection);
+                var stable = CurrentBuildOpticalCameraCandidateReader.SameProjectionSnapshot(firstCamera, lastCamera);
                 sample = sample with
                 {
                     CompletedAtUtc = after.CompletedAtUtc,

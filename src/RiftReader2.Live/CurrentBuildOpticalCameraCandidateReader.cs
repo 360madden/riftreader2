@@ -20,6 +20,13 @@ internal sealed record CurrentBuildOpticalCameraCandidate(
 
 internal static class CurrentBuildOpticalCameraCandidateReader
 {
+    internal static bool SameProjectionSnapshot(CurrentBuildOpticalCameraCandidate? first,
+        CurrentBuildOpticalCameraCandidate? last) =>
+        first is { Status: "available-candidate", RawBits: { } firstBits, ProjectionRawBits: { } firstProjection } &&
+        last is { Status: "available-candidate", RawBits: { } lastBits, ProjectionRawBits: { } lastProjection } &&
+        first.CameraAddressDecimal == last.CameraAddressDecimal &&
+        firstBits.AsSpan().SequenceEqual(lastBits) && firstProjection.AsSpan().SequenceEqual(lastProjection);
+
     internal static CurrentBuildOpticalCameraCandidate TryRead(
         IReadOnlyNativeMemorySession session, ulong playerSystem)
     {

@@ -659,3 +659,28 @@ The visually reviewed frame is
 `artifacts/observe-wgc-0b1b1433b6a742d691c504b53363f9e6/image.png`.
 The component itself is stored data refreshed by game code, so passive absolute
 age and restart recovery remain unqualified. No game input was sent.
+
+## Bounded loaded-unit position retrieval, November 11 at 23:48 EST
+
+`sample-current-unit-positions` and physical read kind `unit-positions` reuse the
+unit-manager table at `module+0x33624A8 -> manager+0x50` and the position selector
+at `module+0x2F588A0`. Each row verifies key/bucket membership, anchored node path,
+entity component map, exact position vtable/backlink and consumed XYZ bytes through
+the existing position reader. Unit keys remain decimal text. One scan is capped
+at 512 entries, 128 links per bucket, 4096 buckets and 2 MiB of attempted reads.
+The self position and manager anchors are rechecked; changing self rejects the
+scan. Individual unreadable/changing rows and cyclic chains remain explicit.
+Optical camera snapshots bracket the scan. A changed or unavailable camera
+withholds screen points, with native position candidates still available.
+
+On the current physical AMD-DESKTOP epoch, all 681 captured buckets were visited,
+419 entries examined, 157 typed position candidates returned and 262 position
+slots absent, with zero unavailable rows/chains. This describes that manager
+snapshot and does not establish complete world coverage or entity classifications.
+The native acquisition took 13.669 ms and attempted 219292 bytes. Atank's key
+`u035400012FA2D207` and the previously selected dummy keys `u8000000215000A28`
+and `u8000000215000A3F` independently reappeared with matching XYZ/screen points.
+Of the 157 projected candidates, 46 lay inside viewport bounds; occlusion remains
+unknown. Raw evidence is
+`artifacts/physical-unit-positions-d3e6f4313d814eabb570ef1ab387503c.json`.
+No game input, method invocation, process-memory write or focus change occurred.
