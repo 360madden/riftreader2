@@ -104,6 +104,23 @@ python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 
 
 Successful CLI runs retain the native input receipts under `artifacts/waypoint-run-*.json`.
 
+Run a saved multi-point route through the same backend:
+
+```powershell
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 18092 --run-route my-route.json --face-waypoints --execute
+```
+
+This requires explicit `--execute` and preserves every leg in one receipt. The
+same ownership, progress, release and whole-trip limits apply. **Ctrl+C** cancels
+CLI execution; **F8** is the GUI's temporary hotkey. Omit `--face-waypoints` to
+use the W/S/Q/E movement basis while keeping the current facing.
+
+A live two-point CLI route went one unit forward and returned home with one W
+and two S presses (450 ms requested hold total). Outbound error was 0.0102 units;
+return error was 0.00414 units. Bearing stayed unchanged and all three native
+releases succeeded. The receipt retains both named legs:
+`artifacts/waypoint-run-dba8ed0a046c4036a33437a61912766d.json`.
+
 Existing solutions were checked before adding this adapter. [TomTom Rift](https://www.curseforge.com/rift/addons/tomtom-rift)
 already provides waypoint lists and guidance, but its last release was in 2013
 and it does not know terrain obstacles. [DotRecast](https://github.com/ikpil/DotRecast)

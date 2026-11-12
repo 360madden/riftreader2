@@ -530,7 +530,7 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
                                   face_waypoints=face_waypoints)
                 segments.append(segment)
                 movement_started = movement_started or segment["pulses"] > 0
-            result = dict(segments[-1], start=asdict(start), goal=asdict(goal),
+            result = dict(segments[-1], name=label, start=asdict(start), goal=asdict(goal),
                           pulses=sum(row["pulses"] for row in segments),
                           totalHoldMs=sum(row["totalHoldMs"] for row in segments),
                           turnPulses=sum(row["turnPulses"] for row in segments),
@@ -913,24 +913,37 @@ def main(argv=None):
     parser.add_argument("--route", type=Path, help="load a waypoint JSON into the window without running it")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
+    mode.add_argument("--run-route", type=Path, help="run a saved waypoint JSON with --execute")
     mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
     parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
-    if args.go is None and args.face_bearing is None:
+    if args.go is None and args.face_bearing is None and args.run_route is None:
         launch_window(args)
         return 0
     if not args.execute:
-        parser.error("--go / --face-bearing requires --execute; omit both to open the window")
+        parser.error("--go / --face-bearing / --run-route requires --execute; omit them to open the window")
     stop = threading.Event()
     try:
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
         emit = lambda event: print(json.dumps({k: v for k, v in event.items()
                                                if k not in ("actions", "segments")}), flush=True)
-        result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
-                  if args.face_bearing is not None else
-                  run_route(adapter, [("Waypoint", *args.go)], stop, emit,
-                            face_waypoints=args.face_waypoints)[0])
+        if args.run_route is not None:
+            points = route_points(json.loads(args.run_route.read_text(encoding="utf-8"))["waypoints"])
+            started = time.monotonic()
+            legs = run_route(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
+            result = {"status": "arrived", "waypointCount": len(legs),
+                      "position": legs[-1]["position"], "bearing": legs[-1]["bearing"],
+                      "distance": legs[-1]["distance"], "legs": legs,
+                      "pulses": sum(leg["pulses"] for leg in legs),
+                      "totalHoldMs": sum(leg["totalHoldMs"] for leg in legs),
+                      "elapsedSeconds": round(time.monotonic()-started, 3),
+                      "allPulsesReleased": True}
+        else:
+            result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
+                      if args.face_bearing is not None else
+                      run_route(adapter, [("Waypoint", *args.go)], stop, emit,
+                                face_waypoints=args.face_waypoints)[0])
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps({"status": result["status"], "receipt": str(output)}))
