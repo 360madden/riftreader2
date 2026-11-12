@@ -171,5 +171,72 @@ class ComparisonUnitTests(unittest.TestCase):
             self.pair(same=True)
 
 
+
+class HistoryUnitTests(unittest.TestCase):
+    def sample(self, i, *, start=None, pid=42):
+        return {
+            "summarySha256": str(i), "target": {"processId": pid, "start": 100},
+            "moduleBaseAddress": 1000, "moduleSize": 500,
+            "selfKeyCandidate": "123",
+            "firstStartedAtUtc": start or f"2026-11-12T12:00:{2*i:02d}+00:00",
+            "lastCompletedAtUtc": f"2026-11-12T12:00:{2*i+1:02d}+00:00",
+            "candidateValues": {
+                "position": {"x": float(i * 3), "y": 3.0, "z": float(i * 4)},
+                "vitals": {"health": {"status": "calculated-candidate",
+                                      "current": 100 - 5 * i}},
+            },
+        }
+
+    def test_three_capture_history_distance_and_health(self):
+        from unittest.mock import patch
+        with patch.object(replay, "verified_state",
+                          side_effect=[self.sample(i) for i in range(3)]):
+            result = replay.history(["one", "two", "three"])
+        self.assertEqual(result["captureCount"], 3)
+        self.assertEqual([s["planarDistanceCandidate"] for s in result["segments"]], [5, 5])
+        self.assertEqual(result["sumPlanarChordsCandidate"], 10)
+        self.assertEqual(result["netPositionDeltaCandidate"], {"x": 6, "y": 0, "z": 8})
+        self.assertEqual((result["healthObservedCount"], result["healthMinCandidate"],
+                          result["healthMaxCandidate"]), (3, 90, 100))
+        self.assertIn("NOT actual travel", result["qualification"])
+
+    def test_history_rejects_overlap(self):
+        from unittest.mock import patch
+        with patch.object(replay, "verified_state",
+                          side_effect=[self.sample(0), self.sample(1),
+                                       self.sample(2, start="2026-11-12T12:00:03+00:00")]):
+            with self.assertRaisesRegex(ValueError, "captures-overlap-or-reversed"):
+                replay.history(["a", "b", "c"])
+
+    def test_history_rejects_changed_process_epoch(self):
+        from unittest.mock import patch
+        with patch.object(replay, "verified_state",
+                          side_effect=[self.sample(0), self.sample(1, pid=99)]):
+            with self.assertRaisesRegex(ValueError, "owner-or-epoch-changed"):
+                replay.history(["a", "b"])
+
+    def test_history_rejects_replay_and_out_of_bounds(self):
+        from unittest.mock import patch
+        with self.assertRaisesRegex(ValueError, "history-count-out-of-bounds"):
+            replay.history(["a"])
+        with patch.object(replay, "verified_state",
+                          side_effect=[self.sample(0), self.sample(0)]):
+            with self.assertRaisesRegex(ValueError, "same-source"):
+                replay.history(["a", "a"])
+
+    def test_history_handles_missing_health_without_fabrication(self):
+        from unittest.mock import patch
+        missing = self.sample(1)
+        missing["candidateValues"]["vitals"]["health"] = {
+            "status": "unavailable", "current": None}
+        with patch.object(replay, "verified_state",
+                          side_effect=[self.sample(0), missing, self.sample(2)]):
+            result = replay.history(["a", "b", "c"])
+        self.assertEqual(result["healthObservedCount"], 2)
+        self.assertEqual(result["healthMinCandidate"], 90)
+        self.assertIsNone(result["segments"][0]["healthDeltaCandidate"])
+        self.assertIsNone(result["segments"][1]["healthDeltaCandidate"])
+
+
 if __name__ == "__main__":
     unittest.main()

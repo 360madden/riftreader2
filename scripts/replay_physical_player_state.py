@@ -108,8 +108,8 @@ def verified_state(filename):
     }
 
 
-def compare(before, after):
-    a, b = verified_state(before), verified_state(after)
+def _compare_states(a, b):
+    """Compare two previously verified native observations."""
     require(a["summarySha256"] != b["summarySha256"], "same-source")
     require(a["target"] == b["target"]
             and (a["moduleBaseAddress"], a["moduleSize"]) ==
@@ -143,14 +143,63 @@ def compare(before, after):
     }
 
 
+def compare(before, after):
+    return _compare_states(verified_state(before), verified_state(after))
+
+
+def history(summaries):
+    """Ordered, same-process trajectory of offline native evidence."""
+    require(2 <= len(summaries) <= 24, "history-count-out-of-bounds")
+    captures = [verified_state(path) for path in summaries]
+    edges = [_compare_states(a, b) for a, b in zip(captures, captures[1:])]
+    health = [capture["candidateValues"]["vitals"]["health"] for capture in captures]
+    health_points = [h["current"] if h.get("status") == "calculated-candidate"
+                     and type(h.get("current")) is int else None for h in health]
+    delta = {axis: captures[-1]["candidateValues"]["position"][axis] -
+             captures[0]["candidateValues"]["position"][axis]
+             for axis in ("x", "y", "z")}
+    require(all(type(v) in (int, float) and math.isfinite(v) for v in delta.values()),
+            "invalid-history-position-delta")
+    return {
+        "schemaVersion": 1, "status": "candidate-only",
+        "evidenceKind": "amd-physical-player-state-history/1",
+        "processId": captures[0]["target"]["processId"],
+        "selfKeyCandidate": captures[0]["selfKeyCandidate"],
+        "captureCount": len(captures),
+        "summarySha256s": [capture["summarySha256"] for capture in captures],
+        "firstStartedAtUtc": captures[0]["firstStartedAtUtc"],
+        "lastCompletedAtUtc": captures[-1]["lastCompletedAtUtc"],
+        "segments": [{
+            "beforeSummarySha256": edge["beforeSummarySha256"],
+            "afterSummarySha256": edge["afterSummarySha256"],
+            "positionDeltaCandidate": edge["positionDeltaCandidate"],
+            "planarDistanceCandidate": edge["planarDistanceCandidate"],
+            "healthDeltaCandidate": edge["healthDeltaCandidate"],
+        } for edge in edges],
+        "sumPlanarChordsCandidate": sum(e["planarDistanceCandidate"] for e in edges),
+        "netPositionDeltaCandidate": delta,
+        "healthObservedCount": sum(h is not None for h in health_points),
+        "healthMinCandidate": min((h for h in health_points if h is not None), default=None),
+        "healthMaxCandidate": max((h for h in health_points if h is not None), default=None),
+        "qualification": ("SHA-pinned ordered same-process native candidates; planar chords "
+                          "are sampled straight-line distances, NOT actual travel. No "
+                          "independent Lua, freshness, movement-causation or restart proof."),
+    }
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--after", type=Path)
+    parser.add_argument("--history", nargs="+", type=Path,
+                        help="Additional 1-23 ordered summaries for offline history")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     try:
-        result = compare(args.summary, args.after) if args.after else verified_state(args.summary)
+        require(not (args.after and args.history), "options-conflict")
+        result = (history([args.summary, *args.history]) if args.history else
+                  compare(args.summary, args.after) if args.after else
+                  verified_state(args.summary))
         if args.output:
             require(not args.output.exists() and not args.output.is_symlink(), "output-exists")
             with args.output.open("x", encoding="utf-8", newline="\n") as out:
@@ -161,7 +210,8 @@ def main(argv=None):
         return 2
     print(json.dumps({"status": result["status"], "evidenceKind": result["evidenceKind"],
                       "summarySha256": result.get("summarySha256"),
-                      "sourceCount": len(result.get("sources", {})),
+                      "sourceCount": len(result["sources"]) if "sources" in result else None,
+                      "captureCount": result.get("captureCount"),
                       "output": str(args.output) if args.output else None}))
     return 0
 
