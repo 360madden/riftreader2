@@ -116,6 +116,16 @@ class HeadingTests(unittest.TestCase):
             snapshot = adapter.read()
         self.assertGreaterEqual(time.monotonic()-snapshot.acquired, 1.49)
 
+    def test_moving_player_preflight_sends_no_input(self):
+        class MovingRift(TurningRift):
+            def read(self):
+                self.position = Position(self.position.x+.1, 10, self.position.z)
+                return super().read()
+        adapter = MovingRift()
+        with self.assertRaisesRegex(WaypointError, "moving or turning"):
+            run_route(adapter, [("Near", 2, 0)], ImmediateStop(), face_waypoints=True)
+        self.assertFalse(adapter.calls)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -35,6 +35,16 @@ python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 
 
 Add `--face-waypoints` to a CLI `--go` or a GUI launch to enable forward walking.
 
+**Live pose (2 s)** refreshes position, facing and the preview while idle. It is
+read-only, pauses during GUI actions and preserves entered waypoint coordinates.
+The current pose has a separate timestamped readout. A control request waits for
+an in-flight observation; closing waits for it as well. Before starting a route
+or facing action, two fresh observations must show settled XYZ and bearing.
+
+Live updates were checked against an independently issued facing command: the
+preview updated to the new -16.51-degree bearing while an edited X coordinate
+remained unchanged.
+
 Each route is limited to 20 world units of planned travel, 64 pulses, 9 seconds
 total key hold and 120 seconds overall. Long waypoints are split into targets
 at most 4 units apart. Each target retains the existing controller's six-pulse,

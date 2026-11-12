@@ -152,6 +152,19 @@ def pose_drift(first, second):
             abs(heading_error(second.bearing, first.bearing)))
 
 
+def read_stationary(adapter, stop):
+    if stop.is_set():
+        raise Stopped("Stopped; no further input")
+    first = adapter.read()
+    if stop.wait(.15):
+        raise Stopped("Stopped; no further input")
+    second = adapter.read()
+    distance, yaw = pose_drift(first, second)
+    if distance > .05 or yaw > .5:
+        raise WaypointError("Player is moving or turning; let it settle before starting")
+    return second
+
+
 class PhysicalAdapter:
     """Exact-epoch reads and guarded, released native pulses; never retry input."""
 
@@ -320,7 +333,7 @@ def run_facing(adapter, stop, emit=lambda event: None, *, bearing=None, point=No
     if (bearing is None) == (point is None):
         raise WaypointError("Choose one facing angle or waypoint")
     with adapter.reserve() as lease:
-        current = adapter.read()
+        current = read_stationary(adapter, stop)
         if point is not None:
             px, pz = (finite(value) for value in point)
             distance = math.hypot(px-current.position.x, pz-current.position.z)
@@ -355,7 +368,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
     actions = []
     check_stop()
     with (adapter.reserve() if reservation is None else nullcontext(reservation)) as lease:
-        start = current = adapter.read()
+        start = current = (read_stationary(adapter, stop) if reservation is None else adapter.read())
         goal = Position(finite(goal_x), start.position.y, finite(goal_z))
         # Validate the original translation bounds before any optional turn.
         controller = WaypointController(adapter.calibrations(start), start.position, goal)
@@ -440,7 +453,7 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
     if stop.is_set():
         raise Stopped("Stopped; no further input")
     with adapter.reserve() as lease:
-        current = adapter.read()
+        current = read_stationary(adapter, stop)
         planned = route_length(current.position.x, current.position.z, points)
         if planned > 20:
             raise WaypointError("Route exceeds 20 world units; choose a shorter route")
@@ -494,23 +507,27 @@ def launch_window(args):
 
     window = tk.Tk()
     window.title(f"RR2 Waypoints — {args.expected_host} / PID {args.physical_pid}")
-    window.geometry("1060x740")
+    window.geometry("1060x770")
     frame = ttk.Frame(window, padding=14)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
     ttk.Label(frame, text="Open ground • route ≤ 20 units • pulses ≤ 150 ms • foreground loss stops movement").pack(anchor="w", pady=(0, 10))
     state = tk.StringVar(value="Ready — save a point, click the map, or enter X / Z.")
     ttk.Label(frame, textvariable=state, wraplength=1000).pack(anchor="w", pady=5)
+    pose_text = tk.StringVar(value="Position is loading…")
+    ttk.Label(frame, textvariable=pose_text).pack(anchor="w", pady=(0, 3))
     editable = []
     coordinates = ttk.Frame(frame)
     coordinates.pack(fill="x", pady=5)
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
+    live_pose = tk.BooleanVar(value=True)
     for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
         ttk.Label(coordinates, text=label).pack(side="left", padx=(0, 5))
         entry = ttk.Entry(coordinates, textvariable=variable, width=width)
         entry.pack(side="left", padx=(0, 10))
         editable.append(entry)
+    ttk.Checkbutton(coordinates, text="Live pose (2 s)", variable=live_pose).pack(side="left", padx=(16, 0))
     summary = tk.StringVar(value="Refresh position to preview the route.")
     ttk.Label(frame, textvariable=summary).pack(anchor="w", pady=(5, 0))
     middle = ttk.Frame(frame)
@@ -532,6 +549,9 @@ def launch_window(args):
     foreground_stop = None
     last_pose = None
     map_view = None
+    observing = False
+    next_live_at = time.monotonic() + 2
+    operation_gate = threading.Lock()
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
     def add_point(label, px, pz):
@@ -540,6 +560,8 @@ def launch_window(args):
             return
         item = table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
         table.selection_set(item)
+        x.set(f"{finite(px):.6f}")
+        z.set(f"{finite(pz):.6f}")
         redraw()
         return item
 
@@ -552,6 +574,10 @@ def launch_window(args):
         if last_pose is None:
             map_view = None
             draw_route(canvas, None, [], set())
+            summary.set("Position unavailable; refresh to preview the route.")
+            if not busy:
+                for button in (go_button, route_button, face_button):
+                    button.configure(state="disabled")
             return
         map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()))
         draw_route(canvas, map_view, points, set(table.selection()))
@@ -573,11 +599,15 @@ def launch_window(args):
         start("map", (map_view, px, pz, name.get() or "Waypoint"))
 
     def worker(operation, points=None, face_walk=False):
+        with operation_gate:
+            perform_operation(operation, points, face_walk)
+
+    def perform_operation(operation, points=None, face_walk=False):
         nonlocal adapter
         try:
             if adapter is None:
                 adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
-            if operation in ("refresh", "save", "map"):
+            if operation in ("refresh", "save", "map", "live"):
                 pose = adapter.read()
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
                 if operation == "map":
@@ -611,15 +641,16 @@ def launch_window(args):
                         stopped_bearing = second.bearing
                 except Exception as observation_error:
                     exc = WaypointError("STOP requested; stationary check unavailable: " + str(observation_error))
-            events.put({"status": "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
+            events.put({"status": "live-unavailable" if operation == "live" else
+                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
                         **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
                         "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None})
         finally:
-            events.put({"status": "idle"})
+            events.put({"status": "live-idle" if operation == "live" else "idle"})
 
     def start(operation, points=None):
         nonlocal busy, foreground_stop
-        if busy:
+        if busy or closing:
             return
         if operation == "go" and (not points or len(points) > 20):
             messagebox.showinfo("Choose waypoints", "Select a waypoint, or add up to 20 points for a route.")
@@ -708,17 +739,30 @@ def launch_window(args):
 
     def close():
         nonlocal closing
-        if busy:
+        if busy or observing:
             closing = True
+            for widget in editable:
+                widget.configure(state="disabled")
             request_stop()
         else:
             window.destroy()
 
     def poll():
-        nonlocal busy, foreground_stop, last_pose
+        nonlocal busy, foreground_stop, last_pose, observing, next_live_at
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
+            if status == "live-idle":
+                observing = False
+                if closing and not busy:
+                    window.destroy()
+                    return
+                continue
+            if status == "live-unavailable":
+                pose_text.set("Live position unavailable: " + event["reason"])
+                last_pose = None
+                redraw()
+                continue
             if status == "idle":
                 if foreground_stop is not None:
                     try:
@@ -738,12 +782,17 @@ def launch_window(args):
                 continue
             if "position" in event:
                 point = event["position"]
-                x.set(f"{point['x']:.6f}")
-                z.set(f"{point['z']:.6f}")
                 last_pose = (point["x"], point["z"], event.get("bearing", last_pose[2] if last_pose else 0))
+                pose_text.set(f"Position X={point['x']:.6f}  Y={point['y']:.6f}  Z={point['z']:.6f}"
+                              f"   facing={last_pose[2]:.2f}°   updated {time.strftime('%H:%M:%S')}")
+                if not x.get() and not z.get():
+                    x.set(f"{point['x']:.6f}")
+                    z.set(f"{point['z']:.6f}")
                 redraw()
+            if status == "live":
+                continue
             if status == "save":
-                add_point(name.get() or "Waypoint", x.get(), z.get())
+                add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
                 name.set(f"Point {len(table.get_children()) + 1}")
             if "waypoint" in event:
                 add_point(*event["waypoint"])
@@ -752,19 +801,32 @@ def launch_window(args):
                     f"{status}: {abs(event['headingError']):.2f}° from requested facing" if "headingError" in event else
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
                     f"{status}: {event.get('name', '')}" if status == "leg" else
-                    f"Position X={x.get()}  Z={z.get()}  facing={event.get('bearing', 0):.2f}°")
+                    "Saved current position." if status == "save" else
+                    "Waypoint added from the preview." if status == "map" else
+                    "Position refreshed.")
             state.set(text)
             log.configure(state="normal")
             log.insert("end", text + "\n")
             log.see("end")
             log.configure(state="disabled")
+        if live_pose.get() and not busy and not observing and not closing and time.monotonic() >= next_live_at:
+            observing = True
+            next_live_at = time.monotonic() + 2
+            threading.Thread(target=worker, args=("live",), daemon=False).start()
         window.after(80, poll)
+
+    def select_point(_):
+        selected = selected_points()
+        if len(selected) == 1:
+            x.set(selected[0][1])
+            z.set(selected[0][2])
+        redraw()
 
     window.protocol("WM_DELETE_WINDOW", close)
     window.bind("<Escape>", lambda _: request_stop())
     canvas.bind("<Configure>", redraw)
     canvas.bind("<Button-1>", map_click)
-    table.bind("<<TreeviewSelect>>", redraw)
+    table.bind("<<TreeviewSelect>>", select_point)
     if args.route:
         for row in route_points(json.loads(args.route.read_text(encoding="utf-8"))["waypoints"]):
             add_point(*row)
