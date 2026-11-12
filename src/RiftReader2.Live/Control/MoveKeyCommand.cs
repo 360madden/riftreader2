@@ -20,7 +20,7 @@ internal static class MoveKeyCommand
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
         int XyzSettleMilliseconds, bool MeasureActorPose, int ActorPoseSettleMilliseconds = 0,
-        bool ReleaseOnly = false, bool InspectOnly = false);
+        bool ReleaseOnly = false, bool InspectOnly = false, long? ExpectedHwnd = null);
 
     // A timed envelope around the bounded input executor, NOT exact down/up
     // timestamps or proof that the RIFT game consumed the injected key.
@@ -213,7 +213,24 @@ internal static class MoveKeyCommand
 
     private const string Usage =
         "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose] [--actor-pose-settle-ms 500]"
-        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--release-only] [--inspect]";
+        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--expect-hwnd HWND] [--release-only] [--inspect]";
+
+    internal static long ParseWindowHandle(string value)
+    {
+        var hex = value.StartsWith("0x", StringComparison.OrdinalIgnoreCase);
+        var digits = hex ? value[2..] : value;
+        if (digits.Length == 0 || !digits.All(c => hex ? Uri.IsHexDigit(c) : c is >= '0' and <= '9')
+            || !long.TryParse(digits, hex ? NumberStyles.AllowHexSpecifier : NumberStyles.None,
+                CultureInfo.InvariantCulture, out var handle) || handle <= 0)
+            throw new InvalidDataException("Expected HWND must be a positive decimal or 0x-prefixed hexadecimal handle.");
+        return handle;
+    }
+
+    internal static void ValidateExpectedWindow(long? expectedHwnd, string actualWindowHandle)
+    {
+        if (expectedHwnd is long expected && expected != ParseWindowHandle(actualWindowHandle))
+            throw new InvalidOperationException("RIFT window does not match --expect-hwnd; no input sent.");
+    }
 
     internal static Options Parse(string[] args)
     {
@@ -226,6 +243,7 @@ internal static class MoveKeyCommand
         bool releaseOnly = false;
         bool inspectOnly = false;
         long? expectedTicks = null;
+        long? expectedHwnd = null;
         string? expectedSha = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
@@ -286,6 +304,9 @@ internal static class MoveKeyCommand
                         throw new InvalidDataException("Expected SHA-256 must contain 64 hex digits.");
                     expectedSha = value.ToUpperInvariant();
                     break;
+                case "--expect-hwnd":
+                    expectedHwnd = ParseWindowHandle(value);
+                    break;
                 default:
                     throw new InvalidDataException($"Unknown option: {option}");
             }
@@ -318,7 +339,7 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("--release-only requires one key, no hold and no movement measurements.");
         return new Options(pid.Value, keys, hold, focus, execute, json,
             expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose, actorPoseSettleMilliseconds,
-            releaseOnly, inspectOnly);
+            releaseOnly, inspectOnly, expectedHwnd);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -391,8 +412,13 @@ internal static class MoveKeyCommand
             throw new InvalidOperationException(
                 "Native XYZ/actor-pose measurement is unavailable for this RIFT build; no game input sent.");
 
-        DesktopTarget Inspect() => WindowsControlDesktop.InspectPinned("rift_x64", path, sha,
-            options.Pid, startTicks);
+        DesktopTarget Inspect()
+        {
+            var inspected = WindowsControlDesktop.InspectPinned("rift_x64", path, sha,
+                options.Pid, startTicks);
+            ValidateExpectedWindow(options.ExpectedHwnd, inspected.WindowHandle);
+            return inspected;
+        }
         var target = Inspect();
         if (options.InspectOnly)
         {

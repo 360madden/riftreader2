@@ -7,6 +7,44 @@ namespace RiftReader2.Live.Tests;
 
 public sealed class MoveKeyCommandTests
 {
+    [Theory]
+    [InlineData("0xE0842", 919618L)]
+    [InlineData("0Xe0842", 919618L)]
+    [InlineData("919618", 919618L)]
+    public void ExpectedWindowAcceptsStrictPositiveHexOrDecimal(string value, long expected)
+    {
+        var options = MoveKeyCommand.Parse(["--pid", "123", "--inspect", "--expect-hwnd", value]);
+        Assert.Equal(expected, options.ExpectedHwnd);
+        MoveKeyCommand.ValidateExpectedWindow(options.ExpectedHwnd, "0xE0842");
+        Assert.Throws<InvalidOperationException>(() =>
+            MoveKeyCommand.ValidateExpectedWindow(options.ExpectedHwnd, "0xE0843"));
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("0x0")]
+    [InlineData("-1")]
+    [InlineData("+1")]
+    [InlineData(" 1")]
+    [InlineData("0x 1")]
+    [InlineData("0x")]
+    [InlineData("0xFFFFFFFFFFFFFFFF")]
+    [InlineData("9223372036854775808")]
+    [InlineData("0xG")]
+    [InlineData("")]
+    public void ExpectedWindowRejectsInvalidOrNonpositiveHandles(string value)
+        => Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--key", "w", "--expect-hwnd", value]));
+
+    [Fact]
+    public void ExpectedWindowIsOptionalAndRejectsDuplicateOptions()
+    {
+        Assert.Null(MoveKeyCommand.Parse(["--pid", "123", "--key", "w"]).ExpectedHwnd);
+        MoveKeyCommand.ValidateExpectedWindow(null, "0xE0842");
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--inspect", "--expect-hwnd", "1", "--expect-hwnd", "2"]));
+    }
+
     [Fact]
     public void InspectionRequiresOnlyPidAndCannotFocusOrSendInput()
     {

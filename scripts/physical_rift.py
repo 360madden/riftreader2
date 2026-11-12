@@ -560,7 +560,8 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                     actual = struct.unpack("<I", struct.pack("<f", value))[0]
                 except (ValueError, OverflowError, struct.error) as exc:
                     raise ValueError("invalid-native-orientation-matrix") from exc
-                if actual != bit:
+                # JSON may serialize -0.0 as integer 0, losing its sign.
+                if actual != bit and not (actual in (0, 0x80000000) and bit in (0, 0x80000000)):
                     raise ValueError("invalid-native-orientation-matrix-bits")
             angle = matrix.get("planarAngleDegreesCandidate")
             structural = matrix["status"] == "structural-y-planar-matrix-candidate"

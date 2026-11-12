@@ -1,5 +1,10 @@
 # Physical waypoint prototype — November 12, 2026
 
+**Later update:** the manual basis-rebuild limitation in this historical handoff
+is superseded by the [current waypoint guide](workflows/physical-waypoints.md).
+Same-build/player seed reuse and idle automatic reconnection passed a subsequent
+full-game restart and live route trial on AMD-DESKTOP.
+
 Authoritative checkout: `C:\work\riftreader2`, branch `codex/modular-foundation`.
 Active machine: **AMD-DESKTOP only**. Implementation is committed through
 `cfe96b8`; no push was performed. User priority: functional first, practical,

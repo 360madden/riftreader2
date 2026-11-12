@@ -1,5 +1,32 @@
 # Current status
 
+**04:31 EST NOVEMBER 12 — WAYPOINT RESTART RECOVERY WORKING:** On **AMD-DESKTOP**,
+the prototype now reuses the same-host/build/player numerical movement/turn seed
+across process epochs, keeping original measurement provenance and freshly pinning
+the live PID/start/SHA/HWND and native player owners. Reused-seed pulses must pass
+direction/speed/drift feedback before another pulse. The default single-client
+launcher reconnects only while idle, after the old process truly ends; explicit
+PIDs remain pinned and interrupted trips do not resume themselves.
+
+Live full exits/relaunches: **18092 → 79012 → 31696**. The final restart reconnected
+the same waypoint app **PID69060**, preserving the route and coordinates. The
+original movement-basis SHA stayed unchanged; no calibration routine or basis
+rewrite was needed. A three-point forward-facing triangle completed **0.08265
+units** from its final point, all **27 pulses released**, no target loss.
+Facing restoration finished within **1.248°**, without XYZ movement. Atank is
+settled at `(7424.656738, 863.585876, 2946.182129)`, bearing **−6.706013°**.
+RIFT is back on the left display; game start ticks **639300720494342174**,
+HWND **59246246**. Reacquire identities before new actions.
+
+Fixed the real restart-only signed-zero orientation decode failure; nonzero bit
+mismatches still reject. Added native expected-HWND validation before focus/input.
+**98 focused Python tests and 75 native move-key tests pass.** Evidence:
+`artifacts/waypoint-restart-8f221c26b1994205bea0375d3323b889/` and
+`artifacts/waypoint-run-04b0b0e8cab74168ad7dfae2f0c8e86b.json`.
+See [current use and restart behavior](workflows/physical-waypoints.md).
+Same-build/player recovery is demonstrated; native candidate labels and the
+20-unit/open-ground limitations remain. Concurrent work is preserved.
+
 **03:23 EST NOVEMBER 12 — CLOSING HANDOFF:** The working physical waypoint
 prototype is open and idle on **AMD-DESKTOP**, pythonw PID61684, with the tested
 triangle loaded. Fresh WGC/native before/after reads agree on Atank's settled

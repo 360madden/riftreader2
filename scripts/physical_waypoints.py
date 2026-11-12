@@ -31,6 +31,7 @@ from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalCli
 from scripts.physical_move_basis_waypoint import read_basis, candidate_calibrations
 from scripts.waypoint_map import LocalMap, draw_route, route_length
 from scripts.waypoint_heading import choose_turn, heading_error
+from scripts.waypoint_seed_feedback import verify_translation, verify_turn
 
 DEFAULT_BASIS = ROOT / "config/physical-movement-basis.amd-desktop.json"
 
@@ -220,7 +221,7 @@ def read_stationary(adapter, stop):
 
 
 class PhysicalAdapter:
-    """Exact-epoch reads and guarded, released native pulses; never retry input."""
+    """Fresh epoch-pinned input, with reusable numerical calibration seeds."""
 
     def __init__(self, host, pid, basis_path):
         self.host, self.pid = host, pid
@@ -228,22 +229,35 @@ class PhysicalAdapter:
         if self.selection.get("status") != "ready":
             raise WaypointError(self.selection.get("reason", "RIFT unavailable"))
         self.target = self.selection["target"]
+        if type(self.target.get("hwnd")) is not int or self.target["hwnd"] <= 0:
+            raise WaypointError("RIFT window is not ready; wait for the game window")
         self.basis, self.basis_sha = read_basis(basis_path)
         ident = self.basis["identity"]
         if (ident["machine"].casefold() != host.casefold()
-                or ident["processId"] != pid
-                or ident["processStartUtcTicks"] != self.target["processStartUtcTicks"]
                 or ident["gameBuildSha256"].casefold() != self.target["executableSha256"].casefold()):
-            raise WaypointError("Movement basis belongs to another process/build; recalibrate first")
+            raise WaypointError("Movement seed belongs to another host/build; current build calibration required")
         self.unit_key = ident["unitKey"]
+        self.basis_reused = (ident["processId"] != pid
+                             or ident["processStartUtcTicks"] != self.target["processStartUtcTicks"])
         self.input_receipt_path = ROOT / "artifacts" / ("waypoint-input-" + uuid.uuid4().hex + ".jsonl")
         self.last_input_receipt = None
+        # A basis stores measured speeds, not reusable process addresses. Keep its
+        # provenance intact; acquire current owners/facing and prove player identity
+        # before publishing the new binding. Every input still pins self.target.
+        self.initial_pose = self.read()
+        self.binding = {"mode": "reused-seed" if self.basis_reused else "measured-epoch",
+                        "basisSha256": self.basis_sha, "calibrationIdentity": dict(ident),
+                        "runtimeIdentity": {"machine": host, "processId": pid,
+                            "processStartUtcTicks": self.target["processStartUtcTicks"],
+                            "gameBuildSha256": self.target["executableSha256"],
+                            "unitKey": self.unit_key}}
 
     def identity(self):
         completed = subprocess.run([str(physical_rift.NATIVE_EXE), "move-key", "--inspect",
                                     "--pid", str(self.pid), "--expect-start-ticks",
                                     self.target["processStartUtcTicks"], "--expect-sha256",
-                                    self.target["executableSha256"], "--json"], cwd=ROOT,
+                                    self.target["executableSha256"], "--expect-hwnd",
+                                    hex(self.target["hwnd"]), "--json"], cwd=ROOT,
                                    capture_output=True, text=True,
                                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         try:
@@ -307,6 +321,7 @@ class PhysicalAdapter:
         command = [str(physical_rift.NATIVE_EXE), "move-key", "--pid", str(self.pid),
                    "--expect-start-ticks", self.target["processStartUtcTicks"],
                    "--expect-sha256", self.target["executableSha256"],
+                   "--expect-hwnd", hex(self.target["hwnd"]),
                    "--key", action.key, "--hold-ms", str(action.hold_ms),
                    "--execute", "--json"]
         if not focus:
@@ -333,6 +348,8 @@ class PhysicalAdapter:
                 and (receipt.get("targetLost") is True or receipt.get("cancelled") is True)):
             raise Stopped("Target changed or lost foreground; Windows release accepted, game stop unverified")
         if (completed.returncode != 0 or receipt.get("boundedActionCompleted") is not True
+                or receipt.get("keys") != [action.key]
+                or receipt.get("holdMilliseconds") != action.hold_ms
                 or receipt.get("releaseSucceeded") is not True
                 or receipt.get("allRequestedKeyDownsInserted") is not True
                 or receipt.get("insertionUncertain") is not False
@@ -389,6 +406,10 @@ def align_heading(adapter, target, current, stop, lease, budget, emit, *, focus=
         after = adapter.read()
         if spatial_distance(anchor, after.position) > .10:
             raise WaypointError("Turning moved the player; stopped")
+        if getattr(adapter, "basis_reused", False):
+            receipt["seedFeedback"] = dict(
+                verify_turn(current, after, action.key, rates[action.key], receipt),
+                beforeSource=current.source, afterSource=after.source)
         actual = heading_error(after.bearing, current.bearing)
         error = heading_error(target, after.bearing)
         if actual * rates[action.key] <= 0 or abs(actual) < .25:
@@ -425,7 +446,8 @@ def run_facing(adapter, stop, emit=lambda event: None, *, bearing=None, point=No
                   "pulses": len(actions), "totalHoldMs": sum(row["holdMilliseconds"] for row in actions),
                   "elapsedSeconds": round(time.monotonic()-started, 3),
                   "allPulsesReleased": True, "actions": actions,
-                  "qualification": "Current-epoch candidate body facing; restart qualification pending"}
+                  "calibrationBinding": getattr(adapter, "binding", None),
+                  "qualification": "Candidate body facing; fresh runtime identity and post-release feedback"}
         emit(result)
         return result
 
@@ -485,6 +507,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
                           "totalHoldMs": controller.total_hold_ms + sum(row["holdMilliseconds"] for row in turns),
                           "elapsedSeconds": round(time.monotonic() - leg_started, 3),
                           "allPulsesReleased": True, "actions": turns + actions,
+                          "calibrationBinding": getattr(adapter, "binding", None),
                           "qualification": "Supervised open-ground prototype; candidate native pose, no obstacle routing"}
                 emit(result)
                 return result
@@ -501,7 +524,12 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
             # Wait with all keys released for the observed motion to settle.
             if stop.wait(.15):
                 raise Stopped("Stopped; current pulse released")
+            before = current
             current = adapter.read()
+            if getattr(adapter, "basis_reused", False):
+                receipt["seedFeedback"] = dict(
+                    verify_translation(before, current, adapter.calibrations(before)[action.key], receipt),
+                    beforeSource=before.source, afterSource=current.source)
             feedback = controller.record_feedback(current.position, time.monotonic() - started)
             emit({"status": feedback.status, "position": asdict(current.position),
                   "distance": feedback.distance_after, "pulse": len(actions), "bearing": current.bearing,
@@ -580,6 +608,8 @@ def launch_window(args):
     from tkinter import filedialog, messagebox, ttk
 
     window = tk.Tk()
+    from scripts.waypoint_connection import idle_read
+
     window.title(f"RR2 Waypoints — {args.expected_host} / PID {args.physical_pid}")
     window.geometry("1060x770")
     frame = ttk.Frame(window, padding=14)
@@ -619,7 +649,7 @@ def launch_window(args):
     events, stop = queue.Queue(), threading.Event()
     busy = False
     closing = False
-    adapter = None
+    adapter = getattr(args, "initial_adapter", None)
     foreground_stop = None
     last_pose = None
     map_view = None
@@ -682,7 +712,12 @@ def launch_window(args):
             if adapter is None:
                 adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
             if operation in ("refresh", "save", "map", "live", "target"):
-                pose = adapter.read(include_target=True) if operation == "target" else adapter.read()
+                adapter, pose, reconnected = idle_read(
+                    adapter, args.expected_host, args.basis, physical_rift.select_physical,
+                    PhysicalAdapter, include_target=operation == "target",
+                    auto_reconnect=getattr(args, "auto_reconnect", False))
+                if reconnected:
+                    events.put({"status": "reconnected", "pid": adapter.pid})
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
                 if operation == "target":
                     result["waypoint"] = target_waypoint(pose)
@@ -850,6 +885,13 @@ def launch_window(args):
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
+            if status == "reconnected":
+                window.title(f"RR2 Waypoints - {args.expected_host} / PID {event['pid']}")
+                state.set(f"Reconnected to RIFT PID {event['pid']}.")
+                continue
+            if status == "halted":
+                last_pose = None
+                redraw()
             if status == "live-idle":
                 observing = False
                 if closing and not busy:
@@ -972,6 +1014,7 @@ def main(argv=None):
                           "pulses": sum(leg["pulses"] for leg in legs),
                           "totalHoldMs": sum(leg["totalHoldMs"] for leg in legs),
                           "elapsedSeconds": round(time.monotonic()-started, 3),
+                          "calibrationBinding": getattr(adapter, "binding", None),
                           "allPulsesReleased": True}
             else:
                 result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)

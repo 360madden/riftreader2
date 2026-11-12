@@ -164,6 +164,12 @@ class PhysicalOnlySelectionTests(unittest.TestCase):
         observed = {"identity": REPORT_IDENTITY, "unitKey": "239816685251645959",
                     "refreshHandleRaw": "0x0000000000000000", "refreshFlagRaw": 0,
                     "primary": primary, "secondary": secondary, "completedAtUtc": "now"}
+        # Integer zero can result from JSON serialization of a negative zero.
+        signed_zero = {**primary, "rawBits": [primary["rawBits"][0], 0x80000000, *primary["rawBits"][2:]]}
+        physical._native_values("orientation", {"observation": {**observed, "primary": signed_zero}})
+        nonzero_mismatch = {**primary, "rawBits": [0x3F800001, *primary["rawBits"][1:]]}
+        with self.assertRaisesRegex(ValueError, "invalid-native-orientation-matrix-bits"):
+            physical._native_values("orientation", {"observation": {**observed, "primary": nonzero_mismatch}})
         values = physical._native_values("orientation", {"observation": observed})
         self.assertEqual(values["unitKey"], "239816685251645959")
         self.assertEqual(values["primaryPlanarDegreesCandidate"], 0)

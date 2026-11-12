@@ -4,13 +4,22 @@ Double-click **`Waypoints.cmd`** in the repository root to open the window for
 the single local physical RIFT client. It checks the current host, process,
 movement basis and live pose before opening; it never starts movement on launch.
 If several clients are running, use `Waypoints.cmd --physical-pid PID`.
+The default single-client launcher reconnects while idle after the old game
+process has truly exited and a new unique client has loaded the same player on
+the same host and executable build. It freshly pins the new process and native
+owners/facing. An explicit `--physical-pid` remains pinned to that process;
+changed builds or players and ambiguous processes are refused. Reconnection
+does not resume an interrupted trip or start movement.
 The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
 For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
 
-Launch on the physical game's owning host with an explicit PID:
+For explicit CLI calls, obtain the current PID with the read-only readiness
+check. An old PID remains deliberately pinned and is refused after it exits.
+Use the default `Waypoints.cmd` launcher for automatic idle reconnection.
 
 ```powershell
-pythonw scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 18092
+$riftPid = (python scripts/launch_physical_waypoints.py --check | ConvertFrom-Json).pid
+pythonw scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid
 ```
 
 The window reads the current position and facing. **Save Current** adds a point;
@@ -34,7 +43,7 @@ is refused. The point uses the same native candidate source as the target reader
 **Face Selected** turns toward a waypoint without walking. **Face, then walk**
 aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E
 controller approaches the point with the current facing. Facing uses the retained
-same-epoch settled A/D measurements as seeds and checks the observed response
+settled A/D measurements as numerical seeds and checks the observed response
 after every release. Alignment allows eight 20–150-ms presses and 20 seconds,
 stopping within 4 degrees. It refuses unexpected XYZ movement during a turn.
 Turns share the trip's hold/pulse budget; facing mode uses segments up to 3.5
@@ -43,7 +52,7 @@ units long. The existing translation controller retains its own limits.
 For a requested facing without walking:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 18092 --face-bearing -4.7 --execute
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --face-bearing -4.7 --execute
 ```
 
 Add `--face-waypoints` to a CLI `--go` or a GUI launch to enable forward walking.
@@ -72,9 +81,43 @@ budget span every target and waypoint; only the first actual pulse can focus
 RIFT. Arrival requires two settled observations within 0.30 units.
 This is a supervised open-ground prototype: it does not route around obstacles.
 The measured W/S/Q/E speeds are rotated using the current entity body facing;
-the native position/facing fields remain candidates, with restart qualification
-still pending. The included movement basis is pinned to its measured process
-epoch, player and executable. A restart requires a new basis via `--basis PATH`.
+the native position/facing fields retain their candidate labels. On the same
+host, executable build and player, the measured
+speed/turn model can be reused as a seed across process epochs without manually
+rebuilding the basis. The original basis and measurement provenance retain
+their original epoch; they are never retagged as new measurements. The live
+adapter always pins the current process afresh and reads its native owners and
+facing. Every pulse using a reused seed must pass signed direction, speed and
+drift consistency checks before another pulse is allowed. A different basis can
+still be supplied via `--basis PATH`. Same-build full-game restart recovery was
+exercised on AMD-DESKTOP as described below.
+
+Live restart acceptance, November 12: physical RIFT fully exited and relaunched
+as PID18092 → PID79012 → PID31696, on the same executable build and Atank player
+identity. After the reader's signed-zero decoding fix was loaded, the same
+waypoint app (PID69060) stayed open across the latter full restart, reconnected
+automatically and retained its route and entered coordinates. The original
+basis bytes were unchanged (SHA256
+`9A556D85DE26258D94E5A438BBC37D5938CCE762C67BC9B2E693602FDAB39251`).
+No separate movement calibration or basis rewrite was performed.
+
+The retained three-point triangle then completed in forward-facing mode,
+finishing **0.08265 units** from its final waypoint. All 27 pulses (14 W, 9 A,
+4 D; 3,781 ms requested hold) passed the reused-seed checks and native release
+checks, with no target loss. Five subsequent D turns restored the starting
+bearing within **1.248°**, with unchanged XYZ. The CLI facing receipt retains
+each turn's timing/model comparison and before/after native source paths:
+`artifacts/waypoint-run-04b0b0e8cab74168ad7dfae2f0c8e86b.json`.
+Before/middle/after binding and settled route results are in
+`artifacts/waypoint-restart-8f221c26b1994205bea0375d3323b889/`.
+
+The first restart exposed native negative-zero matrix entries serialized as JSON
+integer zero. The decoder now accepts that zero-sign equivalence and still
+rejects other bit mismatches. Native `move-key --expect-hwnd` also pins the
+current window before focus/input; passing the old window was refused without
+input. Focused checks passed: 98 Python waypoint/reader tests and 75 native
+move-key tests. These observations cover this same-build/player restart case,
+not arbitrary patches, character changes or obstacle routing.
 
 **STOP / F8** latches cancellation. F8 is registered only during a trip and does
 not change foreground. The waypoint window uses `WS_EX_NOACTIVATE` during the
@@ -100,7 +143,7 @@ retains exclusive native input ownership, held-input refusal and bounded release
 For the same backend without the window:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 18092 --go 7422.455078125 2948.04931640625 --execute
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --go 7422.455078125 2948.04931640625 --execute
 ```
 
 Successful CLI runs retain the native input receipts under `artifacts/waypoint-run-*.json`.
@@ -108,7 +151,7 @@ Successful CLI runs retain the native input receipts under `artifacts/waypoint-r
 Run a saved multi-point route through the same backend:
 
 ```powershell
-python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 18092 --run-route my-route.json --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --face-waypoints --execute
 ```
 
 This requires explicit `--execute` and preserves every leg in one receipt. The
@@ -146,7 +189,8 @@ Live use on AMD-DESKTOP, 2026-11-12: a two-pulse 2-unit outbound leg stopped
 0.111 units from its waypoint. **Go Selected** returned within 0.097 units of
 its waypoint. A subsequent three-point **Run Route** finished 0.00352 units
 from the original position. A latched STOP after one released 150-ms pulse
-prevented the next pulse. These are current-epoch open-ground observations,
+prevented the next pulse. These are historical open-ground observations from
+their recorded process epoch,
 not restart or obstacle-routing qualification.
 
 The longer-trip extension crossed an 8-unit open-road waypoint in two segments

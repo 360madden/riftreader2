@@ -29,17 +29,19 @@ def main(argv=None):
         if selected.get("status") != "ready":
             raise ValueError(selected.get("reason", "Physical RIFT is unavailable"))
         pid = selected["target"]["processId"]
-        # The same epoch/build/player validation used by the controller applies
-        # before opening the window. Startup never starts a trip.
+        # Validate the current epoch and same-host/build/player calibration before
+        # opening the window. Startup never starts a trip.
         adapter = PhysicalAdapter(host, pid, args.basis)
         pose = adapter.read()
         if args.check:
             print(json.dumps({"status": "ready", "host": host, "pid": pid,
-                              "bearing": pose.bearing, "inputSent": False}))
+                              "bearing": pose.bearing, "calibrationBinding": adapter.binding,
+                              "inputSent": False}))
         else:
             launch_window(SimpleNamespace(expected_host=host, physical_pid=pid,
                                           basis=args.basis, route=args.route,
-                                          face_waypoints=True))
+                                          face_waypoints=True, auto_reconnect=args.physical_pid is None,
+                                          initial_adapter=adapter))
         return 0
     except Exception as exc:
         if args.check:

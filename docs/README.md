@@ -8,7 +8,7 @@ topic below instead of loading every document for each task.
 | Direction | [Project brief](project-brief.md) | User goals and scope. |
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
-| Live prototype | [Physical waypoints](workflows/physical-waypoints.md) | One-click window, local route preview, facing/forward travel, STOP and current-epoch live results. |
+| Live prototype | [Physical waypoints](workflows/physical-waypoints.md) | One-click window, route preview, facing/forward travel, STOP and same-build restart recovery. |
 | Continuity | [Movement handoff](workflows/movement-handoff-2026-10-29.md) | Verified partial trial, cleanup, exact build, reusable bootstrap and remaining acquisition work. |
 | Postmortem | [Move-key focus failure and recovery (2026-11-11)](validation/move-key-focus-failure-postmortem-2026-11-11.md) | Full assistant failure analysis, known-good A/B evidence, successful fix, and prevention rules. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |
