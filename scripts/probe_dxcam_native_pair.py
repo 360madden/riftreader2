@@ -17,6 +17,7 @@ from scripts import physical_rift as native
 from scripts.probe_dxcam import _DXcamBackend, _output, _snapshot, require
 from scripts.plot_physical_units import _saved
 from scripts.waypoint_progress import write_json_atomic
+from scripts.live_physical_waypoints import _expected_target, _hwnd_argument
 
 
 class Qpc:
@@ -83,11 +84,13 @@ def compare(reports, target):
 
 
 def probe(expected_host, physical_pid, display, output, *, timeout=10, select=None, snapshot=None,
-          backend_loader=None, read_native=None, qpc=None, perf_ns=None, clock=None, sleep=None, clock_info=None):
+          backend_loader=None, read_native=None, qpc=None, perf_ns=None, clock=None, sleep=None, clock_info=None,
+          expected_start_ticks=None, expected_sha256=None, expected_hwnd=None):
     require(expected_host == "AMD-DESKTOP" and socket.gethostname().upper() == expected_host, "AMD-DESKTOP-host-required")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-positive-pid-required")
     require(type(timeout) in (int, float) and math.isfinite(timeout) and 0 < timeout <= 30, "invalid-timeout")
     require(isinstance(display, str) and display, "explicit-display-required")
+    expected = _expected_target(expected_start_ticks, expected_sha256, expected_hwnd)
     output = Path(output).resolve()
     require(not output.exists() and output.parent.is_dir(), "fresh-output-required")
     select, snapshot = select or native.select_physical, snapshot or _snapshot
@@ -115,6 +118,11 @@ def probe(expected_host, physical_pid, display, output, *, timeout=10, select=No
         require(selection.get("status") == "ready", "target-not-ready")
         target = selection["target"]
         require(target["processId"] == physical_pid and target["hostName"].upper() == expected_host, "target-mismatch")
+        if expected is not None:
+            require(str(target.get("processStartUtcTicks")) == expected["processStartUtcTicks"]
+                    and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
+                    and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
+        result["expectedTarget"] = expected
         geometry = guard()
         result.update(targetBefore=target, snapshotBefore=geometry, requestedDisplay=display)
         qpc = qpc or Qpc()
@@ -223,9 +231,14 @@ def main(argv=None):
     parser.add_argument("--display", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--timeout", default=10, type=float)
+    parser.add_argument("--expect-start-ticks")
+    parser.add_argument("--expect-sha256")
+    parser.add_argument("--expect-hwnd", type=_hwnd_argument)
     args = parser.parse_args(argv)
     try:
-        result = probe(args.expected_host, args.physical_pid, args.display, args.output, timeout=args.timeout)
+        result = probe(args.expected_host, args.physical_pid, args.display, args.output, timeout=args.timeout,
+                       expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
+                       expected_hwnd=args.expect_hwnd)
     except (ValueError, OSError) as error:
         print(json.dumps({"status": "withheld", "reason": str(error)}))
         return 2

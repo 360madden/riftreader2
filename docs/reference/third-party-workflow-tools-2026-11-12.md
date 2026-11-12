@@ -94,6 +94,34 @@ changes. This does not replace authoritative WGC receipts.
 No generic workflow/agent framework, detection stack or navigation mesh was added.
 Those need a concrete next capability and usable environment geometry first.
 
+## Follow-up GitHub review, November 12 afternoon
+
+The highest-value new capture pilot is
+[windows-capture 2.0.1](https://github.com/NiiightmareXD/windows-capture), MIT.
+Its Python API accepts an exact HWND and its native frame handler recreates the
+pool on a size change instead of unconditionally discarding every first frame.
+The maintainer reports the first occluded-frame sizing fix in
+[issue 197](https://github.com/NiiightmareXD/windows-capture/issues/197).
+This directly relates to the observed WgcSharp failure: stage diagnostics received
+frame one, discarded it, and received no frame two. It remains a candidate,
+because the later RIFT window screenshot was black and DXcam also stopped
+receiving advancing events; a different WGC wrapper cannot be assumed to fix that.
+The pilot is isolated from existing capture environments and live control.
+
+[Win32CaptureSample](https://github.com/robmikh/Win32CaptureSample) is a maintained
+MIT reference for received-frame snapshots, but adopting its C++/WinRT sample
+would add more build and adapter work than the Python candidate.
+
+For future geometry work, use [trimesh](https://github.com/mikedh/trimesh) first
+for loading, transforms and inspection of an actual validated mesh. Consider
+[Open3D](https://github.com/isl-org/Open3D) for point-cloud registration or
+reconstruction once measured depth/geometry is available, and Recast/Detour for
+walkable mesh generation and path queries afterward. These packages do not
+supply RIFT terrain from screenshots or sparse route/unit positions.
+[uv](https://github.com/astral-sh/uv) is a suitable future Python environment
+manager, but the existing pinned local environments work; migrating them does
+not resolve the present capture or geometry gap.
+
 ## Optional offline Rerun evidence viewer
 
 `scripts/export_physical_rerun.py` converts a complete recorded route and optional

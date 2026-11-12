@@ -1,12 +1,13 @@
 """Synthetic saved-snapshot checks; no process, capture or input calls."""
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from scripts import plot_physical_waypoints as plot
 from tests.test_physical_facing import report, optical_camera
@@ -158,6 +159,102 @@ class PlotTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "image-hash-or-size"):
             self.run_render()
         self.assertFalse(self.output.exists())
+
+
+class DesktopPairPlotTests(unittest.TestCase):
+    def setUp(self):
+        PlotTests.setUp(self)
+        self.image = self.root / "desktop.png"
+        image = Image.new("RGB", (320, 200), "#222222")
+        ImageDraw.Draw(image).rectangle((20, 20, 180, 150), fill="#dddddd")
+        image.save(self.image)
+        sources = []
+        for name, report in (("before.json", self.before), ("after.json", self.after)):
+            path = self.root / name
+            path.write_text(json.dumps(report))
+            sources.append(dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest()))
+        def calibration(start):
+            return dict(frequency=1000, orderingAllowanceTicks=1, implementation="fake QPC", samples=[
+                dict(qpcBefore=start+i*2, qpcAfter=start+i*2+1, perfCounterNs=(start+i*2)*10**6,
+                     bracketWidthSeconds=.001) for i in range(8)])
+        def event(ticks, begin, end):
+            return dict(backendTicks=ticks, backendSeconds=ticks/1000, qpcPeekBefore=begin, qpcPeekAfter=end,
+                        backendEventAgeBoundsSeconds=[max(0, (begin-ticks-1)/1000), (end-ticks+1)/1000])
+        self.pair = dict(status="stable-native-composite-event-candidate", diagnosticKind="dxcam-native-event-pair/1",
+            machine="AMD-DESKTOP", inputSent=False, focusChanged=False, cleanupErrors=[],
+            targetBefore=dict(IDENTITY, executablePath=r"C:\Games\rift_x64.exe"),
+            targetAfter=dict(IDENTITY, executablePath=r"C:\Games\rift_x64.exe"),
+            snapshotBefore=dict(clientRect=[-320, 0, 320, 200], foreground=True),
+            snapshotAfter=dict(clientRect=[-320, 0, 320, 200], foreground=True),
+            requestedDisplay=r"\\.\DISPLAY5", selectedOutput=dict(deviceIndex=1, outputIndex=0,
+                deviceName=r"\\.\DISPLAY5", desktopRect=[-400, -50, 100, 300], attachedToDesktop=True, rotationDegrees=0),
+            outputLocalCrop=[80, 50, 400, 250], clockBefore=calibration(100), clockAfter=calibration(1000),
+            warmupFrame=event(180, 181, 182), event=event(420, 421, 422),
+            qpcMarks=dict(nativeBeforeInvoked=200, nativeBeforeReturnedFence=400, frameAccepted=430,
+                          nativeAfterInvoked=440, nativeAfterReturned=900), nativeBracketSpanSeconds=.7,
+            nativeSources=sources, nativeBeforeOutput=sources[0]["path"], nativeAfterOutput=sources[1]["path"],
+            image=str(self.image), imageSha256=hashlib.sha256(self.image.read_bytes()).hexdigest())
+
+    def render_pair(self):
+        pair = self.root / "pair.json"
+        route = self.root / "route.json"
+        pair.write_text(json.dumps(self.pair))
+        route.write_text(json.dumps(self.route))
+        return plot.render_desktop_pair(pair, route, self.output)
+
+    def test_desktop_source_projects_with_explicit_upper_bound_not_invented_capture_time(self):
+        result = self.render_pair()
+        self.assertEqual("desktop-composite-event-candidate", result["sourceKind"])
+        self.assertIsNone(result["capturedAtUtc"])
+        self.assertEqual("unavailable-exact-desktop-event-utc", result["capturedAtUtcKind"])
+        self.assertEqual(self.after["observation"]["startedAtUtc"], result["captureUpperBoundAtUtc"])
+        self.assertEqual(self.before["identity"], result["identity"])
+        self.assertEqual(0, result["clientFrameMapping"]["clientLeft"])
+        self.assertEqual(3, len(result["points"]))
+        self.assertTrue(Path(result["annotatedImage"]).is_file())
+        self.assertEqual(str(self.image), result["originalImage"])
+
+    def test_desktop_timing_monitor_target_and_cleanup_mutations_refused_before_output(self):
+        original = deepcopy(self.pair)
+        mutations = [lambda: self.pair["clockAfter"].update(frequency=2000),
+            lambda: self.pair["qpcMarks"].update(nativeBeforeReturnedFence=420),
+            lambda: self.pair["event"].update(backendEventAgeBoundsSeconds=[0, 1]),
+            lambda: self.pair["clockBefore"]["samples"][0].update(perfCounterNs=0),
+            lambda: self.pair.update(nativeBracketSpanSeconds=6),
+            lambda: self.pair.update(outputLocalCrop=[0, 0, 320, 200]),
+            lambda: self.pair["selectedOutput"].update(deviceName="another-display"),
+            lambda: self.pair["snapshotAfter"].update(foreground=False),
+            lambda: self.pair["targetAfter"].update(hwnd=999999),
+            lambda: self.pair.update(cleanupErrors=["release failed"])]
+        for mutate in mutations:
+            self.pair = deepcopy(original)
+            mutate()
+            with self.subTest(pair=self.pair):
+                with self.assertRaises(ValueError): self.render_pair()
+                self.assertFalse(self.output.exists())
+
+    def test_desktop_native_hash_and_actual_changed_camera_refused(self):
+        self.pair["nativeSources"][0]["sha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "source-hash"):
+            self.render_pair()
+        self.assertFalse(self.output.exists())
+        source = self.pair["nativeSources"][0]
+        path = Path(source["path"])
+        self.before["observation"]["opticalCameraCandidate"] = None
+        path.write_text(json.dumps(self.before))
+        source["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+        with self.assertRaises(ValueError): self.render_pair()
+        self.assertFalse(self.output.exists())
+
+    def test_desktop_png_hash_dimensions_and_blank_are_refused(self):
+        self.pair["imageSha256"] = "0" * 64
+        with self.assertRaisesRegex(ValueError, "image-hash"):
+            self.render_pair()
+        for size, color in (((319, 200), "red"), ((320, 200), "black"), ((320, 200), "white")):
+            Image.new("RGB", size, color).save(self.image)
+            self.pair["imageSha256"] = hashlib.sha256(self.image.read_bytes()).hexdigest()
+            with self.assertRaises(ValueError): self.render_pair()
+            self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":

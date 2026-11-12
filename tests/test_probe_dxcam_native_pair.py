@@ -201,6 +201,19 @@ class PairTests(unittest.TestCase):
             self.run_pair(timeout=31)
         self.assertFalse(self.backend.camera.started)
 
+    def test_expected_epoch_mismatch_refused_before_device_initialization(self):
+        result = self.run_pair(expected_start_ticks="1", expected_sha256=self.target["executableSha256"],
+                               expected_hwnd=self.target["hwnd"])
+        self.assertEqual(result["reason"], "expected-target-identity-mismatch")
+        self.assertFalse(self.backend.camera.started)
+        self.assertEqual(self.native_calls, [])
+        self.assertNotIn("image", result)
+
+    def test_partial_expectations_refused_before_selection(self):
+        with self.assertRaisesRegex(ValueError, "together"):
+            self.run_pair(expected_start_ticks=self.target["processStartUtcTicks"])
+        self.assertEqual(self.select_calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,6 +12,19 @@ and the GitHub tool comparison are in
 The existing native presenter remains an explicit fallback. Both reuse the same
 recorded XYZ, native camera projector, identity/freshness checks and stop lifecycle.
 
+The waypoint window also has **Save view** and **Open view**. Save view snapshots
+the complete recorded route, brings the pinned RIFT window forward without keys,
+and requests an explicit DXcam/native-bracket desktop candidate. A successful
+`artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
+before/after reports with hashes, projection PNG/JSON and `view.json`. If the
+optional visualization environment is available, it also saves `view.rrd` without
+starting a viewer. Open view opens only the last successfully saved projection.
+Failed capture or unstable camera blocks the projection and retains diagnostics.
+The desktop event has no exact capture UTC; Rerun explicitly labels its timeline
+placement as the native-after start upper bound. This remains separate from WGC.
+The GUI/backend focused checks pass; live Save view is currently withheld by the
+black/no-advancing-frame capture condition described in the tools note.
+
 Use the exact local host/process and a stationary camera. Capture through the
 existing guarded observation path, saving its returned JSON in UTF-8:
 

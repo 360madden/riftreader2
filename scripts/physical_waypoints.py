@@ -797,6 +797,7 @@ def launch_window(args):
     foreground_stop = None
     last_pose = None
     last_y = None
+    saved_view = None
     markers = OwnedWaypointMarkers(ROOT)
     marker_identity = None
     map_view = None
@@ -1094,6 +1095,20 @@ def launch_window(args):
                 events.put(result)
             elif operation == "face":
                 outcome = run_facing(adapter, stop, emit, point=points[0][1:])
+            elif operation == "view":
+                from scripts.save_physical_route_view import save_route_view
+                document, pid, target = points
+                if adapter.pid != pid or adapter.target != target:
+                    raise WaypointError("RIFT connection changed; refresh before saving a view")
+                output = ROOT / "artifacts" / ("waypoint-view-" + uuid.uuid4().hex)
+                result = save_route_view(args.expected_host, pid, document, output,
+                                         expected_target=target, export_rerun=True, capture_backend="desktop")
+                if (result.get("status") != "saved-route-view-candidate" or not result.get("image")
+                        or result.get("inputSent") is not False or type(result.get("focusChanged")) is not bool):
+                    raise WaypointError(str(result.get("reason", "View capture unavailable"))
+                                        + "; details: " + str(result.get("directory", output)))
+                events.put({"status": "view-saved", "image": str(result["image"]),
+                            "rerun": result.get("rerun", {})})
             elif operation == "record":
                 recorder = RouteRecorder(adapter.binding)
                 while not record_stop.is_set() and not record_cancel.is_set():
@@ -1146,7 +1161,7 @@ def launch_window(args):
                     exc = WaypointError("STOP requested; stationary check unavailable: " + stop_verification["reason"])
                 elif is_stop and stop_verification["status"] != "pass":
                     exc = WaypointError(stop_verification["reason"])
-            failure = {"status": "live-unavailable" if operation == "live" else
+            failure = {"status": "live-unavailable" if operation == "live" else "view-failed" if operation == "view" else
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
                        "originalReason": original_reason,
                        **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
@@ -1222,6 +1237,7 @@ def launch_window(args):
             redraw()
         state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face", "play", "resume", "teach")
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
+                  else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
         threading.Thread(target=worker, args=(operation, points, walk_facing.get()), daemon=False).start()
 
@@ -1356,6 +1372,26 @@ def launch_window(args):
             record_end_button.configure(state="disabled")
             state.set("Finishing recording…")
 
+    def save_view():
+        if adapter is None:
+            state.set("Wait for RIFT to connect before saving a view.")
+            return
+        try:
+            document = deepcopy(route_document())
+            document["waypoints"] = [list(row) for row in document["waypoints"]]
+            start("view", (document, adapter.pid, deepcopy(adapter.target)))
+        except (ValueError, KeyError, TypeError) as exc:
+            state.set("Cannot save view: " + str(exc))
+
+    def open_view():
+        if saved_view is None or busy or closing:
+            return
+        try:
+            import os
+            os.startfile(saved_view)
+        except OSError as exc:
+            state.set("Cannot open view: " + str(exc))
+
     def stop_markers():
         if not markers.running():
             return True
@@ -1449,6 +1485,15 @@ def launch_window(args):
     editable.append(marker_button)
     progress_text = tk.StringVar(value="No playback started.")
     ttk.Label(recording_controls, textvariable=progress_text).pack(side="left", padx=8)
+    view_controls = ttk.Frame(frame)
+    view_controls.pack(fill="x", pady=4)
+    save_view_button = ttk.Button(view_controls, text="Save view", command=save_view)
+    save_view_button.pack(side="left", padx=(0, 6))
+    editable.append(save_view_button)
+    open_view_button = ttk.Button(view_controls, text="Open view", command=open_view, state="disabled")
+    open_view_button.pack(side="left", padx=(0, 6))
+    editable.append(open_view_button)
+    ttk.Label(view_controls, text="Save view brings RIFT forward.").pack(side="left", padx=8)
     log.pack(fill="x", pady=4)
     ttk.Label(frame, text="F8 stops movement. Stop Recording saves; STOP cancels recording. "
               "Play starts within 0.30 units of Start (Forward) or End (Reverse).").pack(anchor="w")
@@ -1468,7 +1513,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, observing, next_live_at, playback_view, playback_active, marker_identity
+        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, saved_view, observing, next_live_at, playback_view, playback_active, marker_identity
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1517,6 +1562,7 @@ def launch_window(args):
                 record_end_button.configure(state="disabled")
                 for widget in editable:
                     widget.configure(state="normal")
+                open_view_button.configure(state="normal" if saved_view else "disabled")
                 redraw()
                 if closing and not observing:
                     window.destroy()
@@ -1541,6 +1587,19 @@ def launch_window(args):
                 mark_saved(output)
                 cache_route(event["document"], "Recorded route saved: " + str(output))
                 progress_text.set("Recorded route ready; select playback direction.")
+                continue
+            if status == "view-saved":
+                saved_view = event["image"]
+                rerun = event["rerun"]
+                suffix = ("" if rerun.get("status") == "saved" else
+                          "; Rerun " + str(rerun.get("status", "unavailable"))
+                          + (": " + str(rerun["reason"]) if rerun.get("reason") else ""))
+                text = "View saved: " + saved_view + suffix
+                state.set(text)
+                log.configure(state="normal")
+                log.insert("end", text + "\n")
+                log.see("end")
+                log.configure(state="disabled")
                 continue
             if status in ("run-receipt", "receipt-error"):
                 text = ("Run receipt: " + event["path"] if status == "run-receipt" else

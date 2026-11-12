@@ -6,13 +6,14 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using WgcSharp;
+using Microsoft.Extensions.Logging;
 
 namespace PhysicalWgcProbe;
 
 internal sealed record Options(
     string Mode, string Host, string ProcessName, int Pid, long ProcessStartTicks,
     string Sha256, nint Hwnd, string Backend, int TimeoutMilliseconds,
-    string? Output, bool CaptureExplicitlyRequested)
+    string? Output, bool CaptureExplicitlyRequested, bool Diagnostics = false)
 {
     internal static Options Parse(string[] args)
     {
@@ -22,12 +23,19 @@ internal sealed record Options(
             throw new ArgumentException("Choose --self-test, --inspect, or --capture.");
         var dict = new Dictionary<string, string>(StringComparer.Ordinal);
         var confirmed = false;
+        var diagnostics = false;
         for (int i = 1; i < args.Length; i++)
         {
             if (args[i] == "--allow-one-capture")
             {
                 if (confirmed) throw new ArgumentException("Duplicate capture approval switch.");
                 confirmed = true;
+                continue;
+            }
+            if (args[i] == "--diagnostics")
+            {
+                if (diagnostics) throw new ArgumentException("Duplicate diagnostics switch.");
+                diagnostics = true;
                 continue;
             }
             if (i + 1 >= args.Length || !args[i].StartsWith("--", StringComparison.Ordinal))
@@ -79,7 +87,7 @@ internal sealed record Options(
         var output = dict.GetValueOrDefault("--out");
         if (args[0] == "--inspect")
         {
-            if (confirmed || output is not null)
+            if (confirmed || output is not null || diagnostics)
                 throw new ArgumentException("--inspect never authorizes capture/output.");
         }
         else
@@ -91,7 +99,33 @@ internal sealed record Options(
                 throw new ArgumentException("Capture output must be an absolute PNG path.");
         }
         return new(args[0][2..], host, processName, pid, ticks, hash,
-            new nint(hwndValue), backend, timeout, output, confirmed);
+            new nint(hwndValue), backend, timeout, output, confirmed, diagnostics);
+    }
+}
+
+/// <summary>Opt-in bounded library stage diagnostics; never part of stdout receipts.</summary>
+internal sealed class BoundedDiagnosticLogger(TextWriter writer) : ILogger
+{
+    private readonly object gate = new();
+    private int lines;
+    internal const int MaximumLines = 64;
+    internal const int MaximumLineLength = 512;
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+    public bool IsEnabled(LogLevel level) => level is >= LogLevel.Debug and < LogLevel.None;
+    public void Log<TState>(LogLevel level, EventId eventId, TState state,
+        Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        if (!IsEnabled(level)) return;
+        lock (gate)
+        {
+            if (lines >= MaximumLines) return;
+            var message = $"{level}: {formatter(state, exception)}";
+            if (exception is not null)
+                message += $" | {exception.GetType().Name}: {exception.Message}";
+            message = message.Replace('\r', ' ').Replace('\n', ' ');
+            writer.WriteLine(message.Length > MaximumLineLength ? message[..MaximumLineLength] : message);
+            lines++;
+        }
     }
 }
 
@@ -313,7 +347,8 @@ internal static class Probe
             var timer = Stopwatch.StartNew();
             using var image = WindowCapture.CaptureWindow(options.Hwnd,
                 options.Backend == "wgc" ? CaptureStrategy.WgcOnly : CaptureStrategy.DxgiOnly,
-                timeoutMs: options.TimeoutMilliseconds);
+                timeoutMs: options.TimeoutMilliseconds,
+                logger: options.Diagnostics ? new BoundedDiagnosticLogger(Console.Error) : null);
             timer.Stop();
             var completed = DateTimeOffset.UtcNow;
             if (image is null) throw new InvalidOperationException("gpu-capture-returned-no-frame");
@@ -413,7 +448,27 @@ internal static class Probe
             "--sha256", new string('A', 64), "--hwnd", "0x100" };
         var opt = Options.Parse(valid);
         Check(opt.Mode == "inspect" && opt.Pid == 123 && opt.Hwnd == 0x100
-              && !opt.CaptureExplicitlyRequested, "inspect-parse");
+              && !opt.CaptureExplicitlyRequested && !opt.Diagnostics, "inspect-parse");
+        var captureArgs = new[] { "--capture" }.Concat(valid.Skip(1))
+            .Concat(["--allow-one-capture", "--out", "C:\\work\\riftreader2\\artifacts\\diagnostic-self-test.png"]).ToArray();
+        Check(Options.Parse(captureArgs).Diagnostics is false, "default-diagnostics-silent");
+        Check(Options.Parse(captureArgs.Concat(["--diagnostics"]).ToArray()).Diagnostics,
+            "capture-diagnostics-parse");
+        MustReject(valid.Concat(["--diagnostics"]).ToArray(), "inspect-diagnostics-refused");
+        MustReject(captureArgs.Concat(["--diagnostics", "--diagnostics"]).ToArray(), "duplicate-diagnostics");
+        using var diagnosticOutput = new StringWriter();
+        var diagnosticLogger = new BoundedDiagnosticLogger(diagnosticOutput);
+        for (var i = 0; i < 70; i++)
+            diagnosticLogger.LogDebug("Stage {Index}: {Detail}", i, new string('x', 600) + "\r\nsecond line");
+        var diagnosticLines = diagnosticOutput.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        Check(diagnosticLines.Length == BoundedDiagnosticLogger.MaximumLines
+              && diagnosticLines.All(line => line.Length <= BoundedDiagnosticLogger.MaximumLineLength),
+            "diagnostics-output-bounded");
+        using var exceptionOutput = new StringWriter();
+        new BoundedDiagnosticLogger(exceptionOutput).LogError(new IOException("stage failed\ncontinued"), "WGC stage");
+        Check(exceptionOutput.ToString().Contains("IOException: stage failed continued")
+              && exceptionOutput.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).Length == 1,
+            "diagnostics-exception-single-line");
         MustReject(valid.Take(1).Concat(valid.Skip(3)).ToArray(), "host-required");
         MustReject(valid.Concat(["--backend", "printwindow"]).ToArray(), "unsupported-backend");
         MustReject(valid.Concat(["--out", "C:\\temp\\hello.png"]).ToArray(), "inspect-output");

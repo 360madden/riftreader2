@@ -111,7 +111,8 @@ def default_blueprint(rr, rrb, captures):
     """
     world = rrb.Spatial3DView(origin="/world", name="Native XYZ route (+Y height)",
         spatial_information=rrb.SpatialInformation.from_fields(axes=rr.ViewCoordinates.RIGHT_HAND_Y_UP))
-    views = [rrb.Spatial2DView(origin=entity, name=f"Capture {index + 1}")
+    views = [rrb.Spatial2DView(origin=entity, name=(f"Desktop candidate {index + 1} (UTC upper bound)"
+             if entity.endswith("_desktop_upper_bound") else f"Capture {index + 1}"))
              for index, (entity, _) in enumerate(captures)]
     views.append(rrb.TextDocumentView(origin="/evidence", name="Source metadata"))
     active = max(range(len(captures)), key=lambda index: captures[index][1]) if captures else 0
@@ -121,14 +122,21 @@ def default_blueprint(rr, rrb, captures):
         auto_layout=False, auto_views=False)
 
 
-def prepare(route_path, observations, scratch, *, images=True):
+def prepare(route_path, observations, scratch, *, images=True, desktop_pairs=()):
     """Reuse the existing complete bracket/image/projection validator unchanged."""
     route = load_route(route_path)
     plot.require(route["identity"]["machine"].casefold() == plot.socket.gethostname().casefold(),
                  "route-host-mismatch")
     frames = []
-    for index, source in enumerate(observations):
-        result = plot.render(source, route_path, Path(scratch) / str(index))
+    sources = [(source, False) for source in observations] + [(source, True) for source in desktop_pairs]
+    for index, (source, desktop) in enumerate(sources):
+        renderer = plot.render_desktop_pair if desktop else plot.render
+        result = renderer(source, route_path, Path(scratch) / str(index))
+        if desktop:
+            plot.require(result.get("sourceKind") == "desktop-composite-event-candidate"
+                         and result.get("capturedAtUtc") is None
+                         and result.get("capturedAtUtcKind") == "unavailable-exact-desktop-event-utc",
+                         "explicit-desktop-upper-bound-contract-required")
         # The renderer's scratch outputs are not retained/exported source artifacts.
         result.pop("annotatedImage", None)
         result.pop("report", None)
@@ -142,26 +150,38 @@ def prepare(route_path, observations, scratch, *, images=True):
                          "native-source-changed-during-export")
             native.append({"side": side, "source": str(path),
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "values": values})
+        if desktop:
+            # Native sources keep their actual sample times. This bound only positions
+            # composite pixels on a shared viewer timeline; it is not capture UTC.
+            after_report = plot._read(result["nativeAfter"])
+            plot.require(timestamp_ns(result["captureUpperBoundAtUtc"]) ==
+                         timestamp_ns(after_report["observation"]["startedAtUtc"]),
+                         "desktop-capture-upper-bound-must-match-native-after-start")
+        evidence_at = result["captureUpperBoundAtUtc"] if desktop else result["capturedAtUtc"]
+        time_kind = "upper-bound-native-after-start-not-exact-capture" if desktop else "capture-completed-at-utc"
         png = Path(result["originalImage"]).read_bytes() if images else None
         if png is not None:
             plot.require(hashlib.sha256(png).hexdigest().casefold() == result["imageSha256"].casefold(),
                          "image-source-changed-during-export")
         frames.append({"projection": result, "native": native, "png": png,
+            "desktop": desktop, "evidenceAtUtc": evidence_at, "timeKind": time_kind,
             "sourceSha256": hashlib.sha256(Path(source).read_bytes()).hexdigest()})
     return route, frames
 
 
-def export(route_path, observations, output, *, images=True, sink_factory=RerunSink):
+def export(route_path, observations, output, *, images=True, sink_factory=RerunSink, desktop_pairs=()):
     route_path, output = Path(route_path).resolve(), Path(output).resolve()
     plot.require(output.suffix.lower() == ".rrd" and not output.exists() and output.parent.is_dir(),
                  "new-rrd-output-required")
     observations = [Path(path).resolve() for path in observations]
+    desktop_pairs = [Path(path).resolve() for path in desktop_pairs]
     # Existing renderer writes a scratch annotated PNG; it is discarded after validation.
     with TemporaryDirectory(prefix="rr2-rerun-", dir=output.parent) as scratch:
-        route, frames = prepare(route_path, observations, scratch, images=images)
+        route, frames = prepare(route_path, observations, scratch, images=images, desktop_pairs=desktop_pairs)
     result = {"status": "offline-rerun-evidence-export", "output": str(output), "inputSent": False,
               "route": route["path"], "routeSha256": route["sha256"],
               "recordingIdentity": route["recordingIdentity"], "observationCount": len(frames),
+              "wgcObservationCount": len(observations), "desktopPairCount": len(desktop_pairs),
               "imagesIncluded": images, "limitations": LIMITATIONS}
     result["toolStatus"] = "optional Rerun 0.43.1 alpha SDK pilot; API pinned"
     sink = None
@@ -171,7 +191,8 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
         with output.open("xb"):
             created = True
         sink = sink_factory(output)
-        sink.configure_view([(f"/captures/{number:04d}", timestamp_ns(frame["projection"]["capturedAtUtc"]))
+        sink.configure_view([(f"/captures/{number:04d}" + ("_desktop_upper_bound" if frame["desktop"] else ""),
+                              timestamp_ns(frame["evidenceAtUtc"]))
                              for number, frame in enumerate(frames, 1)])
         sink.log("evidence/sources", "text", result, static=True)
         positions = [[p["xyz"][axis] for axis in ("x", "y", "z")] for p in route["points"]]
@@ -181,9 +202,11 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
             sink.log("world/route/line", "route3d", dict(positions=positions), static=True)
         for number, frame in enumerate(frames, 1):
             projection = frame["projection"]
-            capture_at = timestamp_ns(projection["capturedAtUtc"])
-            capture_entity = f"captures/{number:04d}"
+            capture_at = timestamp_ns(frame["evidenceAtUtc"])
+            capture_entity = f"captures/{number:04d}" + ("_desktop_upper_bound" if frame["desktop"] else "")
             metadata = {"source": projection["observation"], "sourceSha256": frame["sourceSha256"],
+                "timeKind": frame["timeKind"], "evidenceAtUtc": frame["evidenceAtUtc"],
+                "sourceKind": "desktop-composite-event-candidate" if frame["desktop"] else "wgc-native-bracket-candidate",
                 "projection": projection, "nativeSources": [{k: v for k, v in row.items() if k != "values"} for row in frame["native"]]}
             sink.log(f"evidence/observations/{number:04d}", "text", metadata, at=capture_at)
             if frame["png"] is not None:
@@ -226,11 +249,14 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--route", type=Path, required=True)
     parser.add_argument("--observation", type=Path, action="append", default=[])
+    parser.add_argument("--desktop-pair", type=Path, action="append", default=[],
+                        help="explicit retained DXcam/native candidate; capture UTC is only an upper bound")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--no-images", action="store_true", help="validate retained PNGs but omit image payloads")
     args = parser.parse_args(argv)
     try:
-        result = export(args.route, args.observation, args.output, images=not args.no_images)
+        result = export(args.route, args.observation, args.output, images=not args.no_images,
+                        desktop_pairs=args.desktop_pair)
     except (ValueError, OSError, KeyError, TypeError, AttributeError, ImportError) as error:
         print(json.dumps({"status": "blocked", "reason": str(error), "inputSent": False}))
         return 2

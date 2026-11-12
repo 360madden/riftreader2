@@ -1,5 +1,27 @@
 # Current status
 
+**14:25 EST NOVEMBER 12 — SAVE VIEW CANDIDATE; CAPTURE CURRENTLY WITHHELD:**
+On **AMD-DESKTOP/PID38136**, the updated waypoint app PID63468 exposes Save view
+and Open view. The real Save view click focused only the pinned RIFT window,
+rejected a blank desktop image, returned controls to idle and kept Open view
+disabled. Earlier capture timed out without an advancing event. A fresh window
+screenshot is black; existing BlackBox placement recovery succeeded but did not
+restore visible game pixels. No game keys were sent, inspection found no held
+inputs, basis SHA is unchanged and the genuine checkpoint remains 7/7.
+The backend retains route/native/hash/projection evidence and optional offline
+Rerun on success; 58 affected tests pass. Live success is not yet established.
+The retained earlier PID38136 desktop pair exported through the real Rerun SDK
+and passed its file verifier. Rendering that same file again showed all seven
+3D route points/line and actor/bearing beside the screenshot/projections; the
+first headless preview had captured before the world entities loaded.
+Receipts: `artifacts/waypoint-view-f781b1a5bcd64524b6988b2cd0741533/`,
+`artifacts/save-view-38136-refusal-validation.json`,
+`artifacts/rerun-desktop-pair-38136-first.rrd`,
+`artifacts/rerun-desktop-pair-38136-repeat-preview.png`.
+The GitHub review selected windows-capture 2.0.1 for an isolated exact-HWND pilot;
+geometry tools remain deferred until their required source data exists.
+[Decisions and sources](reference/third-party-workflow-tools-2026-11-12.md).
+
 **13:59 EST NOVEMBER 12 — FIRST-SHOW SCALING FIXED; ACTIVE OVERLAY RESTART PASSED:**
 On **AMD-DESKTOP**, a real 125% process-scale probe exposed one prematurely scaled
 first Qt frame. Image admission now waits for logical/physical size agreement;
