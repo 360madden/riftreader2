@@ -229,6 +229,9 @@ class PhysicalAdapter:
         if self.selection.get("status") != "ready":
             raise WaypointError(self.selection.get("reason", "RIFT unavailable"))
         self.target = self.selection["target"]
+        # An unbound single-client launch may wait for RIFT; selection still
+        # refuses ambiguity and resolves an explicit live PID before any reads.
+        self.pid = pid = self.target["processId"]
         if type(self.target.get("hwnd")) is not int or self.target["hwnd"] <= 0:
             raise WaypointError("RIFT window is not ready; wait for the game window")
         self.basis, self.basis_sha = read_basis(basis_path)
@@ -289,7 +292,10 @@ class PhysicalAdapter:
         capture = physical_rift.read_native(self.selection, "facing", samples=1,
                                             include_target=include_target)
         if capture.get("status") != "complete":
-            raise WaypointError(capture.get("reason", "Native pose unavailable"))
+            reason = capture.get("reason", "Native pose unavailable")
+            if capture.get("detail"):
+                reason += ": " + str(capture["detail"])
+            raise WaypointError(reason)
         values = capture["nativeValues"]
         age = (datetime.now(timezone.utc) - datetime.fromisoformat(values["sampledAtUtc"])).total_seconds()
         if not -0.1 <= age <= 2 or values["playerKey"] != self.unit_key:
@@ -544,7 +550,8 @@ def route_points(rows):
     return [(str(row[0])[:80], finite(row[1]), finite(row[2])) for row in rows]
 
 
-def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=False):
+def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=False,
+              entry_check=None):
     """Follow up to 20 units of route using <=4-unit intermediate targets.
 
     The original controller's six-action, 900-ms, 12-second and corridor limits
@@ -556,6 +563,8 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
         raise Stopped("Stopped; no further input")
     with adapter.reserve() as lease:
         current = read_stationary(adapter, stop)
+        if entry_check is not None:
+            entry_check(current.position)
         planned = route_length(current.position.x, current.position.z, points)
         if planned > 20:
             raise WaypointError("Route exceeds 20 world units; choose a shorter route")
@@ -609,14 +618,20 @@ def launch_window(args):
 
     window = tk.Tk()
     from scripts.waypoint_connection import idle_read
+    from scripts.waypoint_observation import observe_batch
+    from scripts.waypoint_recording import RouteRecorder
+    from scripts.waypoint_playback import play_route
 
-    window.title(f"RR2 Waypoints — {args.expected_host} / PID {args.physical_pid}")
+    window.title(f"RR2 Waypoints — {args.expected_host} / "
+                 + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
     window.geometry("1060x770")
     frame = ttk.Frame(window, padding=14)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
     ttk.Label(frame, text="Open ground • route ≤ 20 units • pulses ≤ 150 ms • foreground loss stops movement").pack(anchor="w", pady=(0, 10))
-    state = tk.StringVar(value="Ready — save a point, click the map, or enter X / Z.")
+    state = tk.StringVar(value=("Waiting for RIFT: " + args.initial_reason
+                                if getattr(args, "initial_reason", None) else
+                                "Ready — save a point, click the map, or enter X / Z."))
     ttk.Label(frame, textvariable=state, wraplength=1000).pack(anchor="w", pady=5)
     pose_text = tk.StringVar(value="Position is loading…")
     ttk.Label(frame, textvariable=pose_text).pack(anchor="w", pady=(0, 3))
@@ -648,20 +663,35 @@ def launch_window(args):
     ttk.Label(map_frame, text="Click to add • facing up • rings 5 / 10 units").pack(anchor="w", pady=(4, 0))
     events, stop = queue.Queue(), threading.Event()
     busy = False
+    recording = False
     closing = False
     adapter = getattr(args, "initial_adapter", None)
+    published_adapter = adapter
     foreground_stop = None
     last_pose = None
     map_view = None
     observing = False
     next_live_at = time.monotonic() + 2
     operation_gate = threading.Lock()
+    record_stop, record_cancel = threading.Event(), threading.Event()
+    checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
+    route_metadata = {}
+    playback_view = None
+    loading_route = False
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
+
+    def invalidate_progress():
+        nonlocal route_metadata, playback_view
+        if not loading_route:
+            checkpoint.unlink(missing_ok=True)
+            route_metadata = {}
+            playback_view = None
 
     def add_point(label, px, pz):
         if len(table.get_children()) >= 20:
             state.set("Waypoint list is full; remove a point before adding another.")
             return
+        invalidate_progress()
         item = table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
         table.selection_set(item)
         x.set(f"{finite(px):.6f}")
@@ -672,9 +702,36 @@ def launch_window(args):
     def selected_points(all_points=False):
         return [table.item(item, "values") for item in (table.get_children() if all_points else table.selection())]
 
+    def route_document():
+        return {**route_metadata, "waypoints": route_points(selected_points(True))}
+
+    def show_document(document):
+        nonlocal loading_route, route_metadata
+        parsed = route_points(document["waypoints"])
+        loading_route = True
+        try:
+            table.delete(*table.get_children())
+            for row in parsed:
+                add_point(*row)
+            route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
+            name.set(f"Point {len(table.get_children()) + 1}")
+        finally:
+            loading_route = False
+        redraw()
+
     def redraw(*_):
         nonlocal map_view
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
+        completed, active = None, None
+        if playback_view is not None:
+            if playback_view["direction"] == "reverse":
+                points.reverse()
+            index = max(0, min(len(points), playback_view["nextIndex"]))
+            completed = {row[0] for row in points[:index]}
+            active = points[index][0] if index < len(points) else None
+        for row in points:
+            table.item(row[0], tags=("next",) if row[0] == active else
+                       ("completed",) if completed is not None and row[0] in completed else ())
         if last_pose is None:
             map_view = None
             draw_route(canvas, None, [], set())
@@ -684,7 +741,7 @@ def launch_window(args):
                     button.configure(state="disabled")
             return
         map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()))
-        draw_route(canvas, map_view, points, set(table.selection()))
+        draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active)
         distance = route_length(*last_pose[:2], selected_points(True))
         selected = selected_points()
         chosen = route_length(*last_pose[:2], selected) if selected else None
@@ -704,20 +761,34 @@ def launch_window(args):
 
     def worker(operation, points=None, face_walk=False):
         with operation_gate:
+            if operation == "live" and closing:
+                events.put({"status": "live-idle"})
+                return
             perform_operation(operation, points, face_walk)
 
     def perform_operation(operation, points=None, face_walk=False):
-        nonlocal adapter
+        nonlocal adapter, published_adapter
+        retain = operation in ("go", "face", "play", "resume")
+        history, outcome, failure = [], None, None
+
+        def emit(event):
+            if retain:
+                history.append(dict(event))
+            events.put(event)
+
         try:
             if adapter is None:
+                if operation not in ("refresh", "save", "map", "live", "target"):
+                    raise WaypointError("RIFT is not connected; wait for a fresh pose")
                 adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
             if operation in ("refresh", "save", "map", "live", "target"):
                 adapter, pose, reconnected = idle_read(
                     adapter, args.expected_host, args.basis, physical_rift.select_physical,
                     PhysicalAdapter, include_target=operation == "target",
                     auto_reconnect=getattr(args, "auto_reconnect", False))
-                if reconnected:
+                if reconnected or adapter is not published_adapter:
                     events.put({"status": "reconnected", "pid": adapter.pid})
+                    published_adapter = adapter
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
                 if operation == "target":
                     result["waypoint"] = target_waypoint(pose)
@@ -731,13 +802,42 @@ def launch_window(args):
                         result["waypoint"] = (label, px, pz)
                 events.put(result)
             elif operation == "face":
-                run_facing(adapter, stop, events.put, point=points[0][1:])
+                outcome = run_facing(adapter, stop, emit, point=points[0][1:])
+            elif operation == "record":
+                recorder = RouteRecorder(adapter.binding)
+                while not record_stop.is_set() and not record_cancel.is_set():
+                    # The batch revalidates process/build/player/owners itself.
+                    # A read-only recorder must not contend for move-key's input
+                    # semaphore merely to inspect the window between captures.
+                    # The native lease spans the entire paced burst. Leave a
+                    # real handoff window for other guarded one-pose readers.
+                    for pose in observe_batch(adapter, samples=6):
+                        recorder.observe(pose)
+                    events.put({"status": "recording", "position": asdict(pose.position),
+                                "bearing": pose.bearing})
+                    record_stop.wait(.15)
+                if record_cancel.is_set():
+                    raise WaypointError("Recording cancelled; no route saved")
+                document = recorder.finish()
+                events.put({"status": "recorded-pending", "document": document})
+            elif operation in ("play", "resume"):
+                document, direction = points
+                results, cursor = play_route(adapter, document, stop, emit, runner=run_route,
+                                             checkpoint=checkpoint, direction=direction,
+                                             resume=operation == "resume", face_waypoints=face_walk)
+                outcome = results
+                events.put({"status": "route-complete", "waypointCount": len(results),
+                            "nextWaypoint": cursor.next_index, "totalWaypoints": len(cursor.ordered_points),
+                            "position": results[-1]["position"], "bearing": results[-1]["bearing"],
+                            "distance": results[-1]["distance"]})
             else:
-                results = run_route(adapter, points, stop, events.put, face_waypoints=face_walk)
+                results = run_route(adapter, points, stop, emit, face_waypoints=face_walk)
+                outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
                             "position": results[-1]["position"], "bearing": results[-1]["bearing"],
                             "distance": results[-1]["distance"]})
         except Exception as exc:
+            original_reason = str(exc)
             stopped_position = stopped_bearing = None
             if isinstance(exc, Stopped) and adapter is not None:
                 try:
@@ -755,15 +855,33 @@ def launch_window(args):
                         stopped_bearing = second.bearing
                 except Exception as observation_error:
                     exc = WaypointError("STOP requested; stationary check unavailable: " + str(observation_error))
-            events.put({"status": "live-unavailable" if operation == "live" else
-                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
-                        **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
-                        "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None})
+            failure = {"status": "live-unavailable" if operation == "live" else
+                       "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
+                       "originalReason": original_reason,
+                       **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
+                       "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None}
+            emit(failure)
         finally:
+            if retain:
+                receipt = {"operation": operation,
+                           "direction": points[1] if operation in ("play", "resume") and points else None,
+                           "status": failure["status"] if failure else "completed",
+                           "failure": failure, "result": outcome, "events": history,
+                           "completedLegs": [event for event in history if event.get("status") == "arrived"],
+                           "calibrationBinding": getattr(adapter, "binding", None),
+                           "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None,
+                           "releaseVerification": ("see individual pulse receipts; game stop may be unverified"
+                                                   if failure else "see completed result and pulse receipts")}
+                receipt_path = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
+                try:
+                    receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
+                    events.put({"status": "run-receipt", "path": str(receipt_path), "failure": failure})
+                except (OSError, TypeError, ValueError) as exc:
+                    events.put({"status": "receipt-error", "reason": str(exc), "failure": failure})
             events.put({"status": "live-idle" if operation == "live" else "idle"})
 
     def start(operation, points=None):
-        nonlocal busy, foreground_stop
+        nonlocal busy, foreground_stop, recording, playback_view
         if busy or closing:
             return
         if operation == "go" and (not points or len(points) > 20):
@@ -774,7 +892,15 @@ def launch_window(args):
             return
         busy = True
         stop.clear()
-        if operation in ("go", "face"):
+        if operation in ("play", "resume"):
+            playback_view = {"direction": points[1], "nextIndex": 0}
+            if operation == "resume":
+                try:
+                    playback_view["nextIndex"] = int(json.loads(checkpoint.read_text(encoding="utf-8"))["nextIndex"])
+                except (OSError, ValueError, KeyError, TypeError):
+                    pass  # Backend validates the checkpoint before any input.
+            redraw()
+        if operation in ("go", "face", "play", "resume"):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
             except Exception as exc:
@@ -783,11 +909,22 @@ def launch_window(args):
                 return
         for widget in editable:
             widget.configure(state="disabled")
-        state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face")
+        if operation == "record":
+            recording = True
+            record_stop.clear()
+            record_cancel.clear()
+            record_end_button.configure(state="normal")
+        state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face", "play", "resume")
+                  else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Reading current RIFT pose…")
         threading.Thread(target=worker, args=(operation, points, walk_facing.get()), daemon=False).start()
 
     def request_stop():
+        if recording:
+            record_cancel.set()
+            record_stop.set()
+            state.set("Recording cancelled — no route will be saved.")
+            return
         stop.set()
         state.set("STOP requested — waiting for the current bounded pulse to release." if busy
                   else "Stopped — no input active.")
@@ -801,22 +938,23 @@ def launch_window(args):
     def save_route():
         path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="rift-waypoints.json")
         if path:
-            Path(path).write_text(json.dumps({"waypoints": selected_points(True)}, indent=2), encoding="utf-8")
+            Path(path).write_text(json.dumps(route_document(), indent=2), encoding="utf-8")
 
     def load_route():
         path = filedialog.askopenfilename(filetypes=[("Waypoint JSON", "*.json")])
         if not path:
             return
         try:
-            parsed = route_points(json.loads(Path(path).read_text(encoding="utf-8"))["waypoints"])
-            table.delete(*table.get_children())
-            for row in parsed:
-                add_point(*row)
-            name.set(f"Point {len(table.get_children()) + 1}")
+            document = json.loads(Path(path).read_text(encoding="utf-8"))
+            route_points(document["waypoints"])
+            invalidate_progress()
+            show_document(document)
         except (ValueError, KeyError, TypeError, OSError) as exc:
             messagebox.showerror("Cannot load route", str(exc))
 
     def remove_points():
+        if table.selection():
+            invalidate_progress()
         table.delete(*table.selection())
         redraw()
 
@@ -827,25 +965,49 @@ def launch_window(args):
             return
         item = selected[0]
         index = max(0, min(len(table.get_children()) - 1, table.index(item) + direction))
+        if index != table.index(item):
+            invalidate_progress()
         table.move(item, "", index)
         table.see(item)
         redraw()
 
     def clear_points():
+        if table.get_children():
+            invalidate_progress()
         table.delete(*table.get_children())
         name.set("Point 1")
         redraw()
         state.set("Waypoint list cleared.")
 
+    def playback(direction=None):
+        try:
+            document = route_document()
+            if direction is None:
+                saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+                direction = saved["direction"]
+                start("resume", (document, direction))
+            else:
+                start("play", (document, direction))
+        except (ValueError, KeyError, TypeError, OSError) as exc:
+            state.set("Cannot start playback: " + str(exc))
+
+    def stop_recording():
+        if recording:
+            record_stop.set()
+            record_end_button.configure(state="disabled")
+            state.set("Finishing recording…")
+
     buttons = ttk.Frame(frame)
     buttons.pack(fill="x", pady=4)
-    for label, callback in (("Refresh", lambda: start("refresh")),
+    buttons_second = ttk.Frame(frame)
+    buttons_second.pack(fill="x", pady=4)
+    for index, (label, callback) in enumerate((("Refresh", lambda: start("refresh")),
                             ("Save Current", lambda: start("save")), ("Add X / Z", add_entered),
                             ("Remove", remove_points),
                             ("Load", load_route), ("Save Route", save_route),
                             ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
-                            ("Clear", clear_points), ("Add Target", lambda: start("target"))):
-        button = ttk.Button(buttons, text=label, command=callback)
+                            ("Clear", clear_points), ("Add Target", lambda: start("target")))):
+        button = ttk.Button(buttons if index < 5 else buttons_second, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
         editable.append(button)
     controls = ttk.Frame(frame)
@@ -867,8 +1029,23 @@ def launch_window(args):
     editable.append(face_option)
     tk.Button(controls, text="STOP / F8", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
               command=request_stop, width=16).pack(side="right")
+    recording_controls = ttk.Frame(frame)
+    recording_controls.pack(fill="x", pady=4)
+    for label, callback in (("Record", lambda: start("record")),
+                            ("Play Forward", lambda: playback("forward")),
+                            ("Play Reverse", lambda: playback("reverse")),
+                            ("Resume", playback)):
+        button = ttk.Button(recording_controls, text=label, command=callback)
+        button.pack(side="left", padx=(0, 6))
+        editable.append(button)
+    record_end_button = ttk.Button(recording_controls, text="Stop Recording", command=stop_recording, state="disabled")
+    record_end_button.pack(side="left", padx=(0, 6))
+    progress_text = tk.StringVar(value="No playback started.")
+    ttk.Label(recording_controls, textvariable=progress_text).pack(side="left", padx=8)
     log.pack(fill="x", pady=4)
-    ttk.Label(frame, text="F8 stops without changing focus. STOP preserves focus during a run; edits unlock after cleanup.").pack(anchor="w")
+    ttk.Label(frame, text="During movement F8 stops without changing focus. Stop Recording saves; STOP cancels recording.").pack(anchor="w")
+    table.tag_configure("completed", foreground="#52806d")
+    table.tag_configure("next", foreground="#ad6500")
 
     def close():
         nonlocal closing
@@ -881,7 +1058,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, foreground_stop, last_pose, observing, next_live_at
+        nonlocal busy, recording, foreground_stop, last_pose, observing, next_live_at, playback_view
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -913,13 +1090,49 @@ def launch_window(args):
                         continue
                     foreground_stop = None
                 busy = False
+                recording = False
+                record_end_button.configure(state="disabled")
                 for widget in editable:
                     widget.configure(state="normal")
                 redraw()
-                if closing:
+                if closing and not observing:
                     window.destroy()
                     return
                 continue
+            if status == "recorded-pending":
+                if record_cancel.is_set() or closing:
+                    state.set("Recording cancelled; no route saved.")
+                    continue
+                # This runs on the UI thread: STOP/close cannot race publication.
+                recording = False
+                record_end_button.configure(state="disabled")
+                output = ROOT / "artifacts" / ("recorded-route-" + uuid.uuid4().hex + ".json")
+                try:
+                    output.write_text(json.dumps(event["document"], indent=2), encoding="utf-8")
+                    invalidate_progress()
+                    show_document(event["document"])
+                except (OSError, ValueError, KeyError, TypeError) as exc:
+                    state.set("Cannot finish recording: " + str(exc))
+                    continue
+                state.set("Recorded route saved: " + str(output))
+                progress_text.set("Recorded route ready; select playback direction.")
+                continue
+            if status in ("run-receipt", "receipt-error"):
+                text = ("Run receipt: " + event["path"] if status == "run-receipt" else
+                        "Could not save run receipt: " + event["reason"])
+                failure = event.get("failure")
+                state.set((f"{failure['status']}: {failure['reason']} — " if failure else "") + text)
+                log.configure(state="normal")
+                log.insert("end", text + "\n")
+                log.see("end")
+                log.configure(state="disabled")
+                continue
+            if "nextWaypoint" in event:
+                count = event.get("totalWaypoints", event.get("waypointCount"))
+                progress_text.set(f"Completed {event['nextWaypoint']} / {count} waypoints")
+                if playback_view is not None:
+                    playback_view["nextIndex"] = event["nextWaypoint"]
+                    redraw()
             if "position" in event:
                 point = event["position"]
                 last_pose = (point["x"], point["z"], event.get("bearing", last_pose[2] if last_pose else 0))
@@ -929,7 +1142,7 @@ def launch_window(args):
                     x.set(f"{point['x']:.6f}")
                     z.set(f"{point['z']:.6f}")
                 redraw()
-            if status == "live":
+            if status in ("live", "recording"):
                 continue
             if status == "save":
                 add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
@@ -972,9 +1185,16 @@ def launch_window(args):
     canvas.bind("<Button-1>", map_click)
     table.bind("<<TreeviewSelect>>", select_point)
     if args.route:
-        for row in route_points(json.loads(args.route.read_text(encoding="utf-8"))["waypoints"]):
-            add_point(*row)
-        name.set(f"Point {len(table.get_children()) + 1}")
+        show_document(json.loads(args.route.read_text(encoding="utf-8")))
+    elif checkpoint.exists():
+        try:
+            saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+            show_document(saved["route"])
+            playback_view = {"direction": saved["direction"], "nextIndex": int(saved["nextIndex"])}
+            redraw()
+            progress_text.set(f"Saved progress: {saved['nextIndex']} / {len(saved['route']['waypoints'])}; choose Resume.")
+        except (OSError, ValueError, KeyError, TypeError):
+            progress_text.set("Saved progress unavailable; load a route to continue.")
     poll()
     start("refresh")
     window.mainloop()
@@ -989,25 +1209,51 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
     mode.add_argument("--run-route", type=Path, help="run a saved waypoint JSON with --execute")
+    mode.add_argument("--play-route", type=Path, help="replay a recorded route from its endpoint")
     mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
     parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument("--record-to", type=Path, help="save observed movement from this --go/--run-route")
+    parser.add_argument("--reverse", action="store_true", help="replay from recorded end toward start")
+    parser.add_argument("--progress", type=Path, help="recorded-route progress checkpoint")
+    parser.add_argument("--resume", action="store_true", help="resume saved unfinished recorded route")
     args = parser.parse_args(argv)
-    if args.go is None and args.face_bearing is None and args.run_route is None:
+    if (args.reverse or args.resume or args.progress) and args.play_route is None:
+        parser.error("--reverse / --resume / --progress requires --play-route")
+    if args.record_to is not None and args.go is None and args.run_route is None:
+        parser.error("--record-to requires --go or --run-route")
+    if args.go is None and args.face_bearing is None and args.run_route is None and args.play_route is None:
         launch_window(args)
         return 0
     if not args.execute:
         parser.error("--go / --face-bearing / --run-route requires --execute; omit them to open the window")
     stop = threading.Event()
     try:
+        if args.record_to is not None and args.record_to.exists():
+            raise WaypointError("Recording output already exists; choose a new path")
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
         emit = lambda event: print(json.dumps({k: v for k, v in event.items()
                                                if k not in ("actions", "segments")}), flush=True)
         with cli_stop_controls(stop):
-            if args.run_route is not None:
-                points = route_points(json.loads(args.run_route.read_text(encoding="utf-8"))["waypoints"])
+            if args.run_route is not None or args.play_route is not None or args.record_to is not None:
+                path = args.play_route or args.run_route
+                document = json.loads(path.read_text(encoding="utf-8")) if path else {"waypoints": [("Waypoint", *args.go)]}
+                points = route_points(document["waypoints"])
                 started = time.monotonic()
-                legs = run_route(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
+                if args.play_route:
+                    from scripts.waypoint_playback import play_route
+                    checkpoint = args.progress or args.play_route.with_suffix(".progress.json")
+                    legs, _ = play_route(adapter, document, stop, emit, runner=run_route,
+                                        checkpoint=checkpoint, direction="reverse" if args.reverse else "forward",
+                                        resume=args.resume, face_waypoints=args.face_waypoints)
+                elif args.record_to:
+                    from scripts.waypoint_playback import teach_route
+                    legs, recorded = teach_route(adapter, points, stop, emit, runner=run_route,
+                                                 face_waypoints=args.face_waypoints)
+                    args.record_to.write_text(json.dumps(recorded, indent=2), encoding="utf-8")
+                    emit({"status": "recorded", "path": str(args.record_to), "points": len(recorded["waypoints"])})
+                else:
+                    legs = run_route(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
                 result = {"status": "arrived", "waypointCount": len(legs),
                           "position": legs[-1]["position"], "bearing": legs[-1]["bearing"],
                           "distance": legs[-1]["distance"], "legs": legs,

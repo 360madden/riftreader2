@@ -25,14 +25,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
     host = socket.gethostname().upper()
     try:
-        selected = physical_rift.select_physical(host, args.physical_pid)
-        if selected.get("status") != "ready":
-            raise ValueError(selected.get("reason", "Physical RIFT is unavailable"))
-        pid = selected["target"]["processId"]
-        # Validate the current epoch and same-host/build/player calibration before
-        # opening the window. Startup never starts a trip.
-        adapter = PhysicalAdapter(host, pid, args.basis)
-        pose = adapter.read()
+        if host not in physical_rift.SUPPORTED_HOSTS:
+            raise ValueError("unsupported-host")
+        pid, adapter, pose, waiting_reason = None, None, None, None
+        try:
+            selected = physical_rift.select_physical(host, args.physical_pid)
+            if selected.get("status") != "ready":
+                raise ValueError(selected.get("reason", "Physical RIFT is unavailable"))
+            pid = selected["target"]["processId"]
+            # Validate current epoch and calibration before using a connection.
+            adapter = PhysicalAdapter(host, pid, args.basis)
+            pose = adapter.read()
+        except Exception as exc:
+            if args.check or args.physical_pid is not None:
+                raise
+            # Re-select uniquely on each later attempt; do not retain a stale PID.
+            pid, adapter, waiting_reason = None, None, str(exc)
         if args.check:
             print(json.dumps({"status": "ready", "host": host, "pid": pid,
                               "bearing": pose.bearing, "calibrationBinding": adapter.binding,
@@ -41,7 +49,7 @@ def main(argv=None):
             launch_window(SimpleNamespace(expected_host=host, physical_pid=pid,
                                           basis=args.basis, route=args.route,
                                           face_waypoints=True, auto_reconnect=args.physical_pid is None,
-                                          initial_adapter=adapter))
+                                          initial_adapter=adapter, initial_reason=waiting_reason))
         return 0
     except Exception as exc:
         if args.check:

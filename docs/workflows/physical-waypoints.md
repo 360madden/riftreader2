@@ -1,8 +1,10 @@
 # Physical waypoint prototype
 
 Double-click **`Waypoints.cmd`** in the repository root to open the window for
-the single local physical RIFT client. It checks the current host, process,
-movement basis and live pose before opening; it never starts movement on launch.
+the single local physical RIFT client. If RIFT is absent or still loading, the
+default window opens in a waiting state and retries unique selection while idle.
+It validates the current host, process, movement basis and live pose before use;
+it never starts movement on launch. `--check` and an explicit PID remain strict.
 If several clients are running, use `Waypoints.cmd --physical-pid PID`.
 The default single-client launcher reconnects while idle after the old game
 process has truly exited and a new unique client has loaded the same player on
@@ -39,6 +41,26 @@ run reports the number of visited waypoints and final distance explicitly.
 fixed waypoint. It does not follow a moving entity or start a trip. An unavailable
 or expired target position, or a target more than one unit above/below the player,
 is refused. The point uses the same native candidate source as the target reader.
+
+**Record** passively observes the player's movement without sending input.
+After moving along a short open-ground path, choose **Stop Recording** to finish,
+save a new `artifacts/recorded-route-*.json`, and load its points into the window.
+**STOP** cancels recording without saving; capture or identity errors also leave
+the recording incomplete. Passive GUI recording has not yet passed live acceptance.
+
+**Play Forward** starts near the recorded first endpoint; **Play Reverse** starts
+near its last endpoint. Playback checkpoints each confirmed waypoint to
+`artifacts/waypoint-current-progress.json`. After stopping or restarting the app,
+the window can restore the checkpoint's route; choose **Resume** explicitly to
+continue the unfinished leg. A fresh stationary pose must be near that leg, and
+the host, build and player must match. Reconnection never starts or resumes a trip.
+Editing the route invalidates its saved progress. Existing route and input limits
+still apply, and routes have no obstacle avoidance.
+
+On AMD-DESKTOP, a controlled taught route retained four points from 30 observed
+samples across 9.998 units with 19 released pulses. Reverse playback completed
+with 25 pulses and ended 0.09917 units from its endpoint. These observations do
+not establish passive GUI recording or resume across a full game restart.
 
 **Face Selected** turns toward a waypoint without walking. **Face, then walk**
 aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E
@@ -153,6 +175,20 @@ Run a saved multi-point route through the same backend:
 ```powershell
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --face-waypoints --execute
 ```
+
+To save observations from an explicitly commanded `--go` or `--run-route`, add
+`--record-to` with a new output path. This teaches from that bounded run; it is
+not the passive window recording control. Replay and resume use `--play-route`:
+
+```powershell
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --record-to taught-route.json --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --face-waypoints --execute
+python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --resume --face-waypoints --execute
+```
+
+Omit `--reverse` for forward playback. Resume must use the saved direction and
+checkpoint. Without `--progress`, the checkpoint uses the route path with a
+`.progress.json` suffix. `--execute` is required for each commanded trip.
 
 This requires explicit `--execute` and preserves every leg in one receipt. The
 same ownership, progress, release and whole-trip limits apply. **F8** cancels CLI

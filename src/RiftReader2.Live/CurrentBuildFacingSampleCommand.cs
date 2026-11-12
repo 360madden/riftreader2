@@ -11,7 +11,9 @@ internal static class CurrentBuildFacingSampleCommand
     internal static Task<int> RunAsync(IReadOnlyDictionary<string, string> options,
         TextWriter output, CancellationToken ct) => RunAsync(options, output, ct,
         static async (pid, ticks, token) => await NativeReadFileLease.AcquireAsync(
-            pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(1), token),
+            // A paced recorder holds this lease across a short burst. Wait for
+            // its release before opening the session and timestamping our pose.
+            pid, ticks, CurrentBuildPlayerLookup.GameSha256, TimeSpan.FromSeconds(3), token),
         static async (pid, ticks, token) => await WindowsNativeMemorySession.OpenAsync(
             pid, ticks, CurrentBuildPlayerLookup.GameSha256, token),
         CurrentBuildFacingCandidateReader.Read);

@@ -40,7 +40,7 @@ def route_length(x, z, points):
     return length
 
 
-def draw_route(canvas, view, points, selected):
+def draw_route(canvas, view, points, selected, *, completed=None, active=None):
     """Draw only; dots/lines do not imply terrain or obstacle knowledge."""
     canvas.delete("all")
     if view is None:
@@ -59,10 +59,18 @@ def draw_route(canvas, view, points, selected):
     prior = (cx, cy)
     for index, (identifier, label, x, z) in enumerate(points, 1):
         point = view.world_to_canvas(float(x), float(z))
-        canvas.create_line(*prior, *point, fill="#63b3ed", width=2, dash=(4, 3))
-        color = "#ffb454" if identifier in selected else "#63b3ed"
+        if index > 1 or not completed:
+            canvas.create_line(*prior, *point, fill="#63b3ed", width=2, dash=(4, 3))
+        playback = completed is not None or active is not None
+        if playback:
+            color = ("#ffb454" if identifier == active else
+                     "#719c88" if identifier in (completed or ()) else "#63b3ed")
+            outline = "#ffffff" if identifier in selected else "#101c25"
+        else:
+            color = "#ffb454" if identifier in selected else "#63b3ed"
+            outline = "#101c25"
         canvas.create_oval(point[0]-6, point[1]-6, point[0]+6, point[1]+6,
-                           fill=color, outline="#101c25", width=2)
+                           fill=color, outline=outline, width=2)
         canvas.create_text(point[0]+10, point[1]-9, text=str(index),
                            anchor="sw", fill=color, font=("Segoe UI", 9))
         prior = point
