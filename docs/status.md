@@ -1,5 +1,26 @@
 # Current status
 
+**18:39 EST NOVEMBER 12 — NUMBERED NEARBY SAMPLES PROJECT ONTO A SEPARATE CAPTURE VIEW:**
+On AMD-DESKTOP/PID40452, actual Nearby units in 3D -> Save view -> Open 3D view
+passed with the new **Later samples on capture** tab. Its distinct image copy
+labels capture/scan UTC and temporal gaps; U-numbers link to the nearby table's
+names, positions, pixel results and exact observation times. The fresh scan
+examined 423 entries, retained 161 positions and displayed the nearest 18:
+13 projected inside and five were withheld outside the view. Eight names were
+available candidates; ten had explicit unavailable rows. This scan followed the
+image by **1.4124951–1.4243389 seconds**, so the view is retrospective geometry,
+not screenshot presence/freshness/occlusion proof. Admission checks a hashed WGC
+receipt/image, full target/player identity, decoded XYZ/raw bits, stable matching
+camera snapshots and the entire five-second association interval. Missing or
+changed evidence withholds only this optional tab. Forty-three focused exporter
+tests passed, including a real rounded-float32 regression found in root's retained
+export. Root inspected the actual GUI tabs, verified the RRD and closed the viewer
+normally; all owned viewer processes ended. Independent final pose, basis, cache
+and genuine 7/7 checkpoint are unchanged, inspection found no held inputs, and
+the optional checkbox is off. GUI PID44864 remains idle with the latest saved
+view available. Evidence: `artifacts/waypoint-view-b211b5175f614ef884b0fca95500f80f/validation.json`,
+with `scene-later-samples.png` and `scene-nearby-table.png` in that bundle.
+
 **18:20 EST NOVEMBER 12 — CLOSE DURING PLAYBACK, SAVE AND EXPLICIT RESUME PASSED:**
 On AMD-DESKTOP/PID40452, a separate renamed copy of the reviewed seven-point
 courtyard route was played with an unsaved endpoint label. Normal helper close

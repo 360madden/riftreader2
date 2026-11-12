@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+from io import BytesIO
 from importlib.metadata import version
 import json
 import math
@@ -106,10 +107,10 @@ class RerunSink:
             self.close()
             raise
 
-    def configure_view(self, captures, *, display_camera=None, nearby_samples=False):
+    def configure_view(self, captures, *, display_camera=None, nearby_samples=False, later_samples=()):
         import rerun.blueprint as rrb
         self.recording.send_blueprint(default_blueprint(self.rr, rrb, captures, display_camera=display_camera,
-                                                       nearby_samples=nearby_samples),
+                                                       nearby_samples=nearby_samples, later_samples=later_samples),
                                       make_active=True, make_default=True)
 
     def log(self, entity, kind, data, *, at=None, static=False):
@@ -160,7 +161,7 @@ class RerunSink:
                     os.environ[key] = value
 
 
-def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=False):
+def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=False, later_samples=()):
     """File-only 0.43.1 blueprint: explicit views and latest-data following.
 
     TimePanel cannot encode a cursor position. Following is the supported
@@ -177,6 +178,8 @@ def default_blueprint(rr, rrb, captures, *, display_camera=None, nearby_samples=
     views = [rrb.Spatial2DView(origin=entity, name=(f"Desktop candidate {index + 1} (UTC upper bound)"
              if entity.endswith("_desktop_upper_bound") else f"Capture {index + 1}"))
              for index, (entity, _) in enumerate(captures)]
+    for entity, label in later_samples:
+        views.append(rrb.Spatial2DView(origin=entity, name=label))
     if nearby_samples:
         views.append(rrb.TextDocumentView(origin="/nearby_samples", name="Nearby samples"))
     views.append(rrb.TextDocumentView(origin="/evidence", name="Source metadata"))
@@ -356,6 +359,99 @@ def prepare_unit_samples(paths, route, frames):
     return scans
 
 
+def later_sample_projection(scan, frame):
+    """Optional retrospective geometry, explicitly weaker than screenshot presence."""
+    result = dict(status="withheld", capturedAtUtc=frame["projection"].get("capturedAtUtc"),
+                  scanStartedAtUtc=scan["startedAtUtc"], scanCompletedAtUtc=scan["completedAtUtc"],
+                  qualification="Later stored position candidates on an earlier capture; not presence, freshness "
+                      "or occlusion proof. Coordinates refer to retained frame geometry, not independently observed "
+                      "scan-time client geometry. Equal snapshots do not exclude intervening camera/world changes.")
+    try:
+        plot.require(not frame["desktop"], "later-samples-require-wgc-capture")
+        plot.require(frame["png"] is not None, "later-samples-require-image-payload")
+        def raw_source(source):
+            raw = Path(source["path"]).read_bytes()
+            plot.require(hashlib.sha256(raw).hexdigest() == source["sha256"].casefold(), "later-sample-source-hash-changed")
+            return json.loads(raw.decode("utf-8-sig"), object_pairs_hook=plot.unique_fields,
+                              parse_constant=lambda _: (_ for _ in ()).throw(ValueError("nonfinite-json")))
+        observation = raw_source(dict(path=frame["projection"]["observation"], sha256=frame["sourceSha256"]))
+        receipt_path = Path(observation["receipt"])
+        if not receipt_path.is_absolute():
+            receipt_path = Path(frame["projection"]["observation"]).parent / receipt_path
+        receipt = raw_source(dict(path=str(receipt_path), sha256=frame["projection"]["receiptSha256"]))
+        plot.require(receipt.get("requestedBackend") == "wgc", "later-samples-require-wgc-receipt")
+        plot.require(observation["target"] == scan["target"], "later-sample-full-target-mismatch")
+        units = raw_source(scan["nativeSource"])
+        values = plot.physical._native_values("unit-positions", units)
+        row = units["observation"]
+        native = [raw_source(dict(path=n["source"], sha256=n["sha256"])) for n in frame["native"]]
+        sides = [report["observation"] for report in native]
+        plot.require(all(report["identity"] == row["identity"] for report in native), "later-sample-native-identity-mismatch")
+        plot.require(all(side["playerKeyDecimal"] == row["selfKey"]
+                     and side.get("entityPositionRawBits") == row["selfPositionRawBits"]
+                     and native_values["values"]["positionXYZCandidate"] == values["selfPositionXYZCandidate"]
+                     for side, native_values in zip(sides, frame["native"])), "later-sample-player-position-mismatch")
+        camera = row["opticalCameraCandidate"]
+        same = plot.physical._same_optical_projection_snapshot
+        plot.require(row["cameraStableCandidate"] is True and same(camera, row["opticalCameraAfterCandidate"])
+                     and all(same(camera, side.get(name)) for side in sides for name in
+                             ("opticalCameraCandidate", "opticalCameraAfterTargetCandidate")),
+                     "later-sample-camera-mismatch")
+        captured = timestamp_ns(result["capturedAtUtc"])
+        started, ended = timestamp_ns(scan["startedAtUtc"]), timestamp_ns(scan["completedAtUtc"])
+        after = timestamp_ns(sides[-1]["completedAtUtc"])
+        plot.require(after <= started <= ended and 0 <= ended - captured <= 5_000_000_000,
+                     "later-sample-association-interval-mismatch")
+        mapping = frame["projection"]["clientFrameMapping"]
+        plot.require(plot.client_frame_mapping(receipt) == mapping, "later-sample-frame-geometry-mismatch")
+        with plot.Image.open(BytesIO(frame["png"])) as original:
+            plot.require(original.size == (mapping["frameWidth"], mapping["frameHeight"]),
+                         "later-sample-frame-geometry-mismatch")
+            image = original.convert("RGB")
+        rows = []
+        for number, unit in enumerate(scan["units"], 1):
+            projection = plot.project(camera, unit["positionXYZCandidate"], mapping)
+            rows.append(dict(number=number, label=f"U{number}", unitKey=unit["unitKey"],
+                             positionObservedAtUtc=unit["sampledAtUtc"], projection=projection))
+        result.update(status="retrospective-unit-reprojection-candidate", rows=rows,
+            captureToScanStartSeconds=(started-captured)/1e9, captureToScanEndSeconds=(ended-captured)/1e9,
+            nativeAfterToScanStartSeconds=(started-after)/1e9, originalImageSha256=hashlib.sha256(frame["png"]).hexdigest())
+        # Distinct derived payload only; neither retained source nor normal pane is changed.
+        legend = ["LATER STORED CANDIDATES — NOT PRESENCE / OCCLUSION PROOF",
+                  f"Capture UTC: {result['capturedAtUtc']}",
+                  f"Scan UTC: {scan['startedAtUtc']} to {scan['completedAtUtc']}",
+                  f"After image: +{(started-captured)/1e9:.3f} to +{(ended-captured)/1e9:.3f}s; "
+                  f"after native: +{(started-after)/1e9:.3f}s",
+                  "Reference pixels use retained frame geometry, not scan-time geometry."]
+        layer = image.crop((mapping["clientLeft"], mapping["clientTop"],
+                            mapping["clientLeft"] + mapping["clientWidth"],
+                            mapping["clientTop"] + mapping["clientHeight"]))
+        draw, font = plot.ImageDraw.Draw(layer), plot.ImageFont.load_default(size=13)
+        left, top = 0, 0
+        width = mapping["clientWidth"] - 12
+        lines = []
+        for text in legend:
+            line = ""
+            for word in text.split():
+                candidate = (line + " " + word).strip()
+                if line and draw.textlength(candidate, font=font) > width:
+                    lines.append(line); line = word
+                else:
+                    line = candidate
+            lines.append(line)
+        height = min(mapping["clientHeight"], 8 + len(lines) * 17)
+        draw.rectangle((left, top, left + mapping["clientWidth"] - 1, top + height - 1), fill="#141414")
+        draw.multiline_text((left + 5, top + 4), "\n".join(lines), font=font, fill="#ffd54f", spacing=3)
+        image.paste(layer, (mapping["clientLeft"], mapping["clientTop"]))
+        output = BytesIO(); image.save(output, "PNG")
+        payload = output.getvalue()
+        result["derivedImageSha256"] = hashlib.sha256(payload).hexdigest()
+        return result, payload
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+        result["reason"] = str(error)
+        return result, None
+
+
 def unit_scene_display_camera(route, scans, frames):
     """Conservative viewer pose from admitted geometry, independent of game camera."""
     points = [[point["xyz"][axis] for axis in ("x", "y", "z")] for point in route["points"]]
@@ -399,13 +495,25 @@ def nearby_samples_markdown(scan, *, include_names=False):
         lines += ["Names unavailable: " + escape(names.get("reason", "not-retained")) + ".", ""]
     if not scan["units"]:
         return "\n".join(lines + ["No nonself samples within the displayed 35-unit distance limit."])
-    lines += ["| Name candidate | Distance (native units) | XYZ candidate | Unit key |",
-              "| --- | ---: | --- | --- |"]
-    for unit in scan["units"]:
+    lines += ["| U# | Name candidate | Distance (native units) | XYZ candidate | Unit key |",
+              "| --- | --- | ---: | --- | --- |"]
+    for number, unit in enumerate(scan["units"], 1):
         name = unit.get("nameCandidate") if include_names else None
         label = name["baseNameCandidate"] if name else "—"
         xyz = ", ".join(f"{unit['positionXYZCandidate'][axis]:.3f}" for axis in ("x", "y", "z"))
-        lines.append(f"| {escape(label)} | {unit['horizontalDistanceCandidate']:.3f} | {xyz} | `{unit['unitKey']}` |")
+        lines.append(f"| U{number} | {escape(label)} | {unit['horizontalDistanceCandidate']:.3f} | {xyz} | `{unit['unitKey']}` |")
+    for view in scan.get("laterProjections", []):
+        lines += ["", f"### Later samples on capture {view['frameNumber']}", ""]
+        if view["status"] == "withheld":
+            lines += ["Unavailable: " + escape(view["reason"]) + "."]
+            continue
+        lines += [f"Earlier image `{view['capturedAtUtc']}`; scan followed it by "
+                  f"{view['captureToScanStartSeconds']:.3f}–{view['captureToScanEndSeconds']:.3f} seconds. "
+                  "Retrospective geometry only, not screenshot presence.", ""]
+        for row in view["rows"]:
+            projection = row["projection"]
+            detail = str(projection["pixel"]) if projection["status"] == "drawn-candidate" else projection.get("reason", "withheld")
+            lines.append(f"- U{row['number']}: {escape(detail)}; position UTC `{row['positionObservedAtUtc']}`.")
     lines += ["", "## Observation times (UTC)", "",
               "Exact position times remain separate from later name times; latest samples carry forward in this recording.", ""]
     name_rows = {row["unitKey"]: row for row in names.get("rows", [])} if include_names else {}
@@ -429,6 +537,16 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
         route, frames = prepare(route_path, observations, scratch, images=images, desktop_pairs=desktop_pairs,
                                 camera_rays=camera_rays)
     unit_scans = prepare_unit_samples(unit_samples, route, frames)
+    later_views = []
+    for scan_number, scan in enumerate(unit_scans, 1):
+        scan["laterProjections"] = []
+        for frame_number, frame in enumerate(frames, 1):
+            metadata, payload = later_sample_projection(scan, frame)
+            metadata.update(frameNumber=frame_number, scanNumber=scan_number,
+                            entity=f"later_samples/scan{scan_number:04d}_capture{frame_number:04d}")
+            scan["laterProjections"].append(metadata)
+            if payload is not None:
+                later_views.append(dict(metadata=metadata, png=payload))
     display_camera = unit_scene_display_camera(route, unit_scans, frames) if unit_scans else None
     result = {"status": "offline-rerun-evidence-export", "output": str(output), "inputSent": False,
               "route": route["path"], "routeSha256": route["sha256"],
@@ -452,7 +570,10 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
         sink.configure_view([(f"/captures/{number:04d}" + ("_desktop_upper_bound" if frame["desktop"] else ""),
                               timestamp_ns(frame["evidenceAtUtc"]))
                              for number, frame in enumerate(frames, 1)],
-                            **({"display_camera": display_camera, "nearby_samples": True} if unit_scans else {}))
+                            **({"display_camera": display_camera, "nearby_samples": True,
+                                "later_samples": [("/" + view["metadata"]["entity"],
+                                    f"Later samples on capture {view['metadata']['frameNumber']} (scan {view['metadata']['scanNumber']})")
+                                    for view in later_views]} if unit_scans else {}))
         sink.log("evidence/sources", "text", result, static=True)
         positions = [[p["xyz"][axis] for axis in ("x", "y", "z")] for p in route["points"]]
         labels = [f'{p["number"]}: {p["label"]}' for p in route["points"]]
@@ -496,6 +617,16 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
                     # A failed later sample must not leave an older camera shape
                     # looking current through viewer timeline carry-forward.
                     sink.log("world/camera", "clear", {}, at=at)
+        for view in later_views:
+            metadata = view["metadata"]
+            sink.log(metadata["entity"], "png", view["png"], at=timestamp_ns(metadata["scanCompletedAtUtc"]))
+            for row in metadata["rows"]:
+                projection = row["projection"]
+                if projection["status"] == "drawn-candidate":
+                    point = projection["frameProjection"]
+                    sink.log(metadata["entity"] + f"/U{row['number']}", "points2d",
+                             dict(positions=[[point["frameX"], point["frameY"]]], labels=[row["label"]]),
+                             at=timestamp_ns(row["positionObservedAtUtc"]))
         for number, scan in enumerate(unit_scans, 1):
             sink.log("world/loaded_units", "clear", {}, at=timestamp_ns(scan["startedAtUtc"]))
             sink.log(f"evidence/unit_samples/{number:04d}", "text", scan,

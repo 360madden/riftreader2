@@ -32,10 +32,11 @@ class FakeSink:
         Path(path).write_bytes(b"fake-rrd-test-payload")
     def log(self, entity, kind, data, **kwargs):
         self.events.append((entity, kind, data, kwargs))
-    def configure_view(self, captures, *, display_camera=None, nearby_samples=False):
+    def configure_view(self, captures, *, display_camera=None, nearby_samples=False, later_samples=()):
         self.captures = captures
         self.display_camera = display_camera
         self.nearby_samples = nearby_samples
+        self.later_samples = later_samples
     def flush(self):
         self.flushed = True
     def close(self):
@@ -114,6 +115,162 @@ class ExportTests(unittest.TestCase):
         path = self.root / (name + "-wrapper.json")
         path.write_text(json.dumps(wrapper))
         return path, native_path, raw, wrapper
+
+    def reprojection_unit_wrapper(self):
+        path, native, raw, wrapper = self.unit_wrapper()
+        row = raw["observation"]
+        row["startedAtUtc"] = "2026-11-11T19:00:00.5Z"
+        row["completedAtUtc"] = "2026-11-11T19:00:00.8Z"
+        for unit in row["rows"]:
+            unit["startedAtUtc"] = "2026-11-11T19:00:00.7Z"
+            unit["completedAtUtc"] = "2026-11-11T19:00:00.7Z"
+        native.write_text(json.dumps(raw))
+        for filename in ("before.json", "after.json"):
+            facing = json.loads((self.root / filename).read_text())
+            for side in [facing["observation"], *facing["observations"]]:
+                side["entityPositionCandidate"] = deepcopy(row["selfPositionCandidate"])
+                side["entityPositionRawBits"] = list(row["selfPositionRawBits"])
+                side["targetPositionPairCandidate"]["self"]["position"] = deepcopy(row["selfPositionCandidate"])
+            (self.root / filename).write_text(json.dumps(facing))
+        return path, native, raw, wrapper
+
+    def test_later_samples_separate_copy_exact_pixels_true_times_and_capture_unchanged(self):
+        path, native, raw, wrapper = self.reprojection_unit_wrapper()
+        original = self.fixture.image.read_bytes()
+        result = self.run_export(unit_samples=[path])
+        view = result["unitSamples"][0]["laterProjections"][0]
+        self.assertEqual(view["status"], "retrospective-unit-reprojection-candidate", view)
+        self.assertAlmostEqual(view["captureToScanStartSeconds"], .25)
+        self.assertAlmostEqual(view["captureToScanEndSeconds"], .55)
+        self.assertAlmostEqual(view["nativeAfterToScanStartSeconds"], .1)
+        self.assertEqual(view["rows"][0]["label"], "U1")
+        self.assertEqual(view["rows"][0]["projection"]["pixel"], [127, 110])
+        events = self.sinks[-1].events
+        normal = next(e for e in events if e[0] == "captures/0001" and e[1] == "png")
+        later = next(e for e in events if e[0] == view["entity"] and e[1] == "png")
+        point = next(e for e in events if e[0] == view["entity"] + "/U1")
+        self.assertEqual(normal[2], original)
+        self.assertNotEqual(later[2], original)
+        self.assertEqual(self.fixture.image.read_bytes(), original)
+        self.assertEqual(later[3]["at"], exporter.timestamp_ns(raw["observation"]["completedAtUtc"]))
+        self.assertEqual(point[3]["at"], exporter.timestamp_ns(raw["observation"]["rows"][1]["completedAtUtc"]))
+        self.assertNotEqual(point[3]["at"], normal[3]["at"])
+        self.assertIn("not independently observed", view["qualification"])
+        table = next(e[2] for e in events if e[0] == "nearby_samples")
+        self.assertIn("U1", table)
+        self.assertIn(r"\[127, 110\]", table)
+        self.assertTrue(self.sinks[-1].later_samples)
+
+    def test_later_samples_compare_decoded_float32_not_rounded_native_json(self):
+        from tests.test_physical_unit_positions import bits
+        path, native, raw, _ = self.reprojection_unit_wrapper()
+        # Native JSON uses shortest float32 decimal text, unlike Python's decoded
+        # double representation. These are the actual retained case's coordinates.
+        rounded = dict(x=7421.656, y=863.58655, z=2940.9678)
+        raw_bits = bits(rounded)
+        decoded = dict(zip("xyz", [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in raw_bits]))
+        self.assertEqual(decoded["x"], 7421.65576171875)
+        self.assertNotEqual(rounded, decoded)
+        row = raw["observation"]
+        row.update(selfPositionCandidate=deepcopy(rounded), selfPositionRawBits=raw_bits)
+        row["rows"][0].update(positionCandidate=deepcopy(rounded), rawBits=raw_bits)
+        for unit in row["rows"]:
+            xyz = dict(zip("xyz", [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in unit["rawBits"]]))
+            unit["horizontalDistanceCandidate"] = math.hypot(xyz["x"]-decoded["x"], xyz["z"]-decoded["z"])
+        native.write_text(json.dumps(raw))
+        for filename in ("before.json", "after.json"):
+            source = self.root / filename
+            report = json.loads(source.read_text())
+            for side in [report["observation"], *report["observations"]]:
+                side.update(entityPositionCandidate=deepcopy(rounded), entityPositionRawBits=raw_bits)
+                side["targetPositionPairCandidate"]["self"]["position"] = deepcopy(rounded)
+            source.write_text(json.dumps(report))
+        result = self.run_export(unit_samples=[path])
+        view = result["unitSamples"][0]["laterProjections"][0]
+        self.assertEqual(view["status"], "retrospective-unit-reprojection-candidate", view)
+
+    def test_later_samples_optional_camera_self_target_and_time_refusals_preserve_core(self):
+        from tests.test_physical_unit_positions import bits
+        for fault in ("camera", "missing-camera", "self", "hwnd", "target-path", "before-after", "too-old", "long-scan"):
+            path, native, raw, wrapper = self.reprojection_unit_wrapper()
+            row = raw["observation"]
+            if fault == "camera":
+                row["opticalCameraAfterCandidate"]["cameraAddressDecimal"] = "2096815868168"
+                row["cameraStableCandidate"] = False
+            if fault == "missing-camera":
+                row["opticalCameraCandidate"] = row["opticalCameraAfterCandidate"] = None
+                row["cameraStableCandidate"] = False
+            if fault == "self":
+                row["selfPositionCandidate"]["x"] += 1
+                row["selfPositionRawBits"] = bits(row["selfPositionCandidate"])
+                for unit in row["rows"]:
+                    xyz = unit["positionCandidate"]
+                    unit["rawBits"] = bits(xyz)
+                    unit["horizontalDistanceCandidate"] = math.hypot(xyz["x"] - row["selfPositionCandidate"]["x"],
+                        xyz["z"] - row["selfPositionCandidate"]["z"])
+            if fault == "hwnd": wrapper["target"]["hwnd"] += 1
+            if fault == "target-path": wrapper["target"]["executablePath"] = "other.exe"
+            if fault in ("before-after", "too-old"):
+                stamp = "2026-11-11T19:00:00.3Z" if fault == "before-after" else "2026-11-11T19:00:06Z"
+                row["startedAtUtc"] = stamp
+                row["completedAtUtc"] = "2026-11-11T19:00:00.35Z" if fault == "before-after" else "2026-11-11T19:00:06.1Z"
+                for unit in row["rows"]:
+                    unit["startedAtUtc"] = unit["completedAtUtc"] = stamp
+            if fault == "long-scan":
+                row["completedAtUtc"] = "2026-11-11T19:00:06.1Z"
+            native.write_text(json.dumps(raw)); path.write_text(json.dumps(wrapper))
+            with self.subTest(fault=fault):
+                result = self.run_export(unit_samples=[path])
+                view = result["unitSamples"][0]["laterProjections"][0]
+                self.assertEqual(view["status"], "withheld", view)
+                self.assertTrue(view["reason"])
+                self.assertEqual(len(result["unitSamples"][0]["units"]), 1)
+                self.assertFalse(self.sinks[-1].later_samples)
+                self.assertTrue(any(e[0] == "captures/0001" for e in self.sinks[-1].events))
+                self.output.unlink()
+
+    def test_later_samples_no_image_and_bad_retained_frame_geometry_withhold(self):
+        path, _, _, _ = self.reprojection_unit_wrapper()
+        result = self.run_export(unit_samples=[path], images=False)
+        self.assertEqual(result["unitSamples"][0]["laterProjections"][0]["reason"], "later-samples-require-image-payload")
+        scratch = self.root / "scratch-reprojection"
+        scratch.mkdir()
+        route, frames = exporter.prepare(self.route, [self.observation], scratch)
+        scans = exporter.prepare_unit_samples([path], route, frames)
+        frames[0]["projection"]["clientFrameMapping"]["frameWidth"] += 1
+        metadata, payload = exporter.later_sample_projection(scans[0], frames[0])
+        self.assertEqual(metadata["reason"], "later-sample-frame-geometry-mismatch")
+        self.assertIsNone(payload)
+        frames[0]["desktop"] = True
+        metadata, payload = exporter.later_sample_projection(scans[0], frames[0])
+        self.assertEqual(metadata["reason"], "later-samples-require-wgc-capture")
+
+    def test_later_samples_dxgi_receipt_keeps_core_but_withholds_optional_tab(self):
+        path, _, _, _ = self.reprojection_unit_wrapper()
+        receipt = json.loads(self.fixture.receipt.read_text())
+        receipt["requestedBackend"] = "dxgi"
+        self.fixture.receipt.write_text(json.dumps(receipt))
+        result = self.run_export(unit_samples=[path])
+        view = result["unitSamples"][0]["laterProjections"][0]
+        self.assertEqual(view["reason"], "later-samples-require-wgc-receipt")
+        self.assertFalse(self.sinks[-1].later_samples)
+        self.assertTrue(any(e[0] == "captures/0001" and e[1] == "png" for e in self.sinks[-1].events))
+
+    def test_later_samples_keep_outside_and_behind_reasons_without_clamped_markers(self):
+        from tests.test_physical_unit_positions import bits
+        for xyz, reason in ((dict(x=7450, y=871, z=2946), "outside-client-or-viewport"),
+                            (dict(x=7427, y=871, z=2930), "nonpositive-or-small-clip-w")):
+            path, native, raw, _ = self.reprojection_unit_wrapper()
+            unit = raw["observation"]["rows"][1]
+            unit.update(positionCandidate=xyz, rawBits=bits(xyz), horizontalDistanceCandidate=math.hypot(xyz["x"]-7427, xyz["z"]-2946))
+            native.write_text(json.dumps(raw))
+            result = self.run_export(unit_samples=[path])
+            view = result["unitSamples"][0]["laterProjections"][0]
+            self.assertEqual(view["status"], "retrospective-unit-reprojection-candidate")
+            self.assertEqual(view["rows"][0]["projection"]["reason"], reason)
+            self.assertNotIn("pixel", view["rows"][0]["projection"])
+            self.assertFalse(any(e[0] == view["entity"] + "/U1" for e in self.sinks[-1].events))
+            self.output.unlink()
 
     def named_unit_wrapper(self, *, fault=None):
         from tests.test_physical_unit_names import report

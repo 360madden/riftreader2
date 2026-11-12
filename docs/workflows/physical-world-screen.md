@@ -115,7 +115,7 @@ read-only unit-manager sample after the screenshot/native bracket and retains
 shows the nearest 18 nonself position candidates within 35 native units from
 that sampled subset, at their original per-unit acquisition times. Keys remain
 lossless strings; source hashes, exact capture process epoch, observing player
-and scan coverage are retained. Units are not drawn onto the screenshot.
+and scan coverage are retained. The original Capture tab stays unchanged.
 Optional acquisition failure reports a reason while preserving the core view.
 The viewer's initial display camera includes the admitted geometry; use ordinary
 Rerun zoom/orbit controls to inspect it. Unit labels start hidden to keep the
@@ -126,6 +126,18 @@ distances, XYZ and lossless keys, with exact position/name UTC receipts below it
 All unit text starts hidden in 3D to keep the route readable; the screenshot stays
 the default tab. The table appears first at the position scan's completion time
 without future names, then updates only when the name batch has completed.
+An additional **Later samples on capture** tab can show numbered U1–U18 points
+on a separate copy of the earlier WGC image. The table links those numbers to
+candidate names, exact position times and projected pixels or withholding reasons.
+The image prominently shows its capture UTC, the later scan interval and both
+timing gaps. Admission requires matching process/window/player identity, exact
+player position and camera snapshots, a validated WGC receipt/image, acquisition
+after the native bracket and scan completion within five seconds of the image.
+That cap associates retained samples; it does not prove freshness or that a unit
+was visible at that pixel in the screenshot. Coordinates refer to the retained
+frame, without an independently measured scan-time client size. Changed or missing
+evidence withholds only this extra view and records the reason. The ordinary
+Capture tab remains selected by default; desktop upper-bound captures are excluded.
 One explicit-key batch names only the same selected subset, without selecting
 game targets or scanning more units. `unit-names-native.json` and
 `unit-names-sample.json` retain independent source/hash/time evidence. The
