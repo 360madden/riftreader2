@@ -20,7 +20,7 @@ internal static class MoveKeyCommand
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
         int XyzSettleMilliseconds, bool MeasureActorPose, int ActorPoseSettleMilliseconds = 0,
-        bool ReleaseOnly = false);
+        bool ReleaseOnly = false, bool InspectOnly = false);
 
     // A timed envelope around the bounded input executor, NOT exact down/up
     // timestamps or proof that the RIFT game consumed the injected key.
@@ -213,7 +213,7 @@ internal static class MoveKeyCommand
 
     private const string Usage =
         "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose] [--actor-pose-settle-ms 500]"
-        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--release-only]";
+        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--release-only] [--inspect]";
 
     internal static Options Parse(string[] args)
     {
@@ -224,6 +224,7 @@ internal static class MoveKeyCommand
         int actorPoseSettleMilliseconds = 0;
         bool focus = true, execute = false, json = false, measureXyz = false, measureActorPose = false;
         bool releaseOnly = false;
+        bool inspectOnly = false;
         long? expectedTicks = null;
         string? expectedSha = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -234,7 +235,7 @@ internal static class MoveKeyCommand
             if (!seen.Add(option))
                 throw new InvalidDataException($"Repeated option: {option}");
             if (option is "--focus" or "--no-focus" or "--execute" or "--json" or "--measure-xyz"
-                or "--measure-actor-pose" or "--release-only")
+                or "--measure-actor-pose" or "--release-only" or "--inspect")
             {
                 if (option == "--focus") focus = true;
                 if (option == "--no-focus") focus = false;
@@ -243,6 +244,7 @@ internal static class MoveKeyCommand
                 if (option == "--measure-xyz") measureXyz = true;
                 if (option == "--measure-actor-pose") measureActorPose = true;
                 if (option == "--release-only") releaseOnly = true;
+                if (option == "--inspect") inspectOnly = true;
                 continue;
             }
             if (i + 1 >= args.Length)
@@ -291,10 +293,23 @@ internal static class MoveKeyCommand
 
         if (seen.Contains("--focus") && seen.Contains("--no-focus"))
             throw new InvalidDataException("--focus and --no-focus cannot be combined.");
-        if (pid is null || keys is null)
-            throw new InvalidDataException("Exact --pid and --key are required.");
-        // Reuse the input engine's actual six-key, conflict and hold validation.
-        BoundedControlExecutor.Validate(new ControlAction(keys, hold));
+        if (pid is null)
+            throw new InvalidDataException("Exact --pid is required.");
+        if (inspectOnly)
+        {
+            if (keys is not null || execute || releaseOnly || measureXyz || measureActorPose
+                || seen.Contains("--hold-ms") || seen.Contains("--focus"))
+                throw new InvalidDataException("--inspect is read-only and cannot request keys, focus, holds or execution.");
+            keys = [];
+            focus = false;
+        }
+        else
+        {
+            if (keys is null)
+                throw new InvalidDataException("Exact --pid and --key are required.");
+            // Reuse the input engine's actual six-key, conflict and hold validation.
+            BoundedControlExecutor.Validate(new ControlAction(keys, hold));
+        }
         if (seen.Contains("--xyz-settle-ms") && !measureXyz)
             throw new InvalidDataException("--xyz-settle-ms requires --measure-xyz.");
         if (seen.Contains("--actor-pose-settle-ms") && !measureActorPose)
@@ -303,7 +318,7 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("--release-only requires one key, no hold and no movement measurements.");
         return new Options(pid.Value, keys, hold, focus, execute, json,
             expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose, actorPoseSettleMilliseconds,
-            releaseOnly);
+            releaseOnly, inspectOnly);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -312,7 +327,7 @@ internal static class MoveKeyCommand
         try
         {
             var options = Parse(args);
-            if (!options.Execute)
+            if (!options.Execute && !options.InspectOnly)
             {
                 Report(options.Json, new
                 {
@@ -379,6 +394,15 @@ internal static class MoveKeyCommand
         DesktopTarget Inspect() => WindowsControlDesktop.InspectPinned("rift_x64", path, sha,
             options.Pid, startTicks);
         var target = Inspect();
+        if (options.InspectOnly)
+        {
+            Report(options.Json, new
+            {
+                status = "inspected-target", target, inputSent = false, focusRequested = false,
+                desktopInputsDown = WindowsControlDesktop.ReadPressedInputs()
+            });
+            return 0;
+        }
         FocusAttempt? focusAttempt = null;
         if (!target.IsForeground && options.Focus)
         {

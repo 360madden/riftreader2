@@ -7,6 +7,19 @@ namespace RiftReader2.Live.Tests;
 
 public sealed class MoveKeyCommandTests
 {
+    [Fact]
+    public void InspectionRequiresOnlyPidAndCannotFocusOrSendInput()
+    {
+        var options = MoveKeyCommand.Parse(["--pid", "123", "--inspect", "--json"]);
+        Assert.True(options.InspectOnly);
+        Assert.False(options.Execute);
+        Assert.False(options.Focus);
+        Assert.Empty(options.Keys);
+        foreach (var extra in new[] { "--execute", "--release-only", "--focus", "--measure-xyz" })
+            Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(["--pid", "123", "--inspect", extra]));
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(["--pid", "123", "--inspect", "--key", "w"]));
+    }
+
     [Theory]
     [InlineData('q', 0xC0100001u)]
     [InlineData('e', 0xC0120001u)]

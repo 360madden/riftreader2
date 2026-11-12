@@ -41,6 +41,11 @@ The current pose has a separate timestamped readout. A control request waits for
 an in-flight observation; closing waits for it as well. Before starting a route
 or facing action, two fresh observations must show settled XYZ and bearing.
 
+Repeated ownership checks use the native helper's read-only `move-key --inspect`
+mode, which verifies the pinned process, executable hash and window without
+focusing RIFT or sending input. On AMD-DESKTOP the measured identity-check time
+fell from 411 ms through PowerShell to 230–234 ms through the native helper.
+
 Live updates were checked against an independently issued facing command: the
 preview updated to the new -16.51-degree bearing while an edited X coordinate
 remained unchanged.
