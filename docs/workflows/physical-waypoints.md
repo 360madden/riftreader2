@@ -26,6 +26,10 @@ use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
 **Up / Down** reorder the selected point; **Clear** empties the list. A completed
 run reports the number of visited waypoints and final distance explicitly.
+**Add Target** saves the selected entity's freshly read ground position as a
+fixed waypoint. It does not follow a moving entity or start a trip. An unavailable
+or expired target position, or a target more than one unit above/below the player,
+is refused. The point uses the same native candidate source as the target reader.
 
 **Face Selected** turns toward a waypoint without walking. **Face, then walk**
 aligns to each waypoint and uses W for travel. Unchecked, the existing W/S/Q/E
@@ -166,3 +170,12 @@ Separate settled observations confirmed the endpoint. Five subsequent D turns
 restored the pre-route bearing within 0.361 degrees without XYZ movement.
 Route input receipt: `artifacts/waypoint-input-7aaf3780a54e4a3da35eb9030dcf56d3.jsonl`;
 facing receipt: `artifacts/waypoint-run-314b50d1257b4cce97ec8c9c98c5ad4b.json`.
+
+**Add Target → Face Selected** was exercised against the selected practice dummy,
+6.234 units away. The point was added without input; two subsequent A turns
+faced it within **0.236 degrees**, with unchanged XYZ. A fresh WGC/native bracket
+put the selected dummy at frame X962.105 versus player X961.000 in a 1922-pixel
+frame, matching its visible placement directly ahead. Capture:
+`artifacts/observe-wgc-fe6fe17cdf544e1488bf54ccfbde4935/image.png` and `.png.json`.
+Restoring the prior bearing used two D turns, finishing within 1.434 degrees,
+again with unchanged XYZ. No travel to or attack on the target was attempted.

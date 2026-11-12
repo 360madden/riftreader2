@@ -6,6 +6,10 @@ waypoint window. Save the current point, click the local preview or enter X/Z;
 Go Selected / Run Route use the existing feedback controller. Face Selected and
 Face, then walk use measured A/D rates with fresh body-facing feedback. Live pose
 updates while idle; route JSON can be loaded/saved, reordered and cleared.
+**Add Target** saves a fresh selected entity's fixed ground position without
+input. Add Target → Face Selected aligned to the practice dummy within 0.236°,
+with unchanged XYZ and the dummy centered in a fresh WGC frame; no target travel
+or attack was attempted.
 The longest GUI trial completed a **13.66-unit, three-point triangle**, returning
 **0.150 units** from its start in approximately one minute: 27 released pulses,
 3,700 ms requested hold, no target loss. Separate facing restored the pre-route
@@ -26,7 +30,7 @@ pulses, exclusive input ownership, fresh exact PID/start/build/player checks;
 no obstacle routing or full-game restart qualification. The basis deliberately
 rejects a new process epoch. Native read-only identity checks reduced measured
 per-check delay from 411 ms to 230–234 ms. Focused checks: 117 native control
-tests, 24 waypoint tests, 21 frame/observation tests and 14 WGC self-checks passed;
+tests, 27 waypoint tests, 21 frame/observation tests and 14 WGC self-checks passed;
 these are scoped checks, not a full-repository gate. The physical process was
 PID18092/start639300391441133615; reacquire identity before new actions. LEGION,
 VMs and peer edits were left untouched. Historical notes below predate this work.

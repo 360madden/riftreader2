@@ -48,6 +48,27 @@ class Snapshot:
     bearing: float
     acquired: float
     source: str
+    selected_target: dict | None = None
+
+
+def target_waypoint(snapshot):
+    """Save a fresh selected-target location, never a moving follow command."""
+    target = snapshot.selected_target
+    if not isinstance(target, dict) or target.get("status") != "candidate":
+        raise WaypointError("Select a target with an available position first.")
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(target["sampledAtUtc"])).total_seconds()
+        point = target["positionXYZCandidate"]
+        px, py, pz = (finite(point[axis]) for axis in ("x", "y", "z"))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise WaypointError("Selected target position is unavailable.") from exc
+    if not -.1 <= age <= 2 or time.monotonic() - snapshot.acquired > 2:
+        raise WaypointError("Selected target position expired; try Add Target again.")
+    # A planar waypoint cannot represent a different floor. Keep target
+    # selection useful without offering travel to elevated/flying entities.
+    if abs(py - snapshot.position.y) > 1:
+        raise WaypointError("Selected target is on a different height; choose a ground point.")
+    return "Selected target", px, pz
 
 
 @dataclass
@@ -217,8 +238,9 @@ class PhysicalAdapter:
     def reserve(self):
         return PhysicalClientReservation(self.pinned_identity(), self.identity)
 
-    def read(self):
-        capture = physical_rift.read_native(self.selection, "facing", samples=1)
+    def read(self, *, include_target=False):
+        capture = physical_rift.read_native(self.selection, "facing", samples=1,
+                                            include_target=include_target)
         if capture.get("status") != "complete":
             raise WaypointError(capture.get("reason", "Native pose unavailable"))
         values = capture["nativeValues"]
@@ -230,7 +252,8 @@ class PhysicalAdapter:
         bearing = finite(values["bodyBearingDegreesCandidate"])
         point = values["positionXYZCandidate"]
         return Snapshot(Position(*(finite(point[k]) for k in ("x", "y", "z"))),
-                        bearing, time.monotonic() - max(0, age), capture["nativeOutput"])
+                        bearing, time.monotonic() - max(0, age), capture["nativeOutput"],
+                        values.get("selectedTargetProjectionCandidate"))
 
     def calibrations(self, snapshot):
         # The empirical actor angle is the negative of our +Z -> +X bearing.
@@ -625,9 +648,11 @@ def launch_window(args):
         try:
             if adapter is None:
                 adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
-            if operation in ("refresh", "save", "map", "live"):
-                pose = adapter.read()
+            if operation in ("refresh", "save", "map", "live", "target"):
+                pose = adapter.read(include_target=True) if operation == "target" else adapter.read()
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
+                if operation == "target":
+                    result["waypoint"] = target_waypoint(pose)
                 if operation == "map":
                     view, px, pz, label = points
                     moved = math.hypot(view.x - pose.position.x, view.z - pose.position.z) > .05
@@ -751,7 +776,7 @@ def launch_window(args):
                             ("Remove", remove_points),
                             ("Load", load_route), ("Save Route", save_route),
                             ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
-                            ("Clear", clear_points)):
+                            ("Clear", clear_points), ("Add Target", lambda: start("target"))):
         button = ttk.Button(buttons, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
         editable.append(button)
@@ -845,6 +870,7 @@ def launch_window(args):
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
                     f"{status}: {event.get('name', '')}" if status == "leg" else
                     "Saved current position." if status == "save" else
+                    "Saved the target's current ground position." if status == "target" else
                     "Waypoint added from the preview." if status == "map" else
                     "Position refreshed.")
             state.set(text)
