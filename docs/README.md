@@ -13,6 +13,7 @@ topic below instead of loading every document for each task.
 | Postmortem | [Move-key focus failure and recovery (2026-11-11)](validation/move-key-focus-failure-postmortem-2026-11-11.md) | Full assistant failure analysis, known-good A/B evidence, successful fix, and prevention rules. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |
 | Planning | [Current discovery roadmap](planning/discovery-roadmap-2026-11-06.md) | Parallel development packages, concrete worker ownership, useful outputs and real dependencies. |
+| Planning | [Five-hour recorded-route goal](planning/five-hour-recorded-routes-2026-11-12.md) | Proposed record/replay/resume roadmap and pasteable goal; implementation has not started. |
 | Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
 | Planning | [Bidirectional hybrid prompt and two-lab roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md) | Saved implementation prompt; both labs authorized for parallel discovery/validation; return-channel feasibility first. |
 | Planning | [Two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md) | Fresh VM/guest limits, ownership and first manual-feedback acceptance. |
