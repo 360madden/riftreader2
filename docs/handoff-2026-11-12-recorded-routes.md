@@ -347,6 +347,23 @@ Route refreshed the snapshot to the original document. App is idle, RIFT PID6931
 and basis unchanged. This working route copy avoids editing the tracked evidence
 file during ordinary saves.
 
+**10:47 EST route-edit Undo accepted:** the window retains up to 20 in-memory
+full-document/selection snapshots for actual Add/Remove/Update/Reorder/Clear edits.
+Undo restores route geometry, metadata, order and selection, keeps the current
+filename and marks unsaved. It never restores playback progress. Invalid/no-op
+edits add no history; Load/record publication clear it; Save retains it. Ctrl+Z
+is scoped to the waypoint list and guarded while busy/closing. Fourteen focused
+undo/edit GUI tests passed, including initial-empty/offline and bounded history.
+
+Live Up reordered Recorded 7 ahead of Recorded 6, marked unsaved and cleared the
+completed checkpoint while leaving the saved file/cache unchanged. Undo restored
+the original order and selection, kept Resume disabled, and Ctrl+S saved the exact
+original full document including metadata. No game input occurred. Only after this
+check, the genuine prior 7/7 forward checkpoint was restored from the same verified
+backup after confirming unchanged actor/epoch. Current app PID48384/window19927812
+is idle on `artifacts/waypoint-ready-route-69312.json`; RIFT PID69312 and basis
+unchanged.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads
@@ -396,8 +413,10 @@ IDs and component addresses are not reusable bindings.
 
 ## Live gap at the initial interruption and concrete fixes
 
-**Passive GUI recording through a full moving path has not passed live acceptance.**
-Several attempts correctly discarded incomplete recordings. Findings and fixes:
+**Historical state at the initial 08:06 interruption:** passive GUI recording
+through a full moving path had not passed live acceptance. The continued-progress
+section above records the later successful 08:25 moving capture and playback.
+Several earlier attempts correctly discarded incomplete recordings. Findings and fixes:
 
 - Continuous paced capture contended with the native reader's one-second lease
   wait. Recorder bursts now use six samples with a 150-ms yield; facing acquisition
@@ -414,13 +433,14 @@ Several attempts correctly discarded incomplete recordings. Findings and fixes:
   that same logical sample, at most three attempts within 100 ms, using the same
   pinned lookup/component and completing owner/epoch checks. A stable published
   row records `captureAttempts`. Single-shot controller feedback and target-pair
-  reads keep first-attempt behavior. **This fix is built and tested offline; it
-  has not yet been tested against a moving live player.** No failed rows are
+  reads keep first-attempt behavior. At the interruption this fix was built and
+  tested offline; the later 08:25 moving-player case qualified it live. No failed rows are
   silently skipped and the recorder's age/gap checks remain.
 - A 3.3-unit backward leg exhausted six pulses because S is slower than W.
   Fixed-facing routes now size intermediate legs for 600 ms at the slowest
   calibrated planar speed, capped at four units. Existing input budgets remain.
-  The simulator regression passes; this new segmentation is not yet live-tested.
+  The simulator regression passed before the interruption; the later fixed-facing
+  forward replay qualified this segmentation live within the endpoint tolerance.
 - GUI progress now shows remaining distance, distinguishes completed/next points,
   disables actions without a pose, and directs completed routes to Play rather
   than Resume. Receipt files retain complete GUI successes and failures.

@@ -65,6 +65,13 @@ recorded heights/provenance; changing coordinates converts the route to manually
 edited points and discards recording metadata. An actual edit clears playback
 progress and remains unsaved until **Save Route**. An unchanged update, including
 coordinates that round to the same six-decimal values, preserves progress.
+**Undo** restores up to 20 recent route edits, including removal, reordering,
+coordinate edits and Clear. **Ctrl+Z** does the same while the waypoint list has
+focus. Undo restores point order, selection and recording metadata, and marks the
+route unsaved. It keeps the current filename and leaves saved files unchanged.
+Playback progress stays cleared; Undo never revives an old cursor. Loading another
+route or completing a recording clears edit history; saving keeps it. History is
+held only while the window is open.
 **Add Target** saves the selected entity's freshly read ground position as a
 fixed waypoint. It does not follow a moving entity or start a trip. An unavailable
 or expired target position, or a target more than one unit above/below the player,

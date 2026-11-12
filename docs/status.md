@@ -1,5 +1,13 @@
 # Current status
 
+**10:47 EST NOVEMBER 12 — ROUTE EDIT UNDO WORKS:** On **AMD-DESKTOP**, Undo restores
+the last 20 route edits, including full metadata/order/selection; it keeps the
+current file and leaves playback progress cleared. Ctrl+Z is scoped to the point
+list. Fourteen focused GUI tests and live reorder→Undo→Save passed with no game
+input. The saved document again equals the original recording. Genuine 7/7 forward
+progress was restored separately after unchanged-pose verification. App PID48384,
+RIFT PID69312; goal active through 11:56 EST.
+
 **10:42 EST NOVEMBER 12 — EVERYDAY FILE CONTROLS WORK:** On **AMD-DESKTOP**,
 Save Route writes the current file, Save As creates a copy, and the window shows
 Saved/Unsaved changes. Ctrl+S/Ctrl+Shift+S work while idle. Twenty-nine focused

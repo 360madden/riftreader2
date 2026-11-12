@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from contextlib import closing, contextmanager, nullcontext
 from dataclasses import asdict, dataclass
+from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import math
@@ -734,6 +735,7 @@ def launch_window(args):
     playback_active = False
     loading_route = False
     added_selection = None
+    edit_history = []
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
     def update_route_status():
@@ -762,6 +764,8 @@ def launch_window(args):
         if len(table.get_children()) >= 20:
             state.set("Waypoint list is full; remove a point before adding another.")
             return
+        px, pz = finite(px), finite(pz)
+        remember_edit()
         invalidate_progress()
         item = table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
         added_selection = item
@@ -777,6 +781,33 @@ def launch_window(args):
 
     def route_document():
         return {**route_metadata, "waypoints": route_points(selected_points(True))}
+
+    def remember_edit():
+        if loading_route:
+            return
+        rows = selected_points(True)
+        edit_history.append((deepcopy({**route_metadata, "waypoints": route_points(rows) if rows else []}),
+                             [table.index(item) for item in table.selection()]))
+        del edit_history[:-20]
+
+    def undo_edit(_=None):
+        nonlocal route_metadata, added_selection
+        if busy or closing or not edit_history:
+            return "break"
+        document, indices = edit_history.pop()
+        if document["waypoints"]:
+            show_document(document)
+        else:
+            table.delete(*table.get_children())
+            route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
+            name.set("Point 1")
+        added_selection = None
+        items = table.get_children()
+        table.selection_set([items[index] for index in indices if index < len(items)])
+        invalidate_progress(clear_metadata=False)
+        redraw()
+        state.set("Route edit undone; save the route to keep these changes.")
+        return "break"
 
     def cache_route(document, success):
         try:
@@ -821,6 +852,7 @@ def launch_window(args):
 
     def redraw(*_):
         nonlocal map_view
+        undo_button.configure(state="normal" if edit_history and not busy and not closing else "disabled")
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
         completed, active = None, None
         if playback_view is not None:
@@ -1084,6 +1116,7 @@ def launch_window(args):
         if label == old[0] and not coordinates_changed:
             state.set("Waypoint unchanged.")
             return
+        remember_edit()
         invalidate_progress(clear_metadata=coordinates_changed)
         table.item(selected[0], values=(label, f"{px:.6f}", f"{pz:.6f}"))
         added_selection = None
@@ -1118,6 +1151,7 @@ def launch_window(args):
             route_points(document["waypoints"])
             progress_route(document)
             show_document(document)
+            edit_history.clear()
             try:
                 restore_progress()
             except (OSError, ValueError, KeyError, TypeError):
@@ -1130,6 +1164,7 @@ def launch_window(args):
 
     def remove_points():
         if table.selection():
+            remember_edit()
             invalidate_progress()
         table.delete(*table.selection())
         redraw()
@@ -1142,6 +1177,7 @@ def launch_window(args):
         item = selected[0]
         index = max(0, min(len(table.get_children()) - 1, table.index(item) + direction))
         if index != table.index(item):
+            remember_edit()
             invalidate_progress()
         table.move(item, "", index)
         table.see(item)
@@ -1149,6 +1185,7 @@ def launch_window(args):
 
     def clear_points():
         if table.get_children():
+            remember_edit()
             invalidate_progress()
         table.delete(*table.get_children())
         name.set("Point 1")
@@ -1187,6 +1224,9 @@ def launch_window(args):
         button = ttk.Button(buttons if index < 5 else buttons_second, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
         editable.append(button)
+    undo_button = ttk.Button(buttons_second, text="Undo", command=undo_edit, state="disabled")
+    undo_button.pack(side="left", padx=(0, 5))
+    editable.append(undo_button)
     controls = ttk.Frame(frame)
     controls.pack(fill="x", pady=8)
     for label, callback in (("Go Selected", lambda: start("go", selected_points())),
@@ -1305,6 +1345,7 @@ def launch_window(args):
                     write_json_atomic(output, event["document"])
                     invalidate_progress()
                     show_document(event["document"])
+                    edit_history.clear()
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     state.set("Cannot finish recording: " + str(exc))
                     continue
@@ -1408,6 +1449,7 @@ def launch_window(args):
     canvas.bind("<Button-1>", map_click)
     table.bind("<<TreeviewSelect>>", select_point)
     table.bind("<ButtonRelease-1>", select_clicked)
+    table.bind("<Control-z>", undo_edit)
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
         mark_saved(args.route)
