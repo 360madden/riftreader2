@@ -237,6 +237,9 @@ def main(argv=None):
         "status": result["status"], "summary": str(path),
         "snapshots": result["scanSnapshots"],
         "sequenceWindows": result["comparison"]["sequenceWindows"],
+        "playerIdCandidate": result["comparison"]["luaPlayerIdCandidate"],
+        "positionCandidates": result["comparison"]["positionCandidates"],
+        "sourceQualification": "RR2A1-unbound-candidate-only",
         "coordinateAgreementScreen":
             result["comparison"]["coordinateAgreementScreen"]["result"],
     }))

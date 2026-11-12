@@ -110,6 +110,14 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
                                [second["firstSequence"], second["lastSequence"]]],
         "clockWindows": [[first["firstClockCandidate"], first["lastClockCandidate"]],
                          [fresh[0]["clockCandidate"], fresh[-1]["clockCandidate"]]],
+        # Preserve usable absolute source values alongside the deltas, without
+        # promoting unbound RR2A1 to authenticated or current live telemetry.
+        "positionCandidates": {
+            "firstLua": first["luaPositionCandidates"][0],
+            "lastLua": second["luaPositionCandidates"][-1],
+            "nativeBefore": native_first,
+            "nativeAfter": native_second,
+        },
         "betweenPassLuaXYZDifferenceCandidate": lua_delta,
         "betweenPassNativeXYZDifferenceCandidate": native_delta,
         "maxAbsLuaNativeCoordinateDifferenceCandidate": across_max,

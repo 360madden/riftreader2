@@ -53,6 +53,12 @@ class TwoPassTests(unittest.TestCase):
         self.assertEqual(output["sequenceWindows"], [[1, 2], [3, 4]])
         self.assertEqual(output["luaEpochCandidate"], 1)
         self.assertAlmostEqual(output["betweenPassLuaXYZDifferenceCandidate"]["x"], -.002)
+        self.assertEqual(output["positionCandidates"], {
+            "firstLua": {"x": 10., "y": 20., "z": 30.},
+            "lastLua": {"x": 10.002, "y": 20., "z": 30.},
+            "nativeBefore": {"x": 10., "y": 20., "z": 30.},
+            "nativeAfter": {"x": 10., "y": 20., "z": 30.},
+        })
         self.assertEqual(output["coordinateAgreementScreen"]["result"], "consistent")
         self.assertTrue(output["coordinateAgreementScreen"]["withinTolerance"])
         self.assertEqual(output["status"], "candidate-only")
@@ -82,6 +88,8 @@ class TwoPassTests(unittest.TestCase):
         self.assertEqual(out["sequenceWindows"], [[1, 2], [3, 4]])
         self.assertEqual(out["rawSequenceWindows"], [[1, 2], [2, 4]])
         self.assertAlmostEqual(out["betweenPassLuaXYZDifferenceCandidate"]["x"], 0.001)
+        self.assertEqual(out["positionCandidates"]["lastLua"]["x"], 10.004)
+        self.assertEqual(out["positionCandidates"]["nativeAfter"]["x"], 10.)
 
     def test_overlap_does_not_count_as_newer_or_ignore_stale_clock(self):
         first, second = self.sample()

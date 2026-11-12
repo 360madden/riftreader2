@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import tempfile
 import unittest
@@ -35,6 +37,25 @@ def success():
 
 
 class PhysicalRR2A1PairTests(unittest.TestCase):
+    def test_cli_exposes_absolute_positions_as_unbound_candidates(self):
+        positions = {
+            "firstLua": {"x": 10., "y": 20., "z": 30.},
+            "lastLua": {"x": 11., "y": 20., "z": 31.},
+            "nativeBefore": {"x": 10.001, "y": 20., "z": 30.},
+            "nativeAfter": {"x": 11.002, "y": 20., "z": 31.},
+        }
+        result = dict(scanSnapshots=[3, 4], status="candidate-only",
+                      comparison=dict(success(), luaPlayerIdCandidate="u035400012FA2D207",
+                                      positionCandidates=positions))
+        captured = StringIO()
+        with patch.object(capture, "collect", return_value=(Path("saved.json"), result)), \
+             redirect_stdout(captured):
+            self.assertEqual(capture.main(["--physical-pid", "1234"]), 0)
+        response = json.loads(captured.getvalue())
+        self.assertEqual(response["positionCandidates"], positions)
+        self.assertEqual(response["playerIdCandidate"], "u035400012FA2D207")
+        self.assertEqual(response["sourceQualification"], "RR2A1-unbound-candidate-only")
+
     def test_rejects_wrong_host_or_bad_bounds_without_file_writes(self):
         with tempfile.TemporaryDirectory() as temp:
             dest = Path(temp) / "capture"
