@@ -7,7 +7,13 @@ pythonw scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid
 ```
 
 The window reads the current position and facing. **Save Current** adds a point;
-**Add X / Z** adds entered coordinates. Select a point and choose **Go Selected**,
+clicking the local route preview adds a waypoint, and **Add X / Z** adds entered
+coordinates. The preview faces forward, shows 5/10-unit rings, selected points
+and the route distance. Each click checks a fresh pose; if the player moved or
+turned, it refreshes the preview and requires another click. It shows waypoint
+geometry only, without terrain or obstacle information.
+
+Select a point and choose **Go Selected**,
 or choose **Run Route** to visit the list in order. **Load** and **Save Route**
 use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
@@ -84,3 +90,9 @@ and the exact owned-window release message queued. Two native samples while
 blurred showed zero displacement. Returning focus to RIFT without pressing a
 key, then sampling again, also showed zero displacement. Receipt:
 `artifacts/blur-release-008ba70a0329416fbceab819cd1607e7.json`.
+
+The local preview was exercised by saving the current point, clicking a point
+2.09 units to the right, and using **Go Selected**. Atank stopped 0.216 units
+from that clicked point and the preview recentered from the new observation.
+Returning to the saved start finished 0.023 units from it. The GUI's Save Route
+dialog wrote both points to `artifacts/waypoint-map-demo-4c6a750f.json` for reuse.

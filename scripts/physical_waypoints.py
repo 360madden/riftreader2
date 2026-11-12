@@ -28,6 +28,7 @@ from scripts import physical_rift
 from scripts.movement_controller import Position, WaypointController, planar_distance
 from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalClientReservation
 from scripts.physical_move_basis_waypoint import read_basis, candidate_calibrations
+from scripts.waypoint_map import LocalMap, draw_route, route_length
 
 DEFAULT_BASIS = ROOT / "config/physical-movement-basis.amd-desktop.json"
 
@@ -253,7 +254,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
         goal = Position(finite(goal_x), start.position.y, finite(goal_z))
         controller = WaypointController(adapter.calibrations(start), start.position, goal)
         started = time.monotonic()
-        emit({"status": "moving", "position": asdict(current.position),
+        emit({"status": "moving", "position": asdict(current.position), "bearing": current.bearing,
               "distance": planar_distance(current.position, goal)})
         while True:
             check_stop()
@@ -274,7 +275,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
                     raise WaypointError("Player left the arrival radius while settling")
                 result = {"status": "arrived", "start": asdict(start.position),
                           "goal": asdict(goal), "position": asdict(settled.position),
-                          "distance": planar_distance(settled.position, goal),
+                          "distance": planar_distance(settled.position, goal), "bearing": settled.bearing,
                           "pulses": len(actions), "totalHoldMs": controller.total_hold_ms,
                           "elapsedSeconds": round(time.monotonic() - started, 3),
                           "allPulsesReleased": True, "actions": actions,
@@ -297,7 +298,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
             current = adapter.read()
             feedback = controller.record_feedback(current.position, time.monotonic() - started)
             emit({"status": feedback.status, "position": asdict(current.position),
-                  "distance": feedback.distance_after, "pulse": len(actions),
+                  "distance": feedback.distance_after, "pulse": len(actions), "bearing": current.bearing,
                   "key": action.key, "holdMs": action.hold_ms})
 
 
@@ -321,12 +322,7 @@ def run_route(adapter, points, stop, emit=lambda event: None):
         raise Stopped("Stopped; no further input")
     with adapter.reserve() as lease:
         current = adapter.read()
-        planned = 0.0
-        prior = current.position
-        for _, px, pz in points:
-            point = Position(px, prior.y, pz)
-            planned += planar_distance(prior, point)
-            prior = point
+        planned = route_length(current.position.x, current.position.z, points)
         if planned > 20:
             raise WaypointError("Route exceeds 20 world units; choose a shorter route")
         budget = TripBudget(time.monotonic())
@@ -376,13 +372,13 @@ def launch_window(args):
 
     window = tk.Tk()
     window.title(f"RR2 Waypoints — {args.expected_host} / PID {args.physical_pid}")
-    window.geometry("760x570")
+    window.geometry("1060x740")
     frame = ttk.Frame(window, padding=14)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
     ttk.Label(frame, text="Open ground • route ≤ 20 units • pulses ≤ 150 ms • foreground loss stops movement").pack(anchor="w", pady=(0, 10))
-    state = tk.StringVar(value="Ready — refresh position, save a point, or enter X / Z.")
-    ttk.Label(frame, textvariable=state, wraplength=710).pack(anchor="w", pady=5)
+    state = tk.StringVar(value="Ready — save a point, click the map, or enter X / Z.")
+    ttk.Label(frame, textvariable=state, wraplength=1000).pack(anchor="w", pady=5)
     editable = []
     coordinates = ttk.Frame(frame)
     coordinates.pack(fill="x", pady=5)
@@ -392,36 +388,87 @@ def launch_window(args):
         entry = ttk.Entry(coordinates, textvariable=variable, width=width)
         entry.pack(side="left", padx=(0, 10))
         editable.append(entry)
-    table = ttk.Treeview(frame, columns=("name", "x", "z"), show="headings", height=9)
-    for col, label, width in (("name", "Waypoint", 260), ("x", "X", 180), ("z", "Z", 180)):
+    summary = tk.StringVar(value="Refresh position to preview the route.")
+    ttk.Label(frame, textvariable=summary).pack(anchor="w", pady=(5, 0))
+    middle = ttk.Frame(frame)
+    middle.pack(fill="both", expand=True, pady=8)
+    table = ttk.Treeview(middle, columns=("name", "x", "z"), show="headings", height=9)
+    for col, label, width in (("name", "Waypoint", 210), ("x", "X", 140), ("z", "Z", 140)):
         table.heading(col, text=label)
         table.column(col, width=width)
-    table.pack(fill="both", expand=True, pady=8)
+    table.pack(side="left", fill="both", expand=True)
+    map_frame = ttk.Frame(middle, padding=(12, 0, 0, 0))
+    map_frame.pack(side="right", fill="both")
+    canvas = tk.Canvas(map_frame, width=330, height=310, bg="#101c25", highlightthickness=0)
+    canvas.pack(fill="both", expand=True)
+    ttk.Label(map_frame, text="Click to add • facing up • rings 5 / 10 units").pack(anchor="w", pady=(4, 0))
     events, stop = queue.Queue(), threading.Event()
     busy = False
     closing = False
     adapter = None
     foreground_stop = None
+    last_pose = None
+    map_view = None
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
     def add_point(label, px, pz):
-        table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
+        if len(table.get_children()) >= 20:
+            state.set("Waypoint list is full; remove a point before adding another.")
+            return
+        item = table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
+        table.selection_set(item)
+        redraw()
+        return item
 
     def selected_points(all_points=False):
         return [table.item(item, "values") for item in (table.get_children() if all_points else table.selection())]
+
+    def redraw(*_):
+        nonlocal map_view
+        points = [(item, *table.item(item, "values")) for item in table.get_children()]
+        if last_pose is None:
+            map_view = None
+            draw_route(canvas, None, [], set())
+            return
+        map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()))
+        draw_route(canvas, map_view, points, set(table.selection()))
+        distance = route_length(*last_pose[:2], selected_points(True))
+        selected = selected_points()
+        chosen = route_length(*last_pose[:2], selected) if selected else None
+        summary.set(f"Route: {distance:.2f} / 20 units"
+                    + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
+                    + ("   •   Shorten the route to run it" if distance > 20 else ""))
+        if not busy:
+            go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
+            route_button.configure(state="normal" if points and distance <= 20 else "disabled")
+
+    def map_click(event):
+        if busy or map_view is None:
+            return
+        px, pz = map_view.canvas_to_world(event.x, event.y)
+        start("map", (map_view, px, pz, name.get() or "Waypoint"))
 
     def worker(operation, points=None):
         nonlocal adapter
         try:
             if adapter is None:
                 adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
-            if operation in ("refresh", "save"):
+            if operation in ("refresh", "save", "map"):
                 pose = adapter.read()
-                events.put({"status": operation, "position": asdict(pose.position), "bearing": pose.bearing})
+                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
+                if operation == "map":
+                    view, px, pz, label = points
+                    moved = math.hypot(view.x - pose.position.x, view.z - pose.position.z) > .05
+                    turned = abs((view.bearing - pose.bearing + 180) % 360 - 180) > .5
+                    if moved or turned:
+                        result.update(status="notice", reason="Player moved; map refreshed. Click again to choose a waypoint.")
+                    else:
+                        result["waypoint"] = (label, px, pz)
+                events.put(result)
             else:
                 run_route(adapter, points, stop, events.put)
         except Exception as exc:
-            stopped_position = None
+            stopped_position = stopped_bearing = None
             if isinstance(exc, Stopped) and adapter is not None:
                 try:
                     first = adapter.read()
@@ -432,10 +479,11 @@ def launch_window(args):
                         exc = WaypointError(f"Movement still detected after STOP ({drift:.3f} units); recovery required")
                     else:
                         stopped_position = asdict(second.position)
+                        stopped_bearing = second.bearing
                 except Exception as observation_error:
                     exc = WaypointError("STOP requested; stationary check unavailable: " + str(observation_error))
             events.put({"status": "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
-                        **({"position": stopped_position} if stopped_position else {}),
+                        **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
                         "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None})
         finally:
             events.put({"status": "idle"})
@@ -486,14 +534,19 @@ def launch_window(args):
             table.delete(*table.get_children())
             for row in parsed:
                 add_point(*row)
+            name.set(f"Point {len(table.get_children()) + 1}")
         except (ValueError, KeyError, TypeError, OSError) as exc:
             messagebox.showerror("Cannot load route", str(exc))
+
+    def remove_points():
+        table.delete(*table.selection())
+        redraw()
 
     buttons = ttk.Frame(frame)
     buttons.pack(fill="x", pady=4)
     for label, callback in (("Refresh", lambda: start("refresh")),
                             ("Save Current", lambda: start("save")), ("Add X / Z", add_entered),
-                            ("Remove", lambda: table.delete(*table.selection())),
+                            ("Remove", remove_points),
                             ("Load", load_route), ("Save Route", save_route)):
         button = ttk.Button(buttons, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
@@ -505,6 +558,10 @@ def launch_window(args):
         button = ttk.Button(controls, text=label, command=callback)
         button.pack(side="left", padx=(0, 6))
         editable.append(button)
+        if label == "Go Selected":
+            go_button = button
+        else:
+            route_button = button
     tk.Button(controls, text="STOP / F8", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
               command=request_stop, width=16).pack(side="right")
     log.pack(fill="x", pady=4)
@@ -519,7 +576,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, foreground_stop
+        nonlocal busy, foreground_stop, last_pose
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -535,6 +592,7 @@ def launch_window(args):
                 busy = False
                 for widget in editable:
                     widget.configure(state="normal")
+                redraw()
                 if closing:
                     window.destroy()
                     return
@@ -543,8 +601,13 @@ def launch_window(args):
                 point = event["position"]
                 x.set(f"{point['x']:.6f}")
                 z.set(f"{point['z']:.6f}")
+                last_pose = (point["x"], point["z"], event.get("bearing", last_pose[2] if last_pose else 0))
+                redraw()
             if status == "save":
                 add_point(name.get() or "Waypoint", x.get(), z.get())
+                name.set(f"Point {len(table.get_children()) + 1}")
+            if "waypoint" in event:
+                add_point(*event["waypoint"])
                 name.set(f"Point {len(table.get_children()) + 1}")
             text = (f"{status}: {event['reason']}" if "reason" in event else
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
@@ -559,9 +622,13 @@ def launch_window(args):
 
     window.protocol("WM_DELETE_WINDOW", close)
     window.bind("<Escape>", lambda _: request_stop())
+    canvas.bind("<Configure>", redraw)
+    canvas.bind("<Button-1>", map_click)
+    table.bind("<<TreeviewSelect>>", redraw)
     if args.route:
         for row in route_points(json.loads(args.route.read_text(encoding="utf-8"))["waypoints"]):
             add_point(*row)
+        name.set(f"Point {len(table.get_children()) + 1}")
     poll()
     start("refresh")
     window.mainloop()
