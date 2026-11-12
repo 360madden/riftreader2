@@ -1768,17 +1768,53 @@ def launch_window(args):
     table.tag_configure("completed", foreground="#52806d")
     table.tag_configure("next", foreground="#ad6500")
 
-    def close():
-        nonlocal closing
-        if not stop_markers():
-            return
-        if busy or observing:
-            closing = True
+    close_prompt = False
+
+    def restore_editing():
+        for widget in editable:
+            widget.configure(state="disabled" if busy or closing else "normal")
+        if not busy and not closing:
+            recent_dropdown.configure(state="readonly")
+            recent_load_button.configure(state="normal" if recent_paths else "disabled")
+            open_view_button.configure(state="normal" if saved_view else "disabled")
+            open_3d_button.configure(state="normal" if saved_rerun else "disabled")
+        redraw()
+        if busy or closing:
             for widget in editable:
                 widget.configure(state="disabled")
-            request_stop()
-        else:
+
+    def finish_close():
+        nonlocal closing, close_prompt
+        if (not closing or close_prompt or busy or observing or foreground_stop is not None
+                or markers.running()):
+            return False
+        close_prompt = True
+        try:
+            if route_dirty:
+                decision = messagebox.askyesnocancel(
+                    "Unsaved route changes", "Save changes to the current route before closing?", parent=window)
+                if decision is None or (decision and not save_route()):
+                    closing = False
+                    restore_editing()
+                    return False
             window.destroy()
+            return True
+        finally:
+            close_prompt = False
+
+    def close():
+        nonlocal closing
+        if closing:
+            return
+        closing = True
+        request_stop()
+        for widget in editable:
+            widget.configure(state="disabled")
+        if stop_markers():
+            finish_close()
+        else:
+            closing = False
+            restore_editing()
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
@@ -1803,9 +1839,6 @@ def launch_window(args):
             if status == "live-idle":
                 observing = False
                 select_pending_progress()
-                if closing and not busy:
-                    window.destroy()
-                    return
                 continue
             if status == "live-unavailable":
                 pose_text.set("Live position unavailable: " + event["reason"])
@@ -1835,19 +1868,12 @@ def launch_window(args):
                 recording = False
                 recording_progress = None
                 record_end_button.configure(state="disabled")
-                for widget in editable:
-                    widget.configure(state="normal")
-                recent_dropdown.configure(state="readonly")
-                recent_load_button.configure(state="normal" if recent_paths else "disabled")
-                open_view_button.configure(state="normal" if saved_view else "disabled")
-                open_3d_button.configure(state="normal" if saved_rerun else "disabled")
-                redraw()
+                restore_editing()
                 if pending_recorded is not None and not closing:
                     events.put(dict(pending_recorded, status="recorded-ready"))
                     pending_recorded = None
-                if closing and not observing:
-                    window.destroy()
-                    return
+                if closing:
+                    pending_recorded = None
                 continue
             if status == "recorded-pending":
                 pending_recorded = event
@@ -1973,6 +1999,8 @@ def launch_window(args):
             log.insert("end", text + "\n")
             log.see("end")
             log.configure(state="disabled")
+        if finish_close():
+            return
         if marker_identity is not None:
             target = getattr(adapter, "target", {})
             current_marker_identity = (getattr(adapter, "pid", None), str(target.get("processStartUtcTicks")),

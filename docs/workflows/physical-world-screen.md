@@ -79,6 +79,11 @@ cache, and missing/broken history does not prevent route recovery. Live proof:
 Loading another route with unsaved edits first offers Save / No / Cancel.
 Cancel or an unsuccessful save keeps the current route and Undo history; No
 explicitly discards only the in-memory edits and loads the validated destination.
+Normal close uses the same choice for dirty routes. It requests STOP immediately
+and waits for active work, foreground cleanup and the marker child before prompting;
+Cancel leaves the stopped app open without resuming playback. Failed saves and
+cancelled Save As also keep the edits. Actual Cancel and explicit No passed on
+AMD-DESKTOP/PID40452; see `artifacts/unsaved-close-live-40452/validation.json`.
 
 The 3D pane also shows the retained native optical eye and screen-edge view rays.
 These invert the same matrix X/Y/W rows used by projection, using NumPy from the

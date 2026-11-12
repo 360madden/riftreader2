@@ -1,5 +1,19 @@
 # Current status
 
+**18:07 EST NOVEMBER 12 — NORMAL CLOSE PROTECTS UNSAVED BEACONS:**
+Close now latches STOP, waits for worker/foreground cleanup and the owned marker
+child, then offers Save / No / Cancel for dirty routes. Cancel or failed/cancelled
+Save keeps the stopped app and edits; repeated close cannot open duplicate prompts.
+Ten focused close tests passed, plus the 12 existing recording/marker tests.
+On AMD-DESKTOP/PID40452, actual Cancel kept a reordered named landmark and Undo;
+a second close followed by No exited normally without overwriting its source/cache.
+Load recent restored the byte-identical original 7/7 checkpoint. No game input was
+sent. This trial exposed a separate default-startup gap: the cached route loaded
+but its intact archived checkpoint was not automatically promoted. Fixing that
+path is next; the archive itself was preserved and explicit reload recovered it.
+GUI PID70024 is idle on the main route, markers off. Evidence:
+`artifacts/unsaved-close-live-40452/validation.json`.
+
 **17:57 EST NOVEMBER 12 — NEARBY NAME/SCENE RETRIEVAL SURVIVED FULL RIFT RESTART:**
 On AMD-DESKTOP, normal Exit Game ended PID51524; Glyph launched PID40452/start
 `639301206978915233`, HWND9246620. The same app PID13008 reconnected automatically
