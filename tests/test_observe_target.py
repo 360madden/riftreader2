@@ -19,6 +19,21 @@ class TargetRoutingTests(unittest.TestCase):
         return {"status": "verified-awaiting-visual-review", "targetId": target,
                 "workflow": workflow, "image": "image.bmp", "imageSha256": "A" * 64}
 
+    def test_wgc_route_calls_local_gpu_adapter_without_legacy_capture(self):
+        with patch("scripts.observe_gpu.capture_gpu", return_value=self.result(
+                "physical-amd-desktop", "physical")) as gpu, patch.object(
+                tool, "_capture_physical") as legacy:
+            result = tool.observe("physical-amd-desktop", "AMD-DESKTOP",
+                                  physical_pid=123, physical_capture_backend="wgc")
+        self.assertEqual(result["workflow"], "physical")
+        self.assertEqual(gpu.call_args.kwargs["physical_pid"], 123)
+        legacy.assert_not_called()
+
+    def test_wgc_route_rejects_vm_target(self):
+        with self.assertRaisesRegex(ValueError, "invalid-physical-capture-backend"):
+            tool.observe("lab2", "AMD-DESKTOP", historical_vm=True,
+                         physical_capture_backend="wgc")
+
     def test_retired_vm_targets_are_denied_by_default_without_adapter_calls(self):
         for target in ("lab1", "lab2"):
             with self.subTest(target=target), \

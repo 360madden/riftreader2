@@ -55,7 +55,7 @@ def _paired_preview(result, width, crop):
 def observe(target_id, expected_host, output=None, *, native_vitals=False,
             allow_foreground_change=False, with_preview=False, preview_width=840,
             preview_detail_crop=None, host_preview=False, physical_pid=None,
-            historical_vm=False):
+            historical_vm=False, physical_capture_backend=None):
     started = time.perf_counter()
     if target_id not in TARGETS:
         raise ValueError("unknown-target")
@@ -65,6 +65,9 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     actual_host = socket.gethostname()
     if actual_host.casefold() != owner_host.casefold():
         raise ValueError("host-mismatch")
+    if physical_capture_backend is not None:
+        if workflow != "physical" or physical_capture_backend != "wgc":
+            raise ValueError("invalid-physical-capture-backend")
     if physical_pid is not None:
         if workflow != "physical":
             raise ValueError("physical-pid-incompatible-target")
@@ -106,7 +109,12 @@ def observe(target_id, expected_host, output=None, *, native_vitals=False,
     if workflow == "vmware":
         result = _capture_vmware(target_id, output, native_vitals)
     else:
-        result = _capture_physical(owner_host, output, allow_foreground_change, physical_pid)
+        if physical_capture_backend == "wgc":
+            from scripts.observe_gpu import capture_gpu
+            directory = output or ROOT / "artifacts" / ("observe-wgc-" + uuid.uuid4().hex)
+            result = capture_gpu(owner_host, directory, physical_pid=physical_pid)
+        else:
+            result = _capture_physical(owner_host, output, allow_foreground_change, physical_pid)
     if (not isinstance(result, dict) or result.get("targetId") != target_id
             or result.get("workflow") != workflow):
         raise ValueError("adapter-target-mismatch")
@@ -140,6 +148,8 @@ def main(argv=None):
                         help="VMware labs only: fast read-only FlaUI host screenshot, never movement authority")
     parser.add_argument("--allow-foreground-change", action="store_true",
                         help="physical capture only: explicitly allow the desktop backend to focus RIFT")
+    parser.add_argument("--physical-capture-backend", choices=("wgc",),
+                        help="capture directly with the local GPU probe without changing focus")
     parser.add_argument("--physical-pid", type=int,
                         help="physical capture only: exact rift_x64 process ID for multibox sessions")
     parser.add_argument("--preview", action="store_true", help="include a bounded non-authoritative JPEG in the same result")
@@ -156,7 +166,8 @@ def main(argv=None):
                           preview_detail_crop=args.preview_detail_crop,
                           host_preview=args.host_preview,
                           physical_pid=args.physical_pid,
-                          historical_vm=args.allow_historical_vm)
+                          historical_vm=args.allow_historical_vm,
+                          physical_capture_backend=args.physical_capture_backend)
     except Exception as error:
         result = {"status": "blocked", "targetId": args.target,
                   "errorType": type(error).__name__,
