@@ -105,6 +105,79 @@ class PresenterTests(unittest.TestCase):
         self.assertTrue(self.presenter.present(f))
         self.assertEqual((255, 213, 79), self.presenter.window.images[-1].getpixel((960, 540)))
 
+    def test_next_edge_hint_four_edges_and_offset_viewport(self):
+        viewport = [.1, .2, .9, .8]
+        for x, y, expected_axis, expected in ((1.2, .5, 0, 876), (-.2, .5, 0, 124),
+                                               (.5, -.2, 1, 144), (.5, 1.2, 1, 456)):
+            with self.subTest(x=x, y=y):
+                row = dict(number=7, routeState="next", horizontalDistanceCandidate=12.34,
+                           ground=dict(status="available-candidate", clipW=2, normalizedX=x,
+                                       normalizedY=y, insideViewportCandidate=False))
+                hint = overlay.next_edge_hint([row], viewport, 1000, 600)
+                self.assertEqual("arrow", hint["kind"])
+                self.assertAlmostEqual(expected, hint["anchor"][expected_axis])
+                self.assertEqual("NEXT 7 · 12.3 units direct", hint["text"])
+                image = overlay.Image.new("RGB", (1000, 600))
+                overlay._draw_next_edge_hint(overlay.ImageDraw.Draw(image), hint,
+                                             overlay.ImageFont.load_default(size=16))
+                box = image.getbbox()
+                self.assertTrue(100 <= box[0] < box[2] <= 900 and 120 <= box[1] < box[3] <= 480, box)
+
+    def test_next_edge_corner_behind_and_near_zero_have_honest_cues(self):
+        row = dict(number=3, routeState="next", horizontalDistanceCandidate=5,
+                   ground=dict(status="available-candidate", clipW=1, normalizedX=2, normalizedY=-1,
+                               insideViewportCandidate=False))
+        hint = overlay.next_edge_hint([row], [0, 0, 1, 1], 500, 500)
+        self.assertEqual("arrow", hint["kind"])
+        self.assertAlmostEqual(476, hint["anchor"][0])
+        self.assertAlmostEqual(24, hint["anchor"][1])
+        for clip, phrase in ((-1., "behind camera"), (0., "outside camera view"), (1e-5, "outside camera view")):
+            row["ground"] = {"status": "nonpositive-or-small-clip-w", "clipW": clip}
+            hint = overlay.next_edge_hint([row], [0, 0, 1, 1], 500, 500)
+            self.assertEqual("text", hint["kind"])
+            self.assertIn(phrase, hint["text"])
+            self.assertNotIn("anchor", hint)
+
+    def test_next_edge_hint_withholds_visible_duplicate_or_invalid_metadata(self):
+        row = dict(number=5, routeState="next", horizontalDistanceCandidate=1,
+                   ground=dict(status="available-candidate", clipW=2, normalizedX=2, normalizedY=.5,
+                               insideViewportCandidate=False))
+        viewport = [0, 0, 1, 1]
+        self.assertIsNone(overlay.next_edge_hint([row, deepcopy(row)], viewport, 500, 500))
+        for field, value in (("horizontalDistanceCandidate", float("nan")), ("number", True),
+                             ("routeState", "completed")):
+            bad = deepcopy(row); bad[field] = value
+            self.assertIsNone(overlay.next_edge_hint([bad], viewport, 500, 500))
+        self.assertIsNone(overlay.next_edge_hint([row], None, 500, 500))
+        self.assertIsNone(overlay.next_edge_hint([row], [.1, .2, .1, .8], 500, 500))
+        visible = deepcopy(row); visible["ground"].update(normalizedX=.5, insideViewportCandidate=True)
+        self.assertIsNone(overlay.next_edge_hint([visible], viewport, 500, 500))
+        overflow = deepcopy(row); overflow["ground"]["normalizedX"] = 1e308
+        self.assertIsNone(overlay.next_edge_hint([overflow], viewport, 500, 500))
+        self.assertIsNone(overlay.next_edge_hint([], viewport, 500, 500))
+
+    def test_next_hint_clears_when_saved_progress_disappears(self):
+        f = frame()
+        f["viewportRectNormalized"] = [0, 0, 1, 1]
+        f["points"][0].update(routeState="next", horizontalDistanceCandidate=4)
+        f["points"][0]["ground"] = projection(1.2, .5)
+        f["points"][0]["ground"]["insideViewportCandidate"] = False
+        self.assertTrue(self.presenter.present(f))
+        self.assertEqual((124, 255, 255), self.presenter.window.images[-1].getpixel((1896, 540)))
+        del f["points"][0]["routeState"]
+        self.assertTrue(self.presenter.present(f))
+        self.assertEqual((1, 2, 3), self.presenter.window.images[-1].getpixel((1896, 540)))
+
+    def test_edge_hint_does_not_erase_player_reference_pixel(self):
+        f = frame()
+        f["viewportRectNormalized"] = [0, 0, 1, 1]
+        f["points"][0].update(routeState="next", horizontalDistanceCandidate=4)
+        f["points"][0]["ground"] = projection(1.2, .5)
+        f["points"][0]["ground"]["insideViewportCandidate"] = False
+        f["playerGround"] = projection(1896 / 1920, .5)
+        self.assertTrue(self.presenter.present(f))
+        self.assertEqual((81, 229, 255), self.presenter.window.images[-1].getpixel((1896, 540)))
+
     def test_expired_or_changed_frame_during_paint_is_never_shown(self):
         original = self.presenter.window.paint
         def slow_paint(image):

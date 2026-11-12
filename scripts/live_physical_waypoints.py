@@ -14,6 +14,7 @@ from pathlib import Path
 import queue
 import re
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -131,14 +132,25 @@ class ProjectionProvider:
                 "target-foreground-or-geometry-changed")
         require(0 <= self.clock() - acquired <= self.max_age, "native-acquisition-expired")
         camera = row["opticalCameraCandidate"]
+        # Match the projector's preserved float32 viewport, including offset views.
+        viewport = [struct.unpack("<f", struct.pack("<I", bit))[0]
+                    for bit in camera["projectionRawBits"][16:]]
+        require(len(viewport) == 4 and all(math.isfinite(value) for value in viewport)
+                and 0 <= viewport[0] < viewport[1] <= 1
+                and 0 <= viewport[3] < viewport[2] <= 1, "invalid-native-camera-viewport")
+        left, right, top, bottom = viewport
+        player_xyz = values["positionXYZCandidate"]
         points = []
         for point in self.route["points"]:
             xyz = point["xyz"]
             points.append({"number": point["number"], "label": point["label"],
+                "horizontalDistanceCandidate": math.hypot(xyz["x"] - player_xyz["x"],
+                                                          xyz["z"] - player_xyz["z"]),
                 "ground": physical._project_world_point(camera, xyz),
                 "beaconTop": physical._project_world_point(camera, dict(x=xyz["x"], y=xyz["y"] + 1.5, z=xyz["z"]))})
         frame = {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
                  "clientRect": list(after["clientRect"]), "points": points,
+                 "viewportRectNormalized": [left, 1 - top, right, 1 - bottom],
                  "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"])}
         target = values.get("selectedTargetProjectionCandidate")
         if self.target_beacon and isinstance(target, dict) and target.get("status") == "candidate" \

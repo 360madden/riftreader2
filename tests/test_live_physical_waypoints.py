@@ -2,9 +2,11 @@
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
+import math
 from io import BytesIO
 from pathlib import Path
 import queue
+import struct
 import tempfile
 import threading
 import types
@@ -48,12 +50,35 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(packet["acquiredMonotonic"], 10.)
         self.assertEqual(packet["target"], IDENTITY)
         self.assertEqual(packet["clientRect"], [100, 125, 1920, 1080])
+        self.assertEqual(packet["viewportRectNormalized"], [0., 0., 1., 1.])
         self.assertAlmostEqual(packet["points"][0]["ground"]["normalizedX"], .5)
         self.assertAlmostEqual(packet["points"][0]["ground"]["normalizedY"], .5)
         self.assertLess(packet["points"][0]["beaconTop"]["normalizedY"], .5)
         self.assertEqual(provider.route["recordingIdentity"]["runtimeIdentity"]["processId"], 999)
         self.read.assert_called_once_with(self.selection, "facing", samples=1, include_target=True)
         self.assertNotIn("selectedTarget", packet)
+
+    def test_packet_offset_viewport_and_distance_use_exact_native_player_xz(self):
+        row = self.native["observation"]
+        viewport = [.125, .875, .75, .125]  # native left/right/top/bottom
+        for name in ("opticalCameraCandidate", "opticalCameraAfterTargetCandidate"):
+            camera = row[name]
+            camera["viewportLeftRightTopBottom"] = list(viewport)
+            camera["projectionRawBits"][16:] = [struct.unpack("<I", struct.pack("<f", value))[0]
+                                                for value in viewport]
+        # Actual entity-owned position differs from the legacy system snapshot.
+        # The 71-unit height difference is excluded from horizontal distance.
+        row["entityPositionCandidate"] = dict(x=7424., y=800., z=2942.)
+        row["entityPositionRawBits"] = [struct.unpack("<I", struct.pack("<f", value))[0]
+                                        for value in row["entityPositionCandidate"].values()]
+        row["targetPositionPairCandidate"]["self"]["position"] = row["entityPositionCandidate"]
+        frame = self.provider().acquire()
+        self.assertEqual(frame["viewportRectNormalized"], [.125, .25, .875, .875])
+        point = frame["points"][0]
+        self.assertEqual(point["horizontalDistanceCandidate"], 5.)
+        self.assertTrue(math.isfinite(point["horizontalDistanceCandidate"]))
+        self.assertAlmostEqual(point["ground"]["normalizedX"], .5)
+        self.assertAlmostEqual(point["ground"]["normalizedY"], .5625)
 
     def test_target_beacon_is_opt_in_fresh_and_clears_with_target(self):
         provider = self.provider(clock=lambda: 10.)

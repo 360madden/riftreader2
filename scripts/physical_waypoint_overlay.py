@@ -399,6 +399,76 @@ def _label_layout(labels, width, height, font):
     return placed
 
 
+def next_edge_hint(points, viewport, width, height):
+    """Candidate off-screen NEXT cue in local client pixels; never infer a cursor."""
+    if not isinstance(points, list):
+        return None
+    next_rows = [row for row in points if isinstance(row, dict) and row.get("routeState") == "next"]
+    if len(next_rows) != 1 or not isinstance(viewport, list) or len(viewport) != 4:
+        return None
+    if (type(width) is not int or type(height) is not int or width <= 0 or height <= 0
+            or any(type(v) not in (int, float) or not math.isfinite(v) for v in viewport)):
+        return None
+    left, top, right, bottom = viewport
+    if not (0 <= left < right <= 1 and 0 <= top < bottom <= 1):
+        return None
+    bounds = (left * width, top * height, right * width, bottom * height)
+    if bounds[2] - bounds[0] <= 48 or bounds[3] - bounds[1] <= 48:
+        return None
+    row = next_rows[0]
+    number, distance, ground = row.get("number"), row.get("horizontalDistanceCandidate"), row.get("ground")
+    if (type(number) is not int or number <= 0 or type(distance) not in (int, float)
+            or not math.isfinite(distance) or distance < 0 or not isinstance(ground, dict)):
+        return None
+    clip = ground.get("clipW")
+    if type(clip) not in (int, float) or not math.isfinite(clip):
+        return None
+    if ground.get("status") not in ("available-candidate", "nonpositive-or-small-clip-w"):
+        return None
+    if clip <= 1e-5:
+        reason = "behind camera" if clip < 0 else "outside camera view"
+        return {"kind": "text", "text": f"NEXT {number} {reason} · {distance:.1f} units direct", "bounds": bounds}
+    if ground.get("status") != "available-candidate" or ground.get("insideViewportCandidate") is not False:
+        return None
+    x, y = ground.get("normalizedX"), ground.get("normalizedY")
+    if any(type(v) not in (int, float) or not math.isfinite(v) for v in (x, y)):
+        return None
+    if left <= x <= right and top <= y <= bottom:
+        return None
+    cx, cy = (bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2
+    dx, dy = x * width - cx, y * height - cy
+    length = math.hypot(dx, dy)
+    if not all(math.isfinite(value) for value in (dx, dy, length)) or not length:
+        return None
+    ux, uy = dx / length, dy / length
+    horizontal = ((bounds[2] - 24 - cx) / ux if ux > 0 else (bounds[0] + 24 - cx) / ux) if ux else math.inf
+    vertical = ((bounds[3] - 24 - cy) / uy if uy > 0 else (bounds[1] + 24 - cy) / uy) if uy else math.inf
+    scale = min(horizontal, vertical)
+    return {"kind": "arrow", "anchor": (cx + ux * scale, cy + uy * scale), "direction": (ux, uy),
+            "text": f"NEXT {number} · {distance:.1f} units direct", "bounds": bounds}
+
+
+def _draw_next_edge_hint(draw, hint, font):
+    left, top, right, bottom = hint["bounds"]
+    text = hint["text"]
+    box = draw.textbbox((0, 0), text, font=font, anchor="lt", stroke_width=1)
+    width, height = box[2] - box[0], box[3] - box[1]
+    if width + 4 > right - left or height + 4 > bottom - top:
+        return
+    if hint["kind"] == "arrow":
+        x, y = hint["anchor"]
+        ux, uy = hint["direction"]
+        px, py = -uy, ux
+        draw.line((x - ux*9 + px*7, y - uy*9 + py*7, x, y,
+                   x - ux*9 - px*7, y - uy*9 - py*7), fill="#7cffff", width=3)
+        tx, ty = x - ux*(width/2 + 18) - width/2, y - uy*(height/2 + 18) - height/2
+    else:
+        tx, ty = left + 4, top + 4
+    tx = max(left + 2, min(right - width - 2, tx))
+    ty = max(top + 2, min(bottom - height - 2, ty))
+    draw.text((tx, ty), text, fill="#7cffff", font=font, anchor="lt", stroke_width=1, stroke_fill="#151515")
+
+
 class PhysicalWaypointOverlay:
     def __init__(self, target, *, max_age=.8, window_factory=None):
         self.target = _target(target)
@@ -488,7 +558,10 @@ class PhysicalWaypointOverlay:
                 draw.line((*anchor, *endpoint), fill=color, width=1)
                 draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
                                     anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
-            # Rings/beacons are painted last so label lanes never move or erase
+            hint = next_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
+            if hint is not None:
+                _draw_next_edge_hint(draw, hint, font)
+            # Rings/beacons are painted last so labels and edge cues never erase
             # the exact world-to-screen reference pixels.
             for ground, top, text, color, width, kind in markers:
                 x, y = ground

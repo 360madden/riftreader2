@@ -1,5 +1,20 @@
 # Current status
 
+**15:02 EST NOVEMBER 12 — OFF-SCREEN NEXT CUE PASSED; GENUINE RESUME COMPLETE:**
+On **AMD-DESKTOP/PID17212**, a saved NEXT point outside the actual camera viewport
+now gets a cyan edge chevron and direct horizontal distance. Behind-camera points
+get text without a guessed direction; finished/missing/invalid progress produces
+no cue. Root confirmed reverse point 7 with zero pulses, then stopped genuinely
+at 1/7. A camera-only zoom/pitch trial displayed normal NEXT 6, downward edge cue,
+behind text and normal ring again: 1,113 presentations over 237.05 seconds.
+Position raw bits/body bearing were unchanged during that camera trial.
+Explicit Resume then completed the six remaining reverse legs: 0.08283-unit
+endpoint error, all 36 bounded receipts completed/released, max requested hold
+150 ms, total 4,691 ms. Independent final samples settled identically; no held
+inputs remained, basis unchanged. Genuine current progress is **7/7 reverse**.
+Sixty-one focused feed/presenter/progress tests passed. App PID74016 is idle,
+markers stopped. [Evidence and usage](workflows/physical-world-screen.md).
+
 **14:48 EST NOVEMBER 12 — OPTIONAL SELECTED-TARGET BEACON PASSED LIVE:**
 On **AMD-DESKTOP/PID17212**, the existing waypoint overlay can show a selected unit
 as a magenta diamond/beam and distance label, using the existing bounded target

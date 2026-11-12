@@ -68,6 +68,39 @@ stream and 62 feed/presenter/GUI lifecycle tests. Evidence:
 `artifacts/waypoint-markers-summary-4372ab1b47884465b8fd8f4f68ee028f.json`,
 `artifacts/target-beacon-gui-final-17212-validation.json`.
 
+When the validated saved NEXT waypoint leaves the view, the live overlay now
+shows a cyan edge chevron and its **direct horizontal native-unit distance**.
+The cue uses the real camera viewport, including offset viewports, and retains
+the original waypoint number in reverse. It does not select a new waypoint or
+write progress. If the waypoint is behind the camera, text replaces the arrow;
+near-zero clip W says outside camera view. Finished/missing/invalid progress
+produces no cue. Ground rings return when their actual projection is visible.
+Distance is not remaining route length or a clearance/reachability claim.
+
+Root qualified the cue on AMD-DESKTOP/PID17212 with genuine reverse progress:
+the existing controller confirmed arrival at recorded point 7 with zero pulses,
+then explicitly stopped before point 6. A 237.05-second camera-only Qt pilot
+presented 1,113 frames: 410 normal, 511 edge-arrow and 192 behind-text states.
+Root observed the live downward chevron, behind text and returned NEXT 6 ring;
+retained owned images/packets and desktop snapshots preserve the results.
+Camera zoom/pitch changed; player position raw bits and body bearing did not.
+The owned stop file ended the feed with `stop-requested`. Sixty-one focused
+feed/presenter/progress tests passed, including offset viewport, finite overflow,
+duplicate NEXT withholding, marker-pixel priority and cue clearing.
+Evidence: `artifacts/offscreen-genuine-prefix-17212.json`,
+`artifacts/offscreen-cue-live-pilot-17212/`,
+`artifacts/offscreen-cue-behind-composite-17212/last.png`,
+`artifacts/offscreen-cue-restored-composite-17212/last.png`,
+`artifacts/offscreen-camera-restored-17212.json`.
+After the camera test, explicit Resume completed the six remaining reverse legs
+in 60.993 seconds, endpoint error 0.08283 units. All 36 bounded native action
+receipts completed/released, maximum requested hold 150 ms, total requested hold
+4,691 ms. Two independent final samples had identical position/body-facing bits;
+inspection found no held inputs and the basis was unchanged. The genuine saved
+cursor is now **7/7 reverse**, rather than a restored old checkpoint. Receipts:
+`artifacts/waypoint-run-e97e66b52055420c8051d46429513977.json`,
+`artifacts/offscreen-resume-17212-settled.json`.
+
 Use the exact local host/process and a stationary camera. Capture through the
 existing guarded observation path, saving its returned JSON in UTF-8:
 
