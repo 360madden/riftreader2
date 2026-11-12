@@ -30,7 +30,7 @@ internal sealed record CurrentBuildFacingCandidate(
         ? Wrap180(PlayerSystemBearingDegreesCandidate - angle) : null;
     public double? PlayerSystemMinusBodyDegreesCandidate => BodyBearingDegreesCandidate is double angle
         ? Wrap180(PlayerSystemBearingDegreesCandidate - angle) : null;
-    public string Qualification => "facing-sources-candidate-only; body/camera separation, freshness and restart unverified";
+    public string Qualification => "facing-sources-candidate-only; see source-specific evidence; restart recovery unverified";
     private static double Wrap180(double value) => ((value + 180) % 360 + 360) % 360 - 180;
 }
 

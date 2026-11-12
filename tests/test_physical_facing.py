@@ -51,7 +51,68 @@ def report():
             'observation': rows[-1], 'observations': rows}
 
 
+def optical_camera():
+    transform = [0, 0, -1, 0, 1, 0, 1, 0, 0, 3, 39, -8, 7424, 832, 2944]
+    projection = [-1, 0, 0, 3, 0, 1, 0, -39, 0, 0, 1, 8, 0, 0, 1, 8]
+    viewport = [0, 1, 1, 0]
+    return {
+        'status': 'available-candidate', 'unavailableReason': None,
+        'sourceRootRva': '0x3362848', 'selectedModeCameraGetterRva': '0xF88580',
+        'cameraYawQualified': False, 'rotationRowMajor': transform[:9],
+        'rendererEyeXYZ': transform[9:12], 'renderOriginXYZ': transform[12:],
+        'rawBits': [struct.unpack('<I', struct.pack('<f', v))[0] for v in transform],
+        'bearingDegreesCandidate': 0, 'pitchDegreesCandidate': 0,
+        'worldEyeXYZ': [7427, 871, 2936],
+        'projectionRowMajor': projection, 'viewportLeftRightTopBottom': viewport,
+        'projectionRawBits': [struct.unpack('<I', struct.pack('<f', v))[0]
+                              for v in projection + viewport],
+    }
+
+
 class PhysicalFacingTests(unittest.TestCase):
+    def test_world_projection_subtracts_origin_and_flips_screen_y(self):
+        camera = optical_camera()
+        center = physical._project_world_point(camera, {'x': 7427, 'y': 871, 'z': 2946})
+        self.assertAlmostEqual(.5, center['normalizedX'])
+        self.assertAlmostEqual(.5, center['normalizedY'])
+        self.assertEqual(10, center['clipW'])
+        above = physical._project_world_point(camera, {'x': 7429, 'y': 873, 'z': 2946})
+        self.assertAlmostEqual(.4, above['normalizedX'])
+        self.assertAlmostEqual(.4, above['normalizedY'])
+        self.assertTrue(above['insideViewportCandidate'])
+        for z in (2936, 2935):
+            self.assertEqual('nonpositive-or-small-clip-w', physical._project_world_point(
+                camera, {'x': 7427, 'y': 871, 'z': z})['status'])
+        outside = physical._project_world_point(camera, {'x': 7450, 'y': 871, 'z': 2946})
+        self.assertFalse(outside['insideViewportCandidate'])
+        self.assertLess(outside['normalizedX'], 0)
+
+    def test_projection_checks_float32_geometry_and_supports_old_reports(self):
+        camera = optical_camera()
+        for field, value in (('projectionRawBits', [0] * 20),
+                             ('viewportLeftRightTopBottom', [0, 0, 0, 0]),
+                             ('projectionRowMajor', [math.nan] * 16)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                physical._optical_camera_values(dict(camera, **{field: value}))
+        camera['projectionRowMajor'][-1] = 7
+        camera['projectionRawBits'][-5] = struct.unpack('<I', struct.pack('<f', 7))[0]
+        with self.assertRaisesRegex(ValueError, 'geometry'):
+            physical._optical_camera_values(camera)
+        old = optical_camera()
+        for field in ('projectionRawBits', 'projectionRowMajor', 'viewportLeftRightTopBottom'):
+            old.pop(field)
+        self.assertEqual('projection-not-recorded', physical._project_world_point(
+            old, {'x': 7427, 'y': 871, 'z': 2946})['reason'])
+
+    def test_projection_uses_offset_viewport(self):
+        camera = optical_camera()
+        camera['viewportLeftRightTopBottom'] = [.25, .75, .75, .25]
+        camera['projectionRawBits'][16:] = [struct.unpack('<I', struct.pack('<f', v))[0]
+                                            for v in camera['viewportLeftRightTopBottom']]
+        screen = physical._project_world_point(camera, {'x': 7429, 'y': 873, 'z': 2946})
+        self.assertAlmostEqual(.45, screen['normalizedX'])
+        self.assertAlmostEqual(.45, screen['normalizedY'])
+
     def test_optical_camera_origin_and_angles_are_validated(self):
         values = [0, 0, -1, 0, 1, 0, 1, 0, 0, 3, 39, -8, 7424, 832, 2944]
         camera = {
@@ -133,7 +194,10 @@ class PhysicalFacingTests(unittest.TestCase):
                 self.assertEqual(['sample-current-facing', '--pid', '123', '--start-ticks',
                                   IDENTITY['processStartUtcTicks']], command[1:6])
                 self.assertEqual(['--samples', '3', '--interval-ms', '60'], command[-4:])
-                destination.write_text(json.dumps(report()), encoding='utf-8')
+                source = report()
+                for row in source['observations']:
+                    row['opticalCameraCandidate'] = optical_camera()
+                destination.write_text(json.dumps(source), encoding='utf-8')
                 receipt = {'recordType': 'native-current-facing-summary/1',
                            'status': 'complete', 'output': str(destination), 'completedSamples': 3}
                 return subprocess.CompletedProcess(command, 0, json.dumps(receipt), '')
@@ -144,6 +208,11 @@ class PhysicalFacingTests(unittest.TestCase):
                  redirect_stdout(io.StringIO()) as output:
                 code = physical.main(['--expected-host', 'AMD-DESKTOP', '--physical-pid', '123',
                                       '--read-native', 'facing', '--samples', '3', '--interval-ms', '60',
+                                      '--project-world', '7427', '871', '2946',
                                       '--output', str(destination)])
             self.assertEqual(0, code)
-            self.assertEqual('complete', json.loads(output.getvalue())['status'])
+            result = json.loads(output.getvalue())
+            self.assertEqual('complete', result['status'])
+            self.assertAlmostEqual(.5, result['projectedWorldPointCandidate']['normalizedX'])
+            self.assertAlmostEqual(.5, result['projectedWorldPointCandidate']['normalizedY'])
+            self.assertEqual('available-candidate', result['nativeValues']['playerScreenPointCandidate']['status'])

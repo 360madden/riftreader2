@@ -20,6 +20,8 @@ public sealed class CurrentBuildOpticalCameraTests
         Assert.Equal(0, result.PitchDegreesCandidate);
         Assert.Equal(new double[] { 7427, 871, 2936 }, result.WorldEyeXYZ);
         Assert.Equal(15, result.RawBits!.Length);
+        Assert.Equal(20, result.ProjectionRawBits!.Length);
+        Assert.Equal(new float[] { 0, 1, 1, 0 }, result.ViewportLeftRightTopBottom);
         Assert.False(result.CameraYawQualified);
     }
 
@@ -39,6 +41,9 @@ public sealed class CurrentBuildOpticalCameraTests
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
     public void ChangingPointersAndInvalidTransformsWithholdCamera(int fault)
     {
         var session = new Fake { ChangeCameraPointer = fault == 0 };
@@ -47,6 +52,13 @@ public sealed class CurrentBuildOpticalCameraTests
         if (fault == 2)
             BinaryPrimitives.WriteUInt32LittleEndian(session.Memory[Camera + 0xD4],
                 BitConverter.SingleToUInt32Bits(float.NaN));
+        if (fault == 3)
+            BinaryPrimitives.WriteUInt32LittleEndian(session.Memory[Camera + 0x138].AsSpan(48),
+                BitConverter.SingleToUInt32Bits(1));
+        if (fault == 4)
+            session.Memory[Camera + 0x19C] = new byte[16];
+        if (fault == 5)
+            BinaryPrimitives.WriteUInt32LittleEndian(session.Memory[Camera + 0x138].AsSpan(60), 0);
         var result = CurrentBuildOpticalCameraCandidateReader.TryRead(session, SystemAddress);
         Assert.Equal("unavailable", result.Status);
         Assert.Null(result.RawBits);
@@ -72,6 +84,8 @@ public sealed class CurrentBuildOpticalCameraTests
             Qword(0x30003000 + 0x28, Camera);
             Qword(Camera, Module + 0x274D630);
             Memory[Camera + 0xD4] = Floats([0, 0, -1, 0, 1, 0, 1, 0, 0, 3, 39, -8]);
+            Memory[Camera + 0x138] = Floats([-1, 0, 0, 3, 0, 1, 0, -39, 0, 0, 1, 8, 0, 0, 1, 8]);
+            Memory[Camera + 0x19C] = Floats([0, 1, 1, 0]);
             Memory[SystemAddress + 0x438] = Floats([7424, 832, 2944]);
         }
         public void Qword(ulong address, ulong value)

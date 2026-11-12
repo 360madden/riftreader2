@@ -525,3 +525,29 @@ Raw native reports are
 `artifacts/physical-native-facing-e14cd713eddb4050882537995af1c240.json`, and
 `artifacts/physical-native-facing-263602871f364504ab0611900f149f80.json`.
 The Computer Use observations showed the expected view rotation and return.
+
+### Repeatable native projection at 23:03 EST
+
+The normal facing reader now also retains row-major projection matrix camera
+`+0x138..0x177` and viewport left/right/top/bottom `+0x19C..0x1AB`, with all 20
+float32 bits. It validates the projection forward row and eye translation against
+the same optical transform, then rechecks every consumed source. The Python
+readout subtracts renderer origin, computes clip W and X/Y, applies the viewport,
+and flips Y to top-left client coordinates. W at or below 0.00001 withholds X/Y.
+The game paths are `0xF90230` and `0x1154A90`; bounds checks do not prove occlusion.
+
+After Joey moved Atank, fresh independent position reads agreed with the facing
+XYZ at (7424.7822265625, 863.5865478515625, 2947.272705078125), primary bearing
+13.602310° and secondary body bearing 13.602118°. A new screenshot was bracketed
+by identical camera transform, projection and player-system source bits. The
+paired-position reader reacquired dummy key 9223372045797034536 at
+(7428.724609375, 863.5260009765625, 2950.84375). Atank projected to normalized
+(0.500000003, 0.619451659), and the dummy to (0.389312709, 0.448609753).
+In the 1266 by 713 frame, the observed client inset of (1, 31) and client size
+1264 by 681 place these near pixels (633, 453) and (493, 337). Visual review
+found them inside Atank's model and at the dummy's yellow ground ring.
+
+Raw before/after facing, paired XYZ and comparison are in
+`artifacts/camera-projection-20261111-2304/`. The screenshot is
+`artifacts/observe-wgc-fb32edf8b4b14576ba1a697cec9293df/image.png`.
+This is current-epoch corroboration, with restart recovery still open.

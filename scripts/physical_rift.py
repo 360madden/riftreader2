@@ -100,6 +100,35 @@ def _utc_tick_order_key(value):
     return parsed, remainder
 
 
+def _optical_projection_values(camera, transform):
+    """Optional current-camera projection, decoded from its preserved float32 bits."""
+    names = (("projectionRowMajor", 16), ("viewportLeftRightTopBottom", 4))
+    if all(camera.get(name) is None for name in ("projectionRawBits", *(name for name, _ in names))):
+        return None
+    bits = camera.get("projectionRawBits")
+    if (not isinstance(bits, list) or len(bits) != 20
+            or any(type(bit) is not int or not 0 <= bit < 2**32 for bit in bits)
+            or any(not isinstance(camera.get(name), list) or len(camera[name]) != count
+                   for name, count in names)):
+        raise ValueError("invalid-native-optical-projection")
+    values = [value for name, _ in names for value in camera[name]]
+    if any(type(value) not in (int, float) or not math.isfinite(value) for value in values):
+        raise ValueError("invalid-native-optical-projection")
+    try:
+        encoded = [struct.unpack("<I", struct.pack("<f", value))[0] for value in values]
+    except (OverflowError, struct.error) as error:
+        raise ValueError("invalid-native-optical-projection") from error
+    if any(a != b and {a, b} != {0, 0x80000000} for a, b in zip(encoded, bits)):
+        raise ValueError("invalid-native-optical-projection-bits")
+    raw = [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in bits]
+    left, right, top, bottom = raw[16:]
+    if (not 0 <= left < right <= 1 or not 0 <= bottom < top <= 1
+            or any(abs(raw[12 + i] - transform[i * 3]) > .001 for i in range(3))
+            or abs(raw[15] + sum(transform[i * 3] * transform[9 + i] for i in range(3))) > .001):
+        raise ValueError("invalid-native-optical-projection-geometry")
+    return raw[:16], raw[16:]
+
+
 def _optical_camera_values(camera):
     if camera is None:
         return None
@@ -153,9 +182,42 @@ def _optical_camera_values(camera):
                    or abs(value - raw[9 + index] - raw[12 + index]) > .00001
                    for index, value in enumerate(eye))):
         raise ValueError("invalid-native-optical-camera-world-eye")
+    projection = _optical_projection_values(camera, raw)
     return {"status": "available-candidate", "bearingDegreesCandidate": camera["bearingDegreesCandidate"],
             "pitchDegreesCandidate": camera["pitchDegreesCandidate"], "worldEyeXYZ": eye,
+            "projectionAvailableCandidate": projection is not None,
             "cameraYawQualified": False}
+
+
+def _project_world_point(camera, xyz):
+    """Top-left normalized client coordinates. This cannot establish occlusion."""
+    optical = _optical_camera_values(camera)
+    if optical is None or optical["status"] != "available-candidate":
+        return {"status": "unavailable", "reason": "optical-camera-unavailable"}
+    transform = [struct.unpack("<f", struct.pack("<I", bit))[0] for bit in camera["rawBits"]]
+    projection = _optical_projection_values(camera, transform)
+    if projection is None:
+        return {"status": "unavailable", "reason": "projection-not-recorded"}
+    if (not isinstance(xyz, dict) or any(type(xyz.get(axis)) not in (int, float)
+                                       or not math.isfinite(xyz[axis]) for axis in ("x", "y", "z"))):
+        raise ValueError("invalid-projection-world-point")
+    matrix, viewport = projection
+    point = [xyz[axis] - transform[12 + i] for i, axis in enumerate(("x", "y", "z"))] + [1]
+    clip_w = sum(matrix[12 + i] * point[i] for i in range(4))
+    if not math.isfinite(clip_w):
+        raise ValueError("nonfinite-projection-result")
+    if clip_w <= 1e-5:
+        return {"status": "nonpositive-or-small-clip-w", "clipW": clip_w}
+    ndc_x, ndc_y = (sum(matrix[row * 4 + i] * point[i] for i in range(4)) / clip_w
+                    for row in (0, 1))
+    left, right, top, bottom = viewport
+    x = left + (right - left) * (ndc_x + 1) / 2
+    y = 1 - (bottom + (top - bottom) * (ndc_y + 1) / 2)
+    if not math.isfinite(x) or not math.isfinite(y):
+        raise ValueError("nonfinite-projection-result")
+    return {"status": "available-candidate", "normalizedX": x, "normalizedY": y,
+            "clipW": clip_w, "insideViewportCandidate": left <= x <= right and 1 - top <= y <= 1 - bottom,
+            "coordinateConvention": "top-left-normalized-client"}
 
 
 def _native_values(kind, report, *, expect_position=False, expect_translation_sources=False):
@@ -269,6 +331,8 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             system_bearings.append(system_bearing)
             aim_bearings.append(camera)
             optical = _optical_camera_values(row.get("opticalCameraCandidate"))
+            player_screen = _project_world_point(row.get("opticalCameraCandidate"),
+                                                dict(zip(("x", "y", "z"), raw_values[4:])))
         return {
             "playerKey": owner[0], "playerSystemYawRadiansCandidate": values[0],
             "playerSystemBearingDegreesCandidate": system_bearings[-1],
@@ -279,6 +343,7 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
             "playerSystemMinusBodyDegreesCandidate": delta,
             "cameraAimBearingDegreesCandidate": aim_bearings[-1],
             "opticalCamera": optical,
+            "playerScreenPointCandidate": player_screen,
             "positionXYZCandidate": xyz,
             "bearingConvention": rows[-1]["bearingConvention"],
             "bodyBearingSeriesDegreesCandidate": bearings,
@@ -962,9 +1027,15 @@ def main(argv=None):
                         help="with native position: offline compare XYZ to named-anchor catalog")
     parser.add_argument("--anchor-id",
                         help="with --anchor-catalog: offline destination ID; no movement")
+    parser.add_argument("--project-world", type=float, nargs=3, metavar=("X", "Y", "Z"),
+                        help="with facing: project this world point into normalized client coordinates")
     args = parser.parse_args(argv)
     anchor_requested = args.anchor_catalog is not None or args.anchor_id is not None
-    if anchor_requested and (args.anchor_catalog is None or args.anchor_id is None
+    if args.project_world is not None and (args.read_native != "facing" or
+                                           any(not math.isfinite(value) for value in args.project_world)):
+        result = {"status": "blocked", "workflow": "physical",
+                  "reason": "world-projection-requires-facing-and-finite-xyz"}
+    elif anchor_requested and (args.anchor_catalog is None or args.anchor_id is None
                              or args.read_native != "position"):
         result = {"status": "blocked", "workflow": "physical",
                   "reason": "anchor-preview-requires-position-catalog-and-id"}
@@ -997,6 +1068,16 @@ def main(argv=None):
             result = dict(result, offlineAnchorPreview=preview)
         except (OSError, ValueError) as exc:
             result = dict(result, status="blocked", reason="offline-anchor-preview-failed",
+                          detail=str(exc)[:240])
+    if args.project_world is not None and result["status"] == "complete":
+        try:
+            report = json.loads(Path(result["nativeOutput"]).read_text(encoding="utf-8"))
+            point = dict(zip(("x", "y", "z"), args.project_world))
+            result["projectedWorldPointCandidate"] = dict(
+                _project_world_point(report["observation"].get("opticalCameraCandidate"), point),
+                worldXYZ=point)
+        except (OSError, ValueError, TypeError, KeyError) as exc:
+            result = dict(result, status="blocked", reason="world-projection-failed",
                           detail=str(exc)[:240])
     print(json.dumps(result, sort_keys=True))
     return 0 if result["status"] in ("ready", "complete") else 2

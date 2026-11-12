@@ -13,6 +13,9 @@ internal sealed record CurrentBuildOpticalCameraCandidate(
     public string SourceRootRva => "0x3362848";
     public string SelectedModeCameraGetterRva => "0xF88580";
     public bool CameraYawQualified => false;
+    public float[]? ProjectionRowMajor { get; init; }
+    public float[]? ViewportLeftRightTopBottom { get; init; }
+    public uint[]? ProjectionRawBits { get; init; }
 }
 
 internal static class CurrentBuildOpticalCameraCandidateReader
@@ -61,6 +64,8 @@ internal static class CurrentBuildOpticalCameraCandidateReader
             throw new InvalidDataException("Optical camera type mismatch.");
         var transform = Take(checked(camera + 0xD4), 48);
         var origin = Take(checked(CurrentBuildPlayerLookup.Pointer(playerSystem, 0x444) + 0x438), 12);
+        var projection = Take(checked(camera + 0x138), 64);
+        var viewport = Take(checked(camera + 0x19C), 16);
         var bits = new uint[15];
         var values = new float[15];
         var payload = transform.Concat(origin).ToArray();
@@ -71,6 +76,24 @@ internal static class CurrentBuildOpticalCameraCandidateReader
         }
         if (values.Any(value => !float.IsFinite(value)))
             throw new InvalidDataException("Optical camera transform contains nonfinite values.");
+        var projectionBits = new uint[20];
+        var projectionValues = new float[20];
+        var projectionPayload = projection.Concat(viewport).ToArray();
+        for (var i = 0; i < projectionValues.Length; i++)
+        {
+            projectionBits[i] = BinaryPrimitives.ReadUInt32LittleEndian(projectionPayload.AsSpan(i * 4));
+            projectionValues[i] = BitConverter.UInt32BitsToSingle(projectionBits[i]);
+        }
+        if (projectionValues.Any(value => !float.IsFinite(value)) ||
+            projectionValues[16] >= projectionValues[17] || projectionValues[19] >= projectionValues[18] ||
+            projectionValues[16..20].Any(value => value is < 0 or > 1))
+            throw new InvalidDataException("Optical camera projection or viewport is invalid.");
+        for (var i = 0; i < 3; i++)
+            if (Math.Abs(projectionValues[12 + i] - values[i * 3]) > .001)
+                throw new InvalidDataException("Optical camera projection forward mismatch.");
+        var expectedTranslation = -Enumerable.Range(0, 3).Sum(i => (double)values[i * 3] * values[9 + i]);
+        if (Math.Abs(projectionValues[15] - expectedTranslation) > .001)
+            throw new InvalidDataException("Optical camera projection eye mismatch.");
         for (var row = 0; row < 3; row++)
         {
             for (var other = 0; other < 3; other++)
@@ -94,6 +117,11 @@ internal static class CurrentBuildOpticalCameraCandidateReader
             values[..9], values[9..12], values[12..15], bits,
             horizontal < 1e-8 ? null : Math.Atan2(forwardX, forwardZ) * 180 / Math.PI,
             Math.Atan2(forwardY, horizontal) * 180 / Math.PI,
-            [(double)values[9] + values[12], (double)values[10] + values[13], (double)values[11] + values[14]]);
+            [(double)values[9] + values[12], (double)values[10] + values[13], (double)values[11] + values[14]])
+        {
+            ProjectionRowMajor = projectionValues[..16],
+            ViewportLeftRightTopBottom = projectionValues[16..20],
+            ProjectionRawBits = projectionBits
+        };
     }
 }
