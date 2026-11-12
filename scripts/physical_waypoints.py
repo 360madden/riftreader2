@@ -66,9 +66,12 @@ class OwnedWaypointMarkers:
                 self.child = None
         return self.child is not None
 
-    def start(self, document, adapter, *, target_beacon=False):
+    def start(self, document, adapter, *, target_beacon=False, landmark_number=None):
         if type(target_beacon) is not bool:
             raise WaypointError("Invalid target beacon option")
+        if landmark_number is not None and (type(landmark_number) is not int
+                or not 1 <= landmark_number <= len(document.get("waypoints", []))):
+            raise WaypointError("Select one saved marker to guide to")
         if self.running():
             raise WaypointError("Markers are already open or closing")
         from scripts.live_physical_waypoints import load_route
@@ -102,6 +105,8 @@ class OwnedWaypointMarkers:
                    "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
         if target_beacon:
             command.append("--target-beacon")
+        if landmark_number is not None:
+            command.extend(["--landmark-number", str(landmark_number)])
         self.child = self.popen(command, cwd=self.root,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.stop_requested = False
@@ -819,6 +824,7 @@ def launch_window(args):
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
     target_beacon = tk.BooleanVar(value=False)
+    landmark_guide = tk.BooleanVar(value=False)
     live_pose = tk.BooleanVar(value=True)
     view_bring_forward = tk.BooleanVar(value=False)
     view_include_units = tk.BooleanVar(value=False)
@@ -1644,15 +1650,21 @@ def launch_window(args):
             state.set("Wait for the current RIFT connection before showing markers.")
             return
         try:
+            options = {}
             if target_beacon.get():
-                markers.start(route_document(), adapter, target_beacon=True)
-            else:
-                markers.start(route_document(), adapter)
+                options["target_beacon"] = True
+            if landmark_guide.get():
+                selected = table.selection()
+                if len(selected) != 1:
+                    raise WaypointError("Select one saved marker to guide to")
+                options["landmark_number"] = table.index(selected[0]) + 1
+            markers.start(route_document(), adapter, **options)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
                                target["executableSha256"].casefold(), target["hwnd"])
             marker_button.configure(text="Hide markers")
-            state.set("Markers shown when RIFT is foreground.")
+            state.set("Markers shown when RIFT is foreground."
+                      + (" Selected landmark guide is pinned until Hide markers." if landmark_guide.get() else ""))
         except (OSError, ValueError, KeyError, TypeError) as exc:
             state.set("Cannot show markers: " + str(exc))
 
@@ -1737,6 +1749,9 @@ def launch_window(args):
     target_option = ttk.Checkbutton(view_controls, text="Include selected target in markers", variable=target_beacon)
     target_option.pack(side="left", padx=(12, 0))
     editable.append(target_option)
+    landmark_option = ttk.Checkbutton(view_controls, text="Guide selected marker", variable=landmark_guide)
+    landmark_option.pack(side="left", padx=(12, 0))
+    editable.append(landmark_option)
     recent_controls = ttk.Frame(frame)
     recent_controls.pack(fill="x", pady=4)
     ttk.Label(recent_controls, text="Recent routes").pack(side="left", padx=(0, 6))
@@ -1974,6 +1989,7 @@ def launch_window(args):
             elif markers.stop_requested:
                 marker_button.configure(text="Markers closing…", state="disabled")
         target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
+        landmark_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
         if live_pose.get() and not busy and not observing and not closing and time.monotonic() >= next_live_at:
             observing = True
             next_live_at = time.monotonic() + 2

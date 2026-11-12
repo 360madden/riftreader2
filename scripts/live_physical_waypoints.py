@@ -45,13 +45,17 @@ def load_route(path):
 class ProjectionProvider:
     """One pinned selection, serial reads and plain packets; no overlay calls."""
     def __init__(self, selection, route, snapshot, *, read=None, clock=time.monotonic,
-                 utcnow=lambda: datetime.now(timezone.utc), max_age=.8, target_beacon=False):
+                 utcnow=lambda: datetime.now(timezone.utc), max_age=.8, target_beacon=False, landmark_number=None):
         require(selection.get("status") == "ready", "physical-selection-not-ready")
         self.selection, self.route = deepcopy(selection), deepcopy(route)
         self.target = self.selection["target"]
         self.snapshot, self.read = snapshot, read or physical.read_native
         self.clock, self.utcnow, self.max_age = clock, utcnow, max_age
         self.target_beacon = target_beacon
+        require(landmark_number is None or (type(landmark_number) is int
+                and any(point["number"] == landmark_number for point in self.route["points"])),
+                "landmark-number-not-in-route")
+        self.landmark_number = landmark_number
         identity = route["identity"]
         require(identity["machine"].casefold() == self.target["hostName"].casefold()
                 and identity["gameBuildSha256"].casefold() == self.target["executableSha256"].casefold(),
@@ -131,6 +135,8 @@ class ProjectionProvider:
                                                           xyz["z"] - player_xyz["z"]),
                 "ground": physical._project_world_point(camera, xyz),
                 "beaconTop": physical._project_world_point(camera, dict(x=xyz["x"], y=xyz["y"] + 1.5, z=xyz["z"]))})
+            if point["number"] == self.landmark_number:
+                points[-1]["displayLandmark"] = True
         frame = {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
                  "clientRect": list(after["clientRect"]), "points": points,
                  "viewportRectNormalized": [left, 1 - top, right, 1 - bottom],
@@ -374,7 +380,7 @@ def apply_saved_progress(frame, progress_file, route):
 
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
-        presenter="native", progress_file=None, target_beacon=False):
+        presenter="native", progress_file=None, target_beacon=False, landmark_number=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 < duration <= 600, "duration-must-be-positive-at-most-600")
@@ -393,6 +399,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         progress_file = Path(progress_file)
         require(progress_file.is_absolute() and progress_file.parent.is_dir(), "absolute-progress-file-required")
     route = load_route(route_path)
+    require(landmark_number is None or (type(landmark_number) is int and landmark_number > 0
+            and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
     selection = physical.select_physical(expected_host, physical_pid)
     require(selection.get("status") == "ready", selection.get("reason", "physical-selection-not-ready"))
     require(selection["target"]["processId"] == physical_pid, "selected-pid-mismatch")
@@ -402,7 +410,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
                 and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
-    provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age, target_beacon=target_beacon)
+    provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age, target_beacon=target_beacon,
+                                  landmark_number=landmark_number)
     window_options = {}
     if presenter == "qt":
         try:
@@ -489,6 +498,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,
         "presenter": presenter,
         "targetBeaconEnabled": target_beacon,
+        "landmarkNumber": landmark_number,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
         "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
         "progressFile": str(progress_file) if progress_file is not None else None,
@@ -518,13 +528,14 @@ def main(argv=None):
     parser.add_argument("--stop-file", type=Path)
     parser.add_argument("--progress-file", type=Path, help="optional absolute saved checkpoint; display only")
     parser.add_argument("--target-beacon", action="store_true", help="show fresh selected-target candidate")
+    parser.add_argument("--landmark-number", type=int, help="guide to one saved point (1-based; display only)")
     args = parser.parse_args(argv)
     try:
         result = run(args.expected_host, args.physical_pid, args.route, duration=args.duration,
                      max_age=args.max_age, output=args.output, reader=args.reader,
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
-                     progress_file=args.progress_file, target_beacon=args.target_beacon)
+                     progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

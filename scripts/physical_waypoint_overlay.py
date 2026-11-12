@@ -406,6 +406,28 @@ def next_edge_hint(points, viewport, width, height):
     next_rows = [row for row in points if isinstance(row, dict) and row.get("routeState") == "next"]
     if len(next_rows) != 1 or not isinstance(viewport, list) or len(viewport) != 4:
         return None
+    return _point_edge_hint(next_rows[0], viewport, width, height, f"NEXT {next_rows[0].get('number')}")
+
+
+def landmark_edge_hint(points, viewport, width, height):
+    """Explicit saved landmark only; never derive playback state or a heading behind camera."""
+    if not isinstance(points, list):
+        return None
+    rows = [row for row in points if isinstance(row, dict) and row.get("displayLandmark") is True]
+    if len(rows) != 1 or rows[0].get("routeState") == "next":
+        return None
+    label = rows[0].get("label")
+    if not isinstance(label, str) or not label.strip():
+        return None
+    hint = _point_edge_hint(rows[0], viewport, width, height, label[:80])
+    if hint is not None:
+        hint["color"] = "#ffd54f"
+    return hint
+
+
+def _point_edge_hint(row, viewport, width, height, prefix):
+    if not isinstance(viewport, list) or len(viewport) != 4:
+        return None
     if (type(width) is not int or type(height) is not int or width <= 0 or height <= 0
             or any(type(v) not in (int, float) or not math.isfinite(v) for v in viewport)):
         return None
@@ -415,7 +437,6 @@ def next_edge_hint(points, viewport, width, height):
     bounds = (left * width, top * height, right * width, bottom * height)
     if bounds[2] - bounds[0] <= 48 or bounds[3] - bounds[1] <= 48:
         return None
-    row = next_rows[0]
     number, distance, ground = row.get("number"), row.get("horizontalDistanceCandidate"), row.get("ground")
     if (type(number) is not int or number <= 0 or type(distance) not in (int, float)
             or not math.isfinite(distance) or distance < 0 or not isinstance(ground, dict)):
@@ -427,7 +448,7 @@ def next_edge_hint(points, viewport, width, height):
         return None
     if clip <= 1e-5:
         reason = "behind camera" if clip < 0 else "outside camera view"
-        return {"kind": "text", "text": f"NEXT {number} {reason} · {distance:.1f} units direct", "bounds": bounds}
+        return {"kind": "text", "text": f"{prefix} {reason} · {distance:.1f} units direct", "bounds": bounds}
     if ground.get("status") != "available-candidate" or ground.get("insideViewportCandidate") is not False:
         return None
     x, y = ground.get("normalizedX"), ground.get("normalizedY")
@@ -445,28 +466,47 @@ def next_edge_hint(points, viewport, width, height):
     vertical = ((bounds[3] - 24 - cy) / uy if uy > 0 else (bounds[1] + 24 - cy) / uy) if uy else math.inf
     scale = min(horizontal, vertical)
     return {"kind": "arrow", "anchor": (cx + ux * scale, cy + uy * scale), "direction": (ux, uy),
-            "text": f"NEXT {number} · {distance:.1f} units direct", "bounds": bounds}
+            "text": f"{prefix} · {distance:.1f} units direct", "bounds": bounds}
 
 
-def _draw_next_edge_hint(draw, hint, font):
+def _draw_next_edge_hint(draw, hint, font, *, occupied=()):
     left, top, right, bottom = hint["bounds"]
     text = hint["text"]
     box = draw.textbbox((0, 0), text, font=font, anchor="lt", stroke_width=1)
     width, height = box[2] - box[0], box[3] - box[1]
+    color = hint.get("color", "#7cffff")
+    # Keep the full label in the packet; shorten display text on narrow clients.
+    if color == "#ffd54f":
+        split = text.rfind(" · ")
+        prefix, suffix = (text[:split], text[split:]) if split >= 0 else (text, "")
+        while width + 4 > right - left and prefix:
+            prefix = prefix[:-1]
+            text = prefix + "…" + suffix
+            box = draw.textbbox((0, 0), text, font=font, anchor="lt", stroke_width=1)
+            width = box[2] - box[0]
     if width + 4 > right - left or height + 4 > bottom - top:
         return
     if hint["kind"] == "arrow":
         x, y = hint["anchor"]
         ux, uy = hint["direction"]
+        if occupied:
+            x, y = x - ux * 24, y - uy * 24
         px, py = -uy, ux
         draw.line((x - ux*9 + px*7, y - uy*9 + py*7, x, y,
-                   x - ux*9 - px*7, y - uy*9 - py*7), fill="#7cffff", width=3)
+                   x - ux*9 - px*7, y - uy*9 - py*7), fill=color, width=3)
         tx, ty = x - ux*(width/2 + 18) - width/2, y - uy*(height/2 + 18) - height/2
     else:
         tx, ty = left + 4, top + 4
     tx = max(left + 2, min(right - width - 2, tx))
     ty = max(top + 2, min(bottom - height - 2, ty))
-    draw.text((tx, ty), text, fill="#7cffff", font=font, anchor="lt", stroke_width=1, stroke_fill="#151515")
+    candidates = [(tx, ty), (left + 2, top + 2), (left + 2, bottom - height - 2),
+                  (right - width - 2, top + 2), (right - width - 2, bottom - height - 2)]
+    for tx, ty in candidates:
+        bounds = (tx, ty, tx + width, ty + height)
+        if all(bounds[2] + 4 <= other[0] or other[2] + 4 <= bounds[0]
+               or bounds[3] + 4 <= other[1] or other[3] + 4 <= bounds[1] for other in occupied):
+            draw.text((tx, ty), text, fill=color, font=font, anchor="lt", stroke_width=1, stroke_fill="#151515")
+            return bounds
 
 
 class PhysicalWaypointOverlay:
@@ -513,6 +553,8 @@ class PhysicalWaypointOverlay:
             if "routeState" in row and (not isinstance(row["routeState"], str)
                                          or row["routeState"] not in ("pending", "next", "completed")):
                 raise ValueError("Invalid marker routeState")
+            if "displayLandmark" in row and type(row["displayLandmark"]) is not bool:
+                raise ValueError("Invalid marker displayLandmark")
             _projection(row.get("ground"), *rect[2:])
             _projection(row.get("beaconTop"), *rect[2:])
         _projection(frame.get("playerGround"), *rect[2:])
@@ -559,8 +601,14 @@ class PhysicalWaypointOverlay:
                 draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
                                     anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
             hint = next_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
+            occupied = []
             if hint is not None:
-                _draw_next_edge_hint(draw, hint, font)
+                box = _draw_next_edge_hint(draw, hint, font)
+                if box is not None:
+                    occupied.append(box)
+            landmark = landmark_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
+            if landmark is not None:
+                _draw_next_edge_hint(draw, landmark, font, occupied=occupied)
             # Rings/beacons are painted last so labels and edge cues never erase
             # the exact world-to-screen reference pixels.
             for ground, top, text, color, width, kind in markers:

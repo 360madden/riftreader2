@@ -42,6 +42,7 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertEqual(str(Path(sys.executable).with_name("pythonw.exe")), command[0])
         self.assertEqual("native", command[command.index("--presenter") + 1])
         self.assertNotIn("--target-beacon", command)
+        self.assertNotIn("--landmark-number", command)
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),
                                ("--max-age", ".35"), ("--duration", "600")):
@@ -76,6 +77,22 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertEqual("1234", command[command.index("--expect-start-ticks") + 1])
         path = Path(command[command.index("--route") + 1])
         self.assertEqual(self.route, json.loads(path.read_text()))
+
+    def test_explicit_landmark_number_is_one_based_without_creating_progress(self):
+        self.markers.start(self.route, self.adapter, landmark_number=2)
+        command = self.popen.call_args.args[0]
+        self.assertEqual("2", command[command.index("--landmark-number") + 1])
+        self.assertEqual(1, command.count("--landmark-number"))
+        route = Path(command[command.index("--route") + 1])
+        self.assertEqual(self.route, json.loads(route.read_text()))
+        self.assertFalse((self.root / "artifacts" / "waypoint-current-progress.json").exists())
+
+    def test_invalid_landmark_numbers_are_refused_before_popen(self):
+        for number in (True, False, 0, -1, 3, 1.0, "1"):
+            with self.subTest(number=number), self.assertRaises(WaypointError):
+                self.markers.start(self.route, self.adapter, landmark_number=number)
+        self.popen.assert_not_called()
+        self.assertEqual([], list((self.root / "artifacts").iterdir()))
 
     def test_unrecorded_or_missing_height_route_is_refused(self):
         for route in ({"waypoints": [["A", 1, 2]]}, {**self.route, "heights": [5, None]}):

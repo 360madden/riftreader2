@@ -64,6 +64,58 @@ class PresenterTests(unittest.TestCase):
         self.assertEqual("RR2 Waypoint Overlay | PID 123", self.presenter.window.title)
         self.assertFalse(any("focus" in name or "geometry" == name for name, args, kwargs in self.presenter.window.calls))
 
+    def test_named_landmark_offscreen_and_behind_without_progress(self):
+        row = dict(number=8, label="3rd Guard Soldier", displayLandmark=True, horizontalDistanceCandidate=7.44,
+                   ground=dict(status="available-candidate", normalizedX=2, normalizedY=.5, clipW=1,
+                               insideViewportCandidate=False))
+        hint = overlay.landmark_edge_hint([row], [0, 0, 1, 1], 500, 300)
+        self.assertEqual(hint["kind"], "arrow")
+        self.assertEqual(hint["color"], "#ffd54f")
+        self.assertEqual(hint["text"], "3rd Guard Soldier · 7.4 units direct")
+        self.assertEqual(hint["anchor"], (476., 150.))
+        self.assertNotIn("routeState", row)
+        row["ground"] = dict(status="nonpositive-or-small-clip-w", clipW=-1)
+        self.assertIn("behind camera", overlay.landmark_edge_hint([row], [0, 0, 1, 1], 500, 300)["text"])
+        row["ground"]["clipW"] = 0
+        self.assertIn("outside camera view", overlay.landmark_edge_hint([row], [0, 0, 1, 1], 500, 300)["text"])
+
+    def test_presenter_paints_gold_landmark_cue_without_playback_progress(self):
+        packet = frame()
+        packet["viewportRectNormalized"] = [0, 0, 1, 1]
+        packet["points"][0].update(displayLandmark=True, horizontalDistanceCandidate=7.4,
+            ground=dict(status="available-candidate", normalizedX=2, normalizedY=.5, clipW=1,
+                        insideViewportCandidate=False))
+        self.assertTrue(self.presenter.present(packet))
+        self.assertEqual(self.presenter.window.images[-1].getpixel((1896, 540)), (255, 213, 79))
+        self.assertNotIn("routeState", self.presenter.frame["points"][0])
+
+    def test_landmark_duplicate_invalid_visible_and_next_priority(self):
+        row = dict(number=1, label="Corner", displayLandmark=True, horizontalDistanceCandidate=2,
+                   ground=dict(status="available-candidate", normalizedX=-1, normalizedY=.5, clipW=1,
+                               insideViewportCandidate=False))
+        self.assertIsNone(overlay.landmark_edge_hint([row, deepcopy(row)], [0, 0, 1, 1], 500, 300))
+        for change in (dict(displayLandmark=1), dict(number=True), dict(routeState="next"), dict(ground=projection())):
+            self.assertIsNone(overlay.landmark_edge_hint([dict(row, **change)], [0, 0, 1, 1], 500, 300))
+        f = frame()
+        f["points"][0]["displayLandmark"] = 1
+        self.assertFalse(self.presenter.present(f))
+        self.assertIn("displayLandmark", self.presenter.reason)
+
+    def test_next_landmark_coexist_with_nonoverlapping_text_and_narrow_label(self):
+        row = dict(number=1, label="Very long measured landmark name " * 4, displayLandmark=True,
+                   horizontalDistanceCandidate=2, ground=dict(status="nonpositive-or-small-clip-w", clipW=-1))
+        next_row = dict(row, number=2, label="Other", displayLandmark=False, routeState="next")
+        image = overlay.Image.new("RGB", (300, 180))
+        draw = overlay.ImageDraw.Draw(image)
+        font = overlay.ImageFont.load_default(size=16)
+        first = overlay._draw_next_edge_hint(draw, overlay.next_edge_hint([next_row], [0, 0, 1, 1], 300, 180), font)
+        second = overlay._draw_next_edge_hint(draw, overlay.landmark_edge_hint([row], [0, 0, 1, 1], 300, 180),
+                                              font, occupied=[first])
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)  # Truncates rather than vanishing on a narrow client.
+        self.assertTrue(second[3] < first[1] or first[3] < second[1] or second[2] < first[0] or first[2] < second[0])
+        self.assertEqual(row["label"], "Very long measured landmark name " * 4)
+
     def test_route_states_color_exact_anchors_and_thicken_next_with_label(self):
         for state, color, prefix in ((None, (255, 213, 79), "1 Corner"),
                                      ("pending", (179, 152, 82), "1 Corner"),

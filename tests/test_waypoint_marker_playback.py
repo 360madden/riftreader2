@@ -34,12 +34,64 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.play_mock = self.play_patch.start()
         self.addCleanup(self.play_patch.stop)
         fixture.RecordingWindowTests.setUp(self)
+        self.adapter.pid = 123
+        self.adapter.target = {"processId": 123, "processStartUtcTicks": "1234",
+                               "executableSha256": "a" * 64, "hwnd": 12345}
+        self.adapter.binding["runtimeIdentity"]["processStartUtcTicks"] = "1234"
         self.no_input.side_effect = lambda *_: SimpleNamespace(close=lambda: None)
         self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview))
         self.table.insert("", "end", values=("Start", "0", "0"))
         self.table.insert("", "end", values=("End", "1", "0"))
         self.table.selection_set(self.table.get_children()[0])
         self.window.update()
+
+    def guide_checkbox(self):
+        return next(w for w in self.widgets() if isinstance(w, fixture.ttk.Checkbutton)
+                    and str(w["text"]) == "Guide selected marker")
+
+    def enable_marker_launch(self):
+        self.marker.running.return_value = False
+        self.wait_for(lambda: str(self.guide_checkbox()["state"]) != "disabled")
+        def started(*args, **kwargs):
+            self.marker.running.return_value = True
+        self.marker.start = Mock(side_effect=started)
+
+    def test_default_launch_does_not_opt_into_landmark_guidance(self):
+        self.enable_marker_launch()
+        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
+        self.assertFalse(checkpoint.exists())
+        self.button("Show markers").invoke()
+        self.marker.start.assert_called_once()
+        self.assertEqual({}, self.marker.start.call_args.kwargs)
+        self.assertFalse(checkpoint.exists())
+
+    def test_guide_selection_is_snapshotted_one_based_and_checkbox_locks(self):
+        self.enable_marker_launch()
+        self.guide_checkbox().invoke()
+        items = self.table.get_children()
+        self.table.selection_set(items[1])
+        self.button("Show markers").invoke()
+        self.assertEqual({"landmark_number": 2}, self.marker.start.call_args.kwargs)
+        self.assertEqual(["Start", "End"],
+                         [row[0] for row in self.marker.start.call_args.args[0]["waypoints"]])
+        self.table.selection_set(items[0])
+        self.wait_for(lambda: str(self.guide_checkbox()["state"]) == "disabled")
+        self.marker.start.assert_called_once()
+        self.assertEqual(2, self.marker.start.call_args.kwargs["landmark_number"])
+        self.assertFalse((self.root_path / "artifacts" / "waypoint-current-progress.json").exists())
+
+    def test_guide_requires_exactly_one_selection_before_launch(self):
+        self.enable_marker_launch()
+        self.guide_checkbox().invoke()
+        for selected in ([], list(self.table.get_children())):
+            with self.subTest(selected=selected):
+                self.table.selection_set(selected)
+                self.button("Show markers").invoke()
+                self.marker.start.assert_not_called()
+                labels = [str(self.window.getvar(w["textvariable"])) for w in self.widgets()
+                          if isinstance(w, fixture.ttk.Label) and w["textvariable"]]
+                self.assertTrue(any("Select one saved marker" in text for text in labels), labels)
+        self.assertFalse((self.root_path / "artifacts" / "waypoint-current-progress.json").exists())
 
     def cleanup_windows(self):
         self.no_input.reset_mock()

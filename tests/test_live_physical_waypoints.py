@@ -58,6 +58,36 @@ class FeedTests(unittest.TestCase):
         self.read.assert_called_once_with(self.selection, "facing", samples=1, include_target=True)
         self.assertNotIn("selectedTarget", packet)
 
+    def test_landmark_is_explicit_independent_and_immutable_without_progress(self):
+        provider = self.provider()
+        provider.landmark_number = 1
+        self.route["points"][0]["label"] = "Later GUI edit"
+        packet = provider.acquire()
+        self.assertIs(packet["points"][0]["displayLandmark"], True)
+        self.assertEqual(packet["points"][0]["label"], "One")
+        self.assertNotIn("routeState", packet["points"][0])
+        self.assertNotIn("displayLandmark", self.provider().acquire()["points"][0])
+
+    def test_landmark_selection_rejects_bool_missing_and_wrong_identity(self):
+        for number in (True, False, 0, -1, 2, 1., "1"):
+            with self.subTest(number=number), self.assertRaisesRegex(ValueError, "landmark-number"):
+                live.ProjectionProvider(self.selection, self.route, self.snapshot, landmark_number=number)
+        changed = deepcopy(self.route)
+        changed["identity"]["machine"] = "OTHER"
+        with self.assertRaisesRegex(ValueError, "host-build-mismatch"):
+            live.ProjectionProvider(self.selection, changed, self.snapshot, landmark_number=1)
+
+    def test_landmark_cli_passes_selection_and_refuses_invalid_before_native_selection(self):
+        with patch.object(live, "run", return_value=dict(status="test")) as run:
+            live.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123", "--route", str(self.route_path),
+                       "--landmark-number", "1"])
+        self.assertEqual(run.call_args.kwargs["landmark_number"], 1)
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical") as select:
+            with self.assertRaisesRegex(ValueError, "landmark-number"):
+                live.run("AMD-DESKTOP", 123, self.route_path, landmark_number=2)
+        select.assert_not_called()
+
     def test_packet_offset_viewport_and_distance_use_exact_native_player_xz(self):
         row = self.native["observation"]
         viewport = [.125, .875, .75, .125]  # native left/right/top/bottom

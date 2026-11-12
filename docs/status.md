@@ -1,5 +1,24 @@
 # Current status
 
+**17:37 EST NOVEMBER 12 — SAVED LANDMARK GUIDE WORKS WITHOUT PLAYBACK:**
+Select a measured saved point, enable **Guide selected marker**, then Show markers.
+The pinned point gets a gold named edge cue with direct distance when off-screen;
+behind-camera points get text without an invented direction. Cyan NEXT retains
+precedence for the same point; this feature never creates or changes progress.
+On AMD-DESKTOP/PID51524, the actual named guard trial showed its ground beacon,
+off-screen arrow, behind-camera text and restored beacon. The 200.31-second Qt
+child accepted 921 presentations from 947 stream rows; retained desktop composites
+independently show those states. Hide stopped both owned processes. Camera-only
+input left native XYZ/body bearing and basis unchanged; original camera bearing
+and projection bits were restored. The main route/cache and byte-identical 7/7
+checkpoint are restored, GUI PID25656 is idle, markers and guide option off.
+Seventy-six feed/presenter/Qt checks and 15 launcher/GUI checks passed.
+Evidence: `artifacts/landmark-guide-live-51524/validation.json`; images:
+`artifacts/landmark-guide-edge-close-51524/first.png`,
+`artifacts/landmark-guide-behind-51524/first.png`,
+`artifacts/landmark-guide-restored-51524/last.png`.
+Display only; world instance, terrain, occlusion and reachability remain unqualified.
+
 **17:29 EST NOVEMBER 12 — UNSAVED ROUTE SWITCHING PROTECTS EDITS:**
 Load and Load recent now ask whether to save a dirty route before replacing it.
 Cancel, cancelled Save As and failed saves preserve the route, association,

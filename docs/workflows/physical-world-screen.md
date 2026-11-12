@@ -207,6 +207,25 @@ near-zero clip W says outside camera view. Finished/missing/invalid progress
 produces no cue. Ground rings return when their actual projection is visible.
 Distance is not remaining route length or a clearance/reachability claim.
 
+For an independently saved landmark without a playback cursor, select its row,
+enable **Guide selected marker**, and choose **Show markers**. A gold named edge
+cue uses that point's direct horizontal native-unit distance; behind-camera points
+get text without a guessed arrow. The selection is pinned until Hide markers;
+hide, select another row and show again to change it. The option is disabled while
+the child is open. Cyan NEXT wins if both refer to the same point, and separate
+cues keep their text apart. This guide never creates a cursor, changes playback
+progress or starts movement. The CLI equivalent is `--landmark-number N`, using
+the saved route's original 1-based point number. Invalid numbers are refused.
+On AMD-DESKTOP/PID51524, camera-only live acceptance showed the named guard beacon,
+edge arrow, behind-camera text and restored beacon with no playback checkpoint.
+Hide stopped the child after 921 accepted presentations / 200.31 seconds. Native
+player XYZ/body bearing, basis and the restored main checkpoint were unchanged;
+camera bearing/projection bits also returned exactly. Evidence:
+`artifacts/landmark-guide-live-51524/validation.json`, with reviewed composites at
+`artifacts/landmark-guide-edge-close-51524/first.png`,
+`artifacts/landmark-guide-behind-51524/first.png` and
+`artifacts/landmark-guide-restored-51524/last.png`.
+
 Root qualified the cue on AMD-DESKTOP/PID17212 with genuine reverse progress:
 the existing controller confirmed arrival at recorded point 7 with zero pulses,
 then explicitly stopped before point 6. A 237.05-second camera-only Qt pilot
