@@ -100,6 +100,14 @@ Then `nativeFacing.values` contains the native values associated with that image
 Otherwise the screenshot remains available and `nativeFacing` gives an unavailable
 reason plus any completed raw report paths. These sequential reads cannot exclude
 ABA changes or establish frame freshness, occlusion or restart recovery.
+The WGC receipt optionally records physical window geometry and a validated
+`clientFrameMapping`. The combined result adds `playerFramePointCandidate` and
+target `framePointCandidate`, expressed in full-size screenshot pixels. The probe
+uses its own temporary DPI context and read-only client/DWM geometry; the visible
+frame size must match the bitmap. Unavailable or old geometry withholds pixel
+points while retaining the image and normalized candidates. `insideClientCandidate`
+distinguishes gameplay-client coordinates from title-bar/border coordinates that
+can still satisfy `insideFrameCandidate`. These remain coordinate candidates.
 
 For a **single-command, read-only** distance/progress preview against an existing
 named anchor (replace the example catalog and ID with actual saved values):

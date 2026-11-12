@@ -6,7 +6,7 @@ from pathlib import Path
 import socket
 
 from scripts.observe_physical import ROOT, _identity, _plain_path, _require, _run
-from scripts.physical_turn_visual_pair import read_frame
+from scripts.physical_turn_visual_pair import read_frame, client_frame_mapping
 
 PROBE = ROOT / "tools/physical-wgc-probe/bin/Debug/net10.0-windows10.0.19041.0/win-x64/PhysicalWgcProbe.exe"
 
@@ -51,6 +51,7 @@ def capture_gpu(expected_host, output, *, physical_pid=None):
             "image": str(image), "imageSha256": digest,
             "receipt": str(receipt), "capturedAtUtc": report["capturedCompletedAtUtc"],
             "target": before, "foregroundMayChange": False,
+            "clientFrameMapping": client_frame_mapping(report),
         }
     except (ValueError, OSError, KeyError, TypeError) as error:
         return {"status": "blocked", "targetId": target_id, "workflow": "physical",

@@ -47,10 +47,23 @@ class NativeFacingObservationTests(unittest.TestCase):
             for path, report in zip(paths, (before, after)):
                 path.write_text(json.dumps(report))
             receipt = root / 'image.json'
-            receipt.write_text(json.dumps({
+            geometry = {'visibleFrameLeft': -1266, 'visibleFrameTop': 100, 'visibleFrameRight': 0,
+                        'visibleFrameBottom': 813, 'clientScreenLeft': -1265, 'clientScreenTop': 131,
+                        'clientWidth': 1264, 'clientHeight': 681, 'coordinateSpace': 'physical-screen-pixels'}
+            frame_report = {
                 'imageSha256': 'A' * 64,
+                'frameWidth': 1266, 'frameHeight': 713,
+                'targetBefore': {'width': 1264, 'height': 681, 'windowGeometry': geometry},
+                'targetAfter': {'width': 1264, 'height': 681, 'windowGeometry': deepcopy(geometry)},
+                'clientFrameMapping': {'status': 'available-candidate', 'unavailableReason': None,
+                    'frameWidth': 1266, 'frameHeight': 713, 'clientLeft': 1, 'clientTop': 31,
+                    'clientWidth': 1264, 'clientHeight': 681, 'coordinateSpace': 'top-left-frame-physical-pixels',
+                    'basis': 'matching-dwm-visible-frame-size'},
                 'capturedStartedAtUtc': '2026-11-12T03:13:22.0000000Z' if fault == 'order' else '2026-11-12T03:13:22.5000000Z',
-                'capturedCompletedAtUtc': '2026-11-12T03:13:22.6000000Z'}))
+                'capturedCompletedAtUtc': '2026-11-12T03:13:22.6000000Z'}
+            if fault == 'legacy-geometry': frame_report.pop('clientFrameMapping')
+            if fault == 'bad-geometry': frame_report['clientFrameMapping']['clientTop'] += 1
+            receipt.write_text(json.dumps(frame_report))
             selection = {'status': 'ready', 'target': IDENTITY}
             snapshots = [{'status': 'complete', 'nativeOutput': str(path)} for path in paths]
             if fault == 'before-failure':
@@ -77,12 +90,21 @@ class NativeFacingObservationTests(unittest.TestCase):
         self.assertEqual('stable-bracket-candidate', bracket['status'])
         self.assertEqual('239816685251645959', bracket['values']['playerKey'])
         self.assertEqual('99', bracket['values']['selectedTargetProjectionCandidate']['targetKey'])
+        point = bracket['values']['selectedTargetProjectionCandidate']['framePointCandidate']
+        self.assertEqual(633, point['frameX'])
+        self.assertEqual(371.5, point['frameY'])
+
+    def test_old_geometry_keeps_native_values_with_pixel_point_unavailable(self):
+        bracket = self.run_bracket('legacy-geometry')
+        self.assertEqual('stable-bracket-candidate', bracket['status'])
+        self.assertEqual('unavailable', bracket['values']['playerFramePointCandidate']['status'])
 
     def test_drift_and_bad_order_withhold_values_but_retain_image(self):
         cases = {'owner': 'player-changed', 'camera': 'camera-unavailable-or-changed',
                  'target': 'target-changed', 'identity': 'identity-mismatch',
                  'order': 'acquisition-order-mismatch', 'slow': 'exceeded-five-seconds',
-                 'before-failure': 'native-before-unavailable', 'after-failure': 'native-after-unavailable'}
+                 'before-failure': 'native-before-unavailable', 'after-failure': 'native-after-unavailable',
+                 'bad-geometry': 'visual-client-frame-bounds-mismatch'}
         for fault, reason in cases.items():
             with self.subTest(fault=fault):
                 bracket = self.run_bracket(fault)

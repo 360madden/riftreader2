@@ -684,3 +684,35 @@ Of the 157 projected candidates, 46 lay inside viewport bounds; occlusion remain
 unknown. Raw evidence is
 `artifacts/physical-unit-positions-d3e6f4313d814eabb570ef1ab387503c.json`.
 No game input, method invocation, process-memory write or focus change occurred.
+
+## Screenshot pixel coordinates, November 12 at 00:09 EST
+
+The WGC probe now measures the client origin with Win32 `ClientToScreen` under
+a temporary per-monitor-aware V2 context on its own helper thread. It records
+DWM visible-frame bounds in physical screen coordinates and requires those
+dimensions to match the captured bitmap before returning `clientFrameMapping`.
+The game window is not activated, resized or moved. Geometry participates in
+the existing before/after window checks. A mismatch preserves the screenshot
+with pixel mapping unavailable. Historical receipts remain readable.
+
+Microsoft documents the coordinate conversion in
+[ClientToScreen](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-clienttoscreen),
+the helper-thread context and restoration in
+[SetThreadDpiAwarenessContext](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setthreaddpiawarenesscontext),
+and the DPI/invisible-border distinction in
+[GetWindowRect](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowrect).
+
+On AMD-DESKTOP the measured visible frame was (-1920, 6)..(0, 1038), with client
+origin (-1920, 29), size 1920 by 1009. It matched the 1920 by 1032 bitmap, giving
+client offset (0, 23). The combined native/frame acquisition completed in
+2.730 seconds. Atank's position mapped to frame (959.999996, 642.645381), inside
+his model, and the selected dummy to (635.587070, 515.582222), at its ground ring.
+The image and geometry receipt are
+`artifacts/observe-wgc-fc94c4582603491487d29d9a4f518293/image.png` and `.png.json`.
+Native bracket reports are
+`artifacts/physical-native-facing-7c754d2a1e0647fcb409dbb93b3b10ce.json` and
+`artifacts/physical-native-facing-92e35b5c3d2e4c7682d9d8d3125ad68d.json`.
+Frame/client membership is reported separately; a projected point can fall in
+the title-bar portion of the frame while lying outside the client. Matching
+dimensions remain a mapping candidate, with other window styles/DPI transitions,
+renderer freshness, occlusion and input eligibility unqualified.

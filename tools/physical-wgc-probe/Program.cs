@@ -97,7 +97,40 @@ internal sealed record Options(
 
 internal sealed record TargetInfo(
     int Pid, long StartTicks, string Sha256, long Hwnd,
-    string ProcessName, int Width, int Height, bool Foreground, bool IsCloaked);
+    string ProcessName, int Width, int Height, bool Foreground, bool IsCloaked)
+{
+    public WindowGeometrySnapshot? WindowGeometry { get; init; }
+}
+
+internal sealed record WindowGeometrySnapshot(int VisibleFrameLeft, int VisibleFrameTop,
+    int VisibleFrameRight, int VisibleFrameBottom, int ClientScreenLeft, int ClientScreenTop,
+    int ClientWidth, int ClientHeight)
+{
+    public string CoordinateSpace => "physical-screen-pixels";
+}
+
+internal sealed record ClientFrameMapping(string Status, string? UnavailableReason,
+    int FrameWidth, int FrameHeight, int? ClientLeft, int? ClientTop, int? ClientWidth, int? ClientHeight)
+{
+    public string CoordinateSpace => "top-left-frame-physical-pixels";
+    public string Basis => "matching-dwm-visible-frame-size";
+
+    internal static ClientFrameMapping Create(WindowGeometrySnapshot? geometry, int width, int height)
+    {
+        ClientFrameMapping Missing(string reason) => new("unavailable", reason, width, height, null, null, null, null);
+        if (geometry is null) return Missing("physical-window-geometry-unavailable");
+        if ((long)geometry.VisibleFrameRight - geometry.VisibleFrameLeft != width ||
+            (long)geometry.VisibleFrameBottom - geometry.VisibleFrameTop != height)
+            return Missing("visible-frame-size-does-not-match-image");
+        var left = (long)geometry.ClientScreenLeft - geometry.VisibleFrameLeft;
+        var top = (long)geometry.ClientScreenTop - geometry.VisibleFrameTop;
+        if (geometry.ClientWidth <= 0 || geometry.ClientHeight <= 0 || left < 0 || top < 0 ||
+            left + geometry.ClientWidth > width || top + geometry.ClientHeight > height)
+            return Missing("client-area-outside-captured-frame");
+        return new("available-candidate", null, width, height, (int)left, (int)top,
+            geometry.ClientWidth, geometry.ClientHeight);
+    }
+}
 
 internal static class CapturePolicy
 {
@@ -147,11 +180,39 @@ internal static partial class Native
     [DllImport("user32.dll", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetClientRect(nint hwnd, out Rect rect);
+    [DllImport("user32.dll", ExactSpelling = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool ClientToScreen(nint hwnd, ref Point point);
+    [DllImport("user32.dll", ExactSpelling = true)]
+    internal static extern nint SetThreadDpiAwarenessContext(nint context);
     [DllImport("dwmapi.dll", ExactSpelling = true)]
     internal static extern int DwmGetWindowAttribute(nint hwnd, uint attribute,
         out uint value, uint valueLength);
+    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute", ExactSpelling = true)]
+    internal static extern int DwmGetWindowRectAttribute(nint hwnd, uint attribute,
+        out Rect value, uint valueLength);
     [StructLayout(LayoutKind.Sequential)]
     internal struct Rect { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct Point { public int X, Y; }
+
+    internal static WindowGeometrySnapshot? ReadPhysicalGeometry(nint hwnd)
+    {
+        // Change only this helper thread's coordinate context, never the target window.
+        var previous = SetThreadDpiAwarenessContext((nint)(-4)); // PER_MONITOR_AWARE_V2
+        if (previous == 0) return null;
+        try
+        {
+            if (!GetClientRect(hwnd, out var client) ||
+                DwmGetWindowRectAttribute(hwnd, 9, out var frame, 16) != 0)
+                return null;
+            var origin = new Point { X = client.Left, Y = client.Top };
+            if (!ClientToScreen(hwnd, ref origin)) return null;
+            return new(frame.Left, frame.Top, frame.Right, frame.Bottom, origin.X, origin.Y,
+                client.Right - client.Left, client.Bottom - client.Top);
+        }
+        finally { _ = SetThreadDpiAwarenessContext(previous); }
+    }
 }
 
 internal static class Target
@@ -190,13 +251,16 @@ internal static class Target
             throw new InvalidOperationException("window-client-geometry-unavailable");
         var width = rect.Right - rect.Left;
         var height = rect.Bottom - rect.Top;
+        var geometry = Native.ReadPhysicalGeometry(options.Hwnd);
+        if (geometry is not null) { width = geometry.ClientWidth; height = geometry.ClientHeight; }
         if (width < 64 || height < 64 || width > 4096 || height > 2160)
             throw new InvalidOperationException("window-client-dimensions-invalid");
         var cloaked = Native.DwmGetWindowAttribute(options.Hwnd, 14, out var state, 4) == 0
             && state != 0;
         if (cloaked) throw new InvalidOperationException("window-cloaked");
         return new(options.Pid, start, hash, options.Hwnd.ToInt64(), options.ProcessName,
-            width, height, Native.GetForegroundWindow() == options.Hwnd, cloaked);
+            width, height, Native.GetForegroundWindow() == options.Hwnd, cloaked)
+        { WindowGeometry = geometry };
     }
 }
 
@@ -274,6 +338,7 @@ internal static class Probe
                 capturedStartedAtUtc = started, capturedCompletedAtUtc = completed,
                 captureCallMilliseconds = timer.Elapsed.TotalMilliseconds,
                 frameWidth = image.Width, frameHeight = image.Height,
+                clientFrameMapping = ClientFrameMapping.Create(before.WindowGeometry, image.Width, image.Height),
                 imageSha256 = imageHash, imageBytes = bytes.Length,
                 outputPath = output, quality,
                 inputSent = false, focusChangedByProbe = false,
@@ -359,6 +424,17 @@ internal static class Probe
             "locked-gui");
         Check(CapturePolicy.BlockReason(hasLock: false, quarantineExists: true) is not null,
             "quarantined-gui");
+        var maximized = ClientFrameMapping.Create(new(-1920, 0, 0, 1032, -1920, 23, 1920, 1009), 1920, 1032);
+        Check(maximized.Status == "available-candidate" && maximized.ClientLeft == 0 && maximized.ClientTop == 23,
+            "negative-monitor-origin");
+        var normal = ClientFrameMapping.Create(new(100, 100, 1366, 813, 101, 131, 1264, 681), 1266, 713);
+        Check(normal.Status == "available-candidate" && normal.ClientLeft == 1 && normal.ClientTop == 31,
+            "normal-window-client-offset");
+        Check(ClientFrameMapping.Create(new(100, 100, 1366, 813, 101, 131, 1264, 681), 1920, 1032).Status == "unavailable",
+            "mismatched-frame-withheld");
+        Check(ClientFrameMapping.Create(new(100, 100, 1366, 813, 99, 131, 1264, 681), 1266, 713).Status == "unavailable",
+            "outside-client-withheld");
+        Check(ClientFrameMapping.Create(null, 1920, 1032).Status == "unavailable", "missing-geometry-withheld");
         using var bitmap = new Bitmap(80, 80);
         using (var canvas = Graphics.FromImage(bitmap))
         {

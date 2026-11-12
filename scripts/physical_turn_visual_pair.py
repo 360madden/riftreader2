@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import hashlib
 from io import BytesIO
 import json
+import math
 from pathlib import Path
 from statistics import median
 import sys
@@ -65,6 +66,62 @@ def utc(value: object) -> datetime:
     return result
 
 
+def client_frame_mapping(report: dict) -> dict:
+    """Validate optional physical client/frame geometry; old receipts stay usable."""
+    mapping = report.get("clientFrameMapping")
+    if mapping is None:
+        return {"status": "unavailable", "unavailableReason": "client-frame-geometry-not-recorded"}
+    require(type(mapping) is dict
+            and mapping.get("coordinateSpace") == "top-left-frame-physical-pixels"
+            and mapping.get("basis") == "matching-dwm-visible-frame-size"
+            and mapping.get("frameWidth") == report.get("frameWidth")
+            and mapping.get("frameHeight") == report.get("frameHeight"), "visual-client-frame-mapping-invalid")
+    fields = ("clientLeft", "clientTop", "clientWidth", "clientHeight")
+    if mapping.get("status") == "unavailable":
+        require(type(mapping.get("unavailableReason")) is str and mapping["unavailableReason"]
+                and all(mapping.get(field) is None for field in fields), "visual-client-frame-unavailable-invalid")
+        return mapping.copy()
+    before, after = report.get("targetBefore"), report.get("targetAfter")
+    geometry = before.get("windowGeometry") if type(before) is dict else None
+    names = ("visibleFrameLeft", "visibleFrameTop", "visibleFrameRight", "visibleFrameBottom",
+             "clientScreenLeft", "clientScreenTop", "clientWidth", "clientHeight")
+    require(mapping.get("status") == "available-candidate" and mapping.get("unavailableReason") is None
+            and type(geometry) is dict and type(after) is dict and after.get("windowGeometry") == geometry
+            and geometry.get("coordinateSpace") == "physical-screen-pixels"
+            and all(type(geometry.get(name)) is int for name in names)
+            and all(type(mapping.get(field)) is int for field in fields), "visual-client-frame-geometry-invalid")
+    width, height = report["frameWidth"], report["frameHeight"]
+    expected = (geometry["clientScreenLeft"] - geometry["visibleFrameLeft"],
+                geometry["clientScreenTop"] - geometry["visibleFrameTop"], geometry["clientWidth"], geometry["clientHeight"])
+    left, top, client_width, client_height = expected
+    require(tuple(mapping[field] for field in fields) == expected
+            and geometry["visibleFrameRight"] - geometry["visibleFrameLeft"] == width
+            and geometry["visibleFrameBottom"] - geometry["visibleFrameTop"] == height
+            and before.get("width") == after.get("width") == client_width
+            and before.get("height") == after.get("height") == client_height
+            and 0 <= left < width and 0 <= top < height
+            and 0 < client_width <= width - left and 0 < client_height <= height - top,
+            "visual-client-frame-bounds-mismatch")
+    return mapping.copy()
+
+
+def project_client_point_to_frame(point: dict | None, mapping: dict) -> dict:
+    if type(point) is not dict or point.get("status") != "available-candidate":
+        return {"status": "unavailable", "reason": "native-point-not-projectable"}
+    if mapping.get("status") != "available-candidate":
+        return {"status": "unavailable", "reason": mapping.get("unavailableReason", "client-frame-geometry-unavailable")}
+    x, y = point.get("normalizedX"), point.get("normalizedY")
+    require(all(type(value) in (int, float) and math.isfinite(value) for value in (x, y)),
+            "visual-normalized-point-invalid")
+    frame_x = mapping["clientLeft"] + x * mapping["clientWidth"]
+    frame_y = mapping["clientTop"] + y * mapping["clientHeight"]
+    require(math.isfinite(frame_x) and math.isfinite(frame_y), "visual-frame-point-nonfinite")
+    return {"status": "available-candidate", "frameX": frame_x, "frameY": frame_y,
+            "insideFrameCandidate": 0 <= frame_x < mapping["frameWidth"] and 0 <= frame_y < mapping["frameHeight"],
+            "insideClientCandidate": 0 <= x < 1 and 0 <= y < 1,
+            "coordinateConvention": "top-left-frame-physical-pixels"}
+
+
 def verified_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image, str, str]:
     report, receipt_sha = read_receipt(receipt_path)
     require(report.get("schemaVersion") == 1
@@ -93,6 +150,7 @@ def verified_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Im
     require(type(width) is int and type(height) is int
             and 64 <= width <= 4096 and 64 <= height <= 2160,
             "visual-frame-dimensions-invalid")
+    client_frame_mapping(report)
     started = utc(report.get("capturedStartedAtUtc"))
     ended = utc(report.get("capturedCompletedAtUtc"))
     require(started <= ended and (ended-started).total_seconds() <= 6,

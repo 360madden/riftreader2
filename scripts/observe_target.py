@@ -103,6 +103,12 @@ def _capture_with_native_facing(expected_host, output, physical_pid):
                           for key in target_fields} for value in values]
         if target_values[0] != target_values[1]:
             raise ValueError("target-changed-across-frame")
+        from scripts.physical_turn_visual_pair import client_frame_mapping, project_client_point_to_frame
+        mapping = client_frame_mapping(frame)
+        values[-1]["playerFramePointCandidate"] = project_client_point_to_frame(values[-1]["playerScreenPointCandidate"], mapping)
+        target_value = values[-1].get("selectedTargetProjectionCandidate")
+        if target_value is not None and "screenPointCandidate" in target_value:
+            target_value["framePointCandidate"] = project_client_point_to_frame(target_value["screenPointCandidate"], mapping)
         bracket.update(status="stable-bracket-candidate", values=values[-1])
     except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
         bracket["reason"] = str(error) if isinstance(error, ValueError) else "invalid-native-frame-bracket"
