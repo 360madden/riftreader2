@@ -2,11 +2,12 @@
 """Small physical-RIFT waypoint prototype, using the existing RR2 controller.
 
 Run without --go for the waypoint window. --go X Z --execute runs one bounded
-open-ground leg. No memory writes, addon, service, Workbridge or mesh required.
+open-ground trip. No memory writes, addon, service, Workbridge or mesh required.
 """
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import json
@@ -47,6 +48,92 @@ class Snapshot:
     source: str
 
 
+@dataclass
+class TripBudget:
+    """A single budget shared by every controller and waypoint in a trip."""
+    started: float
+    pulses: int = 0
+    hold_ms: int = 0
+
+    def check(self, action=None):
+        if time.monotonic() - self.started > 120:
+            raise WaypointError("Trip exceeded 120 seconds")
+        if action is not None and (self.pulses >= 64 or self.hold_ms + action.hold_ms > 9000):
+            raise WaypointError("Trip input budget reached; stopped before the next pulse")
+
+
+class ForegroundStop:
+    """Own-window no-activate mode and a temporary F8 STOP registration."""
+
+    def __init__(self, window, stop, events):
+        import ctypes
+        from ctypes import wintypes
+        self.ctypes, self.types = ctypes, wintypes
+        self.api = ctypes.WinDLL("user32", use_last_error=True)
+        self.kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        self.api.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        self.api.GetAncestor.restype = wintypes.HWND
+        self.api.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+        self.api.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+        self.api.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+        self.api.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+        self.api.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]
+        self.api.RegisterHotKey.restype = wintypes.BOOL
+        self.api.UnregisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int]
+        self.api.GetMessageW.argtypes = [ctypes.POINTER(wintypes.MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT]
+        self.api.GetMessageW.restype = ctypes.c_int
+        self.api.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        self.kernel.GetCurrentThreadId.restype = wintypes.DWORD
+        window.update_idletasks()
+        self.handle = self.api.GetAncestor(window.winfo_id(), 2)
+        self.original_style = self.api.GetWindowLongPtrW(self.handle, -20)
+        ctypes.set_last_error(0)
+        self.api.SetWindowLongPtrW(self.handle, -20, self.original_style | 0x08000000)
+        if ctypes.get_last_error():
+            raise WaypointError("Could not enable a STOP window that preserves RIFT focus")
+        self.thread_id = None
+        self.ready = threading.Event()
+        self.cancelled = threading.Event()
+
+        def listen():
+            self.thread_id = self.kernel.GetCurrentThreadId()
+            registered = bool(self.api.RegisterHotKey(None, 1, 0x4000, 0x77))
+            self.ready.set()
+            if self.cancelled.is_set():
+                if registered:
+                    self.api.UnregisterHotKey(None, 1)
+                return
+            if not registered:
+                events.put({"status": "notice", "reason": "F8 unavailable; use the STOP button."})
+                return
+            try:
+                message = wintypes.MSG()
+                while self.api.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
+                    if message.message == 0x0312:
+                        stop.set()
+                        events.put({"status": "stopping", "reason": "F8 STOP requested; waiting for the bounded pulse to finish."})
+            finally:
+                self.api.UnregisterHotKey(None, 1)
+
+        self.thread = threading.Thread(target=listen, daemon=True)
+        self.thread.start()
+        if not self.ready.wait(1):
+            self.cancelled.set()
+            self.api.SetWindowLongPtrW(self.handle, -20, self.original_style)
+            raise WaypointError("F8 listener startup did not complete; no movement started")
+
+    def close(self):
+        self.cancelled.set()
+        if self.thread.is_alive() and self.thread_id:
+            posted = self.api.PostThreadMessageW(self.thread_id, 0x0012, 0, 0)
+            if not posted and self.thread.is_alive():
+                raise WaypointError("Waiting for F8 listener shutdown")
+            self.thread.join(timeout=1)
+            if self.thread.is_alive():
+                raise WaypointError("Waiting for F8 listener shutdown")
+        self.api.SetWindowLongPtrW(self.handle, -20, self.original_style)
+
+
 def finite(value):
     result = float(value)
     if not math.isfinite(result):
@@ -71,6 +158,8 @@ class PhysicalAdapter:
                 or ident["gameBuildSha256"].casefold() != self.target["executableSha256"].casefold()):
             raise WaypointError("Movement basis belongs to another process/build; recalibrate first")
         self.unit_key = ident["unitKey"]
+        self.input_receipt_path = ROOT / "artifacts" / ("waypoint-input-" + uuid.uuid4().hex + ".jsonl")
+        self.last_input_receipt = None
 
     def identity(self):
         selected = physical_rift.select_physical(self.host, self.pid)
@@ -121,6 +210,19 @@ class PhysicalAdapter:
             receipt = json.loads(completed.stdout.splitlines()[-1])
         except (ValueError, IndexError) as exc:
             raise WaypointError("Input receipt unavailable; no retry") from exc
+        # Retain failed/interrupted GUI receipts as well as successful pulses.
+        # This is the evidence needed to distinguish a rejected input from a
+        # released target-loss abort; a generic process exit code cannot do so.
+        self.last_input_receipt = receipt
+        with self.input_receipt_path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(receipt, separators=(",", ":")) + "\n")
+        same_identity = (receipt.get("processId") == self.pid
+                         and str(receipt.get("processStartUtcTicks")) == self.target["processStartUtcTicks"]
+                         and str(receipt.get("executableSha256", "")).casefold()
+                             == self.target["executableSha256"].casefold())
+        if (same_identity and receipt.get("releaseSucceeded") is True
+                and (receipt.get("targetLost") is True or receipt.get("cancelled") is True)):
+            raise Stopped("Target changed or lost foreground; Windows release accepted, game stop unverified")
         if (completed.returncode != 0 or receipt.get("boundedActionCompleted") is not True
                 or receipt.get("releaseSucceeded") is not True
                 or receipt.get("allRequestedKeyDownsInserted") is not True
@@ -130,20 +232,23 @@ class PhysicalAdapter:
                 or str(receipt.get("processStartUtcTicks")) != self.target["processStartUtcTicks"]
                 or str(receipt.get("executableSha256", "")).casefold()
                     != self.target["executableSha256"].casefold()):
-            raise WaypointError(receipt.get("reason") or receipt.get("Error")
+            raise WaypointError(receipt.get("reason") or receipt.get("error")
                                 or "Input stopped or release unconfirmed; no retry")
         return receipt
 
 
-def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=True):
+def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=True,
+            reservation=None, budget=None):
     """One existing bounded controller, with a fresh feedback read per pulse."""
     def check_stop():
         if stop.is_set():
             raise Stopped("Stopped; no further input")
+        if budget is not None:
+            budget.check()
 
     actions = []
     check_stop()
-    with adapter.reserve() as lease:
+    with (adapter.reserve() if reservation is None else nullcontext(reservation)) as lease:
         start = current = adapter.read()
         goal = Position(finite(goal_x), start.position.y, finite(goal_z))
         controller = WaypointController(adapter.calibrations(start), start.position, goal)
@@ -179,8 +284,13 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
             check_stop()
             if time.monotonic() - current.acquired > 2:
                 raise WaypointError("Pose expired before input")
+            if budget is not None:
+                budget.check(action)
             receipt = adapter.pulse(action, focus=focus and not actions)
             actions.append(receipt)
+            if budget is not None:
+                budget.pulses += 1
+                budget.hold_ms += action.hold_ms
             # Wait with all keys released for the observed motion to settle.
             if stop.wait(.15):
                 raise Stopped("Stopped; current pulse released")
@@ -200,16 +310,64 @@ def route_points(rows):
 
 
 def run_route(adapter, points, stop, emit=lambda event: None):
-    results = []
-    movement_started = False
-    for label, px, pz in route_points(points):
-        if stop.is_set():
-            raise Stopped("Stopped; no further input")
-        emit({"status": "leg", "name": label})
-        result = run_leg(adapter, px, pz, stop, emit, focus=not movement_started)
-        results.append(result)
-        movement_started = movement_started or result["pulses"] > 0
-    return results
+    """Follow up to 20 units of route using <=4-unit intermediate targets.
+
+    The original controller's six-action, 900-ms, 12-second and corridor limits
+    remain in force for each intermediate target. Ownership, STOP and the trip
+    budget span the entire route, including arrivals and intermediate targets.
+    """
+    points = route_points(points)
+    if stop.is_set():
+        raise Stopped("Stopped; no further input")
+    with adapter.reserve() as lease:
+        current = adapter.read()
+        planned = 0.0
+        prior = current.position
+        for _, px, pz in points:
+            point = Position(px, prior.y, pz)
+            planned += planar_distance(prior, point)
+            prior = point
+        if planned > 20:
+            raise WaypointError("Route exceeds 20 world units; choose a shorter route")
+        budget = TripBudget(time.monotonic())
+        results = []
+        movement_started = False
+        for label, px, pz in points:
+            if stop.is_set():
+                raise Stopped("Stopped; no further input")
+            budget.check()
+            current = adapter.read()
+            start = current.position
+            goal = Position(px, start.y, pz)
+            distance = planar_distance(start, goal)
+            count = max(1, math.ceil(distance / 4))
+            segments = []
+            emit({"status": "leg", "name": label, "segmentCount": count})
+            for index in range(1, count + 1):
+                sx = start.x + (px - start.x) * index / count
+                sz = start.z + (pz - start.z) * index / count
+
+                def progress(event):
+                    event = dict(event, segment=index, segmentCount=count)
+                    if "position" in event:
+                        point = Position(**event["position"])
+                        event["distance"] = planar_distance(point, goal)
+                    if event["status"] == "arrived":
+                        event["status"] = "segment-arrived"
+                    emit(event)
+
+                segment = run_leg(adapter, sx, sz, stop, progress,
+                                  focus=not movement_started, reservation=lease, budget=budget)
+                segments.append(segment)
+                movement_started = movement_started or segment["pulses"] > 0
+            result = dict(segments[-1], start=asdict(start), goal=asdict(goal),
+                          pulses=sum(row["pulses"] for row in segments),
+                          totalHoldMs=sum(row["totalHoldMs"] for row in segments),
+                          elapsedSeconds=round(sum(row["elapsedSeconds"] for row in segments), 3),
+                          segments=segments, actions=[action for row in segments for action in row["actions"]])
+            results.append(result)
+            emit(result)
+        return results
 
 
 def launch_window(args):
@@ -222,15 +380,18 @@ def launch_window(args):
     frame = ttk.Frame(window, padding=14)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
-    ttk.Label(frame, text="Open ground • each leg ≤ 6 units • pulses ≤ 150 ms • foreground loss stops movement").pack(anchor="w", pady=(0, 10))
+    ttk.Label(frame, text="Open ground • route ≤ 20 units • pulses ≤ 150 ms • foreground loss stops movement").pack(anchor="w", pady=(0, 10))
     state = tk.StringVar(value="Ready — refresh position, save a point, or enter X / Z.")
     ttk.Label(frame, textvariable=state, wraplength=710).pack(anchor="w", pady=5)
+    editable = []
     coordinates = ttk.Frame(frame)
     coordinates.pack(fill="x", pady=5)
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
     for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
         ttk.Label(coordinates, text=label).pack(side="left", padx=(0, 5))
-        ttk.Entry(coordinates, textvariable=variable, width=width).pack(side="left", padx=(0, 10))
+        entry = ttk.Entry(coordinates, textvariable=variable, width=width)
+        entry.pack(side="left", padx=(0, 10))
+        editable.append(entry)
     table = ttk.Treeview(frame, columns=("name", "x", "z"), show="headings", height=9)
     for col, label, width in (("name", "Waypoint", 260), ("x", "X", 180), ("z", "Z", 180)):
         table.heading(col, text=label)
@@ -240,6 +401,7 @@ def launch_window(args):
     busy = False
     closing = False
     adapter = None
+    foreground_stop = None
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
     def add_point(label, px, pz):
@@ -259,12 +421,27 @@ def launch_window(args):
             else:
                 run_route(adapter, points, stop, events.put)
         except Exception as exc:
-            events.put({"status": "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc)})
+            stopped_position = None
+            if isinstance(exc, Stopped) and adapter is not None:
+                try:
+                    first = adapter.read()
+                    time.sleep(.25)
+                    second = adapter.read()
+                    drift = planar_distance(first.position, second.position)
+                    if drift > .05:
+                        exc = WaypointError(f"Movement still detected after STOP ({drift:.3f} units); recovery required")
+                    else:
+                        stopped_position = asdict(second.position)
+                except Exception as observation_error:
+                    exc = WaypointError("STOP requested; stationary check unavailable: " + str(observation_error))
+            events.put({"status": "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
+                        **({"position": stopped_position} if stopped_position else {}),
+                        "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None})
         finally:
             events.put({"status": "idle"})
 
     def start(operation, points=None):
-        nonlocal busy
+        nonlocal busy, foreground_stop
         if busy:
             return
         if operation == "go" and (not points or len(points) > 20):
@@ -272,12 +449,22 @@ def launch_window(args):
             return
         busy = True
         stop.clear()
+        if operation == "go":
+            try:
+                foreground_stop = ForegroundStop(window, stop, events)
+            except Exception as exc:
+                busy = False
+                state.set("Cannot start safely: " + str(exc))
+                return
+        for widget in editable:
+            widget.configure(state="disabled")
         state.set("Reading current RIFT pose…" if operation != "go" else "Starting route — STOP prevents the next pulse.")
         threading.Thread(target=worker, args=(operation, points), daemon=False).start()
 
     def request_stop():
         stop.set()
-        state.set("STOP requested — waiting for the current bounded pulse to release.")
+        state.set("STOP requested — waiting for the current bounded pulse to release." if busy
+                  else "Stopped — no input active.")
 
     def add_entered():
         try:
@@ -308,15 +495,20 @@ def launch_window(args):
                             ("Save Current", lambda: start("save")), ("Add X / Z", add_entered),
                             ("Remove", lambda: table.delete(*table.selection())),
                             ("Load", load_route), ("Save Route", save_route)):
-        ttk.Button(buttons, text=label, command=callback).pack(side="left", padx=(0, 5))
+        button = ttk.Button(buttons, text=label, command=callback)
+        button.pack(side="left", padx=(0, 5))
+        editable.append(button)
     controls = ttk.Frame(frame)
     controls.pack(fill="x", pady=8)
-    ttk.Button(controls, text="Go Selected", command=lambda: start("go", selected_points())).pack(side="left", padx=(0, 6))
-    ttk.Button(controls, text="Run Route", command=lambda: start("go", selected_points(True))).pack(side="left")
-    tk.Button(controls, text="STOP", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
+    for label, callback in (("Go Selected", lambda: start("go", selected_points())),
+                            ("Run Route", lambda: start("go", selected_points(True)))):
+        button = ttk.Button(controls, text=label, command=callback)
+        button.pack(side="left", padx=(0, 6))
+        editable.append(button)
+    tk.Button(controls, text="STOP / F8", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
               command=request_stop, width=16).pack(side="right")
     log.pack(fill="x", pady=4)
-    ttk.Label(frame, text="STOP or close waits for release. Switching away from RIFT aborts; movement never refocuses mid-route.").pack(anchor="w")
+    ttk.Label(frame, text="F8 stops without changing focus. STOP preserves focus during a run; edits unlock after cleanup.").pack(anchor="w")
 
     def close():
         nonlocal closing
@@ -327,12 +519,22 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy
+        nonlocal busy, foreground_stop
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
             if status == "idle":
+                if foreground_stop is not None:
+                    try:
+                        foreground_stop.close()
+                    except WaypointError as exc:
+                        state.set(str(exc))
+                        window.after(200, lambda: events.put({"status": "idle"}))
+                        continue
+                    foreground_stop = None
                 busy = False
+                for widget in editable:
+                    widget.configure(state="normal")
                 if closing:
                     window.destroy()
                     return
@@ -382,8 +584,9 @@ def main(argv=None):
     stop = threading.Event()
     try:
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
-        result = run_leg(adapter, *args.go, stop,
-                         lambda event: print(json.dumps(event), flush=True))
+        result = run_route(adapter, [("Waypoint", *args.go)], stop,
+                           lambda event: print(json.dumps({k: v for k, v in event.items()
+                                                           if k not in ("actions", "segments")}), flush=True))[0]
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         output.write_text(json.dumps(result, indent=2), encoding="utf-8")
         print(json.dumps({"status": result["status"], "receipt": str(output)}))

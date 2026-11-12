@@ -19,7 +19,8 @@ internal static class MoveKeyCommand
     internal sealed record Options(
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
-        int XyzSettleMilliseconds, bool MeasureActorPose, int ActorPoseSettleMilliseconds = 0);
+        int XyzSettleMilliseconds, bool MeasureActorPose, int ActorPoseSettleMilliseconds = 0,
+        bool ReleaseOnly = false);
 
     // A timed envelope around the bounded input executor, NOT exact down/up
     // timestamps or proof that the RIFT game consumed the injected key.
@@ -212,7 +213,7 @@ internal static class MoveKeyCommand
 
     private const string Usage =
         "move-key --pid PID --key w[,e] [--hold-ms 1000] [--no-focus] [--execute] [--json] [--measure-xyz] [--xyz-settle-ms 250] [--measure-actor-pose] [--actor-pose-settle-ms 500]"
-        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH]";
+        + " [--expect-start-ticks TICKS] [--expect-sha256 HASH] [--release-only]";
 
     internal static Options Parse(string[] args)
     {
@@ -222,6 +223,7 @@ internal static class MoveKeyCommand
         int xyzSettleMilliseconds = 0;
         int actorPoseSettleMilliseconds = 0;
         bool focus = true, execute = false, json = false, measureXyz = false, measureActorPose = false;
+        bool releaseOnly = false;
         long? expectedTicks = null;
         string? expectedSha = null;
         var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -232,7 +234,7 @@ internal static class MoveKeyCommand
             if (!seen.Add(option))
                 throw new InvalidDataException($"Repeated option: {option}");
             if (option is "--focus" or "--no-focus" or "--execute" or "--json" or "--measure-xyz"
-                or "--measure-actor-pose")
+                or "--measure-actor-pose" or "--release-only")
             {
                 if (option == "--focus") focus = true;
                 if (option == "--no-focus") focus = false;
@@ -240,6 +242,7 @@ internal static class MoveKeyCommand
                 if (option == "--json") json = true;
                 if (option == "--measure-xyz") measureXyz = true;
                 if (option == "--measure-actor-pose") measureActorPose = true;
+                if (option == "--release-only") releaseOnly = true;
                 continue;
             }
             if (i + 1 >= args.Length)
@@ -296,8 +299,11 @@ internal static class MoveKeyCommand
             throw new InvalidDataException("--xyz-settle-ms requires --measure-xyz.");
         if (seen.Contains("--actor-pose-settle-ms") && !measureActorPose)
             throw new InvalidDataException("--actor-pose-settle-ms requires --measure-actor-pose.");
+        if (releaseOnly && (keys.Length != 1 || measureXyz || measureActorPose || seen.Contains("--hold-ms")))
+            throw new InvalidDataException("--release-only requires one key, no hold and no movement measurements.");
         return new Options(pid.Value, keys, hold, focus, execute, json,
-            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose, actorPoseSettleMilliseconds);
+            expectedTicks, expectedSha, measureXyz, xyzSettleMilliseconds, measureActorPose, actorPoseSettleMilliseconds,
+            releaseOnly);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken cancellationToken)
@@ -316,7 +322,8 @@ internal static class MoveKeyCommand
                     measureActorPoseRequested = options.MeasureActorPose,
                     xyzSettleMilliseconds = options.XyzSettleMilliseconds,
                     actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds, inputSent = false,
-                    instruction = "Add --execute to send one bounded manual pulse."
+                    releaseOnly = options.ReleaseOnly,
+                    instruction = "Add --execute to send the requested pulse or key-up-only recovery."
                 });
                 return 0;
             }
@@ -395,6 +402,33 @@ internal static class MoveKeyCommand
             throw new InvalidOperationException("RIFT is not foreground; use --focus or focus it manually.");
         if (target with { IsForeground = true } != ready)
             throw new InvalidOperationException("Selected RIFT window or geometry changed before input.");
+
+        if (options.ReleaseOnly)
+        {
+            // Explicit recovery for keys owned by an interrupted action. It has
+            // the same exact identity, visible-window and exclusive-input guard,
+            // requests foreground when authorized, and never sends key-down.
+            using var recoveryTarget = WindowsControlDesktop.PinInputTarget(ready);
+            var recoveryTimeline = new KeySendTimeline();
+            foreach (var key in options.Keys)
+            {
+                if (!recoveryTarget.IsCurrent())
+                    throw new InvalidOperationException("Target changed before key-up recovery.");
+                recoveryTimeline.Send(key, false, () => WindowsControlDesktop.SendKeys(key, false));
+            }
+            Report(options.Json, new
+            {
+                status = "windows-keyup-inserted-game-state-unverified",
+                machine = ready.MachineName, processId = ready.ProcessId,
+                processStartUtcTicks = ready.ProcessStartUtcTicks,
+                executableSha256 = ready.ExecutableSha256, focusAttempt,
+                keys = options.Keys, releaseOnly = true, keyDownAttempts = 0,
+                keySendEvents = recoveryTimeline.Snapshot(),
+                desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
+                gameResponseVerified = false
+            });
+            return 0;
+        }
 
         var otherInputs = WindowsControlDesktop.ReadPressedInputs();
         if (otherInputs.Any())
@@ -510,7 +544,8 @@ internal static class MoveKeyCommand
             inputCallTiming, keySendEvents, keyHoldWindows,
             xyzSettleMilliseconds = options.XyzSettleMilliseconds, xyzSettleApplied,
             actorPoseSettleMilliseconds = options.ActorPoseSettleMilliseconds, actorPoseSettleApplied,
-            gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error
+            gameResponseVerified = false, xyzFeedback, poseFeedback, turnRateCandidate, result.Error,
+            keyReleaseFallbacks = input.ReleaseFallbacks
         });
         return success ? 0 : 2;
     }
@@ -651,17 +686,40 @@ internal static class MoveKeyCommand
         public bool IsTargetCurrent() => pinned.IsCurrent();
         public int KeyDownAttempts { get; private set; }
         public int KeyDownInsertions { get; private set; }
+        public List<object> ReleaseFallbacks { get; } = [];
+        private readonly object keyOwnershipGate = new();
+        private readonly Dictionary<string, WindowsControlDesktop.KeyReleaseWindow?> ownedDowns = [];
         public void KeyDown(string key)
         {
+            var releaseWindow = pinned.CaptureKeyReleaseWindow();
             if (!pinned.IsCurrent())
                 throw new InvalidOperationException("RIFT window lost identity or foreground before key down.");
             KeyDownAttempts++;
             timeline.Send(key, true, () => WindowsControlDesktop.SendKeys(key, true));
+            lock (keyOwnershipGate) ownedDowns[key] = releaseWindow;
             KeyDownInsertions++;
         }
         // Never condition key-up on focus or process identity: release is unconditional.
-        public void KeyUp(string key) =>
-            timeline.Send(key, false, () => WindowsControlDesktop.SendKeys(key, false));
+        public void KeyUp(string key)
+        {
+            List<Exception> errors = [];
+            try { timeline.Send(key, false, () => WindowsControlDesktop.SendKeys(key, false)); }
+            catch (Exception error) { errors.Add(error); }
+            lock (keyOwnershipGate)
+            {
+                if (ownedDowns.Remove(key, out var releaseWindow))
+                {
+                    try { ReleaseFallbacks.Add(new { key, status = pinned.PostOwnedKeyUpIfBackground(key[0], releaseWindow) }); }
+                    catch (Exception error)
+                    {
+                        errors.Add(error);
+                        ReleaseFallbacks.Add(new { key, status = "queue-failed", error = error.Message });
+                    }
+                }
+            }
+            if (errors.Count != 0)
+                throw new AggregateException("Key-up release attempt failed.", errors);
+        }
         public void ButtonDown(string _) => throw new NotSupportedException();
         public void ButtonUp(string _) => throw new NotSupportedException();
         public void MoveRelative(int _, int __) => throw new NotSupportedException();

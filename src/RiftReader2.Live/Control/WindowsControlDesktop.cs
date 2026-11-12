@@ -254,14 +254,57 @@ public static class WindowsControlDesktop
         }
     }
 
+    internal sealed record KeyReleaseWindow(IntPtr Handle, uint ThreadId);
+
     internal sealed class PinnedInputTarget(
         DesktopTarget target, Process process, IntPtr window) : IDisposable
     {
+        private int releaseObservedBlur;
+        internal KeyReleaseWindow? CaptureKeyReleaseWindow()
+        {
+            var thread = NativeMethods.GetWindowThreadProcessId(window, out var pid);
+            var info = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+            if (pid != target.ProcessId || thread == 0
+                || !NativeMethods.GetGUIThreadInfo(thread, ref info)
+                || info.Focus == IntPtr.Zero || NativeMethods.GetAncestor(info.Focus, RootWindow) != window)
+                return null;
+            var focusThread = NativeMethods.GetWindowThreadProcessId(info.Focus, out var focusPid);
+            return focusPid == target.ProcessId && focusThread != 0
+                ? new KeyReleaseWindow(info.Focus, focusThread) : null;
+        }
+
+        // Release-only fallback for a key owned by this pinned request. SendInput
+        // still clears the OS state unconditionally; this message can also clear
+        // a message-based client's latch after focus has moved. Queue insertion
+        // is not acknowledgment that the game consumed the release.
+        internal string PostOwnedKeyUpIfBackground(char key, KeyReleaseWindow? releaseWindow)
+        {
+            if (IsTargetForeground(window))
+                return "not-needed-foreground";
+            Interlocked.Exchange(ref releaseObservedBlur, 1);
+            if (NativeMethods.WaitForSingleObject(process.SafeHandle, 0) != 0x00000102
+                || !NativeMethods.IsWindow(window) || releaseWindow is null
+                || !NativeMethods.IsWindow(releaseWindow.Handle))
+                return "unavailable-target-ended";
+            _ = NativeMethods.GetWindowThreadProcessId(window, out var pid);
+            var focusThread = NativeMethods.GetWindowThreadProcessId(releaseWindow.Handle, out var focusPid);
+            if (pid != target.ProcessId || focusPid != target.ProcessId
+                || focusThread != releaseWindow.ThreadId
+                || NativeMethods.GetAncestor(releaseWindow.Handle, RootWindow) != window)
+                return "unavailable-window-owner-changed";
+            var parameters = KeyUpMessageParameters(key);
+            if (!NativeMethods.PostMessageW(releaseWindow.Handle, 0x0101,
+                new IntPtr(char.ToUpperInvariant(key)), new IntPtr(unchecked((int)parameters))))
+                throw LastWin32("Owned background key-up message could not be queued.");
+            return "queued-game-consumption-unverified";
+        }
+
         // Only constant-time OS/window queries here: no process enumeration, file/hash
         // reads, MainModule access, or replacement-window discovery while input is held.
         internal bool IsCurrent()
         {
-            if (NativeMethods.WaitForSingleObject(process.SafeHandle, 0) != 0x00000102
+            if (Volatile.Read(ref releaseObservedBlur) != 0
+                || NativeMethods.WaitForSingleObject(process.SafeHandle, 0) != 0x00000102
                 || !NativeMethods.IsWindow(window) || !NativeMethods.IsWindowVisible(window)
                 || NativeMethods.IsIconic(window) || !IsTargetForeground(window))
                 return false;
@@ -523,6 +566,9 @@ public static class WindowsControlDesktop
         'd' => 0x20,
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "Only W, A, S, D, Q, and E are supported.")
     };
+
+    internal static uint KeyUpMessageParameters(char key) =>
+        1u | ((uint)ScanCodeFor(key) << 16) | 0xC0000000u;
 
     private static void EnsureWindows()
     {
@@ -998,8 +1044,24 @@ public static class WindowsControlDesktop
         public UIntPtr ExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public uint Size, Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public int CaretLeft, CaretTop, CaretRight, CaretBottom;
+    }
+
     private static class NativeMethods
     {
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool GetGUIThreadInfo(uint threadId, ref GuiThreadInfo info);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        internal static extern bool PostMessageW(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         internal static extern uint WaitForSingleObject(
             Microsoft.Win32.SafeHandles.SafeProcessHandle handle, uint milliseconds);

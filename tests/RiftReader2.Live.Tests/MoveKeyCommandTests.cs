@@ -8,6 +8,28 @@ namespace RiftReader2.Live.Tests;
 public sealed class MoveKeyCommandTests
 {
     [Theory]
+    [InlineData('q', 0xC0100001u)]
+    [InlineData('e', 0xC0120001u)]
+    public void BackgroundReleaseMessageHasScanCodeAndKeyUpFlagsOnly(char key, uint expected)
+    {
+        Assert.Equal(expected, WindowsControlDesktop.KeyUpMessageParameters(key));
+    }
+
+    [Fact]
+    public void RecoveryIsExplicitKeyUpOnlyAndCannotAlsoHoldOrMeasure()
+    {
+        var options = MoveKeyCommand.Parse(["--pid", "123", "--key", "q", "--release-only"]);
+        Assert.True(options.ReleaseOnly);
+        Assert.False(options.Execute);
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--key", "q", "--release-only", "--hold-ms", "100"]));
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--key", "q", "--release-only", "--measure-xyz"]));
+        Assert.Throws<InvalidDataException>(() => MoveKeyCommand.Parse(
+            ["--pid", "123", "--key", "q,w", "--release-only"]));
+    }
+
+    [Theory]
     [InlineData("0", 0)]
     [InlineData("500", 500)]
     [InlineData("1000", 1000)]

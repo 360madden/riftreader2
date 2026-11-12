@@ -97,6 +97,32 @@ class WaypointRunnerTests(unittest.TestCase):
             run_route(adapter, [("Here", 0, 0), ("Next", 2, 0)], stop, emit)
         self.assertFalse(adapter.calls)
 
+    def test_long_waypoint_uses_multiple_controllers_but_keeps_one_focus_request(self):
+        adapter = SimulatedRift()
+        result = run_route(adapter, [("Long", 8, 0)], threading.Event())[0]
+        self.assertEqual(result["status"], "arrived")
+        self.assertLessEqual(result["distance"], .30)
+        self.assertEqual(len(result["segments"]), 2)
+        self.assertGreater(result["pulses"], 6)
+        self.assertTrue(adapter.calls[0][1])
+        self.assertTrue(all(not focus for _, focus in adapter.calls[1:]))
+
+    def test_route_total_length_is_checked_before_any_input(self):
+        adapter = SimulatedRift()
+        with self.assertRaisesRegex(ValueError, "20 world units"):
+            run_route(adapter, [("Out", 11, 0), ("Return", 0, 0)], threading.Event())
+        self.assertFalse(adapter.calls)
+
+    def test_stop_at_intermediate_arrival_does_not_start_the_next_segment(self):
+        adapter, stop = SimulatedRift(), threading.Event()
+        def emit(event):
+            if event["status"] == "segment-arrived":
+                stop.set()
+        with self.assertRaises(Stopped):
+            run_route(adapter, [("Long", 8, 0)], stop, emit)
+        self.assertLess(adapter.position.x, 5)
+        self.assertLessEqual(len(adapter.calls), 6)
+
 
 if __name__ == "__main__":
     unittest.main()

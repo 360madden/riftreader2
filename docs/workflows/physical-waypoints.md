@@ -12,20 +12,38 @@ or choose **Run Route** to visit the list in order. **Load** and **Save Route**
 use a small JSON file containing `{"waypoints": [["name", x, z]]}`.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
 
-Each leg is limited to 6 world units, six pulses, 900 ms total key hold and
-12 seconds. Arrival requires two settled observations within 0.30 units.
+Each route is limited to 20 world units of planned travel, 64 pulses, 9 seconds
+total key hold and 120 seconds overall. Long waypoints are split into targets
+at most 4 units apart. Each target retains the existing controller's six-pulse,
+900-ms hold, 12-second and 6-unit radius limits. Input ownership and the trip
+budget span every target and waypoint; only the first actual pulse can focus
+RIFT. Arrival requires two settled observations within 0.30 units.
 This is a supervised open-ground prototype: it does not route around obstacles.
 The measured W/S/Q/E speeds are rotated using the current entity body facing;
 the native position/facing fields remain candidates, with restart qualification
 still pending. The included movement basis is pinned to its measured process
 epoch, player and executable. A restart requires a new basis via `--basis PATH`.
 
-**STOP** latches cancellation. The current pulse is allowed to finish its bounded
-release; another pulse is never sent. Closing the window waits for that cleanup.
-Only the first pulse can request RIFT foreground. Losing foreground stops the
-run, including between pulses or route legs. Do not manipulate the RIFT window
-while moving. Each native pulse retains the existing exclusive input owner,
-process/start/build checks, held-input refusal and unconditional key release.
+**STOP / F8** latches cancellation. F8 is registered only during a trip and does
+not change foreground. The waypoint window uses `WS_EX_NOACTIVATE` during the
+trip so an ordinary STOP click also preserves foreground; editing is disabled
+until cleanup. The current pulse finishes its bounded release; another pulse
+is never sent. Closing waits for cleanup, and STOP checks for actual stationary
+native positions. Only the first actual pulse can request RIFT foreground.
+
+Foreground loss aborts the run. The native helper sends unconditional global
+key-up, then may additionally post one release-only `WM_KEYUP` to the exact
+focused RIFT HWND observed before this pulse's successful key-down. The pinned
+process must remain alive, with matching window owner/thread/root ancestry.
+Observed blur is latched through the action result. The fallback never sends
+key-down or restores foreground. Windows queue acceptance and observed game
+motion remain separate evidence. All GUI pulse receipts, including failures,
+are retained as `artifacts/waypoint-input-*.jsonl`.
+
+For explicit recovery of a key owned by an interrupted action, `move-key`
+accepts `--release-only` with one key and the normal exact identity/foreground
+guards. It cannot also request a hold or movement measurement. Each normal pulse
+retains exclusive native input ownership, held-input refusal and bounded release.
 
 For the same backend without the window:
 
@@ -49,3 +67,20 @@ its waypoint. A subsequent three-point **Run Route** finished 0.00352 units
 from the original position. A latched STOP after one released 150-ms pulse
 prevented the next pulse. These are current-epoch open-ground observations,
 not restart or obstacle-routing qualification.
+
+The longer-trip extension crossed an 8-unit open-road waypoint in two segments
+and eight released 150-ms pulses, finishing 0.213 units from the target.
+
+A GUI focus-loss STOP exposed a real release failure: Atank kept moving into
+the barrier; Joey confirmed no manual movement in that incident. The interrupted
+receipt was not retained, so the precise missed-release sequence is unknown.
+The changes above address the demonstrated failure rather than treating Windows
+`SendInput` acceptance alone as proof the game stopped.
+
+After the fix, F8 stopped a moving trip after one pulse, and a clickable STOP
+also left the character stationary. A targeted open-road blur trial interrupted
+a 750-ms E hold at about 178 ms: native `targetLost=true`, Windows key-up accepted,
+and the exact owned-window release message queued. Two native samples while
+blurred showed zero displacement. Returning focus to RIFT without pressing a
+key, then sampling again, also showed zero displacement. Receipt:
+`artifacts/blur-release-008ba70a0329416fbceab819cd1607e7.json`.
