@@ -1,5 +1,19 @@
 # Current status
 
+**12:26 EST NOVEMBER 12 — LIVE WAYPOINT OVERLAY:** On **AMD-DESKTOP**, the native
+camera stream and owned Win32 overlay now display the recorded route directly
+over RIFT without taking foreground or moving its window. A 30-second trial
+presented 245 frames with zero reported failures; a separate desktop-captured
+52-frame trial preserved foreground/geometry on every frame and observed at most
+0.134 seconds of presentation age. Root reviewed real transparent rings/beacons
+over the game. The initial Tk shell was replaced after live startup exposed a
+foreground-stealing first wrapper. Native stream/focus controls are pushed in
+`3de8bcb`; overlay usage/evidence are in the
+[projection guide](workflows/physical-world-screen.md). Camera pan, actual click
+routing, geometry/restart changes and everyday GUI integration are next. Occlusion,
+terrain, world identity and obstacle clearance remain unqualified. The extended
+goal remains active through **19:44 EST**.
+
 **FIRST WORLD-TO-SCREEN RESULT, NOVEMBER 12 — EXTENDED GOAL ACTIVE:** On
 **AMD-DESKTOP**, the existing camera/matrix projector and stable WGC bracket now
 feed a small offline marker renderer. A fresh PID69312 capture displayed all seven

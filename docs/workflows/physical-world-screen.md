@@ -105,10 +105,41 @@ cases also passed after adding per-row elapsed metadata.
 
 ## Remaining qualification
 
-This output is an annotation of a retained frame, not a live desktop overlay.
-Camera pan, resize/DPI changes and full-game restart need current qualification.
+The offline renderer above annotates a retained frame. A separate live desktop
+overlay is now available:
+
+```powershell
+python scripts/live_physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid PID --route docs/validation/gui-taught-route-2026-11-12.json --reader stream --duration 60 --max-age 0.35 --output artifacts/new-overlay-summary.json
+```
+
+Use a fresh explicit PID and a new summary path. Focus RIFT separately to display
+markers; this command never activates it. The run is bounded (default 60 seconds,
+maximum 600) and Ctrl+C closes it. `--reader single` retains the slower existing
+reader. In either mode, changed foreground/identity/geometry, expired evidence or
+unavailable projection hides markers. Only complete recorded routes with actual
+heights matching the host/build/player are admitted.
+
+The owned window is created with native Win32 no-activation, transparent,
+layered and tool-window styles from its first creation. The Tk prototype was
+discarded after a real startup check showed its first wrapper taking foreground
+before styles could be applied. The shipped native window uses no activation
+veto, focus repair or hook. Pillow renders its cached image; a 50 ms watchdog
+checks the target and frame age. Closing hides immediately, cancels acquisition,
+joins its owned reader and destroys its own window/resources.
+
+On current AMD-DESKTOP/PID69312, a 30-second stream displayed 245 frames with no
+reported failures at a 0.35-second age limit. A separate six-second instrumented
+run displayed 52 frames, with maximum observed presentation age 0.134 seconds;
+RIFT foreground and client geometry were preserved before/after every frame.
+Root reviewed the actual composited desktop image with transparent yellow rings,
+world-height beacon lines and the cyan player reference. Evidence:
+`artifacts/native-overlay-stream-first-69312.json` and
+`artifacts/native-overlay-stream-proof-ad0a5c1917784094bd992531cec98472/`.
+The presenter/feed focused tests passed 31 cases after native-window replacement.
+
+Camera pan, actual cross-process click routing, resize/DPI changes and full-game
+restart still need current qualification. Labels near coincident route endpoints
+can overlap; this does not change the projected anchor positions.
 Projection inside the viewport does not establish visibility: depth, occlusion,
 terrain and obstacle clearance are not checked. World/zone identity is currently
 unavailable, so matching host/build/player alone cannot establish the same world.
-The next implementation uses a no-focus, click-through owned overlay window and
-withholds expired camera/geometry evidence rather than showing stale markers.
