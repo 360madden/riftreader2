@@ -17,9 +17,19 @@ target key as a static measured point, with the observing player identity kept
 separately. It reuses existing target age/floor checks. A target that later moves
 leaves this saved location unchanged. Missing target-key/provenance information
 keeps the existing 2D point and explains its unknown height. Thirty focused tests
-passed, including keys above JavaScript's exact integer range. The real button
-saved 8/8 heights on PID17212; paired image acceptance was interrupted by physical
-Escape and the subsequent user-handled black-client restart, so it remains pending.
+passed, including keys above JavaScript's exact integer range. After the user's
+restart, the actual Add Target -> Save view workflow passed on AMD-DESKTOP/PID51524
+at 16:35 EST. The saved eighth point (`targetKey=9223372045797034558`) projects to
+frame pixel `(962,321)`, visibly at the selected friendly guard's foot circle.
+All eight measured points rendered; the RRD passed upstream verification. Capture
+was focus-neutral WGC with a stable native bracket. Atank's XYZ raw bits/body
+bearing and movement basis were unchanged. Reloading the original seven-point
+route restored the byte-identical cache; no movement or replacement checkpoint
+was created. Evidence:
+`artifacts/waypoint-view-a07ef160cdd34d5f9465b13e372c44fb/validation.json`,
+with `projection/waypoints.png`, `route.json` and `view.rrd` in that bundle.
+This verifies a static saved-point projection, without live-follow, passive
+freshness, world-instance, terrain or occlusion qualification.
 
 Live proof on AMD-DESKTOP/PID17212: actual Save Current appended Point 8 with
 Y `863.5865478515625`; Save view rendered all eight and its RRD passed verification.

@@ -456,6 +456,37 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual("Cached", table.item(table.get_children()[0], "values")[0])
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
 
+    def test_checkpoint_invalid_hash_or_start_falls_back_to_cache(self):
+        cached = {"waypoints": [["Cached", 0, 0]]}
+        cache = self.path / "artifacts" / "waypoint-last-route.json"
+        cache.write_text(json.dumps(cached), encoding="utf-8")
+        for field, invalid in (("routeHash", "invalid"), ("start", None)):
+            with self.subTest(field=field):
+                checkpoint = self.write_checkpoint({"waypoints": [["Bad", 0, 0]]}, "forward", 0)
+                payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+                payload[field] = invalid
+                checkpoint.write_text(json.dumps(payload), encoding="utf-8")
+                before = checkpoint.read_bytes()
+                pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+                self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+                table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+                self.assertEqual("Cached", table.item(table.get_children()[0], "values")[0])
+                self.assertEqual("disabled", str(self.button("Resume")["state"]))
+                self.assertEqual(before, checkpoint.read_bytes())
+                self.cleanup_gui()
+                self.roots.clear()
+                self.threads.clear()
+
+    def test_valid_checkpoint_recovers_route_without_verified_current_identity(self):
+        checkpoint = self.write_checkpoint({"waypoints": [["Saved", 0, 0]]}, "forward", 0)
+        before = checkpoint.read_bytes()
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={"runtimeIdentity": {}}))
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        self.assertEqual("Saved", table.item(table.get_children()[0], "values")[0])
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        self.assertEqual(before, checkpoint.read_bytes())
+
     def test_cache_failure_preserves_saved_route_and_old_cache(self):
         old = {"waypoints": [["Old", 0, 0]]}
         cache = self.path / "artifacts" / "waypoint-last-route.json"

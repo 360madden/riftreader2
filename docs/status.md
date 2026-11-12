@@ -1,5 +1,29 @@
 # Current status
 
+**16:37 EST NOVEMBER 12 — STATIC TARGET BEACON SAVED AND VISUALLY VERIFIED:**
+On **AMD-DESKTOP/PID51524**, actual Add Target -> Save view retained the friendly
+guard's measured XYZ and exact key `9223372045797034558` separately from Atank's
+identity. The eighth beacon appears at the guard's foot circle, pixel `(962,321)`;
+all eight points render and the RRD passed upstream verification. WGC capture
+preserved focus and sent no input; the trial selected a friendly target but sent
+no movement. Atank's native XYZ raw bits/body bearing and movement basis remained
+unchanged. Load recent restored the original seven-point file and byte-identical
+cache. The active checkpoint was absent before this trial and remains absent;
+Resume is disabled, and no substitute completion cursor was created. GUI PID67092
+is idle with markers off. Evidence:
+`artifacts/waypoint-view-a07ef160cdd34d5f9465b13e372c44fb/validation.json` and
+`projection/waypoints.png`. Static position only; live-follow, passive freshness,
+world instance, terrain and occlusion remain unqualified.
+
+Saved-route switching now archives genuine checkpoints by geometry and stable
+host/build/player, restoring exact direction/cursor/start after fresh identity.
+Editing and Undo do not resurrect invalidated progress. Ninety-seven focused
+progress/GUI checks passed; commit `e12a0f0` is pushed. A separate startup fix
+validates the full stored v1 checkpoint before preferring its route over the
+last-route cache; malformed hash/start falls back, while unknown current identity
+preserves genuine saved state with Resume disabled. Thirty focused startup/window
+checks passed. These are individual focused suites, not cumulative daily totals.
+
 **16:04 EST NOVEMBER 12 — USER RESTART REBOUND WITHOUT RECALIBRATION:**
 On **AMD-DESKTOP**, Joey recovered another black-client episode by reloading
 RIFT. Old PID17212 ended; PID51524/start639301139727197117/HWND36770560 is freshly

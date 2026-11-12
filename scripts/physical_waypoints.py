@@ -1984,11 +1984,9 @@ def launch_window(args):
         try:
             saved = json.loads(checkpoint.read_text(encoding="utf-8"))
             if not args.route:
-                progress_route(saved["route"])
-                if (saved["direction"] not in ("forward", "reverse") or type(saved["nextIndex"]) is not int
-                        or not 0 <= saved["nextIndex"] <= len(saved["route"]["waypoints"])):
-                    raise ValueError("Invalid saved progress")
-                show_document(saved["route"])
+                from scripts.waypoint_progress import RouteProgress
+                saved_progress = RouteProgress.load(checkpoint, saved["route"], saved["identity"])
+                show_document(saved_progress.document)
                 route_recovered = True
                 update_route_status()
                 restored_checkpoint = True
