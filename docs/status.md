@@ -1,5 +1,21 @@
 # Current status
 
+**17:44 EST NOVEMBER 12 — EXPLICIT NEARBY UNIT NAMES RETRIEVED WITHOUT SELECTION:**
+On AMD-DESKTOP/PID51524, the new `unit-names` physical read resolved 18 exact keys
+already returned by a fresh bounded position sample. Eight returned template
+base-name candidates: six **3rd Guard Soldier**, **Olaf Bladstrom** and
+**Ekkzell Klamert**; ten honestly returned cache misses. Native acquisition took
+0.461 seconds, wrapper 0.724 seconds. The existing exact-key/TLS/template reader
+is reused with dictionary payload off, one lease, aggregate 2 MiB read budget and
+cooperative three-second wall budget. It sends no selection/input or new scan.
+Names retain independent row times, entity/key and source hash; they do not make
+the earlier XYZ current or qualify classification, API names, passive freshness
+or restart durability. Twenty-two native and 72 Python focused checks passed.
+The idle helper was normally closed before the build; RIFT remains running and
+the main genuine checkpoint is preserved. Saved-3D name integration is in progress.
+Evidence: `artifacts/loaded-unit-names-51524-first/names-wrapper.json` and
+`positions-wrapper.json` in that directory.
+
 **17:37 EST NOVEMBER 12 — SAVED LANDMARK GUIDE WORKS WITHOUT PLAYBACK:**
 Select a measured saved point, enable **Guide selected marker**, then Show markers.
 The pinned point gets a gold named edge cue with direct distance when off-screen;

@@ -121,6 +121,19 @@ also accepts repeatable `--unit-sample ABSOLUTE_WRAPPER_JSON`. This performs no
 new game read. A sample from a different process epoch than a supplied capture
 is rejected before creating the RRD.
 
+Explicit native base-name retrieval is also available without selecting units:
+`python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid PID --read-native unit-names --unit-keys DECIMAL_KEY,DECIMAL_KEY`.
+Supply 1–32 unique canonical nonzero uint64 decimal strings. The reader resolves
+only those exact keys through their existing bounded hash buckets, with a 2 MiB
+aggregate read budget and cooperative three-second wall budget. Readable mode-1,
+unformatted fallback strings become template base-name candidates; cache misses
+and unsupported branches retain explicit unavailable rows. Each row keeps its
+entity/key and acquisition interval; the wrapper pins process/build and hashes
+the retained report. These later names do not refresh a prior position sample.
+The first physical 18-key batch returned eight names and ten cache misses in
+0.461 seconds native / 0.724 seconds wrapper, without input or target selection.
+Evidence: `artifacts/loaded-unit-names-51524-first/names-wrapper.json`.
+
 The existing native optical camera and combined projection matrix can project
 arbitrary world XYZ into normalized client coordinates. Client/frame geometry then
 maps those coordinates into a matching RIFT screenshot. This is separate from the
