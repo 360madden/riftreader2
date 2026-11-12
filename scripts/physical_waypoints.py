@@ -46,6 +46,65 @@ class Stopped(WaypointError):
     pass
 
 
+class OwnedWaypointMarkers:
+    """One owned read-only marker child, stopped only through its unique file."""
+    def __init__(self, root=ROOT, *, popen=None):
+        self.root = Path(root)
+        self.popen = popen or subprocess.Popen
+        self.child = None
+        self.stop_path = None
+        self.output = None
+        self.stop_requested = False
+        self.exit_code = None
+
+    def running(self):
+        if self.child is not None:
+            result = self.child.poll()
+            if result is not None:
+                self.exit_code = result
+                self.child = None
+        return self.child is not None
+
+    def start(self, document, adapter):
+        if self.running():
+            raise WaypointError("Markers are already open or closing")
+        from scripts.live_physical_waypoints import load_route
+        from scripts.waypoint_progress import write_json_atomic
+        token = uuid.uuid4().hex
+        directory = self.root / "artifacts"
+        route_path = directory / ("waypoint-markers-route-" + token + ".json")
+        self.output = directory / ("waypoint-markers-summary-" + token + ".json")
+        self.stop_path = directory / ("waypoint-markers-stop-" + token + ".signal")
+        write_json_atomic(route_path, document)
+        recorded = load_route(route_path)
+        identity = adapter.binding["runtimeIdentity"]
+        if any(str(recorded["identity"].get(key, "")).casefold() != str(identity[key]).casefold()
+               for key in ("machine", "gameBuildSha256", "unitKey")):
+            raise WaypointError("Recorded route belongs to another host, build or player")
+        target = adapter.target
+        if (identity["processId"] != adapter.pid or identity["processId"] != target["processId"]
+                or str(identity["processStartUtcTicks"]) != str(target["processStartUtcTicks"])
+                or identity["gameBuildSha256"].casefold() != target["executableSha256"].casefold()
+                or type(target["hwnd"]) is not int or target["hwnd"] <= 0):
+            raise WaypointError("Current RIFT identity is unavailable")
+        executable = Path(sys.executable).with_name("pythonw.exe")
+        command = [str(executable), str(self.root / "scripts" / "live_physical_waypoints.py"),
+                   "--expected-host", identity["machine"], "--physical-pid", str(adapter.pid),
+                   "--expect-start-ticks", str(target["processStartUtcTicks"]),
+                   "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]),
+                   "--route", str(route_path), "--duration", "600", "--max-age", ".35",
+                   "--output", str(self.output), "--stop-file", str(self.stop_path)]
+        self.child = self.popen(command, cwd=self.root,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        self.stop_requested = False
+        self.exit_code = None
+
+    def stop(self):
+        if self.running() and not self.stop_requested:
+            self.stop_path.touch(exist_ok=False)
+            self.stop_requested = True
+
+
 @dataclass(frozen=True)
 class Snapshot:
     position: Position
@@ -735,6 +794,9 @@ def launch_window(args):
     foreground_stop = None
     last_pose = None
     last_y = None
+    last_pose_acquired = None
+    markers = OwnedWaypointMarkers(ROOT)
+    marker_identity = None
     map_view = None
     observing = False
     next_live_at = time.monotonic() + 2
@@ -779,6 +841,8 @@ def launch_window(args):
     def invalidate_progress(*, clear_metadata=True):
         nonlocal route_metadata, playback_view, route_dirty
         if not loading_route:
+            if not stop_markers():
+                raise WaypointError("Cannot stop markers; route unchanged")
             checkpoint.unlink(missing_ok=True)
             if clear_metadata:
                 route_metadata = {}
@@ -854,6 +918,8 @@ def launch_window(args):
     def show_document(document):
         nonlocal loading_route, route_metadata
         parsed = route_points(document["waypoints"])
+        if not stop_markers():
+            raise WaypointError("Cannot stop markers; route unchanged")
         loading_route = True
         try:
             table.delete(*table.get_children())
@@ -1012,7 +1078,8 @@ def launch_window(args):
                 if reconnected or adapter is not published_adapter:
                     events.put({"status": "reconnected", "pid": adapter.pid})
                     published_adapter = adapter
-                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
+                result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing,
+                          "acquired": pose.acquired}
                 if operation == "target":
                     result["waypoint"] = target_waypoint(pose)
                 if operation == "map":
@@ -1114,6 +1181,10 @@ def launch_window(args):
             return
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
+            return
+        if operation in ("go", "face", "play", "resume", "teach", "record") and markers.running():
+            if stop_markers():
+                state.set("Markers are closing; try the action again when they are hidden.")
             return
         busy = True
         stop.clear()
@@ -1282,6 +1353,37 @@ def launch_window(args):
             record_end_button.configure(state="disabled")
             state.set("Finishing recording…")
 
+    def stop_markers():
+        if not markers.running():
+            return True
+        try:
+            markers.stop()
+            marker_button.configure(text="Markers closing…", state="disabled")
+            return True
+        except OSError as exc:
+            state.set("Cannot hide markers: " + str(exc))
+            return False
+
+    def toggle_markers():
+        nonlocal marker_identity
+        if markers.running():
+            if stop_markers():
+                state.set("Hiding markers…")
+            return
+        if (busy or closing or observing or adapter is None or last_pose_acquired is None
+                or not -.1 <= time.monotonic() - last_pose_acquired <= 2):
+            state.set("Refresh the current RIFT position before showing markers.")
+            return
+        try:
+            markers.start(route_document(), adapter)
+            target = adapter.target
+            marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
+                               target["executableSha256"].casefold(), target["hwnd"])
+            marker_button.configure(text="Hide markers")
+            state.set("Markers shown when RIFT is foreground.")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            state.set("Cannot show markers: " + str(exc))
+
     buttons = ttk.Frame(frame)
     buttons.pack(fill="x", pady=4)
     buttons_second = ttk.Frame(frame)
@@ -1338,6 +1440,9 @@ def launch_window(args):
     resume_button = playback_buttons["Resume"]
     record_end_button = ttk.Button(recording_controls, text="Stop Recording", command=stop_recording, state="disabled")
     record_end_button.pack(side="left", padx=(0, 6))
+    marker_button = ttk.Button(recording_controls, text="Show markers", command=toggle_markers)
+    marker_button.pack(side="left", padx=(0, 6))
+    editable.append(marker_button)
     progress_text = tk.StringVar(value="No playback started.")
     ttk.Label(recording_controls, textvariable=progress_text).pack(side="left", padx=8)
     log.pack(fill="x", pady=4)
@@ -1348,6 +1453,8 @@ def launch_window(args):
 
     def close():
         nonlocal closing
+        if not stop_markers():
+            return
         if busy or observing:
             closing = True
             for widget in editable:
@@ -1357,16 +1464,19 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, observing, next_live_at, playback_view, playback_active
+        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, last_pose_acquired, observing, next_live_at, playback_view, playback_active, marker_identity
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
             if status == "reconnected":
+                if not stop_markers():
+                    state.set("Cannot hide markers after RIFT reconnected.")
                 window.title(f"RR2 Waypoints - {args.expected_host} / PID {event['pid']}")
                 state.set(f"Reconnected to RIFT PID {event['pid']}.")
                 continue
             if status == "halted":
                 last_pose = None
+                last_pose_acquired = None
                 redraw()
             if status == "live-idle":
                 observing = False
@@ -1377,6 +1487,7 @@ def launch_window(args):
             if status == "live-unavailable":
                 pose_text.set("Live position unavailable: " + event["reason"])
                 last_pose = None
+                last_pose_acquired = None
                 redraw()
                 continue
             if status == "idle":
@@ -1457,6 +1568,7 @@ def launch_window(args):
                     x.set(f"{point['x']:.6f}")
                     z.set(f"{point['z']:.6f}")
                 if status in ("refresh", "live"):
+                    last_pose_acquired = event.get("acquired")
                     try:
                         restore_progress()
                     except (OSError, ValueError, KeyError, TypeError):
@@ -1488,6 +1600,21 @@ def launch_window(args):
             log.insert("end", text + "\n")
             log.see("end")
             log.configure(state="disabled")
+        if marker_identity is not None:
+            target = getattr(adapter, "target", {})
+            current_identity = (getattr(adapter, "pid", None), str(target.get("processStartUtcTicks")),
+                                str(target.get("executableSha256", "")).casefold(), target.get("hwnd"))
+            if current_identity != marker_identity:
+                stop_markers()
+            if not markers.running():
+                if markers.exit_code and not markers.stop_requested:
+                    state.set("Markers unavailable; check the route and RIFT connection.")
+                elif state.get() == "Hiding markers…":
+                    state.set("Markers hidden.")
+                marker_identity = None
+                marker_button.configure(text="Show markers", state="normal" if not busy else "disabled")
+            elif markers.stop_requested:
+                marker_button.configure(text="Markers closing…", state="disabled")
         if live_pose.get() and not busy and not observing and not closing and time.monotonic() >= next_live_at:
             observing = True
             next_live_at = time.monotonic() + 2

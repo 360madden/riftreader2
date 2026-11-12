@@ -144,6 +144,25 @@ reader. In either mode, changed foreground/identity/geometry, expired evidence o
 unavailable projection hides markers. Only complete recorded routes with actual
 heights matching the host/build/player are admitted.
 
+The waypoint window also has **Show markers / Hide markers** beside the recording
+controls. Load a complete recorded route, let its current position refresh, press
+Show markers, then return to RIFT. Markers use the route's real saved heights and
+hide while another application is foreground. Hide markers, editing/replacing the
+route, reconnection and closing the waypoint window stop its one owned child;
+it never restarts automatically. Movement and recording currently close markers
+first and ask you to retry after that child exits. Simultaneous automatic playback
+and marker acquisition has not yet been qualified.
+
+Root exercised the real buttons on AMD-DESKTOP/app PID53272. The child was pinned
+to PID69312/start/build/HWND, displayed 101 frames in the current camera view, and
+the Hide button stopped it with `stop-requested`; the process was observed absent
+and the button returned to Show markers. Expected foreground withholding occurred
+while the waypoint window was active. The seven-point completed checkpoint and
+route source stayed loaded. Receipt:
+`artifacts/waypoint-markers-summary-279a56d7de3245aa85d999602d4a180f.json`.
+The marker lifecycle tests plus affected recording/playback/edit/reconnect window
+tests passed 50 cases, using fake processes/observations and withdrawn windows.
+
 An owning application can also pass all three `--expect-start-ticks`,
 `--expect-sha256` and `--expect-hwnd` values to bind startup to its admitted epoch.
 `--stop-file ABSOLUTE_NEW_PATH` lets that owner stop the child by creating the

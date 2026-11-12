@@ -1,5 +1,20 @@
 # Current status
 
+**12:39 EST NOVEMBER 12 — CAMERA TRACKING AND EVERYDAY MARKER BUTTONS:** On
+**AMD-DESKTOP**, a camera drag through a painted marker reached RIFT, changed its
+optical bearing by 17.18897 degrees and left Atank's XYZ/body bearing unchanged.
+Settled markers followed the new view. The per-row-lease overlay displayed 504
+frames in 86.7 seconds without reported failures, then its owned stop file closed
+it. Six competing native reads also completed in 0.325–0.683 s; one stale overlay
+row was correctly withheld in that separate test. The waypoint window now has
+Show/Hide markers: actual buttons launched a pinned child, displayed 101 frames
+and stopped it cleanly. The affected GUI/lifecycle tests passed 50 cases and
+native stream/focus tests passed 98. Usage and exact receipts are in the
+[projection guide](workflows/physical-world-screen.md). Resize/DPI/full-RIFT-restart
+qualification, marker label collisions and simultaneous playback remain next;
+the GUI currently stops markers before automated movement/recording. Goal remains
+active through **19:44 EST**. No occlusion or obstacle-clearance claim is made.
+
 **12:26 EST NOVEMBER 12 — LIVE WAYPOINT OVERLAY:** On **AMD-DESKTOP**, the native
 camera stream and owned Win32 overlay now display the recorded route directly
 over RIFT without taking foreground or moving its window. A 30-second trial
