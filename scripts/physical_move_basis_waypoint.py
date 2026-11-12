@@ -189,6 +189,7 @@ def preview(basis_path, position_path, goal_x, goal_z, goal_y=None):
             "predictedAfterXYZCandidate": predicted_position,
         },
         "decision": "within-tolerance-candidate" if action is None else "suggested-one-pulse",
+        "arrivalTolerance": controller.tolerance,
         "limitations": [
             "Explicit destination does not prove same-world navigation or arrival.",
             ("Only forward was observed at the later facing; S/Q/E are modeled rotations."
