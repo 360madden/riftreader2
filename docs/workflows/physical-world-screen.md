@@ -13,8 +13,9 @@ The existing native presenter remains an explicit fallback. Both reuse the same
 recorded XYZ, native camera projector, identity/freshness checks and stop lifecycle.
 
 The waypoint window also has **Save view** and **Open view**. Save view snapshots
-the complete recorded route, brings the pinned RIFT window forward without keys,
-and requests an explicit DXcam/native-bracket desktop candidate. A successful
+the complete recorded route and defaults to focus-neutral WGC capture. Enable
+**Bring RIFT forward for capture** to explicitly choose the DXcam/native-bracket
+desktop path; that mode focuses the pinned RIFT window without keys. A successful
 `artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
 before/after reports with hashes, projection PNG/JSON and `view.json`. If the
 optional visualization environment is available, it also saves `view.rrd` without
@@ -22,11 +23,19 @@ starting a viewer. Open view opens only the last successfully saved projection.
 Failed capture or unstable camera blocks the projection and retains diagnostics.
 The desktop event has no exact capture UTC; Rerun explicitly labels its timeline
 placement as the native-after start upper bound. This remains separate from WGC.
-The real Save view/Open view buttons passed on PID17212 after normal relaunch
+The explicit desktop Save view/Open view buttons passed on PID17212 after normal relaunch
 restored game rendering: seven markers, exact retained native copies, a 2.050 s
 capture and 0.790 s native bracket. The resulting `view.rrd` passed upstream verify,
 and Open view displayed the correct image. Evidence:
 `artifacts/waypoint-view-47cf972e13854170a84dc5852db072e5/`.
+The later default WGC Save view button also passed while the waypoint window
+remained foreground: exact HWND preserved, all seven markers rendered, a stable
+native bracket, and optional Rerun verified. Capture/bracket elapsed 2.906 s;
+basis and checkpoint hashes were unchanged. No automatic backend fallback occurs.
+The focus option is captured on the UI thread and disabled during acquisition.
+Twenty affected GUI/backend/playback coordination checks passed. Evidence:
+`artifacts/waypoint-view-9b60d7950aa949f5beaa52ce597a9334/`,
+`artifacts/wgc-save-view-17212-validation.json`.
 Saved projection labels reuse the live overlay's compact numbers, nonoverlapping
 lanes and leader lines; marker coordinates are unchanged. A retained rerender in
 `artifacts/waypoint-static-label-check-47cf/` separates the clustered 1/7/Player

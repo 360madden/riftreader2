@@ -1,5 +1,17 @@
 # Current status
 
+**15:13 EST NOVEMBER 12 — SAVE VIEW NOW PRESERVES FOCUS BY DEFAULT:**
+On **AMD-DESKTOP/PID17212**, guarded WGC capture recovered after the normal game
+relaunch and worked with RIFT background throughout. The waypoint GUI now defaults
+to that focus-neutral path; Bring RIFT forward for capture explicitly selects the
+proven desktop mode, without automatic fallback. The actual default Save view
+click preserved foreground HWND126556074 (app PID9656), rendered all seven markers,
+retained a stable native bracket and saved a Rerun file that passed upstream
+verification. Capture/bracket elapsed 2.906 s; basis and 7/7 reverse checkpoint
+hashes were unchanged. All 20 affected GUI/backend/coordination checks passed.
+Receipt: `artifacts/wgc-save-view-17212-validation.json`; bundle:
+`artifacts/waypoint-view-9b60d7950aa949f5beaa52ce597a9334/`.
+
 **15:07 EST NOVEMBER 12 — ZONE-CONTEXT RETRIEVAL EXPOSED AND REPRODUCED:**
 On **AMD-DESKTOP/PID17212**, `physical_rift.py --read-native zone-context` now
 wraps the existing bounded, read-only zone-seed command. It retains source/hash,

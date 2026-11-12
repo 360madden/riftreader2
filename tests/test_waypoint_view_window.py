@@ -54,7 +54,7 @@ class ViewWindowTests(unittest.TestCase):
             if not release.wait(2):
                 raise AssertionError("test did not release backend")
             return {"status": "saved-route-view-candidate", "image": str(self.path / "view.png"),
-                    "inputSent": False, "focusChanged": True,
+                    "inputSent": False, "focusChanged": False,
                     "rerun": {"status": "unavailable", "reason": "not installed"}}
         backend = Mock(side_effect=save)
         fake_module = SimpleNamespace(save_route_view=backend)
@@ -64,6 +64,9 @@ class ViewWindowTests(unittest.TestCase):
             self.assertTrue(entered.wait(2))
             self.assertEqual("disabled", str(self.button("Save view")["state"]))
             self.assertEqual("disabled", str(self.button("Open view")["state"]))
+            option = next(w for w in self.widgets(self.roots[0]) if isinstance(w, fixture.ttk.Checkbutton)
+                          and str(w["text"]) == "Bring RIFT forward for capture")
+            self.assertEqual("disabled", str(option["state"]))
             release.set()
             self.wait_idle()
             open_file.assert_not_called()
@@ -76,18 +79,33 @@ class ViewWindowTests(unittest.TestCase):
         self.assertEqual(self.target, kwargs["expected_target"])
         self.assertIsNot(self.target, kwargs["expected_target"])
         self.assertTrue(kwargs["export_rerun"])
-        self.assertEqual("desktop", kwargs["capture_backend"])
+        self.assertEqual("wgc", kwargs["capture_backend"])
         self.assertTrue(any("Rerun unavailable: not installed" in value for value in self.labels()))
 
-    def test_blocked_capture_keeps_open_view_disabled(self):
+    def test_explicit_focus_capture_failure_keeps_prior_view(self):
         self.prepare()
-        backend = Mock(return_value={"status": "blocked", "reason": "not foreground", "inputSent": False,
-                                     "focusChanged": False})
-        with patch.dict(sys.modules, {"scripts.save_physical_route_view": SimpleNamespace(save_route_view=backend)}):
+        backend = Mock(side_effect=[{"status": "saved-route-view-candidate", "image": str(self.path / "old.png"),
+                                     "inputSent": False, "focusChanged": False, "rerun": {"status": "saved"}},
+                                    {"status": "saved-route-view-candidate", "image": str(self.path / "focused.png"),
+                                     "inputSent": False, "focusChanged": True, "rerun": {"status": "saved"}},
+                                    {"status": "blocked", "reason": "capture unavailable", "inputSent": False,
+                                     "focusChanged": True}])
+        with patch.dict(sys.modules, {"scripts.save_physical_route_view": SimpleNamespace(save_route_view=backend)}), \
+             patch.object(os, "startfile") as open_file:
             self.button("Save view").invoke()
             self.wait_idle()
-        self.assertEqual("disabled", str(self.button("Open view")["state"]))
-        self.assertTrue(any("not foreground" in value for value in self.labels()))
+            option = next(w for w in self.widgets(self.roots[0]) if isinstance(w, fixture.ttk.Checkbutton)
+                          and str(w["text"]) == "Bring RIFT forward for capture")
+            option.invoke()
+            self.button("Save view").invoke()
+            self.wait_idle()
+            self.button("Save view").invoke()
+            self.wait_idle()
+            self.assertNotEqual("disabled", str(self.button("Open view")["state"]))
+            self.button("Open view").invoke()
+            open_file.assert_called_once_with(str(self.path / "focused.png"))
+        self.assertEqual(["wgc", "desktop", "desktop"], [call.kwargs["capture_backend"] for call in backend.call_args_list])
+        self.assertTrue(any("capture unavailable" in value for value in self.labels()))
 
 
 if __name__ == "__main__":
