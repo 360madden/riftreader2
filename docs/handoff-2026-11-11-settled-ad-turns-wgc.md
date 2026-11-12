@@ -202,3 +202,16 @@ The first preview, input, position and feedback files are under `artifacts/cli-f
 The two WGC frames in `artifacts/visual-settle-20261111-213550/` were captured 1.381 seconds apart. Replay the comparison above with the `first` and `second` frame directories. All 18 accepted scenery patches had exactly zero offset. The actor region (890, 462, 1030, 665) also had 18 of 18 at zero. Coordinates refer to the 1920 by 1032 saved frame. The screenshots establish screen stability over that interval. The native samples supply the endpoint coordinates.
 
 For comparison, zero of the 17 accepted scenery patches had zero offset in the repeated A/D trial, and zero of 18 did in the fresh-baseline trial. Their median horizontal shifts were -25 and -9 pixels respectively.
+
+## Turn timing across key release
+
+Independent 30-sample actor-pose bursts overlapped each physical 250 ms command. In `artifacts/turn-release-20261111-214137/` (A) and `artifacts/turn-release-d-20261111-214219/` (D), `pulse.json` records the Windows key-up call and `observer.json` points to the timestamped raw observations. The plot is `turn-release-comparison.png` in the D directory.
+
+| Key | Starting angle | Final angle | Last differing sample after key-up return | First final-angle sample after key-up return |
+| --- | ---: | ---: | ---: | ---: |
+| A | +9.430° | −36.236° | 60 ms | 122 ms |
+| D | −36.236° | +7.816° | 46 ms | 93 ms |
+
+The final pose was 1.614° left of the pair baseline. All 60 sampled actor translations were identical at (7426.0845, 863.52655, 2946.9014). These bounds apply to the observed pose updates in this pair and process epoch. The last pre-release reads began about 2 ms before key-up returned.
+
+Across the four requested 250 ms A/D pairs, signed endpoint errors relative to each pair's own baseline were +0.234°, +2.080°, +1.012° and −1.614°. Mean absolute error was 1.235°, with the largest observed miss at 2.080°. The reversal in sign rules out a consistent overshoot direction in these four trials.
