@@ -71,9 +71,15 @@ def _identity(physical_pid=None, *, require_window=True):
         "if($p.Count -eq 0){@{status='not-running'}|ConvertTo-Json -Compress;exit};"
         "if($p.Count -ne 1){@{status='ambiguous-process'}|ConvertTo-Json -Compress;exit};"
         "$p=$p[0];$path=$p.MainModule.FileName;"
+        # The local PowerShell host may not expose the Get-FileHash cmdlet.
+        # Hash the actual executable stream with the .NET framework instead.
+        "$sha=[Security.Cryptography.SHA256]::Create();"
+        "try{$stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::ReadWrite);"
+        "try{$exeHash=[BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','').ToLowerInvariant()}"
+        "finally{$stream.Dispose()}}finally{$sha.Dispose()};"
         "[ordered]@{hostName=[Environment]::MachineName;processId=[int]$p.Id;"
         "processStartUtcTicks=$p.StartTime.ToUniversalTime().Ticks.ToString();"
-        "executablePath=$path;executableSha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant();"
+        "executablePath=$path;executableSha256=$exeHash;"
         "hwnd=$p.MainWindowHandle.ToInt64()}|ConvertTo-Json -Compress"
     )
     code, text = _run([POWERSHELL, "-NoProfile", "-NonInteractive", "-Command", script], 20)

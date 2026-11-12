@@ -64,6 +64,10 @@ class PhysicalTests(unittest.TestCase):
             script = run.call_args.args[0][-1]
             self.assertIn("Get-Process -Name rift_x64", script)
             self.assertIn("Where-Object {$_.Id -eq 123}", script)
+            self.assertIn("[Security.Cryptography.SHA256]::Create()", script)
+            self.assertIn("[IO.File]::Open($path", script)
+            self.assertIn("executableSha256=$exeHash", script)
+            self.assertNotIn("Get-FileHash", script)
         with patch.object(physical, "_run", return_value=(0, '{"status":"not-running"}')):
             with self.assertRaisesRegex(ValueError, "^not-running$"):
                 physical._identity(999)
