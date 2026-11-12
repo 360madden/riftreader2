@@ -1,5 +1,17 @@
 # Current status
 
+**15:22 EST NOVEMBER 12 — SAVED VIEWS RETAIN FRESH ZONE CANDIDATES:**
+On **AMD-DESKTOP/PID17212**, the actual focus-neutral Save view click retained
+fresh zone reads before and after the existing image/native bracket, with exact
+identity/source hashes and matching route actor. Both returned
+`z487C9102D2EA79BE`; comparison is `matching-candidates`, world instance remains
+unavailable. Changed resolved zone/player candidates withhold projection; missing
+optional context leaves capture usable. The reviewed image contains all seven
+route markers, Rerun passed upstream verification, and no game input/focus change
+occurred. Pose and movement basis remained unchanged; checkpoint remains 7/7
+reverse. Twenty focused backend tests passed. Bundle:
+`artifacts/waypoint-view-22b4dcfd927a4786b53dae82849bd851/`.
+
 **15:13 EST NOVEMBER 12 — SAVE VIEW NOW PRESERVES FOCUS BY DEFAULT:**
 On **AMD-DESKTOP/PID17212**, guarded WGC capture recovered after the normal game
 relaunch and worked with RIFT background throughout. The waypoint GUI now defaults

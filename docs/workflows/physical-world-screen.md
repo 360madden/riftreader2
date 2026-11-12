@@ -485,3 +485,15 @@ passed, including twelve new zone cases. Evidence:
 `artifacts/physical-zone-context-wrapper-first-17212.json`,
 `artifacts/zone-context-wrapper-first-17212-result.json`,
 `artifacts/zone-context-restart-comparison-69312-17212.json`.
+
+Save view also acquires new `zone-before.json` and `zone-after.json` outside its
+existing image/native bracket. `view.json` retains both receipts, exact source
+hashes, acquisition intervals and route-player correspondence under
+`zoneContextCandidate`. Its comparison is `matching-candidates`,
+`changed-candidates` or `unavailable`. A resolved zone/player change withholds
+projection while keeping diagnostic sources; unavailable optional context leaves
+capture usable. Equal candidates do not prove uninterrupted equality, world
+instance, map registration or permission to replay a historical route there.
+The recorded route is never retagged with the current zone. Actual focus-neutral
+GUI proof: `artifacts/waypoint-view-22b4dcfd927a4786b53dae82849bd851/`, with both
+source hashes verified, all seven markers reviewed and Rerun verification passed.

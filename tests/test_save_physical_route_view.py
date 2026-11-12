@@ -12,6 +12,29 @@ from PIL import Image
 
 from scripts import save_physical_route_view as saved
 from tests import test_plot_physical_waypoints as fixtures
+from tests.test_physical_zone_context import report as zone_report
+
+
+def zone_reader(test, *, change_after=None, events=None):
+    """Write actual-contract source files; every native acquisition is injected."""
+    def read(selection, kind, *, output):
+        test.assertEqual(kind, "zone-context")
+        test.assertEqual(selection["target"], test.target)
+        after = output.name == "zone-after.json"
+        if events is not None:
+            events.append("zone-after" if after else "zone-before")
+        source = zone_report()
+        row = source["observation"]
+        row["selfKey"] = int(test.document["recording"]["identity"]["runtimeIdentity"]["unitKey"])
+        row.update(startedAtUtc="2026-11-11T19:00:00.5Z" if after else "2026-11-11T18:59:59.7Z",
+                   completedAtUtc="2026-11-11T19:00:00.6Z" if after else "2026-11-11T18:59:59.75Z")
+        if after and change_after is not None:
+            change_after(source)
+        output.write_text(json.dumps(source))
+        return dict(status="complete", target=deepcopy(test.target), nativeOutput=str(output),
+                    nativeSourceSha256=hashlib.sha256(output.read_bytes()).hexdigest(),
+                    nativeValues=saved.physical_rift._native_values("zone-context", source))
+    return read
 
 
 class SaveViewTests(unittest.TestCase):
@@ -27,6 +50,8 @@ class SaveViewTests(unittest.TestCase):
         self.output = self.root / "saved-view"
         self.selection = dict(status="ready", target=deepcopy(self.target))
         self.select = patch.object(saved.physical_rift, "select_physical", return_value=self.selection).start()
+        self.context = patch.object(saved.physical_rift, "read_native", return_value=dict(
+            status="blocked", reason="optional-zone-unavailable")).start()
         self.capture = patch.object(saved.observe_target, "observe", return_value=deepcopy(self.fixture.observation)).start()
         self.process = patch.object(saved.subprocess, "run", side_effect=AssertionError("No real subprocess allowed")).start()
         self.python = self.root / "optional-python.exe"
@@ -79,6 +104,91 @@ class SaveViewTests(unittest.TestCase):
         self.assertEqual(self.save(expected_host="LEGION")["reason"], "host-mismatch")
         self.capture.assert_not_called()
         self.assertFalse(self.output.exists())
+
+    def test_matching_zone_receipts_surround_core_capture_and_keep_provenance(self):
+        events = []
+        self.context.side_effect = zone_reader(self, events=events)
+        def capture(*args, **kwargs):
+            events.append("capture")
+            return deepcopy(self.fixture.observation)
+        self.capture.side_effect = capture
+        result = self.save(export_rerun=False)
+        self.assertEqual(result["status"], "saved-route-view-candidate", result)
+        self.assertEqual(events, ["zone-before", "capture", "zone-after"])
+        context = result["zoneContextCandidate"]
+        self.assertEqual(context["status"], "matching-candidates")
+        self.assertEqual(context["worldInstanceStatus"], "unavailable")
+        self.assertIn("uninterrupted equality unqualified", context["qualification"])
+        for side in ("before", "after"):
+            entry = context[side]
+            self.assertTrue(entry["routePlayerMatches"])
+            self.assertEqual(entry["sha256"], hashlib.sha256(Path(entry["source"]).read_bytes()).hexdigest())
+            self.assertEqual(entry["sampledAtUtc"], entry["receipt"]["nativeValues"]["sampledAtUtc"])
+        self.assertEqual(json.loads((self.output / "route.json").read_text()), self.document)
+
+    def test_changed_zone_or_player_withholds_projection_but_keeps_acquisition(self):
+        changes = (lambda source: source["observation"].update(rawZoneKey=12, zoneIdCandidate="z0000000CB7B53FD7"),
+                   lambda source: source["observation"].update(selfKey=source["observation"]["selfKey"] + 1))
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                self.context.side_effect = zone_reader(self, change_after=change)
+                directory = self.root / ("changed-zone-" + str(index))
+                result = self.save(output=directory)
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["reason"], "context-changed-candidate")
+                self.assertEqual(result["zoneContextCandidate"]["status"], "changed-candidates")
+                self.assertFalse((directory / "projection").exists())
+                for name in ("route.json", "observation.json", "native-before.json", "native-after.json",
+                             "zone-before.json", "zone-after.json", "view.json"):
+                    self.assertTrue((directory / name).is_file(), name)
+                self.assertNotIn("projection", result)
+        self.process.assert_not_called()
+
+    def test_valid_cache_miss_keeps_source_and_is_nonfatal(self):
+        def unavailable(source):
+            source["observation"].update(status="cache-miss", childStatus=None, childKey=None, zoneIdCandidate=None)
+        self.context.side_effect = zone_reader(self, change_after=unavailable)
+        result = self.save(export_rerun=False)
+        self.assertEqual(result["status"], "saved-route-view-candidate")
+        context = result["zoneContextCandidate"]
+        self.assertEqual(context["status"], "unavailable")
+        self.assertEqual(context["after"]["reason"], "cache-miss")
+        self.assertTrue(Path(context["after"]["source"]).is_file())
+        self.assertIn("sha256", context["after"])
+
+    def test_optional_zone_target_source_identity_and_hash_fail_without_core_fallback(self):
+        for fault in ("target", "source-identity", "hash"):
+            with self.subTest(fault=fault):
+                def change(source):
+                    if fault == "source-identity":
+                        source["observation"]["identity"]["processId"] += 1
+                reader = zone_reader(self, change_after=change)
+                def read(selection, kind, *, output):
+                    receipt = reader(selection, kind, output=output)
+                    if output.name == "zone-after.json":
+                        if fault == "target": receipt["target"]["hwnd"] += 1
+                        if fault == "hash": receipt["nativeSourceSha256"] = "0" * 64
+                    return receipt
+                self.context.side_effect = read
+                result = self.save(output=self.root / fault, export_rerun=False)
+                self.assertEqual(result["status"], "saved-route-view-candidate", result)
+                context = result["zoneContextCandidate"]
+                self.assertEqual(context["status"], "unavailable")
+                self.assertEqual(context["after"]["status"], "unavailable")
+                self.assertIn("mismatch", context["after"]["reason"])
+
+    def test_zone_before_source_is_rechecked_after_capture(self):
+        self.context.side_effect = zone_reader(self)
+        def capture(*args, **kwargs):
+            with (self.output / "zone-before.json").open("ab") as stream:
+                stream.write(b"\n")
+            return deepcopy(self.fixture.observation)
+        self.capture.side_effect = capture
+        result = self.save(export_rerun=False)
+        self.assertEqual(result["status"], "saved-route-view-candidate")
+        context = result["zoneContextCandidate"]
+        self.assertEqual(context["status"], "unavailable")
+        self.assertEqual(context["before"]["reason"], "zone-source-changed-after-acquisition")
 
     def test_missing_height_blocks_before_capture_and_retains_document(self):
         self.document["heights"][0] = None
@@ -195,6 +305,8 @@ class DesktopSaveViewTests(unittest.TestCase):
         patch.object(saved, "CAPTURE_PYTHON", self.capture_python).start()
         patch.object(saved, "VISUALIZATION_PYTHON", self.visualization_python).start()
         patch.object(saved.physical_rift, "select_physical", return_value=dict(status="ready", target=self.target)).start()
+        self.context = patch.object(saved.physical_rift, "read_native", return_value=dict(
+            status="blocked", reason="optional-zone-unavailable")).start()
         self.wgc = patch.object(saved.observe_target, "observe", side_effect=AssertionError("No implicit WGC fallback")).start()
         self.monitor = patch.object(saved, "_monitor_name", return_value=self.fixture.pair["requestedDisplay"]).start()
         self.focus = dict(status="focused-target", inputSent=False, desktopInputsDown=[], focusAttempt=dict(attempted=True),
@@ -319,6 +431,27 @@ class DesktopSaveViewTests(unittest.TestCase):
         self.assertIn("--desktop-pair", command)
         self.assertNotIn("--observation", command)
         self.assertEqual(command[command.index("--desktop-pair") + 1], str(self.output / "desktop-pair.json"))
+        self.wgc.assert_not_called()
+
+    def test_desktop_zone_matching_and_change_use_same_optional_context_gate(self):
+        self.context.side_effect = zone_reader(self)
+        result = self.save(export_rerun=False)
+        self.assertEqual(result["status"], "saved-route-view-candidate", result)
+        self.assertEqual(result["zoneContextCandidate"]["status"], "matching-candidates")
+        self.assertEqual([call.kwargs["output"].name for call in self.context.call_args_list],
+                         ["zone-before.json", "zone-after.json"])
+        self.output = self.root / "desktop-context-changed"
+        def change(source):
+            source["observation"].update(rawZoneKey=12, zoneIdCandidate="z0000000CB7B53FD7")
+        self.context.side_effect = zone_reader(self, change_after=change)
+        result = self.save(export_rerun=False)
+        self.assertEqual(result["status"], "blocked", result)
+        self.assertEqual(result["reason"], "context-changed-candidate")
+        self.assertEqual(result["zoneContextCandidate"]["status"], "changed-candidates")
+        self.assertTrue((self.output / "capture/image.png").is_file())
+        self.assertTrue((self.output / "desktop-pair.json").is_file())
+        self.assertTrue((self.output / "native-before.json").is_file())
+        self.assertFalse((self.output / "projection").exists())
         self.wgc.assert_not_called()
 
 

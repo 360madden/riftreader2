@@ -52,6 +52,59 @@ def _retain_native_sources(observation, directory, sources):
         bracket[field] = str(retained)
 
 
+def _zone_context(selection, route, path):
+    """Optional new acquisition only; retain failures without borrowing old context."""
+    entry = {"status": "unavailable", "source": str(path)}
+    try:
+        receipt = physical_rift.read_native(selection, "zone-context", output=path)
+        entry["receipt"] = deepcopy(receipt)
+        require(receipt.get("status") == "complete", receipt.get("reason", "zone-acquisition-unavailable"))
+        require(receipt.get("target") == selection["target"], "zone-target-identity-mismatch")
+        require(receipt.get("nativeOutput") == str(path), "zone-source-path-mismatch")
+        raw = path.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        require(digest == receipt.get("nativeSourceSha256"), "zone-source-hash-mismatch")
+        report = plot_physical_waypoints._read(path)
+        values = physical_rift._native_values("zone-context", report)
+        identity, target = report["observation"]["identity"], selection["target"]
+        require(identity["processId"] == target["processId"]
+                and str(identity["processStartUtcTicks"]) == target["processStartUtcTicks"]
+                and identity["executableSha256"].casefold() == target["executableSha256"].casefold(),
+                "zone-source-identity-mismatch")
+        require(values == receipt.get("nativeValues"), "zone-source-values-mismatch")
+        entry.update(status=values["status"], reason=values["reason"], sha256=digest, values=values,
+                     startedAtUtc=values["startedAtUtc"], sampledAtUtc=values["sampledAtUtc"],
+                     routePlayerMatches=values["selfKey"] == route["identity"]["unitKey"])
+    except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
+        entry.update(status="unavailable", reason=str(error))
+    return entry
+
+
+def _compare_zone_context(before, after):
+    result = {"status": "unavailable", "before": before, "after": after,
+              "worldInstanceStatus": "unavailable",
+              "qualification": "Zone-context candidates only; API correspondence, passive freshness and uninterrupted equality unqualified; no movement or map-reuse authority."}
+    for entry in (before, after):
+        if entry.get("sha256") is not None:
+            try:
+                require(hashlib.sha256(Path(entry["source"]).read_bytes()).hexdigest() == entry["sha256"],
+                        "zone-source-changed-after-acquisition")
+            except (ValueError, OSError) as error:
+                entry.update(status="unavailable", reason=str(error))
+    if before["status"] != "available-candidate" or after["status"] != "available-candidate":
+        result["reason"] = "zone-candidate-unavailable"
+        return result
+    if physical_rift._utc_tick_order_key(before["sampledAtUtc"]) > physical_rift._utc_tick_order_key(after["startedAtUtc"]):
+        result["reason"] = "zone-acquisition-order-invalid"
+        return result
+    fields = ("rawZoneKey", "zoneIdCandidate", "selfKey")
+    matches = (all(before["values"][field] == after["values"][field] for field in fields)
+               and before["routePlayerMatches"] and after["routePlayerMatches"])
+    result.update(status="matching-candidates" if matches else "changed-candidates",
+                  reason="matching-zone-candidates-not-world-proof" if matches else "zone-or-player-candidate-changed")
+    return result
+
+
 def _optional_rerun(route_path, observation_path, directory, enabled, *, desktop=False):
     if not enabled:
         return {"status": "unavailable", "reason": "not-requested"}
@@ -194,28 +247,36 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         result["route"] = str(route_path)
         result["recordingIdentity"] = route["recordingIdentity"]
         result["captureBackend"] = capture_backend
+        zone_before = _zone_context(selection, route, directory / "zone-before.json")
+        try:
+            if capture_backend == "desktop":
+                observation_path = _desktop_capture(expected_host, physical_pid, pinned, directory, result)
+                result["observation"] = str(observation_path)
+            else:
+                observation = deepcopy(observe_target.observe("physical-" + expected_host.lower(), expected_host,
+                    output=directory / "capture", physical_pid=physical_pid,
+                    native_facing=True, physical_capture_backend="wgc"))
+                result["nativeSources"] = {}
+                try:
+                    _retain_native_sources(observation, directory, result["nativeSources"])
+                finally:
+                    observation["retainedNativeSources"] = result["nativeSources"]
+                    write_json_atomic(observation_path, observation)
+                    result["observation"] = str(observation_path)
+                require(observation.get("status") == "verified-awaiting-visual-review",
+                        observation.get("reason", "physical-observation-unavailable"))
+                require(observation.get("target") == pinned, "captured-target-identity-mismatch")
+        finally:
+            zone_after = _zone_context(selection, route, directory / "zone-after.json")
+            result["zoneContextCandidate"] = _compare_zone_context(zone_before, zone_after)
+        require(result["zoneContextCandidate"]["status"] != "changed-candidates", "context-changed-candidate")
         if capture_backend == "desktop":
-            observation_path = _desktop_capture(expected_host, physical_pid, pinned, directory, result)
-            result["observation"] = str(observation_path)
             projection = plot_physical_waypoints.render_desktop_pair(observation_path, route_path, directory / "projection")
             result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
                           projection=projection["report"])
             result["rerun"] = _optional_rerun(route_path, observation_path, directory, export_rerun, desktop=True)
             write_json_atomic(directory / "view.json", result)
             return result
-        observation = deepcopy(observe_target.observe("physical-" + expected_host.lower(), expected_host,
-            output=directory / "capture", physical_pid=physical_pid,
-            native_facing=True, physical_capture_backend="wgc"))
-        result["nativeSources"] = {}
-        try:
-            _retain_native_sources(observation, directory, result["nativeSources"])
-        finally:
-            observation["retainedNativeSources"] = result["nativeSources"]
-            write_json_atomic(observation_path, observation)
-            result["observation"] = str(observation_path)
-        require(observation.get("status") == "verified-awaiting-visual-review",
-                observation.get("reason", "physical-observation-unavailable"))
-        require(observation.get("target") == pinned, "captured-target-identity-mismatch")
         projection = plot_physical_waypoints.render(observation_path, route_path, directory / "projection")
         result.update(status="saved-route-view-candidate", image=projection["annotatedImage"],
                       projection=projection["report"])
