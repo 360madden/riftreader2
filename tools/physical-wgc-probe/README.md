@@ -1,6 +1,6 @@
 # RR2 physical GPU window capture probe — AMD-DESKTOP
 
-**Status:** Built and tested offline on AMD-DESKTOP, November 11, 2026. **Not approved as a live movement/capture controller.**
+**Status:** Verified on physical RIFT on AMD-DESKTOP, November 11, 2026. WGC captured the game world and HUD during the Atank turn trials.
 
 A standalone C#/.NET 10 one-shot window capture candidate using [WgcSharp 1.1.1](https://www.nuget.org/packages/WgcSharp/1.1.1). This project is isolated from RR2's working input helper. It adds no service, UI automation tree, keyboard/mouse hook, focus request, game addon, or process-memory reader.
 
@@ -17,9 +17,16 @@ From **PowerShell on AMD-DESKTOP**:
 
 ```powershell
 cd C:\work\riftreader2
-dotnet restore tools\physical-wgc-probe\PhysicalWgcProbe.csproj
+dotnet restore tools\physical-wgc-probe\PhysicalWgcProbe.csproj --locked-mode
 dotnet build tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-restore
 dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug --no-build -- --self-test
+```
+
+For a single local WGC capture, run the following from the repository root with Python and Pillow installed. Choose the current PID from the process listing. The observer writes a new artifact directory and returns the image and receipt paths.
+
+```powershell
+Get-Process rift_x64 | Select-Object Id, MainWindowTitle
+python scripts/observe_target.py --target physical-amd-desktop --expected-host AMD-DESKTOP --physical-pid <CURRENT_PID> --physical-capture-backend wgc
 ```
 
 For *read-only identity inspection*, supply current values for a visible, non-cloaked target from the same machine:
@@ -33,7 +40,7 @@ dotnet run --project tools\physical-wgc-probe\PhysicalWgcProbe.csproj -c Debug -
 
 This prints target metadata only; **no pixels or input**. Values in this file are placeholders, not reusable process pins.
 
-A future single capture requires `--capture`, all the same exact target identity fields, an explicit `--allow-one-capture` flag, `--backend wgc|dxgi`, and `--out C:\work\riftreader2\artifacts\NEW_UNIQUE.png`. The output must be a new file under RR2 `artifacts` (no overwrite). The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. **Do not run until reviewed Workbridge GUI ownership is available.**
+Direct invocation requires `--capture`, all the same exact target identity fields, an explicit `--allow-one-capture` flag, `--backend wgc|dxgi`, and `--out C:\work\riftreader2\artifacts\NEW_UNIQUE.png`. The output must be a new file under RR2 `artifacts` (no overwrite). The command writes a PNG and JSON receipt with image hash, frame dimensions, capture duration, before/after pinned identity, and sampled pixel diversity. **Do not run until reviewed Workbridge GUI ownership is available.**
 
 ## Verified on AMD-DESKTOP
 
@@ -46,10 +53,8 @@ A future single capture requires `--capture`, all the same exact target identity
 
 ## Desktop gate and limitations
 
-The probe tests the presence of the Workbridge `desktop-input-turn.lock`, `desktop-turn-admission.lock`, and any `desktop-turn-quarantine-*.json` **before any capture** and again **before publishing**. It never creates, rewrites, clears, archives, or bypasses Workbridge's locks. This is an observational fail-closed check, **not an exclusive shared lease** and not a substitute for Workbridge's owner reconciliation. The current unresolved quarantine remains a hard blocker.
+The probe tests the presence of the Workbridge `desktop-input-turn.lock`, `desktop-turn-admission.lock`, and any `desktop-turn-quarantine-*.json` **before any capture** and again **before publishing**. It never creates, rewrites, clears, archives, or bypasses Workbridge's locks. This is an observational fail-closed check, **not an exclusive shared lease** and not a substitute for Workbridge's owner reconciliation. A present lock or quarantine blocks the capture attempt.
 
-Windows Graphics Capture has not yet returned an accepted image on physical RIFT in this experiment; GPU frame quality, time-to-frame, effective crop, focus-neutrality and camera/actor-heading separation are therefore **not verified**. A valid PNG is not independent proof of game response.
+On November 11, the local observer captured a 1920 x 1032 physical RIFT frame with the same process and window identity before and after capture. The frame showed Atank and the practice dummies. The receipt recorded no input or focus change. Later trials paired screenshots with native actor-pose samples. Camera and body yaw still need independent measurements. DXGI remains unverified on this client.
 
-## Next useful validation
-
-When shared desktop ownership has been independently reconciled and RIFT is visibly presenting frames, run *one* WGC capture against a **disposable non-RIFT window** first. Inspect real non-black pixels, HWND crop, lock behavior, frame latency and after-capture identity. Then test one physical RIFT still frame without sending game input. Compare the same scene with a separately reviewed DXGI capture if WGC is blank/unavailable. Once validated, integrate the **one** winning backend into RR2 and retire this standalone diagnostic prototype; don't create a third screenshot framework.
+The first observer frame and receipt were retained locally under `artifacts/observe-wgc-4ff136b278354b97a5fe21c872e04b41/`. The rebased turn trial is under `artifacts/rebased-ad-20261111-203431/`.
