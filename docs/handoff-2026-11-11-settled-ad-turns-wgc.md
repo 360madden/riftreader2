@@ -137,3 +137,9 @@ python scripts/physical_move_key_calibration.py --receipt artifacts/second-facin
 The native template fallback identified the selected target as Normal Practice Dummy. The target key in `artifacts/dummy-bearing-20261111-210353/template.json` matches the before and after position pairs in `artifacts/dummy-align-20261111-210518/`. In those pairs the bearing to the target was +35.553 degrees from +Z toward +X, at a horizontal distance of 5.417 units.
 
 One D press requested for 50 ms had Windows hold bounds of 57.51–60.80 ms (midpoint 59.16 ms). The settled forward bearing moved from +45.308 to +34.996 degrees. The absolute alignment error fell from 9.755 to 0.556 degrees, crossing the target bearing. Use the before/after pose bursts and position pairs alongside `d.json` to replay this observation. This is one short correction at one heading.
+
+## Forward step and two backsteps after alignment
+
+At the corrected facing, one 100 ms W press moved Atank 0.65907 horizontal units. Paired position samples showed the same selected dummy at the same coordinates before and after, with its distance dropping from 5.417 to 4.758 units. Two separate 100 ms S presses then moved Atank back 0.32489 and 0.35197 units. The final horizontal distance from the pre-W player position was 0.01781 units. The hold midpoints were 107.07 ms for W, then 108.44 and 112.08 ms for S. All three receipts report successful release.
+
+The retained sources are `artifacts/aligned-step-20261111-210654/w.json`, `artifacts/aligned-backstep-20261111-211022/s.json` and `artifacts/return-backstep-20261111-211119/s.json`. Each directory also has before and after self/target position samples. Compare the first before sample to the last after sample for return error. All three presses used one actor facing and process epoch. The result supports separate forward and backward speed estimates. A single continuous 200 ms S hold was not tested in this trial.
