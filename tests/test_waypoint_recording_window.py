@@ -156,6 +156,8 @@ class RecordingWindowTests(unittest.TestCase):
         self.release_capture.set()
         self.wait_for(lambda: bool(self.saved()))
         document = json.loads(self.saved()[0].read_text(encoding="utf-8"))
+        snapshot = self.root_path / "artifacts" / "waypoint-last-route.json"
+        self.assertEqual(document, json.loads(snapshot.read_text(encoding="utf-8")))
         table = next(w for w in self.widgets() if isinstance(w, ttk.Treeview))
         points = [table.item(item, "values") for item in table.get_children()]
         self.assertEqual(len(document["waypoints"]), len(points))

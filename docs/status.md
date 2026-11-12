@@ -1,5 +1,15 @@
 # Current status
 
+**10:16 EST NOVEMBER 12 — SAVED ROUTE RESTORES BEFORE FIRST PLAY:** On
+**AMD-DESKTOP**, default app restart now restores the last successfully loaded,
+saved or recorded route even before a playback checkpoint exists. The full
+seven-point document restored live with Resume disabled and no input. Explicit
+routes and saved progress retain precedence; failed snapshot writes preserve the
+saved file and prior snapshot. Focused state/recording checks passed (21 tests),
+plus two teaching-publication tests. The exact original 7/7 reverse checkpoint
+was restored afterward; Atank's pose and basis are unchanged. Current app PID47320
+is idle, RIFT PID19692. The five-hour goal remains active until 11:56 EST.
+
 **09:57 EST NOVEMBER 12 — WALK + RECORD WORKING IN THE WINDOW:** On **AMD-DESKTOP**,
 one button now walks the loaded points and saves/loads their actual observed path
 through the existing controller. A live loop captured 49 samples into seven points

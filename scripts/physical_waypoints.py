@@ -723,6 +723,7 @@ def launch_window(args):
     operation_gate = threading.Lock()
     record_stop, record_cancel = threading.Event(), threading.Event()
     checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
+    last_route = ROOT / "artifacts" / "waypoint-last-route.json"
     route_metadata = {}
     playback_view = None
     playback_active = False
@@ -755,6 +756,18 @@ def launch_window(args):
 
     def route_document():
         return {**route_metadata, "waypoints": route_points(selected_points(True))}
+
+    def cache_route(document, success):
+        try:
+            write_json_atomic(last_route, document)
+            text = success
+        except (OSError, ValueError, TypeError) as exc:
+            text = success + "; last-route snapshot could not be saved: " + str(exc)
+        state.set(text)
+        log.configure(state="normal")
+        log.insert("end", text + "\n")
+        log.see("end")
+        log.configure(state="disabled")
 
     def show_document(document):
         nonlocal loading_route, route_metadata
@@ -1034,8 +1047,9 @@ def launch_window(args):
         path = filedialog.asksaveasfilename(defaultextension=".json", initialfile="rift-waypoints.json")
         if path:
             try:
-                write_json_atomic(path, route_document())
-                state.set("Route saved: " + str(path))
+                document = route_document()
+                write_json_atomic(path, document)
+                cache_route(document, "Route saved: " + str(path))
             except (ValueError, TypeError, OSError) as exc:
                 messagebox.showerror("Cannot save route", str(exc))
 
@@ -1053,7 +1067,7 @@ def launch_window(args):
             except (OSError, ValueError, KeyError, TypeError):
                 invalidate_progress(clear_metadata=False)
                 redraw()
-            state.set("Route loaded: " + str(path))
+            cache_route(document, "Route loaded: " + str(path))
         except (ValueError, KeyError, TypeError, OSError) as exc:
             messagebox.showerror("Cannot load route", str(exc))
 
@@ -1236,11 +1250,7 @@ def launch_window(args):
                 except (OSError, ValueError, KeyError, TypeError) as exc:
                     state.set("Cannot finish recording: " + str(exc))
                     continue
-                state.set("Recorded route saved: " + str(output))
-                log.configure(state="normal")
-                log.insert("end", "Recorded route saved: " + str(output) + "\n")
-                log.see("end")
-                log.configure(state="disabled")
+                cache_route(event["document"], "Recorded route saved: " + str(output))
                 progress_text.set("Recorded route ready; select playback direction.")
                 continue
             if status in ("run-receipt", "receipt-error"):
@@ -1324,14 +1334,30 @@ def launch_window(args):
     table.bind("<<TreeviewSelect>>", select_point)
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
+    restored_checkpoint = False
     if checkpoint.exists():
         try:
             saved = json.loads(checkpoint.read_text(encoding="utf-8"))
             if not args.route:
+                progress_route(saved["route"])
+                if (saved["direction"] not in ("forward", "reverse") or type(saved["nextIndex"]) is not int
+                        or not 0 <= saved["nextIndex"] <= len(saved["route"]["waypoints"])):
+                    raise ValueError("Invalid saved progress")
                 show_document(saved["route"])
             restore_progress()
+            restored_checkpoint = True
         except (OSError, ValueError, KeyError, TypeError):
             progress_text.set("Saved progress unavailable; load a route to continue.")
+    if not args.route and not restored_checkpoint and last_route.exists():
+        try:
+            document = json.loads(last_route.read_text(encoding="utf-8"))
+            progress_route(document)
+            show_document(document)
+            playback_view = None
+            progress_text.set("Last saved route restored; choose Play Forward or Play Reverse.")
+            redraw()
+        except (OSError, ValueError, KeyError, TypeError):
+            progress_text.set("Last saved route unavailable; load a route to continue.")
     poll()
     start("refresh")
     window.mainloop()

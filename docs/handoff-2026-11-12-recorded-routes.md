@@ -253,6 +253,27 @@ the new seven-point route at **7/7 reverse**. RIFT remains PID19692; the unchang
 basis was reused. Last settled pose was `(7421.592285,863.586548,2941.086182)`, body
 bearing -30.251161 degrees; reacquire it before input.
 
+**10:16 EST saved-route startup accepted:** an actual Load followed by closing and
+default reopening exposed an empty route before its first playback. Successful
+Load, Save Route and completed passive/commanded recording now atomically retain
+the full document at `artifacts/waypoint-last-route.json`. Explicit `--route` wins;
+otherwise a usable checkpoint route precedes this snapshot. The snapshot alone
+does not create progress, enable Resume or send input. Unsaved edits remain unsaved.
+Twenty-one focused state/recording tests and two teaching-publication tests passed,
+including precedence, malformed checkpoint fallback and failed-write preservation.
+
+Live default app PID47320/window12194150 restored all seven original recorded
+points with the checkpoint absent and Resume disabled. The snapshot equals
+`docs/validation/gui-taught-route-2026-11-12.json`, including heights/provenance.
+No game input was sent. After verifying the same PID19692/start/build/player and
+unchanged XYZ/bearing, the genuine prior 7/7 reverse checkpoint was restored
+byte-for-byte from `artifacts/checkpoint-before-route-restore-19692.json` (SHA256
+`e88ddcc2a675da9779c6f4bb125b848dcdd44984d35c62f4ba092fa2d8be4cd7`).
+The idle window picked up 7/7 reverse; Resume remains disabled as complete.
+Before-state evidence is `artifacts/route-restore-before-19692.json`. Current app
+PID47320 is idle with live pose enabled; RIFT remains PID19692 on the established
+left display. Basis and last settled pose above are unchanged. Goal remains active.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

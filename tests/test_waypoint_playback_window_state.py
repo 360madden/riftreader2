@@ -297,6 +297,95 @@ class PlaybackWindowStateTests(unittest.TestCase):
         values = [str(self.roots[0].getvar(label)) for label in labels]
         self.assertTrue(any("Saved progress: 1 / 2" in value for value in values), values)
 
+    def test_load_caches_route_for_restart_without_enabling_resume(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11],
+                    "recording": {"complete": True}}
+        path = self.path / "route.json"
+        path.write_text(json.dumps(document), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        with patch("tkinter.filedialog.askopenfilename", return_value=str(path)):
+            self.button("Load").invoke()
+        cache = self.path / "artifacts" / "waypoint-last-route.json"
+        self.assertEqual(document, json.loads(cache.read_text(encoding="utf-8")))
+        self.cleanup_gui()
+        self.roots.clear()
+        self.threads.clear()
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        self.assertEqual(2, len(table.get_children()))
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+
+    def test_checkpoint_and_explicit_route_take_precedence_over_cache(self):
+        cache = self.path / "artifacts" / "waypoint-last-route.json"
+        cache.write_text(json.dumps({"waypoints": [["Cached", 0, 0]]}), encoding="utf-8")
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Checkpoint", 0, 0]]},
+                                          "direction": "forward", "nextIndex": 0}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123)
+        self.launch(adapter)
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        self.assertEqual("Checkpoint", table.item(table.get_children()[0], "values")[0])
+        self.cleanup_gui()
+        self.roots.clear()
+        self.threads.clear()
+        explicit = self.path / "explicit.json"
+        explicit.write_text(json.dumps({"waypoints": [["Explicit", 0, 0]]}), encoding="utf-8")
+        self.launch(adapter, explicit)
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        self.assertEqual("Explicit", table.item(table.get_children()[0], "values")[0])
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+
+    def test_bad_checkpoint_falls_back_to_cache(self):
+        cache = self.path / "artifacts" / "waypoint-last-route.json"
+        cache.write_text(json.dumps({"waypoints": [["Cached", 0, 0]]}), encoding="utf-8")
+        checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
+        checkpoint.write_text(json.dumps({"route": {"waypoints": [["Bad", 0, 0]]},
+                                          "direction": "forward", "nextIndex": 99}), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        self.assertEqual("Cached", table.item(table.get_children()[0], "values")[0])
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+
+    def test_cache_failure_preserves_saved_route_and_old_cache(self):
+        old = {"waypoints": [["Old", 0, 0]]}
+        cache = self.path / "artifacts" / "waypoint-last-route.json"
+        cache.write_text(json.dumps(old), encoding="utf-8")
+        before = cache.read_bytes()
+        pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
+        output = self.path / "saved.json"
+        from scripts.waypoint_progress import write_json_atomic
+        def fail_cache(path, document):
+            if Path(path) == cache:
+                raise OSError("cache unavailable")
+            return write_json_atomic(path, document)
+        with patch("scripts.waypoint_progress.write_json_atomic", side_effect=fail_cache), \
+             patch("tkinter.filedialog.asksaveasfilename", return_value=str(output)):
+            self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
+            self.button("Save Route").invoke()
+        self.assertEqual(old, json.loads(output.read_text(encoding="utf-8")))
+        self.assertEqual(before, cache.read_bytes())
+        labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
+                  if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
+        values = [str(self.roots[0].getvar(label)) for label in labels]
+        self.assertTrue(any("Route saved:" in value and "cache unavailable" in value for value in values), values)
+
+    def test_save_updates_last_route_snapshot(self):
+        source = self.path / "source.json"
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [5, 6]}
+        source.write_text(json.dumps(document), encoding="utf-8")
+        pose = app.Snapshot(app.Position(0, 5, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), source)
+        output = self.path / "saved.json"
+        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(output)):
+            self.button("Save Route").invoke()
+        saved = json.loads(output.read_text(encoding="utf-8"))
+        snapshot = self.path / "artifacts" / "waypoint-last-route.json"
+        self.assertEqual(document, saved)
+        self.assertEqual(saved, json.loads(snapshot.read_text(encoding="utf-8")))
+
     def test_failed_route_replacement_preserves_existing_saved_route(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 10]}
         route = self.path / "loaded.json"

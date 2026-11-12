@@ -107,6 +107,8 @@ class WindowReceiptTests(unittest.TestCase):
         saved = list((self.root_path / "artifacts").glob("recorded-route-*.json"))
         self.assertEqual(1, len(saved))
         self.assertEqual(document, json.loads(saved[0].read_text()))
+        snapshot = self.root_path / "artifacts" / "waypoint-last-route.json"
+        self.assertEqual(document, json.loads(snapshot.read_text(encoding="utf-8")))
         self.assertFalse(checkpoint.exists())
         self.assertEqual(["Observed start", "Observed corner"],
                          [self.table.item(i, "values")[0] for i in self.table.get_children()])
@@ -119,6 +121,9 @@ class WindowReceiptTests(unittest.TestCase):
                 ready, release = threading.Event(), threading.Event()
                 checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
                 checkpoint.write_text('{"old":true}')
+                snapshot = self.root_path / "artifacts" / "waypoint-last-route.json"
+                snapshot.write_text('{"waypoints":[["Old",0,0]]}', encoding="utf-8")
+                prior_snapshot = snapshot.read_bytes()
                 prior_points = [self.table.item(i, "values") for i in self.table.get_children()]
 
                 def teach(adapter, points, stop, emit, **kwargs):
@@ -151,6 +156,7 @@ class WindowReceiptTests(unittest.TestCase):
                     self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
                 self.assertEqual([], list((self.root_path / "artifacts").glob("recorded-route-*.json")))
                 self.assertEqual('{"old":true}', checkpoint.read_text())
+                self.assertEqual(prior_snapshot, snapshot.read_bytes())
                 self.assertEqual(prior_points, [self.table.item(i, "values") for i in self.table.get_children()])
 
     def test_walk_record_close_before_queued_publication_discards_document(self):

@@ -44,6 +44,14 @@ temporary file before replacing the destination, reusing checkpoint persistence.
 A failed write or replace leaves the previous saved route intact and reports the
 error; closing during passive recording discards that unfinished recording.
 Use `--route PATH` to open the window with a saved list; loading does not start movement.
+Successful Load, Save Route and completed recordings also retain the full route in
+`artifacts/waypoint-last-route.json`. Default startup opens the checkpoint's route
+when available, otherwise this last saved route; an explicit `--route` takes
+precedence. The snapshot retains heights and recording provenance, but creates no
+playback progress and never starts movement or enables Resume by itself. Unsaved
+edits are not cached. A snapshot-write warning leaves the original saved file and
+previous snapshot intact. Reopening before first playback passed a live seven-point
+case on AMD-DESKTOP with no checkpoint and no game input.
 **Up / Down** reorder the selected point; **Clear** empties the list. A completed
 run reports the number of visited waypoints and final distance explicitly.
 **Add Target** saves the selected entity's freshly read ground position as a
