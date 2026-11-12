@@ -1,5 +1,24 @@
 # Current status
 
+**18:55 EST NOVEMBER 12 — SAVED NEARBY SAMPLES BECOME NAMED WAYPOINT BEACONS:**
+New **Add nearby** uses the latest successful nearby Save view, or an explicitly
+chosen retained `units-sample.json`, to list up to 18 stored candidate locations.
+Add Selected preserves original XYZ/height, process epoch, unit key, entity,
+source hash/time and optional independent name provenance. It uses normal route
+editing, Undo and Save/Load; it sends no selection or movement. Browsing works
+during idle observation, while adding still requires a fresh matching player and
+ground height. Thirty-three combined receipt/loader/picker tests passed. Root's
+actual AMD-DESKTOP GUI trial imported Olaf Bladstrom from PID51524 into a separate
+two-point route on current PID40452, saved, undid and reloaded it. The selected
+gold beacon was reviewed at the stored ground location in a fresh desktop image;
+the Qt feed presented 209 frames over 47.41 seconds and Hide stopped it. Native
+XYZ/body bearing and target remained unchanged; no held inputs were found. The
+main route and byte-identical genuine 7/7 checkpoint are restored, basis unchanged.
+GUI PID4388 is idle, markers/guide/nearby capture off. Source observations remain
+historical candidates, with no live-follow, world-instance or clearance claim.
+Evidence: `artifacts/nearby-bookmark-live-40452/validation.json`, reviewed
+`overlay-pair/frame.png`, and marker summary `8ea0939feba944eb9cf3e1af1938805a`.
+
 **18:39 EST NOVEMBER 12 — NUMBERED NEARBY SAMPLES PROJECT ONTO A SEPARATE CAPTURE VIEW:**
 On AMD-DESKTOP/PID40452, actual Nearby units in 3D -> Save view -> Open 3D view
 passed with the new **Later samples on capture** tab. Its distinct image copy

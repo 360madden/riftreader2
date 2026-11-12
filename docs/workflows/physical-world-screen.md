@@ -182,6 +182,31 @@ also accepts repeatable `--unit-sample ABSOLUTE_WRAPPER_JSON`. This performs no
 new game read. A sample from a different process epoch than a supplied capture
 is rejected before creating the RRD.
 
+**Add nearby** turns one retained sample into a fixed waypoint without selecting
+the unit in RIFT. After a successful Save view with nearby units enabled, click
+Add nearby, select a row and choose **Add Selected**. Without a recent successful
+unit capture, its file chooser accepts a retained `units-sample.json`. The picker
+shows saved distance, XYZ and the selected position's original UTC. Browsing can
+continue during the idle pose read; adding requires a fresh matching player and
+a height within one unit of the player. It preserves the source's original
+process epoch, lossless unit key, entity address, position source/hash and time;
+optional names retain their own independent provenance. A cache miss gets a
+generic unit label. The new point participates in normal Undo and Save/Load,
+marks the route unsaved and invalidates its old playback progress. It saves a
+historical location rather than following or reacquiring the unit. Select that
+waypoint and use **Guide selected marker -> Show markers** for its named beacon.
+
+Actual AMD-DESKTOP acceptance imported U5 Olaf Bladstrom from a retained PID51524
+sample while RIFT was running PID40452. Add -> Save -> Undo -> Load preserved its
+22:46:27.832414 UTC position receipt and measured height. The current-process Qt
+feed displayed its gold ground beacon with 209 presentations, and Hide stopped
+the feed. Separate native samples showed unchanged XYZ/body bearing and target;
+inspection found no held inputs. The original route and byte-identical genuine
+7/7 checkpoint are restored. Thirty-three combined receipt/loader/picker tests
+passed. Evidence: `artifacts/nearby-bookmark-live-40452/validation.json` and the
+reviewed desktop image `overlay-pair/frame.png` in that directory. These are
+fixed candidate coordinates with no world-instance, terrain or clearance proof.
+
 Explicit native base-name retrieval is also available without selecting units:
 `python scripts/physical_rift.py --expected-host AMD-DESKTOP --physical-pid PID --read-native unit-names --unit-keys DECIMAL_KEY,DECIMAL_KEY`.
 Supply 1–32 unique canonical nonzero uint64 decimal strings. The reader resolves

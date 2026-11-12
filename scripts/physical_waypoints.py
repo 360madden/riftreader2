@@ -876,6 +876,8 @@ def launch_window(args):
     verified_at = None
     identity_unavailable = False
     saved_view = None
+    saved_unit_sample = None
+    nearby_picker = None
     saved_rerun = None
     rerun_viewer = None
     markers = OwnedWaypointMarkers(ROOT)
@@ -1378,7 +1380,7 @@ def launch_window(args):
 
     def start(operation, points=None):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
-        if busy or closing:
+        if busy or closing or nearby_picker is not None:
             return
         if operation in ("go", "teach") and (not points or len(points) > 20):
             messagebox.showinfo("Choose waypoints", "Select a waypoint, or add up to 20 points for a route.")
@@ -1593,16 +1595,108 @@ def launch_window(args):
             state.set("Finishing recording…")
 
     def save_view():
+        nonlocal saved_unit_sample
+        if busy or closing or nearby_picker is not None:
+            return
         if adapter is None:
             state.set("Wait for RIFT to connect before saving a view.")
             return
         try:
+            saved_unit_sample = None
             document = deepcopy(route_document())
             document["waypoints"] = [list(row) for row in document["waypoints"]]
             start("view", (document, adapter.pid, deepcopy(adapter.target),
                            "desktop" if view_bring_forward.get() else "wgc", view_include_units.get()))
         except (ValueError, KeyError, TypeError) as exc:
             state.set("Cannot save view: " + str(exc))
+
+    def close_nearby_picker():
+        nonlocal nearby_picker
+        if nearby_picker is not None:
+            picker, nearby_picker = nearby_picker, None
+            picker.grab_release()
+            picker.destroy()
+
+    def add_nearby():
+        nonlocal nearby_picker
+        if busy or closing or markers.running() or nearby_picker is not None:
+            state.set("Wait until the current action and markers have stopped before adding a saved sample.")
+            return
+        try:
+            identity = current_identity() or deepcopy(last_verified_owner)
+            if identity is None:
+                raise WaypointError("Connect a verified player once before browsing saved samples.")
+            source = saved_unit_sample or filedialog.askopenfilename(
+                parent=window, title="Choose retained units-sample.json",
+                filetypes=[("Saved nearby samples", "units-sample.json"), ("JSON", "*.json")])
+            if not source:
+                return
+            from scripts.saved_nearby_waypoints import load_saved_nearby_waypoints
+            rows = deepcopy(load_saved_nearby_waypoints(source, identity))[:18]
+            if not rows:
+                raise WaypointError("No saved nearby samples are available.")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            messagebox.showerror("Cannot add nearby sample", str(exc), parent=window)
+            return
+        picker = nearby_picker = tk.Toplevel(window)
+        picker.title("Add nearby — saved samples")
+        picker.transient(window)
+        body = ttk.Frame(picker, padding=12)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="Saved samples; Add saves a fixed observed location. No movement or live tracking.",
+                  wraplength=750).pack(anchor="w", pady=(0, 8))
+        listing = ttk.Treeview(body, columns=("number", "name", "distance", "xyz"), show="headings",
+                               selectmode="browse", height=min(18, len(rows)))
+        for key, title, width in (("number", "U#", 45), ("name", "Candidate name", 230),
+                                  ("distance", "Saved distance", 105), ("xyz", "Observed X / Y / Z", 310)):
+            listing.heading(key, text=title)
+            listing.column(key, width=width)
+        listing.pack(fill="both", expand=True)
+        samples = {}
+        for row in rows:
+            point = row["position"]
+            item = listing.insert("", "end", values=(f"U{row['number']}", row["label"],
+                f"{row['distance']:.2f}", f"{point['x']:.6f} / {point['y']:.6f} / {point['z']:.6f}"))
+            samples[item] = row
+        observed = tk.StringVar(value="Select a saved sample to see its observation UTC.")
+        ttk.Label(body, textvariable=observed, wraplength=750).pack(anchor="w", pady=6)
+        actions = ttk.Frame(body)
+        actions.pack(fill="x")
+
+        def selection_changed(_=None):
+            selected = listing.selection()
+            add_button.configure(state="normal" if len(selected) == 1 else "disabled")
+            if len(selected) == 1:
+                observed.set("Observed UTC: " + samples[selected[0]]["observedAtUtc"])
+
+        def commit_selected():
+            selected = listing.selection()
+            if busy or closing or markers.running() or len(selected) != 1:
+                return
+            current = current_identity()
+            if current is None or any(str(current.get(key, "")).casefold() != str(identity[key]).casefold()
+                    for key in ("machine", "gameBuildSha256", "unitKey")):
+                observed.set("Player identity unavailable or changed; cancel and refresh before adding.")
+                return
+            row = deepcopy(samples[selected[0]])
+            point = row["position"]
+            if last_y is None or abs(point["y"] - last_y) > 1:
+                observed.set("Saved sample is on a different height; choose a ground point near the player.")
+                return
+            item = add_point(row["label"], point["x"], point["z"])
+            if item is not None:
+                point_receipts[item] = row["measurement"]
+                redraw()
+                state.set("Added fixed saved location: " + row["label"] + "; observed " + row["observedAtUtc"])
+                close_nearby_picker()
+
+        add_button = ttk.Button(actions, text="Add Selected", command=commit_selected, state="disabled")
+        add_button.pack(side="left")
+        ttk.Button(actions, text="Cancel", command=close_nearby_picker).pack(side="right")
+        listing.bind("<<TreeviewSelect>>", selection_changed)
+        picker.protocol("WM_DELETE_WINDOW", close_nearby_picker)
+        picker.bind("<Escape>", lambda _: close_nearby_picker())
+        picker.grab_set()
 
     def open_view():
         if saved_view is None or busy or closing:
@@ -1678,10 +1772,13 @@ def launch_window(args):
                             ("Load", load_route), ("Save Route", save_route), ("Save As", lambda: save_route(True)),
                             ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
                             ("Clear", clear_points), ("Add Target", lambda: start("target")),
+                            ("Add nearby", add_nearby),
                             ("Update Selected", update_selected))):
         button = ttk.Button(buttons if index < 5 else buttons_second, text=label, command=callback)
         button.pack(side="left", padx=(0, 5))
         editable.append(button)
+        if label == "Add nearby":
+            nearby_button = button
     undo_button = ttk.Button(buttons_second, text="Undo", command=undo_edit, state="disabled")
     undo_button.pack(side="left", padx=(0, 5))
     editable.append(undo_button)
@@ -1807,6 +1904,7 @@ def launch_window(args):
         if closing:
             return
         closing = True
+        close_nearby_picker()
         request_stop()
         for widget in editable:
             widget.configure(state="disabled")
@@ -1817,10 +1915,12 @@ def launch_window(args):
             restore_editing()
 
     def poll():
-        nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
+        nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
+            if status == "view-failed":
+                saved_unit_sample = None
             if status in ("stopping", "notice") and stop.is_set() and markers.running():
                 if not stop_markers():
                     event = dict(event, reason=event.get("reason", "STOP requested.") + " Could not hide markers.")
@@ -1915,6 +2015,8 @@ def launch_window(args):
                           + (": " + str(rerun["reason"]) if rerun.get("reason") else ""))
                 text = "View saved: " + saved_view + suffix
                 unit_sample = event.get("unitSample")
+                saved_unit_sample = (str(unit_sample["path"]) if isinstance(unit_sample, dict)
+                                     and unit_sample.get("status") == "saved" and unit_sample.get("path") else None)
                 if isinstance(unit_sample, dict) and unit_sample.get("status") == "unavailable":
                     text += " · Nearby units unavailable"
                     if unit_sample.get("reason"):
@@ -2018,6 +2120,7 @@ def launch_window(args):
                 marker_button.configure(text="Markers closing…", state="disabled")
         target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
         landmark_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
+        nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
         if live_pose.get() and not busy and not observing and not closing and time.monotonic() >= next_live_at:
             observing = True
             next_live_at = time.monotonic() + 2

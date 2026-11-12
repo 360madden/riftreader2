@@ -8,6 +8,9 @@ import re
 TARGET_POSITION_QUALIFICATION = (
     "Static selected-target native-position candidate; no live-follow or passive-freshness "
     "qualification; world, terrain and occlusion unverified.")
+LOADED_UNIT_POSITION_QUALIFICATION = (
+    "Stored loaded-unit position candidate; fixed observed location, not live follow, current position, "
+    "screenshot presence, classification, terrain, occlusion or clearance proof.")
 
 
 def _require(condition, reason):
@@ -46,19 +49,35 @@ def _position(position):
     return result
 
 
+def _decimal_key(value):
+    return (isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{0,19}", value) is not None
+            and int(value) < 2**64)
+
+
 def _receipt(receipt, xyz=None):
     _require(isinstance(receipt, dict) and type(receipt.get("version")) is int
              and receipt["version"] == 1 and receipt.get("kind") in
-             ("native-player-position", "native-selected-target-position", "recorded-route-point"),
+             ("native-player-position", "native-selected-target-position", "native-loaded-unit-position", "recorded-route-point"),
              "point-measurement-required")
     if receipt["kind"] == "native-selected-target-position":
-        target_key = receipt.get("targetKey")
-        _require(isinstance(target_key, str) and re.fullmatch(r"[1-9][0-9]{0,19}", target_key) is not None
-                 and int(target_key) <= 18446744073709551615, "measurement-target-key-required")
+        _require(_decimal_key(receipt.get("targetKey")), "measurement-target-key-required")
         _require(receipt.get("qualification") == TARGET_POSITION_QUALIFICATION,
                  "measurement-target-qualification-required")
     else:
         _require("targetKey" not in receipt, "measurement-target-key-kind-mismatch")
+    if receipt["kind"] == "native-loaded-unit-position":
+        _require(_decimal_key(receipt.get("subjectKey")), "measurement-subject-key-required")
+        entity = receipt.get("entityAddressDecimal")
+        _require(_decimal_key(entity) and 0x10000 <= int(entity) <= 0x7fffffffffff and int(entity) % 8 == 0,
+                 "measurement-unit-entity-address-required")
+        digest = receipt.get("sourceSha256")
+        _require(isinstance(digest, str) and re.fullmatch(r"[0-9a-fA-F]{64}", digest) is not None,
+                 "measurement-source-sha256-required")
+        _require(receipt.get("qualification") == LOADED_UNIT_POSITION_QUALIFICATION,
+                 "measurement-loaded-unit-qualification-required")
+    else:
+        _require(not any(field in receipt for field in ("subjectKey", "entityAddressDecimal", "sourceSha256")),
+                 "measurement-loaded-unit-fields-kind-mismatch")
     _identity(receipt.get("identity"))
     measured = _position(receipt.get("position"))
     _require(isinstance(receipt.get("source"), str) and bool(receipt["source"].strip()),
@@ -85,6 +104,14 @@ def measurement(position, identity, source, observed_at, *, kind="native-player-
     else:
         _require(target_key is None, "measurement-target-key-kind-mismatch")
     return _receipt(receipt)
+
+
+def loaded_unit_measurement(position, identity, source, observed_at, *, unit_key, entity_address, source_sha256):
+    """Keep one unit's observed XYZ and source provenance as a fixed waypoint."""
+    return _receipt(dict(version=1, kind="native-loaded-unit-position", position=_position(position),
+                         identity=deepcopy(identity), source=source, observedAtUtc=observed_at,
+                         subjectKey=unit_key, entityAddressDecimal=entity_address, sourceSha256=source_sha256,
+                         qualification=LOADED_UNIT_POSITION_QUALIFICATION))
 
 
 def _points(document):
