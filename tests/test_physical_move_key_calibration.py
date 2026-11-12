@@ -108,6 +108,31 @@ class HelperCalibrationTests(unittest.TestCase):
     def analyze(self):
         return calibrator.from_helper_receipt(self.path)
 
+    def test_forward_pose_comparison_checks_angle_owner_and_order(self):
+        from tests.test_analyze_physical_turn_pair import matrix
+        r = timed_receipt()
+        bearing = math.degrees(math.atan2(-2, .5))
+        row = {"identity": {k: r[k] for k in ("processId", "processStartUtcTicks", "executableSha256")},
+               "playerKeyDecimal": "42", "playerEntityDecimal": "100",
+               "actorComponentDecimal": "200", "positionComponentDecimal": "300",
+               "actorMatrix": matrix(-bearing, 0x398)}
+        def sample(stamp):
+            return dict(row, startedAtUtc=stamp, completedAtUtc=stamp)
+        r["poseFeedback"] = {"status": "candidate-native-actor-pose-feedback",
+                             "beforePose": sample("2026-11-11T14:54:05.150Z"),
+                             "afterPose": sample("2026-11-11T14:54:05.820Z")}
+        self.save(r)
+        result = self.analyze()["forwardPoseComparisonCandidate"]
+        self.assertAlmostEqual(result["travelDegreesFromPositiveZTowardPositiveX"], bearing)
+        self.assertAlmostEqual(result["travelMinusNegatedBeforeActorDegrees"], 0, places=4)
+        for field, value, reason in (("playerKeyDecimal", "43", "owner-mismatch"),
+                                     ("startedAtUtc", "2026-11-11T14:54:05.600Z", "timing-mismatch")):
+            changed = deepcopy(r)
+            changed["poseFeedback"]["afterPose"][field] = value
+            self.save(changed)
+            with self.assertRaisesRegex(ValueError, reason):
+                self.analyze()
+
     def test_uses_observed_not_requested_hold_and_retains_provenance(self):
         result = self.analyze()
         self.assertEqual("offline-helper-move-calibration-candidate", result["status"])

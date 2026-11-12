@@ -13,6 +13,7 @@ import json
 import math
 from pathlib import Path
 import re
+import struct
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,6 +58,54 @@ def utc(value):
         raise HelperCalibrationError("invalid-helper-sample-time") from err
     require(stamp.utcoffset() == timedelta(0), "invalid-helper-sample-time")
     return stamp
+
+
+def forward_pose_comparison(receipt, dx, dz):
+    from scripts.analyze_physical_turn_pair import _matrix
+    from scripts.physical_rift import _utc_tick_order_key as tick
+
+    pose = receipt.get("poseFeedback")
+    if receipt["keys"] != ["w"] or not isinstance(pose, dict) or pose.get("status") != "candidate-native-actor-pose-feedback":
+        return None
+    xyz = receipt["xyzFeedback"]
+    timing = receipt.get("inputCallTiming")
+    if not isinstance(timing, dict):
+        return None
+    angles = []
+    owners = []
+    intervals = []
+    for key in ("beforePose", "afterPose"):
+        row = pose.get(key)
+        require(isinstance(row, dict), "helper-pose-unavailable")
+        ident = row.get("identity")
+        require(isinstance(ident, dict) and ident.get("processId") == receipt["processId"]
+                and ident.get("processStartUtcTicks") == receipt["processStartUtcTicks"]
+                and ident.get("executableSha256") == receipt["executableSha256"]
+                and row.get("playerKeyDecimal") == xyz["beforeXYZ"]["unitKey"],
+                "helper-pose-owner-mismatch")
+        owner = tuple(row.get(k) for k in ("playerEntityDecimal", "actorComponentDecimal",
+                                           "positionComponentDecimal"))
+        require(all(isinstance(v, str) and UNIT.fullmatch(v) for v in owner),
+                "helper-pose-owner-mismatch")
+        owners.append(owner)
+        matrix = row.get("actorMatrix")
+        require(isinstance(matrix, dict) and matrix.get("sourceOffset") == 0x398,
+                "helper-actor-matrix-invalid")
+        angles.append(_matrix(matrix)["angle"])
+        intervals.append((tick(row.get("startedAtUtc")), tick(row.get("completedAtUtc"))))
+    require(owners[0] == owners[1], "helper-pose-owner-mismatch")
+    require(tick(xyz["beforeXYZ"]["completedAtUtc"]) <= intervals[0][0] <= intervals[0][1]
+            <= tick(timing["startedAtUtc"]) and tick(timing["completedAtUtc"])
+            <= tick(xyz["afterXYZ"]["startedAtUtc"]) <= tick(xyz["afterXYZ"]["completedAtUtc"])
+            <= intervals[1][0] <= intervals[1][1], "helper-pose-timing-mismatch")
+    if None in angles or math.hypot(dx, dz) == 0:
+        return None
+    travel = math.degrees(math.atan2(dx, dz))
+    return {"travelDegreesFromPositiveZTowardPositiveX": travel,
+            "beforeActorDegrees": angles[0], "afterActorDegrees": angles[1],
+            "travelMinusNegatedBeforeActorDegrees": (travel + angles[0] + 180) % 360 - 180,
+            "travelMinusNegatedAfterActorDegrees": (travel + angles[1] + 180) % 360 - 180,
+            "headingQualified": False}
 
 
 def from_helper_receipt(path: Path):
@@ -232,7 +281,7 @@ def from_helper_receipt(path: Path):
             maximum_calibration_hold_ms=physical.MAX_PHYSICAL_CALIBRATION_HOLD_MS)
     except movement.MovementError as err:
         raise HelperCalibrationError(str(err)) from err
-    return {
+    result = {
         "schemaVersion": 1,
         "status": "offline-helper-move-calibration-candidate",
         "sourceKind": "rr2-move-key-json-receipt",
@@ -262,6 +311,14 @@ def from_helper_receipt(path: Path):
             "Facing/zone continuity and navigation eligibility are unqualified.",
         ],
     }
+    if keys == ["w"] and receipt.get("poseFeedback") is not None:
+        def native_coordinate(value):
+            return struct.unpack("<f", struct.pack("<f", value))[0]
+        pose = forward_pose_comparison(receipt, native_coordinate(b.x) - native_coordinate(a.x),
+                                      native_coordinate(b.z) - native_coordinate(a.z))
+        if pose is not None:
+            result["forwardPoseComparisonCandidate"] = pose
+    return result
 
 
 def main(argv=None):
