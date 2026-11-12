@@ -184,3 +184,9 @@ In `artifacts/turned-return-20261111-212128/`, `decision1.json` contains the rot
 The W, S, Q and E receipts each have the same sampled actor angle of +9.429536 degrees at both endpoints. W/S travel differed by 179.95 degrees, Q/E by 179.96 degrees, and W/Q by 89.99 degrees. The two 100 ms Q/E pulses returned within 0.012 horizontal units of the pre-Q position. See `artifacts/strafe-pair-20261111-212614/basis-reviewed.json` for the four vectors and source hashes. Facing between samples and reuse after restart remain unverified.
 
 The lateral waypoint trial used all four measured vectors. The goal was the pre-E position, 0.65382 units away. The controller selected Q for 108 ms and the measured hold midpoint was 124.37 ms. Actual travel was 0.75677 units. Two in-tolerance position readings confirmed arrival 0.10295 units past the goal, with less than 0.001 units of sideways offset. The saved decision, pulse, position reads and result are in `artifacts/lateral-waypoint-20261111-212740/`.
+
+## Two-axis waypoint with live feedback
+
+The controller used the four measured key vectors to approach a waypoint offset 0.54 units along E and 0.39 along S from its fresh starting position. It selected E for 90 ms, reducing the goal distance from 0.66619 to 0.39893 units. From that measured position it selected S for 129 ms. The next read measured 0.10116 units remaining, and a second read confirmed arrival within the 0.30-unit tolerance. Both input receipts report successful release.
+
+The directory `artifacts/two-axis-20261111-212913/` contains both decisions and receipts, the starting and post-press position samples, the confirmation and the controller result. Its `path.png` plots the measured positions and arrival radius. This trial exercised two sequential movement axes at one facing in the same process epoch.
