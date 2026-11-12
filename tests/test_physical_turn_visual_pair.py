@@ -107,6 +107,19 @@ class VisualPairTests(unittest.TestCase):
         make_receipt(self.ajson, self.after, 2)
         self.assertFalse(self.assess()["visibleViewChangeCandidate"])
 
+    def test_landmark_offset_recovers_translation_and_refuses_flat_patches(self):
+        import random
+        from PIL import ImageChops
+        original = Image.frombytes("L", (320, 200), random.Random(12).randbytes(320 * 200))
+        moved = ImageChops.offset(original, -11, 1)
+        region = (64, 40, 256, 150)
+        shift = visual.local_return_offset(original, moved, region)
+        self.assertEqual((shift["medianHorizontalPixels"], shift["medianVerticalPixels"]), (-11, 1))
+        flat = Image.new("L", original.size, 50)
+        ambiguous = visual.local_return_offset(flat, flat, region)
+        self.assertEqual(ambiguous["matchedPatches"], 0)
+        self.assertIsNone(ambiguous["medianHorizontalPixels"])
+
     def test_unchanged_scene_does_not_claim_change(self):
         draw_scene(self.after, 0)
         self.areport = make_receipt(self.ajson, self.after, 2)

@@ -12,6 +12,7 @@ import hashlib
 from io import BytesIO
 import json
 from pathlib import Path
+from statistics import median
 import sys
 
 from PIL import Image, ImageChops, ImageStat
@@ -129,8 +130,52 @@ def read_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image,
     return report, image, digest
 
 
+def local_return_offset(before, after, region):
+    """Estimate a small screen displacement for an operator-selected scenery region."""
+    left, top, right, bottom = region
+    width, height = before.size
+    require(40 <= left < right <= width - 40 and 4 <= top < bottom <= height - 4
+            and right - left >= 48 and bottom - top >= 64, "visual-landmark-region-invalid")
+    a, b = before.convert("L"), after.convert("L")
+    # Use at most 18 templates so large regions keep a predictable runtime.
+    xs = sorted({left + (right - left - 48) * i // 8 for i in range(9)})
+    ys = sorted({top, bottom - 64})
+
+    def search(src, dst, x, y):
+        template = src.crop((x, y, x + 48, y + 64))
+        scores = []
+        for dx in range(-40, 41):
+            for dy in range(-4, 5):
+                xx, yy = x + dx, y + dy
+                if not (0 <= xx <= width - 48 and 0 <= yy <= height - 64):
+                    continue
+                patch = dst.crop((xx, yy, xx + 48, yy + 64))
+                error = ImageStat.Stat(ImageChops.difference(template, patch)).mean[0]
+                scores.append((error, dx, dy))
+        error, dx, dy = min(scores)
+        alternate = min(score for score, u, v in scores if abs(u-dx) > 4 or abs(v-dy) > 2)
+        if error > 5 or alternate < 1.5 * max(error, 1) or abs(dx) == 40 or abs(dy) == 4:
+            return None
+        return dx, dy
+
+    matches = []
+    for x in xs:
+        for y in ys:
+            shift = search(a, b, x, y)
+            if shift is None:
+                continue
+            dx, dy = shift
+            reverse = search(b, a, x + dx, y + dy)
+            if reverse and abs(reverse[0] + dx) <= 1 and abs(reverse[1] + dy) <= 1:
+                matches.append(shift)
+    return {"regionPixels": list(region), "attemptedPatches": len(xs) * len(ys),
+            "matchedPatches": len(matches),
+            "medianHorizontalPixels": median(dx for dx, _ in matches) if len(matches) >= 3 else None,
+            "medianVerticalPixels": median(dy for _, dy in matches) if len(matches) >= 3 else None}
+
+
 def visual_compare(before_png: Path, after_png: Path,
-                   before_json: Path, after_json: Path) -> dict:
+                   before_json: Path, after_json: Path, *, landmark_region=None) -> dict:
     before, bimage, before_sha, before_receipt_sha = verified_frame(before_png, before_json)
     after, aimage, after_sha, after_receipt_sha = verified_frame(after_png, after_json)
     ids = ("pid", "startTicks", "sha256", "hwnd", "processName", "width", "height")
@@ -166,7 +211,7 @@ def visual_compare(before_png: Path, after_png: Path,
                             if max(channels[i:i+3]) * exposure_gain >= 24) / sample_count
     adjusted_mean = mean_abs_channel_delta * exposure_gain
     candidate = adjusted_fraction >= .18 and adjusted_mean >= 15
-    return {
+    result = {
         "schemaVersion": 1,
         "status": "offline-visual-change-candidate",
         "machine": before["machine"],
@@ -194,6 +239,9 @@ def visual_compare(before_png: Path, after_png: Path,
             "Screenshots cannot distinguish player body yaw from camera-only movement.",
         ],
     }
+    if landmark_region is not None:
+        result["localReturnOffset"] = local_return_offset(bimage, aimage, landmark_region)
+    return result
 
 
 def main(argv=None) -> int:
@@ -202,11 +250,13 @@ def main(argv=None) -> int:
     parser.add_argument("--after-png", required=True, type=Path)
     parser.add_argument("--before-receipt", required=True, type=Path)
     parser.add_argument("--after-receipt", required=True, type=Path)
+    parser.add_argument("--landmark-region", type=int, nargs=4, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
+                        help="estimate small return offsets in a fixed scenery region, in frame pixels")
     parser.add_argument("--out", type=Path)
     args = parser.parse_args(argv)
     try:
         result = visual_compare(args.before_png, args.after_png,
-                                args.before_receipt, args.after_receipt)
+                                args.before_receipt, args.after_receipt, landmark_region=args.landmark_region)
         content = json.dumps(result, allow_nan=False, sort_keys=True)
         if args.out is not None:
             with args.out.open("x", encoding="utf-8") as stream:
