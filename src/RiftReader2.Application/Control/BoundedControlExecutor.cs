@@ -28,7 +28,11 @@ public sealed class BoundedControlExecutor
         this.input = input;
         this.timeProvider = timeProvider ?? TimeProvider.System;
         this.delayAsync = delayAsync
-            ?? ((delay, cancellationToken) => Task.Delay(delay, this.timeProvider, cancellationToken));
+            // Task.Delay truncates fractional milliseconds. A positive final
+            // remainder must schedule a timer so the hold clock can advance.
+            ?? ((delay, cancellationToken) => Task.Delay(
+                TimeSpan.FromMilliseconds(Math.Ceiling(delay.TotalMilliseconds)),
+                this.timeProvider, cancellationToken));
     }
 
     public async Task<ControlExecutionResult> ExecuteAsync(
