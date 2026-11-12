@@ -739,7 +739,7 @@ def launch_window(args):
 
     window.title(f"RR2 Waypoints — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
-    window.geometry("1060x860")
+    window.geometry("1060x890")
     frame = ttk.Frame(window, padding=14)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
@@ -804,6 +804,8 @@ def launch_window(args):
     last_pose = None
     last_y = None
     saved_view = None
+    saved_rerun = None
+    rerun_viewer = None
     markers = OwnedWaypointMarkers(ROOT)
     marker_identity = None
     map_view = None
@@ -822,6 +824,7 @@ def launch_window(args):
     loading_route = False
     added_selection = None
     edit_history = []
+    recent_paths = []
     log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
 
     def update_route_status():
@@ -833,6 +836,7 @@ def launch_window(args):
         nonlocal route_path, route_dirty, route_recovered
         route_path, route_dirty, route_recovered = Path(path).absolute(), False, False
         update_route_status()
+        remember_recent(route_path)
 
     def local_source_path(value):
         # Inspect drive type before opening any remembered path; never probe a
@@ -846,6 +850,21 @@ def launch_window(args):
         if ctypes.windll.kernel32.GetDriveTypeW(str(path.anchor)) not in (2, 3):
             return None
         return path
+
+    def remember_recent(path):
+        try:
+            progress_route(route_document())
+        except (ValueError, KeyError, TypeError):
+            return
+        source = local_source_path(str(path))
+        if source is None:
+            return
+        value = str(source)
+        recent_paths[:] = [value] + [old for old in recent_paths if old.casefold() != value.casefold()]
+        del recent_paths[8:]
+        recent_dropdown.configure(values=recent_paths)
+        recent_choice.set(value)
+        recent_load_button.configure(state="normal" if not busy and not closing else "disabled")
 
     def invalidate_progress(*, clear_metadata=True):
         nonlocal route_metadata, playback_view, route_dirty
@@ -914,7 +933,8 @@ def launch_window(args):
         try:
             source = local_source_path(str(route_path)) if route_path is not None else None
             write_json_atomic(last_route, {"version": 1, "route": document,
-                                           "sourcePath": str(source) if source else None})
+                                           "sourcePath": str(source) if source else None,
+                                           "recentPaths": list(recent_paths)})
             text = success
         except (OSError, ValueError, TypeError) as exc:
             text = success + "; last-route snapshot could not be saved: " + str(exc)
@@ -1311,10 +1331,7 @@ def launch_window(args):
             except (ValueError, TypeError, OSError) as exc:
                 messagebox.showerror("Cannot save route", str(exc))
 
-    def load_route():
-        path = filedialog.askopenfilename(filetypes=[("Waypoint JSON", "*.json")])
-        if not path:
-            return
+    def load_from(path):
         try:
             document = json.loads(Path(path).read_text(encoding="utf-8"))
             route_points(document["waypoints"])
@@ -1330,6 +1347,18 @@ def launch_window(args):
             cache_route(document, "Route loaded: " + str(path))
         except (ValueError, KeyError, TypeError, OSError) as exc:
             messagebox.showerror("Cannot load route", str(exc))
+
+    def load_route():
+        path = filedialog.askopenfilename(filetypes=[("Waypoint JSON", "*.json")])
+        if path:
+            load_from(path)
+
+    def load_recent():
+        value = recent_choice.get()
+        if value not in recent_paths or local_source_path(value) is None:
+            state.set("Choose a recent local route to load.")
+            return
+        load_from(value)
 
     def remove_points():
         if table.selection():
@@ -1399,6 +1428,20 @@ def launch_window(args):
             os.startfile(saved_view)
         except OSError as exc:
             state.set("Cannot open view: " + str(exc))
+
+    def open_3d_view():
+        nonlocal rerun_viewer
+        if saved_rerun is None or busy or closing:
+            return
+        if rerun_viewer is not None and rerun_viewer.poll() is None:
+            state.set("3D view is already open.")
+            return
+        try:
+            from scripts.save_physical_route_view import launch_saved_rerun
+            rerun_viewer = launch_saved_rerun(saved_rerun)
+            state.set("3D view opened: " + saved_rerun)
+        except (OSError, ValueError, TypeError) as exc:
+            state.set("Cannot open 3D view: " + str(exc))
 
     def stop_markers():
         if not markers.running():
@@ -1504,12 +1547,25 @@ def launch_window(args):
     open_view_button = ttk.Button(view_controls, text="Open view", command=open_view, state="disabled")
     open_view_button.pack(side="left", padx=(0, 6))
     editable.append(open_view_button)
+    open_3d_button = ttk.Button(view_controls, text="Open 3D view", command=open_3d_view, state="disabled")
+    open_3d_button.pack(side="left", padx=(0, 6))
+    editable.append(open_3d_button)
     view_focus_option = ttk.Checkbutton(view_controls, text="Bring RIFT forward for capture", variable=view_bring_forward)
     view_focus_option.pack(side="left", padx=8)
     editable.append(view_focus_option)
     target_option = ttk.Checkbutton(view_controls, text="Include selected target in markers", variable=target_beacon)
     target_option.pack(side="left", padx=(12, 0))
     editable.append(target_option)
+    recent_controls = ttk.Frame(frame)
+    recent_controls.pack(fill="x", pady=4)
+    ttk.Label(recent_controls, text="Recent routes").pack(side="left", padx=(0, 6))
+    recent_choice = tk.StringVar()
+    recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=76)
+    recent_dropdown.pack(side="left", padx=(0, 6))
+    editable.append(recent_dropdown)
+    recent_load_button = ttk.Button(recent_controls, text="Load recent", command=load_recent, state="disabled")
+    recent_load_button.pack(side="left")
+    editable.append(recent_load_button)
     log.pack(fill="x", pady=4)
     ttk.Label(frame, text="F8 stops movement. Stop Recording saves; STOP cancels recording. "
               "Play starts within 0.30 units of Start (Forward) or End (Reverse).").pack(anchor="w")
@@ -1529,7 +1585,7 @@ def launch_window(args):
             window.destroy()
 
     def poll():
-        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, saved_view, observing, next_live_at, playback_view, playback_active, marker_identity
+        nonlocal busy, recording, recording_progress, foreground_stop, last_pose, last_y, saved_view, saved_rerun, observing, next_live_at, playback_view, playback_active, marker_identity
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -1578,7 +1634,10 @@ def launch_window(args):
                 record_end_button.configure(state="disabled")
                 for widget in editable:
                     widget.configure(state="normal")
+                recent_dropdown.configure(state="readonly")
+                recent_load_button.configure(state="normal" if recent_paths else "disabled")
                 open_view_button.configure(state="normal" if saved_view else "disabled")
+                open_3d_button.configure(state="normal" if saved_rerun else "disabled")
                 redraw()
                 if closing and not observing:
                     window.destroy()
@@ -1607,6 +1666,7 @@ def launch_window(args):
             if status == "view-saved":
                 saved_view = event["image"]
                 rerun = event["rerun"]
+                saved_rerun = str(rerun["path"]) if rerun.get("status") == "saved" and rerun.get("path") else None
                 suffix = ("" if rerun.get("status") == "saved" else
                           "; Rerun " + str(rerun.get("status", "unavailable"))
                           + (": " + str(rerun["reason"]) if rerun.get("reason") else ""))
@@ -1759,6 +1819,23 @@ def launch_window(args):
     table.bind("<Delete>", remove_points_shortcut)
     for entry in point_entries:
         entry.bind("<Control-Return>", update_selected_shortcut)
+    if last_route.exists():
+        try:
+            history = json.loads(last_route.read_text(encoding="utf-8"))
+            history = history.get("recentPaths", []) if isinstance(history, dict) else []
+            if isinstance(history, list):
+                for value in history:
+                    source = local_source_path(value)
+                    if source is not None and not any(str(source).casefold() == old.casefold() for old in recent_paths):
+                        recent_paths.append(str(source))
+                        if len(recent_paths) == 8:
+                            break
+            recent_dropdown.configure(values=recent_paths)
+            if recent_paths:
+                recent_choice.set(recent_paths[0])
+                recent_load_button.configure(state="normal")
+        except (OSError, ValueError, TypeError):
+            pass  # Damaged history does not prevent route recovery.
     if args.route:
         show_document(json.loads(args.route.read_text(encoding="utf-8")))
         mark_saved(args.route)

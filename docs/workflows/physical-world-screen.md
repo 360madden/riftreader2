@@ -1,5 +1,17 @@
 # Physical world-to-screen markers
 
+After **Save view**, **Open 3D view** opens the optional Rerun recording with the
+saved XYZ route and actor bearing beside its screenshot/projections. It starts
+only on that click, binds its service to loopback and uses a child-only analytics
+opt-out. Close the viewer normally before opening another recording from this
+button. A failed capture preserves the previous successful view; a new capture
+without an RRD disables its 3D button rather than opening an older recording.
+The ordinary **Open view** still opens the annotated PNG. **Recent routes** /
+**Load recent** selects up to eight saved local paths through the existing load
+checks, without starting playback. Its history shares the existing last-route
+cache, and missing/broken history does not prevent route recovery. Live proof:
+`artifacts/route-controls-17212-validation.json`.
+
 The existing native optical camera and combined projection matrix can project
 arbitrary world XYZ into normalized client coordinates. Client/frame geometry then
 maps those coordinates into a matching RIFT screenshot. This is separate from the

@@ -1,5 +1,16 @@
 # Current status
 
+**15:30 EST NOVEMBER 12 — RECENT ROUTES AND ONE-CLICK 3D VIEW WORK LIVE:**
+On **AMD-DESKTOP/PID17212**, Recent routes / Load recent restored the actual
+saved route and its genuine 7/7 reverse checkpoint. The picker retains eight
+local source paths in the existing cache. After Save view, Open 3D view launched
+the optional Rerun viewer with the real XYZ route, actor bearing and screenshot;
+a second click refused a duplicate. The viewer closed normally, its recording
+passed upstream verification, basis/checkpoint hashes stayed unchanged and no
+game input was sent or held. Thirty-six focused GUI/launcher checks passed.
+Receipt: `artifacts/route-controls-17212-validation.json`; bundle:
+`artifacts/waypoint-view-9bc30e0b429a4e788d6487e3a1fd931b/`.
+
 **15:22 EST NOVEMBER 12 — SAVED VIEWS RETAIN FRESH ZONE CANDIDATES:**
 On **AMD-DESKTOP/PID17212**, the actual focus-neutral Save view click retained
 fresh zone reads before and after the existing image/native bracket, with exact

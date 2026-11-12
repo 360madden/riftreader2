@@ -1,8 +1,9 @@
 """Save one guarded physical route view and optional offline RRD.
 
 The caller owns desktop access. Explicit desktop capture requests pinned focus
-without keys; the separate WGC path is focus-neutral. Neither rebinds a target,
-installs packages or opens a viewer.
+without keys; the separate WGC path is focus-neutral. Capture never rebinds a
+target, installs packages or opens a viewer. The separate viewer helper runs
+only after an explicit user action.
 """
 from __future__ import annotations
 
@@ -30,6 +31,23 @@ TARGET_FIELDS = {"hostName", "processId", "processStartUtcTicks", "executablePat
 def require(condition, reason):
     if not condition:
         raise ValueError(reason)
+
+
+def launch_saved_rerun(path):
+    """Explicit user action: open one local saved recording in the optional viewer."""
+    recording = Path(path)
+    require(recording.is_absolute() and recording.suffix.casefold() == ".rrd"
+            and not str(recording).startswith("\\\\"), "absolute-local-rerun-recording-required")
+    require(recording.is_file() and recording.stat().st_size > 0, "saved-rerun-recording-unavailable")
+    viewer = VISUALIZATION_PYTHON.with_name("rerun.exe")
+    require(viewer.is_file(), "optional-rerun-viewer-not-installed")
+    environment = dict(os.environ)
+    environment["CI"] = "1"
+    environment.pop("FORCE_RERUN_ANALYTICS", None)
+    return subprocess.Popen([str(viewer), "--bind", "127.0.0.1", "--port", "auto", str(recording)],
+                            cwd=ROOT, env=environment, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
 
 
 def _retain_native_sources(observation, directory, sources):
