@@ -1,5 +1,12 @@
 # Physical waypoint prototype
 
+Double-click **`Waypoints.cmd`** in the repository root to open the window for
+the single local physical RIFT client. It checks the current host, process,
+movement basis and live pose before opening; it never starts movement on launch.
+If several clients are running, use `Waypoints.cmd --physical-pid PID`.
+The launcher defaults to **Face, then walk**. `--route PATH` opens a saved route.
+For a read-only readiness check, run `python scripts/launch_physical_waypoints.py --check`.
+
 Launch on the physical game's owning host with an explicit PID:
 
 ```powershell
