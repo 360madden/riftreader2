@@ -816,6 +816,7 @@ def launch_window(args):
     checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
     last_route = ROOT / "artifacts" / "waypoint-last-route.json"
     route_metadata = {}
+    point_receipts = {}
     route_path = None
     route_dirty = False
     route_recovered = False
@@ -900,13 +901,19 @@ def launch_window(args):
         return [table.item(item, "values") for item in (table.get_children() if all_points else table.selection())]
 
     def route_document():
-        return {**route_metadata, "waypoints": route_points(selected_points(True))}
+        document = {**route_metadata, "waypoints": [list(row) for row in route_points(selected_points(True))]}
+        if "recording" not in route_metadata:
+            receipts = [deepcopy(point_receipts.get(item)) for item in table.get_children()]
+            if any(receipt is not None for receipt in receipts):
+                document["pointMeasurements"] = receipts
+                document["heights"] = [receipt["position"]["y"] if receipt is not None else None for receipt in receipts]
+        return document
 
     def remember_edit():
         if loading_route:
             return
         rows = selected_points(True)
-        edit_history.append((deepcopy({**route_metadata, "waypoints": route_points(rows) if rows else []}),
+        edit_history.append((deepcopy(route_document() if rows else {"waypoints": []}),
                              [table.index(item) for item in table.selection()]))
         del edit_history[:-20]
 
@@ -919,6 +926,7 @@ def launch_window(args):
             show_document(document)
         else:
             table.delete(*table.get_children())
+            point_receipts.clear()
             route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
             name.set("Point 1")
         added_selection = None
@@ -946,14 +954,19 @@ def launch_window(args):
 
     def show_document(document):
         nonlocal loading_route, route_metadata
+        from scripts.waypoint_measurements import document_measurements
         parsed = route_points(document["waypoints"])
+        receipts = document_measurements(document)
         if not stop_markers():
             raise WaypointError("Cannot stop markers; route unchanged")
         loading_route = True
         try:
             table.delete(*table.get_children())
-            for row in parsed:
-                add_point(*row)
+            point_receipts.clear()
+            for row, receipt in zip(parsed, receipts):
+                item = add_point(*row)
+                if receipt is not None:
+                    point_receipts[item] = deepcopy(receipt)
             route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
             name.set(f"Point {len(table.get_children()) + 1}")
         finally:
@@ -1036,6 +1049,8 @@ def launch_window(args):
             summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
                         + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
                         + endpoints
+                        + (f"   •   3D: measured heights {sum(1 for row in original_points if point_receipts.get(row[0]) is not None)} / {len(original_points)}"
+                           if original_points else "")
                         + ("   •   Shorten the route to run it" if distance > 20 else ""))
         if not busy:
             go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
@@ -1108,6 +1123,13 @@ def launch_window(args):
                     events.put({"status": "reconnected", "pid": adapter.pid})
                     published_adapter = adapter
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing}
+                if operation == "save" and isinstance(getattr(adapter, "binding", None), dict):
+                    try:
+                        from scripts.waypoint_measurements import measurement
+                        result["measurement"] = measurement(pose.position, adapter.binding, pose.source,
+                                                            datetime.now(timezone.utc).isoformat())
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        result["measurementReason"] = "Position provenance unavailable; point saved without height."
                 if operation == "target":
                     result["waypoint"] = target_waypoint(pose)
                 if operation == "map":
@@ -1307,6 +1329,8 @@ def launch_window(args):
             return
         remember_edit()
         invalidate_progress(clear_metadata=coordinates_changed)
+        if coordinates_changed:
+            point_receipts.pop(selected[0], None)
         table.item(selected[0], values=(label, f"{px:.6f}", f"{pz:.6f}"))
         added_selection = None
         name.set(label)
@@ -1361,10 +1385,13 @@ def launch_window(args):
         load_from(value)
 
     def remove_points():
-        if table.selection():
+        selected = table.selection()
+        if selected:
             remember_edit()
             invalidate_progress()
-        table.delete(*table.selection())
+        for item in selected:
+            point_receipts.pop(item, None)
+        table.delete(*selected)
         redraw()
 
     def move_point(direction):
@@ -1386,6 +1413,7 @@ def launch_window(args):
             remember_edit()
             invalidate_progress()
         table.delete(*table.get_children())
+        point_receipts.clear()
         name.set("Point 1")
         redraw()
         state.set("Waypoint list cleared.")
@@ -1718,7 +1746,10 @@ def launch_window(args):
             if status in ("live", "recording"):
                 continue
             if status == "save":
-                add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
+                item = add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
+                if item is not None and event.get("measurement") is not None:
+                    point_receipts[item] = event["measurement"]
+                    redraw()
                 name.set(f"Point {len(table.get_children()) + 1}")
             if "waypoint" in event:
                 add_point(*event["waypoint"])
@@ -1730,7 +1761,7 @@ def launch_window(args):
                     f"{status}: {abs(event['headingError']):.2f}° from requested facing" if "headingError" in event else
                     f"{status}: {event['distance']:.3f} units remaining" if "distance" in event else
                     f"{status}: {event.get('name', '')}" if status == "leg" else
-                    "Saved current position." if status == "save" else
+                    event.get("measurementReason", "Saved current position.") if status == "save" else
                     "Saved the target's current ground position." if status == "target" else
                     "Waypoint added from the preview." if status == "map" else
                     "Position refreshed.")

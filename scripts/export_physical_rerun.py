@@ -235,6 +235,7 @@ def export(route_path, observations, output, *, images=True, sink_factory=RerunS
     result = {"status": "offline-rerun-evidence-export", "output": str(output), "inputSent": False,
               "route": route["path"], "routeSha256": route["sha256"],
               "recordingIdentity": route["recordingIdentity"], "observationCount": len(frames),
+              "provenanceKind": route["provenanceKind"],
               "wgcObservationCount": len(observations), "desktopPairCount": len(desktop_pairs),
               "imagesIncluded": images, "limitations": LIMITATIONS}
     result["cameraViewRaysRequested"] = camera_rays

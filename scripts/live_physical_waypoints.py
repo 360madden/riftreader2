@@ -36,27 +36,10 @@ def require(condition, reason):
 def load_route(path):
     raw = Path(path).read_bytes()
     document = json.loads(raw.decode("utf-8-sig"))
-    recording = document.get("recording", {})
-    require(recording.get("complete") is True and recording.get("version") == 1,
-            "complete-recorded-route-required")
-    provenance = recording.get("identity")
-    require(isinstance(provenance, dict), "recording-identity-required")
-    identity = provenance.get("runtimeIdentity", provenance)
-    require(isinstance(identity, dict) and all(isinstance(identity.get(key), str) and identity[key]
-            for key in ("machine", "gameBuildSha256", "unitKey")), "recording-identity-required")
-    points, heights = document.get("waypoints"), document.get("heights")
-    require(isinstance(points, list) and 1 <= len(points) <= 20 and isinstance(heights, list)
-            and len(points) == len(heights), "recorded-xyz-heights-required")
-    parsed = []
-    for number, (point, height) in enumerate(zip(points, heights), 1):
-        require(isinstance(point, list) and len(point) == 3 and isinstance(point[0], str),
-                "invalid-recorded-waypoint")
-        require(all(type(v) in (int, float) and math.isfinite(v) for v in (point[1], height, point[2])),
-                "finite-recorded-xyz-heights-required")
-        parsed.append({"number": number, "label": point[0], "xyz": dict(x=point[1], y=height, z=point[2])})
-    return {"points": parsed, "identity": deepcopy(identity), "recordingIdentity": deepcopy(provenance),
-            "path": str(Path(path).resolve()), "sha256": hashlib.sha256(raw).hexdigest(),
-            "document": document}
+    from scripts.waypoint_measurements import parse_projection_route
+    parsed = parse_projection_route(document)
+    return {**parsed, "path": str(Path(path).resolve()),
+            "sha256": hashlib.sha256(raw).hexdigest(), "document": document}
 
 
 class ProjectionProvider:
@@ -500,6 +483,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     result = {"status": "read-only-waypoint-feed-stopped", "reason": reason,
         "machine": socket.gethostname(), "target": selection["target"],
         "recordingIdentity": route["recordingIdentity"], "route": route["path"], "routeSha256": route["sha256"],
+        "provenanceKind": route["provenanceKind"],
         "durationSeconds": time.monotonic() - started, "maxAgeSeconds": max_age,
         "counts": counts, "latestNativeReport": provider.latest_native, "inputSent": False,
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,

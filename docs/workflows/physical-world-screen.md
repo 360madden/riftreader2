@@ -1,5 +1,27 @@
 # Physical world-to-screen markers
 
+**Save Current → Save Route** preserves observed XYZ, source, actor/build identity
+and observation time. Independently measured waypoints can use Show markers,
+Save view and the 3D viewer without recording a walk. Every point needs measured
+height and matching host/build/player provenance; the summary shows **3D: measured
+heights N / M**. Typed coordinates and preview clicks retain unknown height.
+Coordinate edits invalidate that point's measurement; Undo restores it. Renaming
+and reordering preserve each point's observed position. An untouched recording
+retains its original metadata; appending/reordering preserves individual known
+observations with their original sources and intervals, without claiming a newly
+continuous path. Known measured points from another host/build/player are also
+refused before playback input. This adds no terrain/world-instance authority.
+
+Live proof on AMD-DESKTOP/PID17212: actual Save Current appended Point 8 with
+Y `863.5865478515625`; Save view rendered all eight and its RRD passed verification.
+The live Qt beacon at Atank's feet is visible in
+`artifacts/measured-waypoint-trial-17212-69dcd609/sampled-current-markers.png`.
+The first short desktop sample caught a hidden interval; the longer sample
+confirmed pixels. Hide ended the child normally. No movement occurred, and the
+original cache and genuine checkpoint were restored after the edit trial. See
+that directory's `validation.json` and saved-view bundle
+`artifacts/waypoint-view-535de4776556469ab5902782e54a5b1f/`.
+
 After **Save view**, **Open 3D view** opens the optional Rerun recording with the
 saved XYZ route and actor bearing beside its screenshot/projections. It starts
 only on that click, binds its service to loopback and uses a child-only analytics
@@ -34,7 +56,7 @@ The existing native presenter remains an explicit fallback. Both reuse the same
 recorded XYZ, native camera projector, identity/freshness checks and stop lifecycle.
 
 The waypoint window also has **Save view** and **Open view**. Save view snapshots
-the complete recorded route and defaults to focus-neutral WGC capture. Enable
+the recorded route or independently measured points and defaults to focus-neutral WGC capture. Enable
 **Bring RIFT forward for capture** to explicitly choose the DXcam/native-bracket
 desktop path; that mode focuses the pinned RIFT window without keys. A successful
 `artifacts/waypoint-view-*` bundle contains route, original PNG, copied native
@@ -267,11 +289,11 @@ Use a fresh explicit PID and a new summary path. Focus RIFT separately to displa
 markers; this command never activates it. The run is bounded (default 60 seconds,
 maximum 600) and Ctrl+C closes it. `--reader single` retains the slower existing
 reader. In either mode, changed foreground/identity/geometry, expired evidence or
-unavailable projection hides markers. Only complete recorded routes with actual
-heights matching the host/build/player are admitted.
+unavailable projection hides markers. Only complete recorded routes or independently
+measured points with actual heights matching the host/build/player are admitted.
 
 The waypoint window also has **Show markers / Hide markers** beside the recording
-controls. Load a complete recorded route, wait for its RIFT connection, press
+controls. Load a recorded route or independently measured points, wait for its RIFT connection, press
 Show markers, then return to RIFT. Markers use the route's real saved heights and
 hide while another application is foreground. Hide markers, editing/replacing the
 route, reconnection and closing the waypoint window stop its one owned child;

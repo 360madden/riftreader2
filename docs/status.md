@@ -1,5 +1,21 @@
 # Current status
 
+**15:51 EST NOVEMBER 12 — SAVE CURRENT NOW PRODUCES USABLE 3D BEACONS:**
+On **AMD-DESKTOP/PID17212**, Save Current retained fresh native XYZ/source/
+identity/time rather than discarding height. Root appended one point to the
+seven-point route: Save view rendered all eight and Rerun passed verification.
+The live Qt overlay displayed Point 8 at Atank's feet, confirmed in a desktop
+composite. Independent observations retain original epochs/route intervals;
+they do not fabricate a continuous recording. Typed/map points remain unknown-
+height. Coordinate edits invalidate only that point's receipt; Undo restores it.
+Sixty-one focused measurement/edit/recording/playback/backend tests and 29 feed
+tests passed. Hide stopped owned children; pose/basis/cache were unchanged, and
+the genuine original 7/7 reverse checkpoint was restored byte-for-byte after this
+no-input edit trial. Evidence:
+`artifacts/measured-waypoint-trial-17212-69dcd609/validation.json`,
+`sampled-current-markers.png` there, and
+`artifacts/waypoint-view-535de4776556469ab5902782e54a5b1f/`.
+
 **15:35 EST NOVEMBER 12 — 3D VIEW NOW SHOWS NATIVE CAMERA VIEW RAYS:**
 On **AMD-DESKTOP**, retained PID17212 evidence exported through the actual Rerun
 SDK with the optical eye, four screen-corner rays and their display-plane loop.

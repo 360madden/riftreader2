@@ -32,7 +32,8 @@ class WaypointEditTests(unittest.TestCase):
         self.items = self.table.get_children()
         self.table.selection_set(self.items[0])
         self.root.update()
-        self.entries = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Entry)]
+        self.entries = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Entry)
+                        and not isinstance(w, fixture.ttk.Combobox)]
         self.assertEqual(["First", "0.000000", "0.000000"], [w.get() for w in self.entries])
         self.cache = self.path / "artifacts" / "waypoint-last-route.json"
         self.cache_before = self.cache.read_bytes() if self.cache.exists() else None

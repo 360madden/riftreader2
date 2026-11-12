@@ -45,6 +45,25 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
         if any(str(recorded_identity.get(k, "")).casefold() != str(identity[k]).casefold()
                for k in ("machine", "gameBuildSha256", "unitKey")):
             raise ProgressError("Recording belongs to another host, build or player")
+    elif "pointMeasurements" in document:
+        from scripts.waypoint_measurements import document_measurements
+        raw = document["pointMeasurements"]
+        points = document.get("waypoints")
+        if not isinstance(raw, list) or not isinstance(points, list) or len(raw) != len(points):
+            raise ProgressError("Invalid waypoint measurement list")
+        measured = document_measurements(document)
+        if len(measured) != len(raw):
+            raise ProgressError("Invalid waypoint measurement list")
+        for original, receipt in zip(raw, measured):
+            if original is None:
+                continue  # Existing manually entered points retain unknown height.
+            if receipt is None:
+                raise ProgressError("Invalid waypoint measurement")
+            observed_identity = receipt["identity"]
+            observed_identity = observed_identity.get("runtimeIdentity", observed_identity)
+            if any(str(observed_identity.get(k, "")).casefold() != str(identity[k]).casefold()
+                   for k in ("machine", "gameBuildSha256", "unitKey")):
+                raise ProgressError("Measured waypoint belongs to another host, build or player")
     cursor = (RouteProgress.load(checkpoint, document, identity) if resume else
               RouteProgress(document, direction, identity))
     if cursor.direction != direction:

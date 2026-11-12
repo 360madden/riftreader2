@@ -264,6 +264,7 @@ def save_route_view(expected_host, physical_pid, document, output, *, expected_t
         result["target"] = pinned
         result["route"] = str(route_path)
         result["recordingIdentity"] = route["recordingIdentity"]
+        result["provenanceKind"] = route["provenanceKind"]
         result["captureBackend"] = capture_backend
         zone_before = _zone_context(selection, route, directory / "zone-before.json")
         try:

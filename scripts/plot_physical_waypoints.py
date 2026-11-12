@@ -248,23 +248,19 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
                       camera, mapping, image, image_path, digest, receipt_digest, captured_at,
                       native_before, native_after, source_metadata=None):
     """Shared projection/drawing only after the selected source's own admission."""
-    recording = route.get("recording", {})
-    recorded_identity = recording.get("identity", {})
-    recorded_runtime = recorded_identity.get("runtimeIdentity", recorded_identity)
-    require(recording.get("complete") is True and recording.get("version") == 1, "complete-recorded-route-required")
+    from scripts.waypoint_measurements import parse_projection_route
+    parsed_route = parse_projection_route(route)
+    recorded_identity = parsed_route["recordingIdentity"]
+    recorded_runtime = parsed_route["identity"]
     require(recorded_runtime.get("machine", "").casefold() == host.casefold()
             and recorded_runtime.get("gameBuildSha256", "").casefold() == identity["executableSha256"].casefold()
             and recorded_runtime.get("unitKey") == values["playerKey"], "route-host-build-player-identity-mismatch")
-    points, heights = route.get("waypoints"), route.get("heights")
-    require(isinstance(points, list) and 1 <= len(points) <= 20 and isinstance(heights, list)
-            and len(heights) == len(points), "recorded-heights-required")
     rows = []
-    for index, (point, height) in enumerate(zip(points, heights), 1):
-        require(isinstance(point, list) and len(point) == 3 and isinstance(point[0], str), "invalid-recorded-waypoint")
-        xyz = dict(x=_number(point[1]), y=_number(height), z=_number(point[2]))
+    for point in parsed_route["points"]:
+        index, xyz = point["number"], point["xyz"]
         ground = project(camera, xyz, mapping)
         beacon = project(camera, dict(x=xyz["x"], y=xyz["y"] + 1.5, z=xyz["z"]), mapping)
-        rows.append({"number": index, "label": point[0], "ground": ground, "beaconTop": beacon,
+        rows.append({"number": index, "label": point["label"], "ground": ground, "beaconTop": beacon,
                      "beaconLineDrawn": ground["status"] == beacon["status"] == "drawn-candidate"})
     player = project(camera, values["positionXYZCandidate"], mapping)
     # Draw into a client-only layer so labels/marker radii cannot enter window chrome.
@@ -304,6 +300,7 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
     image.paste(layer, (left, top))
     result = {"status": "offline-waypoint-projection-candidate", "machine": host,
               "identity": identity, "recordingIdentity": recorded_identity,
+              "provenanceKind": parsed_route["provenanceKind"],
               "observation": str(observation_path), "route": str(route_path),
               "capturedAtUtc": captured_at,
               "nativeBefore": str(native_before), "nativeAfter": str(native_after),
@@ -315,7 +312,9 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
               "limitations": ["Software projection onto a retained snapshot; not a live overlay.",
                   "Occlusion, depth and terrain not checked; markers may cover foreground objects.",
                   "Source world/zone identity unavailable; matching host/build/player does not establish world identity.",
-                  "Recording provenance preserved; recording process epoch may differ from snapshot."]}
+                  ("Recording provenance preserved; recording process epoch may differ from snapshot."
+                   if parsed_route["provenanceKind"] == "recorded-route" else
+                   "Independent point observations preserved; no continuously recorded path is claimed.")]}
     result.update(source_metadata or {})
     output.mkdir()
     image.save(output / "waypoints.png", "PNG")

@@ -24,6 +24,43 @@ class PlaybackTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.checkpoint = Path(self.temp.name) / "progress.json"
 
+    def measured_document(self, **changes):
+        identity = dict(BoundSim.binding["runtimeIdentity"], processId=99, processStartUtcTicks="99", **changes)
+        return {"waypoints": [["Saved current", 0, 0]], "heights": [10],
+                "pointMeasurements": [{"version": 1, "kind": "native-player-position",
+                    "identity": {"runtimeIdentity": identity}, "position": {"x": 0, "y": 10, "z": 0},
+                    "source": "retained-native-pose.json", "observedAtUtc": "2026-11-12T20:00:00+00:00"}]}
+
+    def test_measured_point_identity_and_invalid_provenance_refuse_before_runner(self):
+        documents = [self.measured_document(**{key: value}) for key, value in (
+            ("machine", "OTHER"), ("gameBuildSha256", "b" * 64), ("unitKey", "999"))]
+        malformed = self.measured_document()
+        malformed["pointMeasurements"][0]["position"]["x"] = 2
+        documents.append(malformed)
+        malformed = self.measured_document()
+        malformed["pointMeasurements"] = "invalid"
+        documents.append(malformed)
+        for document in documents:
+            with self.subTest(document=document):
+                runner = Mock()
+                with self.assertRaises(ProgressError):
+                    play_route(BoundSim(), document, threading.Event(), lambda _: None,
+                               runner=runner, checkpoint=self.checkpoint)
+                runner.assert_not_called()
+                self.assertFalse(self.checkpoint.exists())
+
+    def test_measured_point_reuses_stable_identity_without_retagging_old_epoch(self):
+        document = self.measured_document()
+        document["waypoints"].append(["Manual", .1, 0])
+        document["heights"].append(None)
+        document["pointMeasurements"].append(None)
+        sim = BoundSim()
+        _, cursor = play_route(sim, document, threading.Event(), lambda _: None,
+                               runner=run_route, checkpoint=self.checkpoint, face_waypoints=False)
+        self.assertEqual(cursor.next_index, 2)
+        self.assertEqual(document["pointMeasurements"][0]["identity"]["runtimeIdentity"]["processId"], 99)
+        self.assertIsNone(document["heights"][1])
+
     def test_teach_l_then_reverse_reaches_recorded_start(self):
         sim = BoundSim()
         legs, document = teach_route(sim, [("Corner", 1.5, 0), ("End", 1.5, 1.5)],
