@@ -415,6 +415,14 @@ checkpoint was restored separately after unchanged actor/epoch verification.
 App PID62516/window5313042 is idle on the ready-route copy, RIFT PID69312 and basis
 unchanged. Desktop checks remain root-owned and conditional on noninterference.
 
+**11:12 EST CLI usability fixes:** help and the missing-execute error now include
+recorded-route playback; all CLI action flags require explicit execution. Mixing
+window-only `--route` with any CLI action is rejected before reader/window/input
+startup, including `--face-bearing 0`. The guide now states that Resume requires
+an interrupted, unfinished checkpoint. Twelve focused CLI tests passed and root
+reviewed the patch. No live/native/UI/input operation was needed for these parser
+and documentation corrections; existing controller behavior is unchanged.
+
 ## Working result and use
 
 The prototype records actual observed positions, preserves corners, saves/loads

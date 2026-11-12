@@ -302,6 +302,7 @@ not the passive window recording control. Replay and resume use `--play-route`:
 ```powershell
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --record-to taught-route.json --face-waypoints --execute
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --face-waypoints --execute
+# Use --resume only if that playback was interrupted and left the checkpoint unfinished.
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --play-route taught-route.json --reverse --progress taught-progress.json --resume --face-waypoints --execute
 ```
 

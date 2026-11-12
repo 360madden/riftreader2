@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Small physical-RIFT waypoint prototype, using the existing RR2 controller.
 
-Run without --go for the waypoint window. --go X Z --execute runs one bounded
-open-ground trip. No memory writes, addon, service, Workbridge or mesh required.
+Run without a CLI action for the waypoint window. CLI movement actions require
+--execute and are bounded. No memory writes, addon, service, Workbridge or mesh
+required.
 """
 from __future__ import annotations
 
@@ -1590,7 +1591,7 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
     mode.add_argument("--run-route", type=Path, help="run a saved waypoint JSON with --execute")
-    mode.add_argument("--play-route", type=Path, help="replay a recorded route from its endpoint")
+    mode.add_argument("--play-route", type=Path, help="replay a recorded route from its endpoint with --execute")
     mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
     parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
     parser.add_argument("--execute", action="store_true")
@@ -1599,15 +1600,19 @@ def main(argv=None):
     parser.add_argument("--progress", type=Path, help="recorded-route progress checkpoint")
     parser.add_argument("--resume", action="store_true", help="resume saved unfinished recorded route")
     args = parser.parse_args(argv)
+    cli_action = (args.go is not None or args.face_bearing is not None or
+                  args.run_route is not None or args.play_route is not None)
+    if args.route is not None and cli_action:
+        parser.error("--route cannot be combined with --go / --face-bearing / --run-route / --play-route")
     if (args.reverse or args.resume or args.progress) and args.play_route is None:
         parser.error("--reverse / --resume / --progress requires --play-route")
     if args.record_to is not None and args.go is None and args.run_route is None:
         parser.error("--record-to requires --go or --run-route")
-    if args.go is None and args.face_bearing is None and args.run_route is None and args.play_route is None:
+    if not cli_action:
         launch_window(args)
         return 0
     if not args.execute:
-        parser.error("--go / --face-bearing / --run-route requires --execute; omit them to open the window")
+        parser.error("--go / --face-bearing / --run-route / --play-route requires --execute; omit them to open the window")
     stop = threading.Event()
     adapter, checkpoint = None, None
     history = []

@@ -103,14 +103,35 @@ class WaypointCliTests(unittest.TestCase):
         self.assertEqual("disk full", failure["receiptError"])
         self.assertEqual(str(adapter.input_receipt_path), failure["inputReceiptPath"])
 
-    def test_saved_route_requires_explicit_execution(self):
-        with patch.object(waypoint, "PhysicalAdapter") as adapter, redirect_stderr(io.StringIO()):
+    def test_play_route_requires_explicit_execution(self):
+        with patch.object(waypoint, "PhysicalAdapter") as adapter, \
+                patch.object(waypoint, "launch_window") as window, redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit) as caught:
                 waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
-                               "--run-route", "route.json"])
+                               "--play-route", "route.json"])
         self.assertEqual(2, caught.exception.code)
         adapter.assert_not_called()
+        window.assert_not_called()
         self.stop_guard.assert_not_called()
+
+    def test_window_route_rejects_each_cli_action_before_startup(self):
+        actions = [
+            ["--go", "1", "2"],
+            ["--face-bearing", "0"],
+            ["--run-route", "run.json"],
+            ["--play-route", "play.json"],
+        ]
+        for action in actions:
+            with self.subTest(action=action), \
+                    patch.object(waypoint, "PhysicalAdapter") as adapter, \
+                    patch.object(waypoint, "launch_window") as window, redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as caught:
+                    waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
+                                   "--route", "window.json", *action, "--execute"])
+            self.assertEqual(2, caught.exception.code)
+            adapter.assert_not_called()
+            window.assert_not_called()
+            self.stop_guard.assert_not_called()
 
     def test_saved_route_keeps_every_leg_in_one_receipt(self):
         adapter = SimulatedRift()
