@@ -440,6 +440,9 @@ class PhysicalWaypointOverlay:
         for row in frame["points"]:
             if not isinstance(row, dict) or type(row.get("number")) is not int or row["number"] <= 0 or not isinstance(row.get("label"), str):
                 raise ValueError("Malformed marker")
+            if "routeState" in row and (not isinstance(row["routeState"], str)
+                                         or row["routeState"] not in ("pending", "next", "completed")):
+                raise ValueError("Invalid marker routeState")
             _projection(row.get("ground"), *rect[2:])
             _projection(row.get("beaconTop"), *rect[2:])
         _projection(frame.get("playerGround"), *rect[2:])
@@ -460,19 +463,24 @@ class PhysicalWaypointOverlay:
                 if ground is not None:
                     text = (str(marker["number"]) if marker["label"] == f"Recorded {marker['number']}"
                             else f"{marker['number']} {marker['label']}")
-                    markers.append((ground, top, text))
-            for text, box, anchor in _label_layout([(ground, text) for ground, top, text in markers], *rect[2:], font):
+                    route_state = marker.get("routeState")
+                    color = {"pending": "#b39852", "next": "#7cffff", "completed": "#65c88a"}.get(route_state, "#ffd54f")
+                    if route_state == "next":
+                        text = "NEXT " + text
+                    markers.append((ground, top, text, color, 4 if route_state == "next" else 2))
+            labels = _label_layout([(marker[0], marker[2]) for marker in markers], *rect[2:], font)
+            for (_, _, _, color, _), (text, box, anchor) in zip(markers, labels):
                 endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
-                draw.line((*anchor, *endpoint), fill="#ffd54f", width=1)
-                draw.multiline_text((box[0]+2, box[1]+2), text, fill="#ffd54f", font=font,
+                draw.line((*anchor, *endpoint), fill=color, width=1)
+                draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
                                     anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
             # Rings/beacons are painted last so label lanes never move or erase
             # the exact world-to-screen reference pixels.
-            for ground, top, text in markers:
+            for ground, top, text, color, width in markers:
                 x, y = ground
-                draw.ellipse((x-7, y-7, x+7, y+7), outline="#ffd54f", width=2)
+                draw.ellipse((x-7, y-7, x+7, y+7), outline=color, width=width)
                 if top is not None:
-                    draw.line((*ground, *top), fill="#ffd54f", width=2)
+                    draw.line((*ground, *top), fill=color, width=width)
             player = _projection(frame["playerGround"], *rect[2:])
             if player is not None:
                 x, y = player

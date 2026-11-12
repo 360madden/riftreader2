@@ -161,6 +161,29 @@ keep markers running. STOP/F8 latches movement cancellation first, then requests
 owned marker shutdown. Go/Face/Walk + Record/passive Record still close markers
 first and ask you to retry after that child exits.
 
+The GUI passes its existing checkpoint to the child for display-only progress:
+**cyan/thicker + NEXT** marks the next saved waypoint, **green** marks completed
+points and **muted gold** marks pending points. Original waypoint numbers are
+preserved during reverse playback. The child reuses `RouteProgress.load` to
+validate route/hash, direction, cursor and host/build/player identity. Missing,
+malformed or mismatched progress falls back to ordinary yellow markers; it does
+not guess a next point or change movement admission. A saved cursor describes
+historical progress, not proof that playback is active or that terrain is clear.
+CLI callers can opt in with `--progress-file ABSOLUTE_CHECKPOINT_PATH`; the file
+may be absent until playback starts. This option never creates or edits it.
+
+On PID60384, root saw and desktop-captured NEXT 2 in cyan, completed point 1 in
+green and the remaining points in gold during real forward playback. The route
+finished 7/7 at 0.04443-unit error with 35 released pulses/4,657 ms requested hold,
+each requested pulse at most 150 ms. Root also observed all-green completion.
+The feed presented 576 frames over 143.1 seconds, with 93 foreground/staleness
+withholdings; Hide stopped it. Final poses showed zero XYZ/yaw drift and inspection
+found no held inputs. Forty-seven focused decoder/feed/marker/presenter tests
+passed. Evidence: `artifacts/qt-progress-during-playback-60384/last.png`,
+`artifacts/waypoint-run-8f47f15c57a84b0b9169caae75b03152.json`,
+`artifacts/waypoint-markers-summary-db8b4511efa74a68aafec656d79a6817.json` and
+`artifacts/qt-progress-playback-60384-settled.json`.
+
 On PID60384, root replayed the complete route alongside Qt acquisition: endpoint
 error 0.04649, 35 released pulses/4,593 ms requested hold, 303 presentations during
 the combined 91-second feed. An actual GUI Play Reverse then displayed beacons

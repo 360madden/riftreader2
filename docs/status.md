@@ -1,5 +1,19 @@
 # Current status
 
+**13:49 EST NOVEMBER 12 — PROGRESS-COLORED WORLD BEACONS WORK:** On
+**AMD-DESKTOP/PID60384**, the live Qt overlay now reads the existing validated
+checkpoint: cyan/thicker NEXT, green completed, muted-gold pending, preserving
+original numbers in reverse. Missing/mismatched checkpoints retain ordinary
+markers; these are saved progress labels, not movement/terrain authority.
+Root captured actual NEXT 2/completed 1 during GUI replay and observed all-green
+completion. Final error 0.04443, all 35 pulses released, 4,657 ms requested hold.
+Feed: 576 presentations/143.1 s, 93 withholdings, clean Hide; two final poses had
+zero XYZ/yaw drift and inspection found no held inputs. Forty-seven focused
+checks passed. [Usage and evidence](workflows/physical-world-screen.md).
+App PID60252 is idle at genuine 7/7 forward, markers stopped. Atank is
+`(7421.630371,863.586548,2940.943848)`, body bearing `59.81955` degrees.
+Extended goal remains active through **19:44 EST**.
+
 **13:42 EST NOVEMBER 12 — GUI PLAY/F8/RESUME WITH QT MARKERS VERIFIED:** On
 **AMD-DESKTOP/PID60384**, recorded Play/Resume now keep the owned Qt beacons.
 Root saw actual beacons during GUI reverse turning; F8 stopped input and closed

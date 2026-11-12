@@ -46,6 +46,8 @@ class OwnedMarkerTests(unittest.TestCase):
                                ("--max-age", ".35"), ("--duration", "600")):
             self.assertEqual(expected, command[command.index(flag) + 1])
         route = Path(command[command.index("--route") + 1])
+        self.assertEqual(str(self.root / "artifacts" / "waypoint-current-progress.json"),
+                         command[command.index("--progress-file") + 1])
         self.assertEqual(self.route, json.loads(route.read_text(encoding="utf-8")))
         self.assertFalse(self.markers.stop_path.exists())
         self.markers.stop()

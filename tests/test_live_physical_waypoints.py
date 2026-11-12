@@ -60,6 +60,29 @@ class FeedTests(unittest.TestCase):
             self.provider().acquire()
         self.read.assert_not_called()
 
+    def test_saved_progress_updates_and_mismatch_clears_only_display_state(self):
+        from scripts.waypoint_progress import RouteProgress
+        frame = self.provider().acquire()
+        geometry = deepcopy(frame)
+        checkpoint = self.root / "progress.json"
+        cursor = RouteProgress(self.route_document, identity=self.route["identity"])
+        cursor.begin(dict(x=7427, y=871, z=2946))
+        cursor.save(checkpoint)
+        summary = live.apply_saved_progress(frame, checkpoint, self.route)
+        self.assertEqual(summary["nextNumber"], 1)
+        self.assertEqual(frame["points"][0]["routeState"], "next")
+        cursor.confirm_arrival(0, self.route_document["waypoints"][0])
+        cursor.save(checkpoint)
+        summary = live.apply_saved_progress(frame, checkpoint, self.route)
+        self.assertIsNone(summary["nextNumber"])
+        self.assertEqual(frame["points"][0]["routeState"], "completed")
+        payload = json.loads(checkpoint.read_text())
+        payload["identity"]["unitKey"] = "another player"
+        checkpoint.write_text(json.dumps(payload))
+        summary = live.apply_saved_progress(frame, checkpoint, self.route)
+        self.assertEqual(summary["status"], "unavailable")
+        self.assertEqual(frame, geometry)
+
     def test_changed_geometry_foreground_and_slow_reads_refused(self):
         for second in (dict(foreground=False, clientRect=[100, 125, 1920, 1080]),
                        dict(foreground=True, clientRect=[101, 125, 1920, 1080])):
@@ -177,7 +200,8 @@ class FeedTests(unittest.TestCase):
                  dict(expected, expected_start_ticks="0"), dict(expected, expected_sha256="bad"),
                  dict(expected, expected_hwnd=True), dict(expected, expected_hwnd=0),
                  dict(expected, expected_start_ticks="123"), dict(expected, expected_sha256="b" * 64),
-                 dict(expected, expected_hwnd=999), dict(stop_file=existing), dict(stop_file=Path("relative.stop"))]
+                 dict(expected, expected_hwnd=999), dict(stop_file=existing), dict(stop_file=Path("relative.stop")),
+                 dict(progress_file=Path("relative-progress.json"))]
         with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
              patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(live.physical, "select_physical", return_value=self.selection):

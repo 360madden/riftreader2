@@ -95,7 +95,8 @@ class OwnedWaypointMarkers:
                    "--expect-start-ticks", str(target["processStartUtcTicks"]),
                    "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]),
                    "--route", str(route_path), "--duration", "600", "--max-age", ".35", "--presenter", presenter,
-                   "--output", str(self.output), "--stop-file", str(self.stop_path)]
+                   "--output", str(self.output), "--stop-file", str(self.stop_path),
+                   "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
         self.child = self.popen(command, cwd=self.root,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.stop_requested = False

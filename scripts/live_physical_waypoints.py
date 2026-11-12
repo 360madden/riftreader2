@@ -54,7 +54,8 @@ def load_route(path):
                 "finite-recorded-xyz-heights-required")
         parsed.append({"number": number, "label": point[0], "xyz": dict(x=point[1], y=height, z=point[2])})
     return {"points": parsed, "identity": deepcopy(identity), "recordingIdentity": deepcopy(provenance),
-            "path": str(Path(path).resolve()), "sha256": hashlib.sha256(raw).hexdigest()}
+            "path": str(Path(path).resolve()), "sha256": hashlib.sha256(raw).hexdigest(),
+            "document": document}
 
 
 class ProjectionProvider:
@@ -302,9 +303,21 @@ def _hwnd_argument(value):
         raise argparse.ArgumentTypeError("HWND must be a decimal integer or 0x hexadecimal integer") from error
 
 
+def apply_saved_progress(frame, progress_file, route):
+    """Decorate a fresh projection from a checked historical cursor, never control it."""
+    from scripts.waypoint_marker_progress import read_marker_progress
+    progress = read_marker_progress(progress_file, route["document"], route["identity"])
+    states = progress.get("states", {})
+    for point in frame["points"]:
+        point.pop("routeState", None)
+        if point["number"] in states:
+            point["routeState"] = states[point["number"]]
+    return progress
+
+
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
-        presenter="native"):
+        presenter="native", progress_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 < duration <= 600, "duration-must-be-positive-at-most-600")
@@ -319,6 +332,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     if output is not None:
         output = Path(output).resolve()
         require(not output.exists() and output.parent.is_dir(), "new-output-json-required")
+    if progress_file is not None:
+        progress_file = Path(progress_file)
+        require(progress_file.is_absolute() and progress_file.parent.is_dir(), "absolute-progress-file-required")
     route = load_route(route_path)
     selection = physical.select_physical(expected_host, physical_pid)
     require(selection.get("status") == "ready", selection.get("reason", "physical-selection-not-ready"))
@@ -346,6 +362,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     started = time.monotonic()
     reason = "duration-complete"
     latest_acquired = None
+    latest_progress = None
     def cancel(why):
         nonlocal reason
         reason = why
@@ -353,7 +370,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         overlay.hide(why)
         overlay.window.quit()
     def poll():
-        nonlocal latest_acquired
+        nonlocal latest_acquired, latest_progress
         if stop.is_set():
             return
         if stop_file is not None and stop_file.exists():
@@ -371,6 +388,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 if "frame" in packet:
                     age = time.monotonic() - packet["frame"]["acquiredMonotonic"]
                     if 0 <= age <= max_age:
+                        if progress_file is not None:
+                            latest_progress = apply_saved_progress(packet["frame"], progress_file, route)
                         if overlay.present(packet["frame"]):
                             latest_acquired = packet["frame"]["acquiredMonotonic"]
                             counts["presented"] += 1
@@ -410,9 +429,12 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "presenter": presenter,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
         "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
+        "progressFile": str(progress_file) if progress_file is not None else None,
+        "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
             "World/zone identity unavailable; matching host/build/player does not prove same world.",
-            "Occlusion, depth and terrain not checked.", "Historical recording process epoch preserved."]}
+            "Occlusion, depth and terrain not checked.", "Historical recording process epoch preserved.",
+            "Marker progress is a saved checkpoint, not proof that playback is active or a point is currently reachable."]}
     if output is not None:
         write_json_atomic(output, result)
     return result
@@ -432,12 +454,14 @@ def main(argv=None):
     parser.add_argument("--expect-sha256")
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
     parser.add_argument("--stop-file", type=Path)
+    parser.add_argument("--progress-file", type=Path, help="optional absolute saved checkpoint; display only")
     args = parser.parse_args(argv)
     try:
         result = run(args.expected_host, args.physical_pid, args.route, duration=args.duration,
                      max_age=args.max_age, output=args.output, reader=args.reader,
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
-                     expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter)
+                     expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
+                     progress_file=args.progress_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

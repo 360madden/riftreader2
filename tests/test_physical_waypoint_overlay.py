@@ -64,6 +64,35 @@ class PresenterTests(unittest.TestCase):
         self.assertEqual("RR2 Waypoint Overlay | PID 123", self.presenter.window.title)
         self.assertFalse(any("focus" in name or "geometry" == name for name, args, kwargs in self.presenter.window.calls))
 
+    def test_route_states_color_exact_anchors_and_thicken_next_with_label(self):
+        for state, color, prefix in ((None, (255, 213, 79), "1 Corner"),
+                                     ("pending", (179, 152, 82), "1 Corner"),
+                                     ("completed", (101, 200, 138), "1 Corner"),
+                                     ("next", (124, 255, 255), "NEXT 1 Corner")):
+            with self.subTest(state=state):
+                f = frame()
+                if state is not None:
+                    f["points"][0]["routeState"] = state
+                with patch.object(overlay, "_label_layout", wraps=overlay._label_layout) as layout:
+                    self.assertTrue(self.presenter.present(f))
+                self.assertEqual(prefix, layout.call_args.args[0][0][1])
+                image = self.presenter.window.images[-1]
+                self.assertEqual(color, image.getpixel((960, 540)))
+                self.assertEqual(color, image.getpixel((960, 432)))
+                self.assertEqual(color, image.getpixel((967, 540)))
+                # Same beam center/endpoints; only NEXT gets a wider beam.
+                self.assertEqual(color if state == "next" else (1, 2, 3), image.getpixel((958, 480)))
+                self.assertEqual((81, 229, 255), image.getpixel((768, 648)))
+                self.assertEqual((1, 2, 3), image.getpixel((10, 10)))
+
+    def test_invalid_present_route_state_refuses_frame(self):
+        for state in (None, "unknown", "NEXT", 1, [], {}):
+            f = frame()
+            f["points"][0]["routeState"] = state
+            self.assertFalse(self.presenter.present(f))
+            self.assertIn("routeState", self.presenter.reason)
+        self.api.show.assert_not_called()
+
     def test_stale_future_malformed_and_changed_target_hide(self):
         mutations = [lambda f: f.update(acquiredMonotonic=98.), lambda f: f.update(acquiredMonotonic=101.),
                      lambda f: f["target"].update(hwnd=1000), lambda f: f.update(clientRect=[0, 0, 1]),
