@@ -118,4 +118,16 @@ Displacement was X +0.942871, Y 0, Z +1.280029. Measuring from positive Z toward
 python scripts/physical_move_key_calibration.py --receipt artifacts/forward-pose-20261111-205300/retry.json
 ```
 
-The nominal difference is 0.00099 degrees. Under a round-to-nearest binary32 model, allowing each endpoint coordinate half its local floating-point spacing gives a travel-angle interval of 36.35602 to 36.39479 degrees. This interval covers coordinate rounding only. The experiment supports agreement at this facing to the resolution of the displacement measurement. A second facing with a separately measured displacement remains outstanding.
+The nominal difference is 0.00099 degrees. Under a round-to-nearest binary32 model, allowing each endpoint coordinate half its local floating-point spacing gives a travel-angle interval of 36.35602 to 36.39479 degrees. This interval covers coordinate rounding only. The experiment supports agreement at this facing to the resolution of the displacement measurement.
+
+## Forward movement at a second facing
+
+The second trial is in `artifacts/second-facing-20261111-210134/`. The initial A attempt (`a.json`) lost focus before input. The retry (`a-retry.json`) inserted one A keydown and released it when RIFT lost foreground, after an observed 77.5 ms. Exclude that interrupted turn from the 250 ms A/D calibration. Five subsequent pose samples in `after-a.json` agreed at -45.307867 degrees.
+
+One W press completed and released with a hold midpoint of 266.42 ms. The actor angle was -45.307867 degrees both before and after. Horizontal travel was 1.608622 units at +45.307444 degrees, measured from +Z toward +X. The two observed forward bearings span 8.93 degrees in the same quadrant and process epoch. Other quadrants and restart behavior remain open. The images in `after-a/image.png` and `after-w/image.png` bracket this W press.
+
+Replay the W measurement from the repository root using the coordinate precision fix in `c42620e`.
+
+```powershell
+python scripts/physical_move_key_calibration.py --receipt artifacts/second-facing-20261111-210134/w.json
+```
