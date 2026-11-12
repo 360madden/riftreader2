@@ -54,6 +54,21 @@ public sealed class CurrentBuildFacingTests
     }
 
     [Fact]
+    public void ReportsPrimaryGetterYawSeparatelyFromSecondaryBodyAngle()
+    {
+        var session = new Fake();
+        float[] primary = [MathF.Cos(MathF.PI / 6), 0, -.5f,
+                           0, 1, 0, .5f, 0, MathF.Cos(MathF.PI / 6)];
+        var bytes = primary.SelectMany(value => BitConverter.GetBytes(value)).ToArray();
+        var value = CurrentBuildFacingCandidateReader.Read(session,
+            _ => new(42, Entity, SystemAddress, () => { }), source =>
+                Orientation(source) with { Primary = CurrentBuildOrientationCandidateReader.Decode(bytes, 0x60) });
+        Assert.Equal(-30, value.PrimaryBearingDegreesCandidate!.Value, 4);
+        Assert.Equal(-90, value.BodyBearingDegreesCandidate!.Value, 4);
+        Assert.Equal(-60, value.PlayerSystemMinusPrimaryDegreesCandidate!.Value, 4);
+    }
+
+    [Fact]
     public void RejectsWrongSelfNonfiniteAndEpochChanges()
     {
         var session = new Fake();

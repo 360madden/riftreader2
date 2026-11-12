@@ -20,8 +20,13 @@ internal sealed record CurrentBuildFacingCandidate(
     public string BearingConvention => "degrees-from-positive-z-toward-positive-x";
     public bool HeadingQualified => false;
     public bool CameraYawQualified => false;
+    public double? PrimaryBearingDegreesCandidate =>
+        PositionOrientationCandidate.Primary is { Status: "structural-y-planar-matrix-candidate", RowMajorF32: { } matrix }
+            ? Wrap180(Math.Atan2(matrix[2], matrix[8]) * 180 / Math.PI) : null;
     public double? BodyBearingDegreesCandidate => PositionOrientationCandidate.Secondary.PlanarAngleDegreesCandidate is double angle
         ? Wrap180(-angle) : null;
+    public double? PlayerSystemMinusPrimaryDegreesCandidate => PrimaryBearingDegreesCandidate is double angle
+        ? Wrap180(PlayerSystemBearingDegreesCandidate - angle) : null;
     public double? PlayerSystemMinusBodyDegreesCandidate => BodyBearingDegreesCandidate is double angle
         ? Wrap180(PlayerSystemBearingDegreesCandidate - angle) : null;
     public string Qualification => "facing-sources-candidate-only; body/camera separation, freshness and restart unverified";

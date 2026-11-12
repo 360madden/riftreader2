@@ -114,6 +114,7 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
         owner = None
         previous_end = None
         bearings = []
+        primary_bearings = []
         system_bearings = []
         aim_bearings = []
         for row in rows:
@@ -164,6 +165,24 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                     or orientation.get("unitKey") != current_owner[0]):
                 raise ValueError("invalid-native-facing-orientation-owner")
             source = _native_values("orientation", {"observation": orientation})
+            primary_matrix = orientation["primary"]["rowMajorF32"]
+            expected_primary = ((math.degrees(math.atan2(primary_matrix[2], primary_matrix[8]))
+                                 + 180) % 360 - 180
+                                if source["primaryPlanarDegreesCandidate"] is not None else None)
+            primary = row.get("primaryBearingDegreesCandidate")
+            if ((expected_primary is None and primary is not None)
+                    or (expected_primary is not None and
+                        (type(primary) not in (float, int) or not math.isfinite(primary)
+                         or abs(primary - expected_primary) > .00001))):
+                raise ValueError("invalid-native-facing-primary-bearing")
+            expected_primary_delta = ((system_bearing - primary + 180) % 360 - 180
+                                      if primary is not None else None)
+            primary_delta = row.get("playerSystemMinusPrimaryDegreesCandidate")
+            if ((expected_primary_delta is None and primary_delta is not None)
+                    or (expected_primary_delta is not None and
+                        (type(primary_delta) not in (float, int) or not math.isfinite(primary_delta)
+                         or abs(primary_delta - expected_primary_delta) > .00001))):
+                raise ValueError("invalid-native-facing-primary-source-delta")
             secondary = source["secondaryPlanarDegreesCandidate"]
             expected_body = (-secondary + 180) % 360 - 180 if secondary is not None else None
             body = row.get("bodyBearingDegreesCandidate")
@@ -188,12 +207,16 @@ def _native_values(kind, report, *, expect_position=False, expect_translation_so
                          or abs(camera - expected_camera) > .00001))):
                 raise ValueError("invalid-native-facing-camera-bearing")
             bearings.append(body)
+            primary_bearings.append(primary)
             system_bearings.append(system_bearing)
             aim_bearings.append(camera)
         return {
             "playerKey": owner[0], "playerSystemYawRadiansCandidate": values[0],
             "playerSystemBearingDegreesCandidate": system_bearings[-1],
             "bodyBearingDegreesCandidate": bearings[-1],
+            "primaryBearingDegreesCandidate": primary_bearings[-1],
+            "primaryBearingSeriesDegreesCandidate": primary_bearings,
+            "playerSystemMinusPrimaryDegreesCandidate": primary_delta,
             "playerSystemMinusBodyDegreesCandidate": delta,
             "cameraAimBearingDegreesCandidate": aim_bearings[-1],
             "positionXYZCandidate": xyz,

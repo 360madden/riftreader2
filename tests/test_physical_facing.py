@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from scripts import physical_rift as physical
 from tests.test_physical_only_selection import IDENTITY, REPORT_IDENTITY
-from tests.test_analyze_physical_turn_pair import sample
+from tests.test_analyze_physical_turn_pair import matrix, sample
 
 
 def report():
@@ -35,6 +35,8 @@ def report():
             'rawBits': bits, 'playerSystemYawRadiansCandidate': values[0],
             'playerSystemBearingDegreesCandidate': system,
             'bodyBearingDegreesCandidate': body,
+            'primaryBearingDegreesCandidate': body,
+            'playerSystemMinusPrimaryDegreesCandidate': (system - body + 180) % 360 - 180,
             'playerSystemMinusBodyDegreesCandidate': (system - body + 180) % 360 - 180,
             'positionOrientationCandidate': orientation,
             'positionCandidate': dict(zip(('x', 'y', 'z'), values[4:])),
@@ -67,9 +69,21 @@ class PhysicalFacingTests(unittest.TestCase):
             row['playerSystemBearingDegreesCandidate'] = math.degrees(.5)
             row['playerSystemMinusBodyDegreesCandidate'] = (
                 math.degrees(.5) - row['bodyBearingDegreesCandidate'] + 180) % 360 - 180
+            row['playerSystemMinusPrimaryDegreesCandidate'] = row['playerSystemMinusBodyDegreesCandidate']
         values = physical._native_values('facing', source)
         self.assertAlmostEqual(-5.857142090, values['bodyBearingDegreesCandidate'], places=7)
         self.assertGreater(values['playerSystemMinusBodyDegreesCandidate'], 34)
+
+    def test_primary_yaw_remains_distinct_from_smoothed_body(self):
+        source = report()
+        for row in source['observations']:
+            row['positionOrientationCandidate']['primary'] = matrix(30, 0x60)
+            row['primaryBearingDegreesCandidate'] = -30
+            row['playerSystemMinusPrimaryDegreesCandidate'] = (
+                row['playerSystemBearingDegreesCandidate'] + 30 + 180) % 360 - 180
+        values = physical._native_values('facing', source)
+        self.assertAlmostEqual(-30, values['primaryBearingDegreesCandidate'])
+        self.assertAlmostEqual(-5.857142090, values['bodyBearingDegreesCandidate'], places=7)
 
     def test_changed_owner_replay_forged_angle_and_bits_fail(self):
         for field, value in (('playerSystemDecimal', '123'),

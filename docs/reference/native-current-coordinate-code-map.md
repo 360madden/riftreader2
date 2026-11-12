@@ -444,3 +444,27 @@ Its raw report retains both orientation matrices, float32 source bits,
 player-system yaw and camera/aim point. The matrix source already has turn and
 travel observations. Camera-only separation and full restart remain open for
 this build. An unavailable matrix yields a null body bearing.
+
+### Primary yaw getter and conditional snapshot refresh
+
+Exact-build static follow-up identifies `owner+0x304` as a conditionally refreshed
+copy. Writer RVA `0x57DD10` calls `0x698350` and stores its result at `0x57DE3E`.
+The getter uses primary position matrix `+0x60`. In its ordinary-pitch branch,
+the yaw is the game's atan2 approximation of matrix M02 and M22, at position
+component `+0x68` and `+0x80`. RR2 computes ordinary atan2 from those same elements
+for `primaryBearingDegreesCandidate` when the matrix passes the existing planar
+shape check. The secondary matrix remains a separate observed body-angle source.
+
+Change detector RVA `0x589FC0` compares cached yaw with this getter. Its normal
+scalar path sets a refresh flag when the absolute wrapped difference exceeds
+float32 `0.174532935` radians, approximately 10°, at `0x58A354..357`.
+Other flags and callers can also refresh the snapshot. The retained cache moved
+10.55724° once during A, then both settled endpoints were within 10° of that new
+cache. This fits the static rule. The runtime branch taken was not observed.
+
+The `+0x30C` point stores are gated by a typed change record's `+0xD2` flag.
+Its two packed direction bytes become a point ten units from player XYZ through
+helper `0x7A5930`. This establishes a player-side point snapshot. Optical camera
+ownership remains open. Full bounded disassembly, source hashes and reproduction
+instructions are in `artifacts/yaw-static-worker-20261111/findings.md` and
+`bounded-assembly.txt` in that directory.
