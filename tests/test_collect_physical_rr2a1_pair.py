@@ -92,11 +92,14 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
                  patch.object(capture, "scan_once",
                               side_effect=[(i1, first), (i2, second)]) as scanner, \
                  patch.object(capture.compare, "compare",
-                              return_value=success()) as replay:
+                              return_value=success()) as replay, \
+                  patch.object(capture.compare, "verify_capture_order",
+                               return_value={"status": "source-verified-order"}) as order:
                 path, output = capture.collect(1234, dest, samples=2, interval_ms=100)
                 self.assertEqual(brackets.call_count, 2)
                 self.assertEqual(scanner.call_count, 2)
                 replay.assert_called_once_with(i1, i2, a[0], b[0])
+                order.assert_called_once_with(i1, i2, a[0], b[0])
             self.assertTrue(path.is_file())
             saved = json.loads(path.read_text(encoding="utf-8"))
             self.assertEqual(saved["target"], TARGET)
@@ -104,6 +107,8 @@ class PhysicalRR2A1PairTests(unittest.TestCase):
             self.assertEqual(saved["scanIndexSha256"]["first"], "1"*64)
             self.assertEqual(saved["comparison"]["sequenceWindows"],
                              [[20, 22], [25, 27]])
+            self.assertEqual(saved["comparison"]["captureOrder"]["status"],
+                             "source-verified-order")
             self.assertIn("no nonce", saved["qualification"])
             self.assertEqual(output, saved)
 

@@ -18,6 +18,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import replay_physical_rr2a1 as lua
+from scripts import compare_physical_player_brackets as native
+from scripts import compare_physical_player_context_pair as context
+from scripts.physical_rift import _utc_tick_order_key
 
 # Empirical stationary XYZ screening threshold, NOT a live semantic qualification.
 MAX_COORDINATE_GAP_CANDIDATE = 0.05
@@ -118,6 +121,33 @@ def compare(first_index, second_index, first_native_bracket, second_native_brack
     return result
 
 
+def verify_capture_order(first_index, second_index, first_native_bracket,
+                         second_native_bracket):
+    """Require bracket → scan → scan → bracket from original UTC receipts.
+
+    Call after compare() has replayed and verified all source hashes. This is
+    intentionally opt-in: older independent scans need not be bracketed.
+    """
+    _, _, _, before_end = native.verified_bracket(first_native_bracket)
+    _, _, after_start, _ = native.verified_bracket(second_native_bracket)
+    first, _ = context.load(first_index)
+    second, _ = context.load(second_index)
+    names = ("nativeBeforeCompleted", "firstScanStarted", "firstScanCompleted",
+             "secondScanStarted", "secondScanCompleted", "nativeAfterStarted")
+    times = (before_end, first.get("startedAtUtc"), first.get("completedAtUtc"),
+             second.get("startedAtUtc"), second.get("completedAtUtc"), after_start)
+    require(all(isinstance(t, str) and t for t in times),
+            "missing-capture-timestamps")
+    try:
+        ticks = [_utc_tick_order_key(t) for t in times]
+    except (ValueError, TypeError, OverflowError) as exc:
+        raise ValueError("physical-rr2a1-pair-invalid-capture-timestamps") from exc
+    require(all(a < b for a, b in zip(ticks, ticks[1:])),
+            "overlapping-or-reordered-capture")
+    return {"status": "source-verified-order", "observedUtc": dict(zip(names, times)),
+            "qualification": "Strict sequential source receipts only; not atomic Lua/native freshness"}
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--first-index", type=Path, required=True)
@@ -125,12 +155,20 @@ def main(argv=None):
     parser.add_argument("--first-native-bracket", type=Path, required=True)
     parser.add_argument("--second-native-bracket", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--require-bracketed-order", action="store_true",
+                        help="Verify original native→scan→scan→native UTC order")
     args = parser.parse_args(argv)
     try:
         require(not args.output.exists() and not args.output.is_symlink(),
                 "output-exists")
         result = compare(args.first_index, args.second_index,
                          args.first_native_bracket, args.second_native_bracket)
+        if args.require_bracketed_order:
+            require(args.second_native_bracket is not None,
+                    "second-native-bracket-required")
+            result["captureOrder"] = verify_capture_order(
+                args.first_index, args.second_index,
+                args.first_native_bracket, args.second_native_bracket)
         with args.output.open("x", encoding="utf-8", newline="\n") as out:
             json.dump(result, out, indent=2, allow_nan=False)
             out.write("\n")

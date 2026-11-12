@@ -120,6 +120,44 @@ class TwoPassTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "invalid-coordinate-gap"):
                     pair.compare("a", "b", "native")
 
+    def test_bracketed_order_accepts_independent_sequential_receipts(self):
+        times = [f"2026-11-12T03:33:{sec:02d}.0000000Z"
+                 for sec in (32, 33, 34, 35, 36, 38)]
+        first = {"startedAtUtc": times[1], "completedAtUtc": times[2]}
+        second = {"startedAtUtc": times[3], "completedAtUtc": times[4]}
+        with patch.object(pair.native, "verified_bracket", side_effect=[
+                ({}, "a", times[0], times[0]),
+                ({}, "b", times[5], times[5])]), \
+             patch.object(pair.context, "load", side_effect=[(first, "c"),
+                                                              (second, "d")]):
+            result = pair.verify_capture_order("index1", "index2", "native1", "native2")
+        self.assertEqual(result["status"], "source-verified-order")
+        self.assertEqual(result["observedUtc"]["nativeBeforeCompleted"], times[0])
+        self.assertIn("not atomic", result["qualification"])
+
+    def test_bracketed_order_rejects_overlap_missing_and_reversed_times(self):
+        base = [f"2026-11-12T03:33:{sec:02d}.0000000Z"
+                for sec in (32, 33, 34, 35, 36, 38)]
+        for index, value, reason in (
+                (1, base[0], "overlapping-or-reordered"),
+                (2, base[3], "overlapping-or-reordered"),
+                (4, base[3], "overlapping-or-reordered"),
+                (5, base[4], "overlapping-or-reordered"),
+                (1, None, "missing-capture-timestamps"),
+                (3, "not-a-date", "invalid-capture-timestamps")):
+            times = base.copy()
+            times[index] = value
+            first = {"startedAtUtc": times[1], "completedAtUtc": times[2]}
+            second = {"startedAtUtc": times[3], "completedAtUtc": times[4]}
+            with self.subTest(index=index, value=value), \
+                 patch.object(pair.native, "verified_bracket", side_effect=[
+                     ({}, "a", times[0], times[0]),
+                     ({}, "b", times[5], times[5])]), \
+                 patch.object(pair.context, "load", side_effect=[(first, "c"),
+                                                                  (second, "d")]):
+                with self.assertRaisesRegex(ValueError, reason):
+                    pair.verify_capture_order("index1", "index2", "native1", "native2")
+
     def test_replay_failure_propagates_and_existing_output_preserved(self):
         a, b = self.sample()
         with patch.object(pair.lua, "replay",

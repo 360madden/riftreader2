@@ -116,6 +116,7 @@ def collect(pid, output_dir, *, scan_bytes=268_435_456, scan_ms=15_000,
 
     # Source replay must pass before we describe any Lua/native agreement.
     paired = compare.compare(first, second, before, after)
+    paired["captureOrder"] = compare.verify_capture_order(first, second, before, after)
     summary = {
         "schemaVersion": 1,
         "evidenceKind": "amd-physical-rr2a1-bracketed-two-pass/1",
