@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -160,6 +161,22 @@ class VisualPairTests(unittest.TestCase):
         self.update(report, self.ajson)
         with self.assertRaisesRegex(ValueError, "visual-capture-receipt-unqualified"):
             self.assess()
+
+    def test_comparison_uses_verified_bytes_if_sources_change_during_decode(self):
+        expected = self.assess()
+        decode = Image.open
+        first = True
+
+        def replace_sources_then_decode(source):
+            nonlocal first
+            if first:
+                first = False
+                self.before.write_bytes(self.after.read_bytes())
+                self.bjson.write_text("{}", encoding="utf-8")
+            return decode(source)
+
+        with patch.object(visual.Image, "open", side_effect=replace_sources_then_decode):
+            self.assertEqual(self.assess(), expected)
 
     def test_duplicate_json_key_is_refused(self):
         self.ajson.write_text('{"schemaVersion":1,"schemaVersion":1}',

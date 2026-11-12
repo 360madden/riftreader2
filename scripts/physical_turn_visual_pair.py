@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timedelta
 import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 import sys
@@ -34,16 +35,23 @@ def unique_fields(pairs: list[tuple[str, object]]) -> dict:
     return found
 
 
-def read_json(path: Path) -> dict:
+def read_receipt(path: Path) -> tuple[dict, str]:
     require(path.is_file() and not path.is_symlink()
             and 1 <= path.stat().st_size <= MAX_RECEIPT_BYTES,
             "visual-receipt-missing-or-oversized")
-    data = json.loads(path.read_text(encoding="utf-8-sig"),
+    with path.open("rb") as stream:
+        raw = stream.read(MAX_RECEIPT_BYTES + 1)
+    require(1 <= len(raw) <= MAX_RECEIPT_BYTES, "visual-receipt-missing-or-oversized")
+    data = json.loads(raw.decode("utf-8-sig"),
                       object_pairs_hook=unique_fields,
                       parse_constant=lambda _: (_ for _ in ()).throw(
                           ValueError("visual-nonfinite-json")))
     require(type(data) is dict, "visual-receipt-invalid")
-    return data
+    return data, hashlib.sha256(raw).hexdigest().upper()
+
+
+def read_json(path: Path) -> dict:
+    return read_receipt(path)[0]
 
 
 def utc(value: object) -> datetime:
@@ -56,8 +64,8 @@ def utc(value: object) -> datetime:
     return result
 
 
-def read_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image, str]:
-    report = read_json(receipt_path)
+def verified_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image, str, str]:
+    report, receipt_sha = read_receipt(receipt_path)
     require(report.get("schemaVersion") == 1
             and report.get("status") == "unqualified-gpu-window-frame"
             and report.get("inputSent") is False
@@ -95,13 +103,15 @@ def read_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image,
     require(image_path.is_file() and not image_path.is_symlink()
             and 1 <= image_path.stat().st_size <= MAX_PNG_BYTES,
             "visual-image-missing-or-oversized")
-    raw = image_path.read_bytes()
+    with image_path.open("rb") as stream:
+        raw = stream.read(MAX_PNG_BYTES + 1)
+    require(1 <= len(raw) <= MAX_PNG_BYTES, "visual-image-missing-or-oversized")
     digest = hashlib.sha256(raw).hexdigest().upper()
     require(digest == report.get("imageSha256")
             and len(raw) == report.get("imageBytes"), "visual-image-hash-or-size-mismatch")
     require(raw.startswith(b"\x89PNG\r\n\x1a\n"), "visual-image-not-png")
     try:
-        with Image.open(image_path) as opened:
+        with Image.open(BytesIO(raw)) as opened:
             require(opened.format == "PNG" and opened.size == (width, height),
                     "visual-png-dimensions-mismatch")
             image = opened.convert("RGB")
@@ -111,13 +121,18 @@ def read_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image,
     quality = report.get("quality")
     require(type(quality) is dict and quality.get("potentiallyBlankOrBlack") is False,
             "visual-unusable-capture-quality")
+    return report, image, digest, receipt_sha
+
+
+def read_frame(image_path: Path, receipt_path: Path) -> tuple[dict, Image.Image, str]:
+    report, image, digest, _ = verified_frame(image_path, receipt_path)
     return report, image, digest
 
 
 def visual_compare(before_png: Path, after_png: Path,
                    before_json: Path, after_json: Path) -> dict:
-    before, bimage, before_sha = read_frame(before_png, before_json)
-    after, aimage, after_sha = read_frame(after_png, after_json)
+    before, bimage, before_sha, before_receipt_sha = verified_frame(before_png, before_json)
+    after, aimage, after_sha, after_receipt_sha = verified_frame(after_png, after_json)
     ids = ("pid", "startTicks", "sha256", "hwnd", "processName", "width", "height")
     require(before["machine"] == after["machine"]
             and all(before["targetBefore"][k] == after["targetBefore"][k] for k in ids),
@@ -158,8 +173,8 @@ def visual_compare(before_png: Path, after_png: Path,
         "targetIdentity": {k: before["targetBefore"][k] for k in ids},
         "beforeImageSha256": before_sha,
         "afterImageSha256": after_sha,
-        "beforeReceiptSha256": hashlib.sha256(before_json.read_bytes()).hexdigest().upper(),
-        "afterReceiptSha256": hashlib.sha256(after_json.read_bytes()).hexdigest().upper(),
+        "beforeReceiptSha256": before_receipt_sha,
+        "afterReceiptSha256": after_receipt_sha,
         "captureGapSeconds": gap,
         "comparisonCropPixels": crop,
         "sampledPixels": sample_count,
