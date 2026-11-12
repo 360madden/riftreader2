@@ -131,6 +131,17 @@ class PhysicalTurnPairTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "turn-capture-time-order-invalid"):
             turn._load(path)
 
+    def test_cross_file_gap_preserves_one_native_tick(self):
+        left = report("orientation", [1], [10])
+        right = report("orientation", [1], [20])
+        for row, digit in ((left["observation"], 1), (right["observation"], 3)):
+            row["startedAtUtc"] = f"2026-11-11T02:00:00.100000{digit}Z"
+            row["completedAtUtc"] = f"2026-11-11T02:00:00.100000{digit+1}Z"
+        self.assertEqual(turn.compare(*self.pair(left, right))["captureGapSeconds"], 1e-7)
+        right["observation"]["startedAtUtc"] = left["observation"]["completedAtUtc"]
+        with self.assertRaisesRegex(ValueError, "turn-capture-time-order-invalid"):
+            turn.compare(*self.pair(left, right))
+
     def test_orientation_wrap_and_endpoints(self):
         output = turn.compare(*self.pair())
         self.assertEqual(output["status"], "candidate-only")

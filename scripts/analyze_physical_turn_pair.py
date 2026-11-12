@@ -154,6 +154,7 @@ def _load(path):
                  else (isinstance(v, str) and re.fullmatch(r"[1-9][0-9]{0,19}", v)
                        and int(v) < 2**64), "invalid-turn-component")
     times = []
+    exact_times = []
     last_exact_end = None
     for row in rows:
         _require(row.get(key_field) == key
@@ -169,8 +170,8 @@ def _load(path):
                  and (last_exact_end is None or exact_start > last_exact_end),
                  "turn-capture-time-order-invalid")
         last_exact_end = exact_end
-        a, b = _utc(row.get("startedAtUtc")), _utc(row.get("completedAtUtc"))
-        times.append((a, b))
+        exact_times.append((exact_start, exact_end))
+        times.append((exact_start[0], exact_end[0]))
     # Reuse the production physical projection's burst/owner/bit guards.
     bracketed = (kind == "actor-pose" and
                  all(row.get("positionBracketCandidate") is not None for row in rows))
@@ -182,7 +183,7 @@ def _load(path):
             for name, field in SOURCE_NAMES[kind]
         })
     return {"identity": ident, "kind": kind, "key": key, "owner": owner,
-            "times": times, "matrices": matrices, "sha256": hashlib.sha256(raw).hexdigest().upper(),
+            "times": times, "exactTimes": exact_times, "matrices": matrices, "sha256": hashlib.sha256(raw).hexdigest().upper(),
             "samples": len(rows)}
 
 
@@ -222,7 +223,11 @@ def compare(before_path, after_path, *, max_gap_seconds=120.0):
     _require(before["identity"] == after["identity"], "turn-process-epoch-changed")
     _require(before["key"] == after["key"] and before["owner"] == after["owner"],
              "turn-player-or-component-changed")
-    gap = (after["times"][0][0] - before["times"][-1][1]).total_seconds()
+    start, start_remainder = after["exactTimes"][0][0]
+    end, end_remainder = before["exactTimes"][-1][1]
+    elapsed = start - end
+    micros = (elapsed.days * 86400 + elapsed.seconds) * 1_000_000 + elapsed.microseconds
+    gap = (micros * 10 + start_remainder - end_remainder) / 10_000_000
     _require(gap > 0, "turn-capture-time-order-invalid")
     _require(gap <= max_gap_seconds, "turn-capture-gap-exceeded")
     first, next_start, next_end = (before["matrices"][-1],
