@@ -22,8 +22,17 @@ starting a viewer. Open view opens only the last successfully saved projection.
 Failed capture or unstable camera blocks the projection and retains diagnostics.
 The desktop event has no exact capture UTC; Rerun explicitly labels its timeline
 placement as the native-after start upper bound. This remains separate from WGC.
-The GUI/backend focused checks pass; live Save view is currently withheld by the
-black/no-advancing-frame capture condition described in the tools note.
+The real Save view/Open view buttons passed on PID17212 after normal relaunch
+restored game rendering: seven markers, exact retained native copies, a 2.050 s
+capture and 0.790 s native bracket. The resulting `view.rrd` passed upstream verify,
+and Open view displayed the correct image. Evidence:
+`artifacts/waypoint-view-47cf972e13854170a84dc5852db072e5/`.
+Saved projection labels reuse the live overlay's compact numbers, nonoverlapping
+lanes and leader lines; marker coordinates are unchanged. A retained rerender in
+`artifacts/waypoint-static-label-check-47cf/` separates the clustered 1/7/Player
+labels; 26 affected renderer/backend checks passed.
+The earlier black/no-advancing-frame condition and optional HWND pilot are
+described in the tools note.
 
 Use the exact local host/process and a stationary camera. Capture through the
 existing guarded observation path, saving its returned JSON in UTF-8:

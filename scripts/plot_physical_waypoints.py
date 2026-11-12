@@ -13,7 +13,7 @@ from pathlib import Path
 import socket
 import sys
 
-from PIL import Image, ImageDraw, ImageStat
+from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -23,6 +23,7 @@ from scripts import physical_rift as physical
 from scripts.physical_turn_visual_pair import (client_frame_mapping,
     project_client_point_to_frame, verified_frame, require, unique_fields)
 from scripts.waypoint_progress import write_json_atomic
+from scripts.physical_waypoint_overlay import _label_layout
 
 
 def _read(path):
@@ -273,20 +274,32 @@ def _render_validated(observation_path, route_path, output, route, *, host, iden
     def pixel(row):
         x, y = row["pixel"]
         return x - left, y - top
+    markers = []
     for row in rows:
         if row["ground"]["status"] != "drawn-candidate":
             continue
-        x, y = pixel(row["ground"])
+        text = (str(row["number"]) if row["label"] == f"Recorded {row['number']}"
+                else f"{row['number']} {row['label']}")
+        markers.append((row, pixel(row["ground"]), text, "#ffcc33"))
+    labels = [(anchor, text) for _, anchor, text, _ in markers]
+    if player["status"] == "drawn-candidate":
+        labels.append((pixel(player), "Player"))
+    font = ImageFont.load_default(size=16)
+    layout = _label_layout(labels, mapping["clientWidth"], mapping["clientHeight"], font)
+    for position, (text, box, anchor) in enumerate(layout):
+        color = markers[position][3] if position < len(markers) else "#00ffff"
+        endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
+        draw.line((*anchor, *endpoint), fill=color, width=1)
+        draw.multiline_text((box[0] + 2, box[1] + 2), text, fill=color, font=font,
+                            anchor="lt", spacing=2, stroke_width=1, stroke_fill="black")
+    for row, (x, y), _, _ in markers:
         if row["beaconLineDrawn"]:
             draw.line((x, y, *pixel(row["beaconTop"])), fill="#ffcc33", width=2)
         draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill="#ffcc33", outline="black", width=1)
-        label = f'{row["number"]}: {row["label"]}'
-        draw.text((x + 8, y - 6), label, fill="#ffcc33", stroke_width=1, stroke_fill="black")
     if player["status"] == "drawn-candidate":
         x, y = pixel(player)
         draw.line((x - 7, y, x + 7, y), fill="#00ffff", width=2)
         draw.line((x, y - 7, x, y + 7), fill="#00ffff", width=2)
-        draw.text((x + 9, y + 8), "Player ground", fill="#00ffff", stroke_width=1, stroke_fill="black")
     draw.text((6, 6), "OFFLINE PROJECTION CANDIDATE | depth / terrain not checked", fill="white", stroke_width=1, stroke_fill="black")
     image.paste(layer, (left, top))
     result = {"status": "offline-waypoint-projection-candidate", "machine": host,

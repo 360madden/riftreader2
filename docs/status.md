@@ -1,5 +1,25 @@
 # Current status
 
+**14:31 EST NOVEMBER 12 — SAVE VIEW / OPEN VIEW PASSED LIVE:**
+On **AMD-DESKTOP**, normal RIFT exit/relaunch restored the black game surface.
+Old PID38136 was observed absent before launch. New PID17212/start
+`639301085113535239` entered Atank on Deepwood; same app PID63468 reconnected and
+retained the route, 7/7 checkpoint and unchanged basis. Existing BlackBox helper
+restored DISPLAY5 placement. Actual Save view saved all seven projected markers,
+exact-hash native copies, original image, projection JSON/PNG and optional Rerun:
+capture 2.050 s, native bracket 0.790 s, desktop event age 13.90–15.28 ms.
+Root reviewed the image, upstream `rrd verify` passed, and actual Open view opened
+that projection in the existing image viewer. No game keys were sent.
+Bundle: `artifacts/waypoint-view-47cf972e13854170a84dc5852db072e5/`.
+Independent final inspection found no held inputs. Position raw bits and body
+bearing match pre-restart; basis hash and parsed checkpoint are unchanged.
+Receipt: `artifacts/save-view-restart-17212-validation.json`.
+The isolated windows-capture 2.0.1 pilot also captured a reviewed game image in
+1.066 s without focus change; its whole-window result remains a diagnostic without
+client mapping/native bracket/fresh-render proof. Nine injected checks pass.
+The prior chrome-only frame exposed and prompted an interior-quality check.
+The goal remains active through **19:44 EST**.
+
 **14:25 EST NOVEMBER 12 — SAVE VIEW CANDIDATE; CAPTURE CURRENTLY WITHHELD:**
 On **AMD-DESKTOP/PID38136**, the updated waypoint app PID63468 exposes Save view
 and Open view. The real Save view click focused only the pinned RIFT window,

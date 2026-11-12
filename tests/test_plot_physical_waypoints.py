@@ -92,6 +92,24 @@ class PlotTests(unittest.TestCase):
         self.assertEqual(json.loads(Path(result["report"]).read_text())["playerGround"]["worldXYZ"],
                          plot.physical._native_values("facing", self.after)["positionXYZCandidate"])
 
+    def test_overlapping_recorded_labels_use_separate_lanes_without_moving_markers(self):
+        self.route["waypoints"] = [[f"Recorded {number}", 7427, 2946] for number in range(1, 8)]
+        self.route["heights"] = [871] * 7
+        layouts = []
+        real_layout = plot._label_layout
+        def capture(*args):
+            result = real_layout(*args)
+            layouts.extend(result)
+            return result
+        with patch.object(plot, "_label_layout", side_effect=capture):
+            result = self.run_render()
+        self.assertEqual([str(i) for i in range(1, 8)], [row[0] for row in layouts[:7]])
+        self.assertEqual([[160, 110]] * 7, [row["ground"]["pixel"] for row in result["points"]])
+        for i, (_, box, _) in enumerate(layouts):
+            for _, other, _ in layouts[i + 1:]:
+                self.assertTrue(box[2] <= other[0] or other[2] <= box[0]
+                                or box[3] <= other[1] or other[3] <= box[1])
+
     def test_missing_or_nonfinite_height_rejected_without_output(self):
         for height in (None, float("nan"), True):
             with self.subTest(height=height):

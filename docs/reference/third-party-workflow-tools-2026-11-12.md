@@ -104,9 +104,24 @@ The maintainer reports the first occluded-frame sizing fix in
 [issue 197](https://github.com/NiiightmareXD/windows-capture/issues/197).
 This directly relates to the observed WgcSharp failure: stage diagnostics received
 frame one, discarded it, and received no frame two. It remains a candidate,
-because the later RIFT window screenshot was black and DXcam also stopped
-receiving advancing events; a different WGC wrapper cannot be assumed to fix that.
-The pilot is isolated from existing capture environments and live control.
+because a later RIFT window screenshot was black and DXcam also stopped
+receiving advancing events. The new backend received that black window surface
+too; a different wrapper did not restore game rendering. Normal RIFT exit/relaunch
+restored visible pixels. The next exact-HWND run captured Atank successfully in
+1.066 seconds with exact target/snapshot equality and clean stop/wait, without
+focus changes or game input. Evidence: `artifacts/windows-capture-first-38136/`
+(chrome-only image) and `artifacts/windows-capture-recovered-17212/` (reviewed
+game image). The diagnostic now checks the central 80% interior as well as the
+whole surface so colored chrome cannot qualify a black client. That heuristic
+does not establish client mapping, native bracketing, render freshness or occlusion
+behavior. Nine injected checks pass. It remains an isolated optional diagnostic,
+not the default observation backend.
+
+```powershell
+python -m venv .local/windows-capture-venv
+.\.local\windows-capture-venv\Scripts\python.exe -m pip install --only-binary=:all: -r requirements-window-capture.txt
+.\.local\windows-capture-venv\Scripts\python.exe scripts/probe_windows_capture.py --expected-host AMD-DESKTOP --physical-pid CURRENT_PID --output artifacts/new-hwnd-probe --timeout 5
+```
 
 [Win32CaptureSample](https://github.com/robmikh/Win32CaptureSample) is a maintained
 MIT reference for received-frame snapshots, but adopting its C++/WinRT sample
