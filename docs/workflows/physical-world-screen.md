@@ -337,6 +337,15 @@ checks also run at 125%. Evidence: `artifacts/qt-active-restart-before-60384.jso
 `artifacts/waypoint-markers-summary-93c884f92e0f4531ab5a9a1fd4e52c06.json` and
 `artifacts/waypoint-markers-summary-dd70b32c9bc04cd7a92337912ab6216d.json`.
 
+A final display-metadata check found DISPLAY5's physical desktop origin had
+changed from `(-1920,6)` to `(-1920,357)`; the cause was not established. The
+existing helper centered RIFT at current client rect `(-1920,404,1920,1009)`.
+Fresh DXGI output metadata confirms the entire client fits the current monitor
+`(-1920,357)-(0,1437)`, with unchanged monitor-local crop `(0,47)-(1920,1056)`.
+No Windows display settings were changed by this check. Evidence:
+`artifacts/qt-active-restart-final-placement-38136.json` and
+`artifacts/qt-active-restart-current-displays-38136.json`.
+
 Projection inside the viewport does not establish visibility: depth, occlusion,
 terrain and obstacle clearance are not checked. World/zone identity is currently
 unavailable, so matching host/build/player alone cannot establish the same world.

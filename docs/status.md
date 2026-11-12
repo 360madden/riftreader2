@@ -13,6 +13,10 @@ explicit Show displayed completed green markers (147 frames/40.1 s), and Hide
 stopped the child. No movement keys were sent; inspection found no held inputs.
 Sixty-three focused checks passed. [Details and evidence](workflows/physical-world-screen.md).
 App is idle at genuine 7/7 forward, markers stopped, RIFT on DISPLAY5.
+Final current display metadata has DISPLAY5 at `(-1920,357)-(0,1437)` rather than
+the earlier Y=6 origin. The helper centered the client at `(-1920,404,1920,1009)`;
+DXGI confirms it fits wholly, with the same local crop. Cause of the origin change
+is unknown; no display settings were changed by the agent.
 Extended goal remains active through **19:44 EST**.
 
 **13:49 EST NOVEMBER 12 — PROGRESS-COLORED WORLD BEACONS WORK:** On
