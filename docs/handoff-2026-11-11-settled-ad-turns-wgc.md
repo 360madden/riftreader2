@@ -153,4 +153,10 @@ Each trial below started from a fresh baseline and used one requested 100 ms W p
 | `continuous-return-20261111-211219` | 200 ms | 0.65555 | 0.64691 | 0.00873 |
 | `bounded-return-20261111-211335` | 150 ms | 0.66215 | 0.49862 | 0.16353 |
 
-The live 150 ms trial used the key and duration chosen in a preceding offline replay. Replaying its own records afterward through WaypointController, with the earlier 100 ms W and S calibrations, also selected S for 150 ms and predicted 0.21272 units remaining. The post-S sample moved the replay to confirming-arrival. A subsequent acquisition in `confirm.json` produced the same coordinates and the second confirmation required for arrived. This exercises feedback against saved physical observations. Selecting and executing a controller decision within the same live trial remains open.
+The live 150 ms trial used the key and duration chosen in a preceding offline replay. Replaying its own records afterward through WaypointController, with the earlier 100 ms W and S calibrations, also selected S for 150 ms and predicted 0.21272 units remaining. The post-S sample moved the replay to confirming-arrival. A subsequent acquisition in `confirm.json` produced the same coordinates and the second confirmation required for arrived. This exercises feedback against saved physical observations. The subsequent trial below exercised the controller live.
+
+## First live controller decision and arrival
+
+On AMD-DESKTOP, one controller instance used a fresh position and the earlier measured W/S vectors to select a pulse toward the previously occupied point in `artifacts/bounded-return-20261111-211335/after-w.json`. The goal was 0.49862 horizontal units away. The decision selected W for 81 ms, the input helper reported successful release, and two successive paired position reads each placed Atank 0.00191 units from the goal. The first read produced confirming-arrival and the second produced arrived.
+
+The decision, input receipt, position reads and controller result are in `artifacts/live-controller-20261111-211518/`. This single forward pulse used a supervised, one-off invocation and a previously sampled heading. Multi-step convergence and reuse after a turn or restart remain open.
