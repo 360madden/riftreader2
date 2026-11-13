@@ -1,5 +1,6 @@
 """Owned file feedback changes display only; no duplicate native sampler or input authority."""
 from datetime import datetime, timedelta, timezone
+import json
 import time
 import unittest
 from unittest.mock import Mock, patch
@@ -20,6 +21,9 @@ class BeaconPoseWindowTests(unittest.TestCase):
     enter = sync.MarkerSyncTests.enter
 
     def ready(self):
+        self.pose_tooltips = {}
+        self.stack.enter_context(patch("scripts.waypoint_recent_display.attach_path_tooltip",
+            side_effect=lambda widget, getter: self.pose_tooltips.__setitem__(widget, getter)))
         sync.MarkerSyncTests.ready(self)
         self.adapter.target.update(hostName="AMD-DESKTOP", executablePath=r"C:\RIFT\rift_x64.exe")
         self.reader = Mock(return_value=app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "idle fake"))
@@ -27,10 +31,13 @@ class BeaconPoseWindowTests(unittest.TestCase):
         self.initial_pose = object()
         self.adapter.initial_pose = self.initial_pose
         self.pose_label = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Label)
-                               and w["textvariable"] and str(self.root.getvar(w["textvariable"])).startswith("Position "))
+                               and w["textvariable"] and str(self.root.getvar(w["textvariable"])).startswith(("Position ", "X ")))
 
     def header(self):
         return str(self.root.getvar(self.pose_label["textvariable"]))
+
+    def pose_metadata(self):
+        return json.loads(self.pose_tooltips[self.pose_label]())
 
     def pump_until(self, predicate, timeout=1):
         deadline = time.monotonic() + timeout
@@ -50,11 +57,15 @@ class BeaconPoseWindowTests(unittest.TestCase):
         self.ready()
         packet = self.packet()
         with patch.object(app, "draw_route", wraps=app.draw_route) as draw:
-            self.pump_until(lambda: "X=2.000000" in self.header())
+            self.pump_until(lambda: "X 2.000" in self.header())
             view = draw.call_args.args[1]
             self.assertEqual((2, 3, 45), (view.x, view.z, view.bearing))
-        local = datetime.fromisoformat(packet["sampledAtUtc"]).astimezone().strftime("%H:%M:%S")
-        self.assertIn("sampled " + local + " local", self.header())
+        metadata = self.pose_metadata()
+        self.assertEqual(packet["sampledAtUtc"], metadata["sampledAtUtc"])
+        self.assertEqual(packet["source"], metadata["source"])
+        self.assertEqual("fresh", metadata["sampleStatus"])
+        self.assertGreaterEqual(metadata["ageSeconds"], 0)
+        self.assertIn("Y 11.000   Z 3.000   Facing 45.00\u00b0", self.header())
         self.assertIs(self.initial_pose, self.adapter.initial_pose)
         self.reader.assert_not_called()
         self.assertFalse((self.path / "artifacts" / "waypoint-current-progress.json").exists())
@@ -62,7 +73,7 @@ class BeaconPoseWindowTests(unittest.TestCase):
     def test_repeat_packet_does_not_retimestamp_then_ages_out_and_clears_radar(self):
         self.ready()
         packet = self.packet(old=.4)
-        self.pump_until(lambda: "X=2.000000" in self.header())
+        self.pump_until(lambda: "X 2.000" in self.header())
         variable = fixture.tk.StringVar(master=self.root, name=str(self.pose_label["textvariable"]))
         writes = Mock()
         variable.trace_add("write", writes)
@@ -74,19 +85,19 @@ class BeaconPoseWindowTests(unittest.TestCase):
         with patch.object(app, "draw_route", wraps=app.draw_route) as draw:
             self.pump_until(lambda: "beacon-pose-stale-or-future" in self.header())
             self.assertIsNone(draw.call_args.args[1])
-        self.assertIn(packet["sampledAtUtc"], self.header())
+        self.assertEqual(packet["sampledAtUtc"], self.pose_metadata()["sampledAtUtc"])
         self.assertNotIn("updated ", self.header())
         self.reader.assert_not_called()
 
     def test_missing_wrong_owner_and_unavailable_packets_fail_closed(self):
         self.ready()
-        self.pump_until(lambda: "Position unavailable (beacons):" in self.header())
+        self.pump_until(lambda: "Position unavailable \u2014" in self.header())
         self.packet()
-        self.pump_until(lambda: "X=2.000000" in self.header())
+        self.pump_until(lambda: "X 2.000" in self.header())
         self.packet(2, unit="other")
         self.pump_until(lambda: "session-or-owner-mismatch" in self.header())
         self.packet(3, x=4)
-        self.pump_until(lambda: "X=4.000000" in self.header())
+        self.pump_until(lambda: "X 4.000" in self.header())
         write_unavailable(self.owned.pose_path, self.adapter.target, "player", 4, "fresh pose withheld")
         self.pump_until(lambda: "fresh pose withheld" in self.header())
         self.reader.assert_not_called()
@@ -94,18 +105,19 @@ class BeaconPoseWindowTests(unittest.TestCase):
     def test_hide_clears_stream_display_then_resumes_regular_idle_read(self):
         self.ready()
         self.packet()
-        self.pump_until(lambda: "X=2.000000" in self.header())
+        self.pump_until(lambda: "X 2.000" in self.header())
         self.button("Hide markers").invoke()
         self.child.returncode = 0
         self.pump_until(lambda: "beacon reader ended" in self.header())
         self.pump_until(lambda: self.reader.called, timeout=3)
-        self.pump_until(lambda: "updated " in self.header())
-        self.assertIn("X=0.000000", self.header())
+        self.pump_until(lambda: "X 0.000" in self.header())
+        self.assertEqual("existing-idle-reader", self.pose_metadata()["source"])
+        self.assertIn("X 0.000", self.header())
 
     def test_repeated_same_payload_redraws_do_not_starve_pending_route_update(self):
         self.ready()
         self.packet()
-        self.pump_until(lambda: "X=2.000000" in self.header())
+        self.pump_until(lambda: "X 2.000" in self.header())
         self.enter("Timed add", 7, 1)
         self.button("Add X / Z").invoke()
         deadline = time.monotonic() + .45

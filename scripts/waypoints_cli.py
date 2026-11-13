@@ -131,6 +131,7 @@ def example(operation):
         "library.select":"library select camp",
         "preview.status":"preview status", "preview.set":"preview set --range 10",
         "preview.fit":"preview fit",
+        "pose.status":"pose status", "pose.set":"pose set --live on", "pose.refresh":"pose refresh",
     }.get(operation, operation.replace(".", " "))
 
 
@@ -167,13 +168,13 @@ def build_parser():
                  "Requests owned cancellation and release; does not cancel arbitrary game autorun." if name == "stop" else "Read-only; sends no game input.")
         if name == "status":
             p.add_argument("--watch", action="store_true", help="poll until Ctrl+C; requires --jsonl for machine output")
-            p.add_argument("--pose", action="store_true", help="include the existing reader's qualified pose")
+            p.add_argument("--pose", action="store_true", help="include the existing reader's qualified pose, source and sample age; reads no new pose")
             p.add_argument("--interval", type=bounded(.1, 60), default=1., help="watch interval seconds, default 1")
             p.add_argument("--count", type=positive, help="stop watch after this many reports")
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show select",
-        "preview":"status set fit",
+        "preview":"status set fit", "pose":"status set refresh",
         "diagnostics":"status show events copy open",
         "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
@@ -205,6 +206,9 @@ def build_parser():
                 "preview.status":"Show the local route preview range, cached-pose availability and off-screen point summary.",
                 "preview.set":"Set the local route preview range without reading RIFT or sending game input.",
                 "preview.fit":"Fit the local route preview to the loaded route using only the helper's cached finite pose; the preview remains capped at 20 units.",
+                "pose.status":"Show Live pose refresh, current or cached sample freshness and the existing reader source.",
+                "pose.set":"Turn the helper's Live pose refresh on or off; retained samples remain subject to freshness checks.",
+                "pose.refresh":"Refresh pose with one fresh read through the existing native reader; sends no game input.",
                 "beacons.show":"Start the owned shared beacon reader and wait for fresh pose; sends no game input.",
                 "beacons.hide":"Stop the owned beacon reader and wait for its exit.",
                 "beacons.set":"Adjust beacon appearance and optional target/guide layers; target changes can restart the owned reader and are refused during manual guide/trail use.",
@@ -235,11 +239,12 @@ def build_parser():
                 "route.run":"Run the loaded route from a one-based point using face-then-walk mode.",
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
             }.get(operation, f"{verb.capitalize()} {group}.")
-            effects = ("Read-only native candidate refresh; sends no game input." if operation == "zone.refresh"
+            effects = ("Read-only native candidate refresh; sends no game input." if operation in {"zone.refresh", "pose.refresh"}
                        else "Read-only; sends no game input." if read_only or operation in {"route.context", "library.show"}
                        else "Attaches fresh candidate provenance to the loaded route; sends no game input." if operation == "route.tag-zone"
                        else "Changes the helper's library selection only; sends no game input." if operation == "library.select"
                        else "Changes only the local preview display; reads no new pose and sends no game input." if operation in {"preview.set", "preview.fit"}
+                       else "Changes the helper's idle pose refresh setting; sends no game input." if operation == "pose.set"
                        else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
                        else "Starts the owned shared reader when needed; sends no game input." if operation in {"beacons.show", "radar.show", "guide.start", "trail.start"}
@@ -257,6 +262,8 @@ def build_parser():
     groups.add_parser("help", help="show the same help as COMMAND --help").add_argument("topic", nargs="*")
 
     def arg(op, *names, **kwargs): leaves[op].add_argument(*names, **kwargs)
+    arg("pose.set", "--live", choices=("on", "off"), required=True,
+        help="enable or disable the helper's Live pose refresh")
     arg("library.list", "--zone", choices=("all", "matching", "mismatch", "unknown"), default="all",
         help="candidate comparison with current zone; default all; matching does not prove a world instance")
     arg("library.list", "--search", help="case-insensitive text match in route name, ID or saved zone context; combines with --zone")
@@ -366,12 +373,42 @@ def human_pose(pose):
     age = pose.get("ageSeconds")
     age_text = f"{age:.2f}s old" if isinstance(age, (int, float)) else "age unavailable"
     print(f"Pose: {pose.get('status', 'unavailable')} | {pose.get('source', 'source unavailable')} | {age_text}")
+    if "liveEnabled" in pose:
+        print(f"Live pose: {'on' if pose['liveEnabled'] else 'off'}"
+              + (f" | {'updating' if pose['updating'] else 'not updating'}" if "updating" in pose else "")
+              + (f" | sample {pose['sampleStatus']}" if pose.get("sampleStatus") else ""))
+    elif pose.get("sampleStatus"):
+        print("Pose sample: " + str(pose["sampleStatus"]))
+    if pose.get("sampledAtUtc"):
+        print("Pose observed: " + str(pose["sampledAtUtc"]))
     position = pose.get("position")
     if pose.get("status") == "fresh" and isinstance(position, dict):
         print("Position: " + " / ".join(f"{axis.upper()} {position.get(axis, '?')}" for axis in "xyz")
               + f" | facing {pose.get('bearing', '?')} degrees")
-    elif pose.get("reason"):
+    if pose.get("reason"):
         print("Pose reason: " + str(pose["reason"]))
+    if pose.get("qualification"):
+        print("Pose qualification: " + str(pose["qualification"]))
+
+
+def human_controls(controls, *, stopping=False):
+    latch = controls.get("stopLatched")
+    latch_text = "latched" if latch is True else "clear" if latch is False else "unknown"
+    active = controls.get("ownedActionActive")
+    action = "active" if active is True else "idle" if active is False else "unknown"
+    print(f"STOP: {latch_text} | owned action {action}"
+          + (f" | F8 {controls['f8']}" if controls.get("f8") else ""))
+    print(f"Key release evidence: {controls.get('keyReleaseEvidence') or 'not-measured'}"
+          + f" | stationary evidence: {controls.get('stationaryEvidence') or 'not-measured'}")
+    if stopping and controls.get("ownedActionEnded") is not None:
+        print("Owned action ended: " + ("yes" if controls["ownedActionEnded"] else "no"))
+    if stopping and controls.get("queuedRequestRetired"):
+        print("Queued request retired: " + str(controls.get("requestId", "unknown")))
+    operation = controls.get("result")
+    if stopping and isinstance(operation, dict) and operation.get("receipt"):
+        print("Receipt: " + str(operation["receipt"]))
+    if stopping and controls.get("qualification"):
+        print(str(controls["qualification"]))
 
 
 def human_zone(context, *, label="Zone"):
@@ -469,6 +506,8 @@ def human_data(command, data):
               f"{'visible' if app.get('visible') else 'hidden'} | {app.get('state', '')}")
         print(f"Route: {route.get('count', 0)} points | {'unsaved changes' if route.get('dirty') else 'saved'} | {route.get('file') or 'no file'}")
         human_pose(data.get("pose") or {})
+        if isinstance(data.get("controls"), dict):
+            human_controls(data["controls"])
         human_radar(data.get("radar") or {})
         if data.get("preview"):
             human_preview(data["preview"])
@@ -484,6 +523,10 @@ def human_data(command, data):
             human_zone(zone.get("context", zone))
         if data.get("activeRequestId"): print("Active request: " + str(data["activeRequestId"]))
         for step in data.get("nextSteps", []): print("Next: " + str(step))
+    elif command in {"pose.status", "pose.set", "pose.refresh"}:
+        human_pose(data)
+    elif command == "stop":
+        human_controls(data, stopping=True)
     elif command in {"route.list", "route.validate"}:
         points = data.get("points", [])
         selected = set(data.get("selected", []))
@@ -699,7 +742,13 @@ def human_data(command, data):
         print(f"Movement: {data.get('operation', command)} | {data.get('state', '')}")
         if data.get("receipt"): print("Receipt: " + str(data["receipt"]))
         if data.get("failure"): print("Outcome: " + str(data["failure"].get("reason", data["failure"])))
-        if data.get("stop"): print("STOP response: " + str(data["stop"].get("status", "unknown")) + "; use --json for release evidence")
+        if data.get("stop"):
+            stopped = data["stop"]
+            print("STOP response: " + str(stopped.get("status", "unknown")))
+            if isinstance(stopped.get("data"), dict):
+                human_controls(stopped["data"], stopping=True)
+            if stopped.get("error"):
+                print("STOP error: " + str(stopped["error"].get("message", stopped["error"])))
     else:
         return False
     return True

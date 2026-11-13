@@ -170,7 +170,7 @@ class RecordingWindowTests(unittest.TestCase):
 
     def test_stop_cancels_without_publishing(self):
         self.start_pending_recording()
-        self.button("STOP / F8").invoke()
+        self.button("STOP").invoke()
         self.release_capture.set()
         self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
         self.assertEqual([], self.saved())
@@ -182,7 +182,7 @@ class RecordingWindowTests(unittest.TestCase):
                     if isinstance(w, ttk.Label) and w["textvariable"]]
         self.assertTrue(any("Recording: 2.00 / 20 units" in value and "3 samples" in value
                             for value in label_values()), label_values())
-        self.button("STOP / F8").invoke()
+        self.button("STOP").invoke()
         self.release_capture.set()
         self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
         self.assertFalse(any(value.startswith("Recording:") for value in label_values()))
@@ -206,7 +206,7 @@ class RecordingWindowTests(unittest.TestCase):
         for thread in self.threads:
             thread.join(timeout=2)
             self.assertFalse(thread.is_alive())
-        self.button("STOP / F8").invoke()
+        self.button("STOP").invoke()
         self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
         self.assertEqual([], self.saved())
 

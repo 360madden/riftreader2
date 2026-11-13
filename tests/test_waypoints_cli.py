@@ -53,7 +53,7 @@ class CliTests(unittest.TestCase):
                         'record.cancel move.to face playback.start playback.resume playback.status '
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
-                        'preview.status preview.set preview.fit '
+                        'preview.status preview.set preview.fit pose.status pose.set pose.refresh '
                         'diagnostics.status diagnostics.show diagnostics.events diagnostics.copy diagnostics.open '
                         'library.list library.save library.import library.load library.show library.select').split():
             with self.subTest(command=command):
@@ -581,6 +581,102 @@ class CliTests(unittest.TestCase):
             cli.emit(cli.result('radar.set',data={'enabled':True,'range':10,'opacity':85,'observed':{'visible':True,'range':10,'opacity':.85,'unlocked':False}}))
         self.assertIn('Receipt: run.json',out.getvalue())
         self.assertIn('Radar observed: visible, range 10 units, opacity 85%',out.getvalue())
+
+    def test_human_pose_labels_cached_samples_without_presenting_stale_position_as_current(self):
+        pose = {'status':'unavailable', 'source':'existing-idle-reader', 'sampleStatus':'cached',
+                'liveEnabled':False, 'updating':False,
+                'ageSeconds':3.5, 'sampledAtUtc':'2026-11-13T12:00:00Z',
+                'position':{'x':101,'y':202,'z':303}, 'bearing':45,
+                'reason':'Cached sample expired', 'qualification':'Cached GUI sample; unavailable for control.'}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.human_pose(pose)
+        rendered = out.getvalue()
+        for phrase in ('Pose: unavailable | existing-idle-reader | 3.50s old',
+                       'Live pose: off | not updating | sample cached',
+                       'Pose observed: 2026-11-13T12:00:00Z',
+                       'Pose reason: Cached sample expired', 'unavailable for control'):
+            self.assertIn(phrase, rendered)
+        self.assertNotIn('Position:', rendered)
+
+    def test_human_pose_reports_observation_and_qualification_for_fresh_reader(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.human_pose({'status':'fresh', 'source':'owned-beacon-reader', 'ageSeconds':.25,
+                            'sampledAtUtc':'2026-11-13T12:00:00Z',
+                            'position':{'x':1,'y':2,'z':3}, 'bearing':90,
+                            'qualification':'Native candidate pose'})
+        for phrase in ('0.25s old', 'Pose observed: 2026-11-13T12:00:00Z',
+                       'Position: X 1 / Y 2 / Z 3 | facing 90 degrees',
+                       'Pose qualification: Native candidate pose'):
+            self.assertIn(phrase, out.getvalue())
+
+    def test_pose_commands_dispatch_to_existing_helper_without_input_authority(self):
+        data = {'status':'unavailable', 'sampleStatus':'cached', 'liveEnabled':False,
+                'updating':False, 'source':'existing-idle-reader', 'ageSeconds':4.5}
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('pose.set',data=data)) as request:
+            code, out, _ = self.call('pose','set','--live','off')
+        self.assertEqual(code, 0)
+        self.assertEqual(request.call_args.args[1:3], ('pose.set', {'live':'off'}))
+        self.assertIn('Live pose: off | not updating | sample cached', out)
+        self.assertEqual(self.call('pose','set')[0], 2)
+        help_text = self.call('pose','set','--help')[1]
+        self.assertIn('sends no game input', help_text)
+        self.assertIn('pose set --live on', help_text)
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('pose.status',data=data)) as request:
+            code, out, _ = self.call('pose','status','--json')
+        self.assertEqual(code, 0)
+        self.assertEqual(request.call_args.args[1:3], ('pose.status', {}))
+        self.assertEqual(json.loads(out)['data'], data)
+
+    def test_stop_and_status_keep_release_and_stationary_evidence_separate(self):
+        controls = {'stopLatched':True, 'ownedActionActive':False, 'f8':'active',
+                    'ownedActionEnded':True, 'keyReleaseEvidence':'see-pulse-receipts',
+                    'stationaryEvidence':'fail', 'result':{'receipt':'run.json'},
+                    'qualification':'Owned cancellation only; arbitrary autorun unproven.'}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('stop', data=controls))
+        for phrase in ('STOP: latched | owned action idle | F8 active',
+                       'Key release evidence: see-pulse-receipts | stationary evidence: fail',
+                       'Owned action ended: yes', 'Receipt: run.json', 'arbitrary autorun unproven'):
+            self.assertIn(phrase, out.getvalue())
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('status', data={'controls':controls}))
+        self.assertIn('STOP: latched | owned action idle | F8 active', out.getvalue())
+        self.assertIn('stationary evidence: fail', out.getvalue())
+
+    def test_pose_refresh_dispatches_one_explicit_read_and_renders_pose(self):
+        data = {'status':'fresh', 'sampleStatus':'fresh', 'liveEnabled':True,
+                'updating':False, 'source':'existing-idle-reader', 'ageSeconds':.1,
+                'position':{'x':1,'y':2,'z':3}, 'bearing':90}
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('pose.refresh',data=data)) as request:
+            code,out,_ = self.call('pose','refresh')
+        self.assertEqual(code, 0)
+        self.assertEqual(request.call_count, 1)
+        self.assertEqual(request.call_args.args[1:3], ('pose.refresh', {}))
+        self.assertIn('Position: X 1 / Y 2 / Z 3 | facing 90 degrees', out)
+        help_text = self.call('pose','refresh','--help')[1]
+        self.assertIn('one fresh read', help_text)
+        self.assertIn('sends no game input', help_text)
+
+    def test_stop_without_evidence_and_cancelled_movement_remain_honest(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('stop', data={'stopLatched':True,'ownedActionEnded':True}))
+        self.assertIn('Key release evidence: not-measured | stationary evidence: not-measured', out.getvalue())
+        stopped = cli.result('stop',data={'stopLatched':True,'ownedActionActive':False,
+                                       'keyReleaseEvidence':'not-measured','stationaryEvidence':'unavailable'})
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',side_effect=[KeyboardInterrupt(),stopped]):
+            code,out,_ = self.call('move','to','1','2','--execute')
+        self.assertEqual(code, 130)
+        self.assertIn('STOP response: completed', out)
+        self.assertIn('Key release evidence: not-measured | stationary evidence: unavailable', out)
 
     def test_human_radar_explains_saved_but_unconfirmed_display(self):
         out=io.StringIO()

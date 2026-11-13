@@ -1,5 +1,33 @@
 # Current status
 
+**NOVEMBER 13 — HEADER, LIVE POSE AND STOP:**
+On verified AMD-DESKTOP, the header now has readable rounded XYZ/facing plus a
+Fresh/Cached/Unavailable badge with acquisition age, paused refresh and pending
+read state. Native movement events retain acquisition times; expired beacon
+feedback retains historical timestamps without current coordinates. Hover shows
+source/provenance, and Details opens full Activity. STOP has an actual F8
+active/unavailable/inactive hint; idle STOP explicitly leaves game motion
+unverified. CLI `pose status`, `pose refresh` and `pose set --live on/off` match
+the header. `status.controls`, STOP output and diagnostics distinguish the latch,
+owned work, pulse receipt references and stationary evidence. Idle STOP no
+longer attaches a previous action receipt. CLI completion immediately restores
+control readiness instead of waiting for the next live refresh.
+The affected run passed **196 tests and 155 subtests**, zero failures/skips;
+the final readiness adjustment and its new mailbox regression passed a further
+**8 focused checks and 16 subtests**. Fake bounded-action tests cover unavailable
+F8, pending STOP, delayed stationary evidence and idle evidence reset. Live
+refresh/pause/idle STOP passed without game input. Native 1120×850 and 980×740
+captures exposed extra status-strip height; compact Details padding restored
+all seven normal-size rows and two full compact rows with the selection visible.
+Original route/basis/library/style hashes, recent paths, scene references, empty
+trail, preview range and selected point 7 were preserved/restored; overlays stay
+off, Live pose on, STOP clear, and no new input receipts were produced. Helper
+PID34424/session 5ea29deae29c4280967deed8b7f9ae80 remains on Replay, physical RIFT
+PID34468. Real movement/F8 registration was not exercised in this change.
+Evidence: `artifacts/header-live-verification-20261113.json` and native
+`artifacts/header-verified-{normal,compact}-20261113.png`.
+See [Header, live pose and STOP](workflows/physical-waypoints.md#header-live-pose-and-stop).
+
 **NOVEMBER 13 — MAIN ROUTE LIST AND LOCAL PREVIEW:**
 On verified AMD-DESKTOP, the main list now shows route numbers that match preview
 badges, including reverse playback. Clicking an existing node or badge selects

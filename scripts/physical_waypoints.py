@@ -659,7 +659,7 @@ def align_heading(adapter, target, current, stop, lease, budget, emit, *, focus=
             raise WaypointError("Turn did not improve facing; stopped")
         current = after
         emit({"status": "turning", "position": asdict(current.position), "bearing": current.bearing,
-              "headingError": error, "key": action.key, "holdMs": action.hold_ms})
+              "acquired":current.acquired,"headingError": error, "key": action.key, "holdMs": action.hold_ms})
     if time.monotonic() - started <= 20 and abs(heading_error(target, current.bearing)) <= 4:
         return current, actions
     raise WaypointError("Facing reached its eight-pulse budget")
@@ -682,7 +682,7 @@ def run_facing(adapter, stop, emit=lambda event: None, *, bearing=None, point=No
         current, actions = align_heading(adapter, target, current, stop, lease,
                                         TripBudget(started), emit)
         result = {"status": "facing", "position": asdict(current.position),
-                  "bearing": current.bearing, "targetBearing": target,
+                  "bearing": current.bearing, "acquired":current.acquired,"targetBearing": target,
                   "headingError": heading_error(target, current.bearing),
                   "pulses": len(actions), "totalHoldMs": sum(row["holdMilliseconds"] for row in actions),
                   "elapsedSeconds": round(time.monotonic()-started, 3),
@@ -720,7 +720,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
         controller.calibrations = calibrations
         started = time.monotonic()
         emit({"status": "moving", "position": asdict(current.position), "bearing": current.bearing,
-              "distance": planar_distance(current.position, goal)})
+              "acquired":current.acquired,"distance": planar_distance(current.position, goal)})
         while True:
             check_stop()
             lease.check()
@@ -742,6 +742,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
                     raise WaypointError("Player left the arrival radius while settling")
                 result = {"status": "arrived", "start": asdict(start.position),
                           "goal": asdict(goal), "position": asdict(settled.position),
+                          "acquired":settled.acquired,
                           "distance": planar_distance(settled.position, goal), "bearing": settled.bearing,
                           "pulses": len(turns) + len(actions), "turnPulses": len(turns),
                           "movementPulses": len(actions),
@@ -773,7 +774,7 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
                     beforeSource=before.source, afterSource=current.source)
             feedback = controller.record_feedback(current.position, time.monotonic() - started)
             emit({"status": feedback.status, "position": asdict(current.position),
-                  "distance": feedback.distance_after, "pulse": len(actions), "bearing": current.bearing,
+                  "acquired":current.acquired,"distance": feedback.distance_after, "pulse": len(actions), "bearing": current.bearing,
                   "key": action.key, "holdMs": action.hold_ms})
 
 
@@ -957,7 +958,8 @@ def launch_window(args):
     ttk.Label(brand_context, text="RIFT / READER 2", style="Base.Micro.TLabel").pack(side="left")
     connection_text = tk.StringVar(value=f"{args.expected_host}  /  "
         + (f"PID {args.physical_pid}" if args.physical_pid is not None else "Waiting for RIFT"))
-    ttk.Label(brand_context, textvariable=connection_text, style="Base.Muted.TLabel").pack(side="left", padx=(12, 0))
+    connection_label=ttk.Label(brand_context, textvariable=connection_text, style="Base.Muted.TLabel")
+    connection_label.pack(side="left", padx=(12, 0))
     title_row = ttk.Frame(brand_words)
     title_row.pack(anchor="w", pady=(3, 0))
     ttk.Label(title_row, text=APP_NAME, style="Brand.TLabel").pack(side="left")
@@ -981,12 +983,25 @@ def launch_window(args):
     status_strip = ttk.Frame(frame, style="Card.TFrame", padding=(14, 6))
     status_strip.grid(row=1, column=0, sticky="ew", pady=(0, 8))
     status_label = ttk.Label(status_strip, textvariable=status_brief, style="Gold.TLabel", wraplength=900)
-    status_label.pack(anchor="w")
-    status_strip.bind("<Configure>", lambda event: status_label.configure(wraplength=max(200, event.width - 28)))
+    ttk.Style(window).configure("Header.Ghost.TButton",padding=(8,0),font=("Segoe UI",9,"bold"))
+    status_details = ttk.Button(status_strip, text="Details", style="Header.Ghost.TButton",
+                                command=lambda: workflow.select(activity_tab))
+    status_details.pack(side="right", padx=(10,0))
+    status_label.pack(side="left", fill="x", expand=True)
+    status_strip.bind("<Configure>", lambda event: status_label.configure(
+        wraplength=max(200, event.width - status_details.winfo_reqwidth() - 42)))
     pose_text = tk.StringVar(value="Position is loading…")
     telemetry = ttk.Frame(frame)
     telemetry.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-    ttk.Label(telemetry, textvariable=pose_text, style="Telemetry.TLabel").pack(anchor="w")
+    pose_row = ttk.Frame(telemetry)
+    pose_row.pack(fill="x")
+    pose_label = ttk.Label(pose_row, textvariable=pose_text, style="Telemetry.TLabel")
+    pose_badge = tk.StringVar(value="Waiting for pose")
+    pose_badge_label = ttk.Label(pose_row, textvariable=pose_badge, style="Base.Muted.TLabel")
+    pose_badge_label.pack(side="right", padx=(12,0))
+    pose_label.pack(side="left", fill="x", expand=True)
+    pose_row.bind("<Configure>", lambda event: pose_label.configure(
+        wraplength=max(200,event.width-pose_badge_label.winfo_reqwidth()-12)))
     route_status = tk.StringVar(value="New route — Unsaved")
     editable = []
     workflow = ttk.Notebook(frame, height=184)
@@ -1106,6 +1121,13 @@ def launch_window(args):
     last_y = None
     verified_adapter = None
     verified_at = None
+    displayed_acquired = None
+    displayed_stamp = None
+    displayed_source = "existing-idle-reader"
+    pose_unavailable_reason = None
+    stop_context = {"hadOwnedAction": False, "activeRequestIdAtStop": None,
+                    "result": None, "keyReleaseEvidence": "not-measured", "stationaryEvidence": "not-measured"}
+    stop_waiting_operation = False
     identity_unavailable = False
     saved_view = None
     saved_unit_sample = None
@@ -1731,10 +1753,13 @@ def launch_window(args):
             if operation not in ("live", "zone-live"):
                 events.put({"status": "operation-finished", "operation": operation,
                             "failure": failure, "result": outcome,
+                            "stopVerification":stop_verification,
+                            "inputReceiptPath":str(adapter.input_receipt_path) if retain and getattr(adapter,"input_receipt_path",None) and adapter.input_receipt_path.exists() else None,
                             "receipt": str(receipt_path) if receipt_path else None})
 
     def start(operation, points=None, *, face_walk=None, check_route_zone=True):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
+        nonlocal stop_waiting_operation
         if busy or closing or nearby_picker is not None:
             return
         if marker_restart_pending:
@@ -1755,6 +1780,9 @@ def launch_window(args):
             return
         busy = True
         stop.clear()
+        stop_waiting_operation=False
+        stop_context.update(hadOwnedAction=False,activeRequestIdAtStop=None,result=None,
+                            keyReleaseEvidence="not-measured",stationaryEvidence="not-measured")
         if operation == "teach":
             record_cancel.clear()
             record_stop.clear()
@@ -1787,7 +1815,8 @@ def launch_window(args):
             record_cancel.clear()
             record_end_button.configure(state="normal")
             redraw()
-        state.set("Starting action — F8 or STOP prevents the next pulse." if operation in ("go", "face", "play", "resume", "teach")
+        state.set(("Starting action — F8 or STOP prevents the next pulse." if getattr(foreground_stop,"registered",False)
+                   else "Starting action — use STOP; F8 is unavailable.") if operation in ("go", "face", "face-bearing", "play", "resume", "teach")
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
@@ -1798,8 +1827,14 @@ def launch_window(args):
         return True
 
     def request_stop():
-        nonlocal cli_stop_at, cli_record_output
+        nonlocal cli_stop_at, cli_record_output, stop_waiting_operation
         cli_stop_at = time.time()
+        # Evidence belongs to this STOP, never an unrelated previous receipt.
+        if not stop.is_set() or not stop_waiting_operation:
+            stop_context.update(hadOwnedAction=bool(busy),
+                activeRequestIdAtStop=cli_action["id"] if cli_action else None,
+                result=None,keyReleaseEvidence="not-measured",stationaryEvidence="not-measured")
+            stop_waiting_operation = bool(busy)
         stop.set()
         if cli_action is not None:
             cli_action["cancelled"] = True
@@ -1811,7 +1846,7 @@ def launch_window(args):
             return
         markers_stopped = stop_markers()
         text = ("STOP requested — waiting for the current bounded pulse to release." if busy
-                else "Stopped — no input active.")
+                else "STOP latched — no owned action active; game motion unverified.")
         state.set(text if markers_stopped else text + " Could not hide markers.")
 
     def draft_pending():
@@ -2467,8 +2502,10 @@ def launch_window(args):
     teach_button = ttk.Button(recording_controls, text="Auto-walk + record", command=lambda: start("teach", selected_points(True)))
     teach_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
     editable.append(teach_button)
-    ttk.Button(stop_slot, text="STOP / F8", command=request_stop, style="Danger.TButton", width=15).pack(fill="both")
-    ttk.Label(stop_slot, text="Always available · release & stop", style="Base.Muted.TLabel").pack(anchor="center", pady=(5, 0))
+    stop_button = ttk.Button(stop_slot, text="STOP", command=request_stop, style="Danger.TButton", width=15)
+    stop_button.pack(fill="both")
+    stop_hint = tk.StringVar(value="F8 inactive · Esc in app")
+    ttk.Label(stop_slot, textvariable=stop_hint, style="Base.Micro.TLabel").pack(anchor="center", pady=(5, 0))
     playback_buttons = {}
     for label, parent, row, column, callback in (("Record", recording_controls, 0, 0, lambda: start("record")),
             ("Play Forward", playback_group, 0, 0, lambda: playback("forward")),
@@ -2633,7 +2670,7 @@ def launch_window(args):
     recent_load_button = ttk.Button(recent_controls, text="Load recent", command=load_recent, state="disabled")
     recent_load_button.grid(row=0, column=2)
     editable.append(recent_load_button)
-    footer_label = ttk.Label(frame, text="Open ground · route ≤ 20 units · requested pulses ≤ 150 ms · F8 prevents the next pulse. "
+    footer_label = ttk.Label(frame, text="Open ground · route ≤ 20 units · requested pulses ≤ 150 ms · STOP prevents the next pulse. "
               "Stop Recording saves; STOP cancels recording. Play starts within 0.30 units of Start (Forward) or End (Reverse).",
               style="Base.Micro.TLabel", wraplength=900)
     footer_label.grid(row=5, column=0, sticky="w")
@@ -2708,14 +2745,19 @@ def launch_window(args):
             closing = False
             restore_editing()
 
-    def display_pose(point, bearing=None, *, sampled_at=None, fill_entered=True):
-        nonlocal last_pose, last_y
+    def display_pose(point, bearing=None, *, sampled_at=None, acquired=None,
+                     source="existing-idle-reader", fill_entered=True):
+        nonlocal last_pose, last_y, displayed_acquired, displayed_stamp, displayed_source, pose_unavailable_reason
         last_pose = (point["x"], point["z"], bearing if bearing is not None else last_pose[2] if last_pose else 0)
         last_y = point["y"]
-        stamp = ("sampled " + datetime.fromisoformat(sampled_at.replace("Z", "+00:00")).astimezone().strftime("%H:%M:%S")
-                 + " local") if sampled_at else "updated " + time.strftime("%H:%M:%S")
-        pose_text.set(f"Position X={point['x']:.6f}  Y={point['y']:.6f}  Z={point['z']:.6f}"
-                      f"   facing={last_pose[2]:.2f}°   {stamp}")
+        displayed_acquired = acquired if type(acquired) in (int,float) and math.isfinite(acquired) else None
+        displayed_stamp = sampled_at
+        if displayed_stamp is None and displayed_acquired is not None:
+            from datetime import timedelta
+            displayed_stamp = (datetime.now(timezone.utc)-timedelta(
+                seconds=time.monotonic()-displayed_acquired)).isoformat()
+        displayed_source, pose_unavailable_reason = source, None
+        pose_text.set(f"X {point['x']:.3f}   Y {point['y']:.3f}   Z {point['z']:.3f}   Facing {last_pose[2]:.2f}°")
         if fill_entered and not x.get() and not z.get():
             x.set(f"{point['x']:.6f}")
             z.set(f"{point['z']:.6f}")
@@ -2741,7 +2783,8 @@ def launch_window(args):
             if token != beacon_pose_token or not beacon_pose_available:
                 exploration_sample = pose["acquiredMonotonic"]
                 explore_controls.on_pose(pose)
-                display_pose(pose["position"], pose["bearing"], sampled_at=pose["sampledAtUtc"], fill_entered=False)
+                display_pose(pose["position"], pose["bearing"], sampled_at=pose["sampledAtUtc"],
+                    acquired=pose["acquiredMonotonic"], source="owned-beacon-reader", fill_entered=False)
                 beacon_pose_token = token
                 beacon_pose_stamp = pose["sampledAtUtc"]
                 beacon_pose_available = True
@@ -2760,6 +2803,7 @@ def launch_window(args):
             reason = ("waiting for the owned beacon reader" if isinstance(exc, FileNotFoundError)
                       else (exc.strerror or str(exc)) if isinstance(exc, OSError) else str(exc))
             pose_text.set("Position unavailable (beacons): " + reason + stamp)
+            set_pose_unavailable(reason)
             live_pose_option.configure(text="Live pose (waiting)")
             redraw()
 
@@ -2840,27 +2884,70 @@ def launch_window(args):
         except (OSError, ValueError, KeyError, TypeError): return None
 
     def cli_pose():
-        if adapter is None:
-            return {"status": "unavailable", "reason": "RIFT is not connected"}
-        if markers.running() and not markers.stop_requested:
+        if live_pose.get() and adapter is not None and markers.running() and not markers.stop_requested:
             try:
                 from scripts.waypoint_beacon_pose import read_pose
-                return read_pose(markers.pose_path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"])
+                pose_path=getattr(markers,"pose_path",None)
+                if pose_path is None: raise ValueError("waiting for the owned beacon reader")
+                pose=read_pose(pose_path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"])
+                return dict(pose,sampleStatus="fresh",liveEnabled=True,updating=False,
+                            ageSeconds=time.monotonic()-pose["acquiredMonotonic"],freshForSeconds=1)
             except (OSError, ValueError, TypeError, KeyError) as exc:
-                return {"status": "unavailable", "reason": str(exc), "source": "owned-beacon-reader"}
-        age = time.monotonic() - verified_at if verified_at is not None else None
-        return {"status": "fresh" if last_pose is not None and age is not None and 0 <= age <= 2 else "unavailable",
-                "source": "existing-idle-reader", "ageSeconds": age,
+                return dict(status="unavailable",sampleStatus="unavailable",reason=str(exc),source="owned-beacon-reader",
+                    liveEnabled=True,updating=False,
+                    ageSeconds=time.monotonic()-displayed_acquired if displayed_acquired is not None else None,
+                    sampledAtUtc=displayed_stamp,freshForSeconds=1,position=None,bearing=None,
+                    qualification="Last valid sample time is historical only; the owned reader has no current pose.")
+        age = time.monotonic() - displayed_acquired if displayed_acquired is not None else None
+        limit = 1 if displayed_source=="owned-beacon-reader" else 2
+        fresh=last_pose is not None and adapter is not None and live_pose.get() and not identity_unavailable and age is not None and 0<=age<=limit
+        reason=("RIFT is not connected" if adapter is None else "Live pose paused" if not live_pose.get()
+                else pose_unavailable_reason if last_pose is None else "Cached sample; refresh for current pose" if not fresh else None)
+        return {"status": "fresh" if fresh else "unavailable", "sampleStatus":"fresh" if fresh else "cached" if last_pose else "unavailable",
+                "source": displayed_source, "ageSeconds": age, "sampledAtUtc":displayed_stamp,"freshForSeconds":limit,
+                "liveEnabled":live_pose.get(),"updating":observing or busy,"reason":reason,
                 "position": dict(x=last_pose[0], y=last_y, z=last_pose[1]) if last_pose else None,
                 "bearing": last_pose[2] if last_pose else None,
-                "qualification": "Cached GUI sample; unavailable values must not be used for control."}
+                "qualification": "Native pose candidate for display; acquisition freshness is separate from action admission. Cached or paused samples must not be used for control."}
+
+    def set_pose_unavailable(reason):
+        nonlocal pose_unavailable_reason
+        pose_unavailable_reason=str(reason)
+        pose_text.set("Position unavailable — "+str(reason))
+
+    def change_live_pose():
+        nonlocal next_live_at
+        if live_pose.get(): next_live_at=0
+        update_header_state()
+
+    def cli_controls():
+        listener=foreground_stop is not None
+        return dict(stop_context,stopLatched=stop.is_set(),ownedActionActive=busy,recording=recording,
+            f8="active" if listener and getattr(foreground_stop,"registered",False) else "unavailable" if listener else "inactive",
+            qualification="STOP cancels this helper's work and waits for its bounded pulse release. Key release and observed stationary pose are separate evidence; other game movement is not cancelled.")
+
+    def update_header_state():
+        pose=cli_pose()
+        age=pose.get("ageSeconds")
+        age_text=f"{max(0,age):.1f}s" if age is not None else "age unknown"
+        sample=pose.get("sampleStatus","unavailable")
+        badge=(f"Fresh · {age_text}" if sample=="fresh" else f"Cached · {'paused' if not live_pose.get() else age_text}"
+               if sample=="cached" else "Pose unavailable")
+        pose_badge.set(badge+(" · reading" if pose.get("updating") else ""))
+        pose_badge_label.configure(foreground=PALETTE["mint"] if sample=="fresh" else PALETTE["gold"] if sample=="cached" else PALETTE["muted"])
+        controls=cli_controls()
+        stop_hint.set("F8 active · Esc in app" if controls["f8"]=="active" else "F8 unavailable · use STOP" if controls["f8"]=="unavailable" else "F8 inactive · Esc in app")
+        stop_button.configure(text="STOP requested…" if stop.is_set() and busy else "STOP")
+        target=getattr(adapter,"target",None)
+        pid=target.get("processId",getattr(adapter,"pid",args.physical_pid)) if target else None
+        connection_text.set(f"{args.expected_host} / PID {pid}" if pid is not None else f"{args.expected_host} / Waiting for RIFT")
 
     def cli_preview_status():
         from scripts.waypoint_map import fit_route_status
         available=last_pose is not None and map_view is not None
-        age=(datetime.now(timezone.utc)-datetime.fromisoformat(beacon_pose_stamp.replace("Z","+00:00"))).total_seconds() if markers.running() and beacon_pose_stamp else (
-            time.monotonic()-verified_at if verified_at is not None else None)
-        fresh=available and age is not None and 0<=age<=(1 if markers.running() else 2)
+        pose=cli_pose()
+        age=pose.get("ageSeconds")
+        fresh=available and pose.get("sampleStatus")=="fresh"
         points=selected_points(True)
         fit=fit_route_status(*last_pose[:2],points) if available and points else None
         hidden=[dict(number=p["number"],name=table.item(p["identifier"],"values")[0])
@@ -3017,7 +3104,7 @@ def launch_window(args):
                            "selected": [table.index(i)+1 for i in table.selection()]},
                     zone=zone_state(), routeContext=deepcopy(route_metadata.get("routeContext")),
                     contextComparison=zone_comparison(), heights=route_heights(),
-                    pose=cli_pose(), radar=cli_radar_status(), beacons=cli_beacon_status(),
+                    pose=cli_pose(), controls=cli_controls(), radar=cli_radar_status(), beacons=cli_beacon_status(),
                     view=cli_view_status(),
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
                     routeLibrary=library_view_state(),
@@ -3119,6 +3206,8 @@ def launch_window(args):
             if operation in ("save", "target"):
                 data.update(route=cli_snapshot()["route"], selected=[table.index(i)+1 for i in table.selection()])
                 if job.get("change") is not None: data["change"] = job["change"]
+            if operation=="refresh" and not failure:
+                data=cli_pose()
             response = (cli_error("cancelled" if failure.get("status") == "stopped" else "operation-failed",
                                   failure["reason"], exit_code=130 if failure.get("status") == "stopped" else 1)
                         if failure else cli_ok(data))
@@ -3128,6 +3217,7 @@ def launch_window(args):
                                    receipt=event.get("receipt"), failure=failure))
             del cli_recent[:-8]
             cli_action = None
+            redraw()
             return response
         return cli_wait(rid, advance)
 
@@ -3165,6 +3255,13 @@ def launch_window(args):
                         raise CliError("preview-unavailable","A cached position and a route are needed to fit the preview",exit_code=3)
                 elif command != "preview.status": raise CliError("unsupported-command",command,exit_code=2)
                 return cli_ok(cli_preview_status())
+            if command in ("pose.status","pose.set"):
+                if command=="pose.set":
+                    if values.get("live") not in ("on","off"):
+                        raise CliError("invalid-live-pose","Live pose must be on or off",exit_code=2)
+                    live_pose.set(values["live"]=="on")
+                    change_live_pose()
+                return cli_ok(cli_pose())
             if command == "zone.status": return cli_ok(zone_state())
             if command == "zone.refresh": return cli_begin(rid, "zone", command=command)
             if command == "route.context":
@@ -3270,9 +3367,7 @@ def launch_window(args):
                 request_stop()
                 def stopped():
                     if busy or foreground_stop is not None or markers.running(): return None
-                    return cli_ok({"stopLatched": True, "ownedActionEnded": True,
-                                   "result": {k:v for k,v in (cli_last_operation or {}).items() if k != "result"},
-                                   "stationaryEvidence": "Inspect stopVerification in the action receipt; no arbitrary game autorun cancellation is claimed."})
+                    return cli_ok(dict(cli_controls(),ownedActionEnded=True))
                 return cli_wait(rid, stopped)
             if command == "app.show":
                 if values.get("tab") is not None:
@@ -3309,6 +3404,7 @@ def launch_window(args):
             passive = command.startswith(("radar.", "beacons.", "guide.", "trail."))
             if closing or (busy or cli_action is not None) and not (read_only or passive or command in ("record.stop", "record.cancel")):
                 raise CliError("busy", "The helper is busy", "Use status or stop", 4)
+            if command=="pose.refresh": return cli_begin(rid,"refresh",command=command)
             if command in ("guide.start", "trail.start"):
                 if busy or cli_action is not None:
                     raise CliError("busy", "Wait for the active action before starting passive exploration", exit_code=4)
@@ -3875,9 +3971,15 @@ def launch_window(args):
         nonlocal current_zone_context, zone_error, zone_observing, next_zone_at
         nonlocal last_edit_change
         nonlocal marker_restart_pending, last_capture_state, last_capture_error
+        nonlocal stop_waiting_operation
         cli_server.poll(cli_dispatch)
         if cli_destroyed:
             return
+        # The registered F8 listener also latches the same STOP event.
+        if stop.is_set() and busy and not stop_waiting_operation:
+            stop_context.update(hadOwnedAction=True,activeRequestIdAtStop=cli_action["id"] if cli_action else None,
+                result=None,keyReleaseEvidence="not-measured",stationaryEvidence="not-measured")
+            stop_waiting_operation=True
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -3898,6 +4000,11 @@ def launch_window(args):
                 continue
             if status == "operation-finished":
                 cli_last_operation = event
+                if stop_waiting_operation:
+                    stop_context["result"]={k:v for k,v in event.items() if k not in ("result","status")}
+                    stop_context["stationaryEvidence"]=(event.get("stopVerification") or {}).get("status","not-measured")
+                    stop_context["keyReleaseEvidence"]="see-pulse-receipts" if event.get("inputReceiptPath") else "not-measured"
+                    stop_waiting_operation=False
                 if cli_action is not None and cli_action["operation"] == event["operation"]:
                     cli_action["finished"] = event
                 continue
@@ -3921,6 +4028,7 @@ def launch_window(args):
                 continue
             if status == "halted":
                 last_pose = None
+                set_pose_unavailable(event.get("reason","Action halted; refresh position"))
                 verified_adapter, verified_at = None, None
                 identity_unavailable = True
                 redraw()
@@ -3929,7 +4037,7 @@ def launch_window(args):
                 select_pending_progress()
                 continue
             if status == "live-unavailable":
-                pose_text.set("Live position unavailable: " + event["reason"])
+                set_pose_unavailable(event["reason"])
                 last_pose = None
                 verified_adapter, verified_at = None, None
                 identity_unavailable = True
@@ -4034,7 +4142,7 @@ def launch_window(args):
                 if status == "recording":
                     recording_progress = {"sampleCount": event["sampleCount"],
                                           "observedPathLength": event["observedPathLength"]}
-                display_pose(point, event.get("bearing"))
+                display_pose(point, event.get("bearing"),acquired=event.get("acquired"))
                 if status in ("refresh", "live", "save", "target", "map"):
                     verified_adapter, verified_at = adapter, event.get("acquired")
                     identity_unavailable = False
@@ -4163,7 +4271,7 @@ def launch_window(args):
                 explore_controls.unavailable("beacon reader ended")
                 last_pose = last_y = None
                 stamp = "; last sample " + beacon_pose_stamp if beacon_pose_stamp else ""
-                pose_text.set("Position unavailable: beacon reader ended; waiting for idle pose" + stamp)
+                set_pose_unavailable("beacon reader ended; waiting for idle pose" + stamp)
                 beacon_display_active = beacon_pose_available = False
                 beacon_pose_token = beacon_pose_stamp = None
                 redraw()
@@ -4177,6 +4285,7 @@ def launch_window(args):
             zone_observing = True
             next_zone_at = time.monotonic()+15
             threading.Thread(target=worker, args=("zone-live",), daemon=False).start()
+        update_header_state()
         window.after(80, poll)
 
     def select_point(_, *, force_name=False, discard_draft=False):
@@ -4241,6 +4350,16 @@ def launch_window(args):
             f"{evidence} · {height['label']}\n" if height else "")+"Double-click a row or press F2 to edit."
 
     table_hover=[None]
+    live_pose_option.configure(command=change_live_pose)
+    attach_path_tooltip(status_label,lambda:state.get())
+    attach_path_tooltip(status_details,lambda:"Open Activity for complete status messages, receipts and errors.")
+    attach_path_tooltip(connection_label,lambda:
+        json.dumps(getattr(adapter,"target",None),indent=2) if adapter is not None else "Waiting for a verified local RIFT process.")
+    attach_path_tooltip(pose_label,lambda:json.dumps(cli_pose(),indent=2))
+    attach_path_tooltip(pose_badge_label,lambda:json.dumps(cli_pose(),indent=2))
+    attach_path_tooltip(live_pose_option,lambda:"Use the existing beacon reader while it runs; otherwise read pose every 2 seconds. Pausing keeps a clearly cached display and sends no game input.")
+    attach_path_tooltip(stop_button,lambda:cli_controls()["qualification"]+"\n"+
+        "STOP also cancels recording and hides this helper's overlays. Stop Recording saves instead. Esc works while this app has focus; F8 is registered only for an owned movement action.")
     table.bind("<Motion>",lambda event:table_hover.__setitem__(0,table.identify_row(event.y)))
     attach_path_tooltip(table,lambda:point_tooltip(table_hover[0] or (table.selection()[0] if table.selection() else None)))
     def preview_hover(event):

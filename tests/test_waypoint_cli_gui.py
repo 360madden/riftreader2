@@ -241,6 +241,27 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertEqual(listed['points'][0]['name'], 'A')
         self.assertFalse(listed['dirty'])
 
+    def test_pose_refresh_and_idle_stop_keep_readiness_and_evidence_separate(self):
+        self.call('route.add', {'name':'Reference','x':1,'z':2})
+        before=self.call('route.list')['data']
+        self.assertEqual('cached',self.call('pose.set',{'live':'off'})['data']['sampleStatus'])
+        refreshed=self.call('pose.refresh')
+        self.assertTrue(refreshed['ok'],refreshed)
+        self.assertEqual('existing-idle-reader',refreshed['data']['source'])
+        self.assertFalse(refreshed['data']['liveEnabled'])
+        status=self.call('status')['data']
+        self.assertFalse(status['app']['busy'])
+        self.assertIsNone(status['activeRequestId'])
+        stopped=self.call('stop')['data']
+        self.assertFalse(stopped['hadOwnedAction'])
+        self.assertIsNone(stopped['result'])
+        self.assertEqual('not-measured',stopped['keyReleaseEvidence'])
+        self.assertEqual('not-measured',stopped['stationaryEvidence'])
+        after=self.call('route.list')['data']
+        self.assertEqual(before['document'],after['document'])
+        self.assertEqual(before['revision'],after['revision'])
+        self.assertFalse((self.root/'movement-called').exists())
+
     def test_radar_rejects_invalid_or_unpersisted_changes_transactionally(self):
         keys = ('enabled', 'unlocked', 'range', 'opacity', 'requestedPosition', 'readerRunning')
         baseline = self.call('radar.status')['data']

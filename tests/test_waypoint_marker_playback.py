@@ -23,7 +23,7 @@ class MarkerPlaybackTests(unittest.TestCase):
 
     def setUp(self):
         self.marker = SimpleNamespace(running=Mock(return_value=True), stop=Mock(), update=Mock(),
-                                      stop_requested=False, exit_code=None)
+                                      stop_requested=False, exit_code=None, pose_path=None)
         self.marker_patch = patch.object(app, "OwnedWaypointMarkers", return_value=self.marker)
         self.marker_patch.start()
         self.addCleanup(self.marker_patch.stop)
@@ -46,7 +46,8 @@ class MarkerPlaybackTests(unittest.TestCase):
                                "executableSha256": "a" * 64, "hwnd": 12345}
         self.adapter.binding["runtimeIdentity"]["processStartUtcTicks"] = "1234"
         self.no_input.side_effect = lambda *_: SimpleNamespace(close=lambda: None)
-        self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview))
+        self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview)
+                          and tuple(w["columns"]) == ("name", "x", "z"))
         self.table.insert("", "end", values=("Start", "0", "0"))
         self.table.insert("", "end", values=("End", "1", "0"))
         self.table.selection_set(self.table.get_children()[0])
@@ -105,7 +106,17 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.no_input.reset_mock()
         fixture.RecordingWindowTests.cleanup_windows(self)
 
+    def supply_marker_pose(self):
+        self.adapter.target.update(hostName="AMD-DESKTOP", executablePath=r"C:\RIFT\rift_x64.exe")
+        self.marker.pose_path = self.root_path / "artifacts" / "owned-beacon-pose.json"
+        write_pose(self.marker.pose_path, dict(target=self.adapter.target, acquiredMonotonic=time.monotonic(),
+            playerPose=dict(playerKey=self.adapter.binding["runtimeIdentity"]["unitKey"],
+                            position=dict(x=0, y=0, z=0), bearing=0,
+                            sampledAtUtc=datetime.now(timezone.utc).isoformat())), 1)
+        self.wait_for(lambda: str(self.button("Play Forward")["state"]) != "disabled")
+
     def test_play_keeps_markers_and_stop_latches_before_signal_failure(self):
+        self.supply_marker_pose()
         def fail_stop():
             self.assertTrue(self.stopped.wait(1), "movement STOP must latch before marker signal")
             raise OSError("signal unavailable")
@@ -113,7 +124,7 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.button("Play Forward").invoke()
         self.assertTrue(self.entered.wait(2))
         self.marker.stop.assert_not_called()
-        self.button("STOP / F8").invoke()
+        self.button("STOP").invoke()
         self.assertTrue(self.stopped.wait(1))
         self.marker.stop.assert_called_once()
         self.assertTrue(self.marker.running())
@@ -145,12 +156,13 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.assertTrue(self.entered.wait(2))
         self.assertTrue(self.play_mock.call_args.kwargs["resume"])
         self.marker.stop.assert_not_called()
-        self.button("STOP / F8").invoke()
+        self.button("STOP").invoke()
         self.assertTrue(self.stopped.wait(1))
         self.marker.stop.assert_called_once()
         self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
 
     def test_f8_stop_event_also_requests_marker_shutdown(self):
+        self.supply_marker_pose()
         listener = {}
         def foreground(window, stop, events):
             listener.update(stop=stop, events=events)
@@ -173,7 +185,7 @@ class MarkerPlaybackTests(unittest.TestCase):
             return next(str(self.window.getvar(w["textvariable"])) for w in self.widgets()
                         if isinstance(w, fixture.ttk.Label) and w["textvariable"]
                         and str(self.window.getvar(w["textvariable"])).startswith(
-                            ("Position X=", "Position unavailable", "Position is loading")))
+                            ("X ", "Position unavailable", "Position is loading")))
         previous = displayed_pose()
         with patch.object(self.window, "focus_displayof", return_value=self.window):
             deadline = time.monotonic() + 2.2
@@ -181,7 +193,7 @@ class MarkerPlaybackTests(unittest.TestCase):
                 self.window.update()
                 time.sleep(.01)
             self.assertEqual(0, read.call_count)
-            self.assertIn("Position unavailable (beacons):", displayed_pose())
+            self.assertIn("Position unavailable \u2014", displayed_pose())
             self.assertNotIn("updated ", displayed_pose())
             self.assertEqual(acquired, pose.acquired)
             self.marker.running.return_value = False

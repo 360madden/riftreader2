@@ -305,7 +305,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
             time.sleep(.01)
         self.assertTrue(found, labels)
         self.assertFalse(self.callback_errors)
-        self.button("STOP / F8").invoke()
+        self.button("STOP").invoke()
         release.set()
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:

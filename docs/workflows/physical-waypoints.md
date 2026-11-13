@@ -13,6 +13,52 @@ and detailed status remain in Activity. Load/Save and Recent routes stay with th
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
 
+## Header, live pose and STOP
+
+The header keeps the verified host/PID, Refresh, Live pose and STOP together.
+Hover the host/PID for the bound process identity. **Details** opens Activity;
+hover the status message to reveal its full text, including compacted receipt
+paths. The smaller Details button retains route-list space at compact sizes.
+
+The pose row rounds display coordinates to three decimals without changing saved
+values. Its badge distinguishes **Fresh**, **Cached** and **Pose unavailable**,
+with acquisition age, paused refresh and an in-progress read. Hover coordinates
+or the badge for source, sample time, age and qualification. Acquisition time is
+retained from native samples rather than replaced with the time the GUI received
+an event. Expired beacon samples retain only historical timestamp provenance;
+they do not supply current coordinates. Live pose reuses the owned beacon reader
+while running, otherwise the existing idle reader at two-second intervals.
+Pausing keeps an explicitly cached display. The switch is session-only.
+
+```powershell
+.\rr2-waypoints.cmd pose status
+.\rr2-waypoints.cmd pose refresh
+.\rr2-waypoints.cmd pose set --live off
+.\rr2-waypoints.cmd pose set --live on
+.\rr2-waypoints.cmd stop
+```
+
+`pose status` reads existing feedback; `pose refresh` performs one fresh read
+through the same path as Refresh. Neither sends game input. `pose set` controls
+the same checkbox. Paused samples keep `status: unavailable` for display
+freshness, even after a manual refresh, with `sampleStatus: cached` and their
+actual age. `status.pose` reports these fields too. Actions retain their
+independent fresh-pose and identity checks.
+
+**STOP** always remains available. Its adjacent hint reports whether the global
+F8 listener is actually active, unavailable, or inactive; it is registered only
+for this helper's movement action. **Esc** invokes STOP while this app has focus.
+STOP prevents the next pulse and waits for the bounded current pulse to release;
+it cancels recording (use Stop Recording to save) and hides owned overlays. It
+does not cancel arbitrary game autorun or manual input. An idle STOP explicitly
+says game motion is unverified. A later explicit action can clear the latch.
+
+CLI STOP and `status.controls` separate the latch, owned-action state, actual F8
+availability, key-release receipt references and stationary evidence. Only the
+action associated with that STOP can contribute a result. An idle STOP reports
+both evidence fields as `not-measured`, without reusing an older receipt or
+performing a stationary check. These fields also appear in diagnostics.
+
 ## Route list and local preview
 
 The main route list shows stable **#** numbers alongside the original waypoint

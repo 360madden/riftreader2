@@ -48,6 +48,7 @@ _SNAPSHOT_KEYS = {
     "player",
     "pose",
     "preview",
+    "controls",
     "radar",
     "recording",
     "recentResults",

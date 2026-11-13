@@ -158,7 +158,7 @@ class WindowReceiptTests(unittest.TestCase):
                         for thread in self.threads:
                             thread.join(timeout=2)
                             self.assertFalse(thread.is_alive())
-                    self.button("STOP / F8").invoke()
+                    self.button("STOP").invoke()
                     release.set()
                     self.wait_for(lambda: all(not t.is_alive() for t in self.threads))
                     # Pump the queued publication/idle events.
@@ -204,6 +204,9 @@ class WindowReceiptTests(unittest.TestCase):
         forward = self.invoke_and_wait("Play Forward")
         self.assertEqual(("play", "forward"), (forward["operation"], forward["direction"]))
         self.assertTrue(self.play.call_args.kwargs["face_waypoints"])
+        # Fake playback results carry no acquired pose timestamp; re-read before Resume.
+        self.button("Refresh").invoke()
+        self.wait_for(lambda: str(self.button("Resume")["state"]) != "disabled")
         resumed = self.invoke_and_wait("Resume")
         self.assertEqual(("resume", "reverse"), (resumed["operation"], resumed["direction"]))
         self.assertTrue(self.play.call_args.kwargs["resume"])
