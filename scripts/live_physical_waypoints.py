@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 from copy import deepcopy
+from contextlib import nullcontext
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -29,7 +30,7 @@ from scripts.waypoint_progress import write_json_atomic
 from scripts.waypoint_marker_style import DEFAULT_STYLE, load_style
 
 
-RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required"})
+RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required", "route-update-unavailable"})
 TRANSPORT_GAP_REASONS = frozenset({"stream-child-timeout", "stream-end-missing", "stream-child-failed"})
 
 
@@ -53,10 +54,27 @@ def load_route(path, *, expected_identity=None):
             "sha256": hashlib.sha256(raw).hexdigest(), "document": document}
 
 
+def load_route_update(path, expected_identity):
+    """One atomically published GUI edit, including its matching guide selection."""
+    from scripts.waypoint_measurements import parse_marker_projection_route
+    with Path(path).open("rb") as stream:
+        raw = stream.read(1048577)
+    require(len(raw) <= 1048576, "route-update-too-large")
+    update = json.loads(raw.decode("utf-8-sig"))
+    require(isinstance(update, dict) and set(update) == {"route", "landmarkNumber"}, "invalid-route-update")
+    parsed = parse_marker_projection_route(update["route"], expected_identity, allow_empty=True)
+    landmark = update["landmarkNumber"]
+    require(landmark is None or (type(landmark) is int and any(
+            point["number"] == landmark for point in parsed["points"])), "landmark-number-not-in-route")
+    return ({**parsed, "path": str(Path(path).resolve()), "sha256": hashlib.sha256(raw).hexdigest(),
+             "document": update["route"]}, landmark)
+
+
 class ProjectionProvider:
     """One pinned selection, serial reads and plain packets; no overlay calls."""
     def __init__(self, selection, route, snapshot, *, read=None, clock=time.monotonic,
-                 utcnow=lambda: datetime.now(timezone.utc), max_age=.8, target_beacon=False, landmark_number=None):
+                 utcnow=lambda: datetime.now(timezone.utc), max_age=.8, target_beacon=False, landmark_number=None,
+                 route_updates_file=None):
         require(selection.get("status") == "ready", "physical-selection-not-ready")
         self.selection, self.route = deepcopy(selection), deepcopy(route)
         self.target = self.selection["target"]
@@ -71,15 +89,12 @@ class ProjectionProvider:
         require(identity["machine"].casefold() == self.target["hostName"].casefold()
                 and identity["gameBuildSha256"].casefold() == self.target["executableSha256"].casefold(),
                 "route-host-build-mismatch")
-        self.marker_points = deepcopy(self.route["points"])
-        measured = [point for point in self.marker_points if point["xyz"]["y"] is not None]
-        for point in self.marker_points:
-            if point["xyz"]["y"] is None and measured:
-                nearest = min(measured, key=lambda known: math.hypot(
-                    point["xyz"]["x"] - known["xyz"]["x"], point["xyz"]["z"] - known["xyz"]["z"]))
-                point["xyz"]["y"] = nearest["xyz"]["y"]
-                point["displayHeightKind"] = "nearest-measured-estimate"
-                point["heightReferenceNumber"] = nearest["number"]
+        self.route_lock = threading.RLock()
+        self.route_revision, self.route_update_count, self.route_update_error = route["sha256"], 0, None
+        self.route_updates_file = None if route_updates_file is None else Path(route_updates_file)
+        self._next_route_update = 0.
+        self._startup_player_y = None
+        self.marker_points = self._prepare_marker_points(self.route)
         self.latest_native = None
         self.last_stream_receipt = None
         self.stream_rows = 0
@@ -87,6 +102,40 @@ class ProjectionProvider:
         self.stream_command = None
         self.stream_exit_code = None
         self.stream_last_nonempty_stderr = ""
+
+    @staticmethod
+    def _prepare_marker_points(route):
+        points = deepcopy(route["points"])
+        measured = [point for point in points if point["xyz"]["y"] is not None]
+        for point in points:
+            if point["xyz"]["y"] is None and measured:
+                nearest = min(measured, key=lambda known: math.hypot(
+                    point["xyz"]["x"] - known["xyz"]["x"], point["xyz"]["z"] - known["xyz"]["z"]))
+                point["xyz"]["y"] = nearest["xyz"]["y"]
+                point["displayHeightKind"] = "nearest-measured-estimate"
+                point["heightReferenceNumber"] = nearest["number"]
+        return points
+
+    def _refresh_route(self):
+        if self.route_updates_file is None:
+            return
+        now = self.clock()
+        if now >= self._next_route_update:
+            self._next_route_update = now + .2
+            try:
+                route, landmark = load_route_update(self.route_updates_file, self.route["identity"])
+                points = self._prepare_marker_points(route)
+                with self.route_lock:
+                    if route["sha256"] != self.route_revision:
+                        self.route, self.landmark_number, self.marker_points = route, landmark, points
+                        self.route_revision = route["sha256"]
+                        self.route_update_count += 1
+                    self.route_update_error = None
+            except (OSError, UnicodeError, ValueError, TypeError, KeyError) as error:
+                with self.route_lock:
+                    self.route_update_error = _reason_text(error)
+        if self.route_update_error is not None:
+            raise ValueError("route-update-unavailable")
 
     def acquire(self):
         before = self.snapshot(self.target)
@@ -150,11 +199,14 @@ class ProjectionProvider:
                 and 0 <= viewport[3] < viewport[2] <= 1, "invalid-native-camera-viewport")
         left, right, top, bottom = viewport
         player_xyz = values["positionXYZCandidate"]
+        self._refresh_route()
+        if self._startup_player_y is None:
+            self._startup_player_y = player_xyz["y"]
         # Resolve once from an admitted native row, never from a stale GUI pose.
         # These private display points do not modify the route or its receipts.
         for point in self.marker_points:
             if point["xyz"]["y"] is None:
-                point["xyz"]["y"] = player_xyz["y"]
+                point["xyz"]["y"] = self._startup_player_y
                 point["displayHeightKind"] = "startup-player-estimate"
         points = []
         for point in self.marker_points:
@@ -172,6 +224,8 @@ class ProjectionProvider:
                  "clientRect": list(after["clientRect"]), "points": points,
                  "viewportRectNormalized": [left, 1 - top, right, 1 - bottom],
                  "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"])}
+        if self.route_updates_file is not None:
+            frame["routeRevision"] = self.route_revision
         target = values.get("selectedTargetProjectionCandidate")
         if self.target_beacon and isinstance(target, dict) and target.get("status") == "candidate" \
                 and target.get("cameraStableCandidate") is True:
@@ -401,7 +455,7 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
             previous_end = completed
             provider.stream_rows += 1
             if not stop.is_set():
-                _latest(channel, {"frame": frame})
+                _latest(channel, _frame_packet(provider, frame))
                 counts["acquired"] += 1
                 _record_interval(counts, "Accepted", frame["acquiredMonotonic"])
         wait_timeout = 3 if deadline is None else max(.01, deadline - time.monotonic())
@@ -475,13 +529,20 @@ def _latest(channel, packet):
     channel.put_nowait(packet)
 
 
+def _frame_packet(provider, frame):
+    packet = {"frame": frame}
+    if "routeRevision" in frame:
+        packet["route"] = provider.route  # Immutable worker-owned revision; no per-frame document copy.
+    return packet
+
+
 def feed(provider, channel, stop, counts):
     while not stop.is_set():
         counts["attempts"] += 1
         try:
             frame = provider.acquire()
             if not stop.is_set():
-                _latest(channel, {"frame": frame})
+                _latest(channel, _frame_packet(provider, frame))
                 counts["acquired"] += 1
                 _record_interval(counts, "Accepted", frame["acquiredMonotonic"])
         except Exception as error:
@@ -529,7 +590,7 @@ def apply_saved_progress(frame, progress_file, route):
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
         presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None,
-        companion_window=None, expected_unit_key=None):
+        companion_window=None, expected_unit_key=None, route_updates_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -557,6 +618,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     if appearance_file is not None:
         appearance_file = Path(appearance_file)
         require(appearance_file.is_absolute() and appearance_file.parent.is_dir(), "absolute-appearance-file-required")
+    if route_updates_file is not None:
+        route_updates_file = Path(route_updates_file)
+        require(route_updates_file.is_absolute() and route_updates_file.is_file(), "absolute-route-updates-file-required")
+        require(expected_unit_key is not None, "route-updates-require-expected-unit-key")
     appearance = dict(DEFAULT_STYLE)
     next_appearance_poll = 0.
     route = load_route(route_path) if expected_unit_key is None else None
@@ -584,7 +649,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         snapshot = lambda target: target_snapshot(target, companion=companion_window)
         window_options["companion"] = companion_window
     provider = ProjectionProvider(selection, route, snapshot, max_age=max_age, target_beacon=target_beacon,
-                                  landmark_number=landmark_number)
+                                  landmark_number=landmark_number, route_updates_file=route_updates_file)
     if presenter == "qt":
         try:
             from scripts.qt_waypoint_overlay import QtOwnedWindow
@@ -614,12 +679,16 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     latest_acquired = None
     latest_progress = None
     visible = False
+    last_hide_reason = None
     def hide(why):
-        nonlocal latest_acquired, visible
+        nonlocal latest_acquired, visible, last_hide_reason
+        if not visible and last_hide_reason == why:
+            return
         if visible:
             _record_hide(counts, why)
         visible = False
         latest_acquired = None
+        last_hide_reason = why
         overlay.hide(why)
     def cancel(why):
         nonlocal reason
@@ -655,21 +724,30 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                     age = time.monotonic() - packet["frame"]["acquiredMonotonic"]
                     if 0 <= age <= max_age:
                         packet["frame"]["appearance"] = dict(appearance)
-                        if progress_file is not None:
-                            latest_progress = apply_saved_progress(packet["frame"], progress_file, route)
-                        if overlay.present(packet["frame"]):
-                            latest_acquired = packet["frame"]["acquiredMonotonic"]
-                            visible = True
-                            counts["presentationAccepted"] += 1
-                            counts["presented"] += 1
-                            _record_interval(counts, "PresentationAccepted", time.monotonic())
-                            counts["lastPresentedMonotonic"] = counts["lastPresentationAcceptedMonotonic"]
-                            counts["presentedIntervalMilliseconds"] = deepcopy(
-                                counts["presentationAcceptedIntervalMilliseconds"])
-                        else:
-                            failure = getattr(overlay, "reason", "presenter-refused-frame")
-                            _record_failure(counts, ValueError(failure))
-                            hide(failure)
+                        packet_route = packet.get("route", route)
+                        saved_progress = (apply_saved_progress(packet["frame"], progress_file, packet_route)
+                                          if progress_file is not None and packet_route["points"] else None)
+                        with provider.route_lock if route_updates_file is not None else nullcontext():
+                            if route_updates_file is not None:
+                                require(packet["frame"].get("routeRevision") == provider.route_revision
+                                        and packet_route["sha256"] == provider.route_revision, "route-revision-changed")
+                                require(provider.route_update_error is None, "route-update-unavailable")
+                            latest_progress = saved_progress
+                            if not packet_route["points"]:
+                                hide("route-empty")
+                            elif overlay.present(packet["frame"]):
+                                latest_acquired = packet["frame"]["acquiredMonotonic"]
+                                visible = True
+                                counts["presentationAccepted"] += 1
+                                counts["presented"] += 1
+                                _record_interval(counts, "PresentationAccepted", time.monotonic())
+                                counts["lastPresentedMonotonic"] = counts["lastPresentationAcceptedMonotonic"]
+                                counts["presentedIntervalMilliseconds"] = deepcopy(
+                                    counts["presentationAcceptedIntervalMilliseconds"])
+                            else:
+                                failure = getattr(overlay, "reason", "presenter-refused-frame")
+                                _record_failure(counts, ValueError(failure))
+                                hide(failure)
                     else:
                         hide("queued-frame-expired")
                 elif packet.get("kind") == "transport-gap":
@@ -698,17 +776,20 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     overlay_hide_reasons = getattr(overlay, "hide_reasons", None)
     if isinstance(overlay_hide_reasons, dict):
         counts["hideReasons"] = dict(overlay_hide_reasons)
+    route = provider.route
     result = {"status": "read-only-waypoint-feed-stopped", "reason": reason,
         "machine": socket.gethostname(), "target": selection["target"],
         "recordingIdentity": route["recordingIdentity"], "route": route["path"], "routeSha256": route["sha256"],
         "provenanceKind": route["provenanceKind"],
         "displayHeightPoints": deepcopy(provider.marker_points),
+        "routeRevision": provider.route_revision, "routeUpdateCount": provider.route_update_count,
+        "routeUpdateError": provider.route_update_error,
         "durationSeconds": time.monotonic() - started, "maxAgeSeconds": max_age,
         "counts": counts, "latestNativeReport": provider.latest_native, "inputSent": False,
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,
         "presenter": presenter,
         "targetBeaconEnabled": target_beacon,
-        "landmarkNumber": landmark_number,
+        "landmarkNumber": provider.landmark_number,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
         "nativeLastNonemptyStderr": provider.stream_last_nonempty_stderr,
         "nativeStreamCommand": provider.stream_command, "nativeStreamExitCode": provider.stream_exit_code,
@@ -717,6 +798,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "appearanceFile": str(appearance_file) if appearance_file is not None else None,
         "appearance": appearance,
         "companionWindow": companion_window,
+        "routeUpdatesFile": str(route_updates_file) if route_updates_file is not None else None,
         "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
             "Presentation-accepted counts and intervals are asynchronous presenter requests, not physical display FPS.",
@@ -744,6 +826,7 @@ def main(argv=None):
     parser.add_argument("--presenter", choices=("native", "qt"), default="native")
     parser.add_argument("--appearance-file", type=Path,
                         help="live beacon display preferences saved by Waypoints")
+    parser.add_argument("--route-updates-file", type=Path, help="owned live route and guide updates from Waypoints")
     parser.add_argument("--companion-window", type=json.loads,
                         help="exact owning Waypoints window binding for live appearance preview")
     parser.add_argument("--expect-start-ticks")
@@ -761,7 +844,7 @@ def main(argv=None):
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
                      progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
                      appearance_file=args.appearance_file, companion_window=args.companion_window,
-                     expected_unit_key=args.expected_unit_key)
+                     expected_unit_key=args.expected_unit_key, route_updates_file=args.route_updates_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

@@ -131,6 +131,24 @@ class MeasurementTests(unittest.TestCase):
         self.assertEqual([None, None], [point["xyz"]["y"] for point in parsed["points"]])
         self.assertEqual(0, parsed["recordingIdentity"]["measuredPointCount"])
 
+    def test_marker_preview_empty_route_requires_explicit_opt_in(self):
+        document = {"waypoints": []}
+        with self.assertRaises(ValueError):
+            parse_marker_projection_route(document, self.identity)
+        parsed = parse_marker_projection_route(document, self.identity, allow_empty=True)
+        self.assertEqual([], parsed["points"])
+        self.assertEqual(self.identity["runtimeIdentity"], parsed["identity"])
+        self.assertEqual("estimated-height-beacon-preview", parsed["provenanceKind"])
+        self.assertEqual({"kind": "map-waypoint-beacon-preview",
+                          "identity": self.identity["runtimeIdentity"],
+                          "measuredPointCount": 0, "pointCount": 0, "measuredPointNumbers": []},
+                         parsed["recordingIdentity"])
+        for invalid in ({"waypoints": [], "heights": [1]},
+                        {"waypoints": [], "pointMeasurements": [None]},
+                        {"waypoints": [], "recording": {"complete": True}}):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "empty-marker"):
+                parse_marker_projection_route(invalid, self.identity, allow_empty=True)
+
     def test_marker_preview_rejects_bad_or_foreign_receipts_but_bare_y_is_unmeasured(self):
         bare = deepcopy(self.document)
         bare["pointMeasurements"] = [None]

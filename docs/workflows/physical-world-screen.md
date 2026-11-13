@@ -327,9 +327,8 @@ Distance is not remaining route length or a clearance/reachability claim.
 For an independently saved landmark without a playback cursor, select its row,
 enable **Guide selected marker**, and choose **Show markers**. A gold named edge
 cue uses that point's direct horizontal native-unit distance; behind-camera points
-get text without a guessed arrow. The selection is pinned until Hide markers;
-hide, select another row and show again to change it. The option is disabled while
-the child is open. Cyan NEXT wins if both refer to the same point, and separate
+get text without a guessed arrow. The GUI guide now follows the selected row and
+can be toggled while markers run, without Hide/Show. Cyan NEXT wins if both refer to the same point, and separate
 cues keep their text apart. This guide never creates a cursor, changes playback
 progress or starts movement. The CLI equivalent is `--landmark-number N`, using
 the saved route's original 1-based point number. Invalid numbers are refused.
@@ -511,15 +510,19 @@ heights for marker-only estimates, using the same policy as the GUI.
 The waypoint window also has **Show markers / Hide markers** beside the recording
 controls. Load a route or add map points, wait for its RIFT connection, press
 Show markers, then return to RIFT. Unlike the separately invoked bounded command above, the GUI's
-owned marker child remains open explicitly until Hide markers, route replacement,
+owned marker child remains open explicitly until Hide markers,
 RIFT process/identity loss, or waypoint-window close. Markers preserve measured Y
 and use clearly labeled display estimates for missing Y. They
 stay visible while RIFT or the exact owning Waypoints window is foreground so its
 appearance sliders preview live. Unrelated foreground applications still hide them.
 The GUI binds its HWND/PID/process epoch explicitly; standalone commands remain
-RIFT-foreground-only unless given an explicit companion binding. Editing/replacing the route,
-reconnection and closing the waypoint window stop its one owned child;
-it never restarts automatically. Recorded Play Forward/Reverse and Resume can
+RIFT-foreground-only unless given an explicit companion binding. Route and guide
+edits are atomically published to one owned update file and admitted by the existing
+reader at a fresh frame boundary, at most five times per second. Add/edit/remove,
+Clear/Undo and Load do not restart the child. Clear draws no route until another
+point is added. Invalid updates withhold display; GUI publication failures stop
+the owned markers with an explicit reason. Reconnection and window close still
+stop the child; later edits never restart it after Hide/STOP. Recorded Play Forward/Reverse and Resume can
 keep markers running. STOP/F8 latches movement cancellation first, then requests
 owned marker shutdown. Go/Face/Walk + Record/passive Record still close markers
 first and ask you to retry after that child exits.

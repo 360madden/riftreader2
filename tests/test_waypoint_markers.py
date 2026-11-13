@@ -46,6 +46,9 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertNotIn("--companion-window", command)
         self.assertEqual(str((self.root / "artifacts" / "waypoint-marker-style.json").absolute()),
                          command[command.index("--appearance-file") + 1])
+        updates = Path(command[command.index("--route-updates-file") + 1])
+        self.assertTrue(updates.is_absolute())
+        self.assertEqual({"route": self.route, "landmarkNumber": None}, json.loads(updates.read_text()))
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
                                ("--expected-unit-key", "player"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),
@@ -163,6 +166,28 @@ class OwnedMarkerTests(unittest.TestCase):
         with self.assertRaises(WaypointError):
             self.markers.start(self.route, self.adapter)
         self.assertEqual(1, self.popen.call_count)
+
+    def test_updates_validate_and_atomically_replace_without_relaunch_or_stop(self):
+        self.markers.start(self.route, self.adapter, landmark_number=2)
+        path = self.markers.route_updates_path
+        manual = {"waypoints": [["Renamed", 1, 2], ["Added", 2, 3]]}
+        self.markers.update(manual, landmark_number=1)
+        self.assertEqual({"route": manual, "landmarkNumber": 1}, json.loads(path.read_text()))
+        before = path.read_bytes()
+        wrong = {**self.route, "recording": {**self.route["recording"],
+                 "identity": {"runtimeIdentity": {**self.identity, "unitKey": "other"}}}}
+        with self.assertRaises(ValueError):
+            self.markers.update(wrong)
+        self.assertEqual(before, path.read_bytes())
+        self.markers.update({"waypoints": []})
+        self.assertEqual({"route": {"waypoints": []}, "landmarkNumber": None}, json.loads(path.read_text()))
+        self.assertFalse(self.markers.stop_path.exists())
+        self.assertEqual(1, self.popen.call_count)
+        self.markers.stop()
+        before = path.read_bytes()
+        with self.assertRaises(WaypointError):
+            self.markers.update(manual)
+        self.assertEqual(before, path.read_bytes())
 
 
 if __name__ == "__main__":

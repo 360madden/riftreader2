@@ -149,9 +149,17 @@ def parse_projection_route(document):
                 provenanceKind="independent-point-observations")
 
 
-def parse_marker_projection_route(document, expected_identity):
+def parse_marker_projection_route(document, expected_identity, *, allow_empty=False):
     """Admit display-only map beacons without promoting estimated heights to measurements."""
     expected = deepcopy(_identity(expected_identity))
+    if allow_empty and isinstance(document, dict) and document.get("waypoints") == []:
+        _require("recording" not in document
+                 and document.get("heights", []) == []
+                 and document.get("pointMeasurements", []) == [], "invalid-empty-marker-route")
+        return dict(points=[], identity=expected,
+                    recordingIdentity=dict(kind="map-waypoint-beacon-preview", identity=deepcopy(expected),
+                                           measuredPointCount=0, pointCount=0, measuredPointNumbers=[]),
+                    provenanceKind="estimated-height-beacon-preview")
     try:
         parsed = parse_projection_route(document)
     except ValueError:

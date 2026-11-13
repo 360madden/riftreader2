@@ -56,6 +56,8 @@ class OwnedWaypointMarkers:
         self.stop_path = None
         self.output = None
         self.appearance_path = (self.root / "artifacts" / "waypoint-marker-style.json").absolute()
+        self.route_updates_path = None
+        self.identity = None
         self.stop_requested = False
         self.exit_code = None
 
@@ -86,6 +88,7 @@ class OwnedWaypointMarkers:
         route_path = directory / ("waypoint-markers-route-" + token + ".json")
         self.output = directory / ("waypoint-markers-summary-" + token + ".json")
         self.stop_path = directory / ("waypoint-markers-stop-" + token + ".signal")
+        self.route_updates_path = (directory / ("waypoint-markers-updates-" + token + ".json")).absolute()
         write_json_atomic(route_path, document)
         recorded = load_route(route_path, expected_identity=identity)
         if any(str(recorded["identity"].get(key, "")).casefold() != str(identity[key]).casefold()
@@ -97,6 +100,8 @@ class OwnedWaypointMarkers:
                 or identity["gameBuildSha256"].casefold() != target["executableSha256"].casefold()
                 or type(target["hwnd"]) is not int or target["hwnd"] <= 0):
             raise WaypointError("Current RIFT identity is unavailable")
+        self.identity = deepcopy(identity)
+        write_json_atomic(self.route_updates_path, {"route": document, "landmarkNumber": landmark_number})
         qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
         presenter = "qt" if qt_executable.is_file() else "native"
         executable = qt_executable if presenter == "qt" else Path(sys.executable).with_name("pythonw.exe")
@@ -108,6 +113,7 @@ class OwnedWaypointMarkers:
                    "--route", str(route_path), "--duration", "0", "--max-age", ".35", "--presenter", presenter,
                    "--output", str(self.output), "--stop-file", str(self.stop_path),
                    "--appearance-file", str(self.appearance_path),
+                   "--route-updates-file", str(self.route_updates_path),
                    "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
         if target_beacon:
             command.append("--target-beacon")
@@ -119,6 +125,17 @@ class OwnedWaypointMarkers:
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.stop_requested = False
         self.exit_code = None
+
+    def update(self, document, *, landmark_number=None):
+        if not self.running() or self.stop_requested or self.identity is None:
+            raise WaypointError("Markers are not active")
+        if landmark_number is not None and (type(landmark_number) is not int
+                or not 1 <= landmark_number <= len(document.get("waypoints", []))):
+            raise WaypointError("Select one saved marker to guide to")
+        from scripts.waypoint_measurements import parse_marker_projection_route
+        parse_marker_projection_route(document, self.identity, allow_empty=True)
+        from scripts.waypoint_progress import write_json_atomic
+        write_json_atomic(self.route_updates_path, {"route": document, "landmarkNumber": landmark_number})
 
     def stop(self):
         if self.running() and not self.stop_requested:
@@ -964,6 +981,8 @@ def launch_window(args):
     rerun_viewer = None
     markers = OwnedWaypointMarkers(ROOT)
     marker_identity = None
+    marker_update_after = None
+    marker_published = None
     map_view = None
     observing = False
     next_live_at = time.monotonic() + 2
@@ -1040,8 +1059,6 @@ def launch_window(args):
     def invalidate_progress(*, clear_metadata=True):
         nonlocal route_metadata, playback_view, route_dirty
         if not loading_route:
-            if not stop_markers():
-                raise WaypointError("Cannot stop markers; route unchanged")
             if table.get_children():
                 from scripts.waypoint_progress import invalidate_route_progress
                 # Editing the local route invalidates only the cursor belonging to
@@ -1133,8 +1150,6 @@ def launch_window(args):
         from scripts.waypoint_measurements import document_measurements
         parsed = route_points(document["waypoints"])
         receipts = document_measurements(document)
-        if not stop_markers():
-            raise WaypointError("Cannot stop markers; route unchanged")
         loading_route = True
         try:
             table.delete(*table.get_children())
@@ -1223,6 +1238,7 @@ def launch_window(args):
 
     def redraw(*_):
         nonlocal map_view
+        schedule_marker_update()
         radius_text.set(f"{map_radius:g} units")
         zoom_in.configure(state="disabled" if map_radius == ZOOM_RADII[0] else "normal")
         zoom_out.configure(state="disabled" if map_radius == ZOOM_RADII[-1] else "normal")
@@ -1608,8 +1624,6 @@ def launch_window(args):
                 if decision:
                     # Saving may have updated the very file being loaded.
                     document = prepared_document(json.loads(Path(path).read_text(encoding="utf-8")))
-            if not stop_markers():
-                raise WaypointError("Cannot stop markers; route unchanged")
             progress = select_progress(document)
             show_document(document)
             edit_history.clear()
@@ -1829,7 +1843,42 @@ def launch_window(args):
         except (OSError, ValueError, TypeError) as exc:
             state.set("Cannot open 3D view: " + str(exc))
 
+    def marker_payload():
+        document = route_document() if table.get_children() else {"waypoints": []}
+        selected = table.selection()
+        landmark = table.index(selected[0]) + 1 if landmark_guide.get() and len(selected) == 1 else None
+        return {"route": document, "landmarkNumber": landmark}
+
+    def publish_marker_update():
+        nonlocal marker_update_after, marker_published
+        marker_update_after = None
+        if closing or loading_route or marker_identity is None or not markers.running() or markers.stop_requested:
+            return
+        try:
+            payload = marker_payload()
+            signature = json.dumps(payload, sort_keys=True)
+            if signature != marker_published:
+                markers.update(payload["route"], landmark_number=payload["landmarkNumber"])
+                marker_published = signature
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            reason = "Cannot update markers: " + str(exc)
+            if not stop_markers():
+                reason += "; marker shutdown could not be confirmed"
+            state.set(reason)
+
+    def schedule_marker_update():
+        nonlocal marker_update_after
+        if loading_route or closing or marker_identity is None or not markers.running() or markers.stop_requested:
+            return
+        if marker_update_after is not None:
+            window.after_cancel(marker_update_after)
+        marker_update_after = window.after(150, publish_marker_update)
+
     def stop_markers():
+        nonlocal marker_update_after
+        if marker_update_after is not None:
+            window.after_cancel(marker_update_after)
+            marker_update_after = None
         if not markers.running():
             return True
         try:
@@ -1841,7 +1890,7 @@ def launch_window(args):
             return False
 
     def toggle_markers():
-        nonlocal marker_identity
+        nonlocal marker_identity, marker_published
         if markers.running():
             if stop_markers():
                 state.set("Hiding markers…")
@@ -1863,12 +1912,13 @@ def launch_window(args):
                 options["landmark_number"] = table.index(selected[0]) + 1
             options["companion"] = bind_companion_window(window.winfo_id())
             markers.start(route_document(), adapter, **options)
+            marker_published = json.dumps(marker_payload(), sort_keys=True)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
                                target["executableSha256"].casefold(), target["hwnd"])
             marker_button.configure(text="Hide markers")
             state.set("Markers shown when RIFT or this Waypoints window is foreground."
-                      + (" Selected landmark guide is pinned until Hide markers." if landmark_guide.get() else ""))
+                      + " Route edits and selected-guide changes sync automatically.")
         except (OSError, ValueError, KeyError, TypeError) as exc:
             state.set("Cannot show markers: " + str(exc))
 
@@ -2001,7 +2051,8 @@ def launch_window(args):
     target_option = ttk.Checkbutton(marker_actions, text="Include selected target in markers", variable=target_beacon)
     target_option.pack(anchor="w")
     editable.append(target_option)
-    landmark_option = ttk.Checkbutton(marker_actions, text="Guide selected marker", variable=landmark_guide)
+    landmark_option = ttk.Checkbutton(marker_actions, text="Guide selected marker", variable=landmark_guide,
+                                     command=schedule_marker_update)
     landmark_option.pack(anchor="w", pady=(3, 0))
     editable.append(landmark_option)
     appearance_controls = ttk.Frame(marker_controls, style="Surface.TFrame")
@@ -2170,8 +2221,6 @@ def launch_window(args):
                 try:
                     write_json_atomic(output, event["document"])
                     document = prepared_document(event["document"])
-                    if not stop_markers():
-                        raise WaypointError("Cannot stop markers; route unchanged")
                     progress = select_progress(document)
                     show_document(document)
                     pending_progress_selection = current_identity() is None
@@ -2300,7 +2349,7 @@ def launch_window(args):
             elif markers.stop_requested:
                 marker_button.configure(text="Markers closing…", state="disabled")
         target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
-        landmark_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
+        landmark_option.configure(state="disabled" if busy or closing else "normal")
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")

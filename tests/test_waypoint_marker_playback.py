@@ -20,7 +20,7 @@ class MarkerPlaybackTests(unittest.TestCase):
     wait_for = fixture.RecordingWindowTests.wait_for
 
     def setUp(self):
-        self.marker = SimpleNamespace(running=Mock(return_value=True), stop=Mock(),
+        self.marker = SimpleNamespace(running=Mock(return_value=True), stop=Mock(), update=Mock(),
                                       stop_requested=False, exit_code=None)
         self.marker_patch = patch.object(app, "OwnedWaypointMarkers", return_value=self.marker)
         self.marker_patch.start()
@@ -71,7 +71,7 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.bind_companion.assert_called_once_with(self.window.winfo_id())
         self.assertFalse(checkpoint.exists())
 
-    def test_guide_selection_is_snapshotted_one_based_and_checkbox_locks(self):
+    def test_guide_launch_is_one_based_and_guide_remains_editable(self):
         self.enable_marker_launch()
         self.guide_checkbox().invoke()
         items = self.table.get_children()
@@ -81,7 +81,7 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.assertEqual(["Start", "End"],
                          [row[0] for row in self.marker.start.call_args.args[0]["waypoints"]])
         self.table.selection_set(items[0])
-        self.wait_for(lambda: str(self.guide_checkbox()["state"]) == "disabled")
+        self.wait_for(lambda: str(self.guide_checkbox()["state"]) != "disabled")
         self.marker.start.assert_called_once()
         self.assertEqual(2, self.marker.start.call_args.kwargs["landmark_number"])
         self.assertFalse((self.root_path / "artifacts" / "waypoint-current-progress.json").exists())

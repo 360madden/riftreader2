@@ -171,3 +171,25 @@ unmeasured route, using the first owner-validated fresh native player Y once and
 keeping it fixed even if later player Y changes. The strict measured-route parser
 and movement/progress logic are unchanged. Marker estimates approximate a ground
 level; terrain and multi-floor placement remain unqualified.
+
+## Automatic route-edit synchronization
+
+On AMD-DESKTOP/PID 40452, one active marker session admitted a map-clicked Point 8,
+showed its beacon in RIFT without Show/Hide, changed its label live to **Auto sync
+check**, and removed that beacon when the temporary point was removed. The GUI
+returned to the original seven points and Point 7 guide. Both overlay processes
+(18796/62456) and the native sampler (74188) retained their process IDs throughout.
+Reviewed screenshots: `artifacts/beacon-auto-sync-add-20261112.png`,
+`artifacts/beacon-auto-sync-rename-20261112.png`, and
+`artifacts/beacon-auto-sync-remove-20261112.png`. The original route file remained
+byte-identical with SHA256
+`03f4b7470a10ea84546277922f9b952ae2e3898b5d9a9d780cf9e0317598afe7`.
+No game input was sent, and the temporary point was not retained.
+
+All **90 focused checks** passed, covering the feed, owned launcher/GUI, empty-route
+admission, mutation/guide revisions, invalid/foreign update rejection and recovery,
+frozen display heights, Clear/Undo, persistent Hide and one native child across
+multiple route changes. A single worker owns route replacement. Presentation checks
+the matching revision under the same small lock, and saved progress uses that
+frame's route rather than the startup document. File I/O stays outside the lock.
+The active seven-point overlay is left enabled at the user's existing appearance.

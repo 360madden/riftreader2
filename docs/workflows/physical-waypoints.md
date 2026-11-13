@@ -29,7 +29,13 @@ that display height stays fixed for the session. The summary shows measured and
 estimated counts, and guided estimated points say **est. height**. Estimates are
 only for display: saved heights/receipts stay unchanged. They approximate a ground
 level rather than finding terrain, so slopes or other floors can leave a beacon
-above or below the ground. After editing a route, choose **Show markers** again.
+above or below the ground. Once **Show markers** is enabled, add/edit/remove,
+rename/reorder, Undo and Load automatically update the same overlay. Clear hides
+route beacons while keeping the session ready; the next added point appears
+automatically. **Guide selected marker** follows the current selection live.
+Edits are coalesced briefly, so completed changes normally appear within a fraction
+of a second without restarting the camera reader. Hide/STOP stays off until you
+explicitly enable markers again; route edits never respawn a stopped helper.
 The same panel has **Size** (50–200%), **Opacity** (20–100%), **Show labels**,
 and **Reset**. These update an already enabled overlay without Hide/Show and
 persist for the next launch. Size adjusts beacon shapes and beams while label
@@ -38,7 +44,7 @@ Preferences are stored in `artifacts/waypoint-marker-style.json`. A malformed or
 temporarily unavailable preference file retains the last valid appearance.
 There is no marker session timer: the feed stays enabled until you hide it,
 close Waypoints or RIFT, or another existing owned-stop condition applies, such
-as replacing the route or pressing STOP/F8. Switching to an unrelated app hides
+as pressing STOP/F8. Switching to an unrelated app hides
 the markers temporarily; returning to RIFT or the owning Waypoints window allows
 fresh markers to appear again. The helper pauses its duplicate idle pose reader
 throughout a marker session to avoid camera-feed contention; **Live pose (paused)**
