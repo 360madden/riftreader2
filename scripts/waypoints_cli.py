@@ -80,7 +80,7 @@ def example(operation):
     return {
         "route.load":"route load route.json --discard", "route.save":"route save route.json",
         "route.list":"route list --file route.json", "route.validate":"route validate --file route.json",
-        "route.add":"route add --current --name Camp", "route.update":"route update 1 --name Camp",
+        "route.add":"route add --current --name Camp", "route.update":"route update 1 --current",
         "route.remove":"route remove 1", "route.reorder":"route reorder 1 --to 2",
         "route.select":"route select 1", "guide.start":"guide start --direction forward --from 1",
         "trail.save":"trail save trail.json --segment latest", "trail.clear":"trail clear --discard",
@@ -152,7 +152,7 @@ def build_parser():
                 "app.show":"Show the selected helper window.", "app.hide":"Hide the selected helper window.",
                 "app.close":"Close the selected helper after owned workers release; unsaved changes need --discard.",
                 "route.add":"Add an estimated point with --x/--z, measured player XYZ with --current, or a qualified target candidate with --target.",
-                "route.update":"Edit a point name or estimated X/Z; changed coordinates discard its prior measured height.",
+                "route.update":"Edit a point name/manual X/Z, or use --current to replace its coordinates with freshly measured player XYZ.",
                 "zone.status":"Show the current zone candidate and freshness; a candidate is not proof of the actual world instance.",
                 "zone.refresh":"Read a fresh native zone candidate under the helper's current identity; not proof of the actual world instance.",
                 "route.context":"Show the loaded route's saved zone binding and comparison with current candidate context.",
@@ -221,10 +221,14 @@ def build_parser():
     add = leaves["route.add"].add_mutually_exclusive_group()
     add.add_argument("--current", action="store_true", help="capture current measured player XYZ position")
     add.add_argument("--target", action="store_true", help="capture the qualified selected-target candidate")
+    arg("route.update", "--current", action="store_true",
+        help="replace coordinates and height with a fresh measured player XYZ capture; may be combined with --name, not --x/--z")
     for op in ("route.add", "route.update"):
         for axis in "xz": arg(op, "--" + axis, type=number, help=f"world {axis.upper()} units; finite")
     for op in ("route.update", "route.remove", "route.reorder", "route.select"):
         arg(op, "point", type=positive, help="one-based waypoint number")
+    arg("route.select", "--discard-draft", action="store_true",
+        help="explicitly discard unapplied Edit waypoint fields before selecting the point")
     arg("route.reorder", "--to", type=positive, required=True, help="one-based destination position")
     for op in ("route.load", "route.save", "route.new", "route.add", "route.update", "route.remove", "route.reorder", "route.select", "route.undo"):
         arg(op, "--revision", type=int, help="refuse if the route revision changed")
@@ -358,15 +362,37 @@ def human_data(command, data):
         for step in data.get("nextSteps", []): print("Next: " + str(step))
     elif command in {"route.list", "route.validate"}:
         points = data.get("points", [])
+        selected = set(data.get("selected", []))
         print(f"Route: {data.get('file') or 'loaded in helper'} | {len(points)} points | "
               f"{'unsaved changes' if data.get('dirty') else 'saved'} | revision {data.get('revision', 'offline')}")
+        if selected: print("Selected: " + ", ".join(str(number) for number in sorted(selected)))
+        draft = data.get("editDraft")
+        if isinstance(draft, dict) and draft.get("pending"):
+            point = draft.get("point") if draft.get("point") is not None else "unselected"
+            validity = "valid" if draft.get("valid") else "invalid"
+            reason = f" | {draft['reason']}" if draft.get("reason") else ""
+            print(f"Edit draft: pending for point {point} | {validity}{reason} | apply it or select with --discard-draft")
         if "measuredCount" in data:
             print(f"Heights: {data['measuredCount']} measured, {data['estimatedCount']} estimated/unknown")
         for p in points:
             height = next((h for h in data.get("heights",[]) if h.get("number")==p.get("number")),None)
             note = (" | "+height["label"]+" ["+height["heightKind"]+"]") if height else ""
-            print(f"  {p.get('number')}. {p.get('name', '')}: X {p.get('x')} / Z {p.get('z')}{note}")
+            marker = "*" if p.get("number") in selected else " "
+            print(f" {marker}{p.get('number')}. {p.get('name', '')}: X {p.get('x')} / Z {p.get('z')}{note}")
         if data.get("qualification"): print(data["qualification"])
+    elif command in {"route.update", "route.add", "route.remove", "route.reorder", "route.select", "route.undo"}:
+        selected = data.get("selected") or []
+        if selected: print("Selected waypoint" + ("s" if len(selected) != 1 else "") + ": " + ", ".join(map(str, selected)))
+        change = data.get("change")
+        if isinstance(change, dict):
+            details = []
+            if change.get("nameChanged"): details.append("name updated")
+            if change.get("coordinatesChanged"): details.append("coordinates updated")
+            if change.get("measurementReplaced"): details.append("fresh measured XYZ captured")
+            elif change.get("measurementDiscarded"): details.append("prior measured height discarded")
+            if change.get("recordingDiscarded"): details.append("recording provenance discarded")
+            print("Change: " + ("; ".join(details) if details else "no effective change"))
+        if data.get("revision") is not None: print(f"Route revision: {data['revision']}")
     elif command in {"zone.status", "zone.refresh"}:
         human_zone(data.get("context"))
         age = data.get("currentAgeSeconds")
@@ -575,8 +601,12 @@ def main(argv=None):
                 raise UsageError("--current/--target cannot be combined with explicit coordinates")
             if not (args.current or args.target) and (args.x is None or args.z is None):
                 raise UsageError("route add requires --current, --target, or both --x and --z")
-        if command == "route.update" and all(getattr(args,k) is None for k in ("name","x","z")):
-            raise UsageError("route update requires a name or coordinate change")
+        if command == "route.update":
+            explicit = args.x is not None or args.z is not None
+            if args.current and explicit:
+                raise UsageError("route update --current cannot be combined with --x/--z")
+            if not args.current and all(getattr(args,k) is None for k in ("name","x","z")):
+                raise UsageError("route update requires --name, --current, or a manual --x/--z coordinate change")
         if command == "trail.save" and args.segment != "latest": args.segment = positive(args.segment)
         if command in {"route.list", "route.validate"} and args.file:
             envelope = offline_route(args.file, command)

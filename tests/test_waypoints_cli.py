@@ -83,6 +83,29 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(request.call_args.args[1:3], (operation, payload))
                 spawn.assert_not_called()
 
+    def test_route_update_current_dispatches_read_only_capture_without_execute(self):
+        reply = cli.result('route.update', data={'revision':3, 'selected':[2],
+            'change':{'nameChanged':True, 'coordinatesChanged':True, 'measurementDiscarded':False,
+                      'recordingDiscarded':True, 'measurementReplaced':True}})
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=reply) as request:
+            code,out,_ = self.call('route','update','2','--current','--name','Fresh position')
+        self.assertEqual(code, 0)
+        self.assertEqual(request.call_args.args[1:3], ('route.update', {
+            'name':'Fresh position', 'current':True, 'point':2}))
+        for phrase in ('Selected waypoint: 2', 'name updated', 'coordinates updated',
+                       'fresh measured XYZ captured', 'recording provenance discarded', 'Route revision: 3'):
+            self.assertIn(phrase, out)
+
+    def test_route_select_explicitly_discards_unapplied_edit_draft(self):
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('route.select',data={})) as request:
+            self.assertEqual(self.call('route','select','3','--discard-draft','--json')[0], 0)
+        self.assertEqual(request.call_args.args[1:3], ('route.select', {
+            'point':3, 'discard_draft':True}))
+        help_text = self.call('route','select','--help')[1]
+        self.assertIn('explicitly discard unapplied Edit waypoint fields', help_text)
+
     def test_library_usage_and_help_never_resolve_native_or_session(self):
         with patch.object(protocol, 'resolve_session', side_effect=AssertionError('session lookup')), patch.object(cli.subprocess, 'Popen', side_effect=AssertionError('process launch')):
             for argv in (("library", "load"), ("library", "show"), ("library", "save"),
@@ -114,6 +137,7 @@ class CliTests(unittest.TestCase):
                      ['route','select','0'], ['radar','set','--opacity','101'],
                      ['move','to','1','2'], ['route','add','--x','1'],
                      ['route','add','--current','--x','1','--z','2'],
+                     ['route','update','1','--current','--x','1'],
                      ['route','update','1'], ['trail','save','x','--segment','0'],
                      ['--jsonl','status'], ['route','selct','1']):
             with self.subTest(argv=argv):
@@ -260,6 +284,24 @@ class CliTests(unittest.TestCase):
         self.assertIn('existing pose', playback_help)
         self.assertIn('rechecks live admission', playback_help)
         self.assertIn('Effects: Read-only;', playback_help)
+        update_help = self.call('route','update','--help')[1]
+        self.assertIn('freshly measured player XYZ', update_help)
+        self.assertIn('may be combined with --name', update_help)
+        self.assertIn('--x/--z', update_help)
+        self.assertIn('sends no game input', update_help)
+
+    def test_human_route_list_marks_selected_points(self):
+        data={'points':[{'number':1,'name':'Start','x':1,'z':2},
+                        {'number':2,'name':'Camp','x':3,'z':4}],
+              'selected':[2], 'editDraft':{'pending':True,'point':2,'valid':False,'reason':'X is not finite'},
+              'dirty':False, 'revision':7, 'file':'route.json'}
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('route.list',data=data))
+        self.assertIn('Selected: 2', out.getvalue())
+        self.assertIn(' *2. Camp', out.getvalue())
+        self.assertIn('Edit draft: pending for point 2 | invalid | X is not finite', out.getvalue())
+        self.assertIn('--discard-draft', out.getvalue())
 
     def test_human_playback_status_explains_each_admission(self):
         readiness = {

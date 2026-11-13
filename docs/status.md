@@ -1,5 +1,22 @@
 # Current status
 
+**NOVEMBER 13 — EDIT WAYPOINT POLISH AND MEASURED REPLACEMENT:**
+On verified AMD-DESKTOP/PID40452, Edit waypoint now keeps fields synchronized with
+selection/add/load/Undo, protects unapplied drafts, validates coordinates inline,
+and provides Reset fields and Enter-to-apply. Selection/boundary-aware controls,
+height evidence and explicit measurement-loss messages make edits clearer.
+Set selected to current and CLI `route update N --current [--name]` reuse fresh
+player observation/receipt capture, retaining route order and checking tagged
+zone context; no input is sent. CLI route list exposes selected/draft state,
+update responses expose change details, and `route select --discard-draft`
+explicitly abandons pending fields. Focused GUI/Undo/mailbox/frontend tests passed.
+Live CLI recapture, coordinate edit, reorder and Undo restored each expected
+document; original route/basis, player pose and absent checkpoint were preserved.
+Normal and compact native captures were reviewed and the controls condensed to
+retain useful route-list space. Evidence: `artifacts/edit-ui-live-verification-20261113.json`
+and `artifacts/joey-waypoints-edit-final-{980,1120}-20261113.png`.
+See [Edit operation](workflows/physical-waypoints.md#edit-waypoint).
+
 **NOVEMBER 13 — JOEY D'S WAYPOINTS v1.1.0; REPLAY POLISH:**
 On verified AMD-DESKTOP/PID40452, the app has a versioned title, custom transparent
 red panda header/window artwork, and shared CLI branding. Existing launchers stay

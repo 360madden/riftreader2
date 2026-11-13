@@ -45,6 +45,8 @@ class UndoWindowTests(unittest.TestCase):
         for operation in ("Remove", "Down", "Clear"):
             with self.subTest(operation=operation):
                 self.table.selection_set(self.table.get_children()[0])
+                self.table.event_generate("<<TreeviewSelect>>")
+                self.root.update()
                 self.button(operation).invoke()
                 self.button("Undo").invoke()
                 self.assertEqual(original, self.values())
@@ -96,8 +98,9 @@ class UndoWindowTests(unittest.TestCase):
         with patch.object(fixture.app, "PhysicalAdapter", side_effect=ValueError("offline")):
             self.launch()
         self.root = self.roots[0]
-        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
-        self.entries = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Entry)]
+        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview)
+                          and tuple(w["columns"]) == ("name", "x", "z"))
+        self.entries = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Entry)][:3]
         self.enter("First", "1", "2")
         self.button("Add X / Z").invoke()
         self.assertNotEqual("disabled", str(self.button("Undo")["state"]))

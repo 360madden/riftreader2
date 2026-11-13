@@ -18,21 +18,36 @@ class WaypointEditTests(unittest.TestCase):
     launch = fixture.PlaybackWindowStateTests.launch
 
     def prepare(self):
+        self.identity = {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
+                         "unitKey": "player", "processId": 123, "processStartUtcTicks": "12345"}
         self.document = {"waypoints": [["First", 0, 0], ["Second", 1, 0]],
-                         "heights": [10, 11], "recording": {"complete": True, "source": "retained"}}
+                         "heights": [10, 11],
+                         "recording": {"complete": True, "version": 1,
+                                       "identity": {"runtimeIdentity": dict(self.identity)},
+                                       "sources": ["native-source.json"],
+                                       "firstObservedAtUtc": "2026-11-13T10:00:00Z",
+                                       "lastObservedAtUtc": "2026-11-13T10:00:05Z"}}
         route = self.path / "source.json"
         route.write_text(json.dumps(self.document))
         self.checkpoint = fixture.PlaybackWindowStateTests.write_checkpoint(self, self.document, "forward", 1)
         self.original = self.checkpoint.read_bytes()
-        pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
-        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        self.pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
+        self.adapter = SimpleNamespace(read=lambda **kwargs: self.pose, pid=123,
+                                       binding={"runtimeIdentity": dict(self.identity)},
+                                       input_receipt_path=self.path / "unused")
+        self.launch(self.adapter, route)
         self.root = self.roots[0]
-        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
+        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview)
+                          and tuple(w["columns"]) == ("name", "x", "z"))
         self.items = self.table.get_children()
+        # Normalize whichever row a restored checkpoint selected before this
+        # test explicitly chooses its editing target.
+        self.button("Reset fields").invoke()
         self.table.selection_set(self.items[0])
+        self.table.event_generate("<<TreeviewSelect>>")
         self.root.update()
         self.entries = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Entry)
-                        and not isinstance(w, fixture.ttk.Combobox)]
+                        and not isinstance(w, fixture.ttk.Combobox)][:3]
         self.assertEqual(["First", "0.000000", "0.000000"], [w.get() for w in self.entries])
         self.cache = self.path / "artifacts" / "waypoint-last-route.json"
         self.cache_before = self.cache.read_bytes() if self.cache.exists() else None
@@ -57,6 +72,10 @@ class WaypointEditTests(unittest.TestCase):
                   if isinstance(w, fixture.ttk.Label) and w.cget("textvariable")]
         return next(str(self.root.getvar(value)) for value in labels
                     if str(self.root.getvar(value)).startswith(("source.json ", "saved.json ")))
+
+    def text_values(self):
+        return [str(self.root.getvar(w.cget("textvariable"))) for w in self.widgets(self.root)
+                if isinstance(w, fixture.ttk.Label) and w.cget("textvariable")]
 
     def test_quick_save_uses_loaded_path_and_tracks_real_edits(self):
         self.prepare()
@@ -114,11 +133,15 @@ class WaypointEditTests(unittest.TestCase):
         self.prepare()
         self.enter("First", "0.5", "1.25")
         self.button("Update Selected").invoke()
+        self.assertTrue(any("Measured height removed" in value for value in self.text_values()),
+                        self.text_values())
         self.assertFalse(self.checkpoint.exists())
         self.assert_unsaved_cache()
         saved = self.save_document()
         self.assertEqual(["First", .5, 1.25], saved["waypoints"][0])
-        self.assertNotIn("heights", saved)
+        self.assertEqual([None, 11], saved["heights"])
+        self.assertIsNone(saved["pointMeasurements"][0])
+        self.assertIsNotNone(saved["pointMeasurements"][1])
         self.assertNotIn("recording", saved)
 
     def test_noop_and_invalid_fields_preserve_route_checkpoint_and_metadata(self):
@@ -129,32 +152,27 @@ class WaypointEditTests(unittest.TestCase):
             self.enter("Changed", bad, "0")
             with patch("tkinter.messagebox.showerror") as error:
                 self.button("Update Selected").invoke()
-            error.assert_called_once()
+            error.assert_not_called()
+            self.assertTrue(any("finite numeric X and Z" in value for value in self.text_values()), self.text_values())
             self.assertEqual("First", self.table.item(self.items[0], "values")[0])
             self.assertEqual(self.original, self.checkpoint.read_bytes())
+        self.button("Reset fields").invoke()
         self.table.selection_set(self.items)
+        self.table.event_generate("<<TreeviewSelect>>")
         self.button("Update Selected").invoke()
         self.assertEqual(self.original, self.checkpoint.read_bytes())
         self.assert_unsaved_cache()
         self.assertEqual(self.document, self.save_document())
 
-    def test_new_additions_keep_generated_names_and_explicit_selection_populates_name(self):
+    def test_new_addition_keeps_form_coherent_with_selected_row(self):
         self.prepare()
-        # Addition uses the entered name; its automatic selection leaves the
-        # next generated name ready for another Save Current or map addition.
         self.enter("New point", "2", "0")
         self.button("Add X / Z").invoke()
         self.root.update()
-        self.assertEqual("Point 4", self.entries[0].get())
-        self.button("Save Current").invoke()
-        deadline = time.monotonic() + 3
-        while time.monotonic() < deadline:
-            self.root.update()
-            if len(self.table.get_children()) == 4:
-                break
-            time.sleep(.01)
-        self.assertEqual("Point 4", self.table.item(self.table.get_children()[-1], "values")[0])
-        self.assertEqual("Point 5", self.entries[0].get())
+        added = self.table.get_children()[-1]
+        self.assertEqual((added,), self.table.selection())
+        self.assertEqual(["New point", "2.000000", "0.000000"], [w.get() for w in self.entries])
+        self.assertEqual(tuple(self.entries[i].get() for i in range(3)), self.table.item(added, "values"))
         self.table.selection_set(self.items[0])
         self.root.update()
         self.assertEqual("First", self.entries[0].get())
@@ -169,7 +187,7 @@ class WaypointEditTests(unittest.TestCase):
         self.button("Add X / Z").invoke()
         self.root.update()
         added = self.table.selection()[0]
-        self.assertEqual("Point 4", self.entries[0].get())
+        self.assertEqual("New point", self.entries[0].get())
         self.checkpoint.write_bytes(self.original)
         self.button("Update Selected").invoke()
         self.assertEqual("New point", self.table.item(added, "values")[0])
@@ -181,6 +199,59 @@ class WaypointEditTests(unittest.TestCase):
         self.assertEqual(["New point", "2.500000", "0.000000"], [w.get() for w in self.entries])
         # The injected checkpoint belongs to the original route, not this edited route.
         self.assertEqual(self.original, self.checkpoint.read_bytes())
+
+    def test_set_selected_to_current_preserves_name_order_and_undo_restores(self):
+        self.prepare()
+        original = [self.table.item(item, "values") for item in self.items]
+        self.pose = app.Snapshot(app.Position(7.25, 19.5, 8.75), 10, time.monotonic(),
+                                 "replacement-native.json")
+        self.button("Set selected to current").invoke()
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            self.root.update()
+            values = self.table.item(self.items[0], "values")
+            if tuple(values[1:]) == ("7.250000", "8.750000"):
+                break
+            time.sleep(.01)
+        self.assertEqual(("First", "7.250000", "8.750000"), self.table.item(self.items[0], "values"))
+        self.assertEqual(self.items, self.table.get_children())
+        self.assertEqual((self.items[0],), self.table.selection())
+        saved = self.save_document()
+        self.assertEqual(19.5, saved["heights"][0])
+        self.assertEqual("replacement-native.json", saved["pointMeasurements"][0]["source"])
+        self.button("Undo").invoke()
+        restored_items = self.table.get_children()
+        self.assertEqual(original, [self.table.item(item, "values") for item in restored_items])
+        self.assertEqual(0, self.table.index(self.table.selection()[0]))
+
+    def test_edit_actions_follow_selection_and_reset_restores_fields(self):
+        self.prepare()
+        self.assertEqual("disabled", str(self.button("Up")["state"]))
+        self.assertNotEqual("disabled", str(self.button("Down")["state"]))
+        self.enter("Draft", "2", "3")
+        self.button("Reset fields").invoke()
+        self.assertEqual(["First", "0.000000", "0.000000"], [w.get() for w in self.entries])
+        self.table.selection_remove(self.table.selection())
+        self.root.update()
+        for label in ("Update Selected", "Set selected to current", "Remove", "Up", "Down"):
+            self.assertEqual("disabled", str(self.button(label)["state"]), label)
+
+    def test_pending_form_draft_is_not_silently_overwritten_by_selection(self):
+        self.prepare()
+        self.enter("Unapplied draft", "2", "3")
+        self.table.selection_set(self.items[1])
+        self.table.event_generate("<<TreeviewSelect>>")
+        self.root.update()
+        self.assertEqual((self.items[0],), self.table.selection())
+        self.assertEqual(["Unapplied draft", "2", "3"], [w.get() for w in self.entries])
+        self.assertTrue(any("Apply" in value and "Reset" in value for value in self.text_values()),
+                        self.text_values())
+        self.button("Reset fields").invoke()
+        self.table.selection_set(self.items[1])
+        self.table.event_generate("<<TreeviewSelect>>")
+        self.root.update()
+        self.assertEqual((self.items[1],), self.table.selection())
+        self.assertEqual(["Second", "1.000000", "0.000000"], [w.get() for w in self.entries])
 
 
 if __name__ == "__main__":

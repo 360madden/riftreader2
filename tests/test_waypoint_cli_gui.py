@@ -37,6 +37,18 @@ class Server(original_server):
         # Let the test atomically stage both requests before this poll.
         if (root / 'hold-poll').exists():
             return
+        draft = root / 'draft-fields'
+        if draft.exists():
+            import tkinter as tk
+            entries = []
+            def collect(widget):
+                for child in widget.winfo_children():
+                    if child.winfo_class() == 'TEntry': entries.append(child)
+                    collect(child)
+            collect(tk._default_root)
+            for entry, value in zip(entries[:3], ('Pending draft', '5', '6')):
+                entry.delete(0, 'end'); entry.insert(0, value)
+            draft.unlink()
         gui_stop = root / 'gui-stop'
         if gui_stop.exists():
             import tkinter as tk
@@ -78,7 +90,7 @@ def fake_zone(adapter):
             'target': dict(adapter.target), 'playerKey': '1'}
 app.read_route_context = fake_zone
 app.verify_stopped_pose = lambda *args, **kw: {'status': 'pass', 'samples': [{'position': {'x': 1, 'y': 2, 'z': 3}, 'bearing': 45}]}
-pose = SimpleNamespace(position=Position(), bearing=45.0, acquired=time.monotonic())
+pose = SimpleNamespace(position=Position(), bearing=45.0, acquired=time.monotonic(), source='fake-native.json')
 observation.observe_batch = lambda *args, **kw: [pose]
 class Recorder:
     def __init__(self, identity): pass
@@ -337,6 +349,42 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertEqual(playback['readiness'], snapshot['playback']['readiness'])
         self.assertEqual(snapshot['app']['name'], "Joey D's Waypoints")
         self.assertEqual(snapshot['app']['version'], '1.1.0')
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_current_update_replaces_measurement_and_manual_edit_reports_loss(self):
+        self.assertTrue(self.call('route.add', {'name': 'Keep name', 'x': 1, 'z': 2})['ok'])
+        self.assertTrue(self.call('route.add', {'name': 'Other', 'x': 3, 'z': 4})['ok'])
+        updated = self.call('route.update', {'point': 1, 'current': True})
+        self.assertTrue(updated['ok'], updated)
+        self.assertTrue(updated['data']['change']['measurementReplaced'])
+        listing = self.call('route.list')['data']
+        self.assertEqual(listing['document']['waypoints'], [['Keep name', 12., 24.], ['Other', 3., 4.]])
+        self.assertEqual(listing['document']['heights'], [3., None])
+        self.assertEqual(listing['selected'], [1])
+        changed = self.call('route.update', {'point': 1, 'x': 12.5})
+        self.assertTrue(changed['ok'], changed)
+        self.assertTrue(changed['data']['change']['measurementDiscarded'])
+        self.assertTrue(changed['data']['change']['coordinatesChanged'])
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_cli_selection_requires_explicit_draft_discard(self):
+        self.assertTrue(self.call('route.add', {'name': 'One', 'x': 1, 'z': 2})['ok'])
+        self.assertTrue(self.call('route.add', {'name': 'Two', 'x': 3, 'z': 4})['ok'])
+        (self.root / 'draft-fields').touch()
+        listing = self.call('route.list')['data']
+        self.assertTrue(listing['editDraft']['pending'])
+        self.assertEqual(listing['selected'], [2])
+        refused = self.call('route.select', {'point': 1})
+        self.assertFalse(refused['ok'])
+        self.assertEqual(refused['error']['code'], 'unapplied-edit')
+        saved = self.call('route.save', {'file': str(self.root / 'draft-not-saved.json')})
+        self.assertFalse(saved['ok'])
+        self.assertFalse((self.root / 'draft-not-saved.json').exists())
+        chosen = self.call('route.select', {'point': 1, 'discard_draft': True})
+        self.assertTrue(chosen['ok'], chosen)
+        listing = self.call('route.list')['data']
+        self.assertFalse(listing['editDraft']['pending'])
+        self.assertEqual(listing['selected'], [1])
         self.assertFalse((self.root / 'movement-called').exists())
 
     def test_zone_guard_rechecks_before_movement(self):

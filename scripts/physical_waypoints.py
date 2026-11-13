@@ -950,8 +950,12 @@ def launch_window(args):
                        (scene_tab, "Scene & beacons"), (explore_tab, "Explore"), (library_tab, "Library"), (activity_tab, "Activity")):
         workflow.add(tab, text=title)
     coordinates = ttk.Frame(edit_tab, style="Surface.TFrame")
-    coordinates.pack(fill="x", pady=(0, 12))
+    coordinates.pack(fill="x", pady=(0, 8))
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
+    form_item, form_baseline, form_loading = None, None, False
+    edit_hint = tk.StringVar(value="Select a waypoint to edit, or enter X / Z to add one.")
+    edit_buttons = {}
+    last_edit_change = None
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
     target_beacon = tk.BooleanVar(value=False)
     landmark_guide = tk.BooleanVar(value=False)
@@ -967,10 +971,11 @@ def launch_window(args):
     view_bring_forward = tk.BooleanVar(value=False)
     view_include_units = tk.BooleanVar(value=False)
     point_entries = []
-    for label, variable, width in (("Name", name, 26), ("X", x, 18), ("Z", z, 18)):
-        ttk.Label(coordinates, text=label, style="Surface.TLabel").pack(side="left", padx=(0, 5))
+    for column, (label, variable, width) in enumerate((("Name", name, 26), ("World X", x, 18), ("World Z", z, 18))):
+        coordinates.columnconfigure(column, weight=2 if column == 0 else 1)
+        ttk.Label(coordinates, text=label, style="Surface.TLabel").grid(row=0, column=column, sticky="w", pady=(0, 3))
         entry = ttk.Entry(coordinates, textvariable=variable, width=width)
-        entry.pack(side="left", padx=(0, 10))
+        entry.grid(row=1, column=column, sticky="ew", padx=(0, 10))
         editable.append(entry)
         point_entries.append(entry)
     live_pose_option = ttk.Checkbutton(header_actions, text="Live pose (2 s)", variable=live_pose)
@@ -1185,9 +1190,7 @@ def launch_window(args):
         item = table.insert("", "end", values=(label, f"{finite(px):.6f}", f"{finite(pz):.6f}"))
         added_selection = item
         table.selection_set(item)
-        name.set(f"Point {len(table.get_children()) + 1}")
-        x.set(f"{finite(px):.6f}")
-        z.set(f"{finite(pz):.6f}")
+        fill_fields(item)
         redraw()
         return item
 
@@ -1213,7 +1216,7 @@ def launch_window(args):
 
     def undo_edit(_=None):
         nonlocal route_metadata, added_selection
-        if busy or closing or not edit_history:
+        if busy or closing or not edit_history or draft_pending():
             return "break"
         document, indices = edit_history[-1]
         invalidate_progress(clear_metadata=False)
@@ -1228,6 +1231,8 @@ def launch_window(args):
         added_selection = None
         items = table.get_children()
         table.selection_set([items[index] for index in indices if index < len(items)])
+        selection = table.selection()
+        fill_fields(selection[0] if len(selection) == 1 else None)
         redraw()
         state.set("Route edit undone; save the route to keep these changes.")
         return "break"
@@ -1261,7 +1266,7 @@ def launch_window(args):
                 if receipt is not None:
                     point_receipts[item] = deepcopy(receipt)
             route_metadata = {k: v for k, v in document.items() if k != "waypoints"}
-            name.set(f"Point {len(table.get_children()) + 1}")
+            fill_fields(table.selection()[0] if len(table.selection()) == 1 else None)
         finally:
             loading_route = False
         route_revision += 1
@@ -1345,6 +1350,7 @@ def launch_window(args):
         if cli_server is not None:
             update_context_text()
             update_replay_status()
+            update_edit_state()
         if explore_controls is not None:
             explore_controls.route_changed()
         schedule_marker_update()
@@ -1352,7 +1358,7 @@ def launch_window(args):
         zoom_in.configure(state="disabled" if map_radius == ZOOM_RADII[0] else "normal")
         zoom_out.configure(state="disabled" if map_radius == ZOOM_RADII[-1] else "normal")
         fit_button.configure(state="normal" if last_pose is not None else "disabled")
-        undo_button.configure(state="normal" if edit_history and not busy and not closing else "disabled")
+        undo_button.configure(state="normal" if edit_history and not busy and not closing and not draft_pending() else "disabled")
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
         original_points = points[:]
         completed, active = None, None
@@ -1480,6 +1486,11 @@ def launch_window(args):
                                                             datetime.now(timezone.utc).isoformat())
                     except (ValueError, KeyError, TypeError, AttributeError):
                         result["measurementReason"] = "Position provenance unavailable; point saved without height."
+                if operation == "save" and isinstance(points, dict):
+                    if result.get("measurement") is None:
+                        raise WaypointError("Cannot replace waypoint without a fresh measured position.")
+                    result["replacement"] = deepcopy(points)
+                    result["captureTarget"] = deepcopy(getattr(adapter, "target", None))
                 if operation == "target":
                     result["waypoint"] = waypoint
                     try:
@@ -1619,6 +1630,9 @@ def launch_window(args):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         if busy or closing or nearby_picker is not None:
             return
+        if draft_pending() and operation in ("go", "face", "face-bearing", "play", "resume", "teach", "record", "map", "target", "save"):
+            state.set("Apply or Reset fields before starting another action.")
+            return
         if operation in ("go", "teach") and (not points or len(points) > 20):
             messagebox.showinfo("Choose waypoints", "Select a waypoint, or add up to 20 points for a route.")
             return
@@ -1666,7 +1680,7 @@ def launch_window(args):
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
-        context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and operation in ("go", "face", "play", "resume", "teach") else None
+        context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and (operation in ("go", "face", "play", "resume", "teach") or operation == "save" and isinstance(points, dict)) else None
         mode = True if operation in ("play", "resume") else walk_facing.get() if face_walk is None else face_walk
         threading.Thread(target=worker, args=(operation, points, mode, context), daemon=False).start()
         return True
@@ -1688,14 +1702,98 @@ def launch_window(args):
                 else "Stopped — no input active.")
         state.set(text if markers_stopped else text + " Could not hide markers.")
 
+    def draft_pending():
+        return (not form_loading and form_item is not None and table.exists(form_item)
+                and form_baseline is not None and (name.get(), x.get(), z.get()) != form_baseline)
+
+    def fill_fields(item=None):
+        nonlocal form_item, form_baseline, form_loading, added_selection
+        form_loading = True
+        try:
+            form_item = item if item is not None and table.exists(item) else None
+            if form_item is not None:
+                label, px, pz = table.item(form_item, "values")
+                name.set(label); x.set(px); z.set(pz)
+                added_selection = None
+                form_baseline = (name.get(), x.get(), z.get())
+                table.see(form_item)
+            else:
+                name.set(f"Point {len(table.get_children()) + 1}"); x.set(""); z.set("")
+                form_baseline = None
+        finally:
+            form_loading = False
+        update_edit_state()
+
+    def reset_fields():
+        selection = table.selection()
+        fill_fields(selection[0] if len(selection) == 1 else None)
+
+    def edit_draft_status():
+        try:
+            route_points([(name.get() or "Waypoint", x.get(), z.get())])
+            valid, reason = True, None
+        except (ValueError, TypeError):
+            valid, reason = False, "Enter finite numeric X and Z coordinates."
+        return dict(pending=bool(draft_pending()), point=table.index(form_item)+1 if form_item and table.exists(form_item) else None,
+                    valid=valid, reason=reason)
+
+    def update_edit_state(*_):
+        if not edit_buttons:
+            return
+        selected = table.selection()
+        single = len(selected) == 1
+        draft = edit_draft_status()
+        idle = not busy and not closing
+        index = table.index(selected[0]) if single else None
+        count = len(table.get_children())
+        allowed = {"Update Selected": single and draft["valid"] and draft["pending"],
+                   "Set selected to current": single and adapter is not None and not draft["pending"],
+                   "Reset fields": draft["pending"] or not draft["valid"],
+                   "Up": single and index > 0 and not draft["pending"],
+                   "Down": single and index < count-1 and not draft["pending"],
+                   "Remove": bool(selected) and not draft["pending"], "Clear": count > 0 and not draft["pending"],
+                   "Add X / Z": draft["valid"] and count < 20,
+                   "Save Current": adapter is not None and count < 20 and not draft["pending"],
+                   "Add Target": adapter is not None and count < 20 and not draft["pending"],
+                   "Add nearby": adapter is not None and count < 20 and not draft["pending"] and not markers.running()}
+        for label, button in edit_buttons.items():
+            if label in allowed:
+                button.configure(state="normal" if idle and allowed[label] else "disabled")
+        undo_button.configure(state="normal" if idle and edit_history and not draft["pending"] else "disabled")
+        if draft["pending"]:
+            warning = ""
+            if single and point_receipts.get(selected[0]) is not None:
+                old = table.item(selected[0], "values")
+                try:
+                    if (finite(x.get()), finite(z.get())) != (finite(old[1]), finite(old[2])):
+                        warning = " Changing X/Z removes its measured height."
+                except (ValueError, TypeError): pass
+            edit_hint.set(f"Point {draft['point']} · Unapplied fields — Apply with Enter or Reset fields. "
+                          + (draft["reason"] or "") + warning)
+        elif single:
+            receipt = point_receipts.get(selected[0])
+            evidence = f"Measured Y {receipt['position']['y']:.3f}" if receipt else "Estimated / unknown height"
+            edit_hint.set(f"Point {index+1} of {count} · {evidence} · Enter applies · Alt+↑/↓ reorders · edits are undoable")
+        else:
+            edit_hint.set(f"{len(selected)} selected · Select one to edit; Remove supports multiple points." if selected
+                          else "Select a waypoint to edit, or enter X / Z and choose Add X / Z.")
+
+    def capture_selected(label=None):
+        selected = table.selection()
+        if len(selected) != 1 or draft_pending():
+            state.set("Apply or Reset fields, then select one waypoint to measure.")
+            return
+        return start("save", dict(item=selected[0], revision=route_revision,
+                                 label=label or table.item(selected[0], "values")[0]))
+
     def add_entered():
         try:
             add_point(name.get() or "Waypoint", x.get(), z.get())
         except (ValueError, TypeError):
-            messagebox.showerror("Invalid coordinates", "Enter finite X and Z coordinates.")
+            state.set("Enter finite numeric X and Z coordinates; waypoint unchanged.")
 
     def update_selected():
-        nonlocal added_selection
+        nonlocal added_selection, last_edit_change
         selected = table.selection()
         if len(selected) != 1:
             state.set("Select one waypoint to update.")
@@ -1703,29 +1801,34 @@ def launch_window(args):
         try:
             label, px, pz = route_points([(name.get() or "Waypoint", x.get(), z.get())])[0]
         except (ValueError, TypeError):
-            messagebox.showerror("Invalid coordinates", "Enter finite X and Z coordinates.")
+            state.set("Enter finite numeric X and Z coordinates; waypoint unchanged.")
             return
         old = table.item(selected[0], "values")
-        if selected[0] == added_selection and name.get() == f"Point {len(table.get_children()) + 1}":
-            label = old[0]
         px, pz = float(f"{px:.6f}"), float(f"{pz:.6f}")
         coordinates_changed = (px, pz) != (finite(old[1]), finite(old[2]))
         if label == old[0] and not coordinates_changed:
+            fill_fields(selected[0])
             state.set("Waypoint unchanged.")
-            return
+            return dict(nameChanged=False, coordinatesChanged=False, measurementDiscarded=False, recordingDiscarded=False, measurementReplaced=False)
+        last_edit_change = dict(nameChanged=label != old[0], coordinatesChanged=coordinates_changed,
+                                measurementDiscarded=coordinates_changed and point_receipts.get(selected[0]) is not None,
+                                recordingDiscarded=coordinates_changed and "recording" in route_metadata, measurementReplaced=False)
         remember_edit()
         invalidate_progress(clear_metadata=coordinates_changed)
         if coordinates_changed:
             point_receipts.pop(selected[0], None)
         table.item(selected[0], values=(label, f"{px:.6f}", f"{pz:.6f}"))
         added_selection = None
-        name.set(label)
-        x.set(f"{px:.6f}")
-        z.set(f"{pz:.6f}")
+        fill_fields(selected[0])
         redraw()
-        state.set("Waypoint updated; save the route to keep this edit.")
+        state.set("Waypoint updated; save the route to keep this edit." +
+                  (" Measured height removed; use Set selected to current to measure again." if last_edit_change["measurementDiscarded"] else ""))
+        return deepcopy(last_edit_change)
 
     def save_route(save_as=False):
+        if draft_pending():
+            state.set("Apply or Reset fields before saving the route.")
+            return
         path = route_path
         if save_as or path is None:
             options = {"defaultextension": ".json", "initialfile": path.name if path else "rift-waypoints.json"}
@@ -1744,6 +1847,9 @@ def launch_window(args):
         return False
 
     def load_from(path):
+        if draft_pending():
+            state.set("Apply or Reset fields before loading another route.")
+            return
         nonlocal playback_view, pending_progress_selection
         if busy or closing:
             return
@@ -1816,7 +1922,7 @@ def launch_window(args):
             invalidate_progress()
         table.delete(*table.get_children())
         point_receipts.clear()
-        name.set("Point 1")
+        fill_fields()
         redraw()
         state.set("Waypoint list cleared.")
 
@@ -2111,16 +2217,20 @@ def launch_window(args):
         change_marker_appearance()
         save_marker_appearance()
 
+    buttons_selected = ttk.Frame(edit_tab, style="Surface.TFrame")
+    buttons_selected.pack(fill="x", pady=(0, 6))
     buttons = ttk.Frame(edit_tab, style="Surface.TFrame")
-    buttons.pack(fill="x", pady=(0, 10))
+    buttons.pack(fill="x", pady=(0, 6))
     buttons_second = ttk.Frame(edit_tab, style="Surface.TFrame")
     buttons_second.pack(fill="x")
     for label, parent, callback in (("Refresh", header_actions, lambda: start("refresh")),
             ("Save Current", buttons, lambda: start("save")), ("Add X / Z", buttons, add_entered),
             ("Add Target", buttons, lambda: start("target")), ("Add nearby", buttons, add_nearby),
-            ("Update Selected", buttons, update_selected), ("Up", buttons_second, lambda: move_point(-1)),
-            ("Down", buttons_second, lambda: move_point(1)), ("Remove", buttons_second, remove_points),
-            ("Clear", buttons_second, clear_points), ("Load", file_toolbar, load_route),
+            ("Update Selected", buttons_selected, update_selected),
+            ("Set selected to current", buttons_selected, capture_selected),
+            ("Reset fields", buttons_selected, reset_fields), ("Up", buttons_selected, lambda: move_point(-1)),
+            ("Down", buttons_selected, lambda: move_point(1)), ("Remove", buttons_selected, remove_points),
+            ("Clear", buttons, clear_points), ("Load", file_toolbar, load_route),
             ("Save Route", file_toolbar, save_route), ("Save As", file_toolbar, lambda: save_route(True))):
         button = ttk.Button(parent, text=label, command=callback,
                             style="Primary.TButton" if label in ("Save Route", "Update Selected") else "TButton")
@@ -2129,11 +2239,15 @@ def launch_window(args):
         else:
             button.pack(side="left", padx=(0, 6))
         editable.append(button)
+        edit_buttons[label] = button
         if label == "Add nearby":
             nearby_button = button
-    undo_button = ttk.Button(buttons_second, text="Undo", command=undo_edit, state="disabled")
+    undo_button = ttk.Button(buttons_selected, text="Undo", command=undo_edit, state="disabled")
     undo_button.pack(side="left", padx=(0, 6))
     editable.append(undo_button)
+    edit_hint_label = ttk.Label(edit_tab, textvariable=edit_hint, style="Muted.TLabel", wraplength=850)
+    edit_hint_label.pack(anchor="w", pady=(8, 0))
+    edit_tab.bind("<Configure>", lambda event: edit_hint_label.configure(wraplength=max(200, event.width-28)))
     for column in range(3):
         replay_tab.columnconfigure(column, weight=1, uniform="replaycards")
     playback_group = ttk.LabelFrame(replay_tab, text="PLAYBACK", padding=(10, 5), style="Card.TLabelframe")
@@ -2355,6 +2469,9 @@ def launch_window(args):
             close_prompt = False
 
     def close():
+        if draft_pending():
+            state.set("Apply or Reset fields before closing, or use app close --discard.")
+            return
         nonlocal closing
         if closing:
             return
@@ -2548,6 +2665,8 @@ def launch_window(args):
         identity = getattr(adapter, "binding", None)
         identity = identity.get("runtimeIdentity") if isinstance(identity, dict) else None
         reason = "Another action is active" if busy else "Helper is closing" if closing else None
+        if reason is None and draft_pending():
+            reason = "Apply or Reset Edit waypoint fields first"
         if reason is None and pose.get("status") != "fresh":
             reason = "Waiting for a fresh player pose"
         if reason is None and route_metadata.get("routeContext") is not None:
@@ -2652,12 +2771,14 @@ def launch_window(args):
             if job["finished"] is None or busy:
                 return None
             event = job["finished"]
-            failure = event.get("failure")
+            failure = event.get("failure") or job.get("editFailure")
             data = dict(operation=event["operation"], receipt=event.get("receipt"), failure=failure,
                         recordedFile=job.get("recordedFile"), state=state.get())
             if operation == "view": data.update(image=saved_view, rerun=saved_rerun)
             if operation == "zone" and not failure: data.update(zone_state())
-            if operation in ("save", "target"): data.update(route=cli_snapshot()["route"])
+            if operation in ("save", "target"):
+                data.update(route=cli_snapshot()["route"], selected=[table.index(i)+1 for i in table.selection()])
+                if job.get("change") is not None: data["change"] = job["change"]
             response = (cli_error("cancelled" if failure.get("status") == "stopped" else "operation-failed",
                                   failure["reason"], exit_code=130 if failure.get("status") == "stopped" else 1)
                         if failure else cli_ok(data))
@@ -2717,6 +2838,7 @@ def launch_window(args):
                     library.load_route(values["route_id"], library_dir=directory)
                     return cli_dispatch("route.load", dict(file=str(directory/(values["route_id"]+".json")), discard=values.get("discard",False)), rid)
                 if command == "library.save":
+                    if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before saving a library copy", exit_code=4)
                     route_id = library.save_route(route_document(), values["name"], values.get("route_id"),
                         overwrite=values.get("overwrite",False), library_dir=directory)
                 elif command == "library.import":
@@ -2783,6 +2905,9 @@ def launch_window(args):
                 window.withdraw()
                 return cli_ok({"visible": False, "windowState": window.state()})
             if command == "app.close":
+                if draft_pending() and not values.get("discard"):
+                    raise CliError("unapplied-edit", "Apply or Reset fields before closing", "Or use app close --discard", 4)
+                if values.get("discard"): reset_fields()
                 if route_dirty and not values.get("discard"):
                     raise CliError("unsaved-route", "The route has unsaved changes", "Save with route save FILE or close --discard", 4)
                 if values.get("discard"): route_dirty = False
@@ -2827,11 +2952,15 @@ def launch_window(args):
                     measured = sum(r is not None for r in document_measurements(document))
                     return cli_ok(dict(document=document, file=str(route_path) if route_path else None,
                         dirty=route_dirty, revision=route_revision,
+                        selected=[table.index(i)+1 for i in table.selection()], editDraft=edit_draft_status(),
                         measuredCount=measured, estimatedCount=len(document["waypoints"])-measured,
                         heights=route_heights(document), routeContext=document.get("routeContext"), contextComparison=zone_comparison(document),
                         points=[dict(number=i+1, name=r[0], x=float(r[1]), z=float(r[2])) for i,r in enumerate(selected_points(True))],
                         qualification="Route structure only; terrain, obstacle clearance and playback admission remain live checks."))
                 if command in ("route.load", "route.new"):
+                    if draft_pending() and not values.get("discard"):
+                        raise CliError("unapplied-edit", "Apply or Reset fields first", "Use --discard to abandon the draft", 4)
+                    if values.get("discard"): reset_fields()
                     if route_dirty and not values.get("discard"):
                         raise CliError("unsaved-route", "The route has unsaved changes", "Save first or use --discard", 4)
                     if command == "route.load":
@@ -2853,6 +2982,7 @@ def launch_window(args):
                         update_route_status()
                     return cli_ok(cli_snapshot()["route"])
                 if command == "route.save":
+                    if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before saving", exit_code=4)
                     path = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
                     document = route_document()
                     write_json_atomic(path, document)
@@ -2860,6 +2990,7 @@ def launch_window(args):
                     cache_route(document, "Route saved: " + str(path))
                     return cli_ok({"file": str(path), "revision": route_revision})
                 if command == "route.add":
+                    if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before adding another point", "Use route select N --discard-draft", 4)
                     if len(table.get_children()) >= 20: raise CliError("route-full", "Routes support at most 20 points", exit_code=4)
                     if values.get("current") or values.get("target"):
                         name.set(values.get("name") or f"Point {len(table.get_children())+1}")
@@ -2870,21 +3001,33 @@ def launch_window(args):
                     index = values["point"]-1
                     if not 0 <= index < len(children): raise CliError("point-out-of-range", "Choose an existing one-based point number")
                     item = children[index]
+                    if draft_pending() and not (command == "route.select" and values.get("discard_draft")) and not (command == "route.update" and item == form_item):
+                        raise CliError("unapplied-edit", "Apply or Reset fields before changing the selected point", "Use route select N --discard-draft", 4)
                     if command == "route.update":
                         old = table.item(item, "values")
+                        if values.get("current"):
+                            if values.get("x") is not None or values.get("z") is not None:
+                                raise CliError("invalid-arguments", "--current cannot be combined with --x/--z", exit_code=2)
+                            table.selection_set(item)
+                            select_point(None, discard_draft=True)
+                            label = route_points([(values.get("name") or old[0], old[1], old[2])])[0][0]
+                            return cli_begin(rid, "save", dict(item=item, revision=route_revision, label=label), command=command)
                         route_points([(values.get("name", old[0]), values.get("x",old[1]), values.get("z",old[2]))])
                     table.selection_set(item)
-                    select_point(None, force_name=True)
+                    select_point(None, force_name=True, discard_draft=True)
                     if command == "route.update":
                         for key,var in (("name",name),("x",x),("z",z)):
                             if values.get(key) is not None: var.set(values[key])
-                        update_selected()
+                        change = update_selected()
+                        return cli_ok(dict(revision=route_revision, document=cli_document(), change=change,
+                                           selected=[table.index(i)+1 for i in table.selection()]))
                     elif command == "route.remove": remove_points()
                     elif command == "route.reorder":
                         destination = values["to"]-1
                         if not 0 <= destination < len(children): raise CliError("point-out-of-range", "Destination must be an existing point index")
                         move_point(destination-index)
                 elif command == "route.undo":
+                    if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before Undo", exit_code=4)
                     if not edit_history: raise CliError("nothing-to-undo", "There is no edit to undo", exit_code=4)
                     undo_edit()
                 elif command == "route.run":
@@ -3145,13 +3288,14 @@ def launch_window(args):
     zone_filter.bind("<<ComboboxSelected>>",lambda _:refresh_library())
     library_table.bind("<Double-1>",library_load_selected)
     workflow.bind("<<NotebookTabChanged>>",lambda _:workflow.configure(
-        height=230 if workflow.select()==str(replay_tab) else 220 if workflow.select()==str(library_tab) else 184))
+        height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select()==str(library_tab) else 184))
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
         nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp, exploration_sample
         nonlocal cli_action, cli_record_output, cli_last_operation, cli_last_record_file
         nonlocal current_zone_context, zone_error, zone_observing, next_zone_at
+        nonlocal last_edit_change
         cli_server.poll(cli_dispatch)
         if cli_destroyed:
             return
@@ -3332,17 +3476,39 @@ def launch_window(args):
             if status in ("live", "recording"):
                 continue
             if status == "save":
-                item = add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
+                replacement = event.get("replacement")
+                if replacement is not None:
+                    item = replacement["item"]
+                    if (not table.exists(item) or replacement["revision"] != route_revision
+                            or event.get("captureTarget") != getattr(adapter, "target", None)):
+                        state.set("Waypoint or RIFT identity changed; capture was not applied.")
+                        if cli_action is not None:
+                            cli_action["editFailure"] = dict(status="failed", reason=state.get())
+                        continue
+                    old = table.item(item, "values")
+                    point = event["position"]
+                    last_edit_change = dict(nameChanged=old[0] != replacement["label"],
+                        coordinatesChanged=(finite(old[1]), finite(old[2])) != (round(point["x"],6), round(point["z"],6)),
+                        measurementDiscarded=False, measurementReplaced=True, recordingDiscarded="recording" in route_metadata)
+                    remember_edit()
+                    invalidate_progress()
+                    table.item(item, values=(replacement["label"], f"{point['x']:.6f}", f"{point['z']:.6f}"))
+                    point_receipts[item] = event["measurement"]
+                    table.selection_set(item)
+                    fill_fields(item)
+                    if cli_action is not None: cli_action["change"] = deepcopy(last_edit_change)
+                    event["measurementReason"] = "Selected waypoint replaced with current measured XYZ; save the route to keep it."
+                    redraw()
+                else:
+                    item = add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
                 if item is not None and event.get("measurement") is not None:
                     point_receipts[item] = event["measurement"]
                     redraw()
-                name.set(f"Point {len(table.get_children()) + 1}")
             if "waypoint" in event:
                 item = add_point(*event["waypoint"])
                 if item is not None and event.get("measurement") is not None:
                     point_receipts[item] = event["measurement"]
                     redraw()
-                name.set(f"Point {len(table.get_children()) + 1}")
             text = (f"Route complete — {event['waypointCount']} waypoint{'s' if event['waypointCount'] != 1 else ''}, "
                     f"{event['distance']:.3f} units from the final point."
                     if status == "route-complete" else
@@ -3424,15 +3590,19 @@ def launch_window(args):
             threading.Thread(target=worker, args=("zone-live",), daemon=False).start()
         window.after(80, poll)
 
-    def select_point(_, *, force_name=False):
+    def select_point(_, *, force_name=False, discard_draft=False):
         nonlocal added_selection
-        selected = selected_points()
+        selected = table.selection()
+        if draft_pending() and not discard_draft:
+            if selected != (form_item,):
+                table.selection_set(form_item)
+                state.set("Apply or Reset fields before selecting another waypoint.")
+            update_edit_state()
+            return
         if len(selected) == 1:
-            if force_name or table.selection()[0] != added_selection:
-                added_selection = None
-                name.set(selected[0][0])
-            x.set(selected[0][1])
-            z.set(selected[0][2])
+            fill_fields(selected[0])
+        else:
+            fill_fields()
         redraw()
 
     def select_clicked(event):
@@ -3448,7 +3618,7 @@ def launch_window(args):
     def edit_point_shortcut(_):
         if not busy and not closing and len(table.selection()) == 1:
             workflow.select(edit_tab)
-            select_point(None, force_name=True)
+            if not draft_pending(): select_point(None, force_name=True)
             point_entries[0].focus_set()
             point_entries[0].selection_range(0, "end")
         return "break"
@@ -3483,6 +3653,9 @@ def launch_window(args):
     table.bind("<Delete>", remove_points_shortcut)
     for entry in point_entries:
         entry.bind("<Control-Return>", update_selected_shortcut)
+        entry.bind("<Return>", update_selected_shortcut)
+    for variable in (name, x, z):
+        variable.trace_add("write", lambda *_: None if form_loading else update_edit_state())
     if last_route.exists():
         try:
             history = json.loads(last_route.read_text(encoding="utf-8"))

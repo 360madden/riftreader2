@@ -50,6 +50,48 @@ movement/turn pulses; completed Resume was correctly unavailable. The original
 seven-point route and its absent active checkpoint were restored. This checks
 the updated admission/display path; it is not a new moving-route/STOP trial.
 
+## Edit waypoint
+
+The fields always describe the selected row, including immediately after adding,
+loading or Undo. **Enter** or **Update Selected** applies them. **Reset fields**
+restores the selected row without changing the route. Unapplied fields are marked
+explicitly and preserved when another row is clicked; Apply or Reset before
+switching rows, saving or starting another action. Up/Down, Remove and Update
+follow selection and boundary conditions. The selected row is scrolled into view.
+
+The hint shows measured Y or estimated/unknown height. Renaming retains height
+evidence. Changing X/Z removes that point's old measurement and recorded-route
+provenance, with a visible warning and completion message; other admitted point
+measurements remain. **Set selected to current** replaces a point with freshly
+observed player XYZ while retaining its name and position in the route. It requires
+valid measurement provenance and checks tagged zone context before replacement.
+This reads the game and edits the route; it sends no game input. Undo restores the
+previous coordinates and evidence, but does not reinstate an invalidated playback
+checkpoint. Save the route explicitly to retain changes.
+
+The same operations are available through the attached CLI:
+
+```powershell
+.\rr2-waypoints.cmd route update 7 --current
+.\rr2-waypoints.cmd route update 7 --current --name "Measured corner"
+.\rr2-waypoints.cmd route update 7 --x 7420.25 --z 2940.5
+.\rr2-waypoints.cmd route undo
+.\rr2-waypoints.cmd route select 7 --discard-draft
+```
+
+`--current` may include `--name` but cannot include manual `--x`/`--z`. Route list
+reports selected point numbers and `editDraft` state. Update responses report
+`change` fields for renamed coordinates, replaced/discarded measurements and
+discarded recording provenance. `--discard-draft` explicitly abandons unapplied
+GUI fields; normal selection preserves them. Existing load/new/close `--discard`
+also permits discarding a draft. No new persistent setting is introduced.
+
+On November 13, live CLI checks replaced point 7 with measured XYZ, manually
+changed X, checked measurement removal, reordered with receipt preservation, and
+used Undo to restore each document. The original seven-point file, player pose,
+movement basis and absent active checkpoint were preserved. Normal and compact
+native-window screenshots were reviewed; no game input was sent.
+
 ## Route library and zone context
 
 **Library** keeps named route copies in `artifacts/waypoint-routes`. Search by
