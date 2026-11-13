@@ -61,7 +61,7 @@ class Adapter:
     pid = 123
     target = {'hostName': 'AMD-DESKTOP', 'executableSha256': 'a' * 64, 'processId': 123,
               'processStartUtcTicks': '12345', 'executablePath': 'C:/rift.exe', 'hwnd': '99'}
-    binding = None
+    binding = {'runtimeIdentity': {'machine': 'AMD-DESKTOP', 'gameBuildSha256': 'a' * 64, 'unitKey': '1'}}
     input_receipt_path = root / 'no-input'
 class NoForeground:
     def __init__(self, *args): pass
@@ -322,6 +322,22 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertEqual(current['document']['routeName'], 'Renamed')
         self.assertFalse(current['dirty'])
         self.assertIsNone(json.loads(legacy.read_text()).get('routeContext'))
+
+    def test_replay_status_matches_snapshot_and_explains_endpoint(self):
+        self.assertTrue(self.call('route.add', {'name': 'Here', 'x': 12, 'z': 24})['ok'])
+        self.assertTrue(self.call('route.add', {'name': 'End', 'x': 13, 'z': 24})['ok'])
+        playback = self.call('playback.status')['data']
+        self.assertTrue(playback['faceWaypoints'])
+        self.assertTrue(playback['readiness']['forward']['ready'], playback)
+        self.assertFalse(playback['readiness']['reverse']['ready'])
+        self.assertIn('endpoint', playback['readiness']['reverse']['reason'])
+        self.assertFalse(playback['readiness']['resume']['ready'])
+        self.assertIn('no saved', playback['readiness']['resume']['reason'])
+        snapshot = self.call('status')['data']
+        self.assertEqual(playback['readiness'], snapshot['playback']['readiness'])
+        self.assertEqual(snapshot['app']['name'], "Joey D's Waypoints")
+        self.assertEqual(snapshot['app']['version'], '1.1.0')
+        self.assertFalse((self.root / 'movement-called').exists())
 
     def test_zone_guard_rechecks_before_movement(self):
         self.assertTrue(self.call('route.add', {'name': 'A', 'x': 1, 'z': 2})['ok'])

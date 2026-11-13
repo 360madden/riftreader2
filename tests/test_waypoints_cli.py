@@ -31,6 +31,12 @@ class CliTests(unittest.TestCase):
 
     def test_no_args_and_help_alias(self):
         self.assertEqual(self.call()[0], 0)
+        help_text = self.call()[1]
+        self.assertIn("Control Joey D's Waypoints", help_text)
+        version = self.call('--version')
+        self.assertEqual(version[0], 0)
+        self.assertIn("Joey D's Waypoints 1.1.0", version[1])
+        self.assertIn('rr2-waypoints', version[1])
         alias = self.call('help', 'radar', 'set')
         direct = self.call('radar', 'set', '--help')
         self.assertEqual(alias, direct)
@@ -250,6 +256,42 @@ class CliTests(unittest.TestCase):
         self.assertIn('owned shared reader',self.call('beacons','show','--help')[1])
         self.assertIn('JSON manifest',self.call('view','save','--help')[1])
         self.assertIn('.rrd',self.call('view','open-3d','--help')[1])
+        playback_help = self.call('playback','status','--help')[1]
+        self.assertIn('existing pose', playback_help)
+        self.assertIn('rechecks live admission', playback_help)
+        self.assertIn('Effects: Read-only;', playback_help)
+
+    def test_human_playback_status_explains_each_admission(self):
+        readiness = {
+            'forward': {'ready': True, 'reason': 'At route start', 'direction': 'forward',
+                        'nextIndex': 0, 'nextName': 'Camp', 'remainingDistance': 4.25},
+            'reverse': {'ready': False, 'reason': 'Move 6.2 units to End', 'direction': 'reverse',
+                        'nextIndex': 0, 'nextName': 'End', 'remainingDistance': None},
+            'resume': {'ready': True, 'reason': 'On unfinished leg', 'direction': 'reverse',
+                       'nextIndex': 2, 'nextName': 'Bridge', 'remainingDistance': 1.5},
+        }
+        data = {'active': False, 'progress': {'direction': 'reverse', 'nextIndex': 2},
+                'checkpoint': 'progress.json', 'faceWaypoints': True, 'readiness': readiness}
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('playback.status',data=data)):
+            code,out,_ = self.call('playback','status')
+        self.assertEqual(code, 0)
+        for phrase in ('Replay: idle | face before each leg', 'Saved cursor: reverse | next point 3',
+                       'Forward: ready | forward | point 1 (Camp) | 4.25 units remaining | At route start',
+                       'Reverse: blocked | reverse | point 1 (End) | Move 6.2 units to End',
+                       'Resume: ready | reverse | point 3 (Bridge) | 1.50 units remaining | On unfinished leg'):
+            self.assertIn(phrase, out)
+
+    def test_main_status_has_compact_playback_readiness(self):
+        data={'host':'AMD-DESKTOP','target':{'processId':99},'app':{'busy':False,'visible':True},
+              'route':{'count':2,'dirty':False},'pose':{},'radar':{},
+              'playback':{'active':False,'readiness':{
+                  'forward':{'ready':True},'reverse':{'ready':False},'resume':{'ready':False}}}}
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('status',data=data)):
+            code,out,_ = self.call('status')
+        self.assertEqual(code, 0)
+        self.assertIn('Replay: idle | F ready | R blocked | Resume blocked', out)
 
     def test_human_status_is_compact_and_distinguishes_observed_radar(self):
         data={'host':'AMD-DESKTOP','target':{'processId':99},'app':{'busy':False,'visible':True,'state':'Connected'},

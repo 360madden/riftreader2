@@ -40,7 +40,8 @@ class WindowReceiptTests(unittest.TestCase):
         app.launch_window(args)
         self.window = self.roots[-1]
         self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
-        self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview))
+        self.table = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Treeview)
+                          and tuple(w["columns"]) == ("name", "x", "z"))
         item = self.table.insert("", "end", values=("Goal", "2", "0"))
         self.table.selection_set(item)
         self.window.update()
@@ -96,11 +97,13 @@ class WindowReceiptTests(unittest.TestCase):
 
     def test_walk_and_record_uses_teaching_backend_and_saves_observed_route(self):
         document = {"waypoints": [["Observed start", 0, 0], ["Observed corner", 1, 1]],
-                    "recording": {"complete": True, "sampleCount": 12}}
+                    "heights": [0, 0],
+                    "recording": {"version": 1, "complete": True, "sampleCount": 12,
+                                  "identity": self.adapter.binding}}
         checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
         checkpoint.write_text('{"old":true}')
         with patch("scripts.waypoint_playback.teach_route", return_value=([self.result], document)) as teach:
-            receipt = self.invoke_and_wait("Walk + Record")
+            receipt = self.invoke_and_wait("Auto-walk + record")
         self.assertEqual("teach", receipt["operation"])
         self.assertEqual([self.result], receipt["result"])
         args, kwargs = teach.call_args
@@ -144,7 +147,7 @@ class WindowReceiptTests(unittest.TestCase):
                     return [self.result], {"waypoints": [["New", 0, 0], ["New end", 1, 0]]}
 
                 with patch("scripts.waypoint_playback.teach_route", side_effect=teach):
-                    self.button("Walk + Record").invoke()
+                    self.button("Auto-walk + record").invoke()
                     self.assertTrue(ready.wait(1))
                     self.wait_for(lambda: any("Recording: 1.25 / 20 units" in self.window.getvar(w["textvariable"])
                                              and "8 samples" in self.window.getvar(w["textvariable"])
@@ -170,7 +173,7 @@ class WindowReceiptTests(unittest.TestCase):
         checkpoint.write_text('{"old":true}')
         document = {"waypoints": [["New", 0, 0], ["New end", 1, 0]]}
         with patch("scripts.waypoint_playback.teach_route", return_value=([self.result], document)):
-            self.button("Walk + Record").invoke()
+            self.button("Auto-walk + record").invoke()
             for thread in self.threads:
                 thread.join(timeout=2)
                 self.assertFalse(thread.is_alive())
@@ -195,13 +198,16 @@ class WindowReceiptTests(unittest.TestCase):
         self.adapter.read = lambda **kwargs: self.pose(2)
         self.button("Refresh").invoke()
         self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
-        checkpoint = self.root_path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"direction": "reverse", "nextIndex": 1}))
+        face_mode = next(w for w in self.widgets() if isinstance(w, fixture.ttk.Checkbutton)
+                         and str(w["text"]) == "Face before direct / auto-walk")
+        face_mode.invoke()  # Direct/auto-walk disabled; explicit playback remains face-first.
         forward = self.invoke_and_wait("Play Forward")
         self.assertEqual(("play", "forward"), (forward["operation"], forward["direction"]))
+        self.assertTrue(self.play.call_args.kwargs["face_waypoints"])
         resumed = self.invoke_and_wait("Resume")
         self.assertEqual(("resume", "reverse"), (resumed["operation"], resumed["direction"]))
         self.assertTrue(self.play.call_args.kwargs["resume"])
+        self.assertTrue(self.play.call_args.kwargs["face_waypoints"])
 
     def test_stop_retains_original_reason_and_pulse_path(self):
         self.runner.side_effect = app.Stopped("operator stopped this trip")

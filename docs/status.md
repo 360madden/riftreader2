@@ -1,5 +1,23 @@
 # Current status
 
+**NOVEMBER 13 — JOEY D'S WAYPOINTS v1.1.0; REPLAY POLISH:**
+On verified AMD-DESKTOP/PID40452, the app has a versioned title, custom transparent
+red panda header/window artwork, and shared CLI branding. Existing launchers stay
+compatible. Replay now explains Forward/Reverse/Resume readiness using the same
+read-only cursor admission rules; Resume checks current unfinished-leg position
+and measured height. Saved direction/count and a thin progress bar are visible.
+Play/Resume always face before each leg in GUI and CLI. Manual Record and
+Auto-walk + record are explicitly distinguished. Normal/compact native captures
+were reviewed and clipped readiness text corrected. Focused pure, real-Tk/mailbox
+and receipt checks passed, including wrong-height/off-leg Resume and face-first
+playback with the direct-movement checkbox off; some combined Tk cases skipped
+for the existing Tcl initialization issue. A live CLI two-point colocated playback
+completed with zero turn/movement pulses, then correctly disabled completed Resume.
+Original route/basis hashes, XYZ and absent active checkpoint were preserved.
+Evidence: `artifacts/replay-ui-final-verification-20261113.json` and
+`artifacts/joey-waypoints-replay-final-{980,1120}-20261113.png`.
+See [Replay operation](workflows/physical-waypoints.md#replay).
+
 **NOVEMBER 13 — ZONE ROUTE LIBRARY, HEIGHT CONTEXT AND OVERLAY RECOVERY:**
 On verified AMD-DESKTOP/PID40452, the Library tab and attached CLI now support
 named copies, import, search and candidate-zone filters. Legacy routes remain

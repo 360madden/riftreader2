@@ -22,6 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.waypoint_brand import APP_TITLE
+
 def denied(*args, **kwargs):
     raise AssertionError('Offline preview forbids native acquisition, input and marker processes')
 
@@ -101,7 +103,7 @@ def preview_svg(local, width, height, tab, scenario):
         rect(x,y,w,30,fill,border,6)
         text(x+10,y+20,label,11,ink)
         return w
-    text(26,29,'RIFT / READER 2',10,gold,'600');text(26,61,'Waypoints',28,fg,'600')
+    text(26,29,'RIFT / READER 2',10,gold,'600');text(26,61,APP_TITLE,24,fg,'600')
     text(160,29,'AMD-DESKTOP / OFFLINE FIXTURE',10,'#a3b5c4')
     button(width-250,24,'Refresh',90);button(width-148,24,'STOP / F8',122)
     live=bool(local['live_pose'].get())
@@ -298,7 +300,7 @@ def main(argv=None):
             for widget in descendants(window):
                 if isinstance(widget,ttk.Button):
                     label=str(widget.cget('text'))
-                    if label in ('Play Forward','Play Reverse','Resume','Walk + Record','Record','Run Route','Go Selected','Face Selected','Save current position','Save Current'):
+                    if label in ('Play Forward','Play Reverse','Resume','Auto-walk + record','Record','Run Route','Go Selected','Face Selected','Save current position','Save Current'):
                         widget.configure(state='disabled' if busy else 'normal')
             local['log'].configure(state='normal');local['log'].delete('1.0','end')
             local['log'].insert('end', 'OFFLINE FIXTURE  -  no native process connected.\n'

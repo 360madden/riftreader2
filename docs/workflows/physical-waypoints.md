@@ -1,4 +1,8 @@
-# Physical waypoint prototype
+# Joey D's Waypoints
+
+The desktop helper and console frontend share **Joey D's Waypoints v1.1.0**
+branding. The red panda in the header is also the window icon. Existing
+`Waypoints.cmd` and `rr2-waypoints.cmd` entry points stay compatible.
 
 The window groups its controls into **Replay**, **Edit waypoint**, **Scene &
 beacons**, **Explore**, **Library**, and **Activity** tabs. The route list, local map, current pose and
@@ -8,6 +12,43 @@ F2 on a selected row opens Edit waypoint and focuses its name. Full receipt path
 and detailed status remain in Activity. Load/Save and Recent routes stay with the
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
+
+## Replay
+
+Replay separates explicit **Playback**, **Record a path**, and **Direct movement**.
+Forward, Reverse and Resume each show a readiness reason from the current cached
+pose: endpoint distance, measured height, unfinished-leg position, route budget,
+zone candidate or missing/completed progress. This read-only preview reuses the
+playback cursor's admission rules and never changes a checkpoint or starts a
+reader. Execution still acquires fresh observations and repeats the normal gates.
+
+Saved progress identifies its direction and completed count; the thin progress
+bar follows that cursor. Resume stays disabled when the current position is too
+far from the unfinished leg, even when a checkpoint exists. Fresh Play starts
+within 0.30 units of Start (Forward) or End (Reverse).
+
+**Play and Resume always face before each leg**, matching the CLI. The separate
+**Face before direct / auto-walk** checkbox affects direct movement and automatic
+teaching. **Record** follows your manual walk; **Stop Recording** saves it.
+**Auto-walk + record** explicitly drives the route and records the visited path.
+STOP/F8 cancels automatic work and cancels an unfinished manual recording.
+
+```powershell
+.\rr2-waypoints.cmd playback status
+.\rr2-waypoints.cmd playback status --json
+.\rr2-waypoints.cmd app show --tab replay
+```
+
+`status.playback` and `playback status` share `readiness.forward`, `reverse` and
+`resume` objects with `ready`, `reason`, `direction`, zero-based ordered
+`nextIndex`, `nextName` and `remainingDistance`. These are previews, not movement
+authority. The console retains `--execute` for movement; no new setting is needed.
+
+On November 13 the updated native window was visually checked at compact and
+normal sizes. CLI playback of two colocated measured points completed with zero
+movement/turn pulses; completed Resume was correctly unavailable. The original
+seven-point route and its absent active checkpoint were restored. This checks
+the updated admission/display path; it is not a new moving-route/STOP trial.
 
 ## Route library and zone context
 

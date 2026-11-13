@@ -886,7 +886,8 @@ def launch_window(args):
     from scripts.waypoint_playback import play_route
     from scripts.waypoint_progress import _route as progress_route, write_json_atomic
 
-    window.title(f"RR2 Waypoints — {args.expected_host} / "
+    from scripts.waypoint_brand import APP_NAME, APP_VERSION, APP_TITLE
+    window.title(f"{APP_TITLE} — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
     screen_height = window.winfo_screenheight()
     window.geometry(f"1120x{min(850, max(640, screen_height - 90))}")
@@ -902,13 +903,26 @@ def launch_window(args):
     header.columnconfigure(0, weight=1)
     brand = ttk.Frame(header)
     brand.grid(row=0, column=0, sticky="w")
-    brand_context = ttk.Frame(brand)
+    try:
+        mascot = tk.PhotoImage(file=str(ROOT / "assets/waypoints/red-panda.png"))
+        mascot = mascot.subsample(max(1, math.ceil(max(mascot.width(), mascot.height()) / 68)))
+        window._waypoint_mascot = mascot
+        ttk.Label(brand, image=mascot).pack(side="left", padx=(0, 12))
+        window.iconphoto(True, mascot)
+    except (tk.TclError, OSError):
+        pass  # Text branding remains usable without the optional artwork.
+    brand_words = ttk.Frame(brand)
+    brand_words.pack(side="left")
+    brand_context = ttk.Frame(brand_words)
     brand_context.pack(anchor="w")
     ttk.Label(brand_context, text="RIFT / READER 2", style="Base.Micro.TLabel").pack(side="left")
     connection_text = tk.StringVar(value=f"{args.expected_host}  /  "
         + (f"PID {args.physical_pid}" if args.physical_pid is not None else "Waiting for RIFT"))
     ttk.Label(brand_context, textvariable=connection_text, style="Base.Muted.TLabel").pack(side="left", padx=(12, 0))
-    ttk.Label(brand, text="Waypoints", style="Brand.TLabel").pack(anchor="w")
+    title_row = ttk.Frame(brand_words)
+    title_row.pack(anchor="w", pady=(3, 0))
+    ttk.Label(title_row, text=APP_NAME, style="Brand.TLabel").pack(side="left")
+    ttk.Label(title_row, text=f"v{APP_VERSION}", style="Base.Micro.TLabel").pack(side="left", padx=(10, 0), pady=(7, 0))
     header_actions = ttk.Frame(header)
     header_actions.grid(row=0, column=1, sticky="e", padx=(12, 16))
     stop_slot = ttk.Frame(header)
@@ -1273,7 +1287,7 @@ def launch_window(args):
         count, index = len(progress.ordered_points), progress.next_index
         playback_view = {"direction": progress.direction, "nextIndex": index}
         hint = "choose Play Forward or Play Reverse." if index == count else "choose Resume."
-        progress_text.set(f"Saved progress: {index} / {count}; {hint}")
+        progress_text.set(f"{progress.direction.title()} progress: {index} / {count}; {hint}")
         redraw()
 
     def restore_progress():
@@ -1330,6 +1344,7 @@ def launch_window(args):
         nonlocal map_view
         if cli_server is not None:
             update_context_text()
+            update_replay_status()
         if explore_controls is not None:
             explore_controls.route_changed()
         schedule_marker_update()
@@ -1395,29 +1410,8 @@ def launch_window(args):
             teach_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
             face_button.configure(state="normal" if len(selected) == 1 and .3 < chosen <= 20 else "disabled")
             record_button.configure(state="normal")
-            def can_play(reverse=False):
-                if not original_points:
-                    return False
-                rows = [row[1:] for row in (reversed(original_points) if reverse else original_points)]
-                endpoint = rows[0]
-                if math.hypot(finite(endpoint[1]) - last_pose[0], finite(endpoint[2]) - last_pose[1]) > .30 + 1e-9:
-                    return False
-                heights = route_metadata.get("heights")
-                if heights is not None:
-                    if not isinstance(heights, list) or len(heights) != len(original_points):
-                        return False
-                    try:
-                        height = heights[-1 if reverse else 0]
-                        if height is not None and (last_y is None or abs(last_y - finite(height)) > 1):
-                            return False
-                    except (TypeError, ValueError, IndexError):
-                        return False
-                return route_length(*last_pose[:2], rows) <= 20
-            forward_button.configure(state="normal" if can_play() else "disabled")
-            reverse_button.configure(state="normal" if can_play(True) else "disabled")
-            resumable = (playback_view is not None and checkpoint.exists()
-                         and 0 <= playback_view["nextIndex"] < len(points))
-            resume_button.configure(state="normal" if resumable else "disabled")
+            if cli_server is not None:
+                update_replay_status()
 
     def map_click(event):
         if busy or map_view is None:
@@ -1673,7 +1667,8 @@ def launch_window(args):
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
         context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and operation in ("go", "face", "play", "resume", "teach") else None
-        threading.Thread(target=worker, args=(operation, points, walk_facing.get() if face_walk is None else face_walk, context), daemon=False).start()
+        mode = True if operation in ("play", "resume") else walk_facing.get() if face_walk is None else face_walk
+        threading.Thread(target=worker, args=(operation, points, mode, context), daemon=False).start()
         return True
 
     def request_stop():
@@ -2140,18 +2135,19 @@ def launch_window(args):
     undo_button.pack(side="left", padx=(0, 6))
     editable.append(undo_button)
     for column in range(3):
-        replay_tab.columnconfigure(column, weight=1)
+        replay_tab.columnconfigure(column, weight=1, uniform="replaycards")
     playback_group = ttk.LabelFrame(replay_tab, text="PLAYBACK", padding=(10, 5), style="Card.TLabelframe")
     playback_group.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
     recording_controls = ttk.LabelFrame(replay_tab, text="RECORD A PATH", padding=(10, 5), style="Card.TLabelframe")
     recording_controls.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
     controls = ttk.LabelFrame(replay_tab, text="DIRECT MOVEMENT", padding=(10, 5), style="Card.TLabelframe")
     controls.grid(row=0, column=2, sticky="nsew")
-    for column, (label, callback) in enumerate((("Go Selected", lambda: start("go", selected_points())),
-                            ("Run Route", lambda: start("go", selected_points(True))),
-                            ("Face Selected", lambda: start("face", selected_points())))):
+    for label, row, column, span, callback in (
+            ("Go Selected", 0, 0, 1, lambda: start("go", selected_points())),
+            ("Face Selected", 0, 1, 1, lambda: start("face", selected_points())),
+            ("Run Route", 1, 0, 2, lambda: start("go", selected_points(True)))):
         button = ttk.Button(controls, text=label, command=callback)
-        button.grid(row=0, column=column, sticky="ew", padx=(0, 5), pady=(0, 8))
+        button.grid(row=row, column=column, columnspan=span, sticky="ew", padx=(0, 5), pady=(0, 5))
         editable.append(button)
         if label == "Go Selected":
             go_button = button
@@ -2159,10 +2155,10 @@ def launch_window(args):
             route_button = button
         else:
             face_button = button
-    face_option = ttk.Checkbutton(controls, text="Face, then walk", variable=walk_facing)
-    face_option.grid(row=1, column=0, columnspan=3, sticky="w")
+    face_option = ttk.Checkbutton(controls, text="Face before direct / auto-walk", variable=walk_facing)
+    face_option.grid(row=2, column=0, columnspan=2, sticky="w")
     editable.append(face_option)
-    teach_button = ttk.Button(recording_controls, text="Walk + Record", command=lambda: start("teach", selected_points(True)))
+    teach_button = ttk.Button(recording_controls, text="Auto-walk + record", command=lambda: start("teach", selected_points(True)))
     teach_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
     editable.append(teach_button)
     ttk.Button(stop_slot, text="STOP / F8", command=request_stop, style="Danger.TButton", width=15).pack(fill="both")
@@ -2183,10 +2179,28 @@ def launch_window(args):
     resume_button = playback_buttons["Resume"]
     record_end_button = ttk.Button(recording_controls, text="Stop Recording", command=stop_recording, state="disabled")
     record_end_button.grid(row=0, column=1, sticky="ew", padx=(5, 0), pady=(0, 7))
+    for group in (playback_group, recording_controls, controls):
+        group.columnconfigure(0, weight=1)
+        group.columnconfigure(1, weight=1)
+    ttk.Label(playback_group, text="Face before each leg · explicit playback", style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w")
+    ttk.Label(recording_controls, text="Record follows your manual walk", style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w")
     progress_text = tk.StringVar(value="No playback started.")
     progress_label = ttk.Label(replay_tab, textvariable=progress_text, style="Muted.TLabel", wraplength=860)
     progress_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(7, 0))
-    replay_tab.bind("<Configure>", lambda event: progress_label.configure(wraplength=max(200, event.width - 30)))
+    replay_hints = {}
+    replay_hint_labels = []
+    for column, action in enumerate(("forward", "reverse", "resume")):
+        replay_hints[action] = tk.StringVar(value=f"{action.title()}: waiting for pose")
+        label = ttk.Label(replay_tab, textvariable=replay_hints[action], style="Muted.TLabel", wraplength=280)
+        label.grid(row=2, column=column, sticky="nw", padx=(0, 12), pady=(7, 0))
+        replay_hint_labels.append(label)
+    replay_progress = ttk.Progressbar(replay_tab, style="Replay.Horizontal.TProgressbar", mode="determinate", maximum=1, value=0)
+    replay_progress.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+    def size_replay(event):
+        progress_label.configure(wraplength=max(200, event.width - 30))
+        for label in replay_hint_labels:
+            label.configure(wraplength=max(160, (event.width - 110) // 3))
+    replay_tab.bind("<Configure>", size_replay)
     scene_tab.columnconfigure(0, weight=1)
     scene_tab.columnconfigure(1, weight=1)
     view_controls = ttk.LabelFrame(scene_tab, text="CAPTURE & EXPLORE", padding=(12, 8), style="Card.TLabelframe")
@@ -2290,7 +2304,7 @@ def launch_window(args):
     recent_load_button.grid(row=0, column=2)
     editable.append(recent_load_button)
     footer_label = ttk.Label(frame, text="Open ground · route ≤ 20 units · requested pulses ≤ 150 ms · F8 prevents the next pulse. "
-              "Stop Recording saves; STOP cancels recording. Play starts within 0.30 units of its endpoint.",
+              "Stop Recording saves; STOP cancels recording. Play starts within 0.30 units of Start (Forward) or End (Reverse).",
               style="Base.Micro.TLabel", wraplength=900)
     footer_label.grid(row=5, column=0, sticky="w")
     frame.bind("<Configure>", lambda event: footer_label.configure(wraplength=max(200, event.width - 44)))
@@ -2526,9 +2540,55 @@ def launch_window(args):
                     labels=beacon_labels.get(), target=target_beacon.get(), guide=landmark_guide.get(),
                     pose=cli_pose(), display=cli_display_status(), qualification="Reader state; on-screen beacons also require a valid camera and foreground game/helper.")
 
+    replay_cache = {"key": None, "value": None}
+
+    def cli_playback_status():
+        from scripts.waypoint_replay_readiness import replay_readiness
+        pose = cli_pose()
+        identity = getattr(adapter, "binding", None)
+        identity = identity.get("runtimeIdentity") if isinstance(identity, dict) else None
+        reason = "Another action is active" if busy else "Helper is closing" if closing else None
+        if reason is None and pose.get("status") != "fresh":
+            reason = "Waiting for a fresh player pose"
+        if reason is None and route_metadata.get("routeContext") is not None:
+            comparison = zone_comparison()
+            if comparison != "matching":
+                reason = "Route zone candidate differs" if comparison == "mismatch" else "Refresh zone context before playback"
+        try:
+            stamp = checkpoint.stat()
+            checkpoint_key = (str(checkpoint), stamp.st_mtime_ns, stamp.st_size)
+        except OSError:
+            checkpoint_key = (str(checkpoint), None)
+        position = pose.get("position")
+        key = (route_revision, repr(identity), repr(position), reason, checkpoint_key)
+        if key != replay_cache["key"]:
+            try:
+                readiness = replay_readiness(cli_document(), identity, position, checkpoint, reason)
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                readiness = {action: dict(ready=False, reason=str(exc), direction=None, nextIndex=None,
+                                         nextName=None, remainingDistance=None) for action in ("forward", "reverse", "resume")}
+            replay_cache.update(key=key, value=readiness)
+        return dict(active=playback_active, progress=deepcopy(playback_view), checkpoint=str(checkpoint),
+                    faceWaypoints=True, readiness=deepcopy(replay_cache["value"]),
+                    qualification="Read-only readiness from the existing pose; execution rechecks fresh pose, ownership and zone before input.")
+
+    def update_replay_status():
+        snapshot = cli_playback_status()
+        count = len(table.get_children())
+        cursor = snapshot["readiness"]["resume"]
+        for action, button in (("forward", forward_button), ("reverse", reverse_button), ("resume", resume_button)):
+            item = snapshot["readiness"][action]
+            detail = (f"Ready · {item['remainingDistance']:.2f}u remaining" if item["ready"] else item["reason"])
+            replay_hints[action].set(f"{action.title()}: {detail}")
+            button.configure(state="normal" if item["ready"] else "disabled")
+        view = playback_view if playback_active else cursor
+        index = view.get("nextIndex") if view else None
+        replay_progress.configure(maximum=max(1, count), value=min(count, index or 0))
+
     def cli_snapshot():
         return dict(host=args.expected_host, target=deepcopy(getattr(adapter, "target", None)),
-                    app={"visible": window.state() not in ("withdrawn", "iconic"), "windowState": window.state(),
+                    app={"name": APP_NAME, "version": APP_VERSION,
+                         "visible": window.state() not in ("withdrawn", "iconic"), "windowState": window.state(),
                          "busy": busy, "closing": closing, "state": state.get()},
                     route={"file": str(route_path) if route_path else None, "dirty": route_dirty,
                            "revision": route_revision, "count": len(table.get_children()),
@@ -2538,7 +2598,7 @@ def launch_window(args):
                     pose=cli_pose(), radar=cli_radar_status(), beacons=cli_beacon_status(),
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
                     recording={"active": recording, "progress": recording_progress},
-                    playback={"active": playback_active, "progress": playback_view, "checkpoint": str(checkpoint)},
+                    playback=cli_playback_status(),
                     activeRequestId=cli_action["id"] if cli_action else None,
                     recentResults=deepcopy(cli_recent), inputSent=False)
 
@@ -2980,7 +3040,7 @@ def launch_window(args):
                         raise ValueError("Playback starts at its recorded endpoint; use guide start --from for passive guidance")
                 return cli_begin(rid, "resume" if command.endswith("resume") else "play", (document,direction), command=command)
             if command == "playback.status":
-                return cli_ok(dict(active=playback_active, progress=playback_view, checkpoint=str(checkpoint)))
+                return cli_ok(cli_playback_status())
             if command == "view.save":
                 if adapter is None: raise CliError("rift-unavailable", "Connect to RIFT first", exit_code=3)
                 output = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
@@ -3085,7 +3145,7 @@ def launch_window(args):
     zone_filter.bind("<<ComboboxSelected>>",lambda _:refresh_library())
     library_table.bind("<Double-1>",library_load_selected)
     workflow.bind("<<NotebookTabChanged>>",lambda _:workflow.configure(
-        height=220 if workflow.select()==str(library_tab) else 184))
+        height=230 if workflow.select()==str(replay_tab) else 220 if workflow.select()==str(library_tab) else 184))
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
@@ -3129,7 +3189,7 @@ def launch_window(args):
                 if not stop_markers():
                     state.set("Cannot hide markers after RIFT reconnected.")
                 pending_progress_selection = bool(table.get_children())
-                window.title(f"RR2 Waypoints - {args.expected_host} / PID {event['pid']}")
+                window.title(f"{APP_TITLE} — {args.expected_host} / PID {event['pid']}")
                 connection_text.set(f"{args.expected_host}  /  PID {event['pid']}")
                 state.set(f"Reconnected to RIFT PID {event['pid']}.")
                 continue

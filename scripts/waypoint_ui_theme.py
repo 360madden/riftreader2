@@ -56,6 +56,8 @@ def apply_theme(window):
     style.configure("Eyebrow.TLabel", background=surface, foreground=muted, font=("Segoe UI", 9, "bold"))
     style.configure("Muted.TLabel", background=surface, foreground=muted, font=body)
     style.configure("Micro.TLabel", background=surface, foreground=muted, font=("Segoe UI", 9))
+    style.configure("Replay.Horizontal.TProgressbar", background=mint, troughcolor=inset,
+                    bordercolor=line, lightcolor=mint, darkcolor=mint, thickness=6, borderwidth=0)
     style.configure("Card.TLabelframe", background=surface, bordercolor=line, borderwidth=1, relief="solid")
     style.configure("Card.TLabelframe.Label", background=surface, foreground=muted, font=bold)
 

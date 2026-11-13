@@ -82,6 +82,10 @@ class PlaybackWindowStateTests(unittest.TestCase):
         return next(w for w in self.widgets(self.roots[0])
                     if isinstance(w, (tk.Button, ttk.Button)) and str(w["text"]) == label)
 
+    def route_table(self):
+        return next(w for w in self.widgets(self.roots[0])
+                    if isinstance(w, ttk.Treeview) and tuple(w["columns"]) == ("name", "x", "z"))
+
     def launch(self, adapter=None, route=None):
         if adapter is not None and not getattr(adapter, "binding", None):
             adapter.binding = {"runtimeIdentity": dict(TEST_IDENTITY)}
@@ -112,7 +116,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
     def test_waiting_disables_actions_but_keeps_route_editing(self):
         self.stack.enter_context(patch.object(app, "PhysicalAdapter", side_effect=ValueError("absent")))
         self.launch()
-        for label in ("Record", "Play Forward", "Play Reverse", "Resume", "Walk + Record"):
+        for label in ("Record", "Play Forward", "Play Reverse", "Resume", "Auto-walk + record"):
             self.assertEqual("disabled", str(self.button(label)["state"]))
         for label in ("Load", "Add X / Z"):
             self.assertNotEqual("disabled", str(self.button(label)["state"]))
@@ -126,7 +130,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
         self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
         before = reader.call_count
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         table.selection_set(table.get_children()[0])
         self.roots[0].update()
         self.assertEqual(before, reader.call_count)
@@ -221,12 +225,31 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
 
+    def test_resume_explains_wrong_measured_height(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 10]}
+        route = self.path / "route.json"
+        route.write_text(json.dumps(document), encoding="utf-8")
+        checkpoint = self.write_checkpoint(document, "reverse", 1)
+        before = checkpoint.read_bytes()
+        pose = app.Snapshot(app.Position(0, 12, 0), 0, time.monotonic(), "fake")
+        self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
+                  if isinstance(w, ttk.Label) and w["textvariable"]]
+        self.assertTrue(any("Resume: position is on a different height" in value
+                            for value in labels), labels)
+        self.assertEqual(before, checkpoint.read_bytes())
+
     def test_refresh_reconciles_checkpoint_completed_by_external_cli(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0], ["C", 2, 0], ["D", 3, 0]]}
         checkpoint = self.write_checkpoint(document, "reverse", 2)
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
-        self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
+        labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
+                  if isinstance(w, ttk.Label) and w["textvariable"]]
+        self.assertTrue(any("Resume: position is too far from the unfinished leg" in value
+                            for value in labels), labels)
         self.write_checkpoint(document, "reverse", 4)
         unchanged = checkpoint.read_bytes()
         self.button("Refresh").invoke()
@@ -238,11 +261,11 @@ class PlaybackWindowStateTests(unittest.TestCase):
             time.sleep(.01)
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         self.assertEqual(unchanged, checkpoint.read_bytes())
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         self.assertEqual(4, len(table.get_children()))
         labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
                   if isinstance(w, ttk.Label) and w["textvariable"]]
-        self.assertTrue(any("Saved progress: 4 / 4" in value for value in labels), labels)
+        self.assertTrue(any("Reverse progress: 4 / 4" in value for value in labels), labels)
         self.assertTrue(any("Remaining: 0.00" in value for value in labels), labels)
 
     def test_teach_progress_without_playback_cursor_after_completed_checkpoint(self):
@@ -265,7 +288,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={},
                                     input_receipt_path=self.path / "pulses.jsonl"))
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
-        self.button("Walk + Record").invoke()
+        self.button("Auto-walk + record").invoke()
         deadline = time.monotonic() + 2
         found = False
         while time.monotonic() < deadline:
@@ -298,8 +321,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
 
     def test_loading_same_route_preserves_unfinished_checkpoint(self):
-        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11],
-                    "recording": {"complete": True}}
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}
         route = self.path / "route.json"
         route.write_text(json.dumps(document), encoding="utf-8")
         checkpoint = self.write_checkpoint(document, "forward", 1)
@@ -320,8 +342,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
 
     def test_loading_changed_route_invalidates_and_clears_progress(self):
         old = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}
-        new = {"waypoints": [["A", 0, 0], ["B", 2, 0]], "heights": [10, 11],
-               "recording": {"complete": True}}
+        new = {"waypoints": [["A", 0, 0], ["B", 2, 0]], "heights": [10, 11]}
         route = self.path / "route.json"
         route.write_text(json.dumps(new), encoding="utf-8")
         checkpoint = self.write_checkpoint(old, "forward", 1)
@@ -369,7 +390,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
-        self.assertTrue(any("Saved progress: 2 / 2" in value for value in values), values)
+        self.assertTrue(any("Reverse progress: 2 / 2" in value for value in values), values)
 
     def test_partial_play_keeps_new_checkpoint_cursor(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
@@ -400,24 +421,25 @@ class PlaybackWindowStateTests(unittest.TestCase):
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
-        self.assertTrue(any("Saved progress: 1 / 2" in value for value in values), values)
+        self.assertTrue(any("Forward progress: 1 / 2" in value for value in values), values)
 
     def test_load_caches_route_for_restart_without_enabling_resume(self):
-        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11],
-                    "recording": {"complete": True}}
+        document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}
         path = self.path / "route.json"
         path.write_text(json.dumps(document), encoding="utf-8")
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
-        with patch("tkinter.filedialog.askopenfilename", return_value=str(path)):
+        with (patch("tkinter.filedialog.askopenfilename", return_value=str(path)),
+              patch("tkinter.messagebox.showerror") as error):
             self.button("Load").invoke()
+        error.assert_not_called()
         cache = self.path / "artifacts" / "waypoint-last-route.json"
         self.assertEqual(document, json.loads(cache.read_text(encoding="utf-8"))["route"])
         self.cleanup_gui()
         self.roots.clear()
         self.threads.clear()
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         self.assertEqual(2, len(table.get_children()))
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         with patch("tkinter.filedialog.asksaveasfilename") as chooser:
@@ -432,7 +454,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         adapter = SimpleNamespace(read=lambda **kwargs: pose, pid=123)
         self.launch(adapter)
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         self.assertEqual("Checkpoint", table.item(table.get_children()[0], "values")[0])
         self.cleanup_gui()
         self.roots.clear()
@@ -440,7 +462,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         explicit = self.path / "explicit.json"
         explicit.write_text(json.dumps({"waypoints": [["Explicit", 0, 0]]}), encoding="utf-8")
         self.launch(adapter, explicit)
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         self.assertEqual("Explicit", table.item(table.get_children()[0], "values")[0])
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
 
@@ -452,7 +474,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
                                           "direction": "forward", "nextIndex": 99}), encoding="utf-8")
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         self.assertEqual("Cached", table.item(table.get_children()[0], "values")[0])
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
 
@@ -469,7 +491,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
                 before = checkpoint.read_bytes()
                 pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
                 self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123))
-                table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+                table = self.route_table()
                 self.assertEqual("Cached", table.item(table.get_children()[0], "values")[0])
                 self.assertEqual("disabled", str(self.button("Resume")["state"]))
                 self.assertEqual(before, checkpoint.read_bytes())
@@ -482,7 +504,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         before = checkpoint.read_bytes()
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123, binding={"runtimeIdentity": {}}))
-        table = next(w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Treeview))
+        table = self.route_table()
         self.assertEqual("Saved", table.item(table.get_children()[0], "values")[0])
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         self.assertEqual(before, checkpoint.read_bytes())

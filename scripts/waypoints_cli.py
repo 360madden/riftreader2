@@ -14,7 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-VERSION = "1.0"
+from scripts.waypoint_brand import APP_NAME, APP_VERSION
+
+VERSION = APP_VERSION
 MOVEMENT = {"move.to", "face", "route.run", "playback.start", "playback.resume"}
 COMMON = {"session", "timeout", "json", "jsonl", "no_color"}
 
@@ -98,11 +100,11 @@ def example(operation):
 
 
 def build_parser():
-    parser = Parser(prog="rr2-waypoints", description="Control the existing Waypoints app from a console.",
+    parser = Parser(prog="rr2-waypoints", description=f"Control {APP_NAME} from a console.",
                     epilog="Examples: rr2-waypoints status; rr2-waypoints radar show; rr2-waypoints guide start --from 1\n"
                            "rr2-waypoints route list --file route.json; rr2-waypoints playback start --execute")
     common(parser)
-    parser.add_argument("--version", action="version", version=f"rr2-waypoints {VERSION}")
+    parser.add_argument("--version", action="version", version=f"{APP_NAME} {VERSION} (rr2-waypoints)")
     groups = parser.add_subparsers(dest="group", title="Commands")
     leaves = {}
 
@@ -174,6 +176,7 @@ def build_parser():
                 "trail.save":"Export one observed trail segment to a separate existing-format route file.",
                 "playback.start":"Replay the complete loaded route in forward or reverse order using face-then-walk mode.",
                 "playback.resume":"Resume the saved checkpoint cursor and direction using face-then-walk mode.",
+                "playback.status":"Show Forward, Reverse and Resume readiness from the helper's existing pose; execution rechecks live admission.",
                 "route.run":"Run the loaded route from a one-based point using face-then-walk mode.",
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
             }.get(operation, f"{verb.capitalize()} {group}.")
@@ -296,6 +299,45 @@ def human_zone(context, *, label="Zone"):
           + " | candidate; actual world instance unproven")
 
 
+def _playback_readiness_line(label, readiness):
+    """Compact, stable human rendering for one read-only Replay admission result."""
+    readiness = readiness if isinstance(readiness, dict) else {}
+    ready = readiness.get("ready") is True
+    direction = readiness.get("direction") or label.casefold()
+    index = readiness.get("nextIndex")
+    cursor = f"point {index + 1}" if isinstance(index, int) and index >= 0 else "cursor unavailable"
+    name = readiness.get("nextName")
+    cursor += f" ({name})" if isinstance(name, str) and name else ""
+    remaining = readiness.get("remainingDistance")
+    distance = f" | {remaining:.2f} units remaining" if isinstance(remaining, (int, float)) else ""
+    reason = readiness.get("reason")
+    detail = f" | {reason}" if isinstance(reason, str) and reason else ""
+    return f"{label}: {'ready' if ready else 'blocked'} | {direction} | {cursor}{distance}{detail}"
+
+
+def human_playback(data, *, compact=False):
+    """Render the same GUI-owned readiness in both status and playback status."""
+    playback = data if isinstance(data, dict) else {}
+    readiness = playback.get("readiness") if isinstance(playback.get("readiness"), dict) else {}
+    progress = playback.get("progress") if isinstance(playback.get("progress"), dict) else {}
+    state = "active" if playback.get("active") else "idle"
+    if compact:
+        pieces = []
+        for key, short in (("forward", "F"), ("reverse", "R"), ("resume", "Resume")):
+            entry = readiness.get(key)
+            if isinstance(entry, dict): pieces.append(f"{short} {'ready' if entry.get('ready') is True else 'blocked'}")
+        print(f"Replay: {state}" + (" | " + " | ".join(pieces) if pieces else ""))
+        return
+    print(f"Replay: {state} | face before each leg | checkpoint {playback.get('checkpoint', 'unavailable')}")
+    if progress:
+        index = progress.get("nextIndex")
+        cursor = index + 1 if isinstance(index, int) and index >= 0 else "?"
+        print(f"Saved cursor: {progress.get('direction', '?')} | next point {cursor}")
+    for key, label in (("forward", "Forward"), ("reverse", "Reverse"), ("resume", "Resume")):
+        if key in readiness:
+            print(_playback_readiness_line(label, readiness[key]))
+
+
 def human_data(command, data):
     if not isinstance(data, dict): return False
     if command in {"status", "doctor"}:
@@ -307,6 +349,8 @@ def human_data(command, data):
         print(f"Route: {route.get('count', 0)} points | {'unsaved changes' if route.get('dirty') else 'saved'} | {route.get('file') or 'no file'}")
         human_pose(data.get("pose") or {})
         human_radar(data.get("radar") or {})
+        if data.get("playback"):
+            human_playback(data["playback"], compact=True)
         if data.get("zone"):
             zone = data["zone"]
             human_zone(zone.get("context", zone))
@@ -387,6 +431,8 @@ def human_data(command, data):
             print(f"Breadcrumb trail: {'recording' if data.get('active') else 'stopped'} | {len(segments)} retained segments | no game input")
             for segment in segments:
                 print(f"  Segment {segment.get('number', '?')}: {segment.get('pointCount', len(segment.get('points', [])))} points")
+    elif command == "playback.status":
+        human_playback(data)
     elif command in MOVEMENT:
         print(f"Movement: {data.get('operation', command)} | {data.get('state', '')}")
         if data.get("receipt"): print("Receipt: " + str(data["receipt"]))

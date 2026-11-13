@@ -34,7 +34,7 @@ class EntryDistanceWindowTests(unittest.TestCase):
     def test_refresh_updates_distances_in_original_order_with_reverse_progress(self):
         document = {"waypoints": [["Start", 0, 0], ["End", 3, 4]]}
         checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
-        checkpoint.write_text(json.dumps({"route": document, "direction": "reverse", "nextIndex": 1}))
+        fixture.PlaybackWindowStateTests.write_checkpoint(self, document, "reverse", 1)
         original = checkpoint.read_bytes()
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         reader = Mock(return_value=pose)
@@ -43,7 +43,8 @@ class EntryDistanceWindowTests(unittest.TestCase):
         self.assertEqual(1, reader.call_count)
         self.assertIn("Remaining: 0.00 / 20 units", self.summary())
         self.assertIn("Start: 0.00 • End: 5.00 units", self.summary())
-        table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
+        table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview)
+                     and tuple(w["columns"]) == ("name", "x", "z"))
         table.selection_set(table.get_children()[1])
         self.root.update()
         self.assertIn("Selected: 5.00 units", self.summary())

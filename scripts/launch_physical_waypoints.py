@@ -69,7 +69,8 @@ def main(argv=None):
             from tkinter import messagebox
             root = tk.Tk()
             root.withdraw()
-            messagebox.showerror("RIFT waypoints", str(exc), parent=root)
+            from scripts.waypoint_brand import APP_TITLE
+            messagebox.showerror(APP_TITLE, str(exc), parent=root)
             root.destroy()
         return 2
 
