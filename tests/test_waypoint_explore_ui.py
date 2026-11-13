@@ -11,6 +11,7 @@ from unittest.mock import Mock, patch
 
 import tkinter as tk
 from tkinter import ttk
+from tests.tk_support import withdrawn_root
 
 from scripts.waypoint_beacon_pose import SOURCE, QUALIFICATION
 from scripts.waypoint_explore_ui import ExploreControls, write_feedback
@@ -29,11 +30,7 @@ class ExploreControlsTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name)
-        try:
-            self.root = tk.Tk()
-        except tk.TclError as exc:
-            self.skipTest(str(exc))
-        self.root.withdraw()
+        self.root = withdrawn_root(tk.Tk)
         self.addCleanup(self.cleanup)
         apply_theme(self.root)
         self.parent = ttk.Frame(self.root)

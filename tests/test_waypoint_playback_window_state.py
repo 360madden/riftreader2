@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from scripts import physical_waypoints as app
 from scripts.waypoint_progress import RouteProgress
+from tests.tk_support import withdrawn_root
 
 TEST_IDENTITY = {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64, "unitKey": "player"}
 
@@ -42,11 +43,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.threads, self.roots, self.callback_errors = [], [], []
         actual_tk, actual_thread = tk.Tk, threading.Thread
         def root(*args, **kwargs):
-            try:
-                value = actual_tk(*args, **kwargs)
-            except tk.TclError as exc:
-                self.skipTest(f"Tk cannot initialize: {exc}")
-            value.withdraw()
+            value = withdrawn_root(actual_tk, *args, **kwargs)
             value.report_callback_exception = lambda kind, error, trace: self.callback_errors.append(error)
             self.roots.append(value)
             return value
@@ -118,8 +115,14 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.launch()
         for label in ("Record", "Play Forward", "Play Reverse", "Resume", "Auto-walk + record"):
             self.assertEqual("disabled", str(self.button(label)["state"]))
-        for label in ("Load", "Add X / Z"):
-            self.assertNotEqual("disabled", str(self.button(label)["state"]))
+        self.assertNotEqual("disabled", str(self.button("Load")["state"]))
+        entries = [w for w in self.widgets(self.roots[0]) if isinstance(w, ttk.Entry)
+                   and not isinstance(w, ttk.Combobox)][:3]
+        for entry in entries:
+            self.assertNotEqual("disabled", str(entry["state"]))
+        for entry in entries[1:]:
+            entry.insert(0, "0")
+        self.assertNotEqual("disabled", str(self.button("Add X / Z")["state"]))
 
     def test_play_buttons_follow_original_endpoints_without_extra_reads(self):
         route = self.path / "route.json"

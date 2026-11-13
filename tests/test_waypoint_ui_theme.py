@@ -1,5 +1,6 @@
 """Waypoint theme state checks use only a withdrawn Tk root."""
 import unittest
+from tests.tk_support import withdrawn_root
 
 from scripts.waypoint_ui_theme import PALETTE, apply_theme, summarize_status
 
@@ -22,11 +23,7 @@ class WaypointThemeTests(unittest.TestCase):
             from tkinter import ttk
         except ImportError as exc:
             self.skipTest(str(exc))
-        try:
-            window = tk.Tk()
-        except tk.TclError as exc:
-            self.skipTest(str(exc))
-        window.withdraw()
+        window = withdrawn_root(tk.Tk)
         self.addCleanup(window.destroy)
         style = ttk.Style(window)
         self.assertEqual(PALETTE, apply_theme(window))

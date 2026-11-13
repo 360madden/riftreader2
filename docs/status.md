@@ -1,5 +1,16 @@
 # Current status
 
+**NOVEMBER 13 — TK TEST INITIALIZATION RECOVERY; AFFECTED CHECKS CLEAN:**
+On verified AMD-DESKTOP, reproduced intermittent combined-run Tk bootstrap errors
+despite intact installed Tcl/Tk files. Shared withdrawn-window test startup now
+separates Tcl/Tk initialization and retries once in a fresh interpreter for the
+specific startup errors, only when installed library files are present. Persistent
+errors fail instead of becoming skips; the underlying native cause remains
+unqualified. Also aligned the waiting-state test with inline coordinate validation.
+The combined Replay, receipts, Edit/Undo, Explore, theme, recording, mailbox and
+startup regression run passed **92 tests and 18 subtests, zero failures/skips**.
+No production app code, global Python configuration or live game state changed.
+
 **NOVEMBER 13 — EDIT WAYPOINT POLISH AND MEASURED REPLACEMENT:**
 On verified AMD-DESKTOP/PID40452, Edit waypoint now keeps fields synchronized with
 selection/add/load/Undo, protects unapplied drafts, validates coordinates inline,

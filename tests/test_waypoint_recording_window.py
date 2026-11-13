@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
+from tests.tk_support import withdrawn_root
 
 try:
     import tkinter as tk
@@ -51,11 +52,7 @@ class RecordingWindowTests(unittest.TestCase):
         actual_tk, actual_thread = tk.Tk, threading.Thread
 
         def make_window(*args, **kwargs):
-            try:
-                window = actual_tk(*args, **kwargs)
-            except tk.TclError as exc:
-                self.skipTest(f"Tk cannot initialize: {exc}")
-            window.withdraw()
+            window = withdrawn_root(actual_tk, *args, **kwargs)
             window.report_callback_exception = lambda kind, error, trace: self.callback_errors.append(error)
             self.roots.append(window)
             return window
