@@ -146,8 +146,10 @@ class RecentRoutesTests(unittest.TestCase):
         table.selection_set(table.get_children()[0]); self.window.update()
         self.button("Remove").invoke()
         self.assertFalse(checkpoint.exists())
-        with patch("tkinter.filedialog.askopenfilename", return_value=str(path_a)):
+        with patch("tkinter.filedialog.askopenfilename", return_value=str(path_a)), \
+             patch("tkinter.messagebox.askyesnocancel", return_value=False) as discard:
             self.button("Load").invoke()
+        discard.assert_called_once()
         self.assertEqual(original, checkpoint.read_bytes())
 
     def test_explicit_startup_restores_cursor_after_first_fresh_binding(self):
@@ -228,7 +230,9 @@ class RecentRoutesTests(unittest.TestCase):
         self.button("Refresh").invoke()
         self.wait_idle()
         self.combo.set(str(source))
-        self.button("Load recent").invoke()
+        with patch("tkinter.messagebox.askyesnocancel", return_value=False) as discard:
+            self.button("Load recent").invoke()
+        discard.assert_called_once()
         self.assertFalse(checkpoint.exists())
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         self.assertEqual(1, select_route_progress(checkpoint, archive, document, other_owner).next_index)

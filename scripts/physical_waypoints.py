@@ -797,6 +797,8 @@ def launch_window(args):
     from tkinter import filedialog, messagebox, ttk
 
     window = tk.Tk()
+    from scripts.waypoint_ui_theme import PALETTE, apply_theme, summarize_status
+    apply_theme(window)
     from scripts.waypoint_connection import idle_read
     from scripts.waypoint_observation import observe_batch
     from scripts.waypoint_recording import RouteRecorder
@@ -805,22 +807,55 @@ def launch_window(args):
 
     window.title(f"RR2 Waypoints — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
-    window.geometry("1060x890")
-    frame = ttk.Frame(window, padding=14)
-    frame.pack(fill="both", expand=True)
-    ttk.Label(frame, text="RIFT waypoints", font=("Segoe UI", 18, "bold")).pack(anchor="w")
-    ttk.Label(frame, text="Open ground • route ≤ 20 units • pulses ≤ 150 ms • foreground loss stops movement").pack(anchor="w", pady=(0, 10))
+    screen_height = window.winfo_screenheight()
+    window.geometry(f"1120x{min(850, max(640, screen_height - 90))}")
+    window.minsize(980, min(740, max(620, screen_height - 90)))
+    window.columnconfigure(0, weight=1)
+    window.rowconfigure(0, weight=1)
+    frame = ttk.Frame(window, padding=(22, 12))
+    frame.grid(row=0, column=0, sticky="nsew")
+    frame.columnconfigure(0, weight=1)
+    frame.rowconfigure(3, weight=1)
+    header = ttk.Frame(frame)
+    header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+    header.columnconfigure(0, weight=1)
+    brand = ttk.Frame(header)
+    brand.grid(row=0, column=0, sticky="w")
+    brand_context = ttk.Frame(brand)
+    brand_context.pack(anchor="w")
+    ttk.Label(brand_context, text="RIFT / READER 2", style="Base.Micro.TLabel").pack(side="left")
+    connection_text = tk.StringVar(value=f"{args.expected_host}  /  "
+        + (f"PID {args.physical_pid}" if args.physical_pid is not None else "Waiting for RIFT"))
+    ttk.Label(brand_context, textvariable=connection_text, style="Base.Muted.TLabel").pack(side="left", padx=(12, 0))
+    ttk.Label(brand, text="Waypoints", style="Brand.TLabel").pack(anchor="w")
+    header_actions = ttk.Frame(header)
+    header_actions.grid(row=0, column=1, sticky="e", padx=(12, 16))
+    stop_slot = ttk.Frame(header)
+    stop_slot.grid(row=0, column=2, sticky="e")
     state = tk.StringVar(value=("Waiting for RIFT: " + args.initial_reason
                                 if getattr(args, "initial_reason", None) else
                                 "Ready — save a point, click the map, or enter X / Z."))
-    ttk.Label(frame, textvariable=state, wraplength=1000).pack(anchor="w", pady=5)
+    status_brief = tk.StringVar(value=summarize_status(state.get()))
+    state.trace_add("write", lambda *_: status_brief.set(summarize_status(state.get())))
+    status_strip = ttk.Frame(frame, style="Card.TFrame", padding=(14, 6))
+    status_strip.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+    status_label = ttk.Label(status_strip, textvariable=status_brief, style="Gold.TLabel", wraplength=900)
+    status_label.pack(anchor="w")
+    status_strip.bind("<Configure>", lambda event: status_label.configure(wraplength=max(200, event.width - 28)))
     pose_text = tk.StringVar(value="Position is loading…")
-    ttk.Label(frame, textvariable=pose_text).pack(anchor="w", pady=(0, 3))
+    telemetry = ttk.Frame(frame)
+    telemetry.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+    ttk.Label(telemetry, textvariable=pose_text, style="Telemetry.TLabel").pack(anchor="w")
     route_status = tk.StringVar(value="New route — Unsaved")
-    ttk.Label(frame, textvariable=route_status).pack(anchor="w", pady=(0, 3))
     editable = []
-    coordinates = ttk.Frame(frame)
-    coordinates.pack(fill="x", pady=5)
+    workflow = ttk.Notebook(frame, height=184)
+    workflow.grid(row=4, column=0, sticky="ew", pady=(10, 6))
+    replay_tab, edit_tab, scene_tab, activity_tab = [ttk.Frame(workflow, style="Surface.TFrame", padding=(14, 8)) for _ in range(4)]
+    for tab, title in ((replay_tab, "Replay"), (edit_tab, "Edit waypoint"),
+                       (scene_tab, "Scene & beacons"), (activity_tab, "Activity")):
+        workflow.add(tab, text=title)
+    coordinates = ttk.Frame(edit_tab, style="Surface.TFrame")
+    coordinates.pack(fill="x", pady=(0, 12))
     name, x, z = tk.StringVar(value="Point 1"), tk.StringVar(), tk.StringVar()
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
     target_beacon = tk.BooleanVar(value=False)
@@ -829,29 +864,57 @@ def launch_window(args):
     view_bring_forward = tk.BooleanVar(value=False)
     view_include_units = tk.BooleanVar(value=False)
     point_entries = []
-    for label, variable, width in (("Name", name, 18), ("X", x, 16), ("Z", z, 16)):
-        ttk.Label(coordinates, text=label).pack(side="left", padx=(0, 5))
+    for label, variable, width in (("Name", name, 26), ("X", x, 18), ("Z", z, 18)):
+        ttk.Label(coordinates, text=label, style="Surface.TLabel").pack(side="left", padx=(0, 5))
         entry = ttk.Entry(coordinates, textvariable=variable, width=width)
         entry.pack(side="left", padx=(0, 10))
         editable.append(entry)
         point_entries.append(entry)
-    ttk.Checkbutton(coordinates, text="Live pose (2 s)", variable=live_pose).pack(side="left", padx=(16, 0))
+    ttk.Checkbutton(header_actions, text="Live pose (2 s)", variable=live_pose).pack(anchor="e", pady=(7, 0))
     summary = tk.StringVar(value="Refresh position to preview the route.")
-    ttk.Label(frame, textvariable=summary).pack(anchor="w", pady=(5, 0))
+    summary_label = ttk.Label(telemetry, textvariable=summary, style="Base.Muted.TLabel", wraplength=900)
+    summary_label.pack(anchor="w", pady=(3, 0))
+    telemetry.bind("<Configure>", lambda event: summary_label.configure(wraplength=max(200, event.width)))
     middle = ttk.Frame(frame)
-    middle.pack(fill="both", expand=True, pady=8)
-    table = ttk.Treeview(middle, columns=("name", "x", "z"), show="headings", height=9)
-    for col, label, width in (("name", "Waypoint", 210), ("x", "X", 140), ("z", "Z", 140)):
+    middle.grid(row=3, column=0, sticky="nsew")
+    middle.columnconfigure(0, weight=3)
+    middle.columnconfigure(1, weight=2)
+    middle.rowconfigure(0, weight=1)
+    route_card = ttk.Frame(middle, style="Card.TFrame", padding=12)
+    route_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
+    route_card.columnconfigure(0, weight=1)
+    route_card.rowconfigure(3, weight=1)
+    route_heading = ttk.Frame(route_card, style="Surface.TFrame")
+    route_heading.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+    ttk.Label(route_heading, text="YOUR ROUTE", style="Eyebrow.TLabel").pack(side="left", padx=(0, 12))
+    route_status_label = ttk.Label(route_heading, textvariable=route_status, style="Gold.TLabel", wraplength=360)
+    route_status_label.pack(side="left")
+    route_heading.bind("<Configure>", lambda event: route_status_label.configure(wraplength=max(140, event.width - 100)))
+    file_toolbar = ttk.Frame(route_card, style="Surface.TFrame")
+    file_toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+    recent_controls = ttk.Frame(route_card, style="Surface.TFrame")
+    recent_controls.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+    recent_controls.columnconfigure(1, weight=1)
+    tree_frame = ttk.Frame(route_card, style="Surface.TFrame")
+    tree_frame.grid(row=3, column=0, sticky="nsew")
+    tree_frame.columnconfigure(0, weight=1)
+    tree_frame.rowconfigure(0, weight=1)
+    table = ttk.Treeview(tree_frame, columns=("name", "x", "z"), show="headings", height=4)
+    for col, label, width in (("name", "Waypoint", 220), ("x", "X", 120), ("z", "Z", 120)):
         table.heading(col, text=label)
         table.column(col, width=width)
-    table.pack(side="left", fill="both", expand=True)
-    map_frame = ttk.Frame(middle, padding=(12, 0, 0, 0))
-    map_frame.pack(side="right", fill="both")
-    canvas = tk.Canvas(map_frame, width=330, height=310, bg="#101c25", highlightthickness=0)
+    table.grid(row=0, column=0, sticky="nsew")
+    tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=table.yview)
+    tree_scroll.grid(row=0, column=1, sticky="ns")
+    table.configure(yscrollcommand=tree_scroll.set)
+    map_frame = ttk.Frame(middle, style="Card.TFrame", padding=12)
+    map_frame.grid(row=0, column=1, sticky="nsew")
+    ttk.Label(map_frame, text="LOCAL PREVIEW", style="Eyebrow.TLabel").pack(anchor="w", pady=(0, 10))
+    canvas = tk.Canvas(map_frame, width=330, height=220, bg="#0b1723", highlightthickness=0)
     canvas.pack(fill="both", expand=True)
-    map_hint = ttk.Frame(map_frame)
+    map_hint = ttk.Frame(map_frame, style="Surface.TFrame")
     map_hint.pack(fill="x", pady=(4, 0))
-    ttk.Label(map_hint, text="Click to add").pack(side="left", padx=(0, 6))
+    ttk.Label(map_hint, text="Click to add", style="Surface.TLabel").pack(side="left", padx=(0, 6))
     map_radius = 10
     radius_text = tk.StringVar(value="10 units")
     zoom_in = ttk.Button(map_hint, text="+", width=2, command=lambda: zoom(-1))
@@ -860,7 +923,7 @@ def launch_window(args):
     zoom_out.pack(side="left", padx=3)
     fit_button = ttk.Button(map_hint, text="Fit", width=3, command=lambda: fit_zoom())
     fit_button.pack(side="left")
-    ttk.Label(map_hint, textvariable=radius_text).pack(side="left", padx=6)
+    ttk.Label(map_hint, textvariable=radius_text, style="Surface.TLabel").pack(side="left", padx=6)
     events, stop = queue.Queue(), threading.Event()
     busy = False
     recording = False
@@ -902,7 +965,18 @@ def launch_window(args):
     added_selection = None
     edit_history = []
     recent_paths = []
-    log = tk.Text(frame, height=6, state="disabled", font=("Consolas", 10))
+    activity_tab.columnconfigure(0, weight=1)
+    activity_tab.rowconfigure(1, weight=1)
+    full_status_label = ttk.Label(activity_tab, textvariable=state, wraplength=860, style="Muted.TLabel")
+    full_status_label.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+    activity_tab.bind("<Configure>", lambda event: full_status_label.configure(wraplength=max(200, event.width - 30)))
+    log = tk.Text(activity_tab, height=5, state="disabled", font=("Consolas", 10),
+                  background="#0b1723", foreground="#dce8ef", insertbackground="#8dedc8",
+                  relief="flat", borderwidth=0, padx=10, pady=8, wrap="word")
+    log.grid(row=1, column=0, sticky="nsew")
+    log_scroll = ttk.Scrollbar(activity_tab, command=log.yview)
+    log_scroll.grid(row=1, column=1, sticky="ns")
+    log.configure(yscrollcommand=log_scroll.set)
 
     def update_route_status():
         title = route_path.name if route_path is not None else "Recovered route" if route_recovered else "New route"
@@ -1639,6 +1713,7 @@ def launch_window(args):
             messagebox.showerror("Cannot add nearby sample", str(exc), parent=window)
             return
         picker = nearby_picker = tk.Toplevel(window)
+        picker.configure(background=PALETTE["base"])
         picker.title("Add nearby — saved samples")
         picker.transient(window)
         body = ttk.Frame(picker, padding=12)
@@ -1651,7 +1726,12 @@ def launch_window(args):
                                   ("distance", "Saved distance", 105), ("xyz", "Observed X / Y / Z", 310)):
             listing.heading(key, text=title)
             listing.column(key, width=width)
-        listing.pack(fill="both", expand=True)
+        list_frame = ttk.Frame(body)
+        list_frame.pack(fill="both", expand=True)
+        listing.pack(in_=list_frame, side="left", fill="both", expand=True)
+        nearby_scroll = ttk.Scrollbar(list_frame, command=listing.yview)
+        nearby_scroll.pack(side="right", fill="y")
+        listing.configure(yscrollcommand=nearby_scroll.set)
         samples = {}
         for row in rows:
             point = row["position"]
@@ -1696,6 +1776,12 @@ def launch_window(args):
         listing.bind("<<TreeviewSelect>>", selection_changed)
         picker.protocol("WM_DELETE_WINDOW", close_nearby_picker)
         picker.bind("<Escape>", lambda _: close_nearby_picker())
+        picker.update_idletasks()
+        popup_width = min(850, window.winfo_width() - 40)
+        popup_height = min(picker.winfo_reqheight(), max(300, window.winfo_height() - 60))
+        picker.geometry(f"{max(620, popup_width)}x{popup_height}"
+                        f"+{window.winfo_rootx() + max(20, (window.winfo_width() - popup_width) // 2)}"
+                        f"+{window.winfo_rooty() + 30}")
         picker.grab_set()
 
     def open_view():
@@ -1762,33 +1848,42 @@ def launch_window(args):
         except (OSError, ValueError, KeyError, TypeError) as exc:
             state.set("Cannot show markers: " + str(exc))
 
-    buttons = ttk.Frame(frame)
-    buttons.pack(fill="x", pady=4)
-    buttons_second = ttk.Frame(frame)
-    buttons_second.pack(fill="x", pady=4)
-    for index, (label, callback) in enumerate((("Refresh", lambda: start("refresh")),
-                            ("Save Current", lambda: start("save")), ("Add X / Z", add_entered),
-                            ("Remove", remove_points),
-                            ("Load", load_route), ("Save Route", save_route), ("Save As", lambda: save_route(True)),
-                            ("Up", lambda: move_point(-1)), ("Down", lambda: move_point(1)),
-                            ("Clear", clear_points), ("Add Target", lambda: start("target")),
-                            ("Add nearby", add_nearby),
-                            ("Update Selected", update_selected))):
-        button = ttk.Button(buttons if index < 5 else buttons_second, text=label, command=callback)
-        button.pack(side="left", padx=(0, 5))
+    buttons = ttk.Frame(edit_tab, style="Surface.TFrame")
+    buttons.pack(fill="x", pady=(0, 10))
+    buttons_second = ttk.Frame(edit_tab, style="Surface.TFrame")
+    buttons_second.pack(fill="x")
+    for label, parent, callback in (("Refresh", header_actions, lambda: start("refresh")),
+            ("Save Current", buttons, lambda: start("save")), ("Add X / Z", buttons, add_entered),
+            ("Add Target", buttons, lambda: start("target")), ("Add nearby", buttons, add_nearby),
+            ("Update Selected", buttons, update_selected), ("Up", buttons_second, lambda: move_point(-1)),
+            ("Down", buttons_second, lambda: move_point(1)), ("Remove", buttons_second, remove_points),
+            ("Clear", buttons_second, clear_points), ("Load", file_toolbar, load_route),
+            ("Save Route", file_toolbar, save_route), ("Save As", file_toolbar, lambda: save_route(True))):
+        button = ttk.Button(parent, text=label, command=callback,
+                            style="Primary.TButton" if label in ("Save Route", "Update Selected") else "TButton")
+        if label == "Refresh":
+            button.pack(anchor="e", before=header_actions.winfo_children()[0])
+        else:
+            button.pack(side="left", padx=(0, 6))
         editable.append(button)
         if label == "Add nearby":
             nearby_button = button
     undo_button = ttk.Button(buttons_second, text="Undo", command=undo_edit, state="disabled")
-    undo_button.pack(side="left", padx=(0, 5))
+    undo_button.pack(side="left", padx=(0, 6))
     editable.append(undo_button)
-    controls = ttk.Frame(frame)
-    controls.pack(fill="x", pady=8)
-    for label, callback in (("Go Selected", lambda: start("go", selected_points())),
+    for column in range(3):
+        replay_tab.columnconfigure(column, weight=1)
+    playback_group = ttk.LabelFrame(replay_tab, text="PLAYBACK", padding=(10, 5), style="Card.TLabelframe")
+    playback_group.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    recording_controls = ttk.LabelFrame(replay_tab, text="RECORD A PATH", padding=(10, 5), style="Card.TLabelframe")
+    recording_controls.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
+    controls = ttk.LabelFrame(replay_tab, text="DIRECT MOVEMENT", padding=(10, 5), style="Card.TLabelframe")
+    controls.grid(row=0, column=2, sticky="nsew")
+    for column, (label, callback) in enumerate((("Go Selected", lambda: start("go", selected_points())),
                             ("Run Route", lambda: start("go", selected_points(True))),
-                            ("Face Selected", lambda: start("face", selected_points()))):
+                            ("Face Selected", lambda: start("face", selected_points())))):
         button = ttk.Button(controls, text=label, command=callback)
-        button.pack(side="left", padx=(0, 6))
+        button.grid(row=0, column=column, sticky="ew", padx=(0, 5), pady=(0, 8))
         editable.append(button)
         if label == "Go Selected":
             go_button = button
@@ -1797,22 +1892,21 @@ def launch_window(args):
         else:
             face_button = button
     face_option = ttk.Checkbutton(controls, text="Face, then walk", variable=walk_facing)
-    face_option.pack(side="left", padx=(10, 0))
+    face_option.grid(row=1, column=0, columnspan=3, sticky="w")
     editable.append(face_option)
-    teach_button = ttk.Button(controls, text="Walk + Record", command=lambda: start("teach", selected_points(True)))
-    teach_button.pack(side="left", padx=(10, 0))
+    teach_button = ttk.Button(recording_controls, text="Walk + Record", command=lambda: start("teach", selected_points(True)))
+    teach_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
     editable.append(teach_button)
-    tk.Button(controls, text="STOP / F8", bg="#b3261e", fg="white", font=("Segoe UI", 12, "bold"),
-              command=request_stop, width=16).pack(side="right")
-    recording_controls = ttk.Frame(frame)
-    recording_controls.pack(fill="x", pady=4)
+    ttk.Button(stop_slot, text="STOP / F8", command=request_stop, style="Danger.TButton", width=15).pack(fill="both")
+    ttk.Label(stop_slot, text="Always available · release & stop", style="Base.Muted.TLabel").pack(anchor="center", pady=(5, 0))
     playback_buttons = {}
-    for label, callback in (("Record", lambda: start("record")),
-                            ("Play Forward", lambda: playback("forward")),
-                            ("Play Reverse", lambda: playback("reverse")),
-                            ("Resume", playback)):
-        button = ttk.Button(recording_controls, text=label, command=callback)
-        button.pack(side="left", padx=(0, 6))
+    for label, parent, row, column, callback in (("Record", recording_controls, 0, 0, lambda: start("record")),
+            ("Play Forward", playback_group, 0, 0, lambda: playback("forward")),
+            ("Play Reverse", playback_group, 0, 1, lambda: playback("reverse")),
+            ("Resume", playback_group, 1, 0, playback)):
+        button = ttk.Button(parent, text=label, command=callback,
+                            style="Primary.TButton" if label == "Play Forward" else "TButton")
+        button.grid(row=row, column=column, sticky="ew", padx=(0, 5), pady=(0, 7))
         editable.append(button)
         playback_buttons[label] = button
     record_button = playback_buttons["Record"]
@@ -1820,50 +1914,58 @@ def launch_window(args):
     reverse_button = playback_buttons["Play Reverse"]
     resume_button = playback_buttons["Resume"]
     record_end_button = ttk.Button(recording_controls, text="Stop Recording", command=stop_recording, state="disabled")
-    record_end_button.pack(side="left", padx=(0, 6))
-    marker_button = ttk.Button(recording_controls, text="Show markers", command=toggle_markers)
-    marker_button.pack(side="left", padx=(0, 6))
-    editable.append(marker_button)
+    record_end_button.grid(row=0, column=1, sticky="ew", padx=(5, 0), pady=(0, 7))
     progress_text = tk.StringVar(value="No playback started.")
-    ttk.Label(recording_controls, textvariable=progress_text).pack(side="left", padx=8)
-    view_controls = ttk.Frame(frame)
-    view_controls.pack(fill="x", pady=4)
-    save_view_button = ttk.Button(view_controls, text="Save view", command=save_view)
+    progress_label = ttk.Label(replay_tab, textvariable=progress_text, style="Muted.TLabel", wraplength=860)
+    progress_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(7, 0))
+    replay_tab.bind("<Configure>", lambda event: progress_label.configure(wraplength=max(200, event.width - 30)))
+    scene_tab.columnconfigure(0, weight=1)
+    scene_tab.columnconfigure(1, weight=1)
+    view_controls = ttk.LabelFrame(scene_tab, text="CAPTURE & EXPLORE", padding=(12, 8), style="Card.TLabelframe")
+    view_controls.grid(row=0, column=0, sticky="nsew", padx=(0, 14))
+    view_buttons = ttk.Frame(view_controls, style="Surface.TFrame")
+    view_buttons.pack(fill="x", pady=(0, 8))
+    save_view_button = ttk.Button(view_buttons, text="Save view", command=save_view, style="Primary.TButton")
     save_view_button.pack(side="left", padx=(0, 6))
     editable.append(save_view_button)
-    open_view_button = ttk.Button(view_controls, text="Open view", command=open_view, state="disabled")
+    open_view_button = ttk.Button(view_buttons, text="Open view", command=open_view, state="disabled")
     open_view_button.pack(side="left", padx=(0, 6))
     editable.append(open_view_button)
-    open_3d_button = ttk.Button(view_controls, text="Open 3D view", command=open_3d_view, state="disabled")
-    open_3d_button.pack(side="left", padx=(0, 6))
+    open_3d_button = ttk.Button(view_buttons, text="Open 3D view", command=open_3d_view, state="disabled")
+    open_3d_button.pack(side="left")
     editable.append(open_3d_button)
     view_focus_option = ttk.Checkbutton(view_controls, text="Bring RIFT forward for capture", variable=view_bring_forward)
-    view_focus_option.pack(side="left", padx=8)
+    view_focus_option.pack(anchor="w")
     editable.append(view_focus_option)
     view_units_option = ttk.Checkbutton(view_controls, text="Nearby units in 3D", variable=view_include_units)
-    view_units_option.pack(side="left", padx=8)
+    view_units_option.pack(anchor="w", pady=(3, 0))
     editable.append(view_units_option)
-    target_option = ttk.Checkbutton(view_controls, text="Include selected target in markers", variable=target_beacon)
-    target_option.pack(side="left", padx=(12, 0))
+    marker_controls = ttk.LabelFrame(scene_tab, text="WORLD BEACONS", padding=(12, 8), style="Card.TLabelframe")
+    marker_controls.grid(row=0, column=1, sticky="nsew")
+    marker_button = ttk.Button(marker_controls, text="Show markers", command=toggle_markers)
+    marker_button.pack(anchor="w", pady=(0, 8))
+    editable.append(marker_button)
+    target_option = ttk.Checkbutton(marker_controls, text="Include selected target in markers", variable=target_beacon)
+    target_option.pack(anchor="w")
     editable.append(target_option)
-    landmark_option = ttk.Checkbutton(view_controls, text="Guide selected marker", variable=landmark_guide)
-    landmark_option.pack(side="left", padx=(12, 0))
+    landmark_option = ttk.Checkbutton(marker_controls, text="Guide selected marker", variable=landmark_guide)
+    landmark_option.pack(anchor="w", pady=(3, 0))
     editable.append(landmark_option)
-    recent_controls = ttk.Frame(frame)
-    recent_controls.pack(fill="x", pady=4)
-    ttk.Label(recent_controls, text="Recent routes").pack(side="left", padx=(0, 6))
     recent_choice = tk.StringVar()
-    recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=76)
-    recent_dropdown.pack(side="left", padx=(0, 6))
+    ttk.Label(recent_controls, text="Recent routes", style="Surface.Micro.TLabel").grid(row=0, column=0, padx=(0, 8))
+    recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=18)
+    recent_dropdown.grid(row=0, column=1, sticky="ew", padx=(0, 6))
     editable.append(recent_dropdown)
     recent_load_button = ttk.Button(recent_controls, text="Load recent", command=load_recent, state="disabled")
-    recent_load_button.pack(side="left")
+    recent_load_button.grid(row=0, column=2)
     editable.append(recent_load_button)
-    log.pack(fill="x", pady=4)
-    ttk.Label(frame, text="F8 stops movement. Stop Recording saves; STOP cancels recording. "
-              "Play starts within 0.30 units of Start (Forward) or End (Reverse).").pack(anchor="w")
-    table.tag_configure("completed", foreground="#52806d")
-    table.tag_configure("next", foreground="#ad6500")
+    footer_label = ttk.Label(frame, text="Open ground · route ≤ 20 units · requested pulses ≤ 150 ms · F8 prevents the next pulse. "
+              "Stop Recording saves; STOP cancels recording. Play starts within 0.30 units of its endpoint.",
+              style="Base.Micro.TLabel", wraplength=900)
+    footer_label.grid(row=5, column=0, sticky="w")
+    frame.bind("<Configure>", lambda event: footer_label.configure(wraplength=max(200, event.width - 44)))
+    table.tag_configure("completed", foreground="#7ba89a")
+    table.tag_configure("next", foreground="#f4c779")
 
     close_prompt = False
 
@@ -1929,6 +2031,7 @@ def launch_window(args):
                     state.set("Cannot hide markers after RIFT reconnected.")
                 pending_progress_selection = bool(table.get_children())
                 window.title(f"RR2 Waypoints - {args.expected_host} / PID {event['pid']}")
+                connection_text.set(f"{args.expected_host}  /  PID {event['pid']}")
                 state.set(f"Reconnected to RIFT PID {event['pid']}.")
                 continue
             if status == "halted":
@@ -2150,6 +2253,7 @@ def launch_window(args):
 
     def edit_point_shortcut(_):
         if not busy and not closing and len(table.selection()) == 1:
+            workflow.select(edit_tab)
             select_point(None, force_name=True)
             point_entries[0].focus_set()
             point_entries[0].selection_range(0, "end")

@@ -1,5 +1,34 @@
 # Current status
 
+**NOVEMBER 12 EVENING — WAYPOINT WORKSPACE REDESIGN; DESKTOP CONTROL STOPPED:**
+On verified AMD-DESKTOP, the waypoint helper now has a shared navy/mint theme,
+four workflow tabs (Replay, Edit waypoint, Scene & beacons, Activity), grouped
+route controls and a clearer player-relative radar. STOP/F8 remains in the header.
+The compact layout requests 971×784 pixels and supports a 980×740 minimum;
+long status/filename fields wrap. Eighty-four distinct focused GUI checks and
+ten map checks passed during development; final source compilation and withdrawn
+fake launch passed. Offline previews use actual widget text/style/state and map
+primitives, assembled into intended layouts. They are not native screenshots or
+proof of allocated geometry. The running old helper has not been restarted to
+show the redesign. Desktop control was explicitly stopped by Joey; the automation
+session was reset. Do not resume screenshots, focus, input, native game checks or
+helper restoration without renewed user authority. The daily HTML report includes
+the evening results through 19:03 EST; its original chapters retain their initial
+16:21 snapshot.
+
+**19:03 EST NOVEMBER 12 — STORED NEARBY LANDMARK ROUND TRIP PASSED:**
+The separate two-point Olaf bookmark route completed Forward at 0.229985 units
+and Reverse at 0.094865 units from its saved start, with 16/19 pulses and
+1,938/2,561 ms requested hold respectively. All pulses released, both independent
+settled native samples had identical entity-position bits/body bearing, inspection
+found no held inputs and the original movement-basis hash is unchanged. The main
+seven-point route's genuine archived 7/7 checkpoint remains byte-identical. The
+helper last displayed the two-point trial; restoring the main route is pending
+because desktop control stopped. These are retained observations, not current
+state claims. Evidence: `artifacts/nearby-bookmark-travel-40452/validation.json`,
+Forward receipt `f0015e188ef04c8bb4d5c1fd4b414d82` and Reverse receipt
+`d819b4d86de0425b96fa473592fa4460`.
+
 **18:55 EST NOVEMBER 12 — SAVED NEARBY SAMPLES BECOME NAMED WAYPOINT BEACONS:**
 New **Add nearby** uses the latest successful nearby Save view, or an explicitly
 chosen retained `units-sample.json`, to list up to 18 stored candidate locations.
