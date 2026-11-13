@@ -223,3 +223,32 @@ sent. The black composite is retained at
 `artifacts/live-radar-composite-before-20261113/last.png`; this does not establish
 whether the physical display was black. Existing native pose candidates remained
 readable, but that alone does not prove a rendered, responsive game scene.
+
+### Visible-scene movement acceptance — 01:58 EST
+
+Joey confirmed the physical game remained visible and reported that the black
+capture disappeared when the main monitor was powered back on. Fresh Sky capture
+then showed RIFT normally on the same pinned PID/start/build/HWND, without a game
+restart or capture-backend change. Monitor-power-related capture disruption is
+the likely trigger, not a proven rendering failure; its mechanism was not isolated.
+Do not infer a RIFT black-screen failure or restart the game from black captures
+alone. Check display power and reacquire current window/geometry first.
+
+The pending live check then passed on visible, open ground with one guarded
+150 ms A pulse and one guarded 150 ms W pulse. Shared-reader facing changed
+44.39871 -> 71.76206 degrees (+27.36335), with unchanged XYZ after the turn;
+the actual GUI header and radar rotated to match. W changed X/Z from
+7423.415039/2937.598145 to 7424.334961/2937.900879 (0.96845 horizontal units),
+with Y and facing unchanged; the actual header and radar followed the new
+position. Both native receipts confirm bounded completion and successful release.
+The current client rectangle and foreground remained equal across each pulse.
+Overlay PIDs 59616/34452 and native sampler PID 6016 stayed unchanged across both
+checks. No continuous duplicate idle sampler was added. Atank was left at this
+new position/facing; no compensating input or playback was sent.
+
+Retained receipts: `artifacts/live-radar-turn-20261113.json` and
+`artifacts/live-radar-step-20261113.json`. Reviewed before/after GUI and RIFT
+screenshots use `artifacts/live-radar-motion-*-20261113.png`, including
+`artifacts/live-radar-motion-after-turn-ui-20261113.png` and
+`artifacts/live-radar-motion-after-step-ui-20261113.png`. The three-point route and
+appearance preferences remain unchanged, with markers/shared pose enabled.
