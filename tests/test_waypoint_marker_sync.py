@@ -38,6 +38,7 @@ class MarkerSyncTests(unittest.TestCase):
         adapter = SimpleNamespace(pid=123, read=lambda **kwargs: pose, binding={"runtimeIdentity": identity},
                                   target={"processId": 123, "processStartUtcTicks": "1234",
                                           "executableSha256": "a" * 64, "hwnd": 65537})
+        self.adapter = adapter
         self.launch(adapter, self.source)
         self.root = self.roots[0]
         self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))

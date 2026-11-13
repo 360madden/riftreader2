@@ -46,9 +46,14 @@ There is no marker session timer: the feed stays enabled until you hide it,
 close Waypoints or RIFT, or another existing owned-stop condition applies, such
 as pressing STOP/F8. Switching to an unrelated app hides
 the markers temporarily; returning to RIFT or the owning Waypoints window allows
-fresh markers to appear again. The helper pauses its duplicate idle pose reader
-throughout a marker session to avoid camera-feed contention; **Live pose (paused)**
-keeps the last actual update time visible. Hiding markers resumes idle updates.
+fresh markers to appear again. During a marker session, **Live pose (beacons)**
+updates the position/facing header and player-relative radar from the existing
+beacon reader, up to five times per second. No second native sampler runs. The
+header shows the original sample time in local time. Missing, stale, foreign or
+withheld samples clear the display rather than showing an old pose as current;
+the last real sample time remains available. Hiding markers resumes the normal
+two-second idle reader after the owned beacon child exits. This shared feedback
+is for display; movement still obtains its own fresh, guarded observations.
 The display exception binds the exact Waypoints HWND, PID and process epoch;
 movement still requires RIFT foreground. Identity/geometry/freshness failures still
 withhold markers. See the [camera-motion verification](../validation/waypoint-overlay-camera-2026-11-12.md).
@@ -270,6 +275,7 @@ Add `--face-waypoints` to a CLI `--go` or a GUI launch to enable forward walking
 
 **Live pose (2 s)** refreshes position, facing and the preview while idle. It is
 read-only, pauses during GUI actions and preserves entered waypoint coordinates.
+With markers enabled, the same checkbox uses their reader as **Live pose (beacons)**.
 The current pose has a separate timestamped readout. A control request waits for
 an in-flight observation; closing waits for it as well. Before starting a route
 or facing action, two fresh observations must show settled XYZ and bearing.

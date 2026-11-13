@@ -223,7 +223,11 @@ class ProjectionProvider:
         frame = {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
                  "clientRect": list(after["clientRect"]), "points": points,
                  "viewportRectNormalized": [left, 1 - top, right, 1 - bottom],
-                 "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"])}
+                 "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"]),
+                 "playerPose": {"position": deepcopy(values["positionXYZCandidate"]),
+                                "bearing": values["bodyBearingDegreesCandidate"],
+                                "playerKey": values["playerKey"],
+                                "sampledAtUtc": values["sampledAtUtc"]}}
         if self.route_updates_file is not None:
             frame["routeRevision"] = self.route_revision
         target = values.get("selectedTargetProjectionCandidate")
@@ -590,7 +594,7 @@ def apply_saved_progress(frame, progress_file, route):
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
         presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None,
-        companion_window=None, expected_unit_key=None, route_updates_file=None):
+        companion_window=None, expected_unit_key=None, route_updates_file=None, pose_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -622,6 +626,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         route_updates_file = Path(route_updates_file)
         require(route_updates_file.is_absolute() and route_updates_file.is_file(), "absolute-route-updates-file-required")
         require(expected_unit_key is not None, "route-updates-require-expected-unit-key")
+    if pose_file is not None:
+        pose_file = Path(pose_file)
+        require(pose_file.is_absolute() and pose_file.parent.is_dir() and not pose_file.exists(),
+                "new-absolute-pose-file-required")
     appearance = dict(DEFAULT_STYLE)
     next_appearance_poll = 0.
     route = load_route(route_path) if expected_unit_key is None else None
@@ -665,7 +673,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "lastPresentationAcceptedMonotonic": None,
         "acceptedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
         "presentationAcceptedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
-        "presentedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None}}
+        "presentedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
+        "posePublishAttempts": 0, "posePublished": 0, "poseUnavailablePublished": 0,
+        "posePublishFailures": 0, "poseLatestError": None, "poseFailureReasons": {}}
     worker_target = stream_feed if reader == "stream" else feed
     worker_args = (provider, channel, stop, counts)
     if reader == "stream" and duration == 0:
@@ -680,8 +690,66 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     latest_progress = None
     visible = False
     last_hide_reason = None
+    pose_sequence = 0
+    next_pose_publish = 0.
+    pose_pending_unavailable = None
+    pose_last_unavailable = None
+    pose_unavailable_attempt_reason = None
+    next_pose_unavailable_attempt = 0.
+    if pose_file is not None:
+        from scripts.waypoint_beacon_pose import write_pose, write_unavailable
+    def pose_failure(error):
+        reason = _reason_text(error)
+        counts["posePublishFailures"] += 1
+        counts["poseLatestError"] = reason
+        _increment_reason(counts["poseFailureReasons"], reason)
+    def publish_pose(frame):
+        nonlocal pose_sequence, next_pose_publish, pose_pending_unavailable, pose_last_unavailable
+        nonlocal pose_unavailable_attempt_reason, next_pose_unavailable_attempt
+        if pose_file is None:
+            return
+        now = time.monotonic()
+        if now < next_pose_publish:
+            pose_pending_unavailable = None
+            return
+        next_pose_publish = now + .2
+        counts["posePublishAttempts"] += 1
+        try:
+            write_pose(pose_file, frame, pose_sequence + 1)
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            pose_failure(error)
+            return
+        pose_sequence += 1
+        counts["posePublished"] += 1
+        counts["poseLatestError"] = None
+        pose_pending_unavailable = None
+        pose_last_unavailable = None
+        pose_unavailable_attempt_reason = None
+        next_pose_unavailable_attempt = 0.
+    def publish_unavailable():
+        nonlocal pose_sequence, pose_pending_unavailable, pose_last_unavailable
+        nonlocal pose_unavailable_attempt_reason, next_pose_unavailable_attempt
+        reason = pose_pending_unavailable
+        if pose_file is None or reason is None or reason == pose_last_unavailable:
+            return
+        now = time.monotonic()
+        if reason == pose_unavailable_attempt_reason and now < next_pose_unavailable_attempt:
+            return
+        pose_unavailable_attempt_reason = reason
+        next_pose_unavailable_attempt = now + .2
+        counts["posePublishAttempts"] += 1
+        try:
+            write_unavailable(pose_file, selection["target"], route["identity"]["unitKey"],
+                              pose_sequence + 1, reason)
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            pose_failure(error)
+            return
+        pose_sequence += 1
+        counts["poseUnavailablePublished"] += 1
+        counts["poseLatestError"] = None
+        pose_last_unavailable = reason
     def hide(why):
-        nonlocal latest_acquired, visible, last_hide_reason
+        nonlocal latest_acquired, visible, last_hide_reason, pose_pending_unavailable
         if not visible and last_hide_reason == why:
             return
         if visible:
@@ -689,12 +757,15 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         visible = False
         latest_acquired = None
         last_hide_reason = why
+        if why != "route-empty":
+            pose_pending_unavailable = why
         overlay.hide(why)
     def cancel(why):
         nonlocal reason
         reason = why
         stop.set()
         hide(why)
+        publish_unavailable()
         overlay.window.quit()
     def poll():
         nonlocal latest_acquired, latest_progress, visible, appearance, next_appearance_poll
@@ -715,6 +786,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
             packet = channel.get_nowait()
         except queue.Empty:
             packet = None
+        pose_frame = None
         try:
             if packet is not None:
                 if packet.get("terminal") is True:
@@ -734,8 +806,14 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                                 require(provider.route_update_error is None, "route-update-unavailable")
                             latest_progress = saved_progress
                             if not packet_route["points"]:
+                                current = provider.snapshot(provider.target)
+                                require(_display_allowed(current)
+                                        and current.get("clientRect") == packet["frame"].get("clientRect"),
+                                        "target-foreground-or-geometry-changed")
+                                pose_frame = packet["frame"]
                                 hide("route-empty")
                             elif overlay.present(packet["frame"]):
+                                pose_frame = packet["frame"]
                                 latest_acquired = packet["frame"]["acquiredMonotonic"]
                                 visible = True
                                 counts["presentationAccepted"] += 1
@@ -759,6 +837,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         except Exception as error:
             failure = _record_failure(counts, error)
             hide(failure)
+        if pose_frame is not None:
+            publish_pose(pose_frame)
+        publish_unavailable()
         overlay.window.after(25, poll)
     overlay.window.protocol("WM_DELETE_WINDOW", lambda: cancel("window-closed"))
     worker.start()
@@ -770,6 +851,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     finally:
         stop.set()
         hide(reason)
+        publish_unavailable()
         # read_native's child has its existing bounded timeout and native lease.
         worker.join()
         overlay.close()
@@ -799,8 +881,11 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "appearance": appearance,
         "companionWindow": companion_window,
         "routeUpdatesFile": str(route_updates_file) if route_updates_file is not None else None,
+        "poseFile": str(pose_file) if pose_file is not None else None,
+        "poseSequence": pose_sequence,
         "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
+            "Published player pose is display-only candidate feedback and grants no movement or input authority.",
             "Presentation-accepted counts and intervals are asynchronous presenter requests, not physical display FPS.",
             "Legacy presented fields are compatibility aliases for presentation-accepted fields.",
             "World/zone identity unavailable; matching host/build/player does not prove same world.",
@@ -827,6 +912,7 @@ def main(argv=None):
     parser.add_argument("--appearance-file", type=Path,
                         help="live beacon display preferences saved by Waypoints")
     parser.add_argument("--route-updates-file", type=Path, help="owned live route and guide updates from Waypoints")
+    parser.add_argument("--pose-file", type=Path, help="new owned player-pose feedback file")
     parser.add_argument("--companion-window", type=json.loads,
                         help="exact owning Waypoints window binding for live appearance preview")
     parser.add_argument("--expect-start-ticks")
@@ -844,7 +930,8 @@ def main(argv=None):
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
                      progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
                      appearance_file=args.appearance_file, companion_window=args.companion_window,
-                     expected_unit_key=args.expected_unit_key, route_updates_file=args.route_updates_file)
+                     expected_unit_key=args.expected_unit_key, route_updates_file=args.route_updates_file,
+                     pose_file=args.pose_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

@@ -54,6 +54,13 @@ class FeedTests(unittest.TestCase):
         self.assertAlmostEqual(packet["points"][0]["ground"]["normalizedX"], .5)
         self.assertAlmostEqual(packet["points"][0]["ground"]["normalizedY"], .5)
         self.assertLess(packet["points"][0]["beaconTop"]["normalizedY"], .5)
+        values = live.physical._native_values("facing", self.native)
+        self.assertEqual(packet["playerPose"], {
+            "position": values["positionXYZCandidate"],
+            "bearing": values["bodyBearingDegreesCandidate"],
+            "playerKey": values["playerKey"],
+            "sampledAtUtc": values["sampledAtUtc"]})
+        self.assertEqual(packet["acquiredMonotonic"], 10.)
         self.assertEqual(provider.route["recordingIdentity"]["runtimeIdentity"]["processId"], 999)
         self.read.assert_called_once_with(self.selection, "facing", samples=1, include_target=True)
         self.assertNotIn("selectedTarget", packet)
@@ -321,7 +328,8 @@ class FeedTests(unittest.TestCase):
         with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(live.physical, "select_physical") as select:
             for kwargs in (dict(duration=601), dict(duration=0, reader="single"),
-                           dict(max_age=.01), dict(physical_pid=0)):
+                           dict(max_age=.01), dict(physical_pid=0),
+                           dict(pose_file=Path("relative-pose.json"))):
                 arguments = dict(expected_host="AMD-DESKTOP", physical_pid=123, route_path=self.route_path)
                 arguments.update(kwargs)
                 with self.assertRaises(ValueError):
@@ -830,6 +838,135 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(len(channels), 1)
         self.assertEqual(result["appearance"], changed)
         self.assertEqual(result["reason"], "target-process-ended")
+
+    def test_pose_feedback_is_rate_limited_empty_route_safe_and_io_failure_nonfatal(self):
+        from scripts import waypoint_beacon_pose as beacon_pose
+        pose_path = (self.root / "pose.json").absolute()
+        clock, channels, presented = [10.], [], []
+        values = live.physical._native_values("facing", self.native)
+        full_target = dict(IDENTITY, executablePath=r"C:\Games\RIFT\rift_x64.exe")
+        selection = dict(self.selection, target=full_target)
+        def frame(at):
+            return {"target": deepcopy(full_target), "acquiredMonotonic": at,
+                    "clientRect": [100, 125, 1920, 1080],
+                    "playerPose": {"position": deepcopy(values["positionXYZCandidate"]),
+                                   "bearing": values["bodyBearingDegreesCandidate"],
+                                   "playerKey": values["playerKey"],
+                                   "sampledAtUtc": values["sampledAtUtc"]}, "points": []}
+        class Window:
+            def protocol(self, *args):
+                pass
+            def after(self, delay, callback):
+                self.poll = callback
+            def quit(self):
+                pass
+        class Overlay:
+            def __init__(self, target, max_age):
+                self.window = Window()
+            def present(self, current):
+                if current["acquiredMonotonic"] == 10.5:
+                    self.reason = "presenter-refused-frame"
+                    return False
+                presented.append(current["acquiredMonotonic"])
+                return True
+            def run(self):
+                for at in (10., 10.1, 10.19):
+                    clock[0] = at
+                    live._latest(channels[0], {"frame": frame(at)})
+                    self.window.poll()
+                clock[0] = 10.21
+                live._latest(channels[0], {"frame": frame(10.21), "route": {"points": []}})
+                self.window.poll()
+                clock[0] = 10.5
+                live._latest(channels[0], {"frame": frame(10.5)})
+                self.window.poll()
+                live._latest(channels[0], {"terminal": True, "reason": "target-process-ended"})
+                self.window.poll()
+            def hide(self, why):
+                pass
+            def close(self):
+                pass
+        class Worker:
+            def __init__(self, **kwargs):
+                channels.append(kwargs["args"][1])
+            def start(self):
+                pass
+            def join(self):
+                pass
+        presenter = types.SimpleNamespace(PhysicalWaypointOverlay=Overlay, target_snapshot=self.snapshot)
+        write_pose = Mock(side_effect=[OSError("disk busy"), None])
+        write_unavailable = Mock()
+        with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
+             patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=selection), \
+             patch.object(live.threading, "Thread", Worker), \
+             patch.object(live.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(beacon_pose, "write_pose", write_pose), \
+             patch.object(beacon_pose, "write_unavailable", write_unavailable):
+            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, pose_file=pose_path)
+        self.assertEqual([call.args[1]["acquiredMonotonic"] for call in write_pose.call_args_list], [10., 10.21])
+        self.assertEqual([call.args[2] for call in write_pose.call_args_list], [1, 1])
+        self.assertEqual(presented, [10., 10.1, 10.19])
+        self.assertEqual([(call.args[3], call.args[4]) for call in write_unavailable.call_args_list],
+                         [(2, "presenter-refused-frame"), (3, "target-process-ended")])
+        self.assertTrue(all(call.args[1] == full_target and call.args[2] == values["playerKey"]
+                            for call in write_unavailable.call_args_list))
+        self.assertEqual(result["poseSequence"], 3)
+        self.assertEqual(result["counts"]["posePublished"], 1)
+        self.assertEqual(result["counts"]["poseUnavailablePublished"], 2)
+        self.assertEqual(result["counts"]["posePublishFailures"], 1)
+        self.assertEqual(result["reason"], "target-process-ended")
+
+    def test_unavailable_pose_write_failure_retries_at_most_five_hz(self):
+        from scripts import waypoint_beacon_pose as beacon_pose
+        pose_path = (self.root / "pose.json").absolute()
+        clock, channels = [10.], []
+        full_target = dict(IDENTITY, executablePath=r"C:\Games\RIFT\rift_x64.exe")
+        selection = dict(self.selection, target=full_target)
+        class Window:
+            def protocol(self, *args):
+                pass
+            def after(self, delay, callback):
+                self.poll = callback
+            def quit(self):
+                pass
+        class Overlay:
+            def __init__(self, target, max_age):
+                self.window = Window()
+            def run(self):
+                for at in (10., 10.05, 10.19, 10.21):
+                    clock[0] = at
+                    live._latest(channels[0], {"reason": "target-not-foreground", "kind": "invalid-state"})
+                    self.window.poll()
+                clock[0] = 10.22
+                live._latest(channels[0], {"terminal": True, "reason": "target-process-ended"})
+                self.window.poll()
+            def hide(self, why):
+                pass
+            def close(self):
+                pass
+        class Worker:
+            def __init__(self, **kwargs):
+                channels.append(kwargs["args"][1])
+            def start(self):
+                pass
+            def join(self):
+                pass
+        presenter = types.SimpleNamespace(PhysicalWaypointOverlay=Overlay, target_snapshot=self.snapshot)
+        failed = Mock(side_effect=OSError("disk unavailable"))
+        with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
+             patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=selection), \
+             patch.object(live.threading, "Thread", Worker), \
+             patch.object(live.time, "monotonic", side_effect=lambda: clock[0]), \
+             patch.object(beacon_pose, "write_unavailable", failed):
+            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, pose_file=pose_path)
+        self.assertEqual([(call.args[3], call.args[4]) for call in failed.call_args_list],
+                         [(1, "target-not-foreground"), (1, "target-not-foreground"),
+                          (1, "target-process-ended")])
+        self.assertEqual(result["poseSequence"], 0)
+        self.assertEqual(result["counts"]["posePublishAttempts"], 3)
+        self.assertEqual(result["counts"]["posePublishFailures"], 3)
 
     def test_continuous_run_ignores_elapsed_clock_and_terminal_packet_stops(self):
         events = []

@@ -49,6 +49,10 @@ class OwnedMarkerTests(unittest.TestCase):
         updates = Path(command[command.index("--route-updates-file") + 1])
         self.assertTrue(updates.is_absolute())
         self.assertEqual({"route": self.route, "landmarkNumber": None}, json.loads(updates.read_text()))
+        pose = Path(command[command.index("--pose-file") + 1])
+        self.assertTrue(pose.is_absolute())
+        self.assertEqual(self.markers.pose_path, pose)
+        self.assertFalse(pose.exists())
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
                                ("--expected-unit-key", "player"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),

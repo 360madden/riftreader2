@@ -131,7 +131,7 @@ class MarkerAppearanceTests(unittest.TestCase):
         time.sleep(2.05)
         self.root.update()
         self.assertEqual(reads, self.reader.call_count)
-        self.assertEqual("Live pose (paused)", str(checkbox["text"]))
+        self.assertEqual("Live pose (waiting)", str(checkbox["text"]))
         self.assertTrue(checkbox.instate(["selected"]))
         self.marker.running.return_value = False
         deadline = time.monotonic() + 1

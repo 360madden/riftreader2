@@ -57,6 +57,7 @@ class OwnedWaypointMarkers:
         self.output = None
         self.appearance_path = (self.root / "artifacts" / "waypoint-marker-style.json").absolute()
         self.route_updates_path = None
+        self.pose_path = None
         self.identity = None
         self.stop_requested = False
         self.exit_code = None
@@ -89,6 +90,7 @@ class OwnedWaypointMarkers:
         self.output = directory / ("waypoint-markers-summary-" + token + ".json")
         self.stop_path = directory / ("waypoint-markers-stop-" + token + ".signal")
         self.route_updates_path = (directory / ("waypoint-markers-updates-" + token + ".json")).absolute()
+        self.pose_path = (directory / ("waypoint-markers-pose-" + token + ".json")).absolute()
         write_json_atomic(route_path, document)
         recorded = load_route(route_path, expected_identity=identity)
         if any(str(recorded["identity"].get(key, "")).casefold() != str(identity[key]).casefold()
@@ -114,6 +116,7 @@ class OwnedWaypointMarkers:
                    "--output", str(self.output), "--stop-file", str(self.stop_path),
                    "--appearance-file", str(self.appearance_path),
                    "--route-updates-file", str(self.route_updates_path),
+                   "--pose-file", str(self.pose_path),
                    "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
         if target_beacon:
             command.append("--target-beacon")
@@ -982,7 +985,13 @@ def launch_window(args):
     markers = OwnedWaypointMarkers(ROOT)
     marker_identity = None
     marker_update_after = None
+    marker_pending_signature = None
     marker_published = None
+    beacon_pose_token = None
+    beacon_pose_available = False
+    beacon_pose_stamp = None
+    beacon_display_active = False
+    next_beacon_pose_at = 0
     map_view = None
     observing = False
     next_live_at = time.monotonic() + 2
@@ -1850,8 +1859,9 @@ def launch_window(args):
         return {"route": document, "landmarkNumber": landmark}
 
     def publish_marker_update():
-        nonlocal marker_update_after, marker_published
+        nonlocal marker_update_after, marker_pending_signature, marker_published
         marker_update_after = None
+        marker_pending_signature = None
         if closing or loading_route or marker_identity is None or not markers.running() or markers.stop_requested:
             return
         try:
@@ -1867,18 +1877,34 @@ def launch_window(args):
             state.set(reason)
 
     def schedule_marker_update():
-        nonlocal marker_update_after
+        nonlocal marker_update_after, marker_pending_signature
         if loading_route or closing or marker_identity is None or not markers.running() or markers.stop_requested:
+            return
+        try:
+            signature = json.dumps(marker_payload(), sort_keys=True)
+        except (ValueError, KeyError, TypeError) as exc:
+            stop_markers()
+            state.set("Cannot update markers: " + str(exc))
+            return
+        if signature == marker_published:
+            if marker_update_after is not None:
+                window.after_cancel(marker_update_after)
+                marker_update_after = None
+            marker_pending_signature = None
+            return
+        if marker_update_after is not None and signature == marker_pending_signature:
             return
         if marker_update_after is not None:
             window.after_cancel(marker_update_after)
+        marker_pending_signature = signature
         marker_update_after = window.after(150, publish_marker_update)
 
     def stop_markers():
-        nonlocal marker_update_after
+        nonlocal marker_update_after, marker_pending_signature
         if marker_update_after is not None:
             window.after_cancel(marker_update_after)
             marker_update_after = None
+        marker_pending_signature = None
         if not markers.running():
             return True
         try:
@@ -2145,8 +2171,52 @@ def launch_window(args):
             closing = False
             restore_editing()
 
+    def display_pose(point, bearing=None, *, sampled_at=None, fill_entered=True):
+        nonlocal last_pose, last_y
+        last_pose = (point["x"], point["z"], bearing if bearing is not None else last_pose[2] if last_pose else 0)
+        last_y = point["y"]
+        stamp = ("sampled " + datetime.fromisoformat(sampled_at.replace("Z", "+00:00")).astimezone().strftime("%H:%M:%S")
+                 + " local") if sampled_at else "updated " + time.strftime("%H:%M:%S")
+        pose_text.set(f"Position X={point['x']:.6f}  Y={point['y']:.6f}  Z={point['z']:.6f}"
+                      f"   facing={last_pose[2]:.2f}°   {stamp}")
+        if fill_entered and not x.get() and not z.get():
+            x.set(f"{point['x']:.6f}")
+            z.set(f"{point['z']:.6f}")
+
+    def read_beacon_pose_display():
+        nonlocal beacon_pose_token, beacon_pose_available, beacon_pose_stamp, beacon_display_active, next_beacon_pose_at, last_pose, last_y
+        beacon_display_active = True
+        if time.monotonic() < next_beacon_pose_at:
+            return
+        next_beacon_pose_at = time.monotonic() + .2
+        try:
+            path = getattr(markers, "pose_path", None)
+            if path is None:
+                raise ValueError("waiting for the owned beacon reader")
+            from scripts.waypoint_beacon_pose import read_pose
+            last_sequence = beacon_pose_token[1] if beacon_pose_token and beacon_pose_token[0] == str(path) else None
+            pose = read_pose(path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"], last_sequence=last_sequence)
+            token = (str(path), pose["sequence"], pose["acquiredMonotonic"])
+            if token != beacon_pose_token or not beacon_pose_available:
+                display_pose(pose["position"], pose["bearing"], sampled_at=pose["sampledAtUtc"], fill_entered=False)
+                beacon_pose_token = token
+                beacon_pose_stamp = pose["sampledAtUtc"]
+                beacon_pose_available = True
+                redraw()
+            live_pose_option.configure(text="Live pose (beacons)")
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            beacon_pose_available = False
+            last_pose = last_y = None
+            stamp = "; last sample " + beacon_pose_stamp if beacon_pose_stamp else ""
+            reason = ("waiting for the owned beacon reader" if isinstance(exc, FileNotFoundError)
+                      else (exc.strerror or str(exc)) if isinstance(exc, OSError) else str(exc))
+            pose_text.set("Position unavailable (beacons): " + reason + stamp)
+            live_pose_option.configure(text="Live pose (waiting)")
+            redraw()
+
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
+        nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -2280,13 +2350,7 @@ def launch_window(args):
                 if status == "recording":
                     recording_progress = {"sampleCount": event["sampleCount"],
                                           "observedPathLength": event["observedPathLength"]}
-                last_pose = (point["x"], point["z"], event.get("bearing", last_pose[2] if last_pose else 0))
-                last_y = point["y"]
-                pose_text.set(f"Position X={point['x']:.6f}  Y={point['y']:.6f}  Z={point['z']:.6f}"
-                              f"   facing={last_pose[2]:.2f}°   updated {time.strftime('%H:%M:%S')}")
-                if not x.get() and not z.get():
-                    x.set(f"{point['x']:.6f}")
-                    z.set(f"{point['z']:.6f}")
+                display_pose(point, event.get("bearing"))
                 if status in ("refresh", "live", "save", "target", "map"):
                     verified_adapter, verified_at = adapter, event.get("acquired")
                     identity_unavailable = False
@@ -2353,7 +2417,18 @@ def launch_window(args):
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
-        live_pose_option.configure(text="Live pose (paused)" if markers.running() else "Live pose (2 s)")
+        if markers.running():
+            if live_pose.get() and not busy and not closing:
+                read_beacon_pose_display()
+        else:
+            live_pose_option.configure(text="Live pose (2 s)")
+            if beacon_display_active:
+                last_pose = last_y = None
+                stamp = "; last sample " + beacon_pose_stamp if beacon_pose_stamp else ""
+                pose_text.set("Position unavailable: beacon reader ended; waiting for idle pose" + stamp)
+                beacon_display_active = beacon_pose_available = False
+                beacon_pose_token = beacon_pose_stamp = None
+                redraw()
         if (live_pose.get() and not busy and not observing and not closing
                 and time.monotonic() >= next_live_at and not markers.running()):
             observing = True

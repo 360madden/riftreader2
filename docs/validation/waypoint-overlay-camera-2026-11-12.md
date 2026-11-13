@@ -193,3 +193,33 @@ multiple route changes. A single worker owns route replacement. Presentation che
 the matching revision under the same small lock, and saved progress uses that
 frame's route rather than the startup document. File I/O stays outside the lock.
 The active seven-point overlay is left enabled at the user's existing appearance.
+
+## Shared live radar and player pose — November 13 follow-up
+
+On AMD-DESKTOP, the actual Waypoints window consumed the running beacon reader's
+pose file and displayed **Live pose (beacons)**, XYZ, facing and advancing original
+sample times. The radar used the same display pose. RIFT identity remained PID
+40452, start ticks `639301206978915233`, HWND `9246620`, executable SHA256
+`1935A05C9DB6D468E34E0055014A4A99C1B5AFCEB1695884E24600F5C20A4BE8`, player key
+`239816685251645959`. The stopped session receipt
+`artifacts/waypoint-markers-summary-411a506804ac4bc0bdce5df274955573.json`
+records 603 fresh pose publications, five unavailable notifications and zero
+pose-publication failures. Hide ended with `stop-requested`; the overlay/native
+reader exited and the actual GUI resumed its two-second idle updates. Reviewed
+UI image: `artifacts/live-radar-beacons-ui-20261113.png`.
+
+The current three-point draft was preserved separately as
+`artifacts/waypoint-live-radar-current-route-20261113.json`; the earlier seven-point
+save was not overwritten. Appearance stayed at 137%, 100% opacity, labels on.
+All 88 focused shared-pose, feed and GUI checks passed, including changing XYZ
+and facing, stale/mismatched ownership, unavailable/child-exit handling and route
+edit synchronization under frequent pose redraws. Feedback neither updates input
+authority nor converts display heights into measurements.
+
+Live movement/facing-change acceptance remains unverified: both the window and
+DXcam desktop-composite captures showed a black RIFT game area, also after the
+overlay and native reader fully exited. WGC returned no frame. No game input was
+sent. The black composite is retained at
+`artifacts/live-radar-composite-before-20261113/last.png`; this does not establish
+whether the physical display was black. Existing native pose candidates remained
+readable, but that alone does not prove a rendered, responsive game scene.
