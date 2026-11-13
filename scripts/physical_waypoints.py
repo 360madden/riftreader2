@@ -911,9 +911,10 @@ def launch_window(args):
     map_frame.grid(row=0, column=1, sticky="nsew")
     ttk.Label(map_frame, text="LOCAL PREVIEW", style="Eyebrow.TLabel").pack(anchor="w", pady=(0, 10))
     canvas = tk.Canvas(map_frame, width=330, height=220, bg="#0b1723", highlightthickness=0)
-    canvas.pack(fill="both", expand=True)
     map_hint = ttk.Frame(map_frame, style="Surface.TFrame")
-    map_hint.pack(fill="x", pady=(4, 0))
+    # Reserve the toolbar before the expandable canvas consumes compact height.
+    map_hint.pack(side="bottom", fill="x", pady=(4, 0))
+    canvas.pack(fill="both", expand=True)
     ttk.Label(map_hint, text="Click to add", style="Surface.TLabel").pack(side="left", padx=(0, 6))
     map_radius = 10
     radius_text = tk.StringVar(value="10 units")
