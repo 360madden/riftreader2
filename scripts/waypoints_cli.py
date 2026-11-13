@@ -129,6 +129,8 @@ def example(operation):
         "library.save":"library save Camp --id camp", "library.import":"library import route.json --name Camp",
         "library.load":"library load camp --discard", "library.show":"library show camp",
         "library.select":"library select camp",
+        "preview.status":"preview status", "preview.set":"preview set --range 10",
+        "preview.fit":"preview fit",
     }.get(operation, operation.replace(".", " "))
 
 
@@ -171,6 +173,7 @@ def build_parser():
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show select",
+        "preview":"status set fit",
         "diagnostics":"status show events copy open",
         "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
@@ -199,6 +202,9 @@ def build_parser():
                 "library.load":"Load a library route into the helper; unsaved changes require --discard.",
                 "library.show":"Inspect one owned library route, its zone context and measured/unknown heights.",
                 "library.select":"Select a library entry and show its details without replacing the loaded route; clears filters if needed.",
+                "preview.status":"Show the local route preview range, cached-pose availability and off-screen point summary.",
+                "preview.set":"Set the local route preview range without reading RIFT or sending game input.",
+                "preview.fit":"Fit the local route preview to the loaded route using only the helper's cached finite pose; the preview remains capped at 20 units.",
                 "beacons.show":"Start the owned shared beacon reader and wait for fresh pose; sends no game input.",
                 "beacons.hide":"Stop the owned beacon reader and wait for its exit.",
                 "beacons.set":"Adjust beacon appearance and optional target/guide layers; target changes can restart the owned reader and are refused during manual guide/trail use.",
@@ -233,6 +239,7 @@ def build_parser():
                        else "Read-only; sends no game input." if read_only or operation in {"route.context", "library.show"}
                        else "Attaches fresh candidate provenance to the loaded route; sends no game input." if operation == "route.tag-zone"
                        else "Changes the helper's library selection only; sends no game input." if operation == "library.select"
+                       else "Changes only the local preview display; reads no new pose and sends no game input." if operation in {"preview.set", "preview.fit"}
                        else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
                        else "Starts the owned shared reader when needed; sends no game input." if operation in {"beacons.show", "radar.show", "guide.start", "trail.start"}
@@ -262,6 +269,8 @@ def build_parser():
     for op in ("library.load", "library.show", "library.select"):
         arg(op, "route_id", metavar="ID", help="owned library route ID")
     arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
+    arg("preview.set", "--range", dest="range", type=number, choices=(2., 5., 10., 20.), required=True,
+        help="preview radius in world units: 2, 5, 10 or 20")
     arg("diagnostics.events", "--level", choices=("all", "warning", "error"), default="all",
         help="minimum severity: all, warning (includes errors), or error; default all")
     arg("diagnostics.events", "--limit", type=bounded_integer(1, 200), default=100,
@@ -417,6 +426,39 @@ def human_playback(data, *, compact=False):
             print(_playback_readiness_line(label, readiness[key]))
 
 
+def human_preview(preview):
+    """Render bounded local-preview state without implying terrain awareness."""
+    radius = preview.get("radius", "?")
+    visible = preview.get("visibleCount")
+    total = preview.get("routeCount")
+    offscreen = preview.get("offscreenCount")
+    counts = (f" | {visible}/{total} points visible" if isinstance(visible, int) and isinstance(total, int)
+              else f" | {total} route points" if isinstance(total, int) else "")
+    if isinstance(offscreen, int):
+        counts += f" | {offscreen} off-screen"
+    print(f"Local preview: {radius} units{counts}")
+    pose_status = preview.get("poseStatus", "available" if preview.get("poseAvailable") else "unavailable")
+    age = preview.get("poseAgeSeconds")
+    age_text = f" | {age:.2f}s old" if isinstance(age, (int, float)) else ""
+    print(f"Preview pose: {pose_status}{age_text} | Fit {'available' if preview.get('fitAvailable') else 'unavailable'}")
+    if preview.get("fitLimited"):
+        required = preview.get("requiredRadius")
+        detail = f"; route requires about {required:g} units" if isinstance(required, (int, float)) else ""
+        print(f"Fit limited: preview is capped at 20 units{detail}")
+    points = preview.get("offscreenPoints")
+    if points:
+        labels = []
+        for point in points:
+            if isinstance(point, dict):
+                number, name = point.get("number"), point.get("name")
+                labels.append(f"{number} ({name})" if number is not None and name else str(number or name or "?"))
+            else:
+                labels.append(str(point))
+        print("Off-screen points: " + ", ".join(labels))
+    if preview.get("qualification"):
+        print(str(preview["qualification"]))
+
+
 def human_data(command, data):
     if not isinstance(data, dict): return False
     if command in {"status", "doctor"}:
@@ -428,6 +470,8 @@ def human_data(command, data):
         print(f"Route: {route.get('count', 0)} points | {'unsaved changes' if route.get('dirty') else 'saved'} | {route.get('file') or 'no file'}")
         human_pose(data.get("pose") or {})
         human_radar(data.get("radar") or {})
+        if data.get("preview"):
+            human_preview(data["preview"])
         if data.get("playback"):
             human_playback(data["playback"], compact=True)
         diagnostics = data.get("diagnostics")
@@ -454,6 +498,8 @@ def human_data(command, data):
             print(f"Edit draft: pending for point {point} | {validity}{reason} | apply it or select with --discard-draft")
         if "measuredCount" in data:
             print(f"Heights: {data['measuredCount']} measured, {data['estimatedCount']} estimated/unknown")
+        if data.get("preview"):
+            human_preview(data["preview"])
         for p in points:
             height = next((h for h in data.get("heights",[]) if h.get("number")==p.get("number")),None)
             note = (" | "+height["label"]+" ["+height["heightKind"]+"]") if height else ""
@@ -473,6 +519,8 @@ def human_data(command, data):
             if change.get("recordingDiscarded"): details.append("recording provenance discarded")
             print("Change: " + ("; ".join(details) if details else "no effective change"))
         if data.get("revision") is not None: print(f"Route revision: {data['revision']}")
+    elif command in {"preview.status", "preview.set", "preview.fit"}:
+        human_preview(data)
     elif command in {"zone.status", "zone.refresh"}:
         human_zone(data.get("context"))
         age = data.get("currentAgeSeconds")

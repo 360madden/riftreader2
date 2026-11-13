@@ -27,18 +27,19 @@ class KeyboardWindowTests(unittest.TestCase):
     def values(self):
         return [self.table.item(item, "values") for item in self.table.get_children()]
 
-    def test_f2_prefills_and_selects_name_without_route_changes(self):
+    def test_f2_focuses_name_without_discarding_unapplied_draft(self):
         self.prepare()
         self.enter("Unapplied", "8", "9")
         with patch.object(self.entries[0], "focus_set") as focus:
             self.assertEqual("break", self.shortcut(self.table, "<F2>"))
         focus.assert_called_once_with()
-        self.assertEqual(["First", "0.000000", "0.000000"], [w.get() for w in self.entries])
+        self.assertEqual(["Unapplied", "8", "9"], [w.get() for w in self.entries])
         self.assertEqual(0, self.entries[0].index("sel.first"))
-        self.assertEqual(len("First"), self.entries[0].index("sel.last"))
+        self.assertEqual(len("Unapplied"), self.entries[0].index("sel.last"))
         self.assertEqual(self.original, self.checkpoint.read_bytes())
         self.assertEqual("disabled", str(self.button("Undo")["state"]))
         self.assert_unsaved_cache()
+        self.button("Reset fields").invoke()
         self.table.selection_set(self.items)
         self.root.update()
         self.enter("Unapplied", "8", "9")
@@ -78,7 +79,10 @@ class KeyboardWindowTests(unittest.TestCase):
         self.enter("Renamed", "2", "0")
         self.assertEqual("break", self.shortcut(self.entries[1], "<Control-Return>"))
         changed = self.save_document()
-        self.assertNotIn("heights", changed)
+        self.assertEqual([None, 11], changed["heights"])
+        self.assertEqual([None, "recorded-route-point"],
+                         [None if receipt is None else receipt["kind"]
+                          for receipt in changed["pointMeasurements"]])
         self.assertNotIn("recording", changed)
         self.enter("Renamed", "2", "3")
         self.assertEqual("break", self.shortcut(self.entries[2], "<Control-Return>"))

@@ -1032,33 +1032,40 @@ def launch_window(args):
     context_text = tk.StringVar(value="Zone context loading; legacy routes remain untagged.")
     context_label = ttk.Label(telemetry, textvariable=context_text, style="Base.Muted.TLabel", wraplength=900)
     context_label.pack(anchor="w", pady=(2, 0))
-    telemetry.bind("<Configure>", lambda event: summary_label.configure(wraplength=max(200, event.width)))
+    def size_telemetry(event):
+        for label in (summary_label,context_label): label.configure(wraplength=max(200,event.width))
+    telemetry.bind("<Configure>", size_telemetry)
     middle = ttk.Frame(frame)
     middle.grid(row=3, column=0, sticky="nsew")
     middle.columnconfigure(0, weight=3)
     middle.columnconfigure(1, weight=2)
     middle.rowconfigure(0, weight=1)
-    route_card = ttk.Frame(middle, style="Card.TFrame", padding=12)
+    middle.rowconfigure(0, minsize=200)
+    route_card = ttk.Frame(middle, style="Card.TFrame", padding=(10,7))
     route_card.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
     route_card.columnconfigure(0, weight=1)
     route_card.rowconfigure(3, weight=1)
     route_heading = ttk.Frame(route_card, style="Surface.TFrame")
-    route_heading.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+    route_heading.grid(row=0, column=0, sticky="ew", pady=(0, 4))
     ttk.Label(route_heading, text="YOUR ROUTE", style="Eyebrow.TLabel").pack(side="left", padx=(0, 12))
     route_status_label = ttk.Label(route_heading, textvariable=route_status, style="Gold.TLabel", wraplength=360)
     route_status_label.pack(side="left")
     route_heading.bind("<Configure>", lambda event: route_status_label.configure(wraplength=max(140, event.width - 100)))
     file_toolbar = ttk.Frame(route_card, style="Surface.TFrame")
-    file_toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+    file_toolbar.grid(row=1, column=0, sticky="ew", pady=(0, 3))
     recent_controls = ttk.Frame(route_card, style="Surface.TFrame")
-    recent_controls.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+    recent_controls.grid(row=2, column=0, sticky="ew", pady=(0, 5))
     recent_controls.columnconfigure(1, weight=1)
     tree_frame = ttk.Frame(route_card, style="Surface.TFrame")
     tree_frame.grid(row=3, column=0, sticky="nsew")
     tree_frame.columnconfigure(0, weight=1)
     tree_frame.rowconfigure(0, weight=1)
-    table = ttk.Treeview(tree_frame, columns=("name", "x", "z"), show="headings", height=4)
-    for col, label, width in (("name", "Waypoint", 220), ("x", "X", 120), ("z", "Z", 120)):
+    ttk.Style(window).configure("Route.Treeview",rowheight=24)
+    ttk.Style(window).configure("Route.Treeview.Heading",padding=(7,3))
+    table = ttk.Treeview(tree_frame, columns=("name", "x", "z"), show="tree headings", height=4, style="Route.Treeview")
+    table.heading("#0",text="#")
+    table.column("#0",width=44,minwidth=44,stretch=False,anchor="center")
+    for col, label, width in (("name", "Waypoint", 214), ("x", "X", 107), ("z", "Z", 107)):
         table.heading(col, text=label)
         table.column(col, width=width)
     table.grid(row=0, column=0, sticky="nsew")
@@ -1067,13 +1074,15 @@ def launch_window(args):
     table.configure(yscrollcommand=tree_scroll.set)
     map_frame = ttk.Frame(middle, style="Card.TFrame", padding=12)
     map_frame.grid(row=0, column=1, sticky="nsew")
-    ttk.Label(map_frame, text="LOCAL PREVIEW", style="Eyebrow.TLabel").pack(anchor="w", pady=(0, 10))
+    map_title = tk.StringVar(value="LOCAL PREVIEW")
+    ttk.Label(map_frame, textvariable=map_title, style="Eyebrow.TLabel").pack(anchor="w", pady=(0, 10))
     canvas = tk.Canvas(map_frame, width=330, height=220, bg="#0b1723", highlightthickness=0)
     map_hint = ttk.Frame(map_frame, style="Surface.TFrame")
     # Reserve the toolbar before the expandable canvas consumes compact height.
     map_hint.pack(side="bottom", fill="x", pady=(4, 0))
     canvas.pack(fill="both", expand=True)
-    ttk.Label(map_hint, text="Click to add", style="Surface.TLabel").pack(side="left", padx=(0, 6))
+    map_hint_text = tk.StringVar(value="No pose")
+    ttk.Label(map_hint, textvariable=map_hint_text, style="Surface.Micro.TLabel").pack(side="left", padx=(0, 6))
     map_radius = 10
     radius_text = tk.StringVar(value="10 units")
     zoom_in = ttk.Button(map_hint, text="+", width=2, command=lambda: zoom(-1))
@@ -1124,6 +1133,8 @@ def launch_window(args):
     exploration_trail = []
     beacon_latest_error = None
     map_view = None
+    map_render = {"nodes": [], "offscreen": [], "visible_count": 0, "offscreen_count": 0, "total_count": 0}
+    map_hover = [None]
     observing = False
     next_live_at = time.monotonic() + 2
     operation_gate = threading.Lock()
@@ -1383,13 +1394,15 @@ def launch_window(args):
 
     def fit_zoom():
         nonlocal map_radius
-        if last_pose is None:
-            return
+        if last_pose is None or not table.get_children():
+            state.set("A cached position and at least one waypoint are needed to fit the preview.")
+            return False
         map_radius = fit_route_radius(*last_pose[:2], selected_points(True))
         redraw()
+        return True
 
     def redraw(*_):
-        nonlocal map_view
+        nonlocal map_view, map_render
         if cli_server is not None:
             update_context_text()
             update_replay_status()
@@ -1402,10 +1415,12 @@ def launch_window(args):
         radius_text.set(f"{map_radius:g} units")
         zoom_in.configure(state="disabled" if map_radius == ZOOM_RADII[0] else "normal")
         zoom_out.configure(state="disabled" if map_radius == ZOOM_RADII[-1] else "normal")
-        fit_button.configure(state="normal" if last_pose is not None else "disabled")
+        fit_button.configure(state="normal" if last_pose is not None and table.get_children() else "disabled")
         undo_button.configure(state="normal" if edit_history and not busy and not closing and not draft_pending() else "disabled")
         points = [(item, *table.item(item, "values")) for item in table.get_children()]
         original_points = points[:]
+        for number,row in enumerate(original_points,1):
+            table.item(row[0],text=str(number))
         completed, active = None, None
         if playback_view is not None:
             if playback_view["direction"] == "reverse":
@@ -1423,7 +1438,9 @@ def launch_window(args):
                        ("completed",) if completed is not None and row[0] in completed else ())
         if last_pose is None:
             map_view = None
-            draw_route(canvas, None, [], set())
+            map_render = draw_route(canvas, None, [], set())
+            map_title.set("LOCAL PREVIEW · no position")
+            map_hint_text.set("No pose · Refresh")
             summary.set("Position unavailable; refresh to preview the route.")
             if not busy:
                 for button in (go_button, route_button, face_button, record_button,
@@ -1431,8 +1448,14 @@ def launch_window(args):
                     button.configure(state="disabled")
             return
         map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()), map_radius)
-        draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active,
-                   trail=exploration_trail)
+        map_render = draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active,
+                   trail=exploration_trail,numbers=[table.index(row[0])+1 for row in points])
+        visible=map_render["visible_count"]
+        hidden=map_render["offscreen_count"]
+        map_title.set((f"LOCAL PREVIEW · {visible}/{len(points)} visible"+(f" · {hidden} off-screen" if hidden else ""))
+                      if points else "LOCAL PREVIEW · no waypoints")
+        map_hint_text.set("Apply / Reset first" if draft_pending() else "Preview only" if busy or closing or cli_action is not None
+                          else "Select · list full" if len(points)>=20 else "Click: select / add" if points else "Click to add")
         remaining = points[index:] if playback_view is not None else points
         distance = route_length(*last_pose[:2], [row[1:] for row in remaining])
         planned_distance = route_length(*last_pose[:2], selected_points(True))
@@ -1465,10 +1488,32 @@ def launch_window(args):
                 update_replay_status()
 
     def map_click(event):
-        if busy or map_view is None:
+        if busy or closing or cli_action is not None:
+            state.set("Wait for the active action before changing preview selection or adding points.")
+            return
+        if draft_pending():
+            state.set("Apply or Reset fields before selecting or adding a waypoint.")
+            return
+        from scripts.waypoint_map import hit_test_route
+        hit=hit_test_route(map_render,event.x,event.y)
+        if hit is not None:
+            item=hit["identifier"]
+            table.selection_set(item)
+            table.focus(item)
+            select_point(None)
+            return
+        if map_view is None:
+            state.set("Refresh position before adding a point from the preview.")
+            return
+        if not (12<=event.x<=map_view.width-12 and 12<=event.y<=map_view.height-12):
+            state.set("Click inside the preview to add a waypoint.")
+            return
+        if len(table.get_children())>=20:
+            state.set("Waypoint list is full; remove a point before adding another.")
             return
         px, pz = map_view.canvas_to_world(event.x, event.y)
-        start("map", (map_view, px, pz, name.get() or "Waypoint"))
+        label=(name.get() or f"Point {len(table.get_children())+1}") if form_item is None else f"Point {len(table.get_children())+1}"
+        start("map", (map_view, px, pz, label))
 
     diagnostic_failures = {}
 
@@ -1810,7 +1855,7 @@ def launch_window(args):
         selected = table.selection()
         single = len(selected) == 1
         draft = edit_draft_status()
-        idle = not busy and not closing
+        idle = not busy and not closing and cli_action is None
         index = table.index(selected[0]) if single else None
         count = len(table.get_children())
         allowed = {"Update Selected": single and draft["valid"] and draft["pending"],
@@ -1819,6 +1864,8 @@ def launch_window(args):
                    "Up": single and index > 0 and not draft["pending"],
                    "Down": single and index < count-1 and not draft["pending"],
                    "Remove": bool(selected) and not draft["pending"], "Clear": count > 0 and not draft["pending"],
+                   "Load": not draft["pending"], "Save Route": count>0 and not draft["pending"],
+                   "Save As": count>0 and not draft["pending"],
                    "Add X / Z": draft["valid"] and count < 20,
                    "Save Current": adapter is not None and count < 20 and not draft["pending"],
                    "Add Target": adapter is not None and count < 20 and not draft["pending"],
@@ -1898,6 +1945,9 @@ def launch_window(args):
         if draft_pending():
             state.set("Apply or Reset fields before saving the route.")
             return
+        if not table.get_children():
+            state.set("Add a waypoint before saving the route.")
+            return False
         path = route_path
         if save_as or path is None:
             options = {"defaultextension": ".json", "initialfile": path.name if path else "rift-waypoints.json"}
@@ -2805,6 +2855,25 @@ def launch_window(args):
                 "bearing": last_pose[2] if last_pose else None,
                 "qualification": "Cached GUI sample; unavailable values must not be used for control."}
 
+    def cli_preview_status():
+        from scripts.waypoint_map import fit_route_status
+        available=last_pose is not None and map_view is not None
+        age=(datetime.now(timezone.utc)-datetime.fromisoformat(beacon_pose_stamp.replace("Z","+00:00"))).total_seconds() if markers.running() and beacon_pose_stamp else (
+            time.monotonic()-verified_at if verified_at is not None else None)
+        fresh=available and age is not None and 0<=age<=(1 if markers.running() else 2)
+        points=selected_points(True)
+        fit=fit_route_status(*last_pose[:2],points) if available and points else None
+        hidden=[dict(number=p["number"],name=table.item(p["identifier"],"values")[0])
+                for p in map_render.get("offscreen",[]) if table.exists(p["identifier"])]
+        return dict(radius=map_radius,allowedRadii=list(ZOOM_RADII),poseAvailable=available,
+            poseStatus="fresh" if fresh else "cached" if available else "unavailable",poseAgeSeconds=age,
+            fitAvailable=available and bool(points),fitLimited=bool(fit and fit["capped"]),
+            requiredRadius=fit["required_radius"] if fit else None,
+            routeCount=len(points),selected=[table.index(i)+1 for i in table.selection()],
+            visibleCount=map_render.get("visible_count",0) if available else 0,
+            offscreenCount=map_render.get("offscreen_count",0) if available else None,offscreenPoints=hidden,
+            terrainAvailable=False,inputSent=False,qualification="Player-relative cached reference only; no terrain, obstacle clearance or movement authority. Adding a point rechecks live pose.")
+
     def cli_radar_status():
         observed = None
         try:
@@ -2953,6 +3022,7 @@ def launch_window(args):
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
                     routeLibrary=library_view_state(),
                     activity=activity_controls.view_state(),
+                    preview=cli_preview_status(),
                     recording={"active": recording, "progress": recording_progress},
                     playback=cli_playback_status(),
                     activeRequestId=cli_action["id"] if cli_action else None,
@@ -3063,7 +3133,7 @@ def launch_window(args):
 
     def cli_dispatch(command, values, rid):
         nonlocal route_metadata, route_path, route_dirty, route_recovered, route_revision
-        nonlocal playback_view, pending_progress_selection, checkpoint, cli_close_id, cli_record_output
+        nonlocal playback_view, pending_progress_selection, checkpoint, cli_close_id, cli_record_output, map_radius
         nonlocal saved_view, saved_rerun, rerun_viewer
         nonlocal last_capture_state, last_capture_error
         try:
@@ -3083,6 +3153,18 @@ def launch_window(args):
                 result = open_logs()
                 if result is None: raise CliError("log-directory-unavailable", state.get())
                 return cli_ok(result)
+            if command.startswith("preview."):
+                if command == "preview.set":
+                    radius=values.get("range")
+                    if type(radius) not in (int,float) or radius not in ZOOM_RADII:
+                        raise CliError("invalid-preview-range","Preview range must be 2, 5, 10 or 20",exit_code=2)
+                    map_radius=int(radius)
+                    redraw()
+                elif command == "preview.fit":
+                    if not fit_zoom():
+                        raise CliError("preview-unavailable","A cached position and a route are needed to fit the preview",exit_code=3)
+                elif command != "preview.status": raise CliError("unsupported-command",command,exit_code=2)
+                return cli_ok(cli_preview_status())
             if command == "zone.status": return cli_ok(zone_state())
             if command == "zone.refresh": return cli_begin(rid, "zone", command=command)
             if command == "route.context":
@@ -3268,6 +3350,7 @@ def launch_window(args):
                         selected=[table.index(i)+1 for i in table.selection()], editDraft=edit_draft_status(),
                         measuredCount=measured, estimatedCount=len(document["waypoints"])-measured,
                         heights=route_heights(document), routeContext=document.get("routeContext"), contextComparison=zone_comparison(document),
+                        preview=cli_preview_status(),
                         points=[dict(number=i+1, name=r[0], x=float(r[1]), z=float(r[2])) for i,r in enumerate(selected_points(True))],
                         qualification="Route structure only; terrain, obstacle clearance and playback admission remain live checks."))
                 if command in ("route.load", "route.new"):
@@ -4122,7 +4205,7 @@ def launch_window(args):
         return "break"
 
     def edit_point_shortcut(_):
-        if not busy and not closing and len(table.selection()) == 1:
+        if not busy and not closing and cli_action is None and len(table.selection()) == 1:
             workflow.select(edit_tab)
             if not draft_pending(): select_point(None, force_name=True)
             point_entries[0].focus_set()
@@ -4144,6 +4227,40 @@ def launch_window(args):
             update_selected()
         return "break"
 
+    def point_tooltip(item):
+        if not item or not table.exists(item): return "Select a row or a preview marker. Double-click a row or press F2 to edit."
+        label,px,pz=table.item(item,"values")
+        number=table.index(item)+1
+        details=route_heights()
+        height=details[number-1] if number<=len(details) else None
+        evidence=("Measured height" if height and height["heightKind"]=="measured" else "Estimated height"
+                  if height and height.get("height") is not None else "Height unknown")
+        distance=math.hypot(float(px)-last_pose[0],float(pz)-last_pose[1]) if last_pose else None
+        return f"Point {number} / {len(table.get_children())}: {label}\nX {px} / Z {pz}\n"+(
+            f"From player: {distance:.2f} units (cached)\n" if distance is not None else "Player position unavailable\n")+(
+            f"{evidence} · {height['label']}\n" if height else "")+"Double-click a row or press F2 to edit."
+
+    table_hover=[None]
+    table.bind("<Motion>",lambda event:table_hover.__setitem__(0,table.identify_row(event.y)))
+    attach_path_tooltip(table,lambda:point_tooltip(table_hover[0] or (table.selection()[0] if table.selection() else None)))
+    def preview_hover(event):
+        from scripts.waypoint_map import hit_test_route
+        hit=hit_test_route(map_render,event.x,event.y)
+        map_hover[0]=hit["identifier"] if hit else None
+        allowed=not busy and not closing and cli_action is None and not draft_pending()
+        canvas.configure(cursor="hand2" if allowed and hit else "crosshair" if allowed and map_view is not None else "arrow")
+    canvas.bind("<Motion>",preview_hover)
+    attach_path_tooltip(canvas,lambda:point_tooltip(map_hover[0]) if map_hover[0] else
+        "Player-relative cached reference; no terrain or obstacle clearance. Click a marker to select it; click open space to add a point after a fresh pose check.")
+    attach_path_tooltip(fit_button,lambda:"Fit route around the cached player position, capped at 20 units. "+(
+        "Some points require a larger view than this preview allows." if cli_preview_status()["fitLimited"] else "Zoom never changes the route or movement limits."))
+    attach_path_tooltip(route_status_label,lambda:str(route_path) if route_path else "Current route has no saved file.")
+    def keep_selection_visible(_):
+        if table.winfo_height()>=24*len(table.get_children())+32:
+            table.yview_moveto(0)
+        elif len(table.selection())==1: table.see(table.selection()[0])
+    table.bind("<Configure>",keep_selection_visible)
+
     window.bind("<Control-s>", lambda _: save_shortcut())
     window.bind("<Control-Shift-S>", lambda _: save_shortcut(True))
     window.protocol("WM_DELETE_WINDOW", close)
@@ -4154,6 +4271,7 @@ def launch_window(args):
     table.bind("<ButtonRelease-1>", select_clicked)
     table.bind("<Control-z>", undo_edit)
     table.bind("<F2>", edit_point_shortcut)
+    table.bind("<Double-1>", edit_point_shortcut)
     table.bind("<Alt-Up>", lambda event: move_point_shortcut(event, -1))
     table.bind("<Alt-Down>", lambda event: move_point_shortcut(event, 1))
     table.bind("<Delete>", remove_points_shortcut)

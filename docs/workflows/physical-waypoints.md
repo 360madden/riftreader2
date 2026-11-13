@@ -13,6 +13,47 @@ and detailed status remain in Activity. Load/Save and Recent routes stay with th
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
 
+## Route list and local preview
+
+The main route list shows stable **#** numbers alongside the original waypoint
+name and X/Z. Those numbers match the local preview even during reverse playback;
+drawing/travel order never renumbers the saved route. Compact rows retain usable
+list space, and resizing keeps the selected point visible. Hover a row for its
+full name, coordinates, cached player distance and measured/estimated height
+context. Double-click or F2 opens Edit waypoint while preserving unapplied fields.
+Save Route/Save As require a nonempty route and applied/reset fields.
+
+**Click a preview node or number badge to select its route row.** This does not
+add a point or obtain another pose. Click open space inside the preview to add a
+waypoint; when an existing row is selected the new point gets a fresh `Point N`
+name. Pending fields must be applied/reset before either action. Addition reuses
+the existing live pose check: if the player moved or turned since the plotted
+sample, the map refreshes and asks for another click instead of placing the point
+against the wrong origin. Added map points retain estimated, rather than measured,
+height evidence until explicitly measured.
+
+The header reports visible/off-screen point counts for the local viewport.
+**+**, **−** and **Fit** affect this reference display only. Fit needs a cached
+position and at least one route point; it remains capped at 20 units and may leave
+distant points off-screen. Its hover explanation and CLI status expose that cap.
+No edge-clamped points or terrain clearance are implied. The preview starts at
+10 units on reopening; its range is separate from Explore's compact radar.
+
+```powershell
+.\rr2-waypoints.cmd preview status
+.\rr2-waypoints.cmd preview set --range 5
+.\rr2-waypoints.cmd preview fit
+.\rr2-waypoints.cmd route select 7
+```
+
+Allowed preview ranges are 2, 5, 10 and 20 units. These commands use existing
+cached data, obtain no new pose and send no game input. `status.preview` and live
+`route list --json` expose radius, selected numbers, viewport counts, named
+off-screen points, cached/fresh/unavailable pose status and age, and
+`fitLimited`/`requiredRadius`. Offline route inspection does not fabricate a live
+preview. `terrainAvailable` and `inputSent` remain false. Zoom/Fit never alter
+route coordinates, saved progress, movement admission or the 20-unit trip limit.
+
 ## Activity and diagnostics
 
 **Activity** displays the current session's diagnostic events, including startup,

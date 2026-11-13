@@ -1,7 +1,8 @@
 import math
 import unittest
 
-from scripts.waypoint_map import LocalMap, ZOOM_RADII, draw_route, fit_route_radius, route_length
+from scripts.waypoint_map import (LocalMap, ZOOM_RADII, draw_route, fit_route_radius,
+                                  fit_route_status, hit_test_route, route_length)
 from scripts.waypoint_ui_theme import PALETTE
 
 
@@ -55,6 +56,14 @@ class LocalMapTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 fit_route_radius(0, 0, [("Invalid", bad, 0)])
 
+    def test_fit_status_makes_twenty_unit_cap_explicit(self):
+        status = fit_route_status(0, 0, [("Beyond preview", 50, 0)])
+        self.assertEqual(20, status["radius"])
+        self.assertEqual(50, status["farthest_distance"])
+        self.assertAlmostEqual(55, status["required_radius"])
+        self.assertTrue(status["capped"])
+        self.assertFalse(fit_route_status(0, 0, [("Nearby", 3, 4)])["capped"])
+
     def test_ring_labels_follow_radius_and_default_stays_five_ten(self):
         class Canvas:
             def __init__(self): self.calls = []
@@ -88,6 +97,46 @@ class LocalMapTests(unittest.TestCase):
         self.assertEqual(lines[1][1], (*view.world_to_canvas(0, 2), *view.world_to_canvas(0, 1)))
         labels = [c[2]["text"] for c in canvas.calls if c[2].get("tags") == "waypoint-number"]
         self.assertEqual(labels, ["1", "2", "3"])
+
+    def test_original_numbers_survive_filtered_or_reversed_draw_order(self):
+        class Canvas:
+            def __init__(self): self.calls = []
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: self.calls.append((name, args, kwargs))
+        canvas = Canvas()
+        draw_route(canvas, LocalMap(0, 0, 0, 300, 300),
+                   [("d", "D", 0, 4), ("b", "B", 0, 2)], set(), numbers=[4, 2])
+        labels = [c[2]["text"] for c in canvas.calls if c[2].get("tags") == "waypoint-number"]
+        self.assertEqual(["4", "2"], labels)
+        with self.assertRaisesRegex(ValueError, "numbers must match"):
+            draw_route(Canvas(), LocalMap(0, 0, 0, 300, 300),
+                       [("a", "A", 0, 1)], set(), numbers=[])
+
+    def test_draw_metadata_supports_node_and_badge_hit_testing(self):
+        class Canvas:
+            def __init__(self): self.calls = []
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: self.calls.append((name, args, kwargs))
+        view = LocalMap(0, 0, 0, 300, 280, 2)
+        render = draw_route(Canvas(), view,
+                            [("near", "Near", 0, 1), ("far", "Far", 100, 0)],
+                            set(), numbers=[7, 9])
+        self.assertEqual((1, 1, 2), (render["visible_count"], render["offscreen_count"], render["total_count"]))
+        self.assertEqual("far", render["offscreen"][0]["identifier"])
+        node = render["nodes"][0]
+        self.assertEqual((0.0, 1.0), node["world"])
+        self.assertEqual({"identifier": "near", "number": 7, "part": "node"},
+                         hit_test_route(render, *node["point"]))
+        box = node["badge_box"]
+        self.assertEqual("badge", hit_test_route(render, box[0]+1, box[1]+1)["part"])
+        self.assertIsNone(hit_test_route(render, -100, -100))
+
+    def test_hit_testing_prefers_true_node_over_an_overlapping_badge(self):
+        render = {"nodes": [
+            {"identifier": "badge", "number": 1, "point": (80, 80), "badge_box": (5, 5, 20, 20)},
+            {"identifier": "node", "number": 2, "point": (10, 10), "badge_box": (40, 40, 60, 60)},
+        ]}
+        self.assertEqual("node", hit_test_route(render, 10, 10)["identifier"])
 
     def test_default_selection_and_actual_start_connector_remain_distinct(self):
         class Canvas:

@@ -53,6 +53,7 @@ class CliTests(unittest.TestCase):
                         'record.cancel move.to face playback.start playback.resume playback.status '
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
+                        'preview.status preview.set preview.fit '
                         'diagnostics.status diagnostics.show diagnostics.events diagnostics.copy diagnostics.open '
                         'library.list library.save library.import library.load library.show library.select').split():
             with self.subTest(command=command):
@@ -107,6 +108,31 @@ class CliTests(unittest.TestCase):
             'point':3, 'discard_draft':True}))
         help_text = self.call('route','select','--help')[1]
         self.assertIn('explicitly discard unapplied Edit waypoint fields', help_text)
+
+    def test_preview_commands_are_small_display_only_controls(self):
+        cases = [
+            (("preview", "status"), "preview.status", {}),
+            (("preview", "set", "--range", "5"), "preview.set", {"range": 5.0}),
+            (("preview", "fit"), "preview.fit", {}),
+        ]
+        for argv, operation, payload in cases:
+            with self.subTest(argv=argv), patch.object(protocol, "resolve_session", return_value={}), patch.object(
+                    protocol, "request", return_value=cli.result(operation, data={})) as request:
+                self.assertEqual(self.call(*argv, "--json")[0], 0)
+                self.assertEqual(request.call_args.args[1:3], (operation, payload))
+        set_help = self.call("preview", "set", "--help")[1]
+        self.assertIn("2, 5, 10 or 20", set_help)
+        self.assertIn("reads no new pose", set_help)
+        fit_help = self.call("preview", "fit", "--help")[1]
+        self.assertIn("cached finite pose", fit_help)
+        self.assertIn("capped at 20 units", fit_help)
+
+    def test_preview_range_is_validated_before_dispatch(self):
+        with patch.object(protocol, "resolve_session") as resolve:
+            code, _, error = self.call("preview", "set", "--range", "7")
+        self.assertEqual(code, 2)
+        self.assertIn("invalid choice", error)
+        resolve.assert_not_called()
 
     def test_scene_commands_dispatch_explicit_capture_options_and_reset(self):
         cases = [
@@ -467,6 +493,40 @@ class CliTests(unittest.TestCase):
         self.assertIn(' *2. Camp', out.getvalue())
         self.assertIn('Edit draft: pending for point 2 | invalid | X is not finite', out.getvalue())
         self.assertIn('--discard-draft', out.getvalue())
+
+    def test_human_preview_reports_pose_age_offscreen_points_and_fit_cap(self):
+        preview = {
+            'radius': 20, 'routeCount': 4, 'selected': [3], 'visibleCount': 2,
+            'offscreenCount': 2, 'offscreenPoints': [
+                {'number': 3, 'name': 'Far camp'}, {'number': 4, 'name': 'Cliff'}],
+            'poseAvailable': True, 'poseStatus': 'cached', 'poseAgeSeconds': 1.25,
+            'fitAvailable': True, 'fitLimited': True, 'requiredRadius': 33.4,
+            'terrainAvailable': False,
+            'qualification': 'Local preview only; terrain and clearance are not shown.',
+        }
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('preview.status', data=preview))
+        rendered = out.getvalue()
+        for phrase in ('Local preview: 20 units | 2/4 points visible | 2 off-screen',
+                       'Preview pose: cached | 1.25s old | Fit available',
+                       'Fit limited: preview is capped at 20 units; route requires about 33.4 units',
+                       'Off-screen points: 3 (Far camp), 4 (Cliff)',
+                       'terrain and clearance are not shown'):
+            self.assertIn(phrase, rendered)
+
+    def test_route_list_and_status_render_nested_preview_summary(self):
+        preview = {'radius': 10, 'routeCount': 2, 'visibleCount': 2, 'offscreenCount': 0,
+                   'poseAvailable': False, 'poseStatus': 'unavailable', 'fitAvailable': False}
+        for command, data in (
+                ('route.list', {'points': [], 'preview': preview}),
+                ('status', {'route': {}, 'preview': preview})):
+            with self.subTest(command=command):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out):
+                    cli.emit(cli.result(command, data=data))
+                self.assertIn('Local preview: 10 units | 2/2 points visible | 0 off-screen', out.getvalue())
+                self.assertIn('Preview pose: unavailable | Fit unavailable', out.getvalue())
 
     def test_human_playback_status_explains_each_admission(self):
         readiness = {

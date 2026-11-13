@@ -7,11 +7,12 @@ from scripts.waypoint_ui_theme import PALETTE
 ZOOM_RADII = (2, 5, 10, 20)
 
 
-def fit_route_radius(x, z, points):
-    """Fit (name, X, Z) points around the player with 10% radial headroom.
+def fit_route_status(x, z, points):
+    """Describe the best available fit for ``(name, X, Z)`` route points.
 
-    Empty routes use radius 2. Radius is capped at 20, so farther points can
-    remain offscreen; this preview does not change movement limits.
+    ``required_radius`` includes 10% headroom. ``capped`` makes the fixed
+    20-unit preview limit explicit to callers instead of silently implying
+    that every route point will fit.
     """
     x, z = float(x), float(z)
     if not math.isfinite(x) or not math.isfinite(z):
@@ -23,7 +24,18 @@ def fit_route_radius(x, z, points):
             raise ValueError("Preview points must be finite")
         farthest = max(farthest, math.hypot(px - x, pz - z))
     required = farthest * 1.1
-    return next((radius for radius in ZOOM_RADII if radius >= required), ZOOM_RADII[-1])
+    radius = next((radius for radius in ZOOM_RADII if radius >= required), ZOOM_RADII[-1])
+    return {
+        "radius": radius,
+        "required_radius": required,
+        "farthest_distance": farthest,
+        "capped": required > ZOOM_RADII[-1],
+    }
+
+
+def fit_route_radius(x, z, points):
+    """Return the available zoom radius that best fits the route."""
+    return fit_route_status(x, z, points)["radius"]
 
 
 @dataclass(frozen=True)
@@ -99,14 +111,42 @@ def _label_box(point, number, bounds, occupied):
     return min(candidates, key=lambda c: (c[0], c[1]))[2]
 
 
-def draw_route(canvas, view, points, selected, *, completed=None, active=None, trail=None):
-    """Player-relative reference diagram only; no terrain or clearance imagery."""
+def hit_test_route(render, x, y, *, node_radius=11):
+    """Return the route node or number badge under a canvas coordinate.
+
+    True waypoint nodes win over displaced number badges. Iterating in reverse
+    matches Tk's top-most ordering when multiple route points overlap.
+    """
+    nodes = render.get("nodes", ()) if render else ()
+    for node in reversed(nodes):
+        px, py = node["point"]
+        if math.hypot(float(x) - px, float(y) - py) <= node_radius:
+            return {"identifier": node["identifier"], "number": node["number"], "part": "node"}
+    for node in reversed(nodes):
+        left, top, right, bottom = node["badge_box"]
+        if left <= x <= right and top <= y <= bottom:
+            return {"identifier": node["identifier"], "number": node["number"], "part": "badge"}
+    return None
+
+
+def draw_route(canvas, view, points, selected, *, completed=None, active=None, trail=None, numbers=None):
+    """Draw a player-relative reference diagram and return hit-test metadata.
+
+    ``numbers`` may contain the original one-based route numbers when ``points``
+    is filtered or reversed. Omitting it preserves the historical 1..N labels.
+    The preview contains no terrain or clearance imagery.
+    """
     canvas.delete("all")
     c = PALETTE
+    metadata = {"nodes": [], "offscreen": [], "visible_count": 0,
+                "offscreen_count": 0, "total_count": len(points)}
     if view is None:
         canvas.create_text(canvas.winfo_width()/2, canvas.winfo_height()/2,
                            text="Refresh position to show waypoints", fill=c["muted"], font=("Segoe UI", 10))
-        return
+        return metadata
+    display_numbers = list(range(1, len(points)+1)) if numbers is None else list(numbers)
+    if len(display_numbers) != len(points):
+        raise ValueError("Preview numbers must match route points")
     cx, cy = view.width/2, view.height/2
     bounds = (12, 12, view.width-12, view.height-12)
     canvas.create_rectangle(*bounds, fill=c["inset"], outline=c["line"], width=1, tags="map-inset")
@@ -137,32 +177,37 @@ def draw_route(canvas, view, points, selected, *, completed=None, active=None, t
             previous = current
     visible = []
     prior = (cx, cy)
-    for number, (identifier, label, x, z) in enumerate(points, 1):
+    for sequence, ((identifier, label, x, z), number) in enumerate(zip(points, display_numbers), 1):
         point = view.world_to_canvas(float(x), float(z))
         segment = _clip_segment(prior, point, bounds)
-        if segment is not None and (number > 1 or not completed):
+        if segment is not None and (sequence > 1 or not completed):
             canvas.create_line(*segment, fill=c["surface"], width=5, tags="route-shadow")
             canvas.create_line(*segment, fill=c["blue"], width=2,
-                               dash=(3, 5) if number == 1 else (), tags="route-connector")
+                               dash=(3, 5) if sequence == 1 else (), tags="route-connector")
         if bounds[0]+7 <= point[0] <= bounds[2]-7 and bounds[1]+7 <= point[1] <= bounds[3]-7:
             color = (c["gold"] if identifier == active else c["mint"] if identifier in (completed or ())
                      else c["gold"] if identifier in selected else c["blue"])
-            visible.append((number, identifier, point, color))
+            visible.append((number, identifier, (float(x), float(z)), point, color))
+        else:
+            metadata["offscreen"].append({"identifier": identifier, "number": number,
+                                          "world": (float(x), float(z)), "point": point})
         prior = point
     # Reserve every true node and the player, then find quiet nearby number lanes.
     occupied = [(cx-20, cy-20, cx+20, cy+37)]
-    occupied += [(p[0]-8, p[1]-8, p[0]+8, p[1]+8) for _, _, p, _ in visible]
+    occupied += [(p[0]-8, p[1]-8, p[0]+8, p[1]+8) for _, _, _, p, _ in visible]
     occupied += [(cx-42, 12, cx+42, 32)]
-    for number, identifier, point, color in visible:
+    for number, identifier, world, point, color in visible:
         box = _label_box(point, number, (16, 36, view.width-16, view.height-16), occupied)
         occupied.append(box)
+        metadata["nodes"].append({"identifier": identifier, "number": number,
+                                  "world": world, "point": point, "badge_box": box})
         endpoint = (max(box[0], min(box[2], point[0])), max(box[1], min(box[3], point[1])))
         canvas.create_line(*point, *endpoint, fill=c["line"], width=1, tags="number-leader")
         canvas.create_rectangle(*box, fill=c["surface"], outline=c["gold"] if identifier in selected else c["line"],
                                 width=1, tags="number-badge")
         canvas.create_text((box[0]+box[2])/2, (box[1]+box[3])/2, text=str(number), fill=color,
                            font=("Segoe UI", 10, "bold"), tags="waypoint-number")
-    for number, identifier, (x, y), color in visible:
+    for number, identifier, _, (x, y), color in visible:
         if identifier in selected or identifier == active:
             canvas.create_oval(x-10, y-10, x+10, y+10, outline=c["gold"], width=1, tags="selection-ring")
         canvas.create_oval(x-5, y-5, x+5, y+5, fill=color, outline=c["inset"], width=2, tags="waypoint-node")
@@ -170,3 +215,6 @@ def draw_route(canvas, view, points, selected, *, completed=None, active=None, t
     canvas.create_polygon(cx, cy-11, cx-8, cy+8, cx, cy+4, cx+8, cy+8,
                           fill=c["mint"], outline=c["ink"], width=1, tags="player-arrow")
     canvas.create_text(cx, cy+26, text="YOU", fill=c["mint"], font=("Segoe UI", 10), tags="player-label")
+    metadata["visible_count"] = len(metadata["nodes"])
+    metadata["offscreen_count"] = len(metadata["offscreen"])
+    return metadata

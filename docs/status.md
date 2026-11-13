@@ -1,5 +1,34 @@
 # Current status
 
+**NOVEMBER 13 — MAIN ROUTE LIST AND LOCAL PREVIEW:**
+On verified AMD-DESKTOP, the main list now shows route numbers that match preview
+badges, including reverse playback. Clicking an existing node or badge selects
+its row without adding a duplicate or reading another pose; blank-space addition
+retains the existing fresh-pose check and uses a new point name. Pending edit
+fields block selection/addition until applied/reset. Row and marker hover details
+include full names, cached distance and height context. Double-click/F2 opens
+Edit without discarding drafts; empty/draft save readiness is explicit.
+Denser rows and spacing fit all seven current points at normal size and keep two
+full rows, including the selection, visible at 980×740. Preview counts expose
+off-screen points. CLI `preview status`, `preview set --range` and `preview fit`
+share the GUI display state, cached-pose age, named off-screen points and 20-unit
+Fit limit; status/route-list/diagnostic snapshots include preview data. These
+commands obtain no new pose and send no game input.
+Focused checks passed **142 tests and 135 subtests**, zero failures/skips. Real-Tk
+checks cover selection/addition, drafts, numbering, reverse drawing and Fit;
+live CLI range/selection/Fit and a temporary 50-unit cap trial passed. RIFT
+restarted during verification; readiness recovered the same build/player and
+reused the movement basis for PID34468. Helper PID22380/session
+b727215b402a4b76a16888eceaa0f6e0 remains on Replay with the original seven-point
+route, selection 7 and preview range 10. Route/basis/library hashes, recent-route
+history, trail, scene references, overlay settings and absent checkpoint were
+preserved/restored. No game input was sent. The preview remains a cached local
+reference with no terrain or clearance authority.
+Evidence: `artifacts/route-preview-final-restored-20261113.json`,
+`artifacts/route-preview-live-verification-20261113.json` and native
+`artifacts/route-preview-final-{normal,compact}-20261113.png`.
+See [Route list and local preview](workflows/physical-waypoints.md#route-list-and-local-preview).
+
 **NOVEMBER 13 — ACTIVITY EVENT VIEW, FOLLOW/PAUSE AND DIAGNOSTICS CLI:**
 On verified AMD-DESKTOP, Activity now reads the diagnostic event source instead
 of unbounded hand-appended text. Local timestamps, severity colors, shared

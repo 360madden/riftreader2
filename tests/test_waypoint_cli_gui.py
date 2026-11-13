@@ -602,6 +602,46 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertEqual(listing['selected'], [1])
         self.assertFalse((self.root / 'movement-called').exists())
 
+    def test_preview_controls_use_cached_pose_cap_fit_and_preserve_route(self):
+        self.assertTrue(self.call('route.add', {'name': 'Near', 'x': 12, 'z': 24})['ok'])
+        self.assertTrue(self.call('route.add', {'name': 'Far', 'x': 62, 'z': 24})['ok'])
+        before = self.call('route.list')['data']
+        route_before = {key: before[key] for key in ('file', 'dirty', 'revision', 'document', 'selected')}
+
+        initial = self.call('preview.status')
+        self.assertTrue(initial['ok'], initial)
+        self.assertTrue(initial['data']['poseAvailable'])
+        self.assertIn(initial['data']['poseStatus'], ('fresh', 'cached'))
+        self.assertEqual(initial['data']['routeCount'], 2)
+
+        narrowed = self.call('preview.set', {'range': 2})
+        self.assertTrue(narrowed['ok'], narrowed)
+        self.assertEqual(narrowed['data']['radius'], 2)
+
+        fitted = self.call('preview.fit')
+        self.assertTrue(fitted['ok'], fitted)
+        preview = fitted['data']
+        self.assertEqual(preview['radius'], 20)
+        self.assertTrue(preview['fitLimited'])
+        self.assertGreater(preview['requiredRadius'], 20)
+        self.assertIn({'number': 2, 'name': 'Far'}, preview['offscreenPoints'])
+
+        refused = self.call('preview.set', {'range': 3})
+        self.assertFalse(refused['ok'], refused)
+        self.assertEqual(refused['error']['code'], 'invalid-preview-range')
+        self.assertEqual(self.call('preview.status')['data']['radius'], 20)
+
+        chosen = self.call('route.select', {'point': 1})
+        self.assertTrue(chosen['ok'], chosen)
+        selected_preview = self.call('preview.status')['data']
+        self.assertEqual(selected_preview['selected'], [1])
+        after = self.call('route.list')['data']
+        self.assertEqual(after['preview']['selected'], [1])
+        for key in ('file', 'dirty', 'revision', 'document'):
+            self.assertEqual(after[key], route_before[key], key)
+        self.assertEqual(after['document']['waypoints'], [['Near', 12., 24.], ['Far', 62., 24.]])
+        self.assertFalse((self.root / 'movement-called').exists())
+
     def test_diagnostics_report_keeps_route_request_and_full_malformed_json_trace(self):
         self.assertTrue(self.call('route.add', {'name':'Current', 'x':1, 'z':2})['ok'])
         current = self.root / 'current-route.json'

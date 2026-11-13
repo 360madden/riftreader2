@@ -30,6 +30,7 @@ class RecentRoutesTests(unittest.TestCase):
     widgets = fixture.PlaybackWindowStateTests.widgets
     button = fixture.PlaybackWindowStateTests.button
     launch = fixture.PlaybackWindowStateTests.launch
+    route_table = fixture.PlaybackWindowStateTests.route_table
 
     def prepare(self, route=None):
         pose = app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
@@ -39,7 +40,11 @@ class RecentRoutesTests(unittest.TestCase):
                                        target={"processId": 123}, input_receipt_path=self.path / "unused")
         self.launch(self.adapter, route)
         self.window = self.roots[0]
-        self.combo = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Combobox))
+        self.combo = next(w for w in self.widgets(self.window)
+                          if isinstance(w, fixture.ttk.Combobox)
+                          and any(isinstance(sibling, fixture.ttk.Button)
+                                  and str(sibling.cget("text")) == "Load recent"
+                                  for sibling in w.master.winfo_children()))
 
     def wait_idle(self):
         deadline = time.monotonic() + 3
@@ -53,7 +58,14 @@ class RecentRoutesTests(unittest.TestCase):
     def test_load_recent_keeps_eight_full_local_paths_and_preserves_matching_progress(self):
         paths = []
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [5, 6],
-                    "recording": {"complete": True}}
+                    "recording": {"complete": True, "version": 1,
+                                  "identity": {"runtimeIdentity": {
+                                      "machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
+                                      "unitKey": "player", "processId": 123,
+                                      "processStartUtcTicks": "12345"}},
+                                  "sources": ["native-source.json"],
+                                  "firstObservedAtUtc": "2026-11-13T10:00:00Z",
+                                  "lastObservedAtUtc": "2026-11-13T10:00:05Z"}}
         for i in range(9):
             folder = self.path / str(i)
             folder.mkdir()
@@ -115,7 +127,10 @@ class RecentRoutesTests(unittest.TestCase):
         self.combo.set("a.json")
         self.button("Load recent").invoke()
         self.assertEqual(original, checkpoint.read_bytes())
-        self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
+        # The cursor is restored exactly, while current readiness correctly
+        # refuses Resume because this fixture's player is no longer at the
+        # reverse route's last confirmed point.
+        self.assertEqual("disabled", str(self.button("Resume")["state"]))
         self.assertEqual(("reverse", 1), (RouteProgress.load(checkpoint, a, self.identity).direction,
                                           RouteProgress.load(checkpoint, a, self.identity).next_index))
 
@@ -131,7 +146,7 @@ class RecentRoutesTests(unittest.TestCase):
         progress.begin({"x": 1, "y": 0, "z": 0})
         progress.save(checkpoint)
         original = checkpoint.read_bytes()
-        table = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         before = [table.item(item, "values") for item in table.get_children()]
         with patch("tkinter.filedialog.askopenfilename", return_value=str(path_b)), \
              patch("scripts.waypoint_progress.write_json_atomic", side_effect=OSError("archive failed")), \
@@ -154,7 +169,7 @@ class RecentRoutesTests(unittest.TestCase):
         with patch("tkinter.filedialog.askopenfilename", return_value=str(path_b)):
             self.button("Load").invoke()
         current = RouteProgress(b, "forward", self.identity); current.begin({"x": 0, "y": 0, "z": 0}); current.save(checkpoint)
-        table = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         table.selection_set(table.get_children()[0]); self.window.update()
         self.button("Remove").invoke()
         self.assertFalse(checkpoint.exists())
@@ -233,7 +248,7 @@ class RecentRoutesTests(unittest.TestCase):
         self.adapter.binding = None
         self.combo.set(source.name)
         self.button("Load recent").invoke()
-        table = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         table.selection_set(table.get_children()[0])
         self.button("Remove").invoke()
         self.button("Undo").invoke()
@@ -267,17 +282,27 @@ class RecentRoutesTests(unittest.TestCase):
         self.button("Save Current").invoke()
         self.wait_idle()
         self.assertFalse(checkpoint.exists())
-        table = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         self.assertEqual(3, len(table.get_children()))
 
     def test_explicit_3d_open_no_duplicate_and_new_capture_without_rerun_clears(self):
         route = self.path / "route.json"
-        route.write_text(json.dumps({"waypoints": [["A", 0, 0]]}), encoding="utf-8")
+        route.write_text(json.dumps({"waypoints": [["A", 0, 0]], "heights": [0],
+                                     "recording": {"complete": True, "version": 1,
+                                         "identity": {"runtimeIdentity": {
+                                             "machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64,
+                                             "unitKey": "player", "processId": 123,
+                                             "processStartUtcTicks": "12345"}},
+                                         "sources": ["native-source.json"],
+                                         "firstObservedAtUtc": "2026-11-13T10:00:00Z",
+                                         "lastObservedAtUtc": "2026-11-13T10:00:05Z"}}), encoding="utf-8")
         self.prepare(route)
+        rerun_path = self.path / "first.rrd"
+        rerun_path.write_text("fixture", encoding="utf-8")
         child = SimpleNamespace(poll=Mock(return_value=None))
         launch_viewer = Mock(return_value=child)
         backend = Mock(side_effect=[{"status": "saved-route-view-candidate", "image": "first.png", "inputSent": False,
-                                     "focusChanged": False, "rerun": {"status": "saved", "path": "first.rrd"}},
+                                     "focusChanged": False, "rerun": {"status": "saved", "path": str(rerun_path)}},
                                     {"status": "blocked", "reason": "unavailable", "inputSent": False, "focusChanged": False},
                                     {"status": "saved-route-view-candidate", "image": "second.png", "inputSent": False,
                                      "focusChanged": False, "rerun": {"status": "unavailable"}}])
@@ -288,7 +313,7 @@ class RecentRoutesTests(unittest.TestCase):
             launch_viewer.assert_not_called()
             self.button("Open 3D view").invoke()
             self.button("Open 3D view").invoke()
-            launch_viewer.assert_called_once_with("first.rrd")
+            launch_viewer.assert_called_once_with(str(rerun_path))
             self.button("Save view").invoke(); self.wait_idle()
             self.assertNotEqual("disabled", str(self.button("Open 3D view")["state"]))
             child.poll.return_value = 0
