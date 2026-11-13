@@ -1,5 +1,23 @@
 # Current status
 
+**NOVEMBER 13 — LIVE CLI PLAYBACK / STOP / RESUME VERIFIED:**
+On verified AMD-DESKTOP, physical RIFT PID34468, a reviewed clear-ground three-unit
+manual route passed via CLI. STOP after the first 150 ms W pulse retained cursor
+1/2; native post-STOP samples had 0 XYZ and yaw drift. Resume completed cursor
+2/2 with two further 150 ms W pulses, all three native release receipts passing.
+Final endpoint error was 0.127844 units (arrival radius 0.30); net trial movement
+was 2.872161 units, with no turn input. Before/STOP/completed screenshots were
+reviewed. An earlier preflight detected a position/facing change and blocked before input.
+No application fix was needed. Original route, selection 7, range 10, route cache,
+checkpoint path/content, progress archives, basis/library/style hashes, scene,
+radar/guide settings and empty trail were restored/preserved. Helper was reopened
+to reset the temporary checkpoint override; PID77524/session
+1c1effd6a55e48bca064d21adfcdcd21 remains on Replay, Live pose on, overlays off,
+idle and STOP clear. Atank remains at the trial endpoint.
+Evidence: `artifacts/short-playback-stop-resume-20261113/final-verification.json`,
+`stop-result.json`, `resume-result.json`, and the three observation receipts
+`artifacts/short-playback-{before-refresh,after-stop,after-resume}-20261113.json`.
+
 **NOVEMBER 13 — FINAL CROSS-TAB USABILITY PASS:**
 On verified AMD-DESKTOP, unapplied edits now show a persistent clickable notice
 and Edit tab star, with immediate Replay/direct movement/record/add/preview
