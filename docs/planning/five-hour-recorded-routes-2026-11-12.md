@@ -118,19 +118,116 @@ connecting segment. Full saved world mapping remains later work.
   on the same process without a restart. Check display power and reacquire window
   geometry/capture first. The exact monitor/GPU mechanism remains unconfirmed.
 
-## Next: plan the helper CLI
+## Proposed helper CLI — November 13
 
-Plan a consistent, automation-friendly CLI for this helper and future helpers.
-Start by inventorying the current waypoint CLI; reuse its playback, facing and
-route controls. Agree the command surface before implementing an expansion:
+Status: proposal, not implemented. Source and actual `--help` output were inspected
+on AMD-DESKTOP. Keep the existing command lines compatible while adding a console
+entry point named `rr2-waypoints.cmd`; `Waypoints.cmd` remains the GUI launcher.
 
-- Intuitive top-level and command-specific help, examples and discoverable capabilities.
-- Human-readable output by default, structured JSON and meaningful exit codes for automation.
-- Status/connection, route inspection/editing, radar/beacons, manual guidance and trail export.
-- A practical way to control an already open helper, with one owner of each live reader/action.
-- Explicit target binding and explicit movement commands; preserve current STOP/release behavior.
+### Existing capabilities to reuse
 
-This is the next planning topic. CLI expansion is not implemented by this roadmap.
+- `scripts/physical_waypoints.py`: explicit host/PID, go-to X/Z, face bearing,
+  route run, recorded-route playback, forward/reverse, Resume, checkpoints and
+  recording during a commanded run. Movement requires `--execute`; F8/Ctrl+C
+  latch cancellation and native pulses own their release. Output is currently
+  JSON event lines followed by a final result, not a selectable single-JSON mode.
+- `scripts/launch_physical_waypoints.py`: GUI launch, saved-route startup,
+  unique-client waiting/reconnection and read-only `--check`. Its console help
+  works, but `Waypoints.cmd` launches `pythonw`, so that wrapper is not a useful
+  console-output entry point.
+- `scripts/live_physical_waypoints.py`: internal marker/presenter CLI with
+  pose, route-update, appearance, radar and exploration files. It starts its own
+  feed; it does not attach commands to the open GUI.
+- The GUI owns loaded/dirty route state, selection, marker lifecycle, manual guide
+  and trail history. Its callbacks and `ExploreControls` are reusable. The missing
+  pieces are session discovery, a small dispatcher and correlated command results.
+
+### Command surface
+
+Use noun/verb commands and one-based waypoint/segment numbers matching the UI.
+The following names are proposed, not runnable commands yet.
+
+| Group | Commands and intent |
+| --- | --- |
+| Shared helper basics | `help [COMMAND]`, `--version`, `capabilities`, `status`, `doctor`, `stop` |
+| App/session | `app list`, `app open`, `app show`, `app hide`, `app close`; select an existing instance with `--session ID`, choose a RIFT client at launch with `--pid PID` |
+| Route | `route list/load/save/new/add/update/remove/reorder/select/undo/validate`; `add --current`, `add --target`, or explicit `--x/--z`; `list --file FILE` and validation can work offline |
+| Radar | `radar status/show/hide/lock/unlock/move/set`; range/opacity and position relative to the game client, avoiding desktop-coordinate guessing |
+| Beacons | `beacons status/show/hide/set`; size/opacity/labels, selected-target inclusion and selected-point guide |
+| Manual guide | `guide status/start/stop`; `start --direction forward|reverse --from N` uses passive arrival confirmation and never sends input |
+| Breadcrumbs | `trail status/start/stop/list/save/clear`; `save FILE --segment N|latest` exports a separate existing-format route |
+| Existing route recorder | `record status/start/stop/cancel`; keep Stop-to-save and Cancel distinct from breadcrumb history |
+| Movement/playback | `move to X Z`, `face BEARING`, `route run`, `playback start/resume/status`; movement requires `--execute`, playback has explicit direction/checkpoint and deterministic walk mode |
+| Views/receipts | `view save/open`, `view open-3d`, `receipt list/show`; reuse existing capture bundles and receipts |
+
+### Reusable behavior and help
+
+- No arguments show a short help page. Each group and leaf supports `--help`;
+  `help radar set` resolves to the same content as `radar set --help`.
+- Top-level help groups commands by purpose and shows a handful of common examples.
+  Leaf help states purpose, live-session requirements, side effects, units/ranges,
+  defaults and examples. Explicitly distinguish passive `guide` from input-sending
+  `playback`. Enable typo suggestions, disable abbreviated long-option guessing.
+- Human-readable output is the default. `--json` writes one versioned result to
+  stdout, including failures; logs go to stderr. Streaming commands use explicit
+  `--jsonl`. No color/progress decoration enters machine-readable output.
+- Common flags include `--session`, `--timeout`, `--json` and `--no-color`;
+  `--jsonl` is for streaming commands. Timeouts/defaults are documented per command,
+  so a movement operation is not accidentally given a short status-query timeout.
+- Common result fields: schema version, command, success/status, session/target,
+  data, and error code/message/recovery hint. Live pose reports retain source time,
+  age and qualification; enabled display and actually visible display are distinct.
+- Proposed exit codes: 0 success, 1 operation failure, 2 usage, 3 unavailable or
+  ambiguous session/target, 4 busy/refused, 5 timeout/outcome unknown, 130 cancelled.
+- Commands do not open file choosers or confirmation dialogs. Paths and save/discard
+  decisions are explicit; existing files require an explicit overwrite option.
+  Return actionable errors when a decision is missing. Route edits return revision
+  information so automation can guard against concurrent changes.
+- Quick commands return after the GUI applies the change. Movement commands wait
+  for their terminal result by default, retaining receipts and Ctrl+C/F8 behavior.
+  Acknowledged/running and completed are separate states; timeouts are not success.
+- `stop` mirrors the helper's owned STOP behavior, with release and observed
+  stationary evidence reported separately. It does not promise to cancel arbitrary
+  in-game autorun. `trail stop` retains history; `record stop` saves and `record
+  cancel` discards. Do not silently change existing STOP/F8 semantics.
+
+Use the current `argparse` implementation. Python 3.14.6 is installed; subcommands,
+grouped help and typo suggestions are already supported by
+[Python's standard library](https://docs.python.org/3.14/library/argparse.html).
+Reuse conventions across
+future `rr2-<helper>` apps; extract a small shared parser/result helper after a
+second app needs it, rather than building a generalized application framework.
+
+### Connecting to the open app
+
+The GUI remains the owner of live state, native readers and actions. CLI requests
+enter a small allowlisted dispatcher on the existing Tk poll/worker paths. Reuse
+callbacks after separating explicit arguments/results from file dialogs; do not
+simulate clicks or let the CLI directly edit the presenter's private state files.
+
+For the first implementation, reuse atomic JSON with one request and response per
+ID in an owned local session directory. The GUI publishes its session ID, PID/start
+identity and protocol version; the console verifies liveness and selects exactly
+one session. Bound work per poll and prioritize STOP. Expire stale requests,
+correlate results and deduplicate request IDs. Never silently retry an uncertain
+movement request. Keep the command/result contract independent of this transport.
+No helper starts an additional sampler just to answer `status`.
+
+### Implementation order
+
+1. Console launcher, command/help tree, JSON/exit conventions, session discovery,
+   status/doctor/stop and app attachment. Verify queued versus applied results,
+   stale/ambiguous sessions and busy responses.
+2. Route editing, radar/beacons and guide/trail controls, including explicit-file
+   export. Run a complete CLI-only demonstration against the existing GUI: load
+   route, configure radar, guide/record, save trail and inspect status without
+   desktop clicking or duplicate readers.
+3. Wrap existing movement/playback and recorder/view/receipt operations. Preserve
+   explicit execution, target ownership, STOP/release and dirty-route handling;
+   verify cancellation and receipts before claiming full UI parity.
+
+Keep the first useful result small: controlling the open radar and querying its
+actual state from the console. Broader command coverage follows in coherent slices.
 
 ## Keep the workflow practical
 
