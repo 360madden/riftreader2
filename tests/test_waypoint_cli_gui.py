@@ -84,6 +84,16 @@ class Server(original_server):
             def fail_thread(): raise RuntimeError('thread-failure-marker')
             worker = threading.Thread(target=fail_thread, name='diagnostic-test-worker')
             worker.start(); worker.join()
+        if (root / 'dump-activity-text').exists():
+            rendered = []
+            def collect_text(widget):
+                for child in widget.winfo_children():
+                    if child.winfo_class() == 'Text':
+                        rendered.append(str(child) + '\n' + child.get('1.0', 'end-1c'))
+                    collect_text(child)
+            collect_text(tkroot)
+            (root / 'activity-text.txt').write_text('\n---\n'.join(rendered), encoding='utf-8')
+            (root / 'dump-activity-text').unlink()
         draft = root / 'draft-fields'
         if draft.exists():
             entries = []
@@ -605,7 +615,31 @@ class GuiBridgeTests(unittest.TestCase):
                        current.name, 'malformed-route-request', 'JSONDecodeError',
                        'Traceback (most recent call last):'):
             self.assertIn(marker, report)
+        events = self.call('diagnostics.events', {
+            'level':'error', 'limit':100, 'search':'malformed-route-request'})['data']
+        self.assertEqual(events['shownCount'], 1, events)
+        event = events['entries'][0]
+        self.assertEqual(event['level'], 'ERROR')
+        self.assertEqual(event['requestId'], 'malformed-route-request')
+        self.assertEqual(event['exceptionType'], 'JSONDecodeError')
+        self.assertIn('Traceback (most recent call last):', event['traceback'])
         self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_expected_cli_refusal_is_one_warning_and_event_queries_do_not_log(self):
+        self.assertTrue(self.call('route.add', {'name':'Unsaved', 'x':1, 'z':2})['ok'])
+        rid = 'expected-refusal-request'
+        refused = self.call('route.load', {'file':str(self.root / 'unused.json')}, rid=rid)
+        self.assertFalse(refused['ok'], refused)
+        self.assertEqual(refused['error']['code'], 'unsaved-route')
+        query = {'level':'warning', 'limit':100, 'search':rid}
+        first = self.call('diagnostics.events', query)['data']
+        self.assertEqual(first['shownCount'], 1, first)
+        self.assertEqual(first['entries'][0]['level'], 'WARNING')
+        self.assertEqual(first['entries'][0]['requestId'], rid)
+        self.assertEqual(first['entries'][0]['code'], 'unsaved-route')
+        second = self.call('diagnostics.events', query)['data']
+        self.assertEqual(second['revision'], first['revision'])
+        self.assertEqual(second['entries'], first['entries'])
 
     def test_diagnostics_capture_unhandled_gui_callback_and_thread_failure(self):
         (self.root / 'gui-callback-failure').touch()
@@ -621,6 +655,20 @@ class GuiBridgeTests(unittest.TestCase):
         for marker in ('gui-callback-marker', 'thread-failure-marker',
                        'diagnostic-test-worker', 'Traceback (most recent call last):'):
             self.assertIn(marker, report)
+        self.assertTrue(self.call('app.show', {'tab':'activity'})['ok'])
+        activity = ''
+        end = time.monotonic() + 5
+        while time.monotonic() < end:
+            (self.root / 'dump-activity-text').touch()
+            self.assertTrue(self.call('status')['ok'])
+            path = self.root / 'activity-text.txt'
+            if path.exists():
+                activity = path.read_text(encoding='utf-8')
+                if 'gui-callback-marker' in activity and 'thread-failure-marker' in activity:
+                    break
+            time.sleep(.03)
+        for marker in ('gui-callback-marker', 'thread-failure-marker', '.!text'):
+            self.assertIn(marker, activity)
         self.assertIsNone(self.child.poll())
 
     def test_diagnostics_cli_and_activity_buttons_use_mocked_clipboard_and_explorer(self):

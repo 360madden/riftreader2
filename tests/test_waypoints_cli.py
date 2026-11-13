@@ -53,7 +53,7 @@ class CliTests(unittest.TestCase):
                         'record.cancel move.to face playback.start playback.resume playback.status '
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
-                        'diagnostics.status diagnostics.show diagnostics.copy diagnostics.open '
+                        'diagnostics.status diagnostics.show diagnostics.events diagnostics.copy diagnostics.open '
                         'library.list library.save library.import library.load library.show library.select').split():
             with self.subTest(command=command):
                 self.assertEqual(self.call(*command.split('.'), '--help')[0], 0)
@@ -141,6 +141,14 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(request.call_args.args[1:3], (operation,{}))
                 self.assertEqual(request.call_args.kwargs['timeout'], 10)
 
+        reply = cli.result('diagnostics.events', data={'entries':[]})
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=reply) as request:
+            self.assertEqual(self.call('diagnostics','events','--session','running-helper',
+                                       '--level','warning','--limit','25','--search','reader','--json')[0],0)
+        self.assertEqual(request.call_args.args[1:3], ('diagnostics.events', {
+            'level':'warning', 'limit':25, 'search':'reader'}))
+
     def test_diagnostics_fall_back_to_saved_logs_without_launching_helper(self):
         status={'loggingAvailable':True,'logFile':'C:/logs/waypoints.log','directory':'C:/logs'}
         report='saved diagnostics\n'
@@ -161,6 +169,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0],['clip.exe'])
         self.assertEqual(run.call_args.kwargs['input'],b'\xff\xfe'+report.encode('utf-16le'))
         self.assertFalse(run.call_args.kwargs['shell'])
+
+    def test_diagnostics_events_offline_fallback_and_validation(self):
+        events={'entries':[{'timestamp':'2026-11-13T12:00:00Z','level':'error','message':'Reader failed',
+                            'exceptionType':'RuntimeError','requestId':'req-7','traceback':'full trace'}],
+                'shownCount':1,'matchedCount':1,'offline':True,'logFile':'C:/logs/waypoints.jsonl'}
+        with patch.object(protocol,'discover_sessions',return_value=[]), patch(
+                'scripts.waypoint_diagnostics.existing_events',return_value=events,create=True) as existing, patch.object(
+                cli.subprocess,'Popen',side_effect=AssertionError('must not launch helper')):
+            code,out,_=self.call('diagnostics','events','--level','warning','--limit','25','--search','reader','--json')
+        self.assertEqual(code,0)
+        self.assertEqual(json.loads(out)['data']['entries'][0]['traceback'],'full trace')
+        existing.assert_called_once_with(cli.ROOT,limit=25,level='warning',search='reader')
+        for argv in (('diagnostics','events','--level','info'),
+                     ('diagnostics','events','--limit','0'),
+                     ('diagnostics','events','--limit','201'),
+                     ('diagnostics','events','--search','x'*201)):
+            with self.subTest(argv=argv):
+                self.assertEqual(self.call('--json',*argv)[0],2)
 
     def test_offline_diagnostics_open_and_explicit_session_rules(self):
         status={'loggingAvailable':True,'logFile':'C:/logs/waypoints.log','directory':'C:/logs'}
@@ -415,13 +441,18 @@ class CliTests(unittest.TestCase):
         self.assertIn('opens no viewer', load_help)
         self.assertIn('Effects: Read-only;', self.call('diagnostics','status','--help')[1])
         self.assertIn('Effects: Read-only;', self.call('diagnostics','show','--help')[1])
+        events_help=self.call('diagnostics','events','--help')[1]
+        for phrase in ('structured log events', 'minimum severity', 'warning (includes errors)',
+                       '1-200', 'case-insensitive', 'Effects: Read-only;',
+                       'uses saved logs when no helper is running', 'select --session'):
+            self.assertIn(phrase, events_help)
         copy_help=self.call('diagnostics','copy','--help')[1]
         self.assertIn('Windows clipboard', copy_help)
         self.assertIn('does not change RIFT', copy_help)
         open_help=self.call('diagnostics','open','--help')[1]
         self.assertIn('Windows Explorer', open_help)
         self.assertIn('does not change RIFT', open_help)
-        for verb in ('status','show','copy','open'):
+        for verb in ('status','show','events','copy','open'):
             self.assertIn('without a Waypoints window', self.call('diagnostics',verb,'--help')[1])
 
     def test_human_route_list_marks_selected_points(self):
@@ -563,6 +594,33 @@ class CliTests(unittest.TestCase):
                        'Diagnostics copied: 52 characters | waypoints.log',
                        'Diagnostics directory opened: C:/logs'):
             self.assertIn(phrase, out.getvalue())
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('diagnostics.status',data={
+                'available':False,'offline':True,'error':'disk is read-only',
+                'logFile':'C:/logs/waypoints.log'}))
+        for phrase in ('Diagnostics logging: unavailable | saved/offline logs',
+                       'Logging error: disk is read-only', 'Log file: C:/logs/waypoints.log'):
+            self.assertIn(phrase,out.getvalue())
+
+    def test_diagnostics_events_human_output_is_concise_and_points_to_full_trace(self):
+        data={'entries':[{'timestamp':'2026-11-13T12:00:00Z','level':'warning','message':'Reader delayed',
+                          'status':'withheld','operation':'beacons','reason':'RIFT is hidden','persisted':False},
+                         {'timestamp':'2026-11-13T12:00:01Z','level':'error','message':'Reader failed\nretrying',
+                          'command':'beacons.show','code':'reader-failed','exceptionType':'RuntimeError',
+                          'exceptionMessage':'reader pipe closed','requestId':'req-7','traceback':'full trace'}],
+              'shownCount':2,'matchedCount':4,'offline':True,'logFile':'C:/logs/waypoints.jsonl'}
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('diagnostics.events',data=data))
+        rendered=out.getvalue()
+        for phrase in ('2 shown / 4 matched', 'saved log', 'WARNING', 'Reader delayed', 'ERROR',
+                       'status withheld', 'operation beacons', 'reason RIFT is hidden', 'memory only',
+                       'Reader failed retrying', 'command beacons.show', 'code reader-failed',
+                       'exception RuntimeError', 'error reader pipe closed', 'request req-7',
+                       'Tracebacks are retained in --json output', 'C:/logs/waypoints.jsonl'):
+            self.assertIn(phrase,rendered)
+        self.assertNotIn('full trace',rendered)
 
     def test_offline_manual_route_does_not_resolve_session(self):
         with tempfile.TemporaryDirectory() as directory:

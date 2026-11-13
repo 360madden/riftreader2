@@ -61,6 +61,26 @@ def bounded(low, high):
     return convert
 
 
+def bounded_integer(low, high):
+    def convert(value):
+        try:
+            result = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError("must be an integer") from None
+        if not low <= result <= high:
+            raise argparse.ArgumentTypeError(f"must be between {low} and {high}")
+        return result
+    return convert
+
+
+def bounded_text(maximum):
+    def convert(value):
+        if len(value) > maximum:
+            raise argparse.ArgumentTypeError(f"must be at most {maximum} characters")
+        return value
+    return convert
+
+
 def positive(value):
     try:
         result = int(value)
@@ -96,6 +116,7 @@ def example(operation):
         "radar.reset-position":"radar reset-position",
         "beacons.reset":"beacons reset", "view.status":"view status",
         "diagnostics.status":"diagnostics status", "diagnostics.show":"diagnostics show",
+        "diagnostics.events":"diagnostics events --level warning --limit 50",
         "diagnostics.copy":"diagnostics copy", "diagnostics.open":"diagnostics open",
         "move.to":"move to 123 456 --execute", "face":"face 90 --execute",
         "playback.start":"playback start --direction forward --execute",
@@ -124,6 +145,8 @@ def build_parser():
         p = parent.add_parser(name, help=purpose, description=purpose,
                               epilog=("Requires: no running helper; operates on local session metadata or explicit files.\n"
                                       if operation.startswith("receipt.") or operation in {"app.list", "app.open"}
+                                      else "Requires: uses saved logs when no helper is running; select --session when several helpers exist.\n"
+                                      if operation.startswith("diagnostics.")
                                       else "Requires: an unambiguous running Waypoints session; route list/validate support offline --file.\n")
                                      + f"Effects: {effects}\nDefaults: timeout {default_timeout(operation)} seconds; one-based points/segments.\n"
                                      f"Example: rr2-waypoints {example(operation)}",
@@ -148,7 +171,7 @@ def build_parser():
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show select",
-        "diagnostics":"status show copy open",
+        "diagnostics":"status show events copy open",
         "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
         "move":"to", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
@@ -159,7 +182,7 @@ def build_parser():
         sub = gp.add_subparsers(dest="verb", title="Commands")
         for verb in verbs.split():
             operation = f"{group}.{verb}"
-            read_only = verb in {"status", "list", "validate"} or operation in {"receipt.show", "diagnostics.show"}
+            read_only = verb in {"status", "list", "validate"} or operation in {"receipt.show", "diagnostics.show", "diagnostics.events"}
             purpose = {
                 "app.open":"Open Waypoints, or reuse the selected existing helper without replacing its route.",
                 "app.show":"Show the selected helper window.", "app.hide":"Hide the selected helper window.",
@@ -187,6 +210,7 @@ def build_parser():
                 "view.open-3d":"Open a saved JSON view manifest or exported .rrd recording in the 3D viewer.",
                 "diagnostics.status":"Show diagnostics logging availability and the owned log path; saved logs work without a Waypoints window.",
                 "diagnostics.show":"Print the current diagnostics report; saved logs work without a Waypoints window.",
+                "diagnostics.events":"List recent structured log events with bounded severity and text filters; saved logs work without a Waypoints window.",
                 "diagnostics.copy":"Copy diagnostics to the Windows clipboard; saved logs work without a Waypoints window.",
                 "diagnostics.open":"Open the diagnostics log directory in Windows Explorer; saved logs work without a Waypoints window.",
                 "record.start":"Start read-only route recording; capture continues until explicit stop or cancel.",
@@ -238,6 +262,12 @@ def build_parser():
     for op in ("library.load", "library.show", "library.select"):
         arg(op, "route_id", metavar="ID", help="owned library route ID")
     arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
+    arg("diagnostics.events", "--level", choices=("all", "warning", "error"), default="all",
+        help="minimum severity: all, warning (includes errors), or error; default all")
+    arg("diagnostics.events", "--limit", type=bounded_integer(1, 200), default=100,
+        help="maximum newest matching events to return, 1-200; default 100")
+    arg("diagnostics.events", "--search", type=bounded_text(200), default="",
+        help="case-insensitive text match in event details, at most 200 characters")
     for op in ("route.load", "route.save", "trail.save", "record.stop", "view.save", "view.load", "view.open", "view.open-3d", "receipt.show"):
         arg(op, "file", type=Path, help="explicit file path; no file chooser")
     for op in ("route.save", "trail.save", "record.stop", "view.save"):
@@ -544,9 +574,37 @@ def human_data(command, data):
             print("Nearby sample: retained")
     elif command == "diagnostics.status":
         available = data.get("loggingAvailable", data.get("available"))
-        print(f"Diagnostics logging: {'available' if available is True else 'unavailable' if available is False else 'unknown'}")
+        scope = " | saved/offline logs" if data.get("offline") else ""
+        print(f"Diagnostics logging: {'available' if available is True else 'unavailable' if available is False else 'unknown'}{scope}")
+        if available is False and data.get("error"): print("Logging error: " + str(data["error"]))
         if data.get("logFile"): print("Log file: " + str(data["logFile"]))
         if data.get("directory"): print("Directory: " + str(data["directory"]))
+    elif command == "diagnostics.events":
+        entries = data.get("entries") if isinstance(data.get("entries"), list) else []
+        shown = data.get("shownCount", len(entries))
+        matched = data.get("matchedCount", shown)
+        scope = "saved log" if data.get("offline") else "current log"
+        print(f"Diagnostic events: {shown} shown / {matched} matched | {scope}")
+        if not entries:
+            print("No diagnostic events match the filters.")
+        for entry in entries:
+            timestamp = entry.get("timestamp") or "time unavailable"
+            level = str(entry.get("level") or "info").upper()
+            message = str(entry.get("message") or "(no message)").replace("\r", " ").replace("\n", " ")
+            details = []
+            for key, label in (("status", "status"), ("command", "command"), ("operation", "operation"),
+                               ("reason", "reason"), ("code", "code"),
+                               ("exceptionType", "exception"), ("exceptionMessage", "error"),
+                               ("requestId", "request")):
+                value = entry.get(key)
+                if value not in (None, "") and str(value) not in message:
+                    details.append(f"{label} {str(value).replace(chr(10), ' ')}")
+            if entry.get("persisted") is False: details.append("memory only")
+            suffix = " | " + " | ".join(details) if details else ""
+            print(f"  {timestamp} | {level:<7} | {message}{suffix}")
+        if any(entry.get("traceback") for entry in entries):
+            print("Tracebacks are retained in --json output and the full diagnostics report.")
+        if data.get("logFile"): print("Log file: " + str(data["logFile"]))
     elif command == "diagnostics.copy":
         print(f"Diagnostics copied: {data.get('characters', '?')} characters"
               + (f" | {data['logFile']}" if data.get("logFile") else ""))
@@ -638,15 +696,21 @@ def offline_route(path, operation):
     return result(operation, data=data)
 
 
-def offline_diagnostics(command):
+def offline_diagnostics(command, payload=None):
     """Use existing owned logs when startup failed before a helper was published."""
     from scripts.waypoint_diagnostics import existing_report, existing_status
+    payload = payload or {}
     status = existing_status(ROOT)
     if command == "diagnostics.status":
         return result(command, data=status)
     if command == "diagnostics.show":
         text = existing_report(ROOT)
         return result(command, data={"text": text, **status})
+    if command == "diagnostics.events":
+        from scripts.waypoint_diagnostics import existing_events
+        data = existing_events(ROOT, limit=payload.get("limit", 100),
+                               level=payload.get("level", "all"), search=payload.get("search", ""))
+        return result(command, data=data)
     if command == "diagnostics.copy":
         text = existing_report(ROOT)
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -779,11 +843,12 @@ def main(argv=None):
         elif command.startswith("diagnostics.") and getattr(args, "session", None) is None:
             from scripts import waypoint_cli_protocol as protocol
             sessions = protocol.discover_sessions()
+            payload = ({"level": args.level, "limit": args.limit, "search": args.search}
+                       if command == "diagnostics.events" else {})
             if not sessions:
-                envelope = offline_diagnostics(command)
+                envelope = offline_diagnostics(command, payload)
             else:
                 session = protocol.resolve_session(None)
-                payload = {}
                 envelope = protocol.request(session, command, payload, timeout=args.timeout, request_id=uuid.uuid4().hex)
         else:
             from scripts import waypoint_cli_protocol as protocol

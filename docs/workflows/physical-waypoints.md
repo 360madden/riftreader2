@@ -15,6 +15,28 @@ do not establish terrain visibility or clearance.
 
 ## Activity and diagnostics
 
+**Activity** displays the current session's diagnostic events, including startup,
+handled-command, callback and worker errors. Each line has a local time and
+severity color; messages include command/request context and readable exception
+messages. The view uses the same event source as CLI diagnostics rather than a
+separate collection of manually appended status lines.
+
+Choose **All**, **Warnings + errors** or **Errors**, and use **Find** to search
+structured event details. **Details** adds metadata and multiline tracebacks.
+**Follow latest** follows new output; scrolling or clicking in the text pauses it
+so selection and position stay stable. Re-enable Follow to catch up. Resizing and
+ordinary layout changes do not pause it. **Clear view** hides existing events;
+**Show history** restores retained events. Neither action deletes saved logs.
+These display controls reset to All/Follow on reopening and send no game input.
+
+The session buffer retains 500 attempted events. Activity shows the latest 100
+matching events within a 64 KiB text budget; individual Details blocks are limited
+to 8 KiB. Use CLI JSON or log files for more detail. When disk logging fails,
+attempted events remain in this bounded buffer with `persisted: false` and a
+visible memory-only marker. They can be copied in diagnostics but will be lost
+when the app closes if they could not be written. Logging health and its hover
+details show the storage error/path.
+
 **Activity → Open logs** opens the local log folder in Explorer. **Copy diagnostics**
 puts a bounded plain-text report on the Windows clipboard: app version, helper and
 RIFT identity, cached route/pose/overlay/playback state, receipt paths, and recent
@@ -33,6 +55,8 @@ failure is reported without preventing ordinary app use.
 ```powershell
 .\rr2-waypoints.cmd diagnostics status
 .\rr2-waypoints.cmd diagnostics show
+.\rr2-waypoints.cmd diagnostics events --level warning --limit 50
+.\rr2-waypoints.cmd diagnostics events --level error --search "route.load" --json
 .\rr2-waypoints.cmd diagnostics copy
 .\rr2-waypoints.cmd diagnostics open
 .\rr2-waypoints.cmd app show --tab activity
@@ -43,6 +67,16 @@ no helper is running and no explicit session is requested, these commands use th
 newest saved log without launching Waypoints or reading RIFT. The report clearly
 labels this as saved context rather than live state. Explicit missing sessions
 and ambiguous running helpers still require selection.
+
+`diagnostics events` returns structured newest-first entries; the GUI presents
+them chronologically. `warning` includes errors. Search is case-insensitive and
+limited to 200 characters; `--limit` accepts 1–200. JSON retains the available
+traceback, exception message, request/context and persistence status. Repeated
+event queries do not create their own log entries. CLI filters do not change the
+GUI view; current display settings/counts are exposed through `status.activity`
+and `diagnostics status --json` under `data.activity`. Saved-log mode reads a
+bounded tail of the newest log group and its rotations. Open logs provides access
+to earlier sessions.
 
 Reports are limited to 32 KiB; individual tracebacks to 16 KiB. Environment
 variables and raw command lines are not collected; sensitive field names are

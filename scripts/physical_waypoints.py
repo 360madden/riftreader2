@@ -1161,27 +1161,10 @@ def launch_window(args):
     next_zone_at = time.monotonic() + 1
     marker_anchor_y = None
     from scripts.waypoint_recent_display import route_labels, attach_path_tooltip
-    activity_tab.columnconfigure(0, weight=1)
-    activity_tab.rowconfigure(2, weight=1)
-    diagnostic_toolbar = ttk.Frame(activity_tab, style="Surface.TFrame")
-    diagnostic_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0,6))
-    ttk.Button(diagnostic_toolbar, text="Open logs", command=lambda: open_logs()).pack(side="left", padx=(0,6))
-    ttk.Button(diagnostic_toolbar, text="Copy diagnostics", command=lambda: copy_diagnostics(),
-               style="Primary.TButton").pack(side="left", padx=(0,12))
-    logging_health = tk.StringVar(value="Logging active" if diagnostics.status()["available"] else "Logging unavailable")
-    logging_health_label = ttk.Label(diagnostic_toolbar, textvariable=logging_health, style="Muted.TLabel")
-    logging_health_label.pack(side="left")
-    attach_path_tooltip(logging_health_label, lambda: diagnostics.status().get("error") or str(diagnostics.log_path))
-    full_status_label = ttk.Label(activity_tab, textvariable=state, wraplength=860, style="Muted.TLabel")
-    full_status_label.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
-    activity_tab.bind("<Configure>", lambda event: full_status_label.configure(wraplength=max(200, event.width - 30)))
-    log = tk.Text(activity_tab, height=5, state="disabled", font=("Consolas", 10),
-                  background="#0b1723", foreground="#dce8ef", insertbackground="#8dedc8",
-                  relief="flat", borderwidth=0, padx=10, pady=8, wrap="word")
-    log.grid(row=2, column=0, sticky="nsew")
-    log_scroll = ttk.Scrollbar(activity_tab, command=log.yview)
-    log_scroll.grid(row=2, column=1, sticky="ns")
-    log.configure(yscrollcommand=log_scroll.set)
+    from scripts.waypoint_activity_ui import ActivityControls
+    activity_controls = ActivityControls(activity_tab, diagnostics,
+        open_logs=lambda: open_logs(), copy_diagnostics=lambda: copy_diagnostics(),
+        attach_path_tooltip=attach_path_tooltip)
 
     def update_route_status():
         friendly = route_metadata.get("routeName")
@@ -1310,10 +1293,6 @@ def launch_window(args):
             diagnostics.exception("Unable to cache route", exc=exc)
             text = success + "; last-route snapshot could not be saved: " + str(exc)
         state.set(text)
-        log.configure(state="normal")
-        log.insert("end", text + "\n")
-        log.see("end")
-        log.configure(state="disabled")
 
     def show_document(document):
         nonlocal loading_route, route_metadata, route_revision
@@ -2573,9 +2552,6 @@ def launch_window(args):
         except (OSError, ValueError, TypeError) as exc:
             diagnostics.exception("Unable to publish exploration feedback", exc=exc)
             state.set("Exploration display temporarily unavailable; details in Activity.")
-            log.configure(state="normal")
-            log.insert("end", "Exploration feedback: " + str(exc) + "\n")
-            log.configure(state="disabled")
 
     def ensure_exploration_feed():
         live_pose.set(True)
@@ -2726,10 +2702,6 @@ def launch_window(args):
                 beacon_latest_error = str(exc)
                 diagnostics.warning("Beacon pose feedback unavailable", reason=str(exc),
                                     poseFile=str(getattr(markers, "pose_path", None)))
-                log.configure(state="normal")
-                log.insert("end", "Beacon pose unavailable: " + beacon_latest_error + "\n")
-                log.see("end")
-                log.configure(state="disabled")
             exploration_sample = None
             explore_controls.unavailable(str(exc))
             beacon_pose_available = False
@@ -2748,15 +2720,10 @@ def launch_window(args):
     def cli_ok(data=None, status="completed"):
         return {"ok": True, "status": status, "data": data, "target": deepcopy(getattr(adapter, "target", None))}
 
-    def cli_error(code, message, *, exit_code=1, hint=None):
-        diagnostics.warning("CLI request refused", code=code, reason=message)
-        try:
-            log.configure(state="normal")
-            log.insert("end", f"CLI error [{code}]: {message}\n")
-            log.see("end")
-            log.configure(state="disabled")
-        except tk.TclError:
-            pass  # A closing window must not hide the saved error or CLI response.
+    def cli_error(code, message, *, exit_code=1, hint=None, recorded=False, command=None, request_id=None):
+        if not recorded:
+            diagnostics.warning("CLI request refused", code=code, reason=message,
+                                command=command, requestId=request_id)
         return {"ok": False, "status": "failed", "target": deepcopy(getattr(adapter, "target", None)), "error": {
             "code": code, "message": message, "exitCode": exit_code, "hint": hint}}
 
@@ -2985,6 +2952,7 @@ def launch_window(args):
                     view=cli_view_status(),
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
                     routeLibrary=library_view_state(),
+                    activity=activity_controls.view_state(),
                     recording={"active": recording, "progress": recording_progress},
                     playback=cli_playback_status(),
                     activeRequestId=cli_action["id"] if cli_action else None,
@@ -3099,9 +3067,12 @@ def launch_window(args):
         nonlocal saved_view, saved_rerun, rerun_viewer
         nonlocal last_capture_state, last_capture_error
         try:
-            if not command.endswith(".status") and command not in ("status", "route.list", "diagnostics.show"):
+            if not command.endswith(".status") and command not in ("status", "route.list", "diagnostics.show", "diagnostics.events"):
                 diagnostics.info("CLI request", command=command, requestId=rid)
-            if command == "diagnostics.status": return cli_ok(diagnostics.status())
+            if command == "diagnostics.status": return cli_ok(dict(diagnostics.status(), activity=activity_controls.view_state()))
+            if command == "diagnostics.events":
+                return cli_ok(diagnostics.events(limit=values.get("limit",100),
+                    level=values.get("level","all"),search=values.get("search","")))
             if command == "diagnostics.show":
                 return cli_ok(dict(text=diagnostics_report(), **diagnostics.status()))
             if command == "diagnostics.copy":
@@ -3605,14 +3576,13 @@ def launch_window(args):
                 return cli_ok({"file": str(path), "opened": True})
             raise CliError("unsupported-command", command, exit_code=2)
         except CliError as exc:
-            diagnostics.warning("CLI command refused", command=command, requestId=rid, code=exc.code, reason=str(exc))
-            return cli_error(exc.code, str(exc), exit_code=exc.exit_code, hint=exc.hint)
+            return cli_error(exc.code, str(exc), exit_code=exc.exit_code, hint=exc.hint, command=command, request_id=rid)
         except FileExistsError as exc:
-            diagnostics.warning("CLI file already exists", command=command, requestId=rid, reason=str(exc))
-            return cli_error("file-exists", str(exc), exit_code=4, hint="Choose another ID or explicitly use --overwrite")
+            return cli_error("file-exists", str(exc), exit_code=4, hint="Choose another ID or explicitly use --overwrite",
+                             command=command, request_id=rid)
         except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
             diagnostics.exception("CLI command failed", exc=exc, command=command, requestId=rid)
-            return cli_error("operation-failed", str(exc))
+            return cli_error("operation-failed", str(exc), recorded=True)
 
     library_name = tk.StringVar()
     library_search = tk.StringVar()
@@ -3813,7 +3783,7 @@ def launch_window(args):
     library_table.bind("<Double-1>",library_load_selected)
     library_table.bind("<Return>",library_load_selected)
     workflow.bind("<<NotebookTabChanged>>",lambda _:workflow.configure(
-        height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select() in (str(library_tab),str(scene_tab)) else 184))
+        height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select() in (str(library_tab),str(scene_tab),str(activity_tab)) else 184))
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
@@ -3961,20 +3931,12 @@ def launch_window(args):
                     if unit_sample.get("reason"):
                         text += " (" + str(unit_sample["reason"]) + ")"
                 state.set(text)
-                log.configure(state="normal")
-                log.insert("end", text + "\n")
-                log.see("end")
-                log.configure(state="disabled")
                 continue
             if status in ("run-receipt", "receipt-error"):
                 text = ("Run receipt: " + event["path"] if status == "run-receipt" else
                         "Could not save run receipt: " + event["reason"])
                 failure = event.get("failure")
                 state.set((f"{failure['status']}: {failure['reason']} — " if failure else "") + text)
-                log.configure(state="normal")
-                log.insert("end", text + "\n")
-                log.see("end")
-                log.configure(state="disabled")
                 continue
             if "nextWaypoint" in event:
                 count = event.get("totalWaypoints", event.get("waypointCount"))
@@ -4052,16 +4014,12 @@ def launch_window(args):
                     "Waypoint added from the preview; beacon height estimated." if status == "map" else
                     "Position refreshed.")
             state.set(text)
-            log.configure(state="normal")
-            log.insert("end", text + "\n")
-            log.see("end")
-            log.configure(state="disabled")
         for rid, callback in list(cli_waiters.items()):
             try:
                 response = callback()
             except Exception as exc:
                 diagnostics.exception("Deferred CLI request failed", exc=exc, requestId=rid)
-                response = cli_error("operation-failed", str(exc))
+                response = cli_error("operation-failed", str(exc), recorded=True)
             if response is not None:
                 cli_server.complete(rid, response)
                 del cli_waiters[rid]
@@ -4107,9 +4065,7 @@ def launch_window(args):
             explore_controls.refresh_context()
         if explore_controls.enabled.get() or workflow.select() == str(explore_tab):
             explore_controls.set_radar_observed(cli_radar_status()["observed"])
-        if workflow.select() == str(activity_tab):
-            diagnostic_status = diagnostics.status()
-            logging_health.set("Logging active" if diagnostic_status["available"] else "Logging unavailable — Copy diagnostics for details")
+        activity_controls.refresh()
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
         if markers.running():
             if live_pose.get() and not busy and not closing:

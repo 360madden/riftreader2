@@ -1,5 +1,30 @@
 # Current status
 
+**NOVEMBER 13 — ACTIVITY EVENT VIEW, FOLLOW/PAUSE AND DIAGNOSTICS CLI:**
+On verified AMD-DESKTOP, Activity now reads the diagnostic event source instead
+of unbounded hand-appended text. Local timestamps, severity colors, shared
+severity/search filters, readable exception messages, optional multiline details,
+follow/pause and view-only Clear/Show history work in the compact tab. The session
+buffer retains 500 attempts; GUI output is limited to 100 events/64 KiB. Failed
+writes remain visibly memory-only and copied reports retain their errors.
+`diagnostics events` provides the same bounded data live or from saved logs with
+no helper. Repeated queries do not log themselves; expected CLI refusals produce
+one warning, with command/request correlation. Initial layout was found to pause
+Follow and hide later receipts; explicit-interaction-only pausing fixes that.
+Large errors also survive a disk-tail read starting mid-record. Normal/compact
+native captures fit and resizing retained Follow. Final affected checks passed
+**106 tests and 126 subtests**, zero failures/skips, including receipt publication,
+Tk callbacks, worker failures, view clearing without disk changes and startup
+recovery. Live invalid-route/error/refusal events, offline startup traceback,
+actual clipboard copy and Explorer folder opening passed without game input.
+Original route/basis/library hashes, XYZ/bearing, empty trail, overlay settings,
+scene refs and absent checkpoint were preserved. Helper PID55596/session
+792c117ba6ec46a3ab740acf1fc6e311 remains on Activity, physical RIFT PID40452.
+Evidence: `artifacts/activity-live-final-verification-20261113.json`,
+`artifacts/activity-live-verified-events-20261113.json` and native
+`artifacts/activity-{new-normal,final-compact}-20261113.png`.
+See [Activity operation](workflows/physical-waypoints.md#activity-and-diagnostics).
+
 **NOVEMBER 13 — LIBRARY DISCOVERY, DETAILS AND ACTION POLISH:**
 On verified AMD-DESKTOP, Library now shares case-insensitive name/ID/zone/error
 search with CLI, filters cached metadata, sorts by readable name, shows result

@@ -15,6 +15,7 @@ import sys
 import threading
 import traceback
 import uuid
+from collections import deque
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,11 +26,15 @@ MAX_BYTES = 1024 * 1024
 BACKUP_COUNT = 2
 MAX_LOG_GROUPS = 10
 MAX_REPORT_CHARS = 32 * 1024
+MAX_EVENT_LIMIT = 200
+_EVENT_CACHE_SIZE = 500
+_EVENT_READ_BYTES = 512 * 1024
 _MAX_VALUE_CHARS = 2 * 1024
 _MAX_COLLECTION_ITEMS = 30
 _MAX_DEPTH = 4
 _SNAPSHOT_KEYS = {
     "activeRequestId",
+    "activity",
     "app",
     "beacons",
     "connection",
@@ -208,6 +213,62 @@ def _sanitize(value: Any, *, depth: int = 0) -> Any:
     return _safe_text(value)
 
 
+def _event_query(limit: Any, level: Any, search: Any) -> tuple[int, str, str]:
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= MAX_EVENT_LIMIT:
+        raise ValueError(f"limit must be an integer from 1 to {MAX_EVENT_LIMIT}")
+    if not isinstance(level, str) or level.casefold() not in {"all", "info", "warning", "error"}:
+        raise ValueError("level must be one of: all, info, warning, error")
+    if not isinstance(search, str):
+        raise ValueError("search must be a string")
+    search = search.strip()
+    if len(search) > 200:
+        raise ValueError("search must be 200 characters or fewer")
+    return limit, level.upper(), search.casefold()
+
+
+def _event_matches(entry: Mapping[str, Any], level: str, search: str) -> bool:
+    severity = {"INFO": 10, "WARNING": 20, "ERROR": 30}
+    minimum = {"ALL": 0, "INFO": 10, "WARNING": 20, "ERROR": 30}[level]
+    if severity.get(str(entry.get("level", "")).upper(), 0) < minimum:
+        return False
+    if not search:
+        return True
+    try:
+        rendered = json.dumps(entry, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        rendered = _safe_text(entry)
+    return search in rendered.casefold()
+
+
+def _read_event_group(path: Path) -> list[dict[str, Any]]:
+    """Read a bounded chronological tail from one log and its rotations."""
+    data = bytearray()
+    for candidate in (path, *(Path(f"{path}.{index}") for index in range(1, BACKUP_COUNT + 1))):
+        try:
+            with candidate.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                size = stream.tell()
+                take = min(size, _EVENT_READ_BYTES - len(data))
+                if take <= 0:
+                    break
+                stream.seek(-take, os.SEEK_END)
+                data = bytearray(stream.read(take)) + data
+        except (FileNotFoundError, PermissionError, OSError):
+            continue
+
+    entries: list[dict[str, Any]] = []
+    # A bounded tail may begin in the middle of a JSON record. Invalid or
+    # non-object records are intentionally ignored rather than surfaced.
+    for line in bytes(data).decode("utf-8", errors="replace").splitlines():
+        try:
+            entry = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(entry, dict):
+            entries.append(entry)
+    return entries[-_EVENT_CACHE_SIZE:]
+
+
 class Diagnostics:
     """Small, thread-safe, fail-soft JSON-lines diagnostic log."""
 
@@ -217,6 +278,8 @@ class Diagnostics:
         self.log_path = self.directory / f"waypoints-{stamp}-{os.getpid()}-{uuid.uuid4().hex[:8]}.log"
         self._lock = threading.RLock()
         self._context: dict[str, Any] = {}
+        self._events: deque[tuple[int, dict[str, Any]]] = deque(maxlen=_EVENT_CACHE_SIZE)
+        self._revision = 0
         self._available = False
         self._error: str | None = None
         self._closed = False
@@ -228,16 +291,16 @@ class Diagnostics:
         try:
             self.directory.mkdir(parents=True, exist_ok=True)
             self._cleanup_old_groups()
-            self._append(
-                {
-                    "timestamp": _utc_now(),
-                    "level": "INFO",
-                    "message": "Diagnostics started",
-                    "threadName": threading.current_thread().name,
-                }
-            )
         except Exception as exc:
             self._mark_failed(exc)
+        self._append(
+            {
+                "timestamp": _utc_now(),
+                "level": "INFO",
+                "message": "Diagnostics started",
+                "threadName": threading.current_thread().name,
+            }
+        )
 
     def set_context(self, **fields: Any) -> None:
         with self._lock:
@@ -263,6 +326,7 @@ class Diagnostics:
             rendered = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
             fields = dict(fields)
             fields["exceptionType"] = exc_type.__name__
+            fields["exceptionMessage"] = _safe_text(exc_value)
             fields["traceback"] = rendered
         self._write("ERROR", message, fields)
 
@@ -273,6 +337,46 @@ class Diagnostics:
                 "logFile": str(self.log_path),
                 "available": bool(self._available and not self._closed),
                 "error": self._error,
+                "eventRevision": self._revision,
+                "retainedEvents": len(self._events),
+                "droppedEvents": max(0, self._revision - len(self._events)),
+            }
+
+    def events(self, *, limit: int = 100, level: str = "all", search: str = "") -> dict[str, Any]:
+        """Return a bounded newest-first view of records written this session.
+
+        ``revision`` advances for every attempted record, allowing polling
+        callers to skip redraws when nothing changed. Each entry's
+        ``persisted`` field distinguishes durable writes from fail-soft memory
+        records retained when the log destination is unavailable.
+        """
+        limit, normalized_level, normalized_search = _event_query(limit, level, search)
+        with self._lock:
+            shown: list[dict[str, Any]] = []
+            matched_count = 0
+            for event_id, entry in reversed(self._events):
+                if _event_matches(entry, normalized_level, normalized_search):
+                    matched_count += 1
+                    if len(shown) >= limit:
+                        continue
+                    # A JSON round trip makes the returned values independent
+                    # of the cache while preserving the exact persisted shape.
+                    item = json.loads(json.dumps(entry, ensure_ascii=False))
+                    item["eventId"] = event_id
+                    shown.append(item)
+            return {
+                "entries": shown,
+                "shownCount": len(shown),
+                "matchedCount": matched_count,
+                "totalBuffered": len(self._events),
+                "droppedEvents": max(0, self._revision - len(self._events)),
+                "revision": self._revision,
+                "order": "newest-first",
+                "available": bool(self._available and not self._closed),
+                "error": self._error,
+                "directory": str(self.directory),
+                "logFile": str(self.log_path),
+                "offline": False,
             }
 
     def report(self, snapshot: Any) -> str:
@@ -280,6 +384,7 @@ class Diagnostics:
         with self._lock:
             context = dict(self._context)
             status = self.status()
+            cached_tail = [entry for _event_id, entry in list(self._events)[-60:]]
         controlled: dict[str, Any]
         if isinstance(snapshot, Mapping):
             controlled = {
@@ -291,12 +396,19 @@ class Diagnostics:
             controlled = {"status": _sanitize(snapshot)}
 
         tail = self._read_tail(max_bytes=16 * 1024, max_lines=60)
+        if (not status["available"] or not tail) and cached_tail:
+            tail = [json.dumps(entry, ensure_ascii=False, separators=(",", ":")) for entry in cached_tail]
         errors: list[str] = []
-        for line in tail:
-            try:
-                entry = json.loads(line)
-            except (TypeError, ValueError):
-                continue
+        recent_error_entries = [entry for entry in cached_tail if entry.get("level") in {"WARNING", "ERROR"}]
+        if not recent_error_entries:
+            for line in tail:
+                try:
+                    entry = json.loads(line)
+                except (TypeError, ValueError):
+                    continue
+                if entry.get("level") in {"WARNING", "ERROR"}:
+                    recent_error_entries.append(entry)
+        for entry in recent_error_entries:
             if entry.get("level") in {"WARNING", "ERROR"}:
                 rendered = f"{entry.get('timestamp', '?')} {entry.get('level')}: {entry.get('message', '')}"
                 if entry.get("traceback"):
@@ -396,6 +508,7 @@ class Diagnostics:
     ) -> None:
         if exc_type is not None and exc_value is not None:
             fields["exceptionType"] = exc_type.__name__
+            fields["exceptionMessage"] = _safe_text(exc_value)
             fields["traceback"] = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         self._write("ERROR", message, fields)
 
@@ -422,17 +535,28 @@ class Diagnostics:
             self._append(entry)
 
     def _append(self, entry: Mapping[str, Any]) -> None:
+        cached_entry = dict(entry)
         try:
-            data = (json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+            persisted_entry = dict(entry)
+            persisted_entry["persisted"] = True
+            data = (json.dumps(persisted_entry, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
+                "utf-8"
+            )
             self.directory.mkdir(parents=True, exist_ok=True)
             self._rotate_if_needed(len(data))
             with self.log_path.open("ab") as stream:
                 stream.write(data)
                 stream.flush()
+            cached_entry = json.loads(data)
             self._available = True
             self._error = None
         except Exception as exc:
             self._mark_failed(exc)
+            cached_entry["persisted"] = False
+            cached_entry["persistenceError"] = self._error
+        finally:
+            self._revision += 1
+            self._events.append((self._revision, cached_entry))
 
     def _rotate_if_needed(self, incoming: int) -> None:
         try:
@@ -529,6 +653,41 @@ def existing_status(root: str | os.PathLike[str]) -> dict[str, Any]:
     }
 
 
+def existing_events(
+    root: str | os.PathLike[str],
+    *,
+    limit: int = 100,
+    level: str = "all",
+    search: str = "",
+) -> dict[str, Any]:
+    """Return recent saved events without creating a session, files, or hooks."""
+    limit, normalized_level, normalized_search = _event_query(limit, level, search)
+    status = existing_status(root)
+    entries: list[dict[str, Any]] = []
+    if status["logFile"]:
+        entries = _read_event_group(Path(status["logFile"]))
+    matched = [
+        entry
+        for entry in reversed(entries)
+        if _event_matches(entry, normalized_level, normalized_search)
+    ]
+    shown = matched[:limit]
+    return {
+        "entries": shown,
+        "shownCount": len(shown),
+        "matchedCount": len(matched),
+        "totalBuffered": len(entries),
+        "droppedEvents": 0,
+        "revision": 0,
+        "order": "newest-first",
+        "available": status["available"],
+        "error": status["error"],
+        "directory": status["directory"],
+        "logFile": status["logFile"],
+        "offline": True,
+    }
+
+
 def existing_report(root: str | os.PathLike[str]) -> str:
     """Build a bounded saved-log-only report without creating files or hooks."""
     status = existing_status(root)
@@ -594,4 +753,4 @@ def existing_report(root: str | os.PathLike[str]) -> str:
     return report
 
 
-__all__ = ["Diagnostics", "existing_report", "existing_status"]
+__all__ = ["Diagnostics", "existing_events", "existing_report", "existing_status"]
