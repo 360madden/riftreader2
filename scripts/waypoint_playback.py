@@ -33,15 +33,23 @@ def teach_route(adapter, points, stop, emit, *, runner, face_waypoints=True):
     return legs, recorder.finish()
 
 
-def play_route(adapter, document, stop, emit, *, runner, checkpoint,
-               direction="forward", resume=False, face_waypoints=True):
-    identity = adapter.binding["runtimeIdentity"]
+def validate_playback_document(document, identity):
+    """Share saved evidence admission between read-only readiness and execution."""
+    if not isinstance(document, dict):
+        raise ProgressError("route document must be an object")
+    if not isinstance(identity, dict) or not all(isinstance(identity.get(key), str) and identity[key]
+            for key in ("machine", "gameBuildSha256", "unitKey")):
+        raise ProgressError("identity requires machine, build and player")
     recording = document.get("recording")
     if recording is not None:
         if not isinstance(recording, dict) or recording.get("complete") is not True:
             raise ProgressError("Recording is incomplete")
         recorded_identity = recording.get("identity", {})
+        if not isinstance(recorded_identity, dict):
+            raise ProgressError("Recording identity is invalid")
         recorded_identity = recorded_identity.get("runtimeIdentity", recorded_identity)
+        if not isinstance(recorded_identity, dict):
+            raise ProgressError("Recording identity is invalid")
         if any(str(recorded_identity.get(k, "")).casefold() != str(identity[k]).casefold()
                for k in ("machine", "gameBuildSha256", "unitKey")):
             raise ProgressError("Recording belongs to another host, build or player")
@@ -64,6 +72,12 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
             if any(str(observed_identity.get(k, "")).casefold() != str(identity[k]).casefold()
                    for k in ("machine", "gameBuildSha256", "unitKey")):
                 raise ProgressError("Measured waypoint belongs to another host, build or player")
+
+
+def play_route(adapter, document, stop, emit, *, runner, checkpoint,
+               direction="forward", resume=False, face_waypoints=True):
+    identity = adapter.binding["runtimeIdentity"]
+    validate_playback_document(document, identity)
     cursor = (RouteProgress.load(checkpoint, document, identity) if resume else
               RouteProgress(document, direction, identity))
     if cursor.direction != direction:

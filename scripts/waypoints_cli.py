@@ -234,8 +234,8 @@ def build_parser():
                 "trail.start":"Start observing a breadcrumb trail from the existing owned pose feed.",
                 "trail.stop":"Stop breadcrumb observation and retain its history.",
                 "trail.save":"Export one observed trail segment to a separate existing-format route file.",
-                "playback.start":"Replay the complete loaded route in forward or reverse order using face-then-walk mode.",
-                "playback.resume":"Resume the saved checkpoint cursor and direction using face-then-walk mode.",
+                "playback.start":"Start a new Forward or Reverse run at its route endpoint; replaces saved progress only after fresh admission. Faces before each leg.",
+                "playback.resume":"Resume the validated saved direction and next unfinished waypoint. An explicit direction must match the saved direction. Faces before each leg.",
                 "playback.status":"Show Forward, Reverse and Resume readiness from the helper's existing pose; execution rechecks live admission.",
                 "route.run":"Run the loaded route from a one-based point using face-then-walk mode.",
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
@@ -314,14 +314,17 @@ def build_parser():
     for op in ("route.load", "route.save", "route.new", "route.add", "route.update", "route.remove", "route.reorder", "route.select", "route.undo"):
         arg(op, "--revision", type=int, help="refuse if the route revision changed")
     for op in ("guide.start", "playback.start", "playback.resume", "route.run"):
-        arg(op, "--direction", choices=("forward", "reverse"), default=None if op == "playback.resume" else "forward")
+        arg(op, "--direction", choices=("forward", "reverse"), default=None if op == "playback.resume" else "forward",
+            help="default: saved checkpoint direction; explicit value must match it" if op == "playback.resume"
+                 else "route traversal order; default forward")
         if op in ("guide.start", "route.run"):
             arg(op, "--from", dest="from_point", type=positive, help="one-based starting waypoint; guide confirms fresh arrival for 0.2 seconds")
     arg("guide.start", "--radius", type=bounded(.05, 10),
         help="arrival radius in world units; defaults to the session's configured value (0.6 at startup)")
 
     for op in ("playback.start", "playback.resume"):
-        arg(op, "--checkpoint", type=Path, help="explicit playback checkpoint path")
+        arg(op, "--checkpoint", type=Path,
+            help="select the helper's checkpoint path; Resume reads matching saved progress, Play saves a new run after admission")
     arg("radar.set", "--range", type=number, choices=(2., 5., 10., 20.), help="radar radius in world units: 2, 5, 10 or 20")
     for op in ("radar.set", "beacons.set"):
         arg(op, "--opacity", type=bounded(20, 100), help="opacity percent 20-100")
@@ -440,15 +443,21 @@ def _playback_readiness_line(label, readiness):
     readiness = readiness if isinstance(readiness, dict) else {}
     ready = readiness.get("ready") is True
     direction = readiness.get("direction") or label.casefold()
-    index = readiness.get("nextIndex")
-    cursor = f"point {index + 1}" if isinstance(index, int) and index >= 0 else "cursor unavailable"
+    complete = readiness.get("complete") is True
+    number = readiness.get("nextPointNumber")
+    cursor = "route complete" if complete else f"point {number}" if isinstance(number, int) and number > 0 else "cursor unavailable"
     name = readiness.get("nextName")
-    cursor += f" ({name})" if isinstance(name, str) and name else ""
+    cursor += f" ({name})" if not complete and isinstance(name, str) and name else ""
+    completed, total = readiness.get("completedCount"), readiness.get("pointCount")
+    progress = f" | {completed}/{total} points confirmed" if isinstance(completed, int) and isinstance(total, int) else ""
     remaining = readiness.get("remainingDistance")
     distance = f" | {remaining:.2f} units remaining" if isinstance(remaining, (int, float)) else ""
     reason = readiness.get("reason")
     detail = f" | {reason}" if isinstance(reason, str) and reason else ""
-    return f"{label}: {'ready' if ready else 'blocked'} | {direction} | {cursor}{distance}{detail}"
+    start = readiness.get("startPointNumber")
+    start_name = readiness.get("startName")
+    endpoint = (f" | start point {start}" + (f" ({start_name})" if start_name else "")) if isinstance(start, int) else ""
+    return f"{label}: {'complete' if complete else 'ready' if ready else 'blocked'} | {direction} | {cursor}{endpoint}{progress}{distance}{detail}"
 
 
 def human_playback(data, *, compact=False):
@@ -461,14 +470,18 @@ def human_playback(data, *, compact=False):
         pieces = []
         for key, short in (("forward", "F"), ("reverse", "R"), ("resume", "Resume")):
             entry = readiness.get(key)
-            if isinstance(entry, dict): pieces.append(f"{short} {'ready' if entry.get('ready') is True else 'blocked'}")
+            if isinstance(entry, dict): pieces.append(f"{short} {'complete' if entry.get('complete') is True else 'ready' if entry.get('ready') is True else 'blocked'}")
         print(f"Replay: {state}" + (" | " + " | ".join(pieces) if pieces else ""))
         return
     print(f"Replay: {state} | face before each leg | checkpoint {playback.get('checkpoint', 'unavailable')}")
-    if progress:
+    if playback.get("active") and progress:
         index = progress.get("nextIndex")
-        cursor = index + 1 if isinstance(index, int) and index >= 0 else "?"
-        print(f"Saved cursor: {progress.get('direction', '?')} | next point {cursor}")
+        count = readiness.get(progress.get("direction"), {}).get("pointCount")
+        if isinstance(index, int) and isinstance(count, int) and 0 <= index <= count:
+            print(f"Active progress: {progress.get('direction', '?')} | {index}/{count} points confirmed")
+    saved = readiness.get("resume")
+    if isinstance(saved, dict) and saved.get("direction"):
+        print(_playback_readiness_line("Saved progress", saved))
     for key, label in (("forward", "Forward"), ("reverse", "Reverse"), ("resume", "Resume")):
         if key in readiness:
             print(_playback_readiness_line(label, readiness[key]))

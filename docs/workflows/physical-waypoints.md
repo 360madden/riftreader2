@@ -176,14 +176,23 @@ forced termination or a native crash may leave only the preceding log entries.
 Replay separates explicit **Playback**, **Record a path**, and **Direct movement**.
 Forward, Reverse and Resume each show a readiness reason from the current cached
 pose: endpoint distance, measured height, unfinished-leg position, route budget,
-zone candidate or missing/completed progress. This read-only preview reuses the
-playback cursor's admission rules and never changes a checkpoint or starts a
+zone candidate or missing/completed progress. Each reason now sits beside its
+own button inside PLAYBACK. Start/End point numbers and names identify the
+direction; Resume shows the saved direction and next original route number.
+Ready actions are highlighted. Full names/reasons remain on hover.
+This read-only preview shares execution's recording/measurement identity checks
+and playback cursor admission rules, and never changes a checkpoint or starts a
 reader. Execution still acquires fresh observations and repeats the normal gates.
 
 Saved progress identifies its direction and completed count; the thin progress
 bar follows that cursor. Resume stays disabled when the current position is too
 far from the unfinished leg, even when a checkpoint exists. Fresh Play starts
-within 0.30 units of Start (Forward) or End (Reverse).
+within 0.30 units of Start (Forward) or End (Reverse), and replaces progress for
+a new admitted run. Resume follows the saved direction and requires a position
+within 0.50 units of the unfinished leg. A completed run keeps a full bar and
+disabled Resume, including while Live pose is paused or fields are unapplied.
+The final verified stopped sample retains its acquisition time, avoiding an
+unnecessary Refresh before Resume when the other admission checks pass.
 
 **Play and Resume always face before each leg**, matching the CLI. The separate
 **Face before direct / auto-walk** checkbox affects direct movement and automatic
@@ -195,18 +204,32 @@ STOP/F8 cancels automatic work and cancels an unfinished manual recording.
 .\rr2-waypoints.cmd playback status
 .\rr2-waypoints.cmd playback status --json
 .\rr2-waypoints.cmd app show --tab replay
+.\rr2-waypoints.cmd playback start --direction forward --execute
+.\rr2-waypoints.cmd playback start --direction reverse --execute
+.\rr2-waypoints.cmd playback resume --execute
 ```
 
 `status.playback` and `playback status` share `readiness.forward`, `reverse` and
 `resume` objects with `ready`, `reason`, `direction`, zero-based ordered
-`nextIndex`, `nextName` and `remainingDistance`. These are previews, not movement
-authority. The console retains `--execute` for movement; no new setting is needed.
+`nextIndex`, `nextName` and `remainingDistance`. They also expose `pointCount`,
+`completedCount`, `complete`, original one-based `nextPointNumber` (null when
+complete), `startPointNumber`/`startName`, and `endpointDistance` when too far
+from an endpoint. Reverse numbering matches the saved list, not traversal order.
+Saved progress in CLI output comes from the validated checkpoint; active progress
+is separate. These are previews, not movement authority. The console retains
+`--execute` for movement. `--checkpoint` selects the helper's checkpoint path;
+invalid/missing/completed Resume or a mismatched direction is refused before
+starting work and leaves that selection unchanged. Omit Resume's `--direction`
+to follow the saved direction. No new persistent setting is introduced.
 
-On November 13 the updated native window was visually checked at compact and
-normal sizes. CLI playback of two colocated measured points completed with zero
-movement/turn pulses; completed Resume was correctly unavailable. The original
-seven-point route and its absent active checkpoint were restored. This checks
-the updated admission/display path; it is not a new moving-route/STOP trial.
+On November 13 the updated native window was checked at 1120×850 and 980×740,
+including completed forward/reverse progress. A 2.5-unit CLI out-and-back trial
+passed Play Forward, Play Reverse, STOP and Resume in the saved reverse direction.
+All 20 turn/walk pulses released; Resume was ready immediately after STOP without
+another Refresh. The return ended 0.0455 units and 0.1726° from the starting pose.
+Completed Resume was refused without input. Original route/settings, checkpoint
+binding/content and progress archives were restored. The existing 20-unit trip
+limit and open-ground requirement remain.
 
 ## Edit waypoint
 

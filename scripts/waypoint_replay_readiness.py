@@ -7,17 +7,26 @@ from pathlib import Path
 import math
 
 from scripts.waypoint_progress import ProgressError, RouteProgress
+from scripts.waypoint_playback import validate_playback_document
 
 
 def _summary(cursor, *, ready=False, reason=""):
     remaining = cursor.remaining_points()
+    count = len(cursor.ordered_points)
     return {
+        "pointCount": count,
+        "completedCount": cursor.next_index,
+        "complete": cursor.next_index >= count,
+        "nextPointNumber": (cursor.next_index + 1 if cursor.direction == "forward" else count - cursor.next_index) if remaining else None,
+        "startPointNumber": 1 if cursor.direction == "forward" else count,
+        "startName": cursor.ordered_points[0][0],
         "ready": bool(ready),
         "reason": str(reason),
         "direction": cursor.direction,
         "nextIndex": cursor.next_index,
         "nextName": remaining[0][0] if remaining else None,
         "remainingDistance": None,
+        "endpointDistance": None,
     }
 
 
@@ -39,18 +48,22 @@ def _assess(cursor, position, unavailable_reason):
         if str(exc) == "start is too far from the route endpoint":
             endpoint = cursor.remaining_points()[0]
             distance = math.hypot(position["x"] - endpoint[1], position["z"] - endpoint[2])
+            result["endpointDistance"] = distance
             result["reason"] = f"Move within 0.30u of endpoint ({distance:.2f}u away)"
     return result
 
 
 def _blocked(direction, reason):
     return {
+        "pointCount": None, "completedCount": None, "complete": False,
+        "nextPointNumber": None, "startPointNumber": None, "startName": None,
         "ready": False,
         "reason": str(reason),
         "direction": direction,
         "nextIndex": None,
         "nextName": None,
         "remainingDistance": None,
+        "endpointDistance": None,
     }
 
 
@@ -61,6 +74,11 @@ def replay_readiness(document, identity, position, checkpoint=None, unavailable_
     or zone gating while retaining checkpoint direction/cursor details when the
     checkpoint itself can still be validated.
     """
+    try:
+        validate_playback_document(document, identity)
+    except (ProgressError, KeyError, TypeError, ValueError) as exc:
+        return {action: _blocked(direction, str(exc)) for action, direction in
+                (("forward", "forward"), ("reverse", "reverse"), ("resume", None))}
     result = {}
     for direction in ("forward", "reverse"):
         try:

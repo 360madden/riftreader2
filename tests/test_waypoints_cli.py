@@ -563,11 +563,11 @@ class CliTests(unittest.TestCase):
     def test_human_playback_status_explains_each_admission(self):
         readiness = {
             'forward': {'ready': True, 'reason': 'At route start', 'direction': 'forward',
-                        'nextIndex': 0, 'nextName': 'Camp', 'remainingDistance': 4.25},
+                        'nextIndex': 0, 'nextPointNumber':1, 'nextName': 'Camp', 'remainingDistance': 4.25},
             'reverse': {'ready': False, 'reason': 'Move 6.2 units to End', 'direction': 'reverse',
-                        'nextIndex': 0, 'nextName': 'End', 'remainingDistance': None},
+                        'nextIndex': 0, 'nextPointNumber':5, 'nextName': 'End', 'remainingDistance': None},
             'resume': {'ready': True, 'reason': 'On unfinished leg', 'direction': 'reverse',
-                       'nextIndex': 2, 'nextName': 'Bridge', 'remainingDistance': 1.5},
+                       'nextIndex': 2, 'nextPointNumber':3, 'nextName': 'Bridge', 'remainingDistance': 1.5},
         }
         data = {'active': False, 'progress': {'direction': 'reverse', 'nextIndex': 2},
                 'checkpoint': 'progress.json', 'faceWaypoints': True, 'readiness': readiness}
@@ -575,11 +575,40 @@ class CliTests(unittest.TestCase):
                 protocol,'request',return_value=cli.result('playback.status',data=data)):
             code,out,_ = self.call('playback','status')
         self.assertEqual(code, 0)
-        for phrase in ('Replay: idle | face before each leg', 'Saved cursor: reverse | next point 3',
+        for phrase in ('Replay: idle | face before each leg', 'Saved progress: ready | reverse | point 3 (Bridge)',
                        'Forward: ready | forward | point 1 (Camp) | 4.25 units remaining | At route start',
-                       'Reverse: blocked | reverse | point 1 (End) | Move 6.2 units to End',
+                       'Reverse: blocked | reverse | point 5 (End) | Move 6.2 units to End',
                        'Resume: ready | reverse | point 3 (Bridge) | 1.50 units remaining | On unfinished leg'):
             self.assertIn(phrase, out)
+
+    def test_playback_complete_cursor_uses_validated_saved_progress_and_no_phantom_point(self):
+        completed = {'ready':False,'direction':'reverse','nextIndex':4,'nextPointNumber':None,
+                     'nextName':None,'pointCount':4,'completedCount':4,'complete':True,
+                     'startPointNumber':4,'startName':'End','remainingDistance':0.,'reason':'route already complete'}
+        data = {'active':False,'progress':{'direction':'forward','nextIndex':0},
+                'readiness':{'resume':completed}}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.human_playback(data)
+            cli.human_playback(data,compact=True)
+        rendered = out.getvalue()
+        self.assertIn('Saved progress: complete | reverse | route complete | start point 4 (End) | 4/4 points confirmed', rendered)
+        self.assertIn('Resume: complete | reverse | route complete', rendered)
+        self.assertIn('Replay: idle | Resume complete', rendered)
+        self.assertNotIn('point 5', rendered)
+        self.assertNotIn('Saved cursor: forward', rendered)
+
+    def test_resume_default_does_not_send_direction_and_help_explains_checkpoint_behavior(self):
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('playback.resume',data={})) as request:
+            self.assertEqual(self.call('playback','resume','--execute','--json')[0], 0)
+        self.assertNotIn('direction', request.call_args.args[2])
+        resume_help = ' '.join(self.call('playback','resume','--help')[1].split())
+        self.assertIn('saved checkpoint direction', resume_help)
+        self.assertIn('explicit value must match it', resume_help)
+        start_help = ' '.join(self.call('playback','start','--help')[1].split())
+        self.assertIn('replaces saved progress only after fresh admission', start_help)
+        self.assertIn("select the helper's checkpoint path", start_help)
 
     def test_main_status_has_compact_playback_readiness(self):
         data={'host':'AMD-DESKTOP','target':{'processId':99},'app':{'busy':False,'visible':True},

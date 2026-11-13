@@ -1,5 +1,36 @@
 # Current status
 
+**NOVEMBER 13 — PLAYBACK FORWARD / REVERSE / RESUME HARDENING:**
+On verified AMD-DESKTOP, all three actions now keep endpoint/readiness details
+inside PLAYBACK, highlight ready actions, expose saved Resume direction and
+original waypoint numbering, and retain full completed progress. Readiness and
+execution share recording/measurement identity validation; malformed/incomplete
+or foreign saved evidence cannot appear ready. A verified STOP sample now retains
+its acquisition time/owner freshness, fixing unnecessarily disabled Resume.
+Missing/invalid/completed or conflicting-direction Resume is refused before
+starting work and does not change the selected checkpoint. CLI output separates
+validated saved progress from active cursor state. Freshness transitions update
+button state without new native reads. Focused checks passed **169 tests and 188
+subtests** across core/CLI/Tk runs; the final endpoint-distance helper check passed.
+Native normal/compact captures exposed clipped progress from verbose endpoint
+reasons; tighter rows and concise distance text fixed it. Completed reverse
+captures at 1120×850 and 980×740 show the full bar and disabled Resume.
+Live CLI Play Forward completed a 2.5-unit clear-ground leg with a half-turn;
+Play Reverse stopped after its first W pulse with cursor 1/2 and zero post-STOP
+drift. Resume was immediately ready without Refresh, used the saved reverse
+direction, and completed 2/2. All 20 turn/walk pulses released. Return error was
+0.0454524 units and 0.172503°; completed Resume was refused without input. A
+verification-script shell mismatch interrupted capture after Forward; movement
+was stopped, capture corrected, and remaining checks completed without replaying
+Forward. Original route, selection 7, range 10, cache/progress files and binding,
+basis/library/style hashes, scene, radar/guide/trail settings and window bounds
+were preserved/restored. Helper PID62724/session 3b341ae2e6844cf1a4a198f749bd24e5
+is on Replay, Live pose on, overlays off, idle/STOP clear, physical RIFT PID34468.
+Evidence: `artifacts/replay-playback-verification-20261113/final-verification.json`,
+`stopped-state.json`, `completion.json`, native completed layout captures
+`artifacts/replay-playback-completed-{normal,compact}-20261113.png` and
+`artifacts/replay-playback-after-20261113.json`. The 20-unit open-ground limit remains.
+
 **NOVEMBER 13 — LIVE CLI PLAYBACK / STOP / RESUME VERIFIED:**
 On verified AMD-DESKTOP, physical RIFT PID34468, a reviewed clear-ground three-unit
 manual route passed via CLI. STOP after the first 150 ms W pulse retained cursor

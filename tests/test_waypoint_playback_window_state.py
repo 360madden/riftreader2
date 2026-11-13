@@ -218,7 +218,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
-        self.assertTrue(any("choose Play Forward or Play Reverse" in value for value in values), values)
+        self.assertTrue(any("Forward complete" in value and "2/2 confirmed" in value for value in values), values)
 
     def test_explicit_matching_route_restores_unfinished_progress(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}
@@ -240,7 +240,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
                   if isinstance(w, ttk.Label) and w["textvariable"]]
-        self.assertTrue(any("Resume: position is on a different height" in value
+        self.assertTrue(any("Reverse" in value and "position is on a different height" in value
                             for value in labels), labels)
         self.assertEqual(before, checkpoint.read_bytes())
 
@@ -252,7 +252,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
         labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
                   if isinstance(w, ttk.Label) and w["textvariable"]]
-        self.assertTrue(any("Resume: position is too far from the unfinished leg" in value
+        self.assertTrue(any("Reverse" in value and "position is too far from the unfinished leg" in value
                             for value in labels), labels)
         self.write_checkpoint(document, "reverse", 4)
         unchanged = checkpoint.read_bytes()
@@ -269,7 +269,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.assertEqual(4, len(table.get_children()))
         labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
                   if isinstance(w, ttk.Label) and w["textvariable"]]
-        self.assertTrue(any("Reverse progress: 4 / 4" in value for value in labels), labels)
+        self.assertTrue(any("Reverse complete" in value and "4/4 confirmed" in value for value in labels), labels)
         self.assertTrue(any("Remaining: 0.00" in value for value in labels), labels)
 
     def test_teach_progress_without_playback_cursor_after_completed_checkpoint(self):
@@ -359,7 +359,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
-        self.assertTrue(any("No saved progress; choose Play" in value for value in values), values)
+        self.assertTrue(any("No saved playback progress" in value and "Play Forward" in value for value in values), values)
 
     def test_rejected_play_restores_completed_checkpoint_view(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
@@ -394,7 +394,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
-        self.assertTrue(any("Reverse progress: 2 / 2" in value for value in values), values)
+        self.assertTrue(any("Reverse complete" in value and "2/2 confirmed" in value for value in values), values)
 
     def test_partial_play_keeps_new_checkpoint_cursor(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]]}
@@ -425,7 +425,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         labels = [str(widget.cget("textvariable")) for widget in self.widgets(self.roots[0])
                   if isinstance(widget, ttk.Label) and widget.cget("textvariable")]
         values = [str(self.roots[0].getvar(label)) for label in labels]
-        self.assertTrue(any("Forward progress: 1 / 2" in value for value in values), values)
+        self.assertTrue(any("Saved forward" in value and "1/2 confirmed" in value for value in values), values)
 
     def test_load_caches_route_for_restart_without_enabling_resume(self):
         document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11]}
