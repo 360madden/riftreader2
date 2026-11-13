@@ -252,3 +252,65 @@ screenshots use `artifacts/live-radar-motion-*-20261113.png`, including
 `artifacts/live-radar-motion-after-turn-ui-20261113.png` and
 `artifacts/live-radar-motion-after-step-ui-20261113.png`. The three-point route and
 appearance preferences remain unchanged, with markers/shared pose enabled.
+
+## Compact radar, manual guidance and breadcrumb acceptance — November 13
+
+On the same AMD-DESKTOP RIFT identity recorded above, the Explore tab and compact
+radar passed a local live workflow. The baseline integrated suite passed 144 checks;
+the subsequent placement correction passed four focused Qt drag/placement checks.
+The actual Explore cards were inspected at 982-pixel and larger window widths.
+
+The first trial exposed a placement bug: the radar stayed at its initial desktop
+coordinates when RIFT moved. It now follows admitted game-window geometry and
+preserves the user's dragged physical offset, clamped into the client. Joey
+confirmed dragging worked; the same radar HWND changed position. The game client
+also moved/resized during that manual check, so no exact drag-distance claim is
+made. Zoom 10 -> 2 units and opacity 85% -> 60% were changed through the real UI
+and reviewed in RIFT. Locked click-through reached the game. Four focused checks
+cover config validation, rendering, separate trail segments, source ownership/age,
+drag events, opacity and retained relative placement.
+
+An early wall-running incident interrupted acceptance. Joey clarified that his
+intervention came after the running started. Source review found no movement path
+from route load, radar toggle, pose updates, guide or trail callbacks. The incident
+feedback marked guidance `not-started` and trail empty, and no initiating helper
+key receipt was present. Neither autorun nor game click behavior was established;
+the baseline and later position were minutes apart, not a click-time bracket.
+One guarded S/100 ms tap completed/released; the later image appeared idle and
+two poses matched, though zero drift against a wall alone cannot prove idle state.
+Evidence: `artifacts/explore-wall-stop-20261113.json` and
+`artifacts/explore-wall-after-stop-20261113.png`. Further game clicks were avoided.
+The trigger remains unconfirmed; this record does not attribute it to Joey.
+
+After Joey moved Atank into open ground and authorized resuming, two fresh native
+poses confirmed a settled baseline. A new temporary route was loaded and the
+actual Start guide/Record trail controls enabled. Independent guarded W/150 ms,
+A/150 ms and W/150 ms pulses produced a 1.02211-unit leg, a 27.82556-degree turn,
+and a 0.94770-unit leg. All pulses released. Both forward legs had zero measured
+post-release drift. The passive guide advanced original indexes 0 -> 1 -> 2 and
+the GUI displayed **Route complete · 3 points confirmed**. No automated playback
+checkpoint was created.
+
+Stop trail retained 129 observations in one segment. Actual Save segment wrote
+`artifacts/explore-live-breadcrumb-20261113b.json`, SHA256
+`e22b9f7c083e9f6bd58364fae2d22bfd1f28d1eaead787bc1c60c56a9362ab41`.
+The existing route parser loaded its five measured entries at three distinct
+locations; repeated corner/end observations retain their separate source times.
+The actual corner was within 0.1 units of a saved point. Gap/owner discontinuities,
+no bridging and vertical corners are covered by focused tests, not induced by
+teleporting the live character. Receipt summary:
+`artifacts/explore-live-acceptance-20261113.json`. Step receipts and source feedback
+are `artifacts/explore-first-step-20261113.json`,
+`artifacts/explore-corner-turn-20261113.json` and
+`artifacts/explore-final-step-20261113.json`.
+
+Reviewed images include `artifacts/explore-first-step-20261113.png`,
+`artifacts/explore-radar-zoom-opacity-20261113.png`,
+`artifacts/explore-complete-ui-20261113.png` and
+`artifacts/explore-final-rift-20261113.png`. The user's original three-point route
+and movement basis remained byte-identical. The original route was reloaded,
+guidance stopped, recording stopped, and radar left enabled/locked at 10 units and
+85% opacity. Final actor pose was X7422.041504/Y863.586792/Z2933.240967,
+bearing -60.17559 degrees. Desktop automation was released. This establishes a
+short local workflow, not unrestricted navigation, terrain clearance or mixed-DPI
+qualification.

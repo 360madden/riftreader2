@@ -40,18 +40,19 @@ playback/restart trials, and the
 for recent beacon and shared-reader checks. Old PID/window values in evidence are
 historical; reacquire the actual target before live work.
 
-## Next priorities, in order
+## Delivered exploration priorities — November 13
 
-Ship one useful slice at a time. The three slices below are implemented in the
-current worktree with focused checks; final live interaction acceptance is still
-in progress. A first compact radar was visually confirmed over RIFT. See the
+The three slices below are implemented and passed their local live acceptance.
+The implementation checkpoint is `ece5eac`; the later placement correction makes
+the radar follow game-window movement while retaining the user's relative offset.
+See the [live evidence](../validation/waypoint-overlay-camera-2026-11-12.md#compact-radar-manual-guidance-and-breadcrumb-acceptance--november-13) and
 [Explore usage](../workflows/physical-waypoints.md#explore-while-playing).
 
 ### 1. Compact radar while playing
 
-Add a compact radar mode that stays visible over RIFT without opening the full
-editor. Reuse `waypoint_map.py`, the existing Qt overlay environment and the owned
-beacon pose feed; do not add another native sampler.
+A compact radar stays visible over RIFT without opening the full editor. It reuses
+`waypoint_map.py`, the existing Qt overlay environment and the owned beacon pose
+feed, with no additional native sampler.
 
 - Show player facing, route points and the selected destination with distance.
 - Provide simple zoom, opacity, Hide and an explicit unlock for moving the radar.
@@ -59,14 +60,15 @@ beacon pose feed; do not add another native sampler.
 - Reuse existing marker visibility, process ownership and stale-data behavior.
   Enabling compact radar should make any required beacon-reader start explicit.
 
-**Done when:** the real radar follows one short turn and walk in RIFT, stays
-readable at a compact size, can be moved/hidden, and normal game clicks pass
-through. Verify reader reuse and no automatic movement.
+**Verified:** real turn/walk updates, zoom from 10 to 2 units, opacity from 85% to
+60%, and locked click-through. Joey confirmed manual dragging; the same radar HWND
+changed position. Game geometry also changed, so exact drag distance is unqualified.
+Focused checks cover drag handling, saved relative placement and geometry changes.
 
 ### 2. Passive route guidance during manual play
 
-Let the player explicitly choose a route, direction and starting point, then walk
-it manually while the radar and existing beacons identify the next waypoint.
+The player chooses a route, direction and starting point, then walks it manually
+while the radar and existing beacons identify the next waypoint.
 
 - Update distance and advance only after a small arrival radius is satisfied by
   multiple fresh samples. Do not jump to a later nearby point or skip a corner.
@@ -77,23 +79,26 @@ it manually while the radar and existing beacons identify the next waypoint.
 - Pause advancement when samples are unavailable; route edits or identity changes
   require a valid guidance state before continuing. This mode sends no game input.
 
-**Done when:** a short manually walked route advances in order, remains stable
-when standing near an arrival boundary, and does not advance on stale samples or
-alter saved automated-playback progress.
+**Verified:** the read-only guide confirmed points 0, 1 and 2 in order during an
+independently driven, bounded W/A/W trial. Both forward steps settled with zero
+measured drift. The GUI showed completion; no playback checkpoint was created.
+Focused checks cover reverse/selected starts, boundary confirmation and stale data.
 
 ### 3. Exploration breadcrumb trail
 
-Display a recent trail of positions actually visited, with an explicit option to
-save it as a route. Reuse the recorder and shared pose feed.
+A recent trail displays positions actually visited, with an explicit option to
+save a chosen segment as a route. It reuses the recorder and shared pose feed.
 
 - Keep useful corners and XYZ/height provenance; limit retained samples so normal
   use stays light. Break the trail at missing samples, teleports or owner changes.
 - Keep manual map-click points distinguishable from observed positions. Reuse
   route save/load rather than inventing another map storage format.
 
-**Done when:** walking a short path produces a readable trail, saving/reloading
-preserves its corners and measured points, and a sampling gap never becomes a
-falsely observed connecting segment. Full saved world mapping is a later step.
+**Verified:** the live trail retained 129 observations and saved five measured
+points at three distinct locations, preserving the actual corner. The existing
+route parser loaded the export with original sample times/heights. Focused checks
+cover sampling gaps, owner changes, vertical corners, retention and no false
+connecting segment. Full saved world mapping remains later work.
 
 ## Limits and later work
 
@@ -113,13 +118,21 @@ falsely observed connecting segment. Full saved world mapping is a later step.
   on the same process without a restart. Check display power and reacquire window
   geometry/capture first. The exact monitor/GPU mechanism remains unconfirmed.
 
-## Keep the workflow practical
+## Next: plan the helper CLI
 
-After these three slices pass live acceptance, plan a consistent, automation-friendly
-CLI for the helper app and future helpers, with intuitive help and broad useful
-commands. Inventory the existing waypoint CLI first; do not duplicate its playback,
-facing and route controls. This is the next planning topic, not an implemented CLI
-expansion or a reason to delay the radar/guidance/trail result.
+Plan a consistent, automation-friendly CLI for this helper and future helpers.
+Start by inventorying the current waypoint CLI; reuse its playback, facing and
+route controls. Agree the command surface before implementing an expansion:
+
+- Intuitive top-level and command-specific help, examples and discoverable capabilities.
+- Human-readable output by default, structured JSON and meaningful exit codes for automation.
+- Status/connection, route inspection/editing, radar/beacons, manual guidance and trail export.
+- A practical way to control an already open helper, with one owner of each live reader/action.
+- Explicit target binding and explicit movement commands; preserve current STOP/release behavior.
+
+This is the next planning topic. CLI expansion is not implemented by this roadmap.
+
+## Keep the workflow practical
 
 Reuse the current implementation, make the smallest coherent change, run focused
 checks and try the actual RIFT workflow when authorized and noninterfering. The

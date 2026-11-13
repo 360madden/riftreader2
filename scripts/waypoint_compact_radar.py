@@ -98,6 +98,8 @@ class CompactRadar(QWidget):
         self.drag_offset = None
         self.exploration = None
         self.placed = False
+        self.target_rect = None
+        self.offset = None
         self.hwnd = int(self.winId())
         if api.own_window(self.hwnd) != self.hwnd:
             raise ValueError("radar HWND identity changed")
@@ -127,16 +129,23 @@ class CompactRadar(QWidget):
         self.config, self.frame, self.points = dict(config), frame, route["points"]
         self.exploration = exploration
         self.setWindowOpacity(config["opacity"])
+        rect = list(frame["clientRect"])
+        relocate = not self.placed or self.target_rect != rect
         if not self.isVisible():
             self.show()
-            if not self.placed:
-                x, y, w, h = frame["clientRect"]
-                ratio = self.devicePixelRatioF()
-                width, height = round(self.width()*ratio), round(self.height()*ratio)
-                # Leave the current RIFT minimap/chat at the upper right clear.
-                self.api.show(self.hwnd, [x + 18, y + max(18, h-height-150), width, height])
-                self.placed = True
-        if change_unlock:
+        if relocate:
+            x, y, w, h = rect
+            ratio = self.devicePixelRatioF()
+            width, height = round(self.width()*ratio), round(self.height()*ratio)
+            # Keep signed physical coordinates and the user's relative placement.
+            dx, dy = self.offset or (18, max(18, h-height-150))
+            dx, dy = max(0, min(dx, w-width)), max(0, min(dy, h-height))
+            self._set_unlocked(False)
+            self.api.show(self.hwnd, [x+dx, y+dy, width, height])
+            self.offset = (dx, dy)
+            self.target_rect = rect
+            self.placed = True
+        if change_unlock or relocate:
             self._set_unlocked(config["unlocked"])
         self.update()
 
@@ -156,6 +165,13 @@ class CompactRadar(QWidget):
             event.accept()
 
     def mouseReleaseEvent(self, event):
+        if self.drag_offset is not None and self.target_rect is not None:
+            if __import__('os').name == 'nt':
+                from ctypes import wintypes
+                rect = wintypes.RECT()
+                with self.api.dpi():
+                    if self.api.u.GetWindowRect(self.hwnd, ctypes.byref(rect)):
+                        self.offset = (rect.left-self.target_rect[0], rect.top-self.target_rect[1])
         self.drag_offset = None
 
     def paintEvent(self, event):
