@@ -149,6 +149,58 @@ def parse_projection_route(document):
                 provenanceKind="independent-point-observations")
 
 
+def parse_marker_projection_route(document, expected_identity):
+    """Admit display-only map beacons without promoting estimated heights to measurements."""
+    expected = deepcopy(_identity(expected_identity))
+    try:
+        parsed = parse_projection_route(document)
+    except ValueError:
+        if isinstance(document, dict) and "recording" in document:
+            raise
+    else:
+        _require(_key(parsed["identity"]) == _key(expected), "marker-route-owner-identity-mismatch")
+        result = deepcopy(parsed)
+        for point in result["points"]:
+            point["displayHeightKind"] = "measured"
+        return result
+
+    _require(isinstance(document, dict), "marker-projection-route-required")
+    waypoints = document.get("waypoints")
+    _require(isinstance(waypoints, list) and 1 <= len(waypoints) <= 20,
+             "marker-waypoints-required")
+    heights = document.get("heights", [None] * len(waypoints))
+    receipts = document.get("pointMeasurements", [None] * len(waypoints))
+    _require(isinstance(heights, list) and len(heights) == len(waypoints),
+             "marker-heights-alignment-required")
+    _require(isinstance(receipts, list) and len(receipts) == len(waypoints),
+             "marker-measurements-alignment-required")
+
+    points, measured_numbers = [], []
+    for number, (waypoint, height, raw_receipt) in enumerate(zip(waypoints, heights, receipts), 1):
+        _require(isinstance(waypoint, list) and len(waypoint) == 3 and isinstance(waypoint[0], str)
+                 and all(type(value) in (int, float) and math.isfinite(value) for value in waypoint[1:]),
+                 "invalid-marker-waypoint")
+        _require(height is None or (type(height) in (int, float) and math.isfinite(height)),
+                 "invalid-marker-height")
+        xyz = dict(x=waypoint[1], y=None, z=waypoint[2])
+        kind = "unresolved-estimate"
+        if raw_receipt is not None:
+            _require(height is not None, "marker-measurement-height-required")
+            measured_xyz = dict(x=waypoint[1], y=height, z=waypoint[2])
+            receipt = _receipt(raw_receipt, measured_xyz)
+            _require(_key(receipt["identity"]) == _key(expected),
+                     "marker-measurement-owner-identity-mismatch")
+            xyz, kind = measured_xyz, "measured"
+            measured_numbers.append(number)
+        points.append(dict(number=number, label=waypoint[0], xyz=xyz, displayHeightKind=kind))
+
+    return dict(points=points, identity=expected,
+                recordingIdentity=dict(kind="map-waypoint-beacon-preview", identity=deepcopy(expected),
+                                       measuredPointCount=len(measured_numbers), pointCount=len(points),
+                                       measuredPointNumbers=measured_numbers),
+                provenanceKind="estimated-height-beacon-preview")
+
+
 def document_measurements(document):
     """Return aligned receipts or None per unknown point, for lossless GUI edits.
 

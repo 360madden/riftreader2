@@ -80,14 +80,14 @@ class OwnedWaypointMarkers:
             raise WaypointError("Markers are already open or closing")
         from scripts.live_physical_waypoints import load_route
         from scripts.waypoint_progress import write_json_atomic
+        identity = adapter.binding["runtimeIdentity"]
         token = uuid.uuid4().hex
         directory = self.root / "artifacts"
         route_path = directory / ("waypoint-markers-route-" + token + ".json")
         self.output = directory / ("waypoint-markers-summary-" + token + ".json")
         self.stop_path = directory / ("waypoint-markers-stop-" + token + ".signal")
         write_json_atomic(route_path, document)
-        recorded = load_route(route_path)
-        identity = adapter.binding["runtimeIdentity"]
+        recorded = load_route(route_path, expected_identity=identity)
         if any(str(recorded["identity"].get(key, "")).casefold() != str(identity[key]).casefold()
                for key in ("machine", "gameBuildSha256", "unitKey")):
             raise WaypointError("Recorded route belongs to another host, build or player")
@@ -102,6 +102,7 @@ class OwnedWaypointMarkers:
         executable = qt_executable if presenter == "qt" else Path(sys.executable).with_name("pythonw.exe")
         command = [str(executable), str(self.root / "scripts" / "live_physical_waypoints.py"),
                    "--expected-host", identity["machine"], "--physical-pid", str(adapter.pid),
+                   "--expected-unit-key", identity["unitKey"],
                    "--expect-start-ticks", str(target["processStartUtcTicks"]),
                    "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]),
                    "--route", str(route_path), "--duration", "0", "--max-age", ".35", "--presenter", presenter,
@@ -1268,7 +1269,8 @@ def launch_window(args):
             summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
                         + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
                         + endpoints
-                        + (f"   •   3D: measured heights {sum(1 for row in original_points if point_receipts.get(row[0]) is not None)} / {len(original_points)}"
+                        + (f"   •   Beacons: {sum(1 for row in original_points if point_receipts.get(row[0]) is not None)} measured"
+                           f" · {sum(1 for row in original_points if point_receipts.get(row[0]) is None)} estimated"
                            if original_points else "")
                         + ("   •   Shorten the route to run it" if distance > 20 else ""))
         if not busy:
@@ -2273,7 +2275,7 @@ def launch_window(args):
                     f"{status}: {event.get('name', '')}" if status == "leg" else
                     event.get("measurementReason", "Saved current position.") if status == "save" else
                     event.get("measurementReason", "Saved the target's current ground position.") if status == "target" else
-                    "Waypoint added from the preview." if status == "map" else
+                    "Waypoint added from the preview; beacon height estimated." if status == "map" else
                     "Position refreshed.")
             state.set(text)
             log.configure(state="normal")

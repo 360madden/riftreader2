@@ -43,11 +43,12 @@ def _display_allowed(snapshot):
     return snapshot.get("displayAllowed", snapshot.get("foreground")) is True
 
 
-def load_route(path):
+def load_route(path, *, expected_identity=None):
     raw = Path(path).read_bytes()
     document = json.loads(raw.decode("utf-8-sig"))
-    from scripts.waypoint_measurements import parse_projection_route
-    parsed = parse_projection_route(document)
+    from scripts.waypoint_measurements import parse_projection_route, parse_marker_projection_route
+    parsed = (parse_projection_route(document) if expected_identity is None
+              else parse_marker_projection_route(document, expected_identity))
     return {**parsed, "path": str(Path(path).resolve()),
             "sha256": hashlib.sha256(raw).hexdigest(), "document": document}
 
@@ -70,6 +71,15 @@ class ProjectionProvider:
         require(identity["machine"].casefold() == self.target["hostName"].casefold()
                 and identity["gameBuildSha256"].casefold() == self.target["executableSha256"].casefold(),
                 "route-host-build-mismatch")
+        self.marker_points = deepcopy(self.route["points"])
+        measured = [point for point in self.marker_points if point["xyz"]["y"] is not None]
+        for point in self.marker_points:
+            if point["xyz"]["y"] is None and measured:
+                nearest = min(measured, key=lambda known: math.hypot(
+                    point["xyz"]["x"] - known["xyz"]["x"], point["xyz"]["z"] - known["xyz"]["z"]))
+                point["xyz"]["y"] = nearest["xyz"]["y"]
+                point["displayHeightKind"] = "nearest-measured-estimate"
+                point["heightReferenceNumber"] = nearest["number"]
         self.latest_native = None
         self.last_stream_receipt = None
         self.stream_rows = 0
@@ -140,14 +150,22 @@ class ProjectionProvider:
                 and 0 <= viewport[3] < viewport[2] <= 1, "invalid-native-camera-viewport")
         left, right, top, bottom = viewport
         player_xyz = values["positionXYZCandidate"]
+        # Resolve once from an admitted native row, never from a stale GUI pose.
+        # These private display points do not modify the route or its receipts.
+        for point in self.marker_points:
+            if point["xyz"]["y"] is None:
+                point["xyz"]["y"] = player_xyz["y"]
+                point["displayHeightKind"] = "startup-player-estimate"
         points = []
-        for point in self.route["points"]:
+        for point in self.marker_points:
             xyz = point["xyz"]
             points.append({"number": point["number"], "label": point["label"],
                 "horizontalDistanceCandidate": math.hypot(xyz["x"] - player_xyz["x"],
                                                           xyz["z"] - player_xyz["z"]),
                 "ground": physical._project_world_point(camera, xyz),
                 "beaconTop": physical._project_world_point(camera, dict(x=xyz["x"], y=xyz["y"] + 1.5, z=xyz["z"]))})
+            if "displayHeightKind" in point:
+                points[-1].update(displayHeightKind=point["displayHeightKind"], displayHeightCandidate=xyz["y"])
             if point["number"] == self.landmark_number:
                 points[-1]["displayLandmark"] = True
         frame = {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
@@ -511,7 +529,7 @@ def apply_saved_progress(frame, progress_file, route):
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
         presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None,
-        companion_window=None):
+        companion_window=None, expected_unit_key=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -520,6 +538,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     require(reader in ("single", "stream"), "invalid-reader-mode")
     require(duration != 0 or reader == "stream", "continuous-duration-requires-stream-reader")
     require(presenter in ("native", "qt"), "invalid-presenter")
+    require(expected_unit_key is None or (isinstance(expected_unit_key, str) and bool(expected_unit_key.strip())),
+            "expected-unit-key-required")
     if companion_window is not None:
         from scripts.physical_waypoint_overlay import validate_companion
         companion_window = validate_companion(companion_window)
@@ -539,9 +559,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         require(appearance_file.is_absolute() and appearance_file.parent.is_dir(), "absolute-appearance-file-required")
     appearance = dict(DEFAULT_STYLE)
     next_appearance_poll = 0.
-    route = load_route(route_path)
-    require(landmark_number is None or (type(landmark_number) is int and landmark_number > 0
-            and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
+    route = load_route(route_path) if expected_unit_key is None else None
+    if route is not None:
+        require(landmark_number is None or (type(landmark_number) is int and landmark_number > 0
+                and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
     selection = physical.select_physical(expected_host, physical_pid)
     require(selection.get("status") == "ready", selection.get("reason", "physical-selection-not-ready"))
     require(selection["target"]["processId"] == physical_pid, "selected-pid-mismatch")
@@ -550,6 +571,12 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         require(str(target.get("processStartUtcTicks")) == expected["processStartUtcTicks"]
                 and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
                 and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
+    if route is None:
+        target = selection["target"]
+        route = load_route(route_path, expected_identity=dict(machine=target["hostName"],
+                           gameBuildSha256=target["executableSha256"], unitKey=expected_unit_key))
+        require(landmark_number is None or (type(landmark_number) is int and landmark_number > 0
+                and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
     window_options = {}
     snapshot = target_snapshot
@@ -675,6 +702,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "machine": socket.gethostname(), "target": selection["target"],
         "recordingIdentity": route["recordingIdentity"], "route": route["path"], "routeSha256": route["sha256"],
         "provenanceKind": route["provenanceKind"],
+        "displayHeightPoints": deepcopy(provider.marker_points),
         "durationSeconds": time.monotonic() - started, "maxAgeSeconds": max_age,
         "counts": counts, "latestNativeReport": provider.latest_native, "inputSent": False,
         "nativeReaderMode": reader, "lastStreamReceipt": provider.last_stream_receipt,
@@ -705,6 +733,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--physical-pid", type=int, required=True)
+    parser.add_argument("--expected-unit-key",
+                        help="pin the current player and allow display-only estimated beacon heights")
     parser.add_argument("--route", type=Path, required=True)
     parser.add_argument("--duration", type=float, default=60,
                         help="seconds through 600; 0 streams until owned stop, target loss or close")
@@ -730,7 +760,8 @@ def main(argv=None):
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
                      progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
-                     appearance_file=args.appearance_file, companion_window=args.companion_window)
+                     appearance_file=args.appearance_file, companion_window=args.companion_window,
+                     expected_unit_key=args.expected_unit_key)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

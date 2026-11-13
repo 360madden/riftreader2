@@ -47,6 +47,7 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertEqual(str((self.root / "artifacts" / "waypoint-marker-style.json").absolute()),
                          command[command.index("--appearance-file") + 1])
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
+                               ("--expected-unit-key", "player"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),
                                ("--max-age", ".35"), ("--duration", "0")):
             self.assertEqual(expected, command[command.index(flag) + 1])
@@ -113,15 +114,38 @@ class OwnedMarkerTests(unittest.TestCase):
         self.popen.assert_not_called()
         self.assertEqual([], list((self.root / "artifacts").iterdir()))
 
-    def test_unrecorded_or_missing_height_route_is_refused(self):
-        for route in ({"waypoints": [["A", 1, 2]]}, {**self.route, "heights": [5, None]}):
+    def test_partial_measured_and_plain_routes_keep_unknown_heights_in_owned_copy(self):
+        from scripts.waypoint_measurements import measurement
+        points = [[f"Point {i + 1}", i + 1, i + 2] for i in range(7)]
+        receipts = [measurement({"x": row[1], "y": 5, "z": row[2]}, self.identity,
+                                "retained.json", "2026-11-12T12:00:00Z") for row in points[:2]]
+        document = {"waypoints": points, "heights": [5, 5, None, None, None, None, None],
+                    "pointMeasurements": receipts + [None] * 5}
+        self.markers.start(document, self.adapter)
+        command = self.popen.call_args.args[0]
+        saved = json.loads(Path(command[command.index("--route") + 1]).read_text())
+        self.assertEqual(document, saved)
+        self.assertEqual([None] * 5, saved["heights"][2:])
+        self.child.returncode = 0
+        self.markers.running()
+        plain = {"waypoints": [["Map point", 1, 2]]}
+        self.child = FakeChild()
+        self.popen.return_value = self.child
+        self.markers.start(plain, self.adapter)
+        command = self.popen.call_args.args[0]
+        self.assertEqual(plain, json.loads(Path(command[command.index("--route") + 1]).read_text()))
+        self.assertEqual("player", command[command.index("--expected-unit-key") + 1])
+
+    def test_malformed_route_or_measurements_are_refused(self):
+        for route in ({"waypoints": []}, {"waypoints": [["A", 1, 2]], "heights": [5],
+                                          "pointMeasurements": [{"broken": True}]}):
             with self.subTest(route=route), self.assertRaises(ValueError):
                 self.markers.start(route, self.adapter)
         self.popen.assert_not_called()
 
     def test_changed_player_or_epoch_is_refused_before_launch(self):
         self.adapter.binding["runtimeIdentity"]["unitKey"] = "other"
-        with self.assertRaises(WaypointError):
+        with self.assertRaises(ValueError):
             self.markers.start(self.route, self.adapter)
         self.adapter.binding["runtimeIdentity"]["unitKey"] = "player"
         self.adapter.target["processStartUtcTicks"] = "5678"

@@ -58,6 +58,53 @@ class FeedTests(unittest.TestCase):
         self.read.assert_called_once_with(self.selection, "facing", samples=1, include_target=True)
         self.assertNotIn("selectedTarget", packet)
 
+    def test_partial_route_projects_every_point_using_nearest_real_measurement(self):
+        from scripts.waypoint_measurements import measurement
+        identity = deepcopy(self.route["identity"])
+        waypoints = [["First", 7427, 2946], ["Second", 7437, 2946],
+                     ["Near first", 7428, 2947], ["Near second", 7436, 2947],
+                     ["Five", 7426, 2945], ["Six", 7438, 2945], ["Seven", 7429, 2946]]
+        receipts = [measurement(dict(x=p[1], y=y, z=p[2]), identity, "fixture.json",
+                                "2026-11-12T20:00:00Z") for p, y in zip(waypoints, (871, 880))]
+        document = dict(waypoints=waypoints, heights=[871, 880] + [None] * 5,
+                        pointMeasurements=receipts + [None] * 5)
+        self.route_path.write_text(json.dumps(document), encoding="utf-8")
+        self.route = live.load_route(self.route_path, expected_identity=identity)
+        provider = self.provider(clock=lambda: 10.)
+        frame = provider.acquire()
+        self.assertEqual([point["number"] for point in frame["points"]], list(range(1, 8)))
+        self.assertEqual([point["displayHeightCandidate"] for point in frame["points"]],
+                         [871, 880, 871, 880, 871, 880, 871])
+        self.assertEqual([point["displayHeightKind"] for point in frame["points"]],
+                         ["measured"] * 2 + ["nearest-measured-estimate"] * 5)
+        self.assertEqual(self.route["document"], document)
+        self.assertEqual(json.loads(self.route_path.read_text(encoding="utf-8")), document)
+        self.assertTrue(all(p["xyz"]["y"] is None for p in self.route["points"][2:]))
+
+    def test_plain_map_route_freezes_player_height_only_after_owner_validation(self):
+        identity = deepcopy(self.route["identity"])
+        document = dict(waypoints=[["Click one", 7427, 2946], ["Click two", 7428, 2947]])
+        self.route_path.write_text(json.dumps(document), encoding="utf-8")
+        self.route = live.load_route(self.route_path, expected_identity=identity)
+        provider = self.provider(clock=lambda: 10.)
+        values = live.physical._native_values("facing", self.native)
+        wanted_y = values["positionXYZCandidate"]["y"]
+        with patch.object(live.physical, "_native_values", return_value=values):
+            actual_key = values["playerKey"]
+            values["playerKey"] = "another-player"
+            with self.assertRaisesRegex(ValueError, "recorded-player-mismatch"):
+                provider.acquire()
+            self.assertTrue(all(p["xyz"]["y"] is None for p in provider.marker_points))
+            values["playerKey"] = actual_key
+            first = provider.acquire()
+            values["positionXYZCandidate"]["y"] += 20
+            second = provider.acquire()
+        for frame in (first, second):
+            self.assertEqual([p["displayHeightCandidate"] for p in frame["points"]], [wanted_y] * 2)
+            self.assertEqual([p["displayHeightKind"] for p in frame["points"]], ["startup-player-estimate"] * 2)
+        self.assertEqual(self.route["document"], document)
+        self.assertNotIn("heights", self.route["document"])
+
     def test_landmark_is_explicit_independent_and_immutable_without_progress(self):
         provider = self.provider()
         provider.landmark_number = 1
@@ -462,7 +509,8 @@ class FeedTests(unittest.TestCase):
              patch.object(live.threading, "Thread") as thread, \
              patch.object(renderer, "target_snapshot", return_value=self.snapshot.return_value) as snapshot, \
              patch.object(renderer, "PhysicalWaypointOverlay", return_value=overlay) as presenter:
-            live.run("AMD-DESKTOP", 123, self.route_path, duration=0, companion_window=companion)
+            live.run("AMD-DESKTOP", 123, self.route_path, duration=0, companion_window=companion,
+                     expected_unit_key=self.route["identity"]["unitKey"])
             provider = thread.call_args.kwargs["args"][0]
             provider.snapshot(IDENTITY)
         self.assertEqual(presenter.call_args.kwargs["companion"], companion)

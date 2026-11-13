@@ -2,9 +2,14 @@
 
 **Save Current → Save Route** preserves observed XYZ, source, actor/build identity
 and observation time. Independently measured waypoints can use Show markers,
-Save view and the 3D viewer without recording a walk. Every point needs measured
-height and matching host/build/player provenance; the summary shows **3D: measured
-heights N / M**. Typed coordinates and preview clicks retain unknown height.
+Save view and the 3D viewer without recording a walk. Save view and the 3D viewer
+require measured heights and matching host/build/player provenance. **Show markers**
+also admits map-clicked/typed points with display-only height estimates; the summary
+shows **Beacons: N measured · M estimated**. Typed coordinates and preview clicks
+retain unknown height in the saved route. Marker display borrows the nearest
+measured route Y, or freezes the first freshly admitted player Y for a session with
+no measurements. Estimated labels say **est. height**; this is a flat-level estimate,
+not terrain, floor, occlusion, reachability or movement evidence.
 Coordinate edits invalidate that point's measurement; Undo restores it. Renaming
 and reordering preserve each point's observed position. An untouched recording
 retains its original metadata; appending/reordering preserves individual known
@@ -498,14 +503,17 @@ Use a fresh explicit PID and a new summary path. Focus RIFT separately to displa
 markers; this command never activates it. The run is bounded (default 60 seconds,
 maximum 600) and Ctrl+C closes it. `--reader single` retains the slower existing
 reader. In either mode, changed foreground/identity/geometry, expired evidence or
-unavailable projection hides markers. Only complete recorded routes or independently
-measured points with actual heights matching the host/build/player are admitted.
+unavailable projection hides markers. By default this standalone command requires
+complete recorded routes or independently measured points with matching host/build/player.
+Supplying `--expected-unit-key KEY` explicitly pins the player and admits missing
+heights for marker-only estimates, using the same policy as the GUI.
 
 The waypoint window also has **Show markers / Hide markers** beside the recording
-controls. Load a recorded route or independently measured points, wait for its RIFT connection, press
+controls. Load a route or add map points, wait for its RIFT connection, press
 Show markers, then return to RIFT. Unlike the separately invoked bounded command above, the GUI's
 owned marker child remains open explicitly until Hide markers, route replacement,
-RIFT process/identity loss, or waypoint-window close. Markers use the route's real saved heights and
+RIFT process/identity loss, or waypoint-window close. Markers preserve measured Y
+and use clearly labeled display estimates for missing Y. They
 stay visible while RIFT or the exact owning Waypoints window is foreground so its
 appearance sliders preview live. Unrelated foreground applications still hide them.
 The GUI binds its HWND/PID/process epoch explicitly; standalone commands remain

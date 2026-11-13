@@ -537,6 +537,12 @@ def _point_edge_hint(row, viewport, width, height, prefix):
     if bounds[2] - bounds[0] <= 48 or bounds[3] - bounds[1] <= 48:
         return None
     number, distance, ground = row.get("number"), row.get("horizontalDistanceCandidate"), row.get("ground")
+    height_kind = row.get("displayHeightKind")
+    if ("displayHeightKind" in row and height_kind not in
+            ("measured", "nearest-measured-estimate", "startup-player-estimate")):
+        return None
+    height_note = (" · est. height" if height_kind in
+                   ("nearest-measured-estimate", "startup-player-estimate") else "")
     if (type(number) is not int or number <= 0 or type(distance) not in (int, float)
             or not math.isfinite(distance) or distance < 0 or not isinstance(ground, dict)):
         return None
@@ -547,7 +553,8 @@ def _point_edge_hint(row, viewport, width, height, prefix):
         return None
     if clip <= 1e-5:
         reason = "behind camera" if clip < 0 else "outside camera view"
-        return {"kind": "text", "text": f"{prefix} {reason} · {distance:.1f} units direct", "bounds": bounds}
+        return {"kind": "text", "text": f"{prefix} {reason} · {distance:.1f} units direct{height_note}",
+                "bounds": bounds}
     if ground.get("status") != "available-candidate" or ground.get("insideViewportCandidate") is not False:
         return None
     x, y = ground.get("normalizedX"), ground.get("normalizedY")
@@ -565,7 +572,7 @@ def _point_edge_hint(row, viewport, width, height, prefix):
     vertical = ((bounds[3] - 24 - cy) / uy if uy > 0 else (bounds[1] + 24 - cy) / uy) if uy else math.inf
     scale = min(horizontal, vertical)
     return {"kind": "arrow", "anchor": (cx + ux * scale, cy + uy * scale), "direction": (ux, uy),
-            "text": f"{prefix} · {distance:.1f} units direct", "bounds": bounds}
+            "text": f"{prefix} · {distance:.1f} units direct{height_note}", "bounds": bounds}
 
 
 def _draw_next_edge_hint(draw, hint, font, *, occupied=(), scale=1., labels_visible=True):
@@ -805,6 +812,9 @@ class PhysicalWaypointOverlay:
                 raise ValueError("Invalid marker routeState")
             if "displayLandmark" in row and type(row["displayLandmark"]) is not bool:
                 raise ValueError("Invalid marker displayLandmark")
+            if ("displayHeightKind" in row and row["displayHeightKind"] not in
+                    ("measured", "nearest-measured-estimate", "startup-player-estimate")):
+                raise ValueError("Invalid marker displayHeightKind")
             _projection(row.get("ground"), *rect[2:])
             _projection(row.get("beaconTop"), *rect[2:])
         _projection(frame.get("playerGround"), *rect[2:])
@@ -834,8 +844,11 @@ class PhysicalWaypointOverlay:
                 ground = _projection(marker["ground"], *rect[2:])
                 top = _projection(marker["beaconTop"], *rect[2:])
                 if ground is not None:
-                    text = (str(marker["number"]) if marker["label"] == f"Recorded {marker['number']}"
-                            else f"{marker['number']} {marker['label']}")
+                    base_text = (str(marker["number"]) if marker["label"] == f"Recorded {marker['number']}"
+                                 else f"{marker['number']} {marker['label']}")
+                    height_note = (" · est. height" if marker.get("displayHeightKind") in
+                                   ("nearest-measured-estimate", "startup-player-estimate") else "")
+                    text = base_text + height_note
                     route_state = marker.get("routeState")
                     landmark = marker.get("displayLandmark") is True
                     color = ("#7cffff" if route_state == "next" else "#ffd54f" if landmark
@@ -847,9 +860,9 @@ class PhysicalWaypointOverlay:
                     suffix = (f" · {distance:.1f}u" if type(distance) in (int, float)
                               and math.isfinite(distance) and distance >= 0 else "")
                     if route_state == "next":
-                        display = f"NEXT · {text[5:]}{suffix}"
+                        display = f"NEXT · {base_text}{suffix}{height_note}"
                     elif landmark:
-                        display = f"{marker['label']}{suffix}"
+                        display = f"{marker['label']}{suffix}{height_note}"
                     else:
                         display = text
                     polished_markers.append({"ground": ground, "top": top, "display": display,

@@ -151,3 +151,23 @@ sent. The user's seven-point edits were saved separately as
 `artifacts/waypoint-user-edits-before-focus-preview-20261112.json`; by their choice,
 the two-point measured route remains open. Original 137% size / 100% opacity /
 labels-on preferences were restored, with markers enabled and Waypoints focused.
+
+## Map-click beacons with estimated heights
+
+On AMD-DESKTOP/PID 40452, the user's saved seven-point route now renders all seven
+marker candidates: two measured heights and five nearest-measured display estimates.
+The actual RIFT overlay showed **Point 7 · 10.7u · est. height** with its gold beacon,
+plus the other visible route pips and the optional selected-target beacon. Reviewed
+image: `artifacts/beacon-seven-points-live-20261112.png`. The 63.60s session accepted
+1,948 presentation requests and stopped on Hide; its receipt records all seven
+effective display XYZ values and their height kinds:
+`artifacts/waypoint-markers-summary-22b00031173b4fa8be359fdbec2fb543.json`.
+
+The saved seven-point document remained byte-identical (SHA256
+`03f4b7470a10ea84546277922f9b952ae2e3898b5d9a9d780cf9e0317598afe7`), with all five
+unknown heights still null. No measurement receipts or game input were fabricated.
+All **136 focused checks** passed. Offline checks also covered an entirely
+unmeasured route, using the first owner-validated fresh native player Y once and
+keeping it fixed even if later player Y changes. The strict measured-route parser
+and movement/progress logic are unchanged. Marker estimates approximate a ground
+level; terrain and multi-floor placement remain unqualified.

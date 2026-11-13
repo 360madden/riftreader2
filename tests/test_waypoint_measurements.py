@@ -5,7 +5,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from scripts.waypoint_measurements import measurement, document_measurements, parse_projection_route
+from scripts.waypoint_measurements import (measurement, document_measurements,
+                                           parse_marker_projection_route, parse_projection_route)
 from scripts.live_physical_waypoints import load_route
 
 
@@ -100,6 +101,62 @@ class MeasurementTests(unittest.TestCase):
         self.assertEqual(document_measurements(self.document), [self.receipt, None])
         with self.assertRaises(ValueError):
             parse_projection_route(self.document)
+
+    def test_marker_preview_admits_mixed_seven_points_without_mutating_source(self):
+        document = {"waypoints": [[f"P{i}", i, -i] for i in range(1, 8)],
+                    "heights": [10, None, None, None, 20, None, None],
+                    "pointMeasurements": [None] * 7}
+        document["pointMeasurements"][0] = measurement(
+            dict(x=1, y=10, z=-1), self.identity, "one.json", "2026-11-12T20:00:00Z")
+        document["pointMeasurements"][4] = measurement(
+            dict(x=5, y=20, z=-5), self.identity, "five.json", "2026-11-12T20:00:01Z")
+        original = deepcopy(document)
+
+        parsed = parse_marker_projection_route(document, self.identity)
+
+        self.assertEqual("estimated-height-beacon-preview", parsed["provenanceKind"])
+        self.assertEqual(["measured", "unresolved-estimate", "unresolved-estimate",
+                          "unresolved-estimate", "measured", "unresolved-estimate",
+                          "unresolved-estimate"], [point["displayHeightKind"] for point in parsed["points"]])
+        self.assertEqual([10, None, None, None, 20, None, None],
+                         [point["xyz"]["y"] for point in parsed["points"]])
+        self.assertEqual(2, parsed["recordingIdentity"]["measuredPointCount"])
+        self.assertEqual([1, 5], parsed["recordingIdentity"]["measuredPointNumbers"])
+        self.assertEqual(original, document)
+
+    def test_marker_preview_zero_measurements_uses_expected_identity_only(self):
+        document = {"waypoints": [["A", 1, 2], ["B", 3, 4]]}
+        parsed = parse_marker_projection_route(document, self.identity)
+        self.assertEqual(self.identity["runtimeIdentity"], parsed["identity"])
+        self.assertEqual([None, None], [point["xyz"]["y"] for point in parsed["points"]])
+        self.assertEqual(0, parsed["recordingIdentity"]["measuredPointCount"])
+
+    def test_marker_preview_rejects_bad_or_foreign_receipts_but_bare_y_is_unmeasured(self):
+        bare = deepcopy(self.document)
+        bare["pointMeasurements"] = [None]
+        parsed = parse_marker_projection_route(bare, self.identity)
+        self.assertIsNone(parsed["points"][0]["xyz"]["y"])
+        self.assertEqual("unresolved-estimate", parsed["points"][0]["displayHeightKind"])
+        with self.assertRaises(ValueError):
+            parse_projection_route(bare)
+
+        malformed = deepcopy(self.document)
+        malformed["pointMeasurements"] = [{"broken": True}]
+        with self.assertRaises(ValueError):
+            parse_marker_projection_route(malformed, self.identity)
+        foreign = deepcopy(self.document)
+        foreign["pointMeasurements"][0]["identity"]["runtimeIdentity"]["unitKey"] = "42"
+        with self.assertRaisesRegex(ValueError, "owner-identity"):
+            parse_marker_projection_route(foreign, self.identity)
+
+    def test_marker_preview_preserves_strict_recorded_semantics_and_owner(self):
+        parsed = parse_marker_projection_route(self.recorded(), self.identity)
+        self.assertEqual("recorded-route", parsed["provenanceKind"])
+        self.assertEqual("measured", parsed["points"][0]["displayHeightKind"])
+        foreign = deepcopy(self.identity)
+        foreign["runtimeIdentity"]["unitKey"] = "42"
+        with self.assertRaisesRegex(ValueError, "owner-identity"):
+            parse_marker_projection_route(self.recorded(), foreign)
 
     def recorded(self):
         doc = deepcopy(self.document)

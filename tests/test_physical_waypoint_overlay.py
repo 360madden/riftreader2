@@ -202,6 +202,52 @@ class PresenterTests(unittest.TestCase):
         self.assertFalse(self.presenter.present(packet))
         self.assertIn("beaconScale", self.presenter.reason)
 
+    def test_estimated_height_is_honest_in_prominent_and_native_labels(self):
+        for kind in ("nearest-measured-estimate", "startup-player-estimate"):
+            with self.subTest(kind=kind):
+                packet = frame()
+                packet["points"][0].update(routeState="next", horizontalDistanceCandidate=8.2,
+                                           displayHeightKind=kind)
+                original_label = packet["points"][0]["label"]
+                with patch.object(overlay, "_label_layout", wraps=overlay._label_layout) as layout:
+                    self.assertTrue(self.presenter.present(packet))
+                self.assertEqual("NEXT 1 Corner · est. height", layout.call_args.args[0][0][1])
+                self.assertEqual(original_label, packet["points"][0]["label"])
+
+                polished = overlay.PhysicalWaypointOverlay(TARGET, window_factory=PolishedPrimitiveWindow)
+                try:
+                    self.assertTrue(polished.present(packet))
+                    labels = [command["text"] for command in polished.window.scenes[-1]["commands"]
+                              if command["kind"] == "text"]
+                    self.assertEqual(["NEXT · 1 Corner · 8.2u · est. height"], labels)
+                finally:
+                    polished.close()
+                edge_row = dict(number=1, label="Corner", routeState="next", displayHeightKind=kind,
+                                horizontalDistanceCandidate=8.2,
+                                ground=dict(status="available-candidate", clipW=1., normalizedX=2.,
+                                            normalizedY=.5, insideViewportCandidate=False))
+                hint = overlay.next_edge_hint([edge_row], [0, 0, 1, 1], 500, 300)
+                self.assertTrue(hint["text"].endswith(" · est. height"))
+
+    def test_measured_and_legacy_height_labels_remain_unchanged(self):
+        for kind in ("absent", "measured"):
+            with self.subTest(kind=kind):
+                packet = frame()
+                packet["points"][0].update(routeState="next", horizontalDistanceCandidate=8.2)
+                if kind == "measured":
+                    packet["points"][0]["displayHeightKind"] = "measured"
+                with patch.object(overlay, "_label_layout", wraps=overlay._label_layout) as layout:
+                    self.assertTrue(self.presenter.present(packet))
+                self.assertEqual("NEXT 1 Corner", layout.call_args.args[0][0][1])
+
+    def test_invalid_display_height_kind_fails_closed(self):
+        for kind in (None, "unknown", True, 1, []):
+            packet = frame()
+            packet["points"][0]["displayHeightKind"] = kind
+            with self.subTest(kind=kind):
+                self.assertFalse(self.presenter.present(packet))
+                self.assertIn("displayHeightKind", self.presenter.reason)
+
     def test_named_landmark_offscreen_and_behind_without_progress(self):
         row = dict(number=8, label="3rd Guard Soldier", displayLandmark=True, horizontalDistanceCandidate=7.44,
                    ground=dict(status="available-candidate", normalizedX=2, normalizedY=.5, clipW=1,

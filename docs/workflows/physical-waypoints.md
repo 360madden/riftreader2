@@ -22,6 +22,14 @@ gold reticle, short beacon and name/distance pill; **Include selected target**
 adds a distinct magenta diamond when a fresh target projection is available.
 NEXT is cyan and ordinary/completed points remain subdued. **Hide markers** stops
 the owned feed. Markers are click-through and never start route playback.
+Map clicks and typed X/Z points also work as beacons without measuring every
+height. Unmeasured points borrow Y from the nearest measured route point. If none
+are measured, they use the player's freshly read Y when the marker session starts;
+that display height stays fixed for the session. The summary shows measured and
+estimated counts, and guided estimated points say **est. height**. Estimates are
+only for display: saved heights/receipts stay unchanged. They approximate a ground
+level rather than finding terrain, so slopes or other floors can leave a beacon
+above or below the ground. After editing a route, choose **Show markers** again.
 The same panel has **Size** (50–200%), **Opacity** (20–100%), **Show labels**,
 and **Reset**. These update an already enabled overlay without Hide/Show and
 persist for the next launch. Size adjusts beacon shapes and beams while label
