@@ -44,12 +44,12 @@ def _display_allowed(snapshot):
     return snapshot.get("displayAllowed", snapshot.get("foreground")) is True
 
 
-def load_route(path, *, expected_identity=None):
+def load_route(path, *, expected_identity=None, allow_empty=False):
     raw = Path(path).read_bytes()
     document = json.loads(raw.decode("utf-8-sig"))
     from scripts.waypoint_measurements import parse_projection_route, parse_marker_projection_route
     parsed = (parse_projection_route(document) if expected_identity is None
-              else parse_marker_projection_route(document, expected_identity))
+              else parse_marker_projection_route(document, expected_identity, allow_empty=allow_empty))
     return {**parsed, "path": str(Path(path).resolve()),
             "sha256": hashlib.sha256(raw).hexdigest(), "document": document}
 
@@ -594,7 +594,7 @@ def apply_saved_progress(frame, progress_file, route):
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
         presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None,
-        companion_window=None, expected_unit_key=None, route_updates_file=None, pose_file=None):
+        companion_window=None, expected_unit_key=None, route_updates_file=None, pose_file=None, radar_file=None, exploration_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -630,6 +630,14 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         pose_file = Path(pose_file)
         require(pose_file.is_absolute() and pose_file.parent.is_dir() and not pose_file.exists(),
                 "new-absolute-pose-file-required")
+    if radar_file is not None:
+        radar_file = Path(radar_file)
+        require(presenter == "qt" and radar_file.is_absolute() and radar_file.is_file(),
+                "absolute-radar-file-and-qt-presenter-required")
+    if exploration_file is not None:
+        exploration_file = Path(exploration_file)
+        require(radar_file is not None and pose_file is not None and exploration_file.is_absolute()
+                and exploration_file.parent.is_dir(), "exploration-requires-radar-and-pose-files")
     appearance = dict(DEFAULT_STYLE)
     next_appearance_poll = 0.
     route = load_route(route_path) if expected_unit_key is None else None
@@ -647,7 +655,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     if route is None:
         target = selection["target"]
         route = load_route(route_path, expected_identity=dict(machine=target["hostName"],
-                           gameBuildSha256=target["executableSha256"], unitKey=expected_unit_key))
+                           gameBuildSha256=target["executableSha256"], unitKey=expected_unit_key),
+                           allow_empty=radar_file is not None)
         require(landmark_number is None or (type(landmark_number) is int and landmark_number > 0
                 and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
@@ -666,6 +675,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                              "with requirements-overlay.txt: " + str(error)) from error
         window_options["window_factory"] = QtOwnedWindow
     overlay = PhysicalWaypointOverlay(selection["target"], max_age=max_age, **window_options)
+    radar = None
+    if radar_file is not None:
+        from scripts.waypoint_compact_radar import CompactRadar, load_config, load_exploration
+        radar = CompactRadar(overlay.window.api)
     stop, channel = threading.Event(), queue.Queue(maxsize=1)
     counts = {"attempts": 0, "acquired": 0, "presented": 0, "presentationAccepted": 0, "failures": 0,
         "rejectedRows": 0, "latestFailure": None, "failureReasons": {}, "hideReasons": {},
@@ -748,6 +761,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         counts["poseUnavailablePublished"] += 1
         counts["poseLatestError"] = None
         pose_last_unavailable = reason
+    def present_radar(frame, packet_route):
+        feedback = (load_exploration(exploration_file, frame, pose_file.stem, 1.0)
+                    if exploration_file is not None else None)
+        radar.present(frame, packet_route, load_config(radar_file), feedback)
     def hide(why):
         nonlocal latest_acquired, visible, last_hide_reason, pose_pending_unavailable
         if not visible and last_hide_reason == why:
@@ -760,6 +777,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         if why != "route-empty":
             pose_pending_unavailable = why
         overlay.hide(why)
+        if radar is not None:
+            radar.clear()
     def cancel(why):
         nonlocal reason
         reason = why
@@ -811,9 +830,17 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                                         and current.get("clientRect") == packet["frame"].get("clientRect"),
                                         "target-foreground-or-geometry-changed")
                                 pose_frame = packet["frame"]
-                                hide("route-empty")
+                                overlay.hide("route-empty")
+                                if radar is not None:
+                                    present_radar(packet["frame"], packet_route)
+                                    latest_acquired = packet["frame"]["acquiredMonotonic"]
+                                    visible = radar.isVisible()
+                                else:
+                                    hide("route-empty")
                             elif overlay.present(packet["frame"]):
                                 pose_frame = packet["frame"]
+                                if radar is not None:
+                                    present_radar(packet["frame"], packet_route)
                                 latest_acquired = packet["frame"]["acquiredMonotonic"]
                                 visible = True
                                 counts["presentationAccepted"] += 1
@@ -854,6 +881,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         publish_unavailable()
         # read_native's child has its existing bounded timeout and native lease.
         worker.join()
+        if radar is not None:
+            radar.clear()
+            radar.deleteLater()
         overlay.close()
     overlay_hide_reasons = getattr(overlay, "hide_reasons", None)
     if isinstance(overlay_hide_reasons, dict):
@@ -912,6 +942,8 @@ def main(argv=None):
     parser.add_argument("--appearance-file", type=Path,
                         help="live beacon display preferences saved by Waypoints")
     parser.add_argument("--route-updates-file", type=Path, help="owned live route and guide updates from Waypoints")
+    parser.add_argument("--exploration-file", type=Path, help="owned live guidance and trail feedback")
+    parser.add_argument("--radar-file", type=Path, help="absolute live compact radar preferences")
     parser.add_argument("--pose-file", type=Path, help="new owned player-pose feedback file")
     parser.add_argument("--companion-window", type=json.loads,
                         help="exact owning Waypoints window binding for live appearance preview")
@@ -931,7 +963,7 @@ def main(argv=None):
                      progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
                      appearance_file=args.appearance_file, companion_window=args.companion_window,
                      expected_unit_key=args.expected_unit_key, route_updates_file=args.route_updates_file,
-                     pose_file=args.pose_file)
+                     pose_file=args.pose_file, radar_file=args.radar_file, exploration_file=args.exploration_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

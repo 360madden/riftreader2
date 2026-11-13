@@ -30,7 +30,10 @@ class MarkerAppearanceTests(unittest.TestCase):
         self.launch(self.adapter)
         self.root = self.roots[0]
         self.preferences = self.path / "artifacts" / "waypoint-marker-style.json"
-        self.scales = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Scale)]
+        notebook = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Notebook))
+        scene = next(tab for tab in notebook.tabs() if notebook.tab(tab, "text") == "Scene & beacons")
+        self.scales = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Scale)
+                       and str(w).startswith(scene + ".")]
         self.labels = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
                            and str(w["text"]) == "Show labels")
 

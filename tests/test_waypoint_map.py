@@ -6,6 +6,21 @@ from scripts.waypoint_ui_theme import PALETTE
 
 
 class LocalMapTests(unittest.TestCase):
+    def test_breadcrumb_segments_are_clipped_without_bridging_gaps(self):
+        class Canvas:
+            def __init__(self): self.calls = []
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: self.calls.append((name, args, kwargs))
+        canvas = Canvas()
+        view = LocalMap(0, 0, 0, 300, 300)
+        segments = [[dict(x=0, z=0), dict(x=0, z=2)],
+                    [dict(x=4, z=0), dict(x=100, z=0)]]
+        draw_route(canvas, view, [], set(), trail=segments)
+        lines = [c[1] for c in canvas.calls if c[2].get("tags") == "breadcrumb-trail"]
+        self.assertEqual(2, len(lines))
+        self.assertEqual((*view.world_to_canvas(0, 0), *view.world_to_canvas(0, 2)), lines[0])
+        self.assertTrue(all(12 <= value <= 288 for value in lines[1]))
+
     def test_forward_and_right_match_measured_rift_key_convention(self):
         view = LocalMap(100, 200, 0, 300, 300)
         self.assertEqual(view.world_to_canvas(100, 200), (150, 150))

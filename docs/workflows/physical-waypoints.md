@@ -1,13 +1,45 @@
 # Physical waypoint prototype
 
 The window groups its controls into **Replay**, **Edit waypoint**, **Scene &
-beacons**, and **Activity** tabs. The route list, local map, current pose and
+beacons**, **Explore**, and **Activity** tabs. The route list, local map, current pose and
 STOP/F8 stay visible above them. Replay separates playback, recording and direct
 movement; Edit waypoint contains the coordinate fields and route-edit actions.
 F2 on a selected row opens Edit waypoint and focuses its name. Full receipt paths
 and detailed status remain in Activity. Load/Save and Recent routes stay with the
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
+
+## Explore while playing
+
+**Explore** groups three read-only tools. They reuse the owned beacon reader;
+starting one can enable that reader and Live pose, but never starts movement.
+The compact radar requires the existing Qt overlay environment.
+
+- **Show radar** displays a small player-relative radar over RIFT. It starts near
+  the lower left to leave the current minimap/chat clear. **Unlock to move** lets
+  you drag it; turn Unlock off for click-through play. Range and Opacity update
+  live. Hide, stale samples, unrelated foreground apps and owned shutdown retain
+  the existing display rules.
+- **Start guide** guides a route you walk manually. Choose Forward/Reverse, or
+  enable **Start at selected** to begin at the selected route row. The current
+  point advances after distinct fresh samples confirm arrival within 0.6 units;
+  it never jumps to a later nearby point. Radar and beacon guidance identify the
+  same active destination. Route edits stop the guide. Missing data pauses arrival
+  confirmation. Guidance never writes the automated Play/Resume checkpoint.
+- **Record trail** retains the positions you actually visit and draws a breadcrumb
+  line on both radars. **Stop trail** retains it; **Clear** is available when
+  stopped. Choose a recorded segment and **Save segment** to write a separate
+  waypoint JSON file without replacing the current route. Load that file normally
+  to inspect it. Gaps, teleports and owner changes split segments; long trails also
+  split at the existing 20-unit recording limit. Exact stationary positions keep
+  sparse real heartbeat samples so standing still does not quickly erase a walk.
+
+Trail history keeps up to 2,000 recent observations, with original XYZ and sample
+times. Export preserves corners and measured heights through the existing route
+format; stationary-only or excessively complex segments report a save refusal.
+The radar is a reference diagram: it supplies no terrain, collision, occlusion or
+walkable-route guarantee. A saved trail does not expand the playback budgets.
+Detailed acquisition/file errors remain in Activity; compact captions stay short.
 
 The November 12 dark-theme redesign passed focused withdrawn GUI/map checks.
 Its offline layout gallery can be regenerated with

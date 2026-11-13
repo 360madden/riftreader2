@@ -63,6 +63,19 @@ class OwnedMarkerTests(unittest.TestCase):
                          command[command.index("--progress-file") + 1])
         self.assertEqual(self.route, json.loads(route.read_text(encoding="utf-8")))
         self.assertFalse(self.markers.stop_path.exists())
+
+    def test_qt_empty_route_starts_shared_radar_reader_with_owned_feedback(self):
+        qt = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
+        qt.parent.mkdir(parents=True)
+        qt.touch()
+        self.markers.start({"waypoints": []}, self.adapter)
+        command = self.popen.call_args.args[0]
+        self.assertEqual("qt", command[command.index("--presenter") + 1])
+        self.assertEqual(self.markers.radar_path, Path(command[command.index("--radar-file") + 1]))
+        self.assertEqual(self.markers.exploration_path, Path(command[command.index("--exploration-file") + 1]))
+        feedback = json.loads(self.markers.exploration_path.read_text(encoding="utf-8"))
+        self.assertIsNone(feedback["acquiredMonotonic"])
+        self.assertEqual([], feedback["trail"])
         self.markers.stop()
         self.assertTrue(self.markers.stop_path.exists())
         self.markers.stop()

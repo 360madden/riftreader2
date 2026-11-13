@@ -99,7 +99,7 @@ def _label_box(point, number, bounds, occupied):
     return min(candidates, key=lambda c: (c[0], c[1]))[2]
 
 
-def draw_route(canvas, view, points, selected, *, completed=None, active=None):
+def draw_route(canvas, view, points, selected, *, completed=None, active=None, trail=None):
     """Player-relative reference diagram only; no terrain or clearance imagery."""
     canvas.delete("all")
     c = PALETTE
@@ -127,6 +127,14 @@ def draw_route(canvas, view, points, selected, *, completed=None, active=None):
     if abs(nx-cx) < 36 and ny < 48:
         nx += 40  # Keep the world-axis tag apart from the forward heading.
     canvas.create_text(nx, ny, text="+Z", fill=c["dim"], font=("Segoe UI", 10), tags="world-axis")
+    for segment in trail or ():
+        previous = None
+        for point in segment:
+            current = view.world_to_canvas(point["x"], point["z"])
+            line = _clip_segment(previous, current, bounds) if previous is not None else None
+            if line is not None:
+                canvas.create_line(*line, fill="#477d83", width=2, tags="breadcrumb-trail")
+            previous = current
     visible = []
     prior = (cx, cy)
     for number, (identifier, label, x, z) in enumerate(points, 1):

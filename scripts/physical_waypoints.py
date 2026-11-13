@@ -58,6 +58,8 @@ class OwnedWaypointMarkers:
         self.appearance_path = (self.root / "artifacts" / "waypoint-marker-style.json").absolute()
         self.route_updates_path = None
         self.pose_path = None
+        self.exploration_path = None
+        self.radar_path = (self.root / "artifacts" / "waypoint-radar-style.json").absolute()
         self.identity = None
         self.stop_requested = False
         self.exit_code = None
@@ -91,8 +93,13 @@ class OwnedWaypointMarkers:
         self.stop_path = directory / ("waypoint-markers-stop-" + token + ".signal")
         self.route_updates_path = (directory / ("waypoint-markers-updates-" + token + ".json")).absolute()
         self.pose_path = (directory / ("waypoint-markers-pose-" + token + ".json")).absolute()
+        self.exploration_path = (directory / ("waypoint-exploration-" + token + ".json")).absolute()
+        write_json_atomic(self.exploration_path, {"version": 1, "owner": None,
+                                                "acquiredMonotonic": None, "guidance": None, "trail": []})
         write_json_atomic(route_path, document)
-        recorded = load_route(route_path, expected_identity=identity)
+        qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
+        presenter = "qt" if qt_executable.is_file() else "native"
+        recorded = load_route(route_path, expected_identity=identity, allow_empty=presenter == "qt")
         if any(str(recorded["identity"].get(key, "")).casefold() != str(identity[key]).casefold()
                for key in ("machine", "gameBuildSha256", "unitKey")):
             raise WaypointError("Recorded route belongs to another host, build or player")
@@ -104,9 +111,10 @@ class OwnedWaypointMarkers:
             raise WaypointError("Current RIFT identity is unavailable")
         self.identity = deepcopy(identity)
         write_json_atomic(self.route_updates_path, {"route": document, "landmarkNumber": landmark_number})
-        qt_executable = self.root / ".local" / "overlay-venv" / "Scripts" / "pythonw.exe"
-        presenter = "qt" if qt_executable.is_file() else "native"
         executable = qt_executable if presenter == "qt" else Path(sys.executable).with_name("pythonw.exe")
+        if presenter == "qt" and not self.radar_path.exists():
+            from scripts.waypoint_explore_ui import RADAR_DEFAULTS
+            write_json_atomic(self.radar_path, RADAR_DEFAULTS)
         command = [str(executable), str(self.root / "scripts" / "live_physical_waypoints.py"),
                    "--expected-host", identity["machine"], "--physical-pid", str(adapter.pid),
                    "--expected-unit-key", identity["unitKey"],
@@ -120,6 +128,9 @@ class OwnedWaypointMarkers:
                    "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
         if target_beacon:
             command.append("--target-beacon")
+        if presenter == "qt":
+            command.extend(["--radar-file", str(self.radar_path)])
+            command.extend(["--exploration-file", str(self.exploration_path)])
         if landmark_number is not None:
             command.extend(["--landmark-number", str(landmark_number)])
         if companion is not None:
@@ -879,9 +890,9 @@ def launch_window(args):
     editable = []
     workflow = ttk.Notebook(frame, height=184)
     workflow.grid(row=4, column=0, sticky="ew", pady=(10, 6))
-    replay_tab, edit_tab, scene_tab, activity_tab = [ttk.Frame(workflow, style="Surface.TFrame", padding=(14, 8)) for _ in range(4)]
+    replay_tab, edit_tab, scene_tab, explore_tab, activity_tab = [ttk.Frame(workflow, style="Surface.TFrame", padding=(14, 8)) for _ in range(5)]
     for tab, title in ((replay_tab, "Replay"), (edit_tab, "Edit waypoint"),
-                       (scene_tab, "Scene & beacons"), (activity_tab, "Activity")):
+                       (scene_tab, "Scene & beacons"), (explore_tab, "Explore"), (activity_tab, "Activity")):
         workflow.add(tab, text=title)
     coordinates = ttk.Frame(edit_tab, style="Surface.TFrame")
     coordinates.pack(fill="x", pady=(0, 12))
@@ -992,6 +1003,10 @@ def launch_window(args):
     beacon_pose_stamp = None
     beacon_display_active = False
     next_beacon_pose_at = 0
+    explore_controls = None
+    exploration_sample = None
+    exploration_trail = []
+    beacon_latest_error = None
     map_view = None
     observing = False
     next_live_at = time.monotonic() + 2
@@ -1247,6 +1262,8 @@ def launch_window(args):
 
     def redraw(*_):
         nonlocal map_view
+        if explore_controls is not None:
+            explore_controls.route_changed()
         schedule_marker_update()
         radius_text.set(f"{map_radius:g} units")
         zoom_in.configure(state="disabled" if map_radius == ZOOM_RADII[0] else "normal")
@@ -1262,6 +1279,11 @@ def launch_window(args):
             index = max(0, min(len(points), playback_view["nextIndex"]))
             completed = {row[0] for row in points[:index]}
             active = points[index][0] if index < len(points) else None
+        elif explore_controls is not None:
+            guidance = explore_controls.navigation_state()
+            if guidance["status"] in ("active", "complete"):
+                completed = {row[0] for i, row in enumerate(points) if i in guidance["completedIndices"]}
+                active = next((row[0] for i, row in enumerate(points) if i == guidance["activeIndex"]), None)
         for row in points:
             table.item(row[0], tags=("next",) if row[0] == active else
                        ("completed",) if completed is not None and row[0] in completed else ())
@@ -1275,7 +1297,8 @@ def launch_window(args):
                     button.configure(state="disabled")
             return
         map_view = LocalMap(*last_pose, max(100, canvas.winfo_width()), max(100, canvas.winfo_height()), map_radius)
-        draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active)
+        draw_route(canvas, map_view, points, set(table.selection()), completed=completed, active=active,
+                   trail=exploration_trail)
         remaining = points[index:] if playback_view is not None else points
         distance = route_length(*last_pose[:2], [row[1:] for row in remaining])
         planned_distance = route_length(*last_pose[:2], selected_points(True))
@@ -1856,6 +1879,10 @@ def launch_window(args):
         document = route_document() if table.get_children() else {"waypoints": []}
         selected = table.selection()
         landmark = table.index(selected[0]) + 1 if landmark_guide.get() and len(selected) == 1 else None
+        if explore_controls is not None:
+            guidance = explore_controls.navigation_state()
+            if guidance["status"] == "active" and guidance["activeIndex"] is not None:
+                landmark = guidance["activeIndex"] + 1
         return {"route": document, "landmarkNumber": landmark}
 
     def publish_marker_update():
@@ -1937,7 +1964,7 @@ def launch_window(args):
                     raise WaypointError("Select one saved marker to guide to")
                 options["landmark_number"] = table.index(selected[0]) + 1
             options["companion"] = bind_companion_window(window.winfo_id())
-            markers.start(route_document(), adapter, **options)
+            markers.start(route_document() if table.get_children() else {"waypoints": []}, adapter, **options)
             marker_published = json.dumps(marker_payload(), sort_keys=True)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
@@ -2102,6 +2129,42 @@ def launch_window(args):
                                   style="Ghost.TButton", width=5)
     reset_appearance.grid(row=2, column=2, sticky="e", pady=(5, 0))
     appearance_widgets.extend((labels_option, reset_appearance))
+    from scripts.waypoint_explore_ui import ExploreControls
+    if not hasattr(markers, "radar_path"):
+        markers.radar_path = (ROOT / "artifacts" / "waypoint-radar-style.json").absolute()
+    def exploration_binding():
+        path = getattr(markers, "pose_path", None)
+        if adapter is None or path is None or not markers.running():
+            return None
+        return dict(target=adapter.target, playerKey=adapter.binding["runtimeIdentity"]["unitKey"],
+                    sessionId=Path(path).stem)
+
+    def publish_exploration(guidance, segments):
+        nonlocal exploration_trail
+        exploration_trail = segments
+        path = getattr(markers, "exploration_path", None)
+        if path is None or not markers.running() or markers.stop_requested:
+            return
+        try:
+            from scripts.waypoint_explore_ui import write_feedback
+            write_feedback(path, dict(version=1, owner=exploration_binding(),
+                acquiredMonotonic=exploration_sample, guidance=guidance, trail=segments))
+            schedule_marker_update()
+        except (OSError, ValueError, TypeError) as exc:
+            state.set("Exploration display temporarily unavailable; details in Activity.")
+            log.configure(state="normal")
+            log.insert("end", "Exploration feedback: " + str(exc) + "\n")
+            log.configure(state="disabled")
+
+    def ensure_exploration_feed():
+        live_pose.set(True)
+        if not markers.running():
+            toggle_markers()
+
+    explore_controls = ExploreControls(explore_tab, markers, ensure_exploration_feed, state,
+        get_document=lambda: route_document() if table.get_children() else {"waypoints": []},
+        get_selected_index=lambda: table.index(table.selection()[0]) if len(table.selection()) == 1 else None,
+        get_binding=exploration_binding, on_navigation=publish_exploration)
     recent_choice = tk.StringVar()
     ttk.Label(recent_controls, text="Recent routes", style="Surface.Micro.TLabel").grid(row=0, column=0, padx=(0, 8))
     recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=18)
@@ -2161,6 +2224,7 @@ def launch_window(args):
         if closing:
             return
         closing = True
+        explore_controls.shutdown()
         close_nearby_picker()
         request_stop()
         for widget in editable:
@@ -2185,6 +2249,7 @@ def launch_window(args):
 
     def read_beacon_pose_display():
         nonlocal beacon_pose_token, beacon_pose_available, beacon_pose_stamp, beacon_display_active, next_beacon_pose_at, last_pose, last_y
+        nonlocal exploration_sample, beacon_latest_error
         beacon_display_active = True
         if time.monotonic() < next_beacon_pose_at:
             return
@@ -2196,8 +2261,11 @@ def launch_window(args):
             from scripts.waypoint_beacon_pose import read_pose
             last_sequence = beacon_pose_token[1] if beacon_pose_token and beacon_pose_token[0] == str(path) else None
             pose = read_pose(path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"], last_sequence=last_sequence)
+            beacon_latest_error = None
             token = (str(path), pose["sequence"], pose["acquiredMonotonic"])
             if token != beacon_pose_token or not beacon_pose_available:
+                exploration_sample = pose["acquiredMonotonic"]
+                explore_controls.on_pose(pose)
                 display_pose(pose["position"], pose["bearing"], sampled_at=pose["sampledAtUtc"], fill_entered=False)
                 beacon_pose_token = token
                 beacon_pose_stamp = pose["sampledAtUtc"]
@@ -2205,6 +2273,14 @@ def launch_window(args):
                 redraw()
             live_pose_option.configure(text="Live pose (beacons)")
         except (OSError, ValueError, KeyError, TypeError) as exc:
+            if str(exc) != beacon_latest_error:
+                beacon_latest_error = str(exc)
+                log.configure(state="normal")
+                log.insert("end", "Beacon pose unavailable: " + beacon_latest_error + "\n")
+                log.see("end")
+                log.configure(state="disabled")
+            exploration_sample = None
+            explore_controls.unavailable(str(exc))
             beacon_pose_available = False
             last_pose = last_y = None
             stamp = "; last sample " + beacon_pose_stamp if beacon_pose_stamp else ""
@@ -2216,7 +2292,7 @@ def launch_window(args):
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
-        nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp
+        nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp, exploration_sample
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
@@ -2420,9 +2496,14 @@ def launch_window(args):
         if markers.running():
             if live_pose.get() and not busy and not closing:
                 read_beacon_pose_display()
+            elif not live_pose.get() and explore_controls.latest_pose is not None:
+                exploration_sample = None
+                explore_controls.unavailable("Live pose paused")
         else:
             live_pose_option.configure(text="Live pose (2 s)")
             if beacon_display_active:
+                exploration_sample = None
+                explore_controls.unavailable("beacon reader ended")
                 last_pose = last_y = None
                 stamp = "; last sample " + beacon_pose_stamp if beacon_pose_stamp else ""
                 pose_text.set("Position unavailable: beacon reader ended; waiting for idle pose" + stamp)

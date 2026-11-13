@@ -42,7 +42,10 @@ historical; reacquire the actual target before live work.
 
 ## Next priorities, in order
 
-Ship one useful slice at a time. These are planned work, not existing features.
+Ship one useful slice at a time. The three slices below are implemented in the
+current worktree with focused checks; final live interaction acceptance is still
+in progress. A first compact radar was visually confirmed over RIFT. See the
+[Explore usage](../workflows/physical-waypoints.md#explore-while-playing).
 
 ### 1. Compact radar while playing
 
@@ -111,6 +114,12 @@ falsely observed connecting segment. Full saved world mapping is a later step.
   geometry/capture first. The exact monitor/GPU mechanism remains unconfirmed.
 
 ## Keep the workflow practical
+
+After these three slices pass live acceptance, plan a consistent, automation-friendly
+CLI for the helper app and future helpers, with intuitive help and broad useful
+commands. Inventory the existing waypoint CLI first; do not duplicate its playback,
+facing and route controls. This is the next planning topic, not an implemented CLI
+expansion or a reason to delay the radar/guidance/trail result.
 
 Reuse the current implementation, make the smallest coherent change, run focused
 checks and try the actual RIFT workflow when authorized and noninterfering. The
