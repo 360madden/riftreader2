@@ -118,11 +118,75 @@ connecting segment. Full saved world mapping remains later work.
   on the same process without a restart. Check display power and reacquire window
   geometry/capture first. The exact monitor/GPU mechanism remains unconfirmed.
 
-## Proposed helper CLI — November 13
+## Waypoints CLI — November 13
 
-Status: proposal, not implemented. Source and actual `--help` output were inspected
-on AMD-DESKTOP. Keep the existing command lines compatible while adding a console
-entry point named `rr2-waypoints.cmd`; `Waypoints.cmd` remains the GUI launcher.
+Status: implemented on AMD-DESKTOP. `rr2-waypoints.cmd` is the console entry
+point; `Waypoints.cmd` remains the GUI launcher and the older action scripts
+remain compatible. The console attaches to the open GUI, which owns the route,
+reader, exploration state and guarded actions. `app open` reuses an unambiguous
+matching helper; `--pid` selects a physical RIFT client and `--session` selects
+an exact helper session. A one-time normal close/reopen updates pre-CLI windows.
+
+The 53-command physical-RIFT check exercised editing/reordering/Undo, explicit
+save/load and dirty refusal, measured-point capture, a saved view manifest,
+radar placement/style/lock/visibility feedback, beacon tuning, passive guide
+completion, trail capture/clear, recording cancellation, visibility, status,
+doctor, capabilities and STOP. Go, Face, Run and Playback completed at colocated
+points with **zero input pulses**. This verifies the CLI connection/completion
+path, not another moving-route acceptance trial. Original seven-point route SHA
+remained `3ef696019b4eea5149b9cc0574bd30961f98e77ab5d8106f64069825d36ad076`.
+Local receipts: `artifacts/waypoint-cli-live-20261113/results.json`,
+`preservation.json` and `view.json`. Recorder save/cancel races, movement failure
+and STOP-before-queued-move behavior were additionally verified with a real
+withdrawn Tk/mailbox integration and mocked game-facing operations. Useful
+moving trail export, Resume and actual nonzero input retain their existing
+backend behavior; those were not repeated as live CLI trials in this batch.
+
+### Everyday examples
+
+Run these from the repository (PowerShell uses `.\rr2-waypoints.cmd`):
+
+```powershell
+.\rr2-waypoints.cmd app open
+.\rr2-waypoints.cmd status
+.\rr2-waypoints.cmd help radar set
+.\rr2-waypoints.cmd radar show
+.\rr2-waypoints.cmd radar set --range 10 --opacity 85
+.\rr2-waypoints.cmd radar move --x 18 --y 400
+.\rr2-waypoints.cmd route add --current --name "Trail start"
+.\rr2-waypoints.cmd route add --x 7420 --z 2940 --name "Map point"
+.\rr2-waypoints.cmd route save artifacts\my-route.json
+.\rr2-waypoints.cmd guide start --direction forward --from 1
+.\rr2-waypoints.cmd trail start
+# Walk in RIFT; passive guide/trail send no input.
+.\rr2-waypoints.cmd trail stop
+.\rr2-waypoints.cmd trail save artifacts\walked-segment.json --segment latest
+.\rr2-waypoints.cmd status --watch --pose --jsonl --count 5
+.\rr2-waypoints.cmd stop
+```
+
+`route list --file FILE`, `route validate --file FILE` and receipts work offline.
+Mixed measured/map-point routes are valid; estimates remain unmeasured. Indices
+are one-based. Radar range is 2/5/10/20 world units; radar/marker opacity is
+20–100 percent; beacon size is a 0.5–2 multiplier (`beacons set --size 1.3
+--labels off`). Radar position is physical game-client pixels and clamps to the
+client area. Enabled/configured and fresh observed visibility are separate.
+
+Use `record start`, then `record stop FILE` to save useful observed movement, or
+`record cancel` to discard. `trail stop` retains its history; `trail clear
+--discard` clears it. `view save FILE.json` writes an explicit manifest pointing
+to a fresh existing-format capture bundle; `view open FILE.json` and `view
+open-3d FILE.json` open its available image/Rerun asset. Selected-target inclusion
+changes require `beacons hide`, `beacons set --target on|off`, then `beacons show`.
+
+`move to X Z --execute`, `face BEARING --execute`, `route run --execute` and
+`playback start|resume --execute` reuse the controller. CLI movement uses
+face-then-walk deterministically, short open-ground bounds and existing fresh
+identity/foreground/STOP/release checks. Playback starts at its recorded endpoint;
+Resume uses its matching checkpoint, including its saved direction by default.
+They wait for terminal completion and return the run receipt. F8/STOP and CLI
+Ctrl+C retain cancellation; queued input from before STOP cannot start later.
+Do not retry an uncertain movement result automatically.
 
 ### Existing capabilities to reuse
 
@@ -145,7 +209,7 @@ entry point named `rr2-waypoints.cmd`; `Waypoints.cmd` remains the GUI launcher.
 ### Command surface
 
 Use noun/verb commands and one-based waypoint/segment numbers matching the UI.
-The following names are proposed, not runnable commands yet.
+The following commands are available; each group/leaf supports `--help`.
 
 | Group | Commands and intent |
 | --- | --- |
@@ -177,7 +241,7 @@ The following names are proposed, not runnable commands yet.
 - Common result fields: schema version, command, success/status, session/target,
   data, and error code/message/recovery hint. Live pose reports retain source time,
   age and qualification; enabled display and actually visible display are distinct.
-- Proposed exit codes: 0 success, 1 operation failure, 2 usage, 3 unavailable or
+- Exit codes: 0 success, 1 operation failure, 2 usage, 3 unavailable or
   ambiguous session/target, 4 busy/refused, 5 timeout/outcome unknown, 130 cancelled.
 - Commands do not open file choosers or confirmation dialogs. Paths and save/discard
   decisions are explicit; existing files require an explicit overwrite option.
@@ -213,7 +277,7 @@ correlate results and deduplicate request IDs. Never silently retry an uncertain
 movement request. Keep the command/result contract independent of this transport.
 No helper starts an additional sampler just to answer `status`.
 
-### Implementation order
+### Completed implementation slices
 
 1. Console launcher, command/help tree, JSON/exit conventions, session discovery,
    status/doctor/stop and app attachment. Verify queued versus applied results,
@@ -226,8 +290,8 @@ No helper starts an additional sampler just to answer `status`.
    explicit execution, target ownership, STOP/release and dirty-route handling;
    verify cancellation and receipts before claiming full UI parity.
 
-Keep the first useful result small: controlling the open radar and querying its
-actual state from the console. Broader command coverage follows in coherent slices.
+These slices are implemented. Future helpers should reuse these command/result
+conventions and extract shared code only when a second real consumer needs it.
 
 ## Keep the workflow practical
 

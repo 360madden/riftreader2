@@ -61,7 +61,7 @@ class RadarTests(unittest.TestCase):
             self.assertIsNone(load_config(path))
             path.write_text(json.dumps(DEFAULT_CONFIG))
             self.assertEqual(load_config(path), DEFAULT_CONFIG)
-            for change in ({'radius': 3}, {'opacity': float('nan')}, {'enabled': 1}, {'version': True}):
+            for change in ({'radius': 3}, {'opacity': float('nan')}, {'enabled': 1}, {'version': True}, {'position': {'x': float('nan'), 'y': 1, 'revision': 1}}, {'statusPath': 'relative.json'}):
                 path.write_text(json.dumps(dict(DEFAULT_CONFIG, **change)))
                 self.assertIsNone(load_config(path))
 
@@ -90,6 +90,45 @@ class RadarTests(unittest.TestCase):
         self.assertTrue(radar.isVisible())
         radar.present(frame, route, None)
         self.assertFalse(radar.isVisible()); radar.deleteLater()
+
+    def test_position_revision_and_status_feedback(self):
+        app = QApplication.instance() or QApplication([])
+        api = Api()
+        api.dpi = nullcontext
+        def get_rect(hwnd, pointer):
+            from ctypes import wintypes
+            value = ctypes.cast(pointer, ctypes.POINTER(wintypes.RECT)).contents
+            value.left, value.top = api.rect[0], api.rect[1]
+            return True
+        api.u = SimpleNamespace(GetWindowRect=get_rect)
+        radar = CompactRadar(api)
+        target = {'processId': 123}
+        frame = {'target': target, 'clientRect': [-1500, -300, 1200, 800],
+                 'playerPose': {'position': {'x': 1, 'z': 2}, 'bearing': 0}}
+        with tempfile.TemporaryDirectory() as directory:
+            status_path = Path(directory) / 'status.json'
+            config = dict(DEFAULT_CONFIG, enabled=True, unlocked=True, statusPath=str(status_path),
+                          position={'x': 100, 'y': 80, 'revision': 'first'})
+            radar.present(frame, {'points': []}, config)
+            self.assertEqual(api.rect[:2], [-1400, -220])
+            status = json.loads(status_path.read_text())
+            self.assertTrue(status['visible'])
+            self.assertEqual(status['target'], target)
+            self.assertEqual(status['appliedRevision'], 'first')
+            if os.name == 'nt':
+                self.assertEqual(status['position'], {'x': 100, 'y': 80})
+            radar.offset = (200, 150)  # simulate an observed manual drag
+            radar.present(dict(frame, clientRect=[-1400, -200, 1200, 800]), {'points': []}, config)
+            self.assertEqual(api.rect[:2], [-1200, -50])
+            config['position'] = {'x': 30, 'y': 40, 'revision': 'second'}
+            radar.present(frame, {'points': []}, config)
+            self.assertEqual(api.rect[:2], [-1470, -260])
+            radar.clear()
+            status = json.loads(status_path.read_text())
+            self.assertFalse(status['visible'])
+            self.assertEqual(status['target'], target)
+            self.assertEqual(status['appliedRevision'], 'second')
+        radar.deleteLater()
 
     def test_owner_session_freshness_and_separate_segments(self):
         target = dict(hostName='AMD', processId=1, processStartUtcTicks='123', executablePath='C:/rift.exe', executableSha256='a'*64, hwnd=2)

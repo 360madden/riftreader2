@@ -105,6 +105,12 @@ replay it from the appropriate endpoint. **F8** stops playback, and **Resume**
 explicitly continues unfinished progress after a stop or same-build/player RIFT
 restart. The window reconnects while idle and freshly pins the new game process.
 Travel is limited to 20 units on supervised open ground, without obstacle avoidance.
+For console control of the open app, use **[`rr2-waypoints.cmd`](rr2-waypoints.cmd)**:
+`rr2-waypoints status`, `rr2-waypoints radar show`, or `rr2-waypoints help`.
+PowerShell prefixes the launcher with `.\`. The [CLI reference and examples](docs/planning/five-hour-recorded-routes-2026-11-12.md#waypoints-cli--november-13)
+cover route edits, passive guide/trail, beacons and guarded movement. Use `--json`
+for automation; movement requires explicit `--execute` and retains STOP/release.
+
 See the [waypoint guide](docs/workflows/physical-waypoints.md) for setup, measured
 results and restart/obstacle limitations. Launching the window sends no game input.
 

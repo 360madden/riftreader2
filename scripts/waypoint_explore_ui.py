@@ -54,6 +54,7 @@ class ExploreControls:
         self._pose_caption = "Waiting for live pose"
         self._route_signature = None
         self.path = markers.radar_path
+        self.extra_settings = {}
         settings = radar_settings(self.path)
         self.enabled = tk.BooleanVar(master=parent, value=False)
         self.unlocked = tk.BooleanVar(master=parent, value=False)
@@ -139,7 +140,7 @@ class ExploreControls:
             self.pending = None
         self.opacity_text.set(f"{round(self.opacity.get())}%")
         try:
-            write_json_atomic(self.path, dict(version=1, enabled=self.enabled.get(),
+            write_json_atomic(self.path, dict(self.extra_settings, version=1, enabled=self.enabled.get(),
                 unlocked=self.unlocked.get(), radius=int(self.radius.get()), opacity=round(self.opacity.get()) / 100))
         except (OSError, ValueError, TypeError) as exc:
             self.status.set("Cannot update radar: " + str(exc))

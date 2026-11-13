@@ -831,11 +831,30 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
         return results
 
 
+def validate_route_document(document):
+    """Validate route/provenance without requiring measured heights for map points."""
+    from scripts.waypoint_progress import _route
+    from scripts.waypoint_measurements import document_measurements, parse_projection_route
+    _route(document)
+    if "recording" in document:
+        parse_projection_route(document)
+    elif "pointMeasurements" in document:
+        raw = document["pointMeasurements"]
+        if not isinstance(raw, list) or len(raw) != len(document["waypoints"]):
+            raise WaypointError("Point measurements must align with waypoints")
+        parsed = document_measurements(document)
+        if any(receipt is not None and valid is None for receipt, valid in zip(raw, parsed)):
+            raise WaypointError("Invalid waypoint measurement provenance")
+    return document
+
+
 def launch_window(args):
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
     window = tk.Tk()
+    if getattr(args, "background", False):
+        window.withdraw()
     from scripts.waypoint_ui_theme import PALETTE, apply_theme, summarize_status
     from scripts.waypoint_marker_style import DEFAULT_STYLE, load_style, save_style
     apply_theme(window)
@@ -1027,6 +1046,18 @@ def launch_window(args):
     added_selection = None
     edit_history = []
     recent_paths = []
+    route_revision = 0
+    cli_server = None
+    cli_waiters = {}
+    cli_action = None
+    cli_recent = []
+    cli_record_output = None
+    cli_close_id = None
+    cli_stop_at = 0
+    cli_last_operation = None
+    cli_last_record_file = None
+    cli_destroyed = False
+    cli_cancelled_requests = set()
     from scripts.waypoint_recent_display import route_labels, attach_path_tooltip
     activity_tab.columnconfigure(0, weight=1)
     activity_tab.rowconfigure(1, weight=1)
@@ -1081,8 +1112,9 @@ def launch_window(args):
         recent_load_button.configure(state="normal" if not busy and not closing else "disabled")
 
     def invalidate_progress(*, clear_metadata=True):
-        nonlocal route_metadata, playback_view, route_dirty
+        nonlocal route_metadata, playback_view, route_dirty, route_revision
         if not loading_route:
+            route_revision += 1
             if table.get_children():
                 from scripts.waypoint_progress import invalidate_route_progress
                 # Editing the local route invalidates only the cursor belonging to
@@ -1170,7 +1202,7 @@ def launch_window(args):
         log.configure(state="disabled")
 
     def show_document(document):
-        nonlocal loading_route, route_metadata
+        nonlocal loading_route, route_metadata, route_revision
         from scripts.waypoint_measurements import document_measurements
         parsed = route_points(document["waypoints"])
         receipts = document_measurements(document)
@@ -1186,6 +1218,7 @@ def launch_window(args):
             name.set(f"Point {len(table.get_children()) + 1}")
         finally:
             loading_route = False
+        route_revision += 1
         redraw()
 
     def current_identity():
@@ -1239,6 +1272,7 @@ def launch_window(args):
             state.set("Cannot restore saved progress: " + str(exc))
 
     def prepared_document(document):
+        validate_route_document(document)
         prepared = deepcopy(document)
         prepared["waypoints"] = [[label, float(f"{x:.6f}"), float(f"{z:.6f}")]
                                  for label, x, z in route_points(document["waypoints"])]
@@ -1366,9 +1400,10 @@ def launch_window(args):
 
     def perform_operation(operation, points=None, face_walk=False):
         nonlocal adapter, published_adapter
-        retain = operation in ("go", "face", "play", "resume", "teach")
+        retain = operation in ("go", "face", "face-bearing", "play", "resume", "teach")
         history, outcome, failure = [], None, None
         stop_verification = None
+        receipt_path = None
 
         def emit(event):
             if retain:
@@ -1426,9 +1461,11 @@ def launch_window(args):
                 events.put(result)
             elif operation == "face":
                 outcome = run_facing(adapter, stop, emit, point=points[0][1:])
+            elif operation == "face-bearing":
+                outcome = run_facing(adapter, stop, emit, bearing=points)
             elif operation == "view":
                 from scripts.save_physical_route_view import save_route_view
-                document, pid, target, capture_backend, include_units = points
+                document, pid, target, capture_backend, include_units, *destination = points
                 if adapter.pid != pid or adapter.target != target:
                     raise WaypointError("RIFT connection changed; refresh before saving a view")
                 output = ROOT / "artifacts" / ("waypoint-view-" + uuid.uuid4().hex)
@@ -1440,6 +1477,8 @@ def launch_window(args):
                         or (capture_backend == "wgc" and result.get("focusChanged") is not False)):
                     raise WaypointError(str(result.get("reason", "View capture unavailable"))
                                         + "; details: " + str(result.get("directory", output)))
+                if destination:
+                    write_json_atomic(destination[0], result)
                 events.put({"status": "view-saved", "image": str(result["image"]),
                             "rerun": result.get("rerun", {}), "unitSample": result.get("unitSample")})
             elif operation == "record":
@@ -1520,8 +1559,12 @@ def launch_window(args):
                 except (OSError, TypeError, ValueError) as exc:
                     events.put({"status": "receipt-error", "reason": str(exc), "failure": failure})
             events.put({"status": "live-idle" if operation == "live" else "idle"})
+            if operation != "live":
+                events.put({"status": "operation-finished", "operation": operation,
+                            "failure": failure, "result": outcome,
+                            "receipt": str(receipt_path) if receipt_path else None})
 
-    def start(operation, points=None):
+    def start(operation, points=None, *, face_walk=None):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         if busy or closing or nearby_picker is not None:
             return
@@ -1531,7 +1574,7 @@ def launch_window(args):
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
             return
-        if operation in ("go", "face", "teach", "record") and markers.running():
+        if operation in ("go", "face", "face-bearing", "teach", "record") and markers.running():
             if stop_markers():
                 state.set("Markers are closing; try the action again when they are hidden.")
             return
@@ -1540,7 +1583,7 @@ def launch_window(args):
         if operation == "teach":
             record_cancel.clear()
             record_stop.clear()
-        if operation in ("go", "face", "play", "resume", "teach"):
+        if operation in ("go", "face", "face-bearing", "play", "resume", "teach"):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
             except Exception as exc:
@@ -1572,11 +1615,17 @@ def launch_window(args):
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
-        threading.Thread(target=worker, args=(operation, points, walk_facing.get()), daemon=False).start()
+        threading.Thread(target=worker, args=(operation, points, walk_facing.get() if face_walk is None else face_walk), daemon=False).start()
+        return True
 
     def request_stop():
+        nonlocal cli_stop_at, cli_record_output
+        cli_stop_at = time.time()
         stop.set()
+        if cli_action is not None:
+            cli_action["cancelled"] = True
         if recording:
+            cli_record_output = None
             record_cancel.set()
             record_stop.set()
             state.set("Recording cancelled — no route will be saved.")
@@ -2199,7 +2248,9 @@ def launch_window(args):
                 widget.configure(state="disabled")
 
     def finish_close():
-        nonlocal closing, close_prompt
+        nonlocal closing, close_prompt, cli_destroyed
+        if cli_destroyed:
+            return True
         if (not closing or close_prompt or busy or observing or foreground_stop is not None
                 or markers.running()):
             return False
@@ -2214,6 +2265,11 @@ def launch_window(args):
                     return False
             if appearance_after is not None:
                 save_marker_appearance()
+            if cli_close_id is not None:
+                cli_server.complete(cli_close_id, cli_ok({"closed": True, "ownedWorkersReleased": True}))
+            if cli_server is not None:
+                cli_server.close()
+            cli_destroyed = True
             window.destroy()
             return True
         finally:
@@ -2290,12 +2346,494 @@ def launch_window(args):
             live_pose_option.configure(text="Live pose (waiting)")
             redraw()
 
+    # The GUI owns all mutable state. The console only exchanges bounded JSON
+    # requests; dispatch and completion run on this same Tk thread.
+    from scripts.waypoint_cli_protocol import LocalSessionServer, Deferred, CliError
+
+    def cli_ok(data=None, status="completed"):
+        return {"ok": True, "status": status, "data": data, "target": deepcopy(getattr(adapter, "target", None))}
+
+    def cli_error(code, message, *, exit_code=1, hint=None):
+        return {"ok": False, "status": "failed", "target": deepcopy(getattr(adapter, "target", None)), "error": {
+            "code": code, "message": message, "exitCode": exit_code, "hint": hint}}
+
+    def cli_document():
+        return route_document() if table.get_children() else {"waypoints": []}
+
+    def cli_pose():
+        if adapter is None:
+            return {"status": "unavailable", "reason": "RIFT is not connected"}
+        if markers.running() and not markers.stop_requested:
+            try:
+                from scripts.waypoint_beacon_pose import read_pose
+                return read_pose(markers.pose_path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"])
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                return {"status": "unavailable", "reason": str(exc), "source": "owned-beacon-reader"}
+        age = time.monotonic() - verified_at if verified_at is not None else None
+        return {"status": "fresh" if last_pose is not None and age is not None and 0 <= age <= 2 else "unavailable",
+                "source": "existing-idle-reader", "ageSeconds": age,
+                "position": dict(x=last_pose[0], y=last_y, z=last_pose[1]) if last_pose else None,
+                "bearing": last_pose[2] if last_pose else None,
+                "qualification": "Cached GUI sample; unavailable values must not be used for control."}
+
+    def cli_radar_status():
+        observed = None
+        try:
+            path = Path(explore_controls.extra_settings["statusPath"])
+            if path.stat().st_size <= 16384:
+                value = json.loads(path.read_text(encoding="utf-8"))
+                age = (datetime.now(timezone.utc) - datetime.fromisoformat(value["sampledAtUtc"])).total_seconds()
+                if (0 <= age <= 1 and adapter is not None and value.get("target") == adapter.target
+                        and markers.running() and not markers.stop_requested):
+                    observed = value
+        except (OSError, ValueError, KeyError, TypeError):
+            pass
+        return dict(enabled=explore_controls.enabled.get(), unlocked=explore_controls.unlocked.get(),
+                    range=int(explore_controls.radius.get()), opacity=round(explore_controls.opacity.get()),
+                    requestedPosition=explore_controls.extra_settings.get("position"),
+                    observed=observed, readerRunning=markers.running(),
+                    qualification="Observed visibility is unavailable when the presenter feedback is stale.")
+
+    def cli_beacon_status():
+        return dict(readerRunning=markers.running(), closing=markers.running() and markers.stop_requested,
+                    size=round(beacon_size.get()) / 100, opacity=round(beacon_opacity.get()),
+                    labels=beacon_labels.get(), target=target_beacon.get(), guide=landmark_guide.get(),
+                    pose=cli_pose(), qualification="Reader state; on-screen beacons also require a valid camera and foreground game/helper.")
+
+    def cli_snapshot():
+        return dict(host=args.expected_host, target=deepcopy(getattr(adapter, "target", None)),
+                    app={"visible": window.state() not in ("withdrawn", "iconic"), "windowState": window.state(),
+                         "busy": busy, "closing": closing, "state": state.get()},
+                    route={"file": str(route_path) if route_path else None, "dirty": route_dirty,
+                           "revision": route_revision, "count": len(table.get_children()),
+                           "selected": [table.index(i)+1 for i in table.selection()]},
+                    pose=cli_pose(), radar=cli_radar_status(), beacons=cli_beacon_status(),
+                    guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
+                    recording={"active": recording, "progress": recording_progress},
+                    playback={"active": playback_active, "progress": playback_view, "checkpoint": str(checkpoint)},
+                    activeRequestId=cli_action["id"] if cli_action else None,
+                    recentResults=deepcopy(cli_recent), inputSent=False)
+
+    def cli_trail_status():
+        snapshot = explore_controls.trail.snapshot()
+        snapshot["segments"] = [dict(number=i+1, pointCount=len(segment["points"]),
+                                     **{k:v for k,v in segment.items() if k != "points"})
+                                for i,segment in enumerate(snapshot["segments"])]
+        return snapshot
+
+    def cli_file(value, *, fresh=False, overwrite=False):
+        path = Path(value).absolute()
+        if local_source_path(str(path)) is None:
+            raise CliError("local-path-required", "Choose an absolute local disk path")
+        if fresh and path.exists() and not overwrite:
+            raise CliError("file-exists", f"File already exists: {path}", "Use --overwrite to replace it", 4)
+        if fresh and not path.parent.is_dir():
+            raise CliError("parent-unavailable", f"Parent directory does not exist: {path.parent}")
+        return path
+
+    def cli_wait(rid, callback):
+        cli_waiters[rid] = callback
+        return Deferred()
+
+    def cli_begin(rid, operation, payload=None, *, command=None):
+        nonlocal cli_action
+        if busy or cli_action is not None or closing or nearby_picker is not None:
+            raise CliError("busy", "Another action or dialog owns the helper", "Use status or stop", 4)
+        if adapter is None and operation not in ("save", "target"):
+            raise CliError("rift-unavailable", "Wait for a verified RIFT connection before starting", exit_code=3)
+        job = {"id": rid, "command": command or operation, "operation": operation,
+               "started": False, "finished": None, "recordedFile": None, "cancelled": False}
+        cli_action = job
+        if operation in ("go", "face", "face-bearing", "record") and markers.running():
+            stop_markers()
+
+        def advance():
+            nonlocal cli_action
+            if not job["started"]:
+                if job["cancelled"]:
+                    cli_action = None
+                    return cli_error("cancelled", "Cancelled before starting", exit_code=130)
+                if markers.running() and operation in ("go", "face", "face-bearing", "record"):
+                    return None
+                if not start(operation, payload, face_walk=True):
+                    cli_action = None
+                    return cli_error("start-refused", state.get(), exit_code=4)
+                job["started"] = True
+            if operation == "record" and job["finished"] is None and job.get("recordingObserved") and not record_stop.is_set():
+                return cli_ok({"recording": True, "requestId": rid, "inputSent": False})
+            if job["finished"] is None or busy:
+                return None
+            event = job["finished"]
+            failure = event.get("failure")
+            data = dict(operation=event["operation"], receipt=event.get("receipt"), failure=failure,
+                        recordedFile=job.get("recordedFile"), state=state.get())
+            if operation == "view": data.update(image=saved_view, rerun=saved_rerun)
+            if operation in ("save", "target"): data.update(route=cli_snapshot()["route"])
+            response = (cli_error("cancelled" if failure.get("status") == "stopped" else "operation-failed",
+                                  failure["reason"], exit_code=130 if failure.get("status") == "stopped" else 1)
+                        if failure else cli_ok(data))
+            if failure:
+                response["data"] = data
+            cli_recent.append(dict(requestId=rid, command=job["command"], ok=not bool(failure),
+                                   receipt=event.get("receipt"), failure=failure))
+            del cli_recent[:-8]
+            cli_action = None
+            return response
+        return cli_wait(rid, advance)
+
+    def cli_dispatch(command, values, rid):
+        nonlocal route_metadata, route_path, route_dirty, route_recovered, route_revision
+        nonlocal playback_view, pending_progress_selection, checkpoint, cli_close_id, cli_record_output
+        nonlocal saved_view, saved_rerun, rerun_viewer
+        try:
+            if command in ("status", "doctor"):
+                data = cli_snapshot()
+                if command == "doctor":
+                    data["ready"] = adapter is not None and data["pose"]["status"] == "fresh"
+                    data["nextSteps"] = (["RIFT/pose is ready. Movement still requires --execute and its normal foreground checks."]
+                        if data["ready"] else ["Wait for RIFT connection; use beacons show for continuous shared pose or wait for idle refresh.",
+                                               "If several RIFT clients exist, reopen with app open --pid PID."])
+                return cli_ok(data)
+            if command == "capabilities":
+                from scripts.waypoints_cli import build_parser
+                parser = build_parser()
+                def operations(p):
+                    found = set()
+                    op = p.get_default("operation")
+                    if op: found.add(op)
+                    for action in p._actions:
+                        if isinstance(action, argparse._SubParsersAction):
+                            for child in action.choices.values(): found.update(operations(child))
+                    return found
+                return cli_ok(dict(operations=sorted(operations(parser)), version=1,
+                                   units={"coordinates": "world units", "bearing": "degrees", "opacity": "percent",
+                                          "radarPosition": "physical pixels relative to game client", "indices": "one-based"}))
+            if command == "stop":
+                requested = values.get("requestId")
+                if requested and (cli_action is None or cli_action["id"] != requested):
+                    # Ctrl+C can arrive before its movement request is admitted.
+                    # Retire that ID without cancelling somebody else's action.
+                    cli_cancelled_requests.add(requested)
+                    return cli_ok({"requestId": requested, "activeRequestMatched": False,
+                                   "queuedRequestRetired": True,
+                                   "qualification": "No matching active action; this request ID cannot start later. Other actions were not cancelled."})
+                request_stop()
+                def stopped():
+                    if busy or foreground_stop is not None or markers.running(): return None
+                    return cli_ok({"stopLatched": True, "ownedActionEnded": True,
+                                   "result": {k:v for k,v in (cli_last_operation or {}).items() if k != "result"},
+                                   "stationaryEvidence": "Inspect stopVerification in the action receipt; no arbitrary game autorun cancellation is claimed."})
+                return cli_wait(rid, stopped)
+            if command == "app.show":
+                window.deiconify()
+                window.lift()
+                return cli_ok({"visible": True, "windowState": window.state()})
+            if command == "app.hide":
+                window.withdraw()
+                return cli_ok({"visible": False, "windowState": window.state()})
+            if command == "app.close":
+                if route_dirty and not values.get("discard"):
+                    raise CliError("unsaved-route", "The route has unsaved changes", "Save with route save FILE or close --discard", 4)
+                if values.get("discard"): route_dirty = False
+                cli_close_id = rid
+                close()
+                return Deferred()
+            if command in ("move.to", "face", "route.run", "playback.start", "playback.resume", "record.start"):
+                if rid in cli_cancelled_requests:
+                    cli_cancelled_requests.discard(rid)
+                    return cli_error("cancelled-by-stop", "This request was cancelled before admission", exit_code=130)
+                # STOP also retires older mailbox work that has not yet started.
+                if (cli_server.path / "requests" / (rid+".json")).stat().st_mtime <= cli_stop_at:
+                    return cli_error("cancelled-by-stop", "This request was queued before STOP; send a new explicit command", exit_code=130)
+            read_only = command.endswith(".status") or command in ("route.list", "route.validate", "trail.list")
+            passive = command.startswith(("radar.", "beacons.", "guide.", "trail."))
+            if closing or (busy or cli_action is not None) and not (read_only or passive or command in ("record.stop", "record.cancel")):
+                raise CliError("busy", "The helper is busy", "Use status or stop", 4)
+            if command in ("guide.start", "trail.start"):
+                if busy or cli_action is not None:
+                    raise CliError("busy", "Wait for the active action before starting passive exploration", exit_code=4)
+                ensure_exploration_feed()
+                if not markers.running() or markers.stop_requested:
+                    raise CliError("reader-unavailable", state.get(), exit_code=3)
+                try:
+                    explore_controls._owner()
+                except ValueError:
+                    def ready():
+                        if not markers.running() or markers.stop_requested or closing:
+                            return cli_error("reader-unavailable", "The owned beacon reader ended", exit_code=3)
+                        try: explore_controls._owner()
+                        except ValueError: return None
+                        return cli_dispatch(command, values, rid)
+                    return cli_wait(rid, ready)
+            if command.startswith("route."):
+                if values.get("revision") is not None and values["revision"] != route_revision:
+                    raise CliError("route-changed", "Route revision changed", "Read route list and retry with its revision", 4)
+                if command in ("route.list", "route.validate"):
+                    document = cli_document()
+                    if command == "route.validate":
+                        prepared_document(document)
+                    from scripts.waypoint_measurements import document_measurements
+                    measured = sum(r is not None for r in document_measurements(document))
+                    return cli_ok(dict(document=document, file=str(route_path) if route_path else None,
+                        dirty=route_dirty, revision=route_revision,
+                        measuredCount=measured, estimatedCount=len(document["waypoints"])-measured,
+                        points=[dict(number=i+1, name=r[0], x=float(r[1]), z=float(r[2])) for i,r in enumerate(selected_points(True))],
+                        qualification="Route structure only; terrain, obstacle clearance and playback admission remain live checks."))
+                if command in ("route.load", "route.new"):
+                    if route_dirty and not values.get("discard"):
+                        raise CliError("unsaved-route", "The route has unsaved changes", "Save first or use --discard", 4)
+                    if command == "route.load":
+                        path = cli_file(values["file"])
+                        document = prepared_document(json.loads(path.read_text(encoding="utf-8-sig")))
+                        progress = select_progress(document)
+                        show_document(document)
+                        edit_history.clear()
+                        pending_progress_selection = current_identity() is None
+                        playback_view = None
+                        if progress is not None: display_progress(progress)
+                        mark_saved(path)
+                        cache_route(document, "Route loaded: " + str(path))
+                    else:
+                        clear_points()
+                        route_metadata = {"name": values["name"]} if values.get("name") else {}
+                        route_path, route_dirty, route_recovered = None, False, False
+                        update_route_status()
+                    return cli_ok(cli_snapshot()["route"])
+                if command == "route.save":
+                    path = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
+                    document = route_document()
+                    write_json_atomic(path, document)
+                    mark_saved(path)
+                    cache_route(document, "Route saved: " + str(path))
+                    return cli_ok({"file": str(path), "revision": route_revision})
+                if command == "route.add":
+                    if len(table.get_children()) >= 20: raise CliError("route-full", "Routes support at most 20 points", exit_code=4)
+                    if values.get("current") or values.get("target"):
+                        name.set(values.get("name") or f"Point {len(table.get_children())+1}")
+                        return cli_begin(rid, "target" if values.get("target") else "save", command=command)
+                    add_point(values.get("name") or f"Point {len(table.get_children())+1}", values["x"], values["z"])
+                elif command in ("route.select", "route.update", "route.remove", "route.reorder"):
+                    children = table.get_children()
+                    index = values["point"]-1
+                    if not 0 <= index < len(children): raise CliError("point-out-of-range", "Choose an existing one-based point number")
+                    item = children[index]
+                    if command == "route.update":
+                        old = table.item(item, "values")
+                        route_points([(values.get("name", old[0]), values.get("x",old[1]), values.get("z",old[2]))])
+                    table.selection_set(item)
+                    select_point(None, force_name=True)
+                    if command == "route.update":
+                        for key,var in (("name",name),("x",x),("z",z)):
+                            if values.get(key) is not None: var.set(values[key])
+                        update_selected()
+                    elif command == "route.remove": remove_points()
+                    elif command == "route.reorder":
+                        destination = values["to"]-1
+                        if not 0 <= destination < len(children): raise CliError("point-out-of-range", "Destination must be an existing point index")
+                        move_point(destination-index)
+                elif command == "route.undo":
+                    if not edit_history: raise CliError("nothing-to-undo", "There is no edit to undo", exit_code=4)
+                    undo_edit()
+                elif command == "route.run":
+                    if values.get("execute") is not True: raise CliError("execute-required", "Movement requires --execute", exit_code=2)
+                    rows = route_points(selected_points(True))
+                    direction = values.get("direction", "forward")
+                    index = values.get("from_point", 1 if direction == "forward" else len(rows))-1
+                    if not 0 <= index < len(rows): raise CliError("point-out-of-range", "Choose an existing starting point")
+                    rows = rows[index:] if direction == "forward" else list(reversed(rows[:index+1]))
+                    return cli_begin(rid, "go", rows, command=command)
+                else: raise CliError("unsupported-command", command)
+                return cli_ok(dict(revision=route_revision, document=cli_document()))
+            if command.startswith("radar."):
+                if command == "radar.status": return cli_ok(cli_radar_status())
+                if command in ("radar.show", "radar.hide"):
+                    explore_controls.enabled.set(command == "radar.show")
+                    explore_controls.toggle()
+                elif command in ("radar.lock", "radar.unlock"):
+                    explore_controls.unlocked.set(command == "radar.unlock")
+                elif command == "radar.set":
+                    if values.get("range") is not None:
+                        if values["range"] not in (2,5,10,20): raise ValueError("radar range must be 2, 5, 10 or 20")
+                        explore_controls.radius.set(int(values["range"]))
+                    if values.get("opacity") is not None: explore_controls.opacity.set(finite(values["opacity"]))
+                elif command == "radar.move":
+                    explore_controls.extra_settings["position"] = dict(x=round(finite(values["x"])), y=round(finite(values["y"])), revision=rid)
+                else: raise CliError("unsupported-command", command)
+                if not .2 <= explore_controls.opacity.get()/100 <= 1: raise ValueError("opacity must be 20..100 percent")
+                explore_controls.save()
+                if command == "radar.hide" and not markers.running(): return cli_ok(cli_radar_status())
+                if not explore_controls.enabled.get() and command != "radar.hide": return cli_ok(cli_radar_status(), "configured")
+                if not markers.running(): raise CliError("reader-unavailable", state.get(), exit_code=3)
+                def applied():
+                    status = cli_radar_status()
+                    observed = status["observed"]
+                    if observed is None: return None
+                    if command == "radar.move" and observed.get("appliedRevision") != rid: return None
+                    if observed["visible"] != explore_controls.enabled.get(): return None
+                    if observed["visible"] and observed["unlocked"] != explore_controls.unlocked.get(): return None
+                    if observed["visible"] and (observed.get("range") != int(explore_controls.radius.get())
+                            or observed.get("opacity") != round(explore_controls.opacity.get())/100): return None
+                    return cli_ok(status)
+                return cli_wait(rid, applied)
+            if command.startswith("beacons."):
+                if command == "beacons.status": return cli_ok(cli_beacon_status())
+                if command == "beacons.hide":
+                    stop_markers()
+                    return cli_wait(rid, lambda: None if markers.running() else cli_ok(cli_beacon_status()))
+                if command == "beacons.set":
+                    if values.get("guide") == "on" and len(table.selection()) != 1:
+                        raise CliError("selection-required", "Select one waypoint before enabling its guide", "Use route select N", 4)
+                    if values.get("target") is not None and (values["target"] == "on") != target_beacon.get() and markers.running():
+                        raise CliError("reader-active", "Changing target inclusion requires a reader restart", "Run beacons hide, beacons set --target on|off, beacons show", 4)
+                    if values.get("size") is not None:
+                        if not .5 <= finite(values["size"]) <= 2: raise ValueError("size must be .5..2")
+                        beacon_size.set(values["size"]*100)
+                    if values.get("opacity") is not None:
+                        if not 20 <= finite(values["opacity"]) <= 100: raise ValueError("opacity must be 20..100 percent")
+                        beacon_opacity.set(values["opacity"])
+                    for key,var in (("labels",beacon_labels),("target",target_beacon),("guide",landmark_guide)):
+                        if values.get(key) is not None: var.set(values[key] == "on")
+                    change_marker_appearance()
+                    save_marker_appearance()
+                    schedule_marker_update()
+                    return cli_ok(cli_beacon_status(), "configured")
+                if command != "beacons.show": raise CliError("unsupported-command", command)
+                ensure_exploration_feed()
+                if not markers.running(): raise CliError("reader-unavailable", state.get(), exit_code=3)
+                return cli_wait(rid, lambda: cli_ok(cli_beacon_status()) if cli_pose()["status"] == "fresh" else None)
+            if command.startswith("guide."):
+                if command == "guide.start":
+                    owner = explore_controls._owner()
+                    document = cli_document()
+                    direction = values.get("direction", "forward")
+                    index = values.get("from_point", 1 if direction == "forward" else len(document["waypoints"]))-1
+                    if values.get("radius") is not None:
+                        if not .05 <= finite(values["radius"]) <= 10: raise ValueError("radius must be .05..10")
+                        explore_controls.guidance.radius = values["radius"]
+                    explore_controls.guidance.begin(document["waypoints"], direction, index, owner)
+                    explore_controls._route_signature = json.dumps(document, sort_keys=True, allow_nan=False)
+                    explore_controls.guidance.observe(owner)
+                    explore_controls._refresh()
+                    explore_controls._notify()
+                elif command == "guide.stop": explore_controls.stop_guidance()
+                elif command != "guide.status": raise CliError("unsupported-command", command)
+                return cli_ok(explore_controls.navigation_state())
+            if command.startswith("trail."):
+                if command == "trail.start":
+                    packet = explore_controls._owner()
+                    explore_controls.trail.start(packet)
+                    explore_controls.trail.observe(packet)
+                    explore_controls._refresh()
+                    explore_controls._notify()
+                elif command == "trail.stop": explore_controls.stop_trail()
+                elif command == "trail.clear":
+                    if not values.get("discard"): raise CliError("discard-required", "Use trail clear --discard", exit_code=4)
+                    if explore_controls.trail.snapshot()["active"]: raise CliError("trail-active", "Stop the trail before clearing", exit_code=4)
+                    explore_controls.clear_trail()
+                elif command == "trail.save":
+                    segments = explore_controls.trail.snapshot()["segments"]
+                    index = len(segments)-1 if values.get("segment", "latest") == "latest" else int(values["segment"])-1
+                    if not 0 <= index < len(segments): raise CliError("segment-out-of-range", "Choose an existing one-based segment")
+                    document = explore_controls.trail.export_segment(index)
+                    path = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
+                    write_json_atomic(path, document)
+                    return cli_ok({"file": str(path), "segment": index+1, "pointCount": len(document["waypoints"])})
+                elif command not in ("trail.status", "trail.list"): raise CliError("unsupported-command", command)
+                return cli_ok(cli_trail_status())
+            if command == "record.status": return cli_ok({"active": recording, "progress": recording_progress})
+            if command == "record.start":
+                if route_dirty: raise CliError("unsaved-route", "Save the current route before recording replaces it", exit_code=4)
+                return cli_begin(rid, "record", command=command)
+            if command in ("record.stop", "record.cancel"):
+                if not recording: raise CliError("not-recording", "There is no active recording", exit_code=4)
+                job = cli_action
+                if command == "record.stop":
+                    if cli_record_output is not None:
+                        raise CliError("recording-finishing", "Recording already has a pending save destination", "Wait for its result or explicitly cancel", 4)
+                    cli_record_output = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
+                    stop_recording()
+                else:
+                    cli_record_output = None
+                    record_cancel.set()
+                    record_stop.set()
+                def record_done():
+                    if busy: return None
+                    if command == "record.cancel": return cli_ok({"cancelled": True, "saved": False})
+                    if job and job.get("recordedFile"): return cli_ok({"file": job["recordedFile"], "saved": True})
+                    if cli_last_record_file == str(cli_file(values["file"])):
+                        return cli_ok({"file": cli_last_record_file, "saved": True})
+                    return cli_error("recording-failed", state.get())
+                return cli_wait(rid, record_done)
+            if command in ("move.to", "face", "playback.start", "playback.resume"):
+                if values.get("execute") is not True: raise CliError("execute-required", "Movement requires --execute", exit_code=2)
+                if command == "move.to":
+                    return cli_begin(rid, "go", [("CLI destination", finite(values["x"]), finite(values["z"]))], command=command)
+                if command == "face":
+                    bearing = finite(values["bearing"])
+                    if not 0 <= bearing < 360: raise ValueError("bearing must be in [0,360)")
+                    return cli_begin(rid, "face-bearing", bearing, command=command)
+                if values.get("checkpoint"):
+                    checkpoint = cli_file(values["checkpoint"])
+                document = route_document()
+                direction = values.get("direction")
+                if command == "playback.resume":
+                    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+                    direction = direction or saved["direction"]
+                else:
+                    direction = direction or "forward"
+                    if values.get("from_point") is not None:
+                        raise ValueError("Playback starts at its recorded endpoint; use guide start --from for passive guidance")
+                return cli_begin(rid, "resume" if command.endswith("resume") else "play", (document,direction), command=command)
+            if command == "playback.status":
+                return cli_ok(dict(active=playback_active, progress=playback_view, checkpoint=str(checkpoint)))
+            if command == "view.save":
+                if adapter is None: raise CliError("rift-unavailable", "Connect to RIFT first", exit_code=3)
+                output = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
+                return cli_begin(rid, "view", (deepcopy(route_document()), adapter.pid, deepcopy(adapter.target),
+                    "wgc", view_include_units.get(), str(output)), command=command)
+            if command in ("view.open", "view.open-3d"):
+                path = cli_file(values["file"])
+                if not path.is_file(): raise CliError("file-unavailable", str(path))
+                if path.suffix.lower() == ".json":
+                    manifest = json.loads(path.read_text(encoding="utf-8"))
+                    if manifest.get("status") != "saved-route-view-candidate": raise ValueError("not a saved view manifest")
+                    selected = manifest.get("image") if command == "view.open" else manifest.get("rerun", {}).get("path")
+                    if not selected: raise ValueError("this view has no exported 3D recording")
+                    path = cli_file(selected)
+                    if not path.is_file(): raise ValueError("saved view asset is unavailable")
+                if command == "view.open":
+                    import os
+                    os.startfile(str(path))
+                    saved_view = str(path)
+                else:
+                    from scripts.save_physical_route_view import launch_saved_rerun
+                    if rerun_viewer is not None and rerun_viewer.poll() is None: raise CliError("viewer-open", "The owned 3D viewer is already open", exit_code=4)
+                    rerun_viewer = launch_saved_rerun(str(path))
+                    saved_rerun = str(path)
+                return cli_ok({"file": str(path), "opened": True})
+            raise CliError("unsupported-command", command, exit_code=2)
+        except CliError as exc:
+            return cli_error(exc.code, str(exc), exit_code=exc.exit_code, hint=exc.hint)
+        except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
+            return cli_error("operation-failed", str(exc))
+
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
         nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp, exploration_sample
+        nonlocal cli_action, cli_record_output, cli_last_operation, cli_last_record_file
+        cli_server.poll(cli_dispatch)
+        if cli_destroyed:
+            return
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
+            if status == "operation-finished":
+                cli_last_operation = event
+                if cli_action is not None and cli_action["operation"] == event["operation"]:
+                    cli_action["finished"] = event
+                continue
+            if status == "recording" and cli_action is not None and cli_action["operation"] == "record":
+                cli_action["recordingObserved"] = True
             if status == "view-failed":
                 saved_unit_sample = None
             if status in ("stopping", "notice") and stop.is_set() and markers.running():
@@ -2363,7 +2901,8 @@ def launch_window(args):
                 # This runs on the UI thread: STOP/close cannot race publication.
                 recording = False
                 record_end_button.configure(state="disabled")
-                output = ROOT / "artifacts" / ("recorded-route-" + uuid.uuid4().hex + ".json")
+                output = cli_record_output or ROOT / "artifacts" / ("recorded-route-" + uuid.uuid4().hex + ".json")
+                cli_record_output = None
                 try:
                     write_json_atomic(output, event["document"])
                     document = prepared_document(event["document"])
@@ -2378,6 +2917,9 @@ def launch_window(args):
                     state.set("Cannot finish recording: " + str(exc))
                     continue
                 mark_saved(output)
+                cli_last_record_file = str(output)
+                if cli_action is not None and cli_action["operation"] == "record":
+                    cli_action["recordedFile"] = str(output)
                 cache_route(event["document"], "Recorded route saved: " + str(output))
                 if progress is None:
                     progress_text.set("Recorded route ready; select playback direction.")
@@ -2471,6 +3013,20 @@ def launch_window(args):
             log.insert("end", text + "\n")
             log.see("end")
             log.configure(state="disabled")
+        for rid, callback in list(cli_waiters.items()):
+            try:
+                response = callback()
+            except Exception as exc:
+                response = cli_error("operation-failed", str(exc))
+            if response is not None:
+                cli_server.complete(rid, response)
+                del cli_waiters[rid]
+        # A background Record command acknowledges when capture starts, but its
+        # ownership remains until the recording worker actually ends.
+        if (cli_action is not None and cli_action["operation"] == "record"
+                and cli_action["finished"] is not None and not busy):
+            cli_action = None
+            cli_record_output = None
         if finish_close():
             return
         if marker_identity is not None:
@@ -2603,6 +3159,8 @@ def launch_window(args):
                 display_progress(progress)
             mark_saved(args.route)
         except (OSError, ValueError, KeyError, TypeError) as exc:
+            if getattr(args, "cli", False):
+                raise
             messagebox.showerror("Cannot load route", str(exc))
     restored_checkpoint = False
     if checkpoint.exists():
@@ -2671,9 +3229,15 @@ def launch_window(args):
                 mark_saved(source)
         except (OSError, ValueError, KeyError, TypeError):
             pass  # Keep recovered content unbound if the source is unavailable or changed.
+    cli_server = LocalSessionServer(launch_token=getattr(args, "launch_token", None))
+    explore_controls.extra_settings["statusPath"] = str(cli_server.path / "radar-status.json")
+    explore_controls.save()
     poll()
     start("refresh")
-    window.mainloop()
+    try:
+        window.mainloop()
+    finally:
+        cli_server.close()
 
 
 def main(argv=None):

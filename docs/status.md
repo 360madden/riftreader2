@@ -1,5 +1,19 @@
 # Current status
 
+**NOVEMBER 13 — WAYPOINT CLI IMPLEMENTED AND PHYSICAL ATTACHMENT CHECKED:**
+On verified AMD-DESKTOP, `rr2-waypoints.cmd` controls the open Waypoints GUI
+through an owned, PID/start/session-bound local mailbox. It exposes help/status,
+route edits/files, radar/beacons, passive guide/trail, recorder, guarded movement,
+playback, views and receipts. The GUI remains the reader/action owner; status
+starts no extra sampler. JSON/exit codes, explicit decisions, terminal receipts,
+Ctrl+C/STOP, queued-input cancellation and observed radar feedback are implemented.
+A 53-command live check passed on physical PID40452: colocated Go/Face/Run/Play
+used zero input pulses; passive guide reached complete, and the original seven-
+point route remained byte-identical. Save/cancel races and queued STOP additionally
+passed isolated real-Tk/mailbox tests with mocked game-facing operations. Moving
+trail export, Resume and nonzero movement were not repeated as live CLI trials.
+See [commands, evidence and limits](planning/five-hour-recorded-routes-2026-11-12.md#waypoints-cli--november-13).
+
 **20:57 EST NOVEMBER 12 — CAMERA-MOTION FLICKER FIXED IN EXERCISED CASE; BEACONS POLISHED:**
 On AMD-DESKTOP/PID40452, 50-second camera-pan trials improved from 24 visible
 freshness clears / 273 accepted updates to zero clears / 1,513 accepted updates.

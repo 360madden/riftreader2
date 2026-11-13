@@ -1,5 +1,7 @@
 """Small, non-activating player-relative radar in the existing Qt presenter."""
 import ctypes
+import datetime
+import os
 import json
 import math
 import time
@@ -11,6 +13,7 @@ from PySide6.QtWidgets import QWidget
 
 from scripts.waypoint_map import LocalMap, ZOOM_RADII, _clip_segment, _label_box
 from scripts.waypoint_beacon_pose import _target
+from scripts.waypoint_progress import write_json_atomic
 
 
 DEFAULT_CONFIG = {"version": 1, "enabled": False, "unlocked": False, "radius": 10, "opacity": .9}
@@ -24,6 +27,17 @@ def load_config(path, fallback=None):
                 or type(data.get("radius")) not in (int, float) or data["radius"] not in ZOOM_RADII
                 or type(data.get("opacity")) not in (int, float) or not math.isfinite(data["opacity"])
                 or not .2 <= data["opacity"] <= 1):
+            return fallback
+        position = data.get("position")
+        if position is not None and (not isinstance(position, dict)
+                or type(position.get("x")) is not int or type(position.get("y")) is not int
+                or not -100000 <= position["x"] <= 100000 or not -100000 <= position["y"] <= 100000
+                or type(position.get("revision")) not in (str, int)
+                or isinstance(position["revision"], str) and not 1 <= len(position["revision"]) <= 128):
+            return fallback
+        status_path = data.get("statusPath")
+        if status_path is not None and (not isinstance(status_path, str) or not status_path
+                or not Path(status_path).is_absolute() or status_path.startswith(("\\\\", "//"))):
             return fallback
         return data
     except (OSError, ValueError, TypeError):
@@ -100,6 +114,10 @@ class CompactRadar(QWidget):
         self.placed = False
         self.target_rect = None
         self.offset = None
+        self.applied_revision = None
+        self.status_path = None
+        self.last_target = None
+        self.last_status_at = 0.0
         self.hwnd = int(self.winId())
         if api.own_window(self.hwnd) != self.hwnd:
             raise ValueError("radar HWND identity changed")
@@ -117,6 +135,10 @@ class CompactRadar(QWidget):
             set_(self.hwnd, -20, (style & ~0x20 if unlocked else style | 0x20) | 0x08000000)
 
     def present(self, frame, route, config, exploration=None):
+        if config:
+            self.status_path = config.get("statusPath")
+        if frame:
+            self.last_target = frame.get("target")
         if not config or not config["enabled"]:
             self.clear()
             return
@@ -130,7 +152,9 @@ class CompactRadar(QWidget):
         self.exploration = exploration
         self.setWindowOpacity(config["opacity"])
         rect = list(frame["clientRect"])
-        relocate = not self.placed or self.target_rect != rect
+        position = config.get("position")
+        new_position = position is not None and position["revision"] != self.applied_revision
+        relocate = not self.placed or self.target_rect != rect or new_position
         if not self.isVisible():
             self.show()
         if relocate:
@@ -138,21 +162,56 @@ class CompactRadar(QWidget):
             ratio = self.devicePixelRatioF()
             width, height = round(self.width()*ratio), round(self.height()*ratio)
             # Keep signed physical coordinates and the user's relative placement.
-            dx, dy = self.offset or (18, max(18, h-height-150))
+            dx, dy = ((position["x"], position["y"]) if new_position
+                      else self.offset or (18, max(18, h-height-150)))
             dx, dy = max(0, min(dx, w-width)), max(0, min(dy, h-height))
             self._set_unlocked(False)
             self.api.show(self.hwnd, [x+dx, y+dy, width, height])
             self.offset = (dx, dy)
             self.target_rect = rect
             self.placed = True
+            if new_position:
+                self.applied_revision = position["revision"]
         if change_unlock or relocate:
             self._set_unlocked(config["unlocked"])
         self.update()
+        self._publish_status()
+
+    def _publish_status(self, *, force=False):
+        if not self.status_path:
+            return
+        now = time.monotonic()
+        if not force and now - self.last_status_at < .2:
+            return
+        position = None
+        if self.isVisible() and self.target_rect is not None and os.name == 'nt':
+            try:
+                from ctypes import wintypes
+                rect = wintypes.RECT()
+                with self.api.dpi():
+                    if self.api.u.GetWindowRect(self.hwnd, ctypes.byref(rect)):
+                        position = {"x": rect.left - self.target_rect[0], "y": rect.top - self.target_rect[1]}
+            except (AttributeError, OSError):
+                pass
+        status = {"version": 1, "sampledAtUtc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                  "presenterPid": os.getpid(), "target": self.last_target,
+                  "visible": self.isVisible(), "position": position,
+                  "range": self.config.get("radius") if self.config else None,
+                  "opacity": self.config.get("opacity") if self.config else None,
+                  "unlocked": bool(self.config and self.config.get("unlocked")) if self.isVisible() else False,
+                  "appliedRevision": self.applied_revision}
+        try:
+            write_json_atomic(Path(self.status_path), status)
+            self.last_status_at = now
+        except (OSError, ValueError, TypeError):
+            pass  # Feedback is advisory; a bad destination must not crash the presenter.
 
     def clear(self):
+        was_visible = self.isVisible()
         self.frame, self.points, self.exploration = None, [], None
         self.hide()
         self.update()
+        self._publish_status(force=was_visible)
 
     def mousePressEvent(self, event):
         if self.config and self.config["unlocked"] and event.button() == Qt.MouseButton.LeftButton:

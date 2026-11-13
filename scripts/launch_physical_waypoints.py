@@ -22,9 +22,15 @@ def main(argv=None):
     parser.add_argument("--basis", type=Path, default=DEFAULT_BASIS)
     parser.add_argument("--route", type=Path)
     parser.add_argument("--check", action="store_true", help="verify readiness without opening a window or sending input")
+    parser.add_argument("--background", action="store_true", help="start with the helper window hidden")
+    parser.add_argument("--cli", action="store_true", help="report startup errors without modal dialogs")
+    parser.add_argument("--launch-token", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     host = socket.gethostname().upper()
     try:
+        if args.cli and args.route is not None:
+            from scripts.physical_waypoints import validate_route_document
+            validate_route_document(json.loads(args.route.read_text(encoding="utf-8-sig")))
         if host not in physical_rift.SUPPORTED_HOSTS:
             raise ValueError("unsupported-host")
         pid, adapter, pose, waiting_reason = None, None, None, None
@@ -49,11 +55,15 @@ def main(argv=None):
             launch_window(SimpleNamespace(expected_host=host, physical_pid=pid,
                                           basis=args.basis, route=args.route,
                                           face_waypoints=True, auto_reconnect=args.physical_pid is None,
-                                          initial_adapter=adapter, initial_reason=waiting_reason))
+                                          initial_adapter=adapter, initial_reason=waiting_reason,
+                                          background=args.background, cli=args.cli, launch_token=args.launch_token))
         return 0
     except Exception as exc:
         if args.check:
             print(json.dumps({"status": "blocked", "host": host, "reason": str(exc), "inputSent": False}))
+        elif args.cli:
+            if sys.stderr is not None:
+                print(str(exc), file=sys.stderr)
         else:
             import tkinter as tk
             from tkinter import messagebox
