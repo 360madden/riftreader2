@@ -67,7 +67,10 @@ class OwnedWaypointMarkers:
                 self.child = None
         return self.child is not None
 
-    def start(self, document, adapter, *, target_beacon=False, landmark_number=None):
+    def start(self, document, adapter, *, target_beacon=False, landmark_number=None, companion=None):
+        if companion is not None:
+            from scripts.physical_waypoint_overlay import validate_companion
+            companion = validate_companion(companion)
         if type(target_beacon) is not bool:
             raise WaypointError("Invalid target beacon option")
         if landmark_number is not None and (type(landmark_number) is not int
@@ -109,6 +112,8 @@ class OwnedWaypointMarkers:
             command.append("--target-beacon")
         if landmark_number is not None:
             command.extend(["--landmark-number", str(landmark_number)])
+        if companion is not None:
+            command.extend(["--companion-window", json.dumps(companion, separators=(",", ":"))])
         self.child = self.popen(command, cwd=self.root,
                                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         self.stop_requested = False
@@ -881,7 +886,8 @@ def launch_window(args):
         entry.pack(side="left", padx=(0, 10))
         editable.append(entry)
         point_entries.append(entry)
-    ttk.Checkbutton(header_actions, text="Live pose (2 s)", variable=live_pose).pack(anchor="e", pady=(7, 0))
+    live_pose_option = ttk.Checkbutton(header_actions, text="Live pose (2 s)", variable=live_pose)
+    live_pose_option.pack(anchor="e", pady=(7, 0))
     summary = tk.StringVar(value="Refresh position to preview the route.")
     summary_label = ttk.Label(telemetry, textvariable=summary, style="Base.Muted.TLabel", wraplength=900)
     summary_label.pack(anchor="w", pady=(3, 0))
@@ -1845,6 +1851,7 @@ def launch_window(args):
             return
         try:
             options = {}
+            from scripts.physical_waypoint_overlay import bind_companion_window
             if target_beacon.get():
                 options["target_beacon"] = True
             if landmark_guide.get():
@@ -1852,12 +1859,13 @@ def launch_window(args):
                 if len(selected) != 1:
                     raise WaypointError("Select one saved marker to guide to")
                 options["landmark_number"] = table.index(selected[0]) + 1
+            options["companion"] = bind_companion_window(window.winfo_id())
             markers.start(route_document(), adapter, **options)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
                                target["executableSha256"].casefold(), target["hwnd"])
             marker_button.configure(text="Hide markers")
-            state.set("Markers shown when RIFT is foreground."
+            state.set("Markers shown when RIFT or this Waypoints window is foreground."
                       + (" Selected landmark guide is pinned until Hide markers." if landmark_guide.get() else ""))
         except (OSError, ValueError, KeyError, TypeError) as exc:
             state.set("Cannot show markers: " + str(exc))
@@ -2294,12 +2302,9 @@ def launch_window(args):
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
-        try:
-            app_focused = window.focus_displayof() is not None
-        except (AttributeError, tk.TclError):
-            app_focused = False
+        live_pose_option.configure(text="Live pose (paused)" if markers.running() else "Live pose (2 s)")
         if (live_pose.get() and not busy and not observing and not closing
-                and time.monotonic() >= next_live_at and (not markers.running() or app_focused)):
+                and time.monotonic() >= next_live_at and not markers.running()):
             observing = True
             next_live_at = time.monotonic() + 2
             threading.Thread(target=worker, args=("live",), daemon=False).start()

@@ -182,6 +182,17 @@ class FeedTests(unittest.TestCase):
             self.provider().acquire()
         self.read.assert_not_called()
 
+    def test_companion_display_permission_keeps_real_game_foreground_false(self):
+        self.snapshot.return_value.update(foreground=False, displayAllowed=True)
+        frame = self.provider().acquire()
+        self.assertEqual(frame["target"], IDENTITY)
+        self.assertFalse(self.snapshot.return_value["foreground"])
+        self.read.assert_called_once()
+        self.snapshot.side_effect = [dict(self.snapshot.return_value),
+                                    dict(self.snapshot.return_value, displayAllowed=False)]
+        with self.assertRaisesRegex(ValueError, "foreground-or-geometry"):
+            self.provider().acquire()
+
     def test_saved_progress_updates_and_mismatch_clears_only_display_state(self):
         from scripts.waypoint_progress import RouteProgress
         frame = self.provider().acquire()
@@ -426,6 +437,36 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(counts["acquired"], 1)
         self.assertIn("native diagnostic", provider.stream_stderr)
         self.assertTrue(child.stdout.closed)
+
+    def test_stream_accepts_only_current_companion_display_permission(self):
+        packet = self.stream_packet()
+        end = dict(recordType="native-current-facing-stream-end/1", status="complete",
+                   requestedSamples=1, completedSamples=1)
+        self.snapshot.return_value.update(foreground=False, displayAllowed=True)
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"):
+            live.stream_burst(self.provider(clock=lambda: 10.), queue.Queue(maxsize=1), threading.Event(),
+                              dict(acquired=0), popen=Mock(return_value=self.child([packet, end])), samples=1)
+        self.snapshot.side_effect = [dict(self.snapshot.return_value),
+                                    dict(self.snapshot.return_value, displayAllowed=False)]
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             self.assertRaisesRegex(ValueError, "foreground-or-geometry"):
+            live.stream_burst(self.provider(clock=lambda: 10.), queue.Queue(maxsize=1), threading.Event(),
+                              dict(acquired=0), popen=Mock(return_value=self.child([packet, end])), samples=1)
+
+    def test_run_binds_same_companion_to_reader_and_presenter(self):
+        from scripts import physical_waypoint_overlay as renderer
+        companion = dict(processId=456, processStartUtcTicks="987654", hwnd=789)
+        overlay = Mock()
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=self.selection), \
+             patch.object(live.threading, "Thread") as thread, \
+             patch.object(renderer, "target_snapshot", return_value=self.snapshot.return_value) as snapshot, \
+             patch.object(renderer, "PhysicalWaypointOverlay", return_value=overlay) as presenter:
+            live.run("AMD-DESKTOP", 123, self.route_path, duration=0, companion_window=companion)
+            provider = thread.call_args.kwargs["args"][0]
+            provider.snapshot(IDENTITY)
+        self.assertEqual(presenter.call_args.kwargs["companion"], companion)
+        snapshot.assert_called_once_with(IDENTITY, companion=companion)
 
     def test_stream_target_flag_is_opt_in_and_emits_candidate(self):
         packet = self.stream_packet()

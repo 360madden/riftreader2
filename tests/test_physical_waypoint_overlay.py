@@ -430,6 +430,19 @@ class PresenterTests(unittest.TestCase):
         self.assertFalse(self.presenter.present(frame()))
         self.assertIn("epoch", self.presenter.reason)
 
+    def test_companion_permission_allows_display_without_falsifying_rift_foreground(self):
+        companion = {"processId": 456, "processStartUtcTicks": "639300720494342175", "hwnd": 777}
+        presenter = overlay.PhysicalWaypointOverlay(TARGET, companion=companion)
+        self.addCleanup(presenter.close)
+        self.api.snapshot.return_value = {"clientRect": [-1920, -20, 1920, 1080],
+                                          "foreground": False, "displayAllowed": True}
+        self.assertTrue(presenter.present(frame()))
+        self.api.snapshot.assert_called_with(TARGET, companion=companion)
+
+        self.api.snapshot.return_value["displayAllowed"] = False
+        self.assertFalse(presenter.present(frame()))
+        self.assertIn("foreground", presenter.reason)
+
     def test_outside_active_viewport_skips_marker_and_missing_membership_refuses(self):
         f = frame()
         f["points"][0]["ground"]["insideViewportCandidate"] = False
@@ -528,6 +541,16 @@ class PresenterTests(unittest.TestCase):
 
 
 class NativeCallsTests(unittest.TestCase):
+    def test_companion_value_validation_is_strict_and_returns_a_copy(self):
+        value = {"processId": 456, "processStartUtcTicks": "639300720494342175", "hwnd": 777}
+        result = overlay.validate_companion(value)
+        self.assertEqual(value, result)
+        self.assertIsNot(value, result)
+        for invalid in (dict(value, extra=True), dict(value, processId=True),
+                        dict(value, processStartUtcTicks="0"), dict(value, hwnd=0)):
+            with self.assertRaisesRegex(ValueError, "companion"):
+                overlay.validate_companion(invalid)
+
     def owned_api(self):
         user = NS(**{name: Mock(return_value=True) for name in (
             "RegisterClassW", "UnregisterClassW", "SetLayeredWindowAttributes", "DestroyWindow", "IsWindow",
@@ -688,6 +711,59 @@ class NativeCallsTests(unittest.TestCase):
             return 0
         api.d.DwmGetWindowAttribute = cloaked
         with self.assertRaisesRegex(ValueError, "cloaked"): api.snapshot(TARGET)
+
+    def test_companion_binding_and_snapshot_are_exact_epoch_scoped(self):
+        api = self.snapshot_api()
+        companion_pid, companion_hwnd = 456, 777
+        companion_ticks = int(TARGET["processStartUtcTicks"]) + 1
+        api.u.GetAncestor = lambda hwnd, kind: companion_hwnd
+        api.u.GetForegroundWindow = lambda: companion_hwnd
+        api.owner = lambda hwnd: TARGET["processId"] if hwnd == TARGET["hwnd"] else companion_pid
+        api.k.OpenProcess = lambda access, inherit, pid: pid
+        def times(handle, first, *others):
+            ticks = (int(TARGET["processStartUtcTicks"]) if handle == TARGET["processId"]
+                     else companion_ticks) - 504911232000000000
+            first._obj.dwHighDateTime, first._obj.dwLowDateTime = ticks >> 32, ticks & 0xffffffff
+            return True
+        api.k.GetProcessTimes = times
+        with patch.object(overlay.os, "getpid", return_value=companion_pid):
+            companion = api.bind_companion_window(700)
+        self.assertEqual({"processId": companion_pid, "processStartUtcTicks": str(companion_ticks),
+                          "hwnd": companion_hwnd}, companion)
+
+        result = api.snapshot(TARGET, companion=companion)
+        self.assertFalse(result["foreground"])
+        self.assertTrue(result["displayAllowed"])
+        api.u.GetForegroundWindow = lambda: 888
+        self.assertFalse(api.snapshot(TARGET, companion=companion)["displayAllowed"])
+
+        # Normal RIFT foreground display never depends on companion availability.
+        api.u.GetForegroundWindow = lambda: TARGET["hwnd"]
+        api.owner = lambda hwnd: TARGET["processId"] if hwnd == TARGET["hwnd"] else 999
+        api.u.IsIconic = lambda hwnd: hwnd == companion_hwnd
+        result = api.snapshot(TARGET, companion=companion)
+        self.assertTrue(result["foreground"])
+        self.assertTrue(result["displayAllowed"])
+
+        # Losing companion foreground during its validation does not retain permission.
+        api.owner = lambda hwnd: TARGET["processId"] if hwnd == TARGET["hwnd"] else companion_pid
+        api.u.IsIconic = lambda hwnd: False
+        api.u.GetForegroundWindow = Mock(side_effect=[companion_hwnd, 888])
+        self.assertFalse(api.snapshot(TARGET, companion=companion)["displayAllowed"])
+
+        changed = dict(companion, processStartUtcTicks=str(companion_ticks + 1))
+        api.u.GetForegroundWindow = lambda: companion_hwnd
+        api.owner = lambda hwnd: TARGET["processId"] if hwnd == TARGET["hwnd"] else companion_pid
+        api.u.IsIconic = lambda hwnd: False
+        with self.assertRaisesRegex(ValueError, "epoch"):
+            api.snapshot(TARGET, companion=changed)
+        api.owner = lambda hwnd: TARGET["processId"] if hwnd == TARGET["hwnd"] else 999
+        with self.assertRaisesRegex(ValueError, "owner"):
+            api.snapshot(TARGET, companion=companion)
+        api.owner = lambda hwnd: TARGET["processId"] if hwnd == TARGET["hwnd"] else companion_pid
+        api.u.IsIconic = lambda hwnd: hwnd == companion_hwnd
+        with self.assertRaisesRegex(ValueError, "minimized"):
+            api.snapshot(TARGET, companion=companion)
 
 
 if __name__ == "__main__":

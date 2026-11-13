@@ -39,6 +39,20 @@ def _target(value):
     return result
 
 
+def validate_companion(value):
+    """Validate an explicit GUI-window epoch binding without touching the desktop."""
+    fields = {"processId", "processStartUtcTicks", "hwnd"}
+    if not isinstance(value, dict) or set(value) != fields:
+        raise ValueError("Invalid companion window binding")
+    result = {key: value[key] for key in ("processId", "processStartUtcTicks", "hwnd")}
+    if (any(type(result[key]) is not int or result[key] <= 0 for key in ("processId", "hwnd"))
+            or not isinstance(result["processStartUtcTicks"], str)
+            or not result["processStartUtcTicks"].isdecimal()
+            or not 0 < int(result["processStartUtcTicks"]) <= 3155378975999999999):
+        raise ValueError("Invalid companion window binding")
+    return result
+
+
 class _Win32:
     def __init__(self):
         self.u = ctypes.WinDLL("user32", use_last_error=True)
@@ -85,14 +99,59 @@ class _Win32:
             raise ValueError("Window owner unavailable")
         return pid.value
 
-    def snapshot(self, target):
-        hwnd, pid = target["hwnd"], target["processId"]
-        if (not self.u.IsWindow(hwnd) or not self.u.IsWindowVisible(hwnd)
-                or self.u.IsIconic(hwnd) or self.owner(hwnd) != pid):
-            raise ValueError("Target window absent, hidden, minimized or owner changed")
+    def _window_available(self, hwnd, label):
+        if (not self.u.IsWindow(hwnd) or not self.u.IsWindowVisible(hwnd) or self.u.IsIconic(hwnd)):
+            raise ValueError(f"{label} window absent, hidden or minimized")
         cloaked = W.DWORD()
         if self.d.DwmGetWindowAttribute(hwnd, 14, ctypes.byref(cloaked), 4) != 0 or cloaked.value:
-            raise ValueError("Target cloaked or cloak status unavailable")
+            raise ValueError(f"{label} window cloaked or cloak status unavailable")
+
+    def _process_start_ticks(self, pid, label):
+        process = self.k.OpenProcess(0x1000 | 0x100000, False, pid)
+        if not process:
+            raise ValueError(f"{label} process unavailable")
+        try:
+            stamps = [W.FILETIME() for _ in range(4)]
+            if (not self.k.GetProcessTimes(process, *(ctypes.byref(s) for s in stamps))
+                    or self.k.WaitForSingleObject(process, 0) != 258):
+                raise ValueError(f"{label} process epoch unavailable")
+            return ((stamps[0].dwHighDateTime << 32) + stamps[0].dwLowDateTime
+                    + 504911232000000000)
+        finally:
+            self.k.CloseHandle(process)
+
+    def bind_companion_window(self, tk_id):
+        if type(tk_id) is not int or tk_id <= 0:
+            raise ValueError("Invalid companion Tk window")
+        hwnd = self.u.GetAncestor(tk_id, 2)
+        pid = os.getpid()
+        if not hwnd or self.owner(hwnd) != pid:
+            raise ValueError("Companion top-level window is not owned by this process")
+        self._window_available(hwnd, "Companion")
+        ticks = self._process_start_ticks(pid, "Companion")
+        self._window_available(hwnd, "Companion")
+        if self.owner(hwnd) != pid:
+            raise ValueError("Companion window owner changed during binding")
+        return {"processId": pid, "processStartUtcTicks": str(ticks), "hwnd": int(hwnd)}
+
+    def _validate_companion_window(self, companion):
+        companion = validate_companion(companion)
+        hwnd, pid = companion["hwnd"], companion["processId"]
+        self._window_available(hwnd, "Companion")
+        if self.owner(hwnd) != pid:
+            raise ValueError("Companion window owner changed")
+        if self._process_start_ticks(pid, "Companion") != int(companion["processStartUtcTicks"]):
+            raise ValueError("Companion process epoch changed")
+        self._window_available(hwnd, "Companion")
+        if self.owner(hwnd) != pid:
+            raise ValueError("Companion window owner changed")
+        return hwnd
+
+    def snapshot(self, target, *, companion=None):
+        hwnd, pid = target["hwnd"], target["processId"]
+        self._window_available(hwnd, "Target")
+        if self.owner(hwnd) != pid:
+            raise ValueError("Target window absent, hidden, minimized or owner changed")
         process = self.k.OpenProcess(0x1000 | 0x100000, False, pid)
         if not process:
             raise ValueError("Target process unavailable")
@@ -118,8 +177,21 @@ class _Win32:
             width, height = rect.right - rect.left, rect.bottom - rect.top
         if width <= 0 or height <= 0:
             raise ValueError("Invalid client dimensions")
-        return {"clientRect": [origin.x, origin.y, width, height],
-                "foreground": self.u.GetForegroundWindow() == hwnd}
+        foreground_hwnd = self.u.GetForegroundWindow()
+        result = {"clientRect": [origin.x, origin.y, width, height],
+                  "foreground": foreground_hwnd == hwnd}
+        if companion is not None:
+            companion = validate_companion(companion)
+            if result["foreground"]:
+                result["displayAllowed"] = True
+            elif foreground_hwnd == companion["hwnd"]:
+                companion_hwnd = self._validate_companion_window(companion)
+                foreground_hwnd = self.u.GetForegroundWindow()
+                result["foreground"] = foreground_hwnd == hwnd
+                result["displayAllowed"] = result["foreground"] or foreground_hwnd == companion_hwnd
+            else:
+                result["displayAllowed"] = False
+        return result
 
     def own_window(self, tk_id):
         hwnd = self.u.GetAncestor(tk_id, 2)
@@ -154,9 +226,17 @@ def _native():
     return _Win32()
 
 
-def target_snapshot(target):
+def bind_companion_window(tk_id):
+    """Bind one visible GUI top-level window to its current process epoch."""
+    return _native().bind_companion_window(tk_id)
+
+
+def target_snapshot(target, *, companion=None):
     """Read exact process/window epoch and physical client geometry; never focus."""
-    return _native().snapshot(_target(target))
+    target = _target(target)
+    if companion is None:
+        return _native().snapshot(target)
+    return _native().snapshot(target, companion=validate_companion(companion))
 
 
 def _projection(point, width, height):
@@ -676,8 +756,9 @@ class PhysicalWaypointOverlay:
     # the current physical client and only constrain labels, never world anchors.
     polished_reserved_rects = ((.26, 0., .77, .26),)
 
-    def __init__(self, target, *, max_age=.8, window_factory=None):
+    def __init__(self, target, *, max_age=.8, window_factory=None, companion=None):
         self.target = _target(target)
+        self.companion = None if companion is None else validate_companion(companion)
         if type(max_age) not in (int, float) or not math.isfinite(max_age) or max_age <= 0:
             raise ValueError("Invalid overlay freshness limit")
         self.max_age, self.thread = max_age, threading.get_ident()
@@ -710,8 +791,9 @@ class PhysicalWaypointOverlay:
         if (not isinstance(rect, list) or len(rect) != 4 or any(type(v) is not int for v in rect)
                 or rect[2] <= 0 or rect[3] <= 0):
             raise ValueError("Malformed physical client rectangle")
-        snapshot = target_snapshot(self.target)
-        if snapshot["foreground"] is not True or snapshot["clientRect"] != rect:
+        snapshot = target_snapshot(self.target, companion=self.companion)
+        display_allowed = snapshot.get("displayAllowed", snapshot["foreground"])
+        if display_allowed is not True or snapshot["clientRect"] != rect:
             raise ValueError("Target foreground or client geometry changed")
         if not isinstance(frame.get("points"), list):
             raise ValueError("Malformed marker list")

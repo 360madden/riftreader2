@@ -129,3 +129,25 @@ passed all five appearance GUI checks. Default-window pixels were reviewed;
 980px layout coverage uses actual withdrawn widget requests, not a claimed mapped
 minimum-window screenshot. Qt appearance was verified live; the native fallback's
 size/labels/opacity wiring was checked offline.
+
+## Waypoints-focus preview — 21:55 EST follow-up
+
+On AMD-DESKTOP, RIFT PID 40452 remained genuinely unfocused while the exact owning
+Waypoints window held focus. A native window snapshot reported `foreground:false`
+and `displayAllowed:true`. Moving the UI sliders changed visible beacons from
+137%/100% to 200%/46% without leaving Waypoints. Both Olaf's gold landmark and the
+selected target's magenta beacon remained visible. Focusing an existing Explorer
+window hid them and reported `displayAllowed:false`; returning to Waypoints
+restored them. RIFT identity/geometry/freshness checks and movement foreground
+rules remain unchanged. Companion minimization does not suppress RIFT-foreground
+display. Duplicate GUI idle reads now pause for the whole marker session.
+
+All 112 focused feed/presenter/GUI lifecycle checks passed. Reviewed images:
+`artifacts/beacon-companion-baseline-20261112.png`,
+`artifacts/beacon-companion-sliders-20261112.png`, and
+`artifacts/beacon-companion-other-app-hidden-20261112.png`. Native display-state
+receipt: `artifacts/beacon-companion-focus-state-20261112.json`. No game input was
+sent. The user's seven-point edits were saved separately as
+`artifacts/waypoint-user-edits-before-focus-preview-20261112.json`; by their choice,
+the two-point measured route remains open. Original 137% size / 100% opacity /
+labels-on preferences were restored, with markers enabled and Waypoints focused.

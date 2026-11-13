@@ -43,6 +43,7 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertEqual("native", command[command.index("--presenter") + 1])
         self.assertNotIn("--target-beacon", command)
         self.assertNotIn("--landmark-number", command)
+        self.assertNotIn("--companion-window", command)
         self.assertEqual(str((self.root / "artifacts" / "waypoint-marker-style.json").absolute()),
                          command[command.index("--appearance-file") + 1])
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
@@ -93,6 +94,22 @@ class OwnedMarkerTests(unittest.TestCase):
         for number in (True, False, 0, -1, 3, 1.0, "1"):
             with self.subTest(number=number), self.assertRaises(WaypointError):
                 self.markers.start(self.route, self.adapter, landmark_number=number)
+        self.popen.assert_not_called()
+        self.assertEqual([], list((self.root / "artifacts").iterdir()))
+
+    def test_explicit_companion_binding_is_serialized_without_changing_target(self):
+        companion = {"processId": 456, "processStartUtcTicks": "123456789", "hwnd": 65536}
+        self.markers.start(self.route, self.adapter, companion=companion)
+        command = self.popen.call_args.args[0]
+        self.assertEqual(companion, json.loads(command[command.index("--companion-window") + 1]))
+        self.assertEqual("123", command[command.index("--physical-pid") + 1])
+        self.assertEqual("1234", command[command.index("--expect-start-ticks") + 1])
+
+    def test_invalid_companion_is_refused_before_files_or_popen(self):
+        for companion in ({}, {"processId": True, "processStartUtcTicks": "123", "hwnd": 65536},
+                          {"processId": 456, "processStartUtcTicks": "123", "hwnd": 0}):
+            with self.subTest(companion=companion), self.assertRaises(ValueError):
+                self.markers.start(self.route, self.adapter, companion=companion)
         self.popen.assert_not_called()
         self.assertEqual([], list((self.root / "artifacts").iterdir()))
 

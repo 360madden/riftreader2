@@ -506,7 +506,10 @@ controls. Load a recorded route or independently measured points, wait for its R
 Show markers, then return to RIFT. Unlike the separately invoked bounded command above, the GUI's
 owned marker child remains open explicitly until Hide markers, route replacement,
 RIFT process/identity loss, or waypoint-window close. Markers use the route's real saved heights and
-hide while another application is foreground. Editing/replacing the route,
+stay visible while RIFT or the exact owning Waypoints window is foreground so its
+appearance sliders preview live. Unrelated foreground applications still hide them.
+The GUI binds its HWND/PID/process epoch explicitly; standalone commands remain
+RIFT-foreground-only unless given an explicit companion binding. Editing/replacing the route,
 reconnection and closing the waypoint window stop its one owned child;
 it never restarts automatically. Recorded Play Forward/Reverse and Resume can
 keep markers running. STOP/F8 latches movement cancellation first, then requests

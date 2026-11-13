@@ -23,7 +23,11 @@ class MarkerAppearanceTests(unittest.TestCase):
                                       stop_requested=False, exit_code=None)
         self.stack.enter_context(patch.object(app, "OwnedWaypointMarkers", return_value=self.marker))
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
-        self.launch(SimpleNamespace(pid=123, read=lambda **kwargs: pose))
+        self.reader = Mock(return_value=pose)
+        self.adapter = SimpleNamespace(pid=123, read=self.reader,
+                                       target={"processId": 123, "processStartUtcTicks": "1234",
+                                               "executableSha256": "a" * 64, "hwnd": 65537})
+        self.launch(self.adapter)
         self.root = self.roots[0]
         self.preferences = self.path / "artifacts" / "waypoint-marker-style.json"
         self.scales = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Scale)]
@@ -97,6 +101,46 @@ class MarkerAppearanceTests(unittest.TestCase):
             # Tk requests with outer padding44 + border4 + tab padding28.
             self.assertLessEqual(tab.winfo_reqwidth(), width - 76)
         self.assertLessEqual(tab.winfo_reqheight(), 184)
+
+    def test_gui_marker_launch_binds_exact_root_and_passes_companion(self):
+        self.ready()
+        table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
+        table.insert("", "end", values=("Ground", "0", "0"))
+        companion = {"processId": 456, "processStartUtcTicks": "123456789", "hwnd": 65536}
+        with patch("scripts.physical_waypoint_overlay.bind_companion_window", return_value=companion) as bind:
+            self.button("Show markers").invoke()
+        bind.assert_called_once_with(self.root.winfo_id())
+        self.assertEqual(companion, self.marker.start.call_args.kwargs["companion"])
+
+    def test_missing_gui_binding_refuses_marker_launch(self):
+        self.ready()
+        with patch("scripts.physical_waypoint_overlay.bind_companion_window", side_effect=ValueError("binding unavailable")):
+            self.button("Show markers").invoke()
+        self.marker.start.assert_not_called()
+        values = [str(self.root.getvar(w["textvariable"])) for w in self.widgets(self.root)
+                  if isinstance(w, fixture.ttk.Label) and w["textvariable"]]
+        self.assertTrue(any("binding unavailable" in text for text in values))
+
+    def test_running_markers_pause_only_idle_pose_and_preserve_checked_preference(self):
+        self.ready()
+        checkbox = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
+                        and str(w["text"]).startswith("Live pose"))
+        self.assertTrue(checkbox.instate(["selected"]))
+        self.marker.running.return_value = True
+        reads = self.reader.call_count
+        time.sleep(2.05)
+        self.root.update()
+        self.assertEqual(reads, self.reader.call_count)
+        self.assertEqual("Live pose (paused)", str(checkbox["text"]))
+        self.assertTrue(checkbox.instate(["selected"]))
+        self.marker.running.return_value = False
+        deadline = time.monotonic() + 1
+        while self.reader.call_count == reads and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(.01)
+        self.assertGreater(self.reader.call_count, reads)
+        self.assertEqual("Live pose (2 s)", str(checkbox["text"]))
+        self.assertTrue(checkbox.instate(["selected"]))
 
 
 if __name__ == "__main__":

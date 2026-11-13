@@ -16,7 +16,8 @@ screenshots or proof of actual window clipping. Reopen the helper normally to
 load new source; reopening never starts playback automatically.
 
 In **Scene & beacons**, choose **Show markers** to display saved world locations
-while RIFT is foreground. **Guide selected marker** gives the selected point a
+while RIFT or that Waypoints window is foreground. This keeps size and opacity
+changes visible while you adjust the sliders. **Guide selected marker** gives the selected point a
 gold reticle, short beacon and name/distance pill; **Include selected target**
 adds a distinct magenta diamond when a fresh target projection is available.
 NEXT is cyan and ordinary/completed points remain subdued. **Hide markers** stops
@@ -29,10 +30,13 @@ Preferences are stored in `artifacts/waypoint-marker-style.json`. A malformed or
 temporarily unavailable preference file retains the last valid appearance.
 There is no marker session timer: the feed stays enabled until you hide it,
 close Waypoints or RIFT, or another existing owned-stop condition applies, such
-as replacing the route or pressing STOP/F8. Switching away from RIFT hides the
-markers temporarily; returning to RIFT allows fresh markers to appear again.
-The helper pauses its duplicate idle pose reader while markers run and it is unfocused; focusing it
-resumes fresh pose updates. Foreground/identity/geometry/freshness failures still
+as replacing the route or pressing STOP/F8. Switching to an unrelated app hides
+the markers temporarily; returning to RIFT or the owning Waypoints window allows
+fresh markers to appear again. The helper pauses its duplicate idle pose reader
+throughout a marker session to avoid camera-feed contention; **Live pose (paused)**
+keeps the last actual update time visible. Hiding markers resumes idle updates.
+The display exception binds the exact Waypoints HWND, PID and process epoch;
+movement still requires RIFT foreground. Identity/geometry/freshness failures still
 withhold markers. See the [camera-motion verification](../validation/waypoint-overlay-camera-2026-11-12.md).
 
 Double-click **`Waypoints.cmd`** in the repository root to open the window for

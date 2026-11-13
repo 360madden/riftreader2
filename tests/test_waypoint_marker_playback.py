@@ -25,6 +25,10 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.marker_patch = patch.object(app, "OwnedWaypointMarkers", return_value=self.marker)
         self.marker_patch.start()
         self.addCleanup(self.marker_patch.stop)
+        self.companion = {"processId": 456, "processStartUtcTicks": "123456789", "hwnd": 65536}
+        self.bind_patch = patch("scripts.physical_waypoint_overlay.bind_companion_window", return_value=self.companion)
+        self.bind_companion = self.bind_patch.start()
+        self.addCleanup(self.bind_patch.stop)
         self.entered, self.stopped = threading.Event(), threading.Event()
         def playback(adapter, document, stop, emit, **kwargs):
             self.entered.set()
@@ -63,7 +67,8 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.assertFalse(checkpoint.exists())
         self.button("Show markers").invoke()
         self.marker.start.assert_called_once()
-        self.assertEqual({}, self.marker.start.call_args.kwargs)
+        self.assertEqual({"companion": self.companion}, self.marker.start.call_args.kwargs)
+        self.bind_companion.assert_called_once_with(self.window.winfo_id())
         self.assertFalse(checkpoint.exists())
 
     def test_guide_selection_is_snapshotted_one_based_and_checkbox_locks(self):
@@ -72,7 +77,7 @@ class MarkerPlaybackTests(unittest.TestCase):
         items = self.table.get_children()
         self.table.selection_set(items[1])
         self.button("Show markers").invoke()
-        self.assertEqual({"landmark_number": 2}, self.marker.start.call_args.kwargs)
+        self.assertEqual({"landmark_number": 2, "companion": self.companion}, self.marker.start.call_args.kwargs)
         self.assertEqual(["Start", "End"],
                          [row[0] for row in self.marker.start.call_args.args[0]["waypoints"]])
         self.table.selection_set(items[0])
@@ -149,18 +154,28 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.assertTrue(self.stopped.wait(1))
         self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
 
-    def test_marker_feed_suspends_idle_pose_until_helper_has_focus(self):
-        read = Mock(return_value=self.pose(0))
+    def test_marker_feed_suspends_idle_pose_even_with_helper_focus_until_markers_end(self):
+        pose = self.pose(0)
+        acquired = pose.acquired
+        read = Mock(return_value=pose)
         self.adapter.read = read
-        with patch.object(self.window, "focus_displayof", return_value=None) as focused:
+        def displayed_pose():
+            return next(str(self.window.getvar(w["textvariable"])) for w in self.widgets()
+                        if isinstance(w, fixture.ttk.Label) and w["textvariable"]
+                        and str(self.window.getvar(w["textvariable"])).startswith("Position "))
+        previous = displayed_pose()
+        with patch.object(self.window, "focus_displayof", return_value=self.window):
             deadline = time.monotonic() + 2.2
             while time.monotonic() < deadline:
                 self.window.update()
                 time.sleep(.01)
             self.assertEqual(0, read.call_count)
-            focused.return_value = self.window
+            self.assertEqual(previous, displayed_pose())
+            self.assertEqual(acquired, pose.acquired)
+            self.marker.running.return_value = False
             self.wait_for(lambda: read.call_count == 1)
-        self.assertTrue(self.marker.running())
+        self.assertEqual(acquired, pose.acquired)
+        self.assertFalse(self.marker.running())
 
 
 if __name__ == "__main__":

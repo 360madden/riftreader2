@@ -38,6 +38,11 @@ def require(condition, reason):
         raise ValueError(reason)
 
 
+def _display_allowed(snapshot):
+    """Only a trusted local snapshot can admit the bound companion for display."""
+    return snapshot.get("displayAllowed", snapshot.get("foreground")) is True
+
+
 def load_route(path):
     raw = Path(path).read_bytes()
     document = json.loads(raw.decode("utf-8-sig"))
@@ -75,7 +80,7 @@ class ProjectionProvider:
 
     def acquire(self):
         before = self.snapshot(self.target)
-        require(before.get("foreground") is True, "target-not-foreground")
+        require(_display_allowed(before), "target-not-foreground")
         acquired = self.clock()  # Intentionally before child launch, not after it returns.
         result = self.read(self.selection, "facing", samples=1, include_target=True)
         self.latest_native = result.get("nativeOutput")
@@ -123,7 +128,7 @@ class ProjectionProvider:
         age = (self.utcnow() - sampled).total_seconds()
         require(sampled.utcoffset().total_seconds() == 0 and -.1 <= age <= self.max_age, "native-sample-stale")
         after = self.snapshot(self.target)
-        require(after.get("foreground") is True and before.get("clientRect") == after.get("clientRect"),
+        require(_display_allowed(after) and before.get("clientRect") == after.get("clientRect"),
                 "target-foreground-or-geometry-changed")
         require(0 <= self.clock() - acquired <= self.max_age, "native-acquisition-expired")
         camera = row["opticalCameraCandidate"]
@@ -269,7 +274,7 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
     if stop.is_set():
         return
     before = provider.snapshot(provider.target)
-    require(before.get("foreground") is True, "target-not-foreground")
+    require(_display_allowed(before), "target-not-foreground")
     continuous = type(duration_ms) is int and duration_ms == 0
     extended = type(duration_ms) is int and 2000 < duration_ms <= 600000
     require(duration_ms is None or continuous
@@ -339,7 +344,7 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
                 kind, raw = lines.get(timeout=.05)
             except queue.Empty:
                 current = provider.snapshot(provider.target)
-                require(current.get("foreground") is True and current.get("clientRect") == before.get("clientRect"),
+                require(_display_allowed(current) and current.get("clientRect") == before.get("clientRect"),
                         "target-foreground-or-geometry-changed")
                 continue
             if kind == "error":
@@ -358,7 +363,7 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
             require((continuous or sequence < samples) and type(packet.get("sequence")) is int
                     and packet["sequence"] == sequence, "stream-sequence-invalid")
             current = provider.snapshot(provider.target)
-            require(current.get("foreground") is True and current.get("clientRect") == before.get("clientRect"),
+            require(_display_allowed(current) and current.get("clientRect") == before.get("clientRect"),
                     "target-foreground-or-geometry-changed")
             acquired, completed = provider.stream_row_timing(packet, previous_end=previous_end)
             try:
@@ -505,7 +510,8 @@ def apply_saved_progress(frame, progress_file, route):
 
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
-        presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None):
+        presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None,
+        companion_window=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -514,6 +520,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     require(reader in ("single", "stream"), "invalid-reader-mode")
     require(duration != 0 or reader == "stream", "continuous-duration-requires-stream-reader")
     require(presenter in ("native", "qt"), "invalid-presenter")
+    if companion_window is not None:
+        from scripts.physical_waypoint_overlay import validate_companion
+        companion_window = validate_companion(companion_window)
     expected = _expected_target(expected_start_ticks, expected_sha256, expected_hwnd)
     if stop_file is not None:
         stop_file = Path(stop_file)
@@ -542,9 +551,13 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 and str(target.get("executableSha256", "")).casefold() == expected["executableSha256"]
                 and target.get("hwnd") == expected["hwnd"], "expected-target-identity-mismatch")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
-    provider = ProjectionProvider(selection, route, target_snapshot, max_age=max_age, target_beacon=target_beacon,
-                                  landmark_number=landmark_number)
     window_options = {}
+    snapshot = target_snapshot
+    if companion_window is not None:
+        snapshot = lambda target: target_snapshot(target, companion=companion_window)
+        window_options["companion"] = companion_window
+    provider = ProjectionProvider(selection, route, snapshot, max_age=max_age, target_beacon=target_beacon,
+                                  landmark_number=landmark_number)
     if presenter == "qt":
         try:
             from scripts.qt_waypoint_overlay import QtOwnedWindow
@@ -675,6 +688,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "progressFile": str(progress_file) if progress_file is not None else None,
         "appearanceFile": str(appearance_file) if appearance_file is not None else None,
         "appearance": appearance,
+        "companionWindow": companion_window,
         "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
             "Presentation-accepted counts and intervals are asynchronous presenter requests, not physical display FPS.",
@@ -700,6 +714,8 @@ def main(argv=None):
     parser.add_argument("--presenter", choices=("native", "qt"), default="native")
     parser.add_argument("--appearance-file", type=Path,
                         help="live beacon display preferences saved by Waypoints")
+    parser.add_argument("--companion-window", type=json.loads,
+                        help="exact owning Waypoints window binding for live appearance preview")
     parser.add_argument("--expect-start-ticks")
     parser.add_argument("--expect-sha256")
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
@@ -714,7 +730,7 @@ def main(argv=None):
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
                      progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
-                     appearance_file=args.appearance_file)
+                     appearance_file=args.appearance_file, companion_window=args.companion_window)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():
