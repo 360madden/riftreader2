@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 from scripts import physical_waypoints as app
 from scripts.waypoint_progress import RouteProgress
-from tests.tk_support import withdrawn_root
+from tests.tk_support import withdrawn_root, reject_error_dialog
 
 TEST_IDENTITY = {"machine": "AMD-DESKTOP", "gameBuildSha256": "a" * 64, "unitKey": "player"}
 
@@ -36,6 +36,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.addCleanup(restore_gc)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch("tkinter.messagebox.showerror", side_effect=reject_error_dialog))
         self.temp = self.stack.enter_context(tempfile.TemporaryDirectory())
         self.path = Path(self.temp)
         (self.path / "artifacts").mkdir()

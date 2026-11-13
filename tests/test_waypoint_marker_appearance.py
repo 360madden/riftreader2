@@ -19,14 +19,22 @@ class MarkerAppearanceTests(unittest.TestCase):
     launch = fixture.PlaybackWindowStateTests.launch
 
     def ready(self):
-        self.marker = SimpleNamespace(running=Mock(return_value=False), stop=Mock(), start=Mock(),
-                                      stop_requested=False, exit_code=None)
+        self.marker_running = False
+        self.marker = SimpleNamespace(
+            running=Mock(side_effect=lambda: self.marker_running),
+            stop=Mock(side_effect=lambda: setattr(self, "marker_running", False)),
+            start=Mock(side_effect=lambda *args, **kwargs: setattr(self, "marker_running", True)),
+            update=Mock(), stop_requested=False, exit_code=None,
+            status_path=self.path / "marker-status.json", pose_path=self.path / "marker-pose.json")
         self.stack.enter_context(patch.object(app, "OwnedWaypointMarkers", return_value=self.marker))
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.reader = Mock(return_value=pose)
         self.adapter = SimpleNamespace(pid=123, read=self.reader,
                                        target={"processId": 123, "processStartUtcTicks": "1234",
-                                               "executableSha256": "a" * 64, "hwnd": 65537})
+                                               "executableSha256": "a" * 64, "hwnd": 65537},
+                                       binding={"runtimeIdentity": dict(fixture.TEST_IDENTITY)},
+                                       selection=SimpleNamespace(),
+                                       input_receipt_path=self.path / "unused-input.jsonl")
         self.launch(self.adapter)
         self.root = self.roots[0]
         self.preferences = self.path / "artifacts" / "waypoint-marker-style.json"
@@ -36,6 +44,18 @@ class MarkerAppearanceTests(unittest.TestCase):
                        and str(w).startswith(scene + ".")]
         self.labels = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
                            and str(w["text"]) == "Show labels")
+
+    def route_table(self):
+        return next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview)
+                    and tuple(str(name) for name in w["columns"]) == ("name", "x", "z"))
+
+    def marker_toggle(self):
+        return next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Button)
+                    and str(w["text"]) in {"Show markers", "Show beacons", "Hide markers", "Hide beacons"})
+
+    def text_values(self):
+        return [str(self.root.getvar(w["textvariable"])) for w in self.widgets(self.root)
+                if isinstance(w, fixture.ttk.Label) and w["textvariable"]]
 
     def settle(self, expected):
         deadline = time.monotonic() + 1
@@ -48,7 +68,7 @@ class MarkerAppearanceTests(unittest.TestCase):
 
     def test_sliders_and_labels_persist_live_without_stopping_or_starting_markers(self):
         self.ready()
-        self.marker.running.return_value = True
+        self.marker_running = True
         self.scales[0].set(150)
         self.scales[1].set(40)
         self.settle(dict(schemaVersion=1, beaconScale=1.5, opacity=.4, labelsVisible=True))
@@ -103,22 +123,22 @@ class MarkerAppearanceTests(unittest.TestCase):
             # Withdrawn children have no mapped allocations. Compare their real
             # Tk requests with outer padding44 + border4 + tab padding28.
             self.assertLessEqual(tab.winfo_reqwidth(), width - 76)
-        self.assertLessEqual(tab.winfo_reqheight(), 184)
+        self.assertLessEqual(tab.winfo_reqheight(), 220)
 
     def test_gui_marker_launch_binds_exact_root_and_passes_companion(self):
         self.ready()
-        table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
+        table = self.route_table()
         table.insert("", "end", values=("Ground", "0", "0"))
         companion = {"processId": 456, "processStartUtcTicks": "123456789", "hwnd": 65536}
         with patch("scripts.physical_waypoint_overlay.bind_companion_window", return_value=companion) as bind:
-            self.button("Show markers").invoke()
+            self.marker_toggle().invoke()
         bind.assert_called_once_with(self.root.winfo_id())
         self.assertEqual(companion, self.marker.start.call_args.kwargs["companion"])
 
     def test_missing_gui_binding_refuses_marker_launch(self):
         self.ready()
         with patch("scripts.physical_waypoint_overlay.bind_companion_window", side_effect=ValueError("binding unavailable")):
-            self.button("Show markers").invoke()
+            self.marker_toggle().invoke()
         self.marker.start.assert_not_called()
         values = [str(self.root.getvar(w["textvariable"])) for w in self.widgets(self.root)
                   if isinstance(w, fixture.ttk.Label) and w["textvariable"]]
@@ -129,14 +149,14 @@ class MarkerAppearanceTests(unittest.TestCase):
         checkbox = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
                         and str(w["text"]).startswith("Live pose"))
         self.assertTrue(checkbox.instate(["selected"]))
-        self.marker.running.return_value = True
+        self.marker_running = True
         reads = self.reader.call_count
         time.sleep(2.05)
         self.root.update()
         self.assertEqual(reads, self.reader.call_count)
         self.assertEqual("Live pose (waiting)", str(checkbox["text"]))
         self.assertTrue(checkbox.instate(["selected"]))
-        self.marker.running.return_value = False
+        self.marker_running = False
         deadline = time.monotonic() + 1
         while self.reader.call_count == reads and time.monotonic() < deadline:
             self.root.update()
@@ -144,6 +164,61 @@ class MarkerAppearanceTests(unittest.TestCase):
         self.assertGreater(self.reader.call_count, reads)
         self.assertEqual("Live pose (2 s)", str(checkbox["text"]))
         self.assertTrue(checkbox.instate(["selected"]))
+
+    def test_beacon_status_does_not_equate_running_reader_with_visibility(self):
+        unknown = app.beacon_display_status(True, False, None)
+        self.assertEqual(("unknown", None), (unknown["state"], unknown["visible"]))
+        hidden = app.beacon_display_status(True, False, {
+            "presenterSnapshot": {"displayAllowed": False}, "overlayHasFrame": True})
+        self.assertEqual(("hidden", False), (hidden["state"], hidden["visible"]))
+        visible = app.beacon_display_status(True, False, {
+            "presenterSnapshot": {"displayAllowed": True}, "overlayHasFrame": True,
+            "nativeWindowVisible": True, "qtWidgetVisible": True,
+            "frameAgeSeconds": .1, "maxAgeSeconds": .35})
+        self.assertEqual(("visible", True), (visible["state"], visible["visible"]))
+
+    def test_target_toggle_restarts_owned_reader_and_preserves_new_setting(self):
+        self.ready()
+        self.route_table().insert("", "end", values=("Ground", "0", "0"))
+        target = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
+                      and "selected target" in str(w["text"]).casefold())
+        with patch("scripts.physical_waypoint_overlay.bind_companion_window", return_value={
+                "processId": 456, "processStartUtcTicks": "123456789", "hwnd": 65536}):
+            self.marker_toggle().invoke()
+            self.root.update()
+            self.assertFalse(target.instate(["disabled"]))
+            target.invoke()
+            deadline = time.monotonic() + 1
+            while self.marker.start.call_count < 2 and time.monotonic() < deadline:
+                self.root.update()
+                time.sleep(.01)
+        self.assertEqual(1, self.marker.stop.call_count)
+        self.assertEqual(2, self.marker.start.call_count)
+        self.assertTrue(self.marker.start.call_args.kwargs["target_beacon"])
+
+    def test_guide_control_requires_exactly_one_selected_waypoint(self):
+        self.ready()
+        table = self.route_table()
+        first = table.insert("", "end", values=("A", "0", "0"))
+        second = table.insert("", "end", values=("B", "1", "0"))
+        guide = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
+                     and str(w["text"]) == "Guide selected marker")
+        self.root.update()
+        self.assertTrue(guide.instate(["disabled"]))
+        table.selection_set(first)
+        table.event_generate("<<TreeviewSelect>>")
+        deadline = time.monotonic() + 1
+        while guide.instate(["disabled"]) and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(.01)
+        self.assertFalse(guide.instate(["disabled"]))
+        table.selection_set((first, second))
+        table.event_generate("<<TreeviewSelect>>")
+        deadline = time.monotonic() + 1
+        while not guide.instate(["disabled"]) and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(.01)
+        self.assertTrue(guide.instate(["disabled"]))
 
 
 if __name__ == "__main__":

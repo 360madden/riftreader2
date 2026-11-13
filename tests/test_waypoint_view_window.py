@@ -21,9 +21,15 @@ class ViewWindowTests(unittest.TestCase):
     button = fixture.PlaybackWindowStateTests.button
     launch = fixture.PlaybackWindowStateTests.launch
 
-    def prepare(self):
-        self.document = {"waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11],
-                         "recording": {"complete": True, "version": 1}}
+    def prepare(self, document=None):
+        runtime_identity = dict(fixture.TEST_IDENTITY, processId=123, processStartUtcTicks="99")
+        self.document = document or {
+            "waypoints": [["A", 0, 0], ["B", 1, 0]], "heights": [10, 11],
+            "recording": {"version": 1, "complete": True,
+                          "identity": {"mode": "recorded", "runtimeIdentity": runtime_identity},
+                          "sources": ["retained-native-route.json"],
+                          "firstObservedAtUtc": "2026-11-13T12:00:00Z",
+                          "lastObservedAtUtc": "2026-11-13T12:00:01Z"}}
         path = self.path / "route.json"
         path.write_text(json.dumps(self.document), encoding="utf-8")
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
@@ -83,6 +89,23 @@ class ViewWindowTests(unittest.TestCase):
         self.assertEqual("wgc", kwargs["capture_backend"])
         self.assertTrue(any("Rerun unavailable: not installed" in value for value in self.labels()))
 
+    def test_capture_is_disabled_when_route_has_estimated_heights_only(self):
+        self.prepare({"waypoints": [["A", 0, 0], ["B", 1, 0]],
+                      "heights": [None, None], "pointMeasurements": [None, None]})
+        root = self.roots[0]
+        notebook = next(w for w in self.widgets(root) if isinstance(w, fixture.ttk.Notebook))
+        scene = next(tab for tab in notebook.tabs() if notebook.tab(tab, "text") == "Scene & beacons")
+        notebook.select(scene)
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            root.update()
+            if self.button("Save view").instate(["disabled"]):
+                break
+            time.sleep(.01)
+        self.assertTrue(self.button("Save view").instate(["disabled"]))
+        self.assertTrue(any("Capture needs measured XYZ for all points (0/2)" in value
+                            for value in self.labels()))
+
     def test_nearby_units_are_requested_only_on_save_and_unavailable_keeps_view(self):
         self.prepare()
         backend = Mock(return_value={"status": "saved-route-view-candidate", "image": str(self.path / "view.png"),
@@ -131,6 +154,60 @@ class ViewWindowTests(unittest.TestCase):
             open_file.assert_called_once_with(str(self.path / "focused.png"))
         self.assertEqual(["wgc", "desktop", "desktop"], [call.kwargs["capture_backend"] for call in backend.call_args_list])
         self.assertTrue(any("capture unavailable" in value for value in self.labels()))
+
+    def test_failed_capture_keeps_prior_working_image_and_3d_view(self):
+        self.prepare()
+        prior_image = self.path / "prior.png"
+        prior_rerun = self.path / "prior.rrd"
+        prior_image.write_bytes(b"png")
+        prior_rerun.write_bytes(b"rrd")
+        backend = Mock(side_effect=[
+            {"status": "saved-route-view-candidate", "image": str(prior_image),
+             "inputSent": False, "focusChanged": False,
+             "rerun": {"status": "saved", "path": str(prior_rerun)}},
+            {"status": "blocked", "reason": "capture failed", "inputSent": False,
+             "focusChanged": False},
+        ])
+        launched = Mock(return_value=SimpleNamespace(poll=Mock(return_value=None)))
+        with patch.dict(sys.modules, {"scripts.save_physical_route_view": SimpleNamespace(
+                save_route_view=backend, launch_saved_rerun=launched)}), \
+             patch.object(os, "startfile") as open_file:
+            self.button("Save view").invoke()
+            self.wait_idle()
+            self.button("Save view").invoke()
+            self.wait_idle()
+            self.assertFalse(self.button("Open view").instate(["disabled"]))
+            self.assertFalse(self.button("Open 3D view").instate(["disabled"]))
+            self.assertTrue(any("capture failed" in value for value in self.labels()))
+            self.button("Open view").invoke()
+            self.button("Open 3D view").invoke()
+        open_file.assert_called_once_with(str(prior_image))
+        launched.assert_called_once_with(str(prior_rerun))
+
+    def test_open_saved_manifest_loads_assets_without_opening_them(self):
+        self.prepare()
+        image = self.path / "saved.png"
+        rerun = self.path / "saved.rrd"
+        image.write_bytes(b"png")
+        rerun.write_bytes(b"rrd")
+        manifest = self.path / "saved-view.json"
+        manifest.write_text(json.dumps({
+            "status": "saved-route-view-candidate", "image": str(image),
+            "rerun": {"status": "saved", "path": str(rerun)}}), encoding="utf-8")
+        launched = Mock(return_value=SimpleNamespace(poll=Mock(return_value=None)))
+        with patch("tkinter.filedialog.askopenfilename", return_value=str(manifest)), \
+             patch.object(os, "startfile") as open_file, \
+             patch("scripts.save_physical_route_view.launch_saved_rerun", launched):
+            self.button("Open saved…").invoke()
+            open_file.assert_not_called()
+            launched.assert_not_called()
+            self.assertTrue(any("Saved scene loaded" in value for value in self.labels()))
+            self.assertFalse(self.button("Open view").instate(["disabled"]))
+            self.assertFalse(self.button("Open 3D view").instate(["disabled"]))
+            self.button("Open view").invoke()
+            self.button("Open 3D view").invoke()
+        open_file.assert_called_once_with(str(image))
+        launched.assert_called_once_with(str(rerun))
 
 
 if __name__ == "__main__":

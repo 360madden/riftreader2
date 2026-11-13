@@ -7,6 +7,14 @@ from tests.tk_support import withdrawn_root
 
 
 class TkStartupTests(unittest.TestCase):
+    def test_transient_tcl_constructor_failure_also_gets_one_fresh_attempt(self):
+        healthy = Mock()
+        factory = Mock(side_effect=[tk.TclError("Can't find a usable init.tcl"), healthy])
+        with patch('tests.tk_support._installed_libraries', return_value=True):
+            self.assertIs(healthy, withdrawn_root(factory))
+        self.assertEqual(2, factory.call_count)
+        healthy.withdraw.assert_called_once()
+
     def test_transient_bootstrap_recreates_interpreter_then_withdraws(self):
         failed, healthy = Mock(), Mock()
         failed.loadtk.side_effect = tk.TclError('invalid command name "tcl_findLibrary"')

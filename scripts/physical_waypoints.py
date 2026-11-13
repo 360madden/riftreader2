@@ -160,6 +160,28 @@ class OwnedWaypointMarkers:
             self.stop_requested = True
 
 
+def beacon_display_status(running, closing, display):
+    """Explain fresh presenter feedback without equating a reader with visibility."""
+    def state(value, reason, visible=None):
+        return dict(state=value, reason=reason, visible=visible)
+    if closing: return state("stopping", "Waiting for the shared overlay reader to exit")
+    if not running: return state("stopped", "Overlay reader stopped", False)
+    if not isinstance(display, dict): return state("unknown", "Reader running; display feedback unavailable")
+    snapshot = display.get("presenterSnapshot") or display.get("snapshot") or {}
+    if snapshot.get("displayAllowed") is False:
+        return state("hidden", "Switch to RIFT or this Waypoints window", False)
+    if display.get("overlayHasFrame") is False:
+        return state("waiting", "Waiting for a fresh camera frame", False)
+    if display.get("nativeWindowVisible") is False or display.get("qtWidgetVisible") is False:
+        return state("hidden", "Overlay window is hidden; awaiting a valid frame", False)
+    age, maximum = display.get("frameAgeSeconds"), display.get("maxAgeSeconds", .35)
+    if (display.get("nativeWindowVisible") is True and display.get("overlayHasFrame") is True
+            and snapshot.get("displayAllowed") is True and type(age) in (int,float)
+            and type(maximum) in (int,float) and 0 <= age <= maximum):
+        return state("visible", "Overlay visible · fresh camera frame", True)
+    return state("unknown", "Reader running; fresh visible overlay not confirmed")
+
+
 @dataclass(frozen=True)
 class Snapshot:
     position: Position
@@ -1055,9 +1077,15 @@ def launch_window(args):
     saved_unit_sample = None
     nearby_picker = None
     saved_rerun = None
+    last_capture_state, last_capture_error = "none", None
+    capture_hint = tk.StringVar(value="No capture yet · Save view or Open saved…")
+    beacon_hint = tk.StringVar(value="Overlay reader stopped")
+    next_scene_at = 0
     rerun_viewer = None
     markers = OwnedWaypointMarkers(ROOT)
     marker_identity = None
+    marker_restart_pending = False
+    marker_running_target = False
     marker_update_after = None
     marker_pending_signature = None
     marker_published = None
@@ -1630,6 +1658,9 @@ def launch_window(args):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         if busy or closing or nearby_picker is not None:
             return
+        if marker_restart_pending:
+            state.set("Wait while the overlay reader restarts.")
+            return
         if draft_pending() and operation in ("go", "face", "face-bearing", "play", "resume", "teach", "record", "map", "target", "save"):
             state.set("Apply or Reset fields before starting another action.")
             return
@@ -1951,6 +1982,13 @@ def launch_window(args):
         if adapter is None:
             state.set("Wait for RIFT to connect before saving a view.")
             return
+        if draft_pending():
+            state.set("Apply or Reset waypoint fields before capturing the route.")
+            return
+        readiness = capture_readiness()
+        if not readiness["ready"]:
+            state.set(readiness["reason"])
+            return
         try:
             saved_unit_sample = None
             document = deepcopy(route_document())
@@ -2060,6 +2098,37 @@ def launch_window(args):
                         f"+{window.winfo_rooty() + 30}")
         picker.grab_set()
 
+    def load_saved_scene(source):
+        nonlocal saved_view, saved_rerun, saved_unit_sample, last_capture_state, last_capture_error
+        path = cli_file(source)
+        if path.stat().st_size > 1048576: raise ValueError("Scene manifest is too large")
+        manifest = json.loads(path.read_text(encoding="utf-8-sig"))
+        if not isinstance(manifest, dict) or manifest.get("status") != "saved-route-view-candidate":
+            raise ValueError("Choose a saved scene manifest")
+        def asset(value):
+            if not value: return None
+            candidate = Path(value)
+            resolved = cli_file(candidate if candidate.is_absolute() else path.parent / candidate)
+            return str(resolved) if resolved.is_file() else None
+        image, rerun = asset(manifest.get("image")), asset((manifest.get("rerun") or {}).get("path"))
+        sample = asset((manifest.get("unitSample") or {}).get("path"))
+        if image is None and rerun is None: raise ValueError("Saved scene assets are unavailable")
+        saved_view, saved_rerun, saved_unit_sample = image, rerun, sample
+        last_capture_state, last_capture_error = "loaded", None
+        state.set("Saved scene loaded; choose Open view or Open 3D view.")
+        restore_editing()
+        return cli_view_status()
+
+    def open_saved_view():
+        if busy or closing: return
+        chosen = filedialog.askopenfilename(parent=window, title="Open saved scene manifest",
+                                           filetypes=[("Saved scene JSON", "*.json")])
+        if not chosen: return
+        try:
+            load_saved_scene(chosen)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            state.set("Cannot load saved scene: " + str(exc))
+
     def open_view():
         if saved_view is None or busy or closing:
             return
@@ -2139,7 +2208,8 @@ def launch_window(args):
         marker_update_after = window.after(150, publish_marker_update)
 
     def stop_markers():
-        nonlocal marker_update_after, marker_pending_signature
+        nonlocal marker_update_after, marker_pending_signature, marker_restart_pending
+        marker_restart_pending = False
         if marker_update_after is not None:
             window.after_cancel(marker_update_after)
             marker_update_after = None
@@ -2155,7 +2225,7 @@ def launch_window(args):
             return False
 
     def toggle_markers():
-        nonlocal marker_identity, marker_published, marker_anchor_y
+        nonlocal marker_identity, marker_published, marker_anchor_y, marker_running_target
         if markers.running():
             if stop_markers():
                 state.set("Hiding markers…")
@@ -2180,15 +2250,34 @@ def launch_window(args):
             options["companion"] = bind_companion_window(window.winfo_id())
             markers.start(route_document() if table.get_children() else {"waypoints": []}, adapter, **options)
             marker_anchor_y = last_y
+            marker_running_target = target_beacon.get()
             marker_published = json.dumps(marker_payload(), sort_keys=True)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
                                target["executableSha256"].casefold(), target["hwnd"])
             marker_button.configure(text="Hide markers")
-            state.set("Markers shown when RIFT or this Waypoints window is foreground."
+            state.set("Overlay reader started; beacons appear with a fresh camera frame in RIFT or this window."
                       + " Route edits and selected-guide changes sync automatically.")
         except (OSError, ValueError, KeyError, TypeError) as exc:
             state.set("Cannot show markers: " + str(exc))
+
+    def target_change_blocked():
+        return (explore_controls is not None and (explore_controls.navigation_state().get("status") == "active"
+                or explore_controls.trail.snapshot().get("active")))
+
+    def change_target_inclusion():
+        nonlocal marker_restart_pending
+        if not markers.running() or target_beacon.get() == marker_running_target: return True
+        if target_change_blocked():
+            target_beacon.set(marker_running_target)
+            state.set("Stop manual guidance and trail recording before changing target inclusion.")
+            return False
+        if not stop_markers():
+            target_beacon.set(marker_running_target)
+            return False
+        marker_restart_pending = True
+        state.set("Restarting overlay reader for target inclusion; appearance and radar settings retained.")
+        return True
 
     def save_marker_appearance():
         nonlocal appearance_after
@@ -2199,8 +2288,10 @@ def launch_window(args):
             save_style(appearance_path, dict(schemaVersion=1, beaconScale=round(beacon_size.get()) / 100,
                                             opacity=round(beacon_opacity.get()) / 100,
                                             labelsVisible=beacon_labels.get()))
+            return True
         except (OSError, ValueError, TypeError) as exc:
             state.set("Cannot save marker appearance: " + str(exc))
+            return False
 
     def change_marker_appearance(_=None):
         nonlocal appearance_after
@@ -2215,7 +2306,7 @@ def launch_window(args):
         beacon_opacity.set(DEFAULT_STYLE["opacity"] * 100)
         beacon_labels.set(DEFAULT_STYLE["labelsVisible"])
         change_marker_appearance()
-        save_marker_appearance()
+        return save_marker_appearance()
 
     buttons_selected = ttk.Frame(edit_tab, style="Surface.TFrame")
     buttons_selected.pack(fill="x", pady=(0, 6))
@@ -2322,28 +2413,40 @@ def launch_window(args):
     view_buttons = ttk.Frame(view_controls, style="Surface.TFrame")
     view_buttons.pack(fill="x", pady=(0, 8))
     save_view_button = ttk.Button(view_buttons, text="Save view", command=save_view, style="Primary.TButton")
-    save_view_button.pack(side="left", padx=(0, 6))
+    save_view_button.grid(row=0, column=0, sticky="ew", padx=(0,6), pady=(0,6))
     editable.append(save_view_button)
     open_view_button = ttk.Button(view_buttons, text="Open view", command=open_view, state="disabled")
-    open_view_button.pack(side="left", padx=(0, 6))
+    open_view_button.grid(row=1, column=0, sticky="ew", padx=(0,6))
     editable.append(open_view_button)
     open_3d_button = ttk.Button(view_buttons, text="Open 3D view", command=open_3d_view, state="disabled")
-    open_3d_button.pack(side="left")
+    open_3d_button.grid(row=1, column=1, sticky="ew")
     editable.append(open_3d_button)
-    view_focus_option = ttk.Checkbutton(view_controls, text="Bring RIFT forward for capture", variable=view_bring_forward)
-    view_focus_option.pack(anchor="w")
+    saved_scene_button = ttk.Button(view_buttons, text="Open saved…", command=open_saved_view)
+    saved_scene_button.grid(row=0, column=1, sticky="ew", pady=(0,6))
+    editable.append(saved_scene_button)
+    view_buttons.columnconfigure(0, weight=1)
+    view_buttons.columnconfigure(1, weight=1)
+    capture_options = ttk.Frame(view_controls, style="Surface.TFrame")
+    capture_options.pack(fill="x")
+    view_focus_option = ttk.Checkbutton(capture_options, text="Bring RIFT forward for capture", variable=view_bring_forward)
+    view_focus_option.pack(side="left", padx=(0,8))
     editable.append(view_focus_option)
-    view_units_option = ttk.Checkbutton(view_controls, text="Nearby units in 3D", variable=view_include_units)
-    view_units_option.pack(anchor="w", pady=(3, 0))
+    view_units_option = ttk.Checkbutton(capture_options, text="Nearby units in 3D", variable=view_include_units)
+    view_units_option.pack(side="left")
     editable.append(view_units_option)
+    capture_hint_label = ttk.Label(view_controls, textvariable=capture_hint, style="Muted.TLabel", wraplength=370)
+    capture_hint_label.pack(anchor="w", pady=(5,0))
+    view_controls.bind("<Configure>", lambda event:capture_hint_label.configure(wraplength=max(180,event.width-26)))
     marker_controls = ttk.LabelFrame(scene_tab, text="WORLD BEACONS", padding=(12, 8), style="Card.TLabelframe")
     marker_controls.grid(row=0, column=1, sticky="nsew")
     marker_actions = ttk.Frame(marker_controls, style="Surface.TFrame")
-    marker_actions.pack(side="left", anchor="n", padx=(0, 12))
+    marker_actions.grid(row=0, column=0, sticky="nw", padx=(0, 10))
+    marker_controls.columnconfigure(1, weight=1)
     marker_button = ttk.Button(marker_actions, text="Show markers", command=toggle_markers)
     marker_button.pack(anchor="w", pady=(0, 8))
     editable.append(marker_button)
-    target_option = ttk.Checkbutton(marker_actions, text="Include selected target in markers", variable=target_beacon)
+    target_option = ttk.Checkbutton(marker_actions, text="Include selected target in markers", variable=target_beacon,
+                                   command=change_target_inclusion)
     target_option.pack(anchor="w")
     editable.append(target_option)
     landmark_option = ttk.Checkbutton(marker_actions, text="Guide selected marker", variable=landmark_guide,
@@ -2351,7 +2454,7 @@ def launch_window(args):
     landmark_option.pack(anchor="w", pady=(3, 0))
     editable.append(landmark_option)
     appearance_controls = ttk.Frame(marker_controls, style="Surface.TFrame")
-    appearance_controls.pack(side="left", fill="both", expand=True)
+    appearance_controls.grid(row=0, column=1, sticky="nsew")
     appearance_controls.columnconfigure(1, weight=1)
     appearance_widgets = []
     for row, label, variable, lower, upper, percent in ((0, "Size", beacon_size, 50, 200, size_percent),
@@ -2371,6 +2474,9 @@ def launch_window(args):
                                   style="Ghost.TButton", width=5)
     reset_appearance.grid(row=2, column=2, sticky="e", pady=(5, 0))
     appearance_widgets.extend((labels_option, reset_appearance))
+    beacon_hint_label = ttk.Label(marker_controls, textvariable=beacon_hint, style="Muted.TLabel", wraplength=400)
+    beacon_hint_label.grid(row=1, column=0, columnspan=2, sticky="nw", pady=(6,0))
+    marker_controls.bind("<Configure>", lambda event:beacon_hint_label.configure(wraplength=max(180,event.width-26)))
     from scripts.waypoint_explore_ui import ExploreControls
     if not hasattr(markers, "radar_path"):
         markers.radar_path = (ROOT / "artifacts" / "waypoint-radar-style.json").absolute()
@@ -2400,7 +2506,7 @@ def launch_window(args):
 
     def ensure_exploration_feed():
         live_pose.set(True)
-        if not markers.running():
+        if not markers.running() and not marker_restart_pending:
             toggle_markers()
 
     explore_controls = ExploreControls(explore_tab, markers, ensure_exploration_feed, state,
@@ -2606,7 +2712,7 @@ def launch_window(args):
         context_text.set(text)
 
     def cli_display_status():
-        path = markers.status_path
+        path = getattr(markers, "status_path", None)
         if path is None or not markers.running(): return None
         try:
             if path.stat().st_size > 262144: return None
@@ -2652,10 +2758,70 @@ def launch_window(args):
                     qualification="Observed visibility is unavailable when the presenter feedback is stale.")
 
     def cli_beacon_status():
+        display = cli_display_status()
+        visibility = beacon_display_status(markers.running(), markers.running() and markers.stop_requested, display)
+        if marker_restart_pending:
+            visibility = dict(state="restarting", reason="Restarting reader for target inclusion", visible=None)
         return dict(readerRunning=markers.running(), closing=markers.running() and markers.stop_requested,
                     size=round(beacon_size.get()) / 100, opacity=round(beacon_opacity.get()),
                     labels=beacon_labels.get(), target=target_beacon.get(), guide=landmark_guide.get(),
-                    pose=cli_pose(), display=cli_display_status(), qualification="Reader state; on-screen beacons also require a valid camera and foreground game/helper.")
+                    appliedTarget=marker_running_target if markers.running() and not markers.stop_requested else None,
+                    restartPending=marker_restart_pending, visibility=visibility,
+                    pose=cli_pose(), display=display, qualification="Reader state; visible means a fresh allowed overlay window, not terrain/occlusion or individual point visibility proof.")
+
+    def capture_readiness():
+        from scripts.waypoint_measurements import parse_projection_route, document_measurements
+        document = cli_document()
+        count = len(document.get("waypoints", []))
+        try:
+            parse_projection_route(document)
+            return dict(ready=True, reason="Measured route ready for capture", measured=count, total=count)
+        except (ValueError, TypeError, KeyError):
+            try: measured = sum(r is not None for r in document_measurements(document))
+            except (ValueError, TypeError, KeyError): measured = 0
+            reason = ("Load a measured route before capture" if not count else
+                      f"Capture needs measured XYZ for all points ({measured}/{count}); estimated beacons still work")
+            return dict(ready=False, reason=reason, measured=measured, total=count)
+
+    def cli_view_status():
+        def available(value):
+            try: return bool(value and Path(value).is_file())
+            except OSError: return False
+        return dict(options=dict(bringForward=view_bring_forward.get(), nearbyUnits=view_include_units.get()),
+                    image=saved_view, rerun=saved_rerun, nearbySample=saved_unit_sample,
+                    imageAvailable=available(saved_view), rerunAvailable=available(saved_rerun),
+                    nearbyAvailable=available(saved_unit_sample), lastCaptureState=last_capture_state,
+                    lastCaptureError=last_capture_error, readiness=capture_readiness())
+
+    def update_scene_state():
+        nonlocal next_scene_at
+        if workflow.select() != str(scene_tab) or time.monotonic() < next_scene_at: return
+        next_scene_at = time.monotonic()+.25
+        view = cli_view_status()
+        idle = not busy and not closing
+        open_view_button.configure(state="normal" if idle and view["imageAvailable"] else "disabled")
+        open_3d_button.configure(state="normal" if idle and view["rerunAvailable"] else "disabled")
+        save_view_button.configure(state="normal" if idle and adapter is not None and view["readiness"]["ready"] and not draft_pending() else "disabled")
+        if last_capture_state == "none":
+            capture_hint.set("No capture yet · Save view or Open saved…" if view["readiness"]["ready"] else view["readiness"]["reason"])
+        else:
+            text = f"Last scene: image {'ready' if view['imageAvailable'] else 'unavailable'} · 3D {'ready' if view['rerunAvailable'] else 'unavailable'}"
+            if last_capture_state == "failed": text += " · latest capture failed; previous assets retained"
+            if not view["readiness"]["ready"]:
+                text += f"\nCapture requires measured XYZ: {view['readiness']['measured']}/{view['readiness']['total']} points ready."
+            capture_hint.set(text)
+        beacon = cli_beacon_status()
+        hint = beacon["visibility"]["reason"]
+        if marker_restart_pending: hint = "Restarting reader · appearance and radar retained"
+        elif markers.running(): hint += " · Hide also stops the shared radar/pose reader"
+        elif adapter is None: hint = "Connect RIFT before showing beacons"
+        elif zone_comparison() == "mismatch": hint = "Load a matching-zone route before showing beacons"
+        if len(table.selection()) != 1: hint += " · Select one point for guidance"
+        if target_change_blocked(): hint += " · Stop guide/trail to change target"
+        beacon_hint.set(hint)
+        marker_button.configure(style="Ghost.TButton" if markers.running() else "Primary.TButton",
+            state="normal" if idle and not marker_restart_pending and (not markers.running() or not markers.stop_requested)
+            and (markers.running() or adapter is not None and zone_comparison() != "mismatch") else "disabled")
 
     replay_cache = {"key": None, "value": None}
 
@@ -2715,6 +2881,7 @@ def launch_window(args):
                     zone=zone_state(), routeContext=deepcopy(route_metadata.get("routeContext")),
                     contextComparison=zone_comparison(), heights=route_heights(),
                     pose=cli_pose(), radar=cli_radar_status(), beacons=cli_beacon_status(),
+                    view=cli_view_status(),
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
                     recording={"active": recording, "progress": recording_progress},
                     playback=cli_playback_status(),
@@ -2795,6 +2962,7 @@ def launch_window(args):
         nonlocal route_metadata, route_path, route_dirty, route_recovered, route_revision
         nonlocal playback_view, pending_progress_selection, checkpoint, cli_close_id, cli_record_output
         nonlocal saved_view, saved_rerun, rerun_viewer
+        nonlocal last_capture_state, last_capture_error
         try:
             if command == "zone.status": return cli_ok(zone_state())
             if command == "zone.refresh": return cli_begin(rid, "zone", command=command)
@@ -3073,14 +3241,23 @@ def launch_window(args):
                 return cli_wait(rid, applied)
             if command.startswith("beacons."):
                 if command == "beacons.status": return cli_ok(cli_beacon_status())
+                if command == "beacons.reset":
+                    if not reset_marker_appearance(): raise CliError("appearance-save-failed", state.get())
+                    return cli_ok(cli_beacon_status(), "configured")
                 if command == "beacons.hide":
                     stop_markers()
                     return cli_wait(rid, lambda: None if markers.running() else cli_ok(cli_beacon_status()))
                 if command == "beacons.set":
                     if values.get("guide") == "on" and len(table.selection()) != 1:
                         raise CliError("selection-required", "Select one waypoint before enabling its guide", "Use route select N", 4)
-                    if values.get("target") is not None and (values["target"] == "on") != target_beacon.get() and markers.running():
-                        raise CliError("reader-active", "Changing target inclusion requires a reader restart", "Run beacons hide, beacons set --target on|off, beacons show", 4)
+                    target_change = values.get("target") is not None and (values["target"] == "on") != target_beacon.get()
+                    if target_change and markers.running() and target_change_blocked():
+                        raise CliError("exploration-active", "Stop manual guidance and trail recording before changing target inclusion", exit_code=4)
+                    if marker_restart_pending: raise CliError("reader-restarting", "Wait for the reader restart", exit_code=4)
+                    if values.get("size") is not None and not .5 <= finite(values["size"]) <= 2: raise ValueError("size must be .5..2")
+                    if values.get("opacity") is not None and not 20 <= finite(values["opacity"]) <= 100: raise ValueError("opacity must be 20..100 percent")
+                    for key in ("labels","target","guide"):
+                        if values.get(key) is not None and values[key] not in ("on","off"): raise ValueError(key+" must be on or off")
                     if values.get("size") is not None:
                         if not .5 <= finite(values["size"]) <= 2: raise ValueError("size must be .5..2")
                         beacon_size.set(values["size"]*100)
@@ -3090,13 +3267,25 @@ def launch_window(args):
                     for key,var in (("labels",beacon_labels),("target",target_beacon),("guide",landmark_guide)):
                         if values.get(key) is not None: var.set(values[key] == "on")
                     change_marker_appearance()
-                    save_marker_appearance()
+                    if not save_marker_appearance(): raise CliError("appearance-save-failed", state.get())
                     schedule_marker_update()
+                    if target_change and markers.running():
+                        if not change_target_inclusion(): raise CliError("reader-restart-failed", state.get())
+                        def restarted():
+                            if marker_restart_pending or markers.running() and markers.stop_requested: return None
+                            if not markers.running(): return cli_error("reader-restart-failed", state.get())
+                            return cli_ok(cli_beacon_status(), "configured") if cli_pose()["status"] == "fresh" else None
+                        return cli_wait(rid, restarted)
                     return cli_ok(cli_beacon_status(), "configured")
                 if command != "beacons.show": raise CliError("unsupported-command", command)
                 ensure_exploration_feed()
-                if not markers.running(): raise CliError("reader-unavailable", state.get(), exit_code=3)
-                return cli_wait(rid, lambda: cli_ok(cli_beacon_status()) if cli_pose()["status"] == "fresh" else None)
+                if not markers.running() and not marker_restart_pending:
+                    raise CliError("reader-unavailable", state.get(), exit_code=3)
+                def shown():
+                    if marker_restart_pending or markers.running() and markers.stop_requested: return None
+                    if not markers.running(): return cli_error("reader-unavailable", state.get(), exit_code=3)
+                    return cli_ok(cli_beacon_status()) if cli_pose()["status"] == "fresh" else None
+                return cli_wait(rid, shown)
             if command.startswith("guide."):
                 if command == "guide.start":
                     owner = explore_controls._owner()
@@ -3184,11 +3373,20 @@ def launch_window(args):
                 return cli_begin(rid, "resume" if command.endswith("resume") else "play", (document,direction), command=command)
             if command == "playback.status":
                 return cli_ok(cli_playback_status())
+            if command == "view.status": return cli_ok(cli_view_status())
+            if command == "view.load": return cli_ok(load_saved_scene(values["file"]))
             if command == "view.save":
                 if adapter is None: raise CliError("rift-unavailable", "Connect to RIFT first", exit_code=3)
+                if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset waypoint fields before capturing", exit_code=4)
+                readiness = capture_readiness()
+                if not readiness["ready"]: raise CliError("capture-route-unavailable", readiness["reason"], "Load a fully measured route", 4)
+                for key in ("bring_forward","nearby_units"):
+                    if key in values and type(values[key]) is not bool: raise ValueError(key+" must be boolean")
+                view_bring_forward.set(bool(values.get("bring_forward", False)))
+                view_include_units.set(bool(values.get("nearby_units", False)))
                 output = cli_file(values["file"], fresh=True, overwrite=values.get("overwrite", False))
                 return cli_begin(rid, "view", (deepcopy(route_document()), adapter.pid, deepcopy(adapter.target),
-                    "wgc", view_include_units.get(), str(output)), command=command)
+                    "desktop" if view_bring_forward.get() else "wgc", view_include_units.get(), str(output)), command=command)
             if command in ("view.open", "view.open-3d"):
                 path = cli_file(values["file"])
                 if not path.is_file(): raise CliError("file-unavailable", str(path))
@@ -3208,6 +3406,7 @@ def launch_window(args):
                     if rerun_viewer is not None and rerun_viewer.poll() is None: raise CliError("viewer-open", "The owned 3D viewer is already open", exit_code=4)
                     rerun_viewer = launch_saved_rerun(str(path))
                     saved_rerun = str(path)
+                last_capture_state, last_capture_error = "loaded", None
                 return cli_ok({"file": str(path), "opened": True})
             raise CliError("unsupported-command", command, exit_code=2)
         except CliError as exc:
@@ -3288,7 +3487,7 @@ def launch_window(args):
     zone_filter.bind("<<ComboboxSelected>>",lambda _:refresh_library())
     library_table.bind("<Double-1>",library_load_selected)
     workflow.bind("<<NotebookTabChanged>>",lambda _:workflow.configure(
-        height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select()==str(library_tab) else 184))
+        height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select() in (str(library_tab),str(scene_tab)) else 184))
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
@@ -3296,6 +3495,7 @@ def launch_window(args):
         nonlocal cli_action, cli_record_output, cli_last_operation, cli_last_record_file
         nonlocal current_zone_context, zone_error, zone_observing, next_zone_at
         nonlocal last_edit_change
+        nonlocal marker_restart_pending, last_capture_state, last_capture_error
         cli_server.poll(cli_dispatch)
         if cli_destroyed:
             return
@@ -3325,6 +3525,7 @@ def launch_window(args):
             if status == "recording" and cli_action is not None and cli_action["operation"] == "record":
                 cli_action["recordingObserved"] = True
             if status == "view-failed":
+                last_capture_state, last_capture_error = "failed", event.get("reason")
                 saved_unit_sample = None
             if status in ("stopping", "notice") and stop.is_set() and markers.running():
                 if not stop_markers():
@@ -3415,9 +3616,11 @@ def launch_window(args):
                     progress_text.set("Recorded route ready; select playback direction.")
                 continue
             if status == "view-saved":
+                last_capture_state, last_capture_error = "saved", None
                 saved_view = event["image"]
                 rerun = event["rerun"]
                 saved_rerun = str(rerun["path"]) if rerun.get("status") == "saved" and rerun.get("path") else None
+                if saved_rerun is None: last_capture_state = "partial"
                 suffix = ("" if rerun.get("status") == "saved" else
                           "; Rerun " + str(rerun.get("status", "unavailable"))
                           + (": " + str(rerun["reason"]) if rerun.get("reason") else ""))
@@ -3556,10 +3759,17 @@ def launch_window(args):
                 marker_button.configure(text="Show markers", state="normal" if not busy else "disabled")
             elif markers.stop_requested:
                 marker_button.configure(text="Markers closing…", state="disabled")
-        target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
-        landmark_option.configure(state="disabled" if busy or closing else "normal")
+        if marker_restart_pending and not markers.running() and not busy and not closing:
+            marker_restart_pending = False
+            toggle_markers()
+        target_option.configure(state="disabled" if busy or closing or marker_restart_pending or target_change_blocked() else "normal")
+        if len(table.selection()) != 1 and landmark_guide.get():
+            landmark_guide.set(False)
+            schedule_marker_update()
+        landmark_option.configure(state="disabled" if busy or closing or len(table.selection()) != 1 else "normal")
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
+        update_scene_state()
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
         if markers.running():
             if live_pose.get() and not busy and not closing:

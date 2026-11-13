@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
-from tests.tk_support import withdrawn_root
+from tests.tk_support import withdrawn_root, reject_error_dialog
 
 try:
     import tkinter as tk
@@ -42,6 +42,7 @@ class RecordingWindowTests(unittest.TestCase):
         self.addCleanup(restore_gc)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch("tkinter.messagebox.showerror", side_effect=reject_error_dialog))
         self.temp = self.stack.enter_context(tempfile.TemporaryDirectory())
         self.root_path = Path(self.temp)
         (self.root_path / "artifacts").mkdir()

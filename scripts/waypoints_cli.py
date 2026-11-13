@@ -21,6 +21,11 @@ MOVEMENT = {"move.to", "face", "route.run", "playback.start", "playback.resume"}
 COMMON = {"session", "timeout", "json", "jsonl", "no_color"}
 
 
+def default_timeout(operation):
+    """One timeout policy for parsing, help and dispatch."""
+    return 150 if operation in MOVEMENT else 120 if operation == "view.save" else 10
+
+
 class UsageError(ValueError):
     pass
 
@@ -65,11 +70,12 @@ def positive(value):
     return result
 
 
-def common(parser):
+def common(parser, operation=None):
     # Suppressed defaults let an option before a group survive leaf parsing.
     parser.add_argument("--session", default=argparse.SUPPRESS, help="select the exact helper session ID")
-    parser.add_argument("--timeout", type=bounded(.05, 3600), default=argparse.SUPPRESS,
-                        help="seconds to wait; default 150 for movement, 10 otherwise")
+    timeout_help = (f"seconds to wait; default {default_timeout(operation)} for this command" if operation else
+                    "seconds to wait; defaults: view save 120, movement 150, other commands 10")
+    parser.add_argument("--timeout", type=bounded(.05, 3600), default=argparse.SUPPRESS, help=timeout_help)
     output = parser.add_mutually_exclusive_group()
     output.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="one versioned JSON result")
     output.add_argument("--jsonl", action="store_true", default=argparse.SUPPRESS, help="explicit status/pose watch JSON lines")
@@ -86,10 +92,11 @@ def example(operation):
         "trail.save":"trail save trail.json --segment latest", "trail.clear":"trail clear --discard",
         "record.stop":"record stop recorded-route.json", "radar.set":"radar set --range 10 --opacity 85",
         "radar.move":"radar move --x 30 --y 50", "beacons.set":"beacons set --size 1 --labels on",
+        "beacons.reset":"beacons reset", "view.status":"view status",
         "move.to":"move to 123 456 --execute", "face":"face 90 --execute",
         "playback.start":"playback start --direction forward --execute",
         "playback.resume":"playback resume --execute", "route.run":"route run --execute",
-        "view.save":"view save view.json", "view.open":"view open view.json",
+        "view.save":"view save view.json", "view.load":"view load view.json", "view.open":"view open view.json",
         "view.open-3d":"view open-3d view.json", "receipt.show":"receipt show waypoint-run-ID.json",
         "app.close":"app close --discard", "app.open":"app open --route route.json",
         "zone.refresh":"zone refresh", "route.tag-zone":"route tag-zone",
@@ -113,10 +120,10 @@ def build_parser():
                               epilog=("Requires: no running helper; operates on local session metadata or explicit files.\n"
                                       if operation.startswith("receipt.") or operation in {"app.list", "app.open"}
                                       else "Requires: an unambiguous running Waypoints session; route list/validate support offline --file.\n")
-                                     + f"Effects: {effects}\nDefaults: timeout {'150' if operation in MOVEMENT else '10'} seconds; one-based points/segments.\n"
+                                     + f"Effects: {effects}\nDefaults: timeout {default_timeout(operation)} seconds; one-based points/segments.\n"
                                      f"Example: rr2-waypoints {example(operation)}",
                               formatter_class=argparse.RawDescriptionHelpFormatter)
-        common(p)
+        common(p, operation)
         p.set_defaults(operation=operation)
         leaves[operation] = p
         if operation in MOVEMENT:
@@ -136,9 +143,9 @@ def build_parser():
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show",
-        "radar":"status show hide set move lock unlock", "beacons":"status show hide set",
+        "radar":"status show hide set move lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
-        "move":"to", "playback":"start resume status", "view":"save open open-3d", "receipt":"list show"
+        "move":"to", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
     }.items():
         gp = groups.add_parser(group, help=f"{group.capitalize()} controls", description=f"{group.capitalize()} commands")
         common(gp)
@@ -164,7 +171,11 @@ def build_parser():
                 "library.show":"Inspect one owned library route, its zone context and measured/unknown heights.",
                 "beacons.show":"Start the owned shared beacon reader and wait for fresh pose; sends no game input.",
                 "beacons.hide":"Stop the owned beacon reader and wait for its exit.",
-                "view.save":"Save a JSON manifest at FILE referencing a newly captured image/3D bundle in artifacts.",
+                "beacons.set":"Adjust beacon appearance and optional target/guide layers; target changes can restart the owned reader and are refused during manual guide/trail use.",
+                "beacons.reset":"Reset size, opacity and labels while preserving target, selected guide and enabled state.",
+                "view.status":"Show focus/capture options and availability of the last image and 3D rerun assets.",
+                "view.save":"Capture a JSON/image/3D bundle; every route point must have measured XYZ evidence.",
+                "view.load":"Load saved image and 3D asset references into Scene & beacons without opening a viewer.",
                 "view.open":"Open a saved JSON view manifest or image file.",
                 "view.open-3d":"Open a saved JSON view manifest or exported .rrd recording in the 3D viewer.",
                 "record.start":"Start read-only route recording; capture continues until explicit stop or cancel.",
@@ -188,6 +199,7 @@ def build_parser():
                        else "Starts the owned shared reader; sends no game input." if operation == "beacons.show"
                        else "Changes helper visibility; sends no game input." if operation in {"app.show", "app.hide", "app.open"}
                        else "Writes the explicit JSON manifest and a new capture bundle; sends no game input." if operation == "view.save"
+                       else "Loads saved asset references into the helper; opens no viewer and sends no game input." if operation == "view.load"
                        else "Opens a saved local asset in its viewer; sends no game input." if group == "view"
                        else "Changes helper state or the explicitly named file; sends no game input.")
             leaf(sub, verb, operation, purpose, effects)
@@ -208,7 +220,7 @@ def build_parser():
     for op in ("library.load", "library.show"):
         arg(op, "route_id", metavar="ID", help="owned library route ID")
     arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
-    for op in ("route.load", "route.save", "trail.save", "record.stop", "view.save", "view.open", "view.open-3d", "receipt.show"):
+    for op in ("route.load", "route.save", "trail.save", "record.stop", "view.save", "view.load", "view.open", "view.open-3d", "receipt.show"):
         arg(op, "file", type=Path, help="explicit file path; no file chooser")
     for op in ("route.save", "trail.save", "record.stop", "view.save"):
         arg(op, "--overwrite", action="store_true", help="allow replacement of an existing file")
@@ -247,6 +259,10 @@ def build_parser():
     arg("beacons.set", "--size", type=bounded(.5, 2), help="marker size multiplier 0.5-2")
     for flag in ("labels", "target", "guide"):
         arg("beacons.set", "--" + flag, choices=("on", "off"))
+    arg("view.save", "--bring-forward", action="store_true",
+        help="opt in to bringing RIFT forward for capture; default is focus-neutral")
+    arg("view.save", "--nearby-units", action="store_true",
+        help="opt in to sampling nearby units for this capture; default is no nearby-unit sample")
     arg("trail.save", "--segment", default="latest", help="one-based segment number or latest (default)")
     arg("trail.clear", "--discard", action="store_true", required=True, help="explicitly discard trail history")
     arg("move.to", "x", type=number, help="destination world X")
@@ -441,7 +457,30 @@ def human_data(command, data):
         if display:
             print("Beacon display: " + str(display.get("overlayReason") or display.get("feedHideReason") or
                                           ("frame available" if display.get("overlayHasFrame") else "no frame")))
+        visibility = data.get("visibility")
+        if isinstance(visibility, dict):
+            observed = "visible" if visibility.get("visible") is True else "hidden" if visibility.get("visible") is False else "unknown"
+            state = visibility.get("state") or "unavailable"
+            reason = f" | {visibility['reason']}" if visibility.get("reason") else ""
+            print(f"Beacon visibility: {observed} | {state}{reason}")
         if data.get("qualification"): print(data["qualification"])
+    elif command in {"view.status", "view.load"}:
+        options = data.get("options") or {}
+        readiness = data.get("readiness") or {}
+        print(f"Capture options: {'bring RIFT forward' if options.get('bringForward') else 'focus-neutral'} | "
+              f"nearby units {'on' if options.get('nearbyUnits') else 'off'}")
+        if readiness:
+            measured, total = readiness.get("measured", "?"), readiness.get("total", "?")
+            reason = f" | {readiness['reason']}" if readiness.get("reason") else ""
+            print(f"Capture readiness: {'ready' if readiness.get('ready') is True else 'blocked'} | "
+                  f"{measured}/{total} measured points{reason}")
+        print(f"Last image: {'available' if data.get('imageAvailable') else 'unavailable'}"
+              + (f" | {data['image']}" if data.get('image') else ""))
+        print(f"3D rerun: {'available' if data.get('rerunAvailable') else 'unavailable'}"
+              + (f" | {data['rerun']}" if data.get('rerun') else ""))
+        print("Last capture: " + str(data.get("lastCaptureState") or "none"))
+        if data.get("nearbySample") is not None:
+            print("Nearby sample: retained")
     elif command.startswith("guide."):
         index = data.get("activeIndex")
         point = index + 1 if isinstance(index, int) else "none"
@@ -586,7 +625,7 @@ def main(argv=None):
             getattr(args, "help_parser", parser).print_help()
             return 0
         command = args.operation
-        args.timeout = getattr(args, "timeout", 150 if command in MOVEMENT else 10)
+        args.timeout = getattr(args, "timeout", default_timeout(command))
         if getattr(args, "json", False) and getattr(args, "jsonl", False):
             raise UsageError("--json and --jsonl are mutually exclusive")
         if getattr(args, "jsonl", False) and not (command == "status" and args.watch):

@@ -23,6 +23,7 @@ route when appropriate. Reuse the current readers, radar, recorder and beacons.
 | Forward/reverse playback and STOP/Resume | GUI and CLI playback, saved progress, explicit Resume, waiting-state launch and run receipts are implemented. Live forward/reverse and F8/Resume cases passed, including full-game restart recovery. One final reverse trial ended 0.04980 units from its endpoint with all 34 pulses released. |
 | Everyday Waypoints controls | Joey D's Waypoints v1.1.0 adds red panda header/window artwork, Replay readiness explanations and direction/progress, shared with CLI playback status. Resume checks the unfinished leg; Play/Resume consistently face before each leg. Compact/normal native screenshots and a zero-input colocated playback check passed. Existing organized controls, readable recent-route names and full-path hover text remain. |
 | Selected-point editing | Coherent fields, protected drafts, inline validation, Reset/Enter, action states and measurement-loss cues work in Edit waypoint. Set selected to current has CLI parity and retains name/order. Live recapture/edit/reorder/Undo and compact/normal native layout checks passed; the original route was restored. |
+| Scene and beacons controls | Fresh overlay visibility is separate from reader state. Target-layer changes perform an owned restart while retaining radar/style; active guide/trail use blocks restart. Capture readiness, saved-scene loading, appearance reset and explicit CLI capture options are aligned. Live target/waypoint visuals and image/3D capture passed; original route and settings were restored. |
 | World-to-screen beacons | Live click-through markers, selected-point guidance and optional selected-target cues reuse the native camera projector. Camera-motion flicker fixes and live appearance controls are in place. Marker sessions have no ten-minute GUI limit and can remain visible while their owning Waypoints window has focus. |
 | Map-click points and live edits | Unmeasured points receive explicitly estimated display heights. Add/edit/remove, rename/reorder, Undo, Load and guide-selection changes update the running overlay without restarting its reader. Estimates remain separate from measured heights. |
 | Shared live radar and player pose | The main window's radar and XYZ/facing header reuse the beacon reader, up to five updates per second. Original sample times are preserved; missing/stale/foreign feedback clears the display. Hide returns to the two-second idle reader after the beacon child exits. |
@@ -208,7 +209,10 @@ Use `record start`, then `record stop FILE` to save useful observed movement, or
 --discard` clears it. `view save FILE.json` writes an explicit manifest pointing
 to a fresh existing-format capture bundle; `view open FILE.json` and `view
 open-3d FILE.json` open its available image/Rerun asset. Selected-target inclusion
-changes require `beacons hide`, `beacons set --target on|off`, then `beacons show`.
+changes now perform a controlled owned restart through `beacons set --target on|off`;
+stop active manual guidance or trail recording first. `beacons reset` preserves
+target/guide/enabled state. `view status/load` match saved-scene inspection/loading;
+`view save` defaults to 120 seconds and exposes explicit focus/nearby-unit options.
 
 `move to X Z --execute`, `face BEARING --execute`, `route run --execute` and
 `playback start|resume --execute` reuse the controller. CLI movement uses

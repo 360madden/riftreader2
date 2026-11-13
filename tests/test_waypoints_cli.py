@@ -48,10 +48,10 @@ class CliTests(unittest.TestCase):
                         'route.list route.load route.save route.new route.add route.update route.remove '
                         'route.reorder route.select route.undo route.validate route.run radar.status radar.show '
                         'radar.hide radar.set radar.move radar.lock radar.unlock beacons.status beacons.show '
-                        'beacons.hide beacons.set guide.status guide.start guide.stop trail.status trail.start '
+                        'beacons.hide beacons.set beacons.reset guide.status guide.start guide.stop trail.status trail.start '
                         'trail.stop trail.list trail.save trail.clear record.status record.start record.stop '
                         'record.cancel move.to face playback.start playback.resume playback.status '
-                        'view.save view.open view.open-3d receipt.list receipt.show '
+                        'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
                         'library.list library.save library.import library.load library.show').split():
             with self.subTest(command=command):
@@ -106,6 +106,24 @@ class CliTests(unittest.TestCase):
         help_text = self.call('route','select','--help')[1]
         self.assertIn('explicitly discard unapplied Edit waypoint fields', help_text)
 
+    def test_scene_commands_dispatch_explicit_capture_options_and_reset(self):
+        cases = [
+            (('beacons','reset'), 'beacons.reset', {}),
+            (('view','status'), 'view.status', {}),
+            (('view','load','scene.json'), 'view.load', {'file':str(Path('scene.json').resolve())}),
+            (('view','save','scene.json'), 'view.save', {
+                'file':str(Path('scene.json').resolve()), 'overwrite':False,
+                'bring_forward':False, 'nearby_units':False}),
+            (('view','save','scene.json','--bring-forward','--nearby-units','--overwrite'), 'view.save', {
+                'file':str(Path('scene.json').resolve()), 'overwrite':True,
+                'bring_forward':True, 'nearby_units':True}),
+        ]
+        for argv,operation,payload in cases:
+            with self.subTest(argv=argv), patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                    protocol,'request',return_value=cli.result(operation,data={})) as request:
+                self.assertEqual(self.call(*argv,'--json')[0], 0)
+                self.assertEqual(request.call_args.args[1:3], (operation,payload))
+
     def test_library_usage_and_help_never_resolve_native_or_session(self):
         with patch.object(protocol, 'resolve_session', side_effect=AssertionError('session lookup')), patch.object(cli.subprocess, 'Popen', side_effect=AssertionError('process launch')):
             for argv in (("library", "load"), ("library", "show"), ("library", "save"),
@@ -157,6 +175,10 @@ class CliTests(unittest.TestCase):
             self.assertEqual(request.call_args.args[2]['bearing'],90)
             self.call('--timeout','7','status','--json')
             self.assertEqual(request.call_args.kwargs['timeout'],7)
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('view.save',data={})) as request:
+            self.assertEqual(self.call('view','save','scene.json','--json')[0], 0)
+            self.assertEqual(request.call_args.kwargs['timeout'], 120)
 
     def test_refusal_and_unavailable_are_not_success(self):
         with patch.object(protocol,'resolve_session',side_effect=protocol.CliError('session-unavailable','No app',exit_code=3)):
@@ -289,6 +311,19 @@ class CliTests(unittest.TestCase):
         self.assertIn('may be combined with --name', update_help)
         self.assertIn('--x/--z', update_help)
         self.assertIn('sends no game input', update_help)
+        reset_help = self.call('beacons','reset','--help')[1]
+        self.assertIn('preserving target, selected guide and enabled state', reset_help)
+        beacon_help = self.call('beacons','set','--help')[1]
+        for phrase in ('restart the owned reader', 'refused during manual guide/trail use'):
+            self.assertIn(phrase, beacon_help)
+        view_help = self.call('view','save','--help')[1]
+        for phrase in ('every route point must have measured XYZ evidence', 'default is', 'focus-neutral',
+                       'no nearby-unit sample', 'Defaults: timeout 120 seconds',
+                       'seconds to wait; default 120 for this command'):
+            self.assertIn(phrase, view_help)
+        load_help = self.call('view','load','--help')[1]
+        self.assertIn('Load saved image and 3D asset references', load_help)
+        self.assertIn('opens no viewer', load_help)
 
     def test_human_route_list_marks_selected_points(self):
         data={'points':[{'number':1,'name':'Start','x':1,'z':2},
@@ -356,6 +391,27 @@ class CliTests(unittest.TestCase):
             cli.emit(cli.result('radar.set',data={'enabled':True,'range':10,'opacity':85,'observed':{'visible':True,'range':10,'opacity':.85,'unlocked':False}}))
         self.assertIn('Receipt: run.json',out.getvalue())
         self.assertIn('Radar observed: visible, range 10 units, opacity 85%',out.getvalue())
+
+    def test_scene_status_distinguishes_reader_visibility_and_capture_assets(self):
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('beacons.status',data={
+                'readerRunning':True,'closing':False,'size':1.0,'opacity':100,'labels':True,
+                'target':False,'guide':False,'pose':{},
+                'visibility':{'visible':False,'state':'withheld','reason':'RIFT is not foreground'}}))
+            cli.emit(cli.result('view.status',data={
+                'options':{'bringForward':False,'nearbyUnits':False},
+                'readiness':{'ready':False,'reason':'5 route points lack measured XYZ evidence',
+                             'measured':2,'total':7},
+                'image':'scene.png','imageAvailable':True,'rerun':'scene.rrd','rerunAvailable':False,
+                'nearbySample':None,'lastCaptureState':'complete'}))
+        rendered=out.getvalue()
+        for phrase in ('Beacon reader: running', 'Beacon visibility: hidden | withheld | RIFT is not foreground',
+                       'Capture options: focus-neutral | nearby units off',
+                       'Capture readiness: blocked | 2/7 measured points | 5 route points lack measured XYZ evidence',
+                       'Last image: available | scene.png', '3D rerun: unavailable | scene.rrd',
+                       'Last capture: complete'):
+            self.assertIn(phrase, rendered)
 
     def test_offline_manual_route_does_not_resolve_session(self):
         with tempfile.TemporaryDirectory() as directory:

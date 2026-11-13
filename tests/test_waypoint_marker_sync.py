@@ -36,14 +36,16 @@ class MarkerSyncTests(unittest.TestCase):
         self.source.write_text(json.dumps(self.document), encoding="utf-8")
         pose = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         adapter = SimpleNamespace(pid=123, read=lambda **kwargs: pose, binding={"runtimeIdentity": identity},
+                                  input_receipt_path=self.path / "unused.jsonl",
                                   target={"processId": 123, "processStartUtcTicks": "1234",
                                           "executableSha256": "a" * 64, "hwnd": 65537})
         self.adapter = adapter
         self.launch(adapter, self.source)
         self.root = self.roots[0]
-        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview))
+        self.table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview)
+                          and tuple(w["columns"]) == ("name", "x", "z"))
         self.entries = [w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Entry)
-                        and not isinstance(w, fixture.ttk.Combobox)]
+                        and not isinstance(w, fixture.ttk.Combobox)][:3]
         self.guide = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
                           and str(w["text"]) == "Guide selected marker")
         self.button("Show markers").invoke()

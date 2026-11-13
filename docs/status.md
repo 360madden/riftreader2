@@ -1,5 +1,24 @@
 # Current status
 
+**NOVEMBER 13 — SCENE & BEACONS POLISH AND CLI PARITY:**
+On verified AMD-DESKTOP/PID40452, the Scene tab shows fresh overlay visibility
+separately from reader state, selection-aware marker guidance, controlled target
+option restarts, and clearer capture/asset readiness. Open saved… / CLI `view load`
+restore scene asset references without launching viewers; `beacons reset` matches
+GUI appearance reset. Capture options are explicit in CLI, with a 120-second
+deadline. Mixed estimated-height routes remain valid for beacons; strict image/3D
+capture now explains its all-points-measured requirement before attempting work.
+Live target changes retained radar/style; active manual guidance refused a change.
+The magenta target and guided waypoint were visually checked over RIFT. A two-point
+measured copy produced image/3D capture with no input or focus change. Original
+route/basis/pose/settings/checkpoint were preserved; normal/compact app captures fit.
+The affected run passed **125 tests and 117 subtests**, zero failures/skips/warnings.
+An orphaned diagnostic test caused the reported recording-identity dialog; it was
+closed, its invalid fixture corrected, and unexpected test error dialogs now fail
+immediately. Tk recovery also covers the observed constructor-stage library error.
+See [Scene operation](workflows/physical-waypoints.md#scene--beacons) and local
+`artifacts/scene-ui-final-restored-20261113.json`.
+
 **NOVEMBER 13 — TK TEST INITIALIZATION RECOVERY; AFFECTED CHECKS CLEAN:**
 On verified AMD-DESKTOP, reproduced intermittent combined-run Tk bootstrap errors
 despite intact installed Tcl/Tk files. Shared withdrawn-window test startup now

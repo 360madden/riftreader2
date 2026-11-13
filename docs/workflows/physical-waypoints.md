@@ -92,6 +92,58 @@ used Undo to restore each document. The original seven-point file, player pose,
 movement basis and absent active checkpoint were preserved. Normal and compact
 native-window screenshots were reviewed; no game input was sent.
 
+## Scene & beacons
+
+The World beacons card distinguishes the owned reader from its fresh presenter
+feedback: stopped, restarting, waiting for a camera frame, hidden by foreground
+rules, visible overlay, or unknown feedback. A running reader alone does not
+prove visible markers. Visible overlay feedback does not establish individual
+point visibility, terrain or occlusion. Hide stops the shared radar/pose reader
+too; the card states this while running.
+
+**Include selected target in markers** can now change while enabled. The helper
+stops its owned reader, retains appearance/route/selected-guide/radar settings,
+and starts a fresh reader for the new target option. STOP/Hide/close or an identity
+change cancels a pending restart. Stop an active manual guide or trail before
+changing this option, so their session progress is not interrupted. The selected
+marker guide is available only with exactly one selected waypoint.
+
+**Reset** restores size 100%, opacity 100% and labels on; it retains target,
+selected-guide and enabled state. The same action is `beacons reset`.
+
+Capture & explore shows the last image/3D availability and capture readiness.
+**Open saved…** loads a saved scene JSON manifest's local asset references without
+opening a viewer. Open view/Open 3D view are separate explicit actions. An entire
+failed capture retains the previous successful assets. Saved image/3D capture
+uses the existing strict measured-XYZ path: every route point needs measurement
+provenance. A mixed measured/estimated route remains usable for live beacons,
+but Save view explains its measured count and stays unavailable until a fully
+measured route is loaded.
+
+```powershell
+.\rr2-waypoints.cmd beacons status
+.\rr2-waypoints.cmd beacons set --target on
+.\rr2-waypoints.cmd beacons reset
+.\rr2-waypoints.cmd view status
+.\rr2-waypoints.cmd view load saved-scene.json
+.\rr2-waypoints.cmd view save new-scene.json
+.\rr2-waypoints.cmd view save new-scene.json --bring-forward --nearby-units
+```
+
+CLI capture defaults to focus-neutral WGC and no nearby-unit sampling; both
+options are explicit per-capture opt-ins and are reflected in the GUI afterward.
+Capture gets a 120-second CLI deadline; movement remains 150 seconds and ordinary
+commands 10 seconds. `view status` reports options, capture readiness and actual
+asset availability. `beacons status` adds `visibility` and `restartPending`.
+
+November 13 live checks on AMD-DESKTOP/PID40452 verified target restarts retaining
+radar/style, refusal during active manual guidance, and the actual magenta target
+and guided estimated waypoint over RIFT. A temporary copy of the two measured
+points produced image/3D assets with `inputSent=false` and `focusChanged=false`.
+The original seven-point route, body pose, appearance, radar-off state and absent
+checkpoint were restored. Local evidence is under `artifacts/scene-ui-*20261113*`;
+normal/compact native UI captures were reviewed. No movement input was sent.
+
 ## Route library and zone context
 
 **Library** keeps named route copies in `artifacts/waypoint-routes`. Search by
