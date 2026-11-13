@@ -75,7 +75,7 @@ class RecentRoutesTests(unittest.TestCase):
         self.combo.current(6)
         self.button("Load recent").invoke()
         self.assertEqual(prior, checkpoint.read_bytes())
-        self.assertEqual("route.json â€” 2", list(self.combo.cget("values"))[0])
+        self.assertEqual("route.json — 2", list(self.combo.cget("values"))[0])
         saved = json.loads((self.path / "artifacts" / "waypoint-last-route.json").read_text(encoding="utf-8"))
         self.assertEqual(document, saved["route"])
         self.assertEqual(str(paths[2]), saved["recentPaths"][0])
