@@ -15,6 +15,17 @@ Its offline layout gallery can be regenerated with
 screenshots or proof of actual window clipping. Reopen the helper normally to
 load new source; reopening never starts playback automatically.
 
+In **Scene & beacons**, choose **Show markers** to display saved world locations
+while RIFT is foreground. **Guide selected marker** gives the selected point a
+gold reticle, short beacon and name/distance pill; **Include selected target**
+adds a distinct magenta diamond when a fresh target projection is available.
+NEXT is cyan and ordinary/completed points remain subdued. **Hide markers** stops
+the owned feed. Markers are click-through and never start route playback.
+The existing marker session cap is ten minutes. The helper pauses its duplicate
+idle pose reader while markers run and the helper is unfocused; focusing it
+resumes fresh pose updates. Foreground/identity/geometry/freshness failures still
+withhold markers. See the [camera-motion verification](../validation/waypoint-overlay-camera-2026-11-12.md).
+
 Double-click **`Waypoints.cmd`** in the repository root to open the window for
 the single local physical RIFT client. If RIFT is absent or still loading, the
 default window opens in a waiting state and retries unique selection while idle.

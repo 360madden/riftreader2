@@ -7,10 +7,11 @@ import ctypes
 from ctypes import wintypes as W
 import math
 import threading
+from copy import deepcopy
 
 from PIL import Image, ImageChops, ImageQt
-from PySide6.QtCore import QCoreApplication, QEvent, QEventLoop, QRectF, Qt, QThread, QTimer
-from PySide6.QtGui import QColor, QPainter
+from PySide6.QtCore import QCoreApplication, QEvent, QEventLoop, QPointF, QRectF, Qt, QThread, QTimer
+from PySide6.QtGui import QBrush, QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 
@@ -52,14 +53,63 @@ class _OverlayWidget(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.image, self.on_close = None, on_close
+        self.image, self.scene, self.on_close = None, None, on_close
+
+    def _paint_scene(self, painter):
+        width, height = self.scene["size"]
+        painter.save()
+        try:
+            painter.scale(self.width() / width, self.height() / height)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
+            for command in self.scene["commands"]:
+                color = QColor(command["color"]) if command.get("color") else QColor(0, 0, 0, 0)
+                pen = QPen(color, command.get("width", 1)) if command.get("color") else QPen(Qt.PenStyle.NoPen)
+                pen.setCosmetic(False)
+                painter.setPen(pen)
+                kind, xy = command["kind"], command["xy"]
+                if kind == "line":
+                    path = QPainterPath(QPointF(xy[0], xy[1]))
+                    for index in range(2, len(xy), 2):
+                        path.lineTo(xy[index], xy[index + 1])
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    painter.drawPath(path)
+                elif kind == "ellipse":
+                    painter.setBrush(QBrush(QColor(command["fill"])) if command.get("fill")
+                                     else Qt.BrushStyle.NoBrush)
+                    painter.drawEllipse(QRectF(xy[0], xy[1], xy[2] - xy[0], xy[3] - xy[1]))
+                elif kind == "roundedRect":
+                    painter.setBrush(QBrush(QColor(command["fill"])))
+                    painter.drawRoundedRect(QRectF(xy[0], xy[1], xy[2] - xy[0], xy[3] - xy[1]),
+                                            command["radius"], command["radius"])
+                elif kind == "text":
+                    font = QFont("Segoe UI")
+                    font.setPixelSize(command["fontSize"])
+                    painter.setFont(font)
+                    metrics = painter.fontMetrics()
+                    baseline = xy[1] + metrics.ascent()
+                    for line in command["text"].split("\n"):
+                        path = QPainterPath()
+                        path.addText(QPointF(xy[0], baseline), font, line)
+                        stroke_width = command.get("strokeWidth", 0)
+                        if stroke_width:
+                            painter.strokePath(path, QPen(QColor(command.get("strokeColor") or "#151515"),
+                                                         stroke_width * 2))
+                        # Fill after the outline so a 2 px keyline cannot cover
+                        # the fine stems of a 16 px glyph.
+                        painter.fillPath(path, QBrush(color))
+                        baseline += metrics.height() + command.get("spacing", 0)
+        finally:
+            painter.restore()
 
     def paintEvent(self, event):
         painter = QPainter(self)
         try:
             painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
             painter.fillRect(self.rect(), QColor(0, 0, 0, 0))
-            if self.image is not None:
+            if self.scene is not None:
+                self._paint_scene(painter)
+            elif self.image is not None:
                 painter.drawImage(QRectF(self.rect()), self.image)
         finally:
             painter.end()
@@ -72,6 +122,7 @@ class _OverlayWidget(QWidget):
 
 class QtOwnedWindow:
     """Single owner-thread Qt widget implementing the overlay window interface."""
+    polished_visuals = True
     def __init__(self, api, title):
         self.api, self.thread = api, threading.get_ident()
         self.app = _application()
@@ -120,8 +171,37 @@ class QtOwnedWindow:
         self._main()
         if self.destroyed:
             return
+        self.widget.scene = None
         self.widget.image = None if image is None else _transparent_image(image)
         self.widget.update()
+
+    def paint_scene(self, scene):
+        """Cache renderer-neutral primitives without a full-frame Pillow conversion."""
+        self._main()
+        if self.destroyed:
+            return
+        if scene is not None:
+            if (not isinstance(scene, dict) or not isinstance(scene.get("size"), (list, tuple))
+                    or len(scene["size"]) != 2 or any(type(value) is not int or value <= 0 for value in scene["size"])
+                    or not isinstance(scene.get("commands"), list)):
+                raise ValueError("Invalid Qt overlay primitive scene")
+        self.widget.image = None
+        self.widget.scene = deepcopy(scene)
+        self.widget.update()
+
+    def measure_text(self, text, *, spacing=0, stroke_width=0):
+        """Measure labels with the same Qt pixel font used by direct painting."""
+        self._main()
+        if (not isinstance(text, str) or type(spacing) not in (int, float)
+                or type(stroke_width) not in (int, float)):
+            raise ValueError("Invalid Qt overlay text measurement")
+        font = QFont("Segoe UI")
+        font.setPixelSize(16)
+        metrics, lines = QFontMetricsF(font), text.split("\n")
+        width = max((metrics.horizontalAdvance(line) for line in lines), default=0)
+        height = len(lines) * metrics.height() + max(0, len(lines) - 1) * spacing
+        padding = max(0, stroke_width) * 2
+        return math.ceil(width + padding), math.ceil(height + padding)
 
     def show(self, physicalrect):
         self._main()
@@ -130,15 +210,16 @@ class QtOwnedWindow:
         if (not isinstance(physicalrect, (list, tuple)) or len(physicalrect) != 4
                 or any(type(v) is not int for v in physicalrect) or min(physicalrect[2:]) <= 0):
             raise ValueError("Invalid physical overlay rectangle")
-        cached = self.widget.image
-        self.widget.image = None
+        cached = self.widget.image, self.widget.scene
+        self.widget.image, self.widget.scene = None, None
         try:
             if self._presented_rect != tuple(physicalrect):
                 self.hide()  # Never stretch an old frame during native placement.
             self.widget.show()  # Qt's precreation no-focus flags govern first show.
             if int(self.widget.winId()) != self.hwnd:
                 raise ValueError("Qt recreated the overlay HWND")
-            self.api.show(self.hwnd, physicalrect)  # OWN HWND only, signed pixels.
+            if self._presented_rect != tuple(physicalrect):
+                self.api.show(self.hwnd, physicalrect)  # OWN HWND only, signed pixels.
             actual = self._physical_rect()
             if actual != list(physicalrect):
                 raise ValueError("Qt overlay physical geometry mismatch")
@@ -147,7 +228,7 @@ class QtOwnedWindow:
                     or abs(self.widget.width() * ratio - actual[2]) > 1
                     or abs(self.widget.height() * ratio - actual[3]) > 1):
                 raise ValueError("Qt overlay logical geometry has not settled to physical client")
-            self.widget.image = cached
+            self.widget.image, self.widget.scene = cached
             self._presented_rect = tuple(physicalrect)
             self.widget.update()
         except Exception:
@@ -233,7 +314,7 @@ class QtOwnedWindow:
                 self.after_cancel(identifier)
             self.destroyed = True
             if self.widget is not None:
-                self.widget.image, self.widget.on_close = None, None
+                self.widget.image, self.widget.scene, self.widget.on_close = None, None, None
                 self.widget.deleteLater()
                 QCoreApplication.sendPostedEvents(self.widget, QEvent.Type.DeferredDelete)
                 self.widget = None

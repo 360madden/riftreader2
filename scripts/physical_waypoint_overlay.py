@@ -361,20 +361,32 @@ class _OwnedWindow:
         self.dib = None
 
 
-def _label_layout(labels, width, height, font):
+def _overlap_area(box, other, margin=0):
+    return (max(0, min(box[2] + margin, other[2]) - max(box[0] - margin, other[0])) *
+            max(0, min(box[3] + margin, other[3]) - max(box[1] - margin, other[1])))
+
+
+def _label_layout(labels, width, height, font, measure=None, reserved=()):
     """Greedy nearby label lanes; anchors retain their exact projected position."""
     placed = []
-    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+    measure_draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     for anchor, text in labels:
         # Preserve custom text; wrap only when wider than the physical client.
         lines, line = [], ""
         for character in text:
-            if line and font.getlength(line + character) > max(1, width - 6):
+            line_width = (measure(line + character, spacing=0, stroke_width=1)[0]
+                          if measure is not None else font.getlength(line + character))
+            if line and line_width > max(1, width - 6):
                 lines.append(line)
                 line = ""
             line += character
         text = "\n".join(lines + [line])
-        bounds = measure.multiline_textbbox((0, 0), text, font=font, anchor="lt", spacing=2, stroke_width=1)
+        if measure is not None:
+            measured_width, measured_height = measure(text, spacing=2, stroke_width=1)
+            bounds = (0, 0, measured_width, measured_height)
+        else:
+            bounds = measure_draw.multiline_textbbox((0, 0), text, font=font, anchor="lt", spacing=2,
+                                                      stroke_width=1)
         w, h = min(width, bounds[2] - bounds[0] + 4), min(height, bounds[3] - bounds[1] + 4)
         x, y = anchor
         candidates = []
@@ -384,9 +396,8 @@ def _label_layout(labels, width, height, font):
                     left = max(0, min(width - w, left))
                     top = max(0, min(height - h, y - 10 - h + offset))
                     box = (left, top, left + w, top + h)
-                    overlap = sum(max(0, min(box[2], prior[1][2]) - max(box[0], prior[1][0])) *
-                                  max(0, min(box[3], prior[1][3]) - max(box[1], prior[1][1]))
-                                  for prior in placed)
+                    overlap = sum(_overlap_area(box, prior[1]) for prior in placed)
+                    overlap += sum(_overlap_area(box, quiet, 4) for quiet in reserved)
                     candidates.append((overlap, box))
                     if overlap == 0:
                         break
@@ -509,13 +520,133 @@ def _draw_next_edge_hint(draw, hint, font, *, occupied=()):
             return bounds
 
 
+class _PrimitiveDraw:
+    """Record the tiny ImageDraw subset used by the overlay for Qt painting."""
+    def __init__(self, measure_text=None):
+        self.commands = []
+        self._measure_text = measure_text
+        self._measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+
+    def textbbox(self, xy, text, **kwargs):
+        if self._measure_text is not None:
+            width, height = self._measure_text(text, spacing=kwargs.get("spacing", 0),
+                                               stroke_width=kwargs.get("stroke_width", 0))
+            return xy[0], xy[1], xy[0] + width, xy[1] + height
+        return self._measure.textbbox(xy, text, **kwargs)
+
+    def line(self, xy, *, fill, width=1):
+        self.commands.append({"kind": "line", "xy": tuple(xy), "color": fill, "width": width})
+
+    def ellipse(self, xy, *, outline=None, fill=None, width=1):
+        self.commands.append({"kind": "ellipse", "xy": tuple(xy), "color": outline,
+                              "fill": fill, "width": width})
+
+    def rounded_rectangle(self, xy, *, radius, fill, outline=None, width=1):
+        self.commands.append({"kind": "roundedRect", "xy": tuple(xy), "radius": radius,
+                              "color": outline, "fill": fill, "width": width})
+
+    def text(self, xy, text, *, fill, font, anchor="lt", stroke_width=0, stroke_fill=None):
+        if anchor != "lt":
+            raise ValueError("Unsupported primitive text anchor")
+        self.commands.append({"kind": "text", "xy": tuple(xy), "text": text, "color": fill,
+                              "strokeWidth": stroke_width, "strokeColor": stroke_fill,
+                              "fontSize": 16, "spacing": 0})
+
+    def multiline_text(self, xy, text, *, fill, font, anchor="lt", spacing=0,
+                       stroke_width=0, stroke_fill=None):
+        if anchor != "lt":
+            raise ValueError("Unsupported primitive text anchor")
+        self.commands.append({"kind": "text", "xy": tuple(xy), "text": text, "color": fill,
+                              "strokeWidth": stroke_width, "strokeColor": stroke_fill,
+                              "fontSize": 16, "spacing": spacing})
+
+
+def _short_beam(ground, top, limit=54):
+    if top is None:
+        return ground
+    dx, dy = top[0] - ground[0], top[1] - ground[1]
+    length = math.hypot(dx, dy)
+    if not length or length <= limit:
+        return top
+    return ground[0] + dx * limit / length, ground[1] + dy * limit / length
+
+
+def _draw_polished_markers(draw, font, markers, width, height, *, measure=None, label_lanes=None,
+                           reserved=()):
+    """Draw a quiet field of pips with labels reserved for active landmarks."""
+    prominent = []
+    for marker in markers:
+        x, y = marker["ground"]
+        if not marker["prominent"]:
+            radius = 3 if marker["state"] == "completed" else 4
+            draw.ellipse((x-radius, y-radius, x+radius, y+radius), outline=marker["color"],
+                         fill=marker["color"] if marker["state"] == "completed" else None, width=1)
+            continue
+        endpoint = _short_beam(marker["ground"], marker["top"])
+        prominent.append((endpoint, marker["display"], marker))
+
+    labels = _label_layout([(endpoint, text) for endpoint, text, marker in prominent], width, height, font,
+                           measure, reserved)
+    occupied, active_keys = [], set()
+    for (endpoint, _, marker), (text, box, anchor) in zip(prominent, labels):
+        key = marker["key"]
+        active_keys.add(key)
+        if label_lanes is not None and key in label_lanes:
+            dx, dy = label_lanes[key]
+            box_width, box_height = box[2] - box[0], box[3] - box[1]
+            left = max(0, min(width - box_width, anchor[0] + dx))
+            top = max(0, min(height - box_height, anchor[1] + dy))
+            stable = (left, top, left + box_width, top + box_height)
+            if all(stable[2] <= other[0] or other[2] <= stable[0]
+                   or stable[3] <= other[1] or other[3] <= stable[1] for other in occupied) and not any(
+                       _overlap_area(stable, quiet, 4) for quiet in reserved):
+                box = stable
+        if label_lanes is not None:
+            label_lanes[key] = (box[0] - anchor[0], box[1] - anchor[1])
+        occupied.append(box)
+        color = marker["color"]
+        x, y = marker["ground"]
+        ex, ey = endpoint
+        if endpoint != marker["ground"]:
+            draw.line((x, y, ex, ey), fill=color, width=2)
+        if marker["role"] == "target":
+            # Shape, not color alone, distinguishes an explicit unit target.
+            draw.line((x, y-10, x+10, y, x, y+10, x-10, y, x, y-10), fill=color, width=2)
+            for corner in ((x-14, y-8, x-14, y-14, x-8, y-14),
+                           (x+8, y-14, x+14, y-14, x+14, y-8),
+                           (x+14, y+8, x+14, y+14, x+8, y+14),
+                           (x-8, y+14, x-14, y+14, x-14, y+8)):
+                draw.line(corner, fill=color, width=2)
+        else:
+            # A compact two-ring reticle leaves the projected ground pixel legible.
+            draw.ellipse((x-10, y-10, x+10, y+10), outline=color, width=2)
+            draw.ellipse((x-3, y-3, x+3, y+3), outline=color, fill=color, width=1)
+            if marker["role"] == "next":
+                draw.line((x-6, y-15, x, y-10, x+6, y-15), fill=color, width=2)
+        padded = (max(0, box[0]-4), max(0, box[1]-2), min(width, box[2]+4), min(height, box[3]+2))
+        draw.rounded_rectangle(padded, radius=7, fill="#dc111821", outline="#a0ffffff", width=1)
+        endpoint_on_box = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
+        draw.line((*anchor, *endpoint_on_box), fill=color, width=1)
+        draw.multiline_text((box[0]+2, box[1]+2), text, fill="#f5fbff", font=font,
+                            anchor="lt", spacing=2, stroke_width=0)
+    if label_lanes is not None:
+        for key in set(label_lanes) - active_keys:
+            del label_lanes[key]
+
+
 class PhysicalWaypointOverlay:
+    # RIFT's top-center chat/notification lane. Coordinates are normalized to
+    # the current physical client and only constrain labels, never world anchors.
+    polished_reserved_rects = ((.26, 0., .77, .26),)
+
     def __init__(self, target, *, max_age=.8, window_factory=None):
         self.target = _target(target)
         if type(max_age) not in (int, float) or not math.isfinite(max_age) or max_age <= 0:
             raise ValueError("Invalid overlay freshness limit")
         self.max_age, self.thread = max_age, threading.get_ident()
         self.frame, self.closed, self.reason = None, False, "waiting-for-frame"
+        self.hide_reasons = {}
+        self._label_lanes, self._label_rect = {}, None
         self.api, self.window, self.hwnd, self.timer = _native(), None, None, None
         try:
             factory = window_factory or _OwnedWindow
@@ -566,9 +697,18 @@ class PhysicalWaypointOverlay:
             return False
         try:
             rect = self._validate(frame)
-            image = Image.new("RGB", tuple(rect[2:]), (1, 2, 3))
-            draw, font = ImageDraw.Draw(image), ImageFont.load_default(size=16)
-            markers = []
+            # Inspect the class so permissive compatibility shims implementing
+            # __getattr__ do not accidentally opt into the primitive contract.
+            direct = callable(getattr(type(self.window), "paint_scene", None))
+            measure_text = (self.window.measure_text
+                            if direct and callable(getattr(type(self.window), "measure_text", None)) else None)
+            image = None if direct else Image.new("RGB", tuple(rect[2:]), (1, 2, 3))
+            draw = _PrimitiveDraw(measure_text) if direct else ImageDraw.Draw(image)
+            font = ImageFont.load_default(size=16)
+            if self._label_rect != tuple(rect):
+                self._label_lanes.clear()
+                self._label_rect = tuple(rect)
+            markers, polished_markers = [], []
             for marker in frame["points"]:
                 ground = _projection(marker["ground"], *rect[2:])
                 top = _projection(marker["beaconTop"], *rect[2:])
@@ -576,10 +716,26 @@ class PhysicalWaypointOverlay:
                     text = (str(marker["number"]) if marker["label"] == f"Recorded {marker['number']}"
                             else f"{marker['number']} {marker['label']}")
                     route_state = marker.get("routeState")
-                    color = {"pending": "#b39852", "next": "#7cffff", "completed": "#65c88a"}.get(route_state, "#ffd54f")
+                    landmark = marker.get("displayLandmark") is True
+                    color = ("#7cffff" if route_state == "next" else "#ffd54f" if landmark
+                             else {"pending": "#b39852", "completed": "#65c88a"}.get(route_state, "#ffd54f"))
                     if route_state == "next":
                         text = "NEXT " + text
                     markers.append((ground, top, text, color, 4 if route_state == "next" else 2, "route"))
+                    distance = marker.get("horizontalDistanceCandidate")
+                    suffix = (f" · {distance:.1f}u" if type(distance) in (int, float)
+                              and math.isfinite(distance) and distance >= 0 else "")
+                    if route_state == "next":
+                        display = f"NEXT · {text[5:]}{suffix}"
+                    elif landmark:
+                        display = f"{marker['label']}{suffix}"
+                    else:
+                        display = text
+                    polished_markers.append({"ground": ground, "top": top, "display": display,
+                                             "color": color, "state": route_state,
+                                             "prominent": route_state == "next" or landmark,
+                                             "key": ("route", marker["number"]),
+                                             "role": "next" if route_state == "next" else "landmark" if landmark else "pip"})
             target = frame.get("selectedTarget")
             if isinstance(target, dict):
                 try:
@@ -592,14 +748,26 @@ class PhysicalWaypointOverlay:
                         top = _projection(target["beaconTop"], *rect[2:])
                         if ground is not None:
                             markers.append((ground, top, f"Target · {distance:.1f}", "#ff58db", 2, "target"))
+                            polished_markers.append({"ground": ground, "top": top,
+                                "display": f"TARGET · {distance:.1f}u", "color": "#ff58db",
+                                "state": None, "prominent": True, "key": ("target", key), "role": "target"})
                 except (ValueError, KeyError, TypeError, OverflowError):
                     pass  # An invalid optional target does not hide route markers.
-            labels = _label_layout([(marker[0], marker[2]) for marker in markers], *rect[2:], font)
-            for (_, _, _, color, _, _), (text, box, anchor) in zip(markers, labels):
-                endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
-                draw.line((*anchor, *endpoint), fill=color, width=1)
-                draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
-                                    anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
+            polished = direct and bool(getattr(type(self.window), "polished_visuals", False))
+            if polished:
+                reserved = tuple((left * rect[2], top * rect[3], right * rect[2], bottom * rect[3])
+                                 for left, top, right, bottom in self.polished_reserved_rects)
+                _draw_polished_markers(draw, font, polished_markers, *rect[2:], measure=measure_text,
+                                       label_lanes=self._label_lanes, reserved=reserved)
+            else:
+                label_input = [(marker[0], marker[2]) for marker in markers]
+                labels = (_label_layout(label_input, *rect[2:], font, measure_text)
+                          if measure_text is not None else _label_layout(label_input, *rect[2:], font))
+                for (_, _, _, color, _, _), (text, box, anchor) in zip(markers, labels):
+                    endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
+                    draw.line((*anchor, *endpoint), fill=color, width=1)
+                    draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
+                                        anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
             hint = next_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
             occupied = []
             if hint is not None:
@@ -609,24 +777,29 @@ class PhysicalWaypointOverlay:
             landmark = landmark_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
             if landmark is not None:
                 _draw_next_edge_hint(draw, landmark, font, occupied=occupied)
-            # Rings/beacons are painted last so labels and edge cues never erase
-            # the exact world-to-screen reference pixels.
-            for ground, top, text, color, width, kind in markers:
-                x, y = ground
-                if kind == "target":
-                    draw.line((x, y-8, x+8, y, x, y+8, x-8, y, x, y-8), fill=color, width=width)
-                else:
-                    draw.ellipse((x-7, y-7, x+7, y+7), outline=color, width=width)
-                if top is not None:
-                    draw.line((*ground, *top), fill=color, width=width)
+            if not polished:
+                # Rings/beacons are painted last so labels and edge cues never erase
+                # the exact world-to-screen reference pixels.
+                for ground, top, text, color, width, kind in markers:
+                    x, y = ground
+                    if kind == "target":
+                        draw.line((x, y-8, x+8, y, x, y+8, x-8, y, x, y-8), fill=color, width=width)
+                    else:
+                        draw.ellipse((x-7, y-7, x+7, y+7), outline=color, width=width)
+                    if top is not None:
+                        draw.line((*ground, *top), fill=color, width=width)
             player = _projection(frame["playerGround"], *rect[2:])
             if player is not None:
                 x, y = player
                 draw.line((x-6, y, x+6, y), fill="#51e5ff", width=2)
                 draw.line((x, y-6, x, y+6), fill="#51e5ff", width=2)
-            self.window.paint(image)
-            # Rendering and a synchronous paint can consume the remaining TTL
-            # or span a window change; revalidate before making pixels visible.
+            if direct:
+                self.window.paint_scene({"size": tuple(rect[2:]), "commands": draw.commands})
+            else:
+                self.window.paint(image)
+            # Scene construction (and native fallback painting) can consume the
+            # remaining TTL or span a window change. Revalidate before show;
+            # Qt's update remains asynchronous and is not claimed as a paint.
             self._validate(frame)
             if not 0 <= time.monotonic() - frame["acquiredMonotonic"] <= self.max_age:
                 raise ValueError("Stale or future overlay frame")
@@ -640,11 +813,19 @@ class PhysicalWaypointOverlay:
     def hide(self, reason):
         self._main()
         if not self.closed:
+            reason = str(reason)
+            if self.frame is not None:
+                self.hide_reasons[reason] = self.hide_reasons.get(reason, 0) + 1
             try:
                 self.window.hide()
             finally:
-                self.window.paint(None)
-                self.frame, self.reason = None, str(reason)
+                if callable(getattr(type(self.window), "paint_scene", None)):
+                    self.window.paint_scene(None)
+                else:
+                    self.window.paint(None)
+                self._label_lanes.clear()
+                self._label_rect = None
+                self.frame, self.reason = None, reason
 
     def _tick(self):
         self._main()

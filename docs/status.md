@@ -1,5 +1,20 @@
 # Current status
 
+**20:57 EST NOVEMBER 12 — CAMERA-MOTION FLICKER FIXED IN EXERCISED CASE; BEACONS POLISHED:**
+On AMD-DESKTOP/PID40452, 50-second camera-pan trials improved from 24 visible
+freshness clears / 273 accepted updates to zero clears / 1,513 accepted updates.
+Instrumented Qt paint events independently matched the latter count; mean sample
+age fell from 112ms to 24ms. The normal GUI workflow then accepted 5,097 updates
+with no TTL clears, retaining the expected foreground-loss hiding. Changes reuse
+the native reader and Qt: bounded continuous stream, coherent-camera retries,
+immutable executable pin, direct primitive painting, and coordination with the
+helper's idle reader. Gold landmark / cyan NEXT / magenta target roles, short
+beams, readable pills and stable label lanes replace the diagnostic-style field.
+Position/body facing and camera return were independently checked; no movement
+keys or playback were used. Basis, active progress and route cache are unchanged.
+53 native and 101 distinct Python/GUI focused checks passed. See
+[live evidence and limits](validation/waypoint-overlay-camera-2026-11-12.md).
+
 **NOVEMBER 12 EVENING — WAYPOINT WORKSPACE REDESIGN; DESKTOP CONTROL STOPPED:**
 On verified AMD-DESKTOP, the waypoint helper now has a shared navy/mint theme,
 four workflow tabs (Replay, Edit waypoint, Scene & beacons, Activity), grouped

@@ -30,6 +30,17 @@ class FakeWindow:
     def hide(self): self.api.hide(self.hwnd)
 
 
+class FakePrimitiveWindow(FakeWindow):
+    def __init__(self, api, title):
+        super().__init__(api, title)
+        self.scenes = []
+    def paint_scene(self, scene): self.scenes.append(scene)
+
+
+class PolishedPrimitiveWindow(FakePrimitiveWindow):
+    polished_visuals = True
+
+
 def projection(x=.5, y=.5):
     return dict(status="available-candidate", normalizedX=x, normalizedY=y, clipW=1., insideViewportCandidate=True)
 
@@ -63,6 +74,94 @@ class PresenterTests(unittest.TestCase):
         self.assertEqual((1, 2, 3), image.getpixel((10, 10)))
         self.assertEqual("RR2 Waypoint Overlay | PID 123", self.presenter.window.title)
         self.assertFalse(any("focus" in name or "geometry" == name for name, args, kwargs in self.presenter.window.calls))
+
+    def test_explicit_primitive_window_avoids_full_frame_pillow_image(self):
+        primitive = overlay.PhysicalWaypointOverlay(TARGET, window_factory=FakePrimitiveWindow)
+        self.addCleanup(primitive.close)
+        original = overlay.Image.new
+        def tiny_images_only(mode, size, *args, **kwargs):
+            self.assertEqual((1, 1), tuple(size))
+            return original(mode, size, *args, **kwargs)
+        with patch.object(overlay.Image, "new", side_effect=tiny_images_only):
+            self.assertTrue(primitive.present(frame()))
+        scene = primitive.window.scenes[-1]
+        self.assertEqual((1920, 1080), scene["size"])
+        self.assertEqual(["line", "text", "ellipse", "line", "line", "line"],
+                         [command["kind"] for command in scene["commands"]])
+        self.assertEqual([], primitive.window.images)
+        primitive.hide("test")
+        self.assertIsNone(primitive.window.scenes[-1])
+
+    def test_polished_scene_reserves_pill_and_short_beam_for_active_marker(self):
+        presenter = overlay.PhysicalWaypointOverlay(TARGET, window_factory=PolishedPrimitiveWindow)
+        self.addCleanup(presenter.close)
+        packet = frame()
+        packet["points"] = [
+            dict(number=1, label="Corner", routeState="next", horizontalDistanceCandidate=8.25,
+                 ground=projection(.5, .5), beaconTop=projection(.5, .2)),
+            dict(number=2, label="Recorded 2", routeState="pending",
+                 ground=projection(.7, .6), beaconTop=projection(.7, .3)),
+        ]
+        self.assertTrue(presenter.present(packet))
+        commands = presenter.window.scenes[-1]["commands"]
+        self.assertEqual(1, sum(command["kind"] == "roundedRect" for command in commands))
+        labels = [command["text"] for command in commands if command["kind"] == "text"]
+        self.assertEqual(["NEXT · 1 Corner · 8.2u"], labels)
+        # The active beam is deliberately bounded instead of spanning the full
+        # world-height projection; the pending point remains a quiet pip.
+        self.assertIn({"kind": "line", "xy": (960, 540, 960.0, 486.0),
+                       "color": "#7cffff", "width": 2}, commands)
+        self.assertTrue(any(command["kind"] == "ellipse" and command.get("width") == 1
+                            and command["xy"] == (1340, 644, 1348, 652) for command in commands))
+        first_lane = presenter._label_lanes[("route", 1)]
+        packet["points"][0]["ground"] = projection(.501, .5)
+        packet["points"][0]["beaconTop"] = projection(.501, .2)
+        self.assertTrue(presenter.present(packet))
+        self.assertEqual(first_lane, presenter._label_lanes[("route", 1)])
+        for command in presenter.window.scenes[-1]["commands"]:
+            if command["kind"] == "roundedRect":
+                self.assertGreaterEqual(min(command["xy"]), 0)
+                self.assertLessEqual(command["xy"][2], 1920)
+                self.assertLessEqual(command["xy"][3], 1080)
+        presenter.hide("reset")
+        self.assertEqual({}, presenter._label_lanes)
+        self.assertIsNone(presenter._label_rect)
+
+    def test_polished_landmark_stays_gold_when_completed_and_target_uses_diamond(self):
+        presenter = overlay.PhysicalWaypointOverlay(TARGET, window_factory=PolishedPrimitiveWindow)
+        self.addCleanup(presenter.close)
+        packet = frame()
+        packet["points"][0].update(routeState="completed", displayLandmark=True,
+                                   horizontalDistanceCandidate=2.5)
+        packet["selectedTarget"] = {"status": "candidate", "targetKey": "99", "distance": 3.2,
+                                    "cameraStableCandidate": True, "ground": projection(.7, .5),
+                                    "beaconTop": projection(.7, .4)}
+        self.assertTrue(presenter.present(packet))
+        commands = presenter.window.scenes[-1]["commands"]
+        self.assertTrue(any(command["kind"] == "ellipse" and command["color"] == "#ffd54f"
+                            and command["width"] == 2 for command in commands))
+        target_diamond = (1344, 530, 1354, 540, 1344, 550, 1334, 540, 1344, 530)
+        self.assertTrue(any(command["kind"] == "line" and command["color"] == "#ff58db"
+                            and command["xy"] == target_diamond for command in commands))
+        self.assertFalse(any(command["kind"] == "ellipse" and command["color"] == "#ff58db"
+                             for command in commands))
+
+    def test_polished_label_avoids_top_chat_quiet_zone_without_moving_anchor(self):
+        presenter = overlay.PhysicalWaypointOverlay(TARGET, window_factory=PolishedPrimitiveWindow)
+        self.addCleanup(presenter.close)
+        packet = frame()
+        packet["points"][0].update(routeState="next", horizontalDistanceCandidate=4,
+                                   ground=projection(.5, .12), beaconTop=projection(.5, .07))
+        self.assertTrue(presenter.present(packet))
+        commands = presenter.window.scenes[-1]["commands"]
+        quiet = (.26 * 1920, 0, .77 * 1920, .26 * 1080)
+        pill = next(command["xy"] for command in commands if command["kind"] == "roundedRect")
+        self.assertEqual(0, overlay._overlap_area(pill, quiet))
+        # The reticle remains at the exact projected ground point.
+        reticle = next(command["xy"] for command in commands
+                       if command["kind"] == "ellipse" and command["width"] == 2)
+        self.assertAlmostEqual(960, (reticle[0] + reticle[2]) / 2)
+        self.assertAlmostEqual(.12 * 1080, (reticle[1] + reticle[3]) / 2)
 
     def test_named_landmark_offscreen_and_behind_without_progress(self):
         row = dict(number=8, label="3rd Guard Soldier", displayLandmark=True, horizontalDistanceCandidate=7.44,
@@ -336,6 +435,10 @@ class PresenterTests(unittest.TestCase):
         placed = overlay._label_layout(labels, 320, 240, font)
         self.assert_layout(placed, 320, 240)
         self.assertEqual([text for anchor, text in labels], [text for text, box, anchor in placed])
+        # If every pixel is reserved, retain a finite bounded best-effort label.
+        fallback = overlay._label_layout([((160, 120), "Only label")], 320, 240, font,
+                                         reserved=((0, 0, 320, 240),))
+        self.assert_layout(fallback, 320, 240)
 
     def test_watchdog_hides_expired_frame_and_close_cancels_timer(self):
         self.assertTrue(self.presenter.present(frame()))
@@ -343,6 +446,10 @@ class PresenterTests(unittest.TestCase):
         self.presenter._tick()
         self.assertIsNone(self.presenter.frame)
         self.assertIn("Stale", self.presenter.reason)
+        self.assertEqual({self.presenter.reason: 1}, self.presenter.hide_reasons)
+        # Repeated hides without a visible accepted frame are not double-counted.
+        self.presenter.hide(self.presenter.reason)
+        self.assertEqual({self.presenter.reason: 1}, self.presenter.hide_reasons)
         self.presenter.close()
         calls = self.presenter.window.calls
         self.assertTrue(any(name == "destroy" for name, args, kwargs in calls))

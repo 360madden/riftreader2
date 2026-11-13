@@ -70,6 +70,40 @@ class QtWindowTests(unittest.TestCase):
         self.window.paint(None)
         self.assertIsNone(self.window.widget.image)
 
+    def test_primitive_scene_uses_widget_cache_and_unchanged_show_skips_reposition(self):
+        scene = {"size": (320, 240), "commands": [
+            {"kind": "line", "xy": (10, 10, 50, 50), "color": "#7cffff", "width": 3},
+            {"kind": "ellipse", "xy": (42, 42, 58, 58), "color": "#ffd54f", "width": 2},
+            {"kind": "roundedRect", "xy": (56, 34, 130, 64), "radius": 7,
+             "color": "#80ffffff", "fill": "#dc111821", "width": 1},
+            {"kind": "text", "xy": (60, 40), "text": "NEXT 1", "color": "#ffd54f",
+             "strokeWidth": 1, "strokeColor": "#151515", "fontSize": 16, "spacing": 0},
+        ]}
+        self.window.paint_scene(scene)
+        scene["commands"].clear()  # The cached frame is detached from its producer.
+        self.assertIsNone(self.window.widget.image)
+        self.assertEqual(4, len(self.window.widget.scene["commands"]))
+        self.window.show(self.rect)
+        rendered = self.window.widget.grab().toImage()  # Executes the direct QPainter primitive path.
+        # The colored glyph fill must survive its dark readability outline.
+        self.assertTrue(any(rendered.pixelColor(x, y).red() > 220
+                            and rendered.pixelColor(x, y).green() > 170
+                            and rendered.pixelColor(x, y).blue() < 130
+                            for y in range(35, 65) for x in range(58, 130)))
+        self.window.show(self.rect)
+        self.api.show.assert_called_once_with(self.window.hwnd, self.rect)
+        self.assertIsNotNone(self.window.widget.scene)
+        self.window.paint(None)
+        self.assertIsNone(self.window.widget.scene)
+
+    def test_text_measurement_uses_painted_pixel_font_and_multiline_spacing(self):
+        single = self.window.measure_text("NEXT 1", spacing=2, stroke_width=0)
+        multiline = self.window.measure_text("NEXT 1\nCorner", spacing=2, stroke_width=1)
+        self.assertGreater(single[0], 0)
+        self.assertGreater(single[1], 0)
+        self.assertGreater(multiline[1], single[1] * 2)
+        self.assertGreaterEqual(multiline[0], single[0])
+
     def test_flags_and_attributes_exist_before_first_explicit_native_handle_request(self):
         original = overlay._OverlayWidget.winId
         checks = []
