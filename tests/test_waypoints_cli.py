@@ -12,6 +12,17 @@ from scripts import waypoints_cli as cli
 
 
 class CliTests(unittest.TestCase):
+    def test_machine_json_survives_legacy_windows_output_encoding(self):
+        raw = io.BytesIO()
+        stream = io.TextIOWrapper(raw, encoding="cp1252")
+        envelope = cli.result("status", data={"state": "Stopped — no input active.", "name": "地図"})
+        with contextlib.redirect_stdout(stream):
+            cli.emit(envelope, machine=True)
+        stream.flush()
+        decoded = raw.getvalue().decode("utf-8")
+        self.assertEqual(json.loads(decoded), envelope)
+        self.assertEqual(len(decoded.splitlines()), 1)
+
     def call(self, *argv):
         out, err = io.StringIO(), io.StringIO()
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):

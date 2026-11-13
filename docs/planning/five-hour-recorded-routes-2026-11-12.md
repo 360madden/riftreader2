@@ -139,8 +139,35 @@ Local receipts: `artifacts/waypoint-cli-live-20261113/results.json`,
 `preservation.json` and `view.json`. Recorder save/cancel races, movement failure
 and STOP-before-queued-move behavior were additionally verified with a real
 withdrawn Tk/mailbox integration and mocked game-facing operations. Useful
-moving trail export, Resume and actual nonzero input retain their existing
-backend behavior; those were not repeated as live CLI trials in this batch.
+moving trail export retains its existing backend behavior and was not repeated
+as a live CLI trial in this batch.
+
+**Follow-up real movement/STOP/Resume trial, November 13:** on the same physical
+AMD-DESKTOP/PID40452 epoch/build, CLI Go moved 1.807438 units on open ground,
+ending 0.007521 units from its requested goal (two W pulses, 286 ms total).
+A separate two-point measured route then played in reverse. CLI STOP after its
+first W pulse left progress at 1/2; the stopped receipt's two independent native
+samples had zero XYZ and yaw drift. CLI Resume used the saved reverse direction,
+completed 2/2 with one further W pulse, and finished 0.036622 units from the saved
+start. CLI Face restored body facing within 0.269286 degrees of the original;
+two fresh shared-reader samples afterward again had zero XYZ/yaw drift.
+All 18 movement/turn pulses across the trial/restoration have successful key-down
+and key-release receipts, with requested holds no longer than 150 ms.
+The seven-point source route, movement basis and original checkpoint state were
+verified unchanged; the normal checkpoint path, selection and route were restored.
+Before/outbound/final WGC screenshots were visually reviewed using the existing
+focus-neutral CLI probe; no desktop-control session was used.
+
+The first STOP result exposed a Windows machine-output encoding problem:
+the CLI emitted an em dash as CP1252 while automation expected UTF-8. STOP itself had
+completed safely, with its immutable cancelled response and stopped receipt
+retained. Machine JSON now escapes Unicode, so its bytes are valid ASCII/UTF-8
+even with legacy stdout encoding. A CP1252/Unicode regression and all 21 frontend
+tests passed; the retained STOP response was successfully read through the fixed
+CLI before Resume. Evidence: `artifacts/cli-real-movement-20261113/verification.json`,
+`phase1.json`, `phase2.json`, `recovered-stopped-command.json`, `resume-receipt.json`
+and the three screenshot directories. This establishes one short supervised
+open-ground case, not general navigation or obstacle avoidance.
 
 ### Everyday examples
 

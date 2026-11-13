@@ -1,5 +1,20 @@
 # Current status
 
+**NOVEMBER 13 — REAL CLI MOVEMENT, STOP AND RESUME PASSED:**
+On physical AMD-DESKTOP/PID40452, CLI Go moved 1.807438 units (0.007521 goal error).
+Reverse playback was stopped after a walking pulse with checkpoint 1/2 and zero
+post-STOP XYZ/yaw drift. CLI Resume completed 2/2, returning within 0.036622 units
+of the start; body facing was restored within 0.269286 degrees. All 18 trial/
+restoration pulses released, each requested hold <=150 ms. Two fresh final pose
+samples were stationary. The original seven-point route, movement basis and
+checkpoint state were verified unchanged, and normal app state was restored.
+The STOP response exposed CP1252 versus UTF-8 output in the reader; machine JSON
+now escapes Unicode, with a focused regression and 21 frontend tests passing.
+All app/input actions used CLI; screenshots used the existing focus-neutral WGC
+CLI probe. Evidence and limits are in the
+[CLI roadmap](planning/five-hour-recorded-routes-2026-11-12.md#waypoints-cli--november-13)
+and `artifacts/cli-real-movement-20261113/verification.json`.
+
 **NOVEMBER 13 — WAYPOINT CLI IMPLEMENTED AND PHYSICAL ATTACHMENT CHECKED:**
 On verified AMD-DESKTOP, `rr2-waypoints.cmd` controls the open Waypoints GUI
 through an owned, PID/start/session-bound local mailbox. It exposes help/status,
@@ -10,8 +25,9 @@ Ctrl+C/STOP, queued-input cancellation and observed radar feedback are implement
 A 53-command live check passed on physical PID40452: colocated Go/Face/Run/Play
 used zero input pulses; passive guide reached complete, and the original seven-
 point route remained byte-identical. Save/cancel races and queued STOP additionally
-passed isolated real-Tk/mailbox tests with mocked game-facing operations. Moving
-trail export, Resume and nonzero movement were not repeated as live CLI trials.
+passed isolated real-Tk/mailbox tests with mocked game-facing operations. That
+initial batch did not exercise moving trail export, Resume or nonzero movement;
+the follow-up above covers the latter two.
 See [commands, evidence and limits](planning/five-hour-recorded-routes-2026-11-12.md#waypoints-cli--november-13).
 
 **20:57 EST NOVEMBER 12 — CAMERA-MOTION FLICKER FIXED IN EXERCISED CASE; BEACONS POLISHED:**

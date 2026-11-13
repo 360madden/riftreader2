@@ -318,7 +318,9 @@ def human_data(command, data):
 
 def emit(envelope, machine=False):
     if machine:
-        print(json.dumps(envelope, ensure_ascii=False, allow_nan=False, default=str))
+        # Redirected Windows consoles may use a legacy encoding. JSON escapes
+        # keep machine output valid UTF-8/ASCII even for Unicode UI messages.
+        print(json.dumps(envelope, ensure_ascii=True, allow_nan=False, default=str))
         return
     command = envelope.get("command", "waypoints")
     data = envelope.get("data")
