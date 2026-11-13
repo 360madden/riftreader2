@@ -30,12 +30,18 @@ def load_config(path, fallback=None):
                 or not .2 <= data["opacity"] <= 1):
             return fallback
         position = data.get("position")
-        if position is not None and (not isinstance(position, dict)
-                or type(position.get("x")) is not int or type(position.get("y")) is not int
-                or not -100000 <= position["x"] <= 100000 or not -100000 <= position["y"] <= 100000
-                or type(position.get("revision")) not in (str, int)
-                or isinstance(position["revision"], str) and not 1 <= len(position["revision"]) <= 128):
-            return fallback
+        if position is not None:
+            revision = position.get("revision") if isinstance(position, dict) else None
+            valid_revision = (type(revision) in (str, int)
+                              and (not isinstance(revision, str) or 1 <= len(revision) <= 128))
+            reset = isinstance(position, dict) and position.get("reset") is True
+            coordinates = (isinstance(position, dict)
+                           and type(position.get("x")) is int and type(position.get("y")) is int
+                           and -100000 <= position["x"] <= 100000
+                           and -100000 <= position["y"] <= 100000)
+            if (not valid_revision or reset == coordinates
+                    or reset and ("x" in position or "y" in position)):
+                return fallback
         status_path = data.get("statusPath")
         if status_path is not None and (not isinstance(status_path, str) or not status_path
                 or not Path(status_path).is_absolute() or status_path.startswith(("\\\\", "//"))):
@@ -172,7 +178,8 @@ class CompactRadar(QWidget):
             ratio = self.devicePixelRatioF()
             width, height = round(self.width()*ratio), round(self.height()*ratio)
             # Keep signed physical coordinates and the user's relative placement.
-            dx, dy = ((position["x"], position["y"]) if new_position
+            dx, dy = (((18, max(18, h-height-150)) if position.get("reset") else
+                       (position["x"], position["y"])) if new_position
                       else self.offset or (18, max(18, h-height-150)))
             dx, dy = max(0, min(dx, w-width)), max(0, min(dy, h-height))
             self._set_unlocked(False)
@@ -209,6 +216,7 @@ class CompactRadar(QWidget):
                   "range": self.config.get("radius") if self.config else None,
                   "opacity": self.config.get("opacity") if self.config else None,
                   "unlocked": bool(self.config and self.config.get("unlocked")) if self.isVisible() else False,
+                  "dragging": self.drag_offset is not None,
                   "appliedRevision": self.applied_revision}
         try:
             write_json_atomic(Path(self.status_path), status, durable=False)

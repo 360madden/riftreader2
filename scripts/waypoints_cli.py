@@ -93,6 +93,7 @@ def example(operation):
         "trail.save":"trail save trail.json --segment latest", "trail.clear":"trail clear --discard",
         "record.stop":"record stop recorded-route.json", "radar.set":"radar set --range 10 --opacity 85",
         "radar.move":"radar move --x 30 --y 50", "beacons.set":"beacons set --size 1 --labels on",
+        "radar.reset-position":"radar reset-position",
         "beacons.reset":"beacons reset", "view.status":"view status",
         "diagnostics.status":"diagnostics status", "diagnostics.show":"diagnostics show",
         "diagnostics.copy":"diagnostics copy", "diagnostics.open":"diagnostics open",
@@ -147,7 +148,7 @@ def build_parser():
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show",
         "diagnostics":"status show copy open",
-        "radar":"status show hide set move lock unlock", "beacons":"status show hide set reset",
+        "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
         "move":"to", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
     }.items():
@@ -189,7 +190,10 @@ def build_parser():
                 "record.start":"Start read-only route recording; capture continues until explicit stop or cancel.",
                 "record.stop":"Stop recording and save its measured route at the explicit FILE.",
                 "record.cancel":"Stop recording and discard its captured route.",
-                "guide.start":"Start passive arrival guidance with fresh confirmation for 0.2 seconds; never sends game input.",
+                "radar.show":"Show the compact radar, starting the owned shared reader when needed.",
+                "radar.hide":"Hide the compact radar while retaining its range, opacity and position.",
+                "radar.reset-position":"Remove the saved manual radar position and return it to its default game-relative location.",
+                "guide.start":"Start passive arrival guidance with fresh confirmation for 0.2 seconds; waits up to 4 seconds for a fresh pose, then refuses without applying and requires an explicit retry.",
                 "trail.start":"Start observing a breadcrumb trail from the existing owned pose feed.",
                 "trail.stop":"Stop breadcrumb observation and retain its history.",
                 "trail.save":"Export one observed trail segment to a separate existing-format route file.",
@@ -204,7 +208,8 @@ def build_parser():
                        else "Attaches fresh candidate provenance to the loaded route; sends no game input." if operation == "route.tag-zone"
                        else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
-                       else "Starts the owned shared reader; sends no game input." if operation == "beacons.show"
+                       else "Starts the owned shared reader when needed; sends no game input." if operation in {"beacons.show", "radar.show", "guide.start", "trail.start"}
+                       else "Removes only the saved manual radar position; retains range, opacity and enabled state; sends no game input." if operation == "radar.reset-position"
                        else "Changes helper visibility; sends no game input." if operation in {"app.show", "app.hide", "app.open"}
                        else "Writes the explicit JSON manifest and a new capture bundle; sends no game input." if operation == "view.save"
                        else "Loads saved asset references into the helper; opens no viewer and sends no game input." if operation == "view.load"
@@ -234,8 +239,10 @@ def build_parser():
         arg(op, "file", type=Path, help="explicit file path; no file chooser")
     for op in ("route.save", "trail.save", "record.stop", "view.save"):
         arg(op, "--overwrite", action="store_true", help="allow replacement of an existing file")
-    for op in ("route.load", "route.new", "app.close"):
+    for op in ("route.load", "route.new"):
         arg(op, "--discard", action="store_true", help="explicitly discard unsaved route changes")
+    arg("app.close", "--discard", action="store_true",
+        help="explicitly discard unsaved route changes and retained breadcrumb trail history")
     for op in ("route.list", "route.validate"):
         arg(op, "--file", type=Path, help="read and inspect a route offline; no live session required")
     for op in ("route.new", "route.add", "route.update"):
@@ -258,7 +265,8 @@ def build_parser():
         arg(op, "--direction", choices=("forward", "reverse"), default=None if op == "playback.resume" else "forward")
         if op in ("guide.start", "route.run"):
             arg(op, "--from", dest="from_point", type=positive, help="one-based starting waypoint; guide confirms fresh arrival for 0.2 seconds")
-    arg("guide.start", "--radius", type=bounded(.05, 10), help="arrival radius in world units")
+    arg("guide.start", "--radius", type=bounded(.05, 10),
+        help="arrival radius in world units; defaults to the session's configured value (0.6 at startup)")
 
     for op in ("playback.start", "playback.resume"):
         arg(op, "--checkpoint", type=Path, help="explicit playback checkpoint path")
@@ -299,6 +307,8 @@ def human_radar(data):
     observed = data.get("observed")
     if not observed:
         print("Radar observed: unavailable (no fresh owned presenter feedback)")
+        if data.get("displayPending"):
+            print("Radar display pending: settings saved; visibility is unconfirmed. Keep RIFT or Waypoints foreground, then check radar status.")
         return
     opacity = observed.get("opacity")
     opacity = round(opacity * 100) if isinstance(opacity, (int, float)) else "?"
@@ -511,7 +521,15 @@ def human_data(command, data):
         point = index + 1 if isinstance(index, int) else "none"
         print(f"Manual guide: {data.get('status', '?')} | {data.get('direction', '?')} | next point {point}: {data.get('activeName') or ''}")
         if data.get("distance") is not None: print(f"Distance: {data['distance']} world units")
-        print(f"Confirmed points: {len(data.get('completedIndices', []))} | no game input")
+        radius = data.get("arrivalRadius")
+        total = data.get("pointCount")
+        confirmed = len(data.get("completedIndices", []))
+        print(f"Confirmed points: {confirmed}" + (f"/{total}" if isinstance(total, int) else "")
+              + (f" | arrival radius {radius} units" if radius is not None else "") + " | no game input")
+        if data.get("heightWarning"):
+            separation = data.get("heightSeparation")
+            detail = f" ({separation:+.1f} units)" if isinstance(separation, (int, float)) else ""
+            print("Floor warning: waypoint may be on another floor" + detail)
         if data.get("reason"): print("Reason: " + str(data["reason"]))
     elif command.startswith("trail."):
         if data.get("file"):
@@ -519,8 +537,20 @@ def human_data(command, data):
         else:
             segments = data.get("segments", [])
             print(f"Breadcrumb trail: {'recording' if data.get('active') else 'stopped'} | {len(segments)} retained segments | no game input")
+            if data.get("discardedPointCount"):
+                print(f"Retention: {data['discardedPointCount']} older samples discarded")
             for segment in segments:
-                print(f"  Segment {segment.get('number', '?')}: {segment.get('pointCount', len(segment.get('points', [])))} points")
+                points = segment.get('pointCount', len(segment.get('points', [])))
+                distance = segment.get('observedPathLength')
+                detail = f" | {distance:.2f} units" if isinstance(distance, (int, float)) else ""
+                if segment.get("exportable") is True:
+                    readiness = f"ready to save as {segment.get('waypointCount', '?')} waypoints"
+                elif segment.get("exportable") is False:
+                    readiness = "not ready to save" + (f": {segment['exportReason']}" if segment.get("exportReason") else "")
+                else:
+                    readiness = "save readiness unknown"
+                reason = f" | split: {segment['reason']}" if segment.get("reason") else ""
+                print(f"  Segment {segment.get('number', '?')}: {points} samples{detail} | {readiness}{reason}")
     elif command == "playback.status":
         human_playback(data)
     elif command in MOVEMENT:

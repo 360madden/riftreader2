@@ -1417,6 +1417,7 @@ def launch_window(args):
             update_edit_state()
         if explore_controls is not None:
             explore_controls.route_changed()
+            explore_controls.refresh_context()
         schedule_marker_update()
         radius_text.set(f"{map_radius:g} units")
         zoom_in.configure(state="disabled" if map_radius == ZOOM_RADII[0] else "normal")
@@ -2578,10 +2579,21 @@ def launch_window(args):
         if not markers.running() and not marker_restart_pending:
             toggle_markers()
 
+    def exploration_block_reason(operation="guide"):
+        if closing:
+            return "The helper is closing"
+        if busy or cli_action is not None:
+            return "Wait for the active action to finish"
+        if operation == "guide" and cli_server is not None and zone_comparison() == "mismatch":
+            return "Route zone candidate differs; load a matching route"
+        return None
+
     explore_controls = ExploreControls(explore_tab, markers, ensure_exploration_feed, state,
         get_document=lambda: route_document() if table.get_children() else {"waypoints": []},
         get_selected_index=lambda: table.index(table.selection()[0]) if len(table.selection()) == 1 else None,
-        get_binding=exploration_binding, on_navigation=publish_exploration)
+        get_binding=exploration_binding, on_navigation=publish_exploration,
+        get_block_reason=exploration_block_reason,
+        on_error=lambda message, exc: diagnostics.exception(message, exc=exc))
     recent_choice = tk.StringVar()
     ttk.Label(recent_controls, text="Recent routes", style="Surface.Micro.TLabel").grid(row=0, column=0, padx=(0, 8))
     recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=18)
@@ -2643,13 +2655,18 @@ def launch_window(args):
         finally:
             close_prompt = False
 
-    def close():
+    def close(*, discard_trail=False):
         if draft_pending():
             state.set("Apply or Reset fields before closing, or use app close --discard.")
             return
         nonlocal closing
         if closing:
             return
+        if explore_controls.trail.snapshot()["pointCount"] and not discard_trail:
+            if not messagebox.askyesno("Discard breadcrumb trail?",
+                    "The breadcrumb trail is kept only in this window.\n\n"
+                    "Close and discard it? Choose No to save a segment in Explore first.", parent=window):
+                return
         closing = True
         explore_controls.shutdown()
         close_nearby_picker()
@@ -3005,9 +3022,8 @@ def launch_window(args):
 
     def cli_trail_status():
         snapshot = explore_controls.trail.snapshot()
-        snapshot["segments"] = [dict(number=i+1, pointCount=len(segment["points"]),
-                                     **{k:v for k,v in segment.items() if k != "points"})
-                                for i,segment in enumerate(snapshot["segments"])]
+        snapshot["segments"] = [dict(summary, identity=segment["identity"])
+            for summary, segment in zip(explore_controls.trail.segment_summaries(), snapshot["segments"])]
         return snapshot
 
     def cli_file(value, *, fresh=False, overwrite=False):
@@ -3206,9 +3222,12 @@ def launch_window(args):
                 if values.get("discard"): reset_fields()
                 if route_dirty and not values.get("discard"):
                     raise CliError("unsaved-route", "The route has unsaved changes", "Save with route save FILE or close --discard", 4)
+                if explore_controls.trail.snapshot()["pointCount"] and not values.get("discard"):
+                    raise CliError("retained-trail", "The window contains a retained breadcrumb trail",
+                                   "Save segments with trail save FILE; then use app close --discard or trail clear --discard", 4)
                 if values.get("discard"): route_dirty = False
                 cli_close_id = rid
-                close()
+                close(discard_trail=bool(values.get("discard")))
                 return Deferred()
             if command in ("move.to", "face", "route.run", "playback.start", "playback.resume", "record.start"):
                 if rid in cli_cancelled_requests:
@@ -3224,15 +3243,26 @@ def launch_window(args):
             if command in ("guide.start", "trail.start"):
                 if busy or cli_action is not None:
                     raise CliError("busy", "Wait for the active action before starting passive exploration", exit_code=4)
+                block_reason = exploration_block_reason("guide" if command == "guide.start" else "trail")
+                if block_reason:
+                    raise CliError("exploration-unavailable", block_reason, exit_code=4)
+                if command == "guide.start":
+                    explore_controls.validate_guidance(direction=values.get("direction", "forward"),
+                        start_index=values.get("from_point", 1 if values.get("direction", "forward") == "forward" else len(table.get_children()))-1,
+                        radius=values.get("radius"))
                 ensure_exploration_feed()
                 if not markers.running() or markers.stop_requested:
                     raise CliError("reader-unavailable", state.get(), exit_code=3)
                 try:
                     explore_controls._owner()
                 except ValueError:
+                    pose_deadline = time.monotonic() + 4
                     def ready():
                         if not markers.running() or markers.stop_requested or closing:
                             return cli_error("reader-unavailable", "The owned beacon reader ended", exit_code=3)
+                        if time.monotonic() >= pose_deadline:
+                            return cli_error("pose-unavailable", "No fresh exploration pose; start was not applied",
+                                exit_code=3, hint="Focus RIFT or Waypoints, wait for Live pose, then retry explicitly")
                         try: explore_controls._owner()
                         except ValueError: return None
                         return cli_dispatch(command, values, rid)
@@ -3338,29 +3368,60 @@ def launch_window(args):
                 return cli_ok(dict(revision=route_revision, document=cli_document()))
             if command.startswith("radar."):
                 if command == "radar.status": return cli_ok(cli_radar_status())
-                if command in ("radar.show", "radar.hide"):
-                    explore_controls.enabled.set(command == "radar.show")
-                    explore_controls.toggle()
-                elif command in ("radar.lock", "radar.unlock"):
-                    explore_controls.unlocked.set(command == "radar.unlock")
-                elif command == "radar.set":
+                if command not in ("radar.show", "radar.hide", "radar.lock", "radar.unlock", "radar.set", "radar.move", "radar.reset-position"):
+                    raise CliError("unsupported-command", command)
+                # Validate the complete request before changing variables or starting a reader.
+                new_radius, new_opacity = None, None
+                new_position = None
+                if command == "radar.set":
                     if values.get("range") is not None:
                         if values["range"] not in (2,5,10,20): raise ValueError("radar range must be 2, 5, 10 or 20")
-                        explore_controls.radius.set(int(values["range"]))
-                    if values.get("opacity") is not None: explore_controls.opacity.set(finite(values["opacity"]))
+                        new_radius = int(values["range"])
+                    if values.get("opacity") is not None:
+                        new_opacity = finite(values["opacity"])
+                        if not 20 <= new_opacity <= 100: raise ValueError("opacity must be 20..100 percent")
                 elif command == "radar.move":
-                    explore_controls.extra_settings["position"] = dict(x=round(finite(values["x"])), y=round(finite(values["y"])), revision=rid)
-                else: raise CliError("unsupported-command", command)
-                if not .2 <= explore_controls.opacity.get()/100 <= 1: raise ValueError("opacity must be 20..100 percent")
-                explore_controls.save()
+                    px, py = finite(values["x"]), finite(values["y"])
+                    if not -100000 <= px <= 100000 or not -100000 <= py <= 100000:
+                        raise ValueError("radar position must be within -100000..100000 physical pixels")
+                    new_position = dict(x=round(px), y=round(py), revision=rid)
+                elif command == "radar.reset-position":
+                    new_position = dict(reset=True, revision=rid)
+                previous_radar = (explore_controls.enabled.get(), explore_controls.unlocked.get(),
+                    explore_controls.radius.get(), explore_controls.opacity.get(), deepcopy(explore_controls.extra_settings))
+                if command in ("radar.show", "radar.hide"):
+                    explore_controls.enabled.set(command == "radar.show")
+                if command in ("radar.lock", "radar.unlock"):
+                    explore_controls.unlocked.set(command == "radar.unlock")
+                if new_radius is not None: explore_controls.radius.set(str(new_radius))
+                if new_opacity is not None: explore_controls.opacity.set(new_opacity)
+                if new_position is not None: explore_controls.extra_settings["position"] = new_position
+                if not explore_controls.save():
+                    enabled, unlocked, radius, opacity, extra = previous_radar
+                    explore_controls.enabled.set(enabled)
+                    explore_controls.unlocked.set(unlocked)
+                    explore_controls.radius.set(radius)
+                    explore_controls.opacity.set(opacity)
+                    explore_controls.extra_settings = extra
+                    explore_controls.refresh_context()
+                    raise CliError("radar-save-failed", state.get(), exit_code=4)
+                if command == "radar.show":
+                    ensure_exploration_feed()
+                    if not markers.running():
+                        explore_controls.enabled.set(False)
+                        explore_controls.save()
+                        raise CliError("reader-unavailable", state.get(), exit_code=3)
                 if command == "radar.hide" and not markers.running(): return cli_ok(cli_radar_status())
                 if not explore_controls.enabled.get() and command != "radar.hide": return cli_ok(cli_radar_status(), "configured")
                 if not markers.running(): raise CliError("reader-unavailable", state.get(), exit_code=3)
+                display_deadline = time.monotonic() + 4
                 def applied():
                     status = cli_radar_status()
                     observed = status["observed"]
+                    if time.monotonic() >= display_deadline:
+                        return cli_ok(dict(status, displayPending=True), "configured")
                     if observed is None: return None
-                    if command == "radar.move" and observed.get("appliedRevision") != rid: return None
+                    if command in ("radar.move", "radar.reset-position") and observed.get("appliedRevision") != rid: return None
                     if observed["visible"] != explore_controls.enabled.get(): return None
                     if observed["visible"] and observed["unlocked"] != explore_controls.unlocked.get(): return None
                     if observed["visible"] and (observed.get("range") != int(explore_controls.radius.get())
@@ -3416,20 +3477,10 @@ def launch_window(args):
                 return cli_wait(rid, shown)
             if command.startswith("guide."):
                 if command == "guide.start":
-                    owner = explore_controls._owner()
-                    document = cli_document()
                     direction = values.get("direction", "forward")
-                    index = values.get("from_point", 1 if direction == "forward" else len(document["waypoints"]))-1
-                    if values.get("radius") is not None:
-                        if not .05 <= finite(values["radius"]) <= 10: raise ValueError("radius must be .05..10")
-                        explore_controls.guidance.radius = values["radius"]
-                    from scripts.waypoint_height_context import measured_heights
-                    explore_controls.guidance.begin(document["waypoints"], direction, index, owner,
-                                                   measured_heights=measured_heights(document))
-                    explore_controls._route_signature = json.dumps(document, sort_keys=True, allow_nan=False)
-                    explore_controls.guidance.observe(owner)
-                    explore_controls._refresh()
-                    explore_controls._notify()
+                    index = values.get("from_point", 1 if direction == "forward" else len(table.get_children()))-1
+                    explore_controls.start_guidance(direction=direction, start_index=index,
+                        radius=values.get("radius"), raise_errors=True)
                 elif command == "guide.stop": explore_controls.stop_guidance()
                 elif command != "guide.status": raise CliError("unsupported-command", command)
                 return cli_ok(explore_controls.navigation_state())
@@ -3444,7 +3495,7 @@ def launch_window(args):
                 elif command == "trail.clear":
                     if not values.get("discard"): raise CliError("discard-required", "Use trail clear --discard", exit_code=4)
                     if explore_controls.trail.snapshot()["active"]: raise CliError("trail-active", "Stop the trail before clearing", exit_code=4)
-                    explore_controls.clear_trail()
+                    explore_controls.clear_trail(discard=True)
                 elif command == "trail.save":
                     segments = explore_controls.trail.snapshot()["segments"]
                     index = len(segments)-1 if values.get("segment", "latest") == "latest" else int(values["segment"])-1
@@ -3906,6 +3957,10 @@ def launch_window(args):
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
         update_scene_state()
+        if workflow.select() == str(explore_tab):
+            explore_controls.refresh_context()
+        if explore_controls.enabled.get() or workflow.select() == str(explore_tab):
+            explore_controls.set_radar_observed(cli_radar_status()["observed"])
         if workflow.select() == str(activity_tab):
             diagnostic_status = diagnostics.status()
             logging_health.set("Logging active" if diagnostic_status["available"] else "Logging unavailable — Copy diagnostics for details")

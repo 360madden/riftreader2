@@ -54,6 +54,34 @@ class BreadcrumbTests(unittest.TestCase):
         self.assertEqual([[p["x"] for p in s["points"]] for s in segments],[[0,1],[2,3],[4,5]])
         self.assertEqual([p[1] for p in trail.export_segment()["waypoints"]],[4,5])
 
+    def test_segment_summaries_report_export_readiness_and_split_indices(self):
+        trail=self.trail()
+        trail.observe(packet(1))
+        stationary=trail.segment_summaries()
+        self.assertEqual([(s["index"],s["number"]) for s in stationary],[(0,1)])
+        self.assertFalse(stationary[0]["exportable"])
+        self.assertIn("no useful movement",stationary[0]["exportReason"])
+        self.assertIsNone(stationary[0]["waypointCount"])
+
+        trail.observe(packet(2,1))
+        moved=trail.segment_summaries()
+        self.assertTrue(moved[0]["exportable"])
+        self.assertIsNone(moved[0]["exportReason"])
+        self.assertEqual(moved[0]["waypointCount"],2)
+        self.assertEqual(moved[0]["pointCount"],2)
+        self.assertEqual(moved[0]["observedPathLength"],1.)
+
+        trail.unavailable("gap")
+        trail.observe(packet(3,2))
+        split=trail.segment_summaries()
+        self.assertEqual([s["number"] for s in split],[1,2])
+        self.assertEqual(split[1]["reason"],"gap")
+        self.assertFalse(split[1]["exportable"])
+        self.assertIn("no useful movement",split[1]["exportReason"])
+
+        trail.clear()
+        self.assertEqual(trail.segment_summaries(),[])
+
     def test_teleport_and_epoch_owner_split(self):
         trail=self.trail()
         trail.observe(packet(1)); trail.observe(packet(2,100))

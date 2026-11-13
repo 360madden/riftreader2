@@ -31,6 +31,7 @@ class BreadcrumbTrail:
         self._pending = "started"
         self._reason = "stopped"
         self._discarded = 0
+        self._summary_cache = {}
 
     @staticmethod
     def _owner_key(owner):
@@ -63,6 +64,7 @@ class BreadcrumbTrail:
 
     def clear(self):
         self._segments.clear()
+        self._summary_cache.clear()
         self._discarded = 0
         self._pending = "cleared"
         return self.snapshot()
@@ -167,6 +169,50 @@ class BreadcrumbTrail:
     def snapshot(self):
         return dict(active=self._active, reason=self._reason, segments=deepcopy(self._segments),
                     pointCount=sum(len(s["points"]) for s in self._segments), discardedPointCount=self._discarded)
+
+    def segment_summaries(self):
+        """Return compact export readiness without copying retained pose packets.
+
+        Readiness comes from ``export_segment`` itself so the UI and CLI cannot
+        drift from the actual save rules. Results are cached until a segment's
+        retained endpoints, size, length, or split reason changes.
+        """
+        summaries = []
+        live_ids = set()
+        for index, segment in enumerate(self._segments):
+            points = segment["points"]
+            segment_id = id(segment)
+            live_ids.add(segment_id)
+            signature = (
+                len(points),
+                points[0].get("sequence") if points else None,
+                points[-1].get("sequence") if points else None,
+                segment.get("observedPathLength"),
+                segment.get("reason"),
+            )
+            cached = self._summary_cache.get(segment_id)
+            if cached is None or cached[0] != signature:
+                try:
+                    document = self.export_segment(index)
+                    readiness = (True, None, len(document["waypoints"]))
+                except (RecordingError, ValueError, TypeError, KeyError, IndexError) as exc:
+                    readiness = (False, str(exc), None)
+                self._summary_cache[segment_id] = (signature, readiness)
+            exportable, export_reason, waypoint_count = self._summary_cache[segment_id][1]
+            summaries.append(dict(
+                index=index,
+                number=index + 1,
+                pointCount=len(points),
+                observedPathLength=segment.get("observedPathLength", 0.),
+                reason=segment.get("reason"),
+                exportable=exportable,
+                exportReason=export_reason,
+                waypointCount=waypoint_count,
+            ))
+        for segment_id in tuple(self._summary_cache):
+            if segment_id not in live_ids:
+                del self._summary_cache[segment_id]
+        return summaries
 
     def export_segment(self, index=-1):
         """Export exactly the chosen retained segment; never bridge other segments."""

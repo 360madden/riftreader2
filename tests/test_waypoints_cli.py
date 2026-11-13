@@ -47,7 +47,7 @@ class CliTests(unittest.TestCase):
         for command in ('status doctor capabilities stop app.list app.open app.show app.hide app.close '
                         'route.list route.load route.save route.new route.add route.update route.remove '
                         'route.reorder route.select route.undo route.validate route.run radar.status radar.show '
-                        'radar.hide radar.set radar.move radar.lock radar.unlock beacons.status beacons.show '
+                        'radar.hide radar.set radar.move radar.reset-position radar.lock radar.unlock beacons.status beacons.show '
                         'beacons.hide beacons.set beacons.reset guide.status guide.start guide.stop trail.status trail.start '
                         'trail.stop trail.list trail.save trail.clear record.status record.start record.stop '
                         'record.cancel move.to face playback.start playback.resume playback.status '
@@ -124,6 +124,12 @@ class CliTests(unittest.TestCase):
                     protocol,'request',return_value=cli.result(operation,data={})) as request:
                 self.assertEqual(self.call(*argv,'--json')[0], 0)
                 self.assertEqual(request.call_args.args[1:3], (operation,payload))
+
+    def test_radar_reset_position_dispatches_without_new_settings(self):
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('radar.reset-position',data={})) as request:
+            self.assertEqual(self.call('radar','reset-position','--json')[0], 0)
+        self.assertEqual(request.call_args.args[1:3], ('radar.reset-position', {}))
 
     def test_diagnostics_commands_dispatch_through_gui_owner(self):
         for verb in ('status','show','copy','open'):
@@ -346,6 +352,20 @@ class CliTests(unittest.TestCase):
             self.assertIn('Effects: Read-only;',self.call(*command,'--help')[1])
         self.assertIn('Changes helper visibility',self.call('app','show','--help')[1])
         self.assertIn('owned shared reader',self.call('beacons','show','--help')[1])
+        for command in (('radar','show'), ('guide','start'), ('trail','start')):
+            help_text = self.call(*command, '--help')[1]
+            self.assertIn('owned shared reader', help_text)
+            self.assertIn('sends no game input', help_text)
+        radar_reset = self.call('radar','reset-position','--help')[1]
+        for phrase in ('saved manual radar position', 'retains range, opacity and enabled state'):
+            self.assertIn(phrase, radar_reset)
+        self.assertIn("configured value (0.6 at startup)", self.call('guide','start','--help')[1])
+        guide_help = self.call('guide','start','--help')[1]
+        for phrase in ('up to 4 seconds', 'refuses without applying', 'explicit retry'):
+            self.assertIn(phrase, guide_help)
+        close_help = self.call('app','close','--help')[1]
+        self.assertIn('retained', close_help)
+        self.assertIn('breadcrumb trail history', close_help)
         self.assertIn('JSON manifest',self.call('view','save','--help')[1])
         self.assertIn('.rrd',self.call('view','open-3d','--help')[1])
         playback_help = self.call('playback','status','--help')[1]
@@ -447,6 +467,39 @@ class CliTests(unittest.TestCase):
             cli.emit(cli.result('radar.set',data={'enabled':True,'range':10,'opacity':85,'observed':{'visible':True,'range':10,'opacity':.85,'unlocked':False}}))
         self.assertIn('Receipt: run.json',out.getvalue())
         self.assertIn('Radar observed: visible, range 10 units, opacity 85%',out.getvalue())
+
+    def test_human_radar_explains_saved_but_unconfirmed_display(self):
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('radar.show', status='configured', data={
+                'enabled':True, 'range':10, 'opacity':85, 'unlocked':False,
+                'observed':None, 'displayPending':True}))
+        rendered=out.getvalue()
+        self.assertIn('Radar observed: unavailable', rendered)
+        self.assertIn('settings saved; visibility is unconfirmed', rendered)
+        self.assertIn('check radar status', rendered)
+
+    def test_human_explore_status_exposes_floor_and_trail_readiness(self):
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('guide.status',data={
+                'status':'active','direction':'forward','activeIndex':1,'activeName':'Upstairs',
+                'distance':.4,'completedIndices':[0],'pointCount':3,'arrivalRadius':.6,
+                'heightWarning':True,'heightSeparation':4.25}))
+            cli.emit(cli.result('trail.list',data={
+                'active':False,'discardedPointCount':12,'segments':[
+                    {'number':1,'pointCount':8,'observedPathLength':3.125,'reason':'sample-gap',
+                     'exportable':True,'waypointCount':3,'exportReason':None},
+                    {'number':2,'pointCount':1,'observedPathLength':0.,'reason':'started',
+                     'exportable':False,'waypointCount':None,
+                     'exportReason':'Recording requires movement of at least 0.05 units'}]}))
+        rendered=out.getvalue()
+        for phrase in ('Confirmed points: 1/3', 'arrival radius 0.6 units',
+                       'Floor warning: waypoint may be on another floor (+4.2 units)',
+                       'Retention: 12 older samples discarded',
+                       'Segment 1: 8 samples | 3.12 units | ready to save as 3 waypoints | split: sample-gap',
+                       'Segment 2: 1 samples | 0.00 units | not ready to save: Recording requires movement'):
+            self.assertIn(phrase, rendered)
 
     def test_scene_status_distinguishes_reader_visibility_and_capture_assets(self):
         out=io.StringIO()

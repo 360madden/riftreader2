@@ -247,13 +247,22 @@ The compact radar requires the existing Qt overlay environment.
   the lower left to leave the current minimap/chat clear. **Unlock to move** lets
   you drag it; turn Unlock off for click-through play. Range and Opacity update
   live. Hide, stale samples, unrelated foreground apps and owned shutdown retain
-  the existing display rules.
+  the existing display rules. The caption distinguishes requested display from
+  observed visibility. **Recenter** restores the default corner without changing
+  range or opacity. Settled unlocked drags and explicit CLI placement survive
+  reopening; the radar always starts hidden and locked.
 - **Start guide** guides a route you walk manually. Choose Forward/Reverse, or
-  enable **Start at selected** to begin at the selected route row. The current
-  point advances after distinct fresh samples confirm arrival within 0.6 units;
+  enable **From selected** to begin at the selected route row. **Arrive** sets the
+  arrival radius in world units (0.05–10; 0.60 at startup), matching CLI `--radius`.
+  The current point advances after distinct fresh samples confirm arrival within
+  that radius;
   it never jumps to a later nearby point. Radar and beacon guidance identify the
   same active destination. Route edits stop the guide. Missing data pauses arrival
   confirmation. Guidance never writes the automated Play/Resume checkpoint.
+  Readiness explains an empty route, missing selection, invalid radius, busy
+  action or known zone mismatch before starting the reader. The active direction,
+  next point and confirmed count are visible; Stop before starting another guide
+  or changing its options. CLI starts update the same direction/radius controls.
 - **Record trail** retains the positions you actually visit and draws a breadcrumb
   line on both radars. **Stop trail** retains it; **Clear** is available when
   stopped. Choose a recorded segment and **Save segment** to write a separate
@@ -261,6 +270,35 @@ The compact radar requires the existing Qt overlay environment.
   to inspect it. Gaps, teleports and owner changes split segments; long trails also
   split at the existing 20-unit recording limit. Exact stationary positions keep
   sparse real heartbeat samples so standing still does not quickly erase a walk.
+  Segment selection stays on your chosen segment when a new segment arrives.
+  Save is enabled only when the actual export rules accept that segment; the
+  caption shows path length or the refusal reason and dropped-history count.
+  Clear asks before discarding retained history. Closing also warns that the
+  in-memory trail will be discarded; save useful segments before closing.
+
+```powershell
+.\rr2-waypoints.cmd radar reset-position
+.\rr2-waypoints.cmd guide start --direction reverse --from 7 --radius 0.45
+.\rr2-waypoints.cmd guide status
+.\rr2-waypoints.cmd guide stop
+.\rr2-waypoints.cmd trail list
+.\rr2-waypoints.cmd trail save trail.json --segment 1
+.\rr2-waypoints.cmd trail clear --discard
+```
+
+Guide radius is shared within the current window and returns to 0.60 on reopen.
+`guide status` includes start `readiness` and `configuredRadius`; `trail list/status`
+include per-segment `exportable`, `exportReason`, path length and output point
+count. CLI `app close` requires its existing `--discard` flag if trail history
+remains. Rejected radar settings leave the previous configuration intact, and a
+settings write failure is an explicit error rather than a reported success.
+
+When the browser or another unrelated app is foreground, fresh beacon pose may
+be unavailable. CLI guide/trail starts wait up to four seconds, then refuse with
+`pose-unavailable`; they do not remain queued to start later. Focus RIFT or
+Waypoints and retry explicitly. Radar changes are saved immediately; if display
+application cannot be observed within four seconds, CLI returns `configured`
+with `displayPending: true`, rather than claiming visibility or timing out.
 
 Trail history keeps up to 2,000 recent observations, with original XYZ and sample
 times. Export preserves corners and measured heights through the existing route

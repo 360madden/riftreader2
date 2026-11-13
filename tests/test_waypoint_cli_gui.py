@@ -29,6 +29,14 @@ import scripts.waypoint_cli_protocol as protocol
 root = Path(sys.argv[1])
 app.ROOT = root
 (root / 'artifacts').mkdir(exist_ok=True)
+original_markers_factory = app.OwnedWaypointMarkers
+def test_markers_factory(*args, **kwargs):
+    markers = original_markers_factory(*args, **kwargs)
+    original_running = markers.running
+    markers.running = lambda: ((root / 'force-no-pose-reader').exists()
+                               or original_running())
+    return markers
+app.OwnedWaypointMarkers = test_markers_factory
 def fake_startfile(path):
     (root / 'opened-log-directory').write_text(str(path), encoding='utf-8')
 app.os.startfile = fake_startfile
@@ -222,6 +230,90 @@ class GuiBridgeTests(unittest.TestCase):
         listed = self.call('route.list')['data']
         self.assertEqual(listed['points'][0]['name'], 'A')
         self.assertFalse(listed['dirty'])
+
+    def test_radar_rejects_invalid_or_unpersisted_changes_transactionally(self):
+        keys = ('enabled', 'unlocked', 'range', 'opacity', 'requestedPosition', 'readerRunning')
+        baseline = self.call('radar.status')['data']
+        self.assertFalse(baseline['readerRunning'])
+
+        invalid = (
+            ('radar.set', {'range': 5, 'opacity': 10}),
+            ('radar.move', {'x': 12}),
+            ('radar.move', {'x': 100001, 'y': 0}),
+        )
+        for operation, arguments in invalid:
+            with self.subTest(operation=operation, arguments=arguments):
+                rejected = self.call(operation, arguments)
+                self.assertFalse(rejected['ok'], rejected)
+                current = self.call('radar.status')['data']
+                self.assertEqual({key: current.get(key) for key in keys},
+                                 {key: baseline.get(key) for key in keys})
+                self.assertFalse(current['readerRunning'])
+
+        # The mailbox refuses non-finite JSON before publication; this must not
+        # create a request or indirectly start the shared reader.
+        with self.assertRaises(protocol.CliError) as nonfinite:
+            self.call('radar.move', {'x': float('nan'), 'y': 0})
+        self.assertEqual(nonfinite.exception.code, 'transport-error')
+        self.assertFalse(self.call('radar.status')['data']['readerRunning'])
+
+        radar_path = self.root / 'artifacts' / 'waypoint-radar-style.json'
+        radar_path.unlink()
+        radar_path.mkdir()
+        try:
+            failed = self.call('radar.set', {'range': 5, 'opacity': 70})
+            self.assertFalse(failed['ok'], failed)
+            self.assertEqual(failed['error']['code'], 'radar-save-failed')
+            current = self.call('radar.status')['data']
+            self.assertEqual({key: current.get(key) for key in keys},
+                             {key: baseline.get(key) for key in keys})
+            self.assertFalse(current['readerRunning'])
+        finally:
+            radar_path.rmdir()
+        restored = self.call('radar.set', {'range': baseline['range'],
+                                            'opacity': baseline['opacity']})
+        self.assertTrue(restored['ok'], restored)
+        self.assertTrue(radar_path.is_file())
+
+    def test_guide_preflight_rejects_empty_route_radius_and_index_before_reader(self):
+        empty = self.call('guide.start', {'direction': 'forward'})
+        self.assertFalse(empty['ok'], empty)
+        self.assertFalse(self.call('radar.status')['data']['readerRunning'])
+
+        self.assertTrue(self.call('route.add', {'name': 'Only point', 'x': 1, 'z': 2})['ok'])
+        for arguments in ({'direction': 'forward', 'radius': 11},
+                          {'direction': 'forward', 'from_point': 9}):
+            with self.subTest(arguments=arguments):
+                rejected = self.call('guide.start', arguments)
+                self.assertFalse(rejected['ok'], rejected)
+                self.assertFalse(self.call('radar.status')['data']['readerRunning'])
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_passive_explore_waits_are_bounded_and_never_apply_late(self):
+        forced = self.root / 'force-no-pose-reader'
+        forced.touch()
+        try:
+            started = time.monotonic()
+            radar = self.call('radar.show')
+            self.assertTrue(radar['ok'], radar)
+            self.assertEqual(radar['status'], 'configured')
+            self.assertTrue(radar['data']['displayPending'])
+            self.assertIsNone(radar['data']['observed'])
+            self.assertLess(time.monotonic() - started, 5)
+
+            self.assertTrue(self.call('route.add', {
+                'name': 'Only point', 'x': 1, 'z': 2})['ok'])
+            started = time.monotonic()
+            guide = self.call('guide.start', {'direction': 'forward'})
+            self.assertFalse(guide['ok'], guide)
+            self.assertEqual(guide['error']['code'], 'pose-unavailable')
+            self.assertIn('retry explicitly', guide['error']['hint'])
+            self.assertLess(time.monotonic() - started, 5)
+            state = self.call('guide.status')['data']
+            self.assertEqual(state['status'], 'stopped')
+            self.assertFalse((self.root / 'movement-called').exists())
+        finally:
+            forced.unlink(missing_ok=True)
 
     def test_deferred_success_and_failure_publish_receipts(self):
         result = self.call('move.to', {'x': 1, 'z': 2, 'execute': True})

@@ -76,7 +76,17 @@ class RadarTests(unittest.TestCase):
             self.assertIsNone(load_config(path))
             path.write_text(json.dumps(DEFAULT_CONFIG))
             self.assertEqual(load_config(path), DEFAULT_CONFIG)
-            for change in ({'radius': 3}, {'opacity': float('nan')}, {'enabled': 1}, {'version': True}, {'position': {'x': float('nan'), 'y': 1, 'revision': 1}}, {'statusPath': 'relative.json'}):
+            valid_reset = dict(DEFAULT_CONFIG, position={'reset': True, 'revision': 'home'})
+            path.write_text(json.dumps(valid_reset))
+            self.assertEqual(load_config(path), valid_reset)
+            for change in ({'radius': 3}, {'opacity': float('nan')}, {'enabled': 1}, {'version': True},
+                           {'position': {'x': float('nan'), 'y': 1, 'revision': 1}},
+                           {'position': {'reset': False, 'revision': 1}},
+                           {'position': {'reset': 1, 'revision': 1}},
+                           {'position': {'reset': True, 'x': 1, 'revision': 1}},
+                           {'position': {'reset': True, 'revision': ''}},
+                           {'position': {'reset': True, 'revision': True}},
+                           {'statusPath': 'relative.json'}):
                 path.write_text(json.dumps(dict(DEFAULT_CONFIG, **change)))
                 self.assertIsNone(load_config(path))
 
@@ -131,6 +141,11 @@ class RadarTests(unittest.TestCase):
             self.assertTrue(status['visible'])
             self.assertEqual(status['target'], target)
             self.assertEqual(status['appliedRevision'], 'first')
+            self.assertFalse(status['dragging'])
+            radar.drag_offset = object()
+            radar._publish_status(force=True)
+            self.assertTrue(json.loads(status_path.read_text())['dragging'])
+            radar.drag_offset = None
             if os.name == 'nt':
                 self.assertEqual(status['position'], {'x': 100, 'y': 80})
             radar.offset = (200, 150)  # simulate an observed manual drag
@@ -139,11 +154,27 @@ class RadarTests(unittest.TestCase):
             config['position'] = {'x': 30, 'y': 40, 'revision': 'second'}
             radar.present(frame, {'points': []}, config)
             self.assertEqual(api.rect[:2], [-1470, -260])
+            radar.offset = (220, 130)  # simulate another settled drag
+            config.update(radius=5, opacity=.4,
+                          position={'reset': True, 'revision': 'reset-1'})
+            radar.present(frame, {'points': []}, config)
+            default_offset = (18, max(18, 800-round(radar.height()*radar.devicePixelRatioF())-150))
+            self.assertEqual(api.rect[:2], [-1500+default_offset[0], -300+default_offset[1]])
+            self.assertEqual(radar.offset, default_offset)
+            self.assertEqual(radar.applied_revision, 'reset-1')
+            self.assertEqual(radar.config['radius'], 5)
+            self.assertAlmostEqual(radar.windowOpacity(), .4, delta=.01)
+            api.rect = [999, 999, api.rect[2], api.rect[3]]
+            radar.present(frame, {'points': []}, config)
+            self.assertEqual(api.rect[:2], [999, 999])  # same revision is idempotent
+            config['position'] = {'reset': True, 'revision': 'reset-2'}
+            radar.present(frame, {'points': []}, config)
+            self.assertEqual(api.rect[:2], [-1500+default_offset[0], -300+default_offset[1]])
             radar.clear()
             status = json.loads(status_path.read_text())
             self.assertFalse(status['visible'])
             self.assertEqual(status['target'], target)
-            self.assertEqual(status['appliedRevision'], 'second')
+            self.assertEqual(status['appliedRevision'], 'reset-2')
         radar.deleteLater()
 
     def test_owner_session_freshness_and_separate_segments(self):

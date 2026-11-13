@@ -7,14 +7,14 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import tkinter as tk
 from tkinter import ttk
 from tests.tk_support import withdrawn_root
 
 from scripts.waypoint_beacon_pose import SOURCE, QUALIFICATION
-from scripts.waypoint_explore_ui import ExploreControls, write_feedback
+from scripts.waypoint_explore_ui import ExploreControls, radar_settings, write_feedback
 from scripts.waypoint_ui_theme import apply_theme
 
 
@@ -44,9 +44,12 @@ class ExploreControlsTests(unittest.TestCase):
                            executablePath=r"C:\RIFT\rift_x64.exe", executableSha256="a" * 64, hwnd=12345)
         self.binding = dict(target=self.target, playerKey="123", sessionId="owned-session")
         self.navigation = Mock()
+        self.block_reason = None
+        self.errors = Mock()
         self.ui = ExploreControls(self.parent, self.markers, self.feed, self.status,
             get_document=lambda: self.document, get_selected_index=lambda: self.selected,
-            get_binding=lambda: self.binding, on_navigation=self.navigation)
+            get_binding=lambda: self.binding, get_block_reason=lambda: self.block_reason,
+            on_navigation=self.navigation, on_error=self.errors)
         self.base_time = datetime.now(timezone.utc) - timedelta(seconds=.25)
 
     def cleanup(self):
@@ -118,7 +121,8 @@ class ExploreControlsTests(unittest.TestCase):
         self.ui.on_pose(self.packet(5, 3.2))
         self.ui.stop_trail()
         self.assertEqual(2, len(self.ui.segment_dropdown["values"]))
-        self.assertEqual(1, self.ui.segment_dropdown.current())
+        # New segments do not steal the user's current review selection.
+        self.assertEqual(0, self.ui.segment_dropdown.current())
         self.ui.segment_dropdown.current(0)
         output = self.path / "saved-segment.json"
         with patch("tkinter.filedialog.asksaveasfilename", return_value=str(output)) as chooser:
@@ -129,13 +133,15 @@ class ExploreControlsTests(unittest.TestCase):
         self.assertEqual(10, saved["heights"][0])
         self.assertEqual(self.packet(1)["sampledAtUtc"], saved["pointMeasurements"][0]["observedAtUtc"])
         self.assertEqual(original, self.document)
-        self.ui.clear_trail()
+        self.ui.clear_trail(discard=True)
         self.assertEqual(0, self.ui.trail.snapshot()["pointCount"])
 
     def test_stationary_segment_save_reports_refusal_without_opening_chooser(self):
         self.ui.on_pose(self.packet(1))
         self.ui.start_trail()
         self.ui.stop_trail()
+        self.assertEqual("disabled", str(self.ui.save_trail_button["state"]))
+        self.assertIn("movement", self.ui.trail_text.get().lower())
         with patch("tkinter.messagebox.showerror") as error, patch("tkinter.filedialog.asksaveasfilename") as chooser:
             self.ui.save_trail()
         error.assert_called_once()
@@ -219,6 +225,91 @@ class ExploreControlsTests(unittest.TestCase):
         self.ui.enabled.set(True)
         self.ui.toggle()
         self.assertEqual(3, self.feed.call_count)
+
+    def test_guide_readiness_radius_and_active_start_lock_do_not_launch_blocked_feed(self):
+        self.document["waypoints"] = []
+        self.ui.refresh_context()
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            self.ui.validate_guidance()
+        self.assertEqual("disabled", str(self.ui.start_guide_button["state"]))
+        self.ui.start_guidance()
+        self.feed.assert_not_called()
+
+        self.document["waypoints"] = [["A", 0, 0], ["B", 1, 0]]
+        self.selected = None
+        self.ui.start_selected.set(True)
+        self.ui.refresh_context()
+        with self.assertRaisesRegex(ValueError, "Select a route point"):
+            self.ui.validate_guidance()
+        self.feed.assert_not_called()
+
+        self.selected = 1
+        self.block_reason = "Route zone differs from the current zone candidate."
+        self.ui.refresh_context()
+        self.assertIn("zone differs", self.ui.navigation_state()["readiness"]["reason"])
+        self.ui.start_guidance()
+        self.feed.assert_not_called()
+
+        self.block_reason = None
+        self.ui.arrival_radius.set("0.80")
+        self.ui.on_pose(self.packet(1, 4))
+        self.ui.start_guidance()
+        state = self.ui.navigation_state()
+        self.assertEqual(.8, state["arrivalRadius"])
+        self.assertEqual(.8, state["configuredRadius"])
+        self.assertFalse(state["readiness"]["ready"])
+        self.assertEqual("disabled", str(self.ui.start_guide_button["state"]))
+        order = state["order"]
+        self.ui.start_guidance()
+        self.assertEqual(order, self.ui.navigation_state()["order"])
+
+    def test_clear_retained_trail_requires_confirmation(self):
+        self.ui.on_pose(self.packet(1))
+        self.ui.start_trail()
+        self.ui.on_pose(self.packet(2, 1))
+        self.ui.stop_trail()
+        with patch("tkinter.messagebox.askyesno", return_value=False) as confirm:
+            self.assertFalse(self.ui.clear_trail())
+        confirm.assert_called_once()
+        self.assertEqual(2, self.ui.trail.snapshot()["pointCount"])
+        with patch("tkinter.messagebox.askyesno", return_value=True):
+            self.assertTrue(self.ui.clear_trail())
+        self.assertEqual(0, self.ui.trail.snapshot()["pointCount"])
+
+    def test_cli_direction_is_shown_and_duplicate_start_preserves_radius(self):
+        self.ui.on_pose(self.packet(1, 4))
+        self.ui.start_guidance(direction="reverse", start_index=2, radius=.45, raise_errors=True)
+        self.assertEqual("Reverse", self.ui.direction.get())
+        self.assertEqual("0.45", self.ui.arrival_radius.get())
+        with self.assertRaisesRegex(ValueError, "Stop the current guide"):
+            self.ui.start_guidance(direction="forward", radius=.8, raise_errors=True)
+        self.assertEqual("Reverse", self.ui.direction.get())
+        self.assertEqual(.45, self.ui.navigation_state()["arrivalRadius"])
+
+    def test_radar_position_is_restored_reset_and_settled_drag_is_saved(self):
+        saved = dict(version=1, enabled=True, unlocked=True, radius=5, opacity=.6,
+                     position=dict(x=44, y=55, revision="old"))
+        self.markers.radar_path.write_text(json.dumps(saved), encoding="utf-8")
+        settings = radar_settings(self.markers.radar_path)
+        self.assertEqual(dict(x=44, y=55, revision="restored"), settings["position"])
+
+        self.ui.enabled.set(True)
+        self.ui.unlocked.set(True)
+        self.assertTrue(self.ui.set_radar_observed(dict(visible=True, unlocked=True, dragging=False,
+            position=dict(x=31, y=42), appliedRevision=None)))
+        persisted = json.loads(self.markers.radar_path.read_text())
+        self.assertEqual((31, 42), (persisted["position"]["x"], persisted["position"]["y"]))
+        self.assertTrue(self.ui.reset_position(revision="reset-test"))
+        persisted = json.loads(self.markers.radar_path.read_text())
+        self.assertEqual(dict(reset=True, revision="reset-test"), persisted["position"])
+
+    def test_radar_enable_does_not_start_reader_when_settings_cannot_be_saved(self):
+        self.ui.enabled.set(True)
+        with patch("scripts.waypoint_explore_ui.write_json_atomic", side_effect=OSError("disk full")):
+            self.assertFalse(self.ui.toggle())
+        self.assertFalse(self.ui.enabled.get())
+        self.feed.assert_not_called()
+        self.errors.assert_called_with("Unable to save compact radar settings", ANY)
 
 
 if __name__ == "__main__":

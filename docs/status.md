@@ -1,5 +1,29 @@
 # Current status
 
+**NOVEMBER 13 — EXPLORE POLISH, RADAR RECOVERY AND CLI ALIGNMENT:**
+On verified AMD-DESKTOP, Explore now explains guide readiness, exposes the shared
+session arrival radius, shows progress/direction, and prevents accidental active
+guide resets. Radar Recenter works after a drag; settled placement survives
+reopening while startup stays hidden/locked. Captions distinguish actual radar
+visibility from the requested setting. Trail segments show actual export readiness,
+retain selection when new segments arrive, and warn before Clear/close discards
+history. CLI matches these actions and summaries, validates radar settings before
+mutation, and reports persistence failure. No-pose guide/trail starts expire after
+four seconds; unapplied radar visibility returns configured/displayPending rather
+than indefinite waiting. Normal/compact native captures exposed and corrected
+caption/button clipping and a CLI-start direction display mismatch.
+The final focused run passed **117 tests and 117 subtests**, zero failures/skips.
+Live radar move/reset, placement across helper reopen, reverse guide radius and
+duplicate-start refusal, fresh-sample passive arrival, stationary export refusal,
+retained-trail close refusal and foreground-hidden deadlines passed without game
+input. Original route/basis hashes and the live trial's XYZ/bearing were preserved;
+test trail cleared, overlays stopped, radar 10u/85% and scene refs restored,
+checkpoint still absent. Helper PID40316/sessionb485e196a24e4ef8beadcbce558f95db
+remains on Explore, bound to physical RIFT PID40452. Evidence:
+`artifacts/explore-polish-live-verification-20261113.json`,
+`artifacts/explore-final-{normal,compact}-20261113.png`.
+See [Explore operation](workflows/physical-waypoints.md#explore-while-playing).
+
 **NOVEMBER 13 — PERSISTENT WAYPOINT ERROR LOGGING AND DIAGNOSTICS:**
 On verified AMD-DESKTOP, Waypoints now saves rotating JSON-line logs with app,
 session, thread and target context; Python failures retain bounded tracebacks and
