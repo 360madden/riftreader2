@@ -64,6 +64,15 @@ class PresenterTests(unittest.TestCase):
         self.presenter = overlay.PhysicalWaypointOverlay(TARGET)
         self.addCleanup(self.presenter.close)
 
+    def test_clear_and_recovery_timing_retains_actual_reason(self):
+        self.assertTrue(self.presenter.present(frame()))
+        self.clock.return_value = 100.1
+        self.presenter.hide("frame-expired")
+        self.assertEqual(self.presenter.last_clear, {"reason": "frame-expired", "monotonic": 100.1})
+        self.clock.return_value = 100.2
+        self.assertTrue(self.presenter.present(frame()))
+        self.assertAlmostEqual(self.presenter.last_recovery["clearDurationSeconds"], .1)
+
     def test_signed_client_alignment_projection_and_owned_window_only(self):
         self.assertTrue(self.presenter.present(frame()))
         self.api.own_window.assert_called_once_with(42)
@@ -201,6 +210,21 @@ class PresenterTests(unittest.TestCase):
                                 "labelsVisible": True}
         self.assertFalse(self.presenter.present(packet))
         self.assertIn("beaconScale", self.presenter.reason)
+
+    def test_world_height_cue_distinguishes_measured_warning_from_estimate(self):
+        presenter = overlay.PhysicalWaypointOverlay(TARGET, window_factory=PolishedPrimitiveWindow)
+        self.addCleanup(presenter.close)
+        packet = frame()
+        packet["playerPose"] = {"position": {"y": 10.}}
+        packet["points"][0].update(routeState="next", displayHeightCandidate=13., displayHeightKind="measured")
+        self.assertTrue(presenter.present(packet))
+        labels = [c["text"] for c in presenter.window.scenes[-1]["commands"] if c["kind"] == "text"]
+        self.assertIn("↑ possible other floor", labels[0])
+        packet["points"][0]["displayHeightKind"] = "startup-player-estimate"
+        self.assertTrue(presenter.present(packet))
+        labels = [c["text"] for c in presenter.window.scenes[-1]["commands"] if c["kind"] == "text"]
+        self.assertIn("~↑", labels[0])
+        self.assertNotIn("possible other floor", labels[0])
 
     def test_estimated_height_is_honest_in_prominent_and_native_labels(self):
         for kind in ("nearest-measured-estimate", "startup-player-estimate"):
@@ -736,7 +760,7 @@ class NativeCallsTests(unittest.TestCase):
 
     def test_snapshot_physical_negative_origin_and_epoch_refusal(self):
         api = self.snapshot_api()
-        self.assertEqual({"clientRect": [-1920, -20, 1920, 1080], "foreground": True}, api.snapshot(TARGET))
+        self.assertEqual({"clientRect": [-1920, -20, 1920, 1080], "foreground": True, "foregroundHwnd": TARGET["hwnd"]}, api.snapshot(TARGET))
         changed = dict(TARGET, processStartUtcTicks=str(int(TARGET["processStartUtcTicks"]) + 1))
         with self.assertRaisesRegex(ValueError, "epoch"):
             api.snapshot(changed)

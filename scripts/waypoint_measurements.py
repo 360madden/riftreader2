@@ -123,7 +123,8 @@ def _points(document):
     for number, (point, height) in enumerate(zip(points, heights), 1):
         _require(isinstance(point, list) and len(point) == 3 and isinstance(point[0], str),
                  "invalid-recorded-waypoint")
-        parsed.append(dict(number=number, label=point[0], xyz=_position(dict(x=point[1], y=height, z=point[2]))))
+        parsed.append(dict(number=number, label=point[0], xyz=_position(dict(x=point[1], y=height, z=point[2])),
+                           displayHeightKind="measured"))
     return parsed
 
 

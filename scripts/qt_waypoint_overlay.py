@@ -222,7 +222,9 @@ class QtOwnedWindow:
             self.widget.show()  # Qt's precreation no-focus flags govern first show.
             if int(self.widget.winId()) != self.hwnd:
                 raise ValueError("Qt recreated the overlay HWND")
-            if self._presented_rect != tuple(physicalrect):
+            if self._presented_rect != tuple(physicalrect) or not self.api.u.IsWindowVisible(self.hwnd):
+                # Qt can still consider a widget visible after its native HWND is hidden.
+                # Recover only while presenting a freshly validated frame.
                 self.api.show(self.hwnd, physicalrect)  # OWN HWND only, signed pixels.
             actual = self._physical_rect()
             if actual != list(physicalrect):

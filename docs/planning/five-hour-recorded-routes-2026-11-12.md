@@ -25,6 +25,9 @@ route when appropriate. Reuse the current readers, radar, recorder and beacons.
 | World-to-screen beacons | Live click-through markers, selected-point guidance and optional selected-target cues reuse the native camera projector. Camera-motion flicker fixes and live appearance controls are in place. Marker sessions have no ten-minute GUI limit and can remain visible while their owning Waypoints window has focus. |
 | Map-click points and live edits | Unmeasured points receive explicitly estimated display heights. Add/edit/remove, rename/reorder, Undo, Load and guide-selection changes update the running overlay without restarting its reader. Estimates remain separate from measured heights. |
 | Shared live radar and player pose | The main window's radar and XYZ/facing header reuse the beacon reader, up to five updates per second. Original sample times are preserved; missing/stale/foreign feedback clears the display. Hide returns to the two-second idle reader after the beacon child exits. |
+| Zone-aware route library | Named copies, import, search, context filters and explicit tagging work in the Library tab and attached CLI. Legacy files remain untagged. Fresh native candidate checks gate tagged route movement/Resume; a simulated mismatched-zone fixture refused live input. This is candidate matching, not qualified world/instance identity. |
+| Height and possible-floor context | Measured versus estimated labels, radar above/below cues and CLI summaries reuse existing receipts. Passive guidance refuses planar arrival when measured vertical separation exceeds one unit. Flat-ground live guide completion passed; actual upstairs/downstairs acceptance remains untested. |
+| Foreground overlay recovery | Native-hidden Qt recovery, expired-row continuation, lease timing fixes and non-durable transient feedback reuse the existing reader. Final 40-second idle/zone-refresh and 20-second turn checks accepted 1,687 updates with no recorded clears. A later extended-session snapshot recorded one clear recovering in 46 ms; intermittent freshness hides remain possible. |
 
 The latest radar slice passed **88 focused checks** and a visible-scene live test
 on November 13: one 150 ms A pulse changed facing **44.40 -> 71.76 degrees** and
@@ -108,7 +111,7 @@ connecting segment. Full saved world mapping remains later work.
 - Keep display pose separate from movement admission. Route/marker display can
   remain useful even when a route exceeds the existing playback distance limit.
 - Estimated beacon heights are display approximations. Slopes and other floors
-  can place them above/below terrain. World/zone identity, occlusion, walkability
+  can place them above/below terrain. Qualified world/instance and floor identity, occlusion, walkability
   and obstacle clearance remain unresolved; a projected point proves none of them.
 - Defer automatic obstacle avoidance, terrain extraction/navmeshes, automatic
   stuck detours, combat/quests, indefinite patrol and increased movement budgets.

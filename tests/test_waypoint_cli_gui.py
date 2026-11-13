@@ -59,7 +59,8 @@ class Position:
     z: float = 24.0
 class Adapter:
     pid = 123
-    target = {'test': 'owner'}
+    target = {'hostName': 'AMD-DESKTOP', 'executableSha256': 'a' * 64, 'processId': 123,
+              'processStartUtcTicks': '12345', 'executablePath': 'C:/rift.exe', 'hwnd': '99'}
     binding = None
     input_receipt_path = root / 'no-input'
 class NoForeground:
@@ -67,6 +68,15 @@ class NoForeground:
     def close(self): pass
 app.ForegroundStop = NoForeground
 app.PhysicalAdapter = lambda *args: Adapter()
+def fake_zone(adapter):
+    from datetime import datetime, timezone
+    if (root / 'zone-fail').exists():
+        raise app.WaypointError('simulated zone unavailable')
+    number = 2 if (root / 'zone-different').exists() else 1
+    return {'version': 1, 'zoneIdCandidate': f'z{number:08X}ABCDEF00', 'rawZoneKey': number,
+            'source': 'fake-observation', 'observedAtUtc': datetime.now(timezone.utc).isoformat(),
+            'target': dict(adapter.target), 'playerKey': '1'}
+app.read_route_context = fake_zone
 app.verify_stopped_pose = lambda *args, **kw: {'status': 'pass', 'samples': [{'position': {'x': 1, 'y': 2, 'z': 3}, 'bearing': 45}]}
 pose = SimpleNamespace(position=Position(), bearing=45.0, acquired=time.monotonic())
 observation.observe_batch = lambda *args, **kw: [pose]
@@ -276,6 +286,60 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertTrue(path.exists())
         self.assertEqual(protocol._read(path)['error']['code'], 'cancelled-by-stop')
         self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_zone_library_and_explicit_tagging(self):
+        zone = self.call('zone.refresh')
+        self.assertTrue(zone['ok'], zone)
+        self.assertEqual(zone['data']['context']['zoneIdCandidate'], 'z00000001ABCDEF00')
+        legacy = self.root / 'legacy.json'
+        legacy_data = {'waypoints': [['Legacy', 1, 2]], 'heights': [None]}
+        original = json.dumps(legacy_data)
+        legacy.write_text(original, encoding='utf-8')
+        imported = self.call('library.import', {'file': str(legacy), 'name': 'Legacy', 'route_id': 'legacy'})
+        self.assertTrue(imported['ok'], imported)
+        self.assertEqual(legacy.read_text(encoding='utf-8'), original)
+        self.assertIsNone(imported['data']['routeContext'])
+        loaded = self.call('library.load', {'route_id': 'legacy'})
+        self.assertTrue(loaded['ok'], loaded)
+        context = self.call('route.context')['data']
+        self.assertIsNone(context['routeContext'])
+        self.assertEqual(context['comparison'], 'unknown')
+        tagged = self.call('route.tag-zone')
+        self.assertTrue(tagged['ok'], tagged)
+        self.assertEqual(tagged['data']['comparison'], 'matching')
+        self.assertTrue(self.call('route.list')['data']['dirty'])
+        saved = self.call('library.save', {'name': 'Tagged', 'route_id': 'tagged'})
+        self.assertTrue(saved['ok'], saved)
+        self.assertEqual(saved['data']['routeContext']['zoneIdCandidate'], 'z00000001ABCDEF00')
+        listing = self.call('library.list', {'zone': 'matching'})
+        self.assertTrue(listing['ok'], listing)
+        self.assertEqual([row['id'] for row in listing['data']['routes']], ['tagged'])
+        self.assertTrue(self.call('library.load', {'route_id': 'tagged', 'discard': True})['ok'])
+        self.assertEqual(self.call('route.context')['data']['comparison'], 'matching')
+        renamed = self.call('library.save', {'name': 'Renamed', 'route_id': 'tagged', 'overwrite': True})
+        self.assertTrue(renamed['ok'], renamed)
+        current = self.call('route.list')['data']
+        self.assertEqual(current['document']['routeName'], 'Renamed')
+        self.assertFalse(current['dirty'])
+        self.assertIsNone(json.loads(legacy.read_text()).get('routeContext'))
+
+    def test_zone_guard_rechecks_before_movement(self):
+        self.assertTrue(self.call('route.add', {'name': 'A', 'x': 1, 'z': 2})['ok'])
+        self.assertTrue(self.call('route.tag-zone')['ok'])
+        (self.root / 'zone-different').touch()
+        blocked = self.call('route.run', {'execute': True})
+        self.assertFalse(blocked['ok'], blocked)
+        self.assertIn('zone', blocked['error']['message'].lower())
+        self.assertFalse((self.root / 'movement-called').exists())
+        (self.root / 'zone-different').unlink()
+        (self.root / 'zone-fail').touch()
+        blocked = self.call('route.run', {'execute': True})
+        self.assertFalse(blocked['ok'], blocked)
+        self.assertFalse((self.root / 'movement-called').exists())
+        (self.root / 'zone-fail').unlink()
+        completed = self.call('route.run', {'execute': True})
+        self.assertTrue(completed['ok'], completed)
+        self.assertTrue((self.root / 'movement-called').exists())
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@ import uuid
 
 from PIL import Image, ImageDraw, ImageFont, ImageWin
 from scripts.waypoint_marker_style import DEFAULT_STYLE, normalize_style
+from scripts.waypoint_height_context import height_context, height_cue
 
 
 OVERLAY_STYLES = 0x00080000 | 0x00000020 | 0x08000000 | 0x00000080
@@ -179,7 +180,7 @@ class _Win32:
             raise ValueError("Invalid client dimensions")
         foreground_hwnd = self.u.GetForegroundWindow()
         result = {"clientRect": [origin.x, origin.y, width, height],
-                  "foreground": foreground_hwnd == hwnd}
+                  "foreground": foreground_hwnd == hwnd, "foregroundHwnd": int(foreground_hwnd or 0)}
         if companion is not None:
             companion = validate_companion(companion)
             if result["foreground"]:
@@ -188,6 +189,7 @@ class _Win32:
                 companion_hwnd = self._validate_companion_window(companion)
                 foreground_hwnd = self.u.GetForegroundWindow()
                 result["foreground"] = foreground_hwnd == hwnd
+                result["foregroundHwnd"] = int(foreground_hwnd or 0)
                 result["displayAllowed"] = result["foreground"] or foreground_hwnd == companion_hwnd
             else:
                 result["displayAllowed"] = False
@@ -771,6 +773,8 @@ class PhysicalWaypointOverlay:
         self.max_age, self.thread = max_age, threading.get_ident()
         self.frame, self.closed, self.reason = None, False, "waiting-for-frame"
         self.hide_reasons = {}
+        self.last_snapshot = None
+        self.last_clear, self.last_recovery = None, None
         self._label_lanes, self._label_rect = {}, None
         self.api, self.window, self.hwnd, self.timer = _native(), None, None, None
         try:
@@ -799,6 +803,7 @@ class PhysicalWaypointOverlay:
                 or rect[2] <= 0 or rect[3] <= 0):
             raise ValueError("Malformed physical client rectangle")
         snapshot = target_snapshot(self.target, companion=self.companion)
+        self.last_snapshot = dict(snapshot)
         display_allowed = snapshot.get("displayAllowed", snapshot["foreground"])
         if display_allowed is not True or snapshot["clientRect"] != rect:
             raise ValueError("Target foreground or client geometry changed")
@@ -848,6 +853,14 @@ class PhysicalWaypointOverlay:
                                  else f"{marker['number']} {marker['label']}")
                     height_note = (" · est. height" if marker.get("displayHeightKind") in
                                    ("nearest-measured-estimate", "startup-player-estimate") else "")
+                    pose = frame.get("playerPose")
+                    position = pose.get("position") if isinstance(pose, dict) else None
+                    context = height_context(marker, position.get("y") if isinstance(position, dict) else None)
+                    cue = height_cue(context) if context["deltaY"] is not None else ""
+                    if cue and cue != "~":
+                        height_note += " · " + cue
+                    if context["floorWarning"]:
+                        height_note += " possible other floor"
                     text = base_text + height_note
                     route_state = marker.get("routeState")
                     landmark = marker.get("displayLandmark") is True
@@ -948,6 +961,10 @@ class PhysicalWaypointOverlay:
                 self.window.set_opacity(appearance["opacity"])
             self.window.show(rect)
             self.frame, self.reason = deepcopy(frame), None
+            if self.last_clear is not None and self.last_recovery is None:
+                recovered = time.monotonic()
+                self.last_recovery = {"monotonic": recovered,
+                                      "clearDurationSeconds": max(0., recovered - self.last_clear["monotonic"])}
             return True
         except (ValueError, KeyError, TypeError, OSError) as exc:
             self.hide(str(exc))
@@ -959,6 +976,8 @@ class PhysicalWaypointOverlay:
             reason = str(reason)
             if self.frame is not None:
                 _count_bounded_reason(self.hide_reasons, reason)
+                self.last_clear = {"reason": reason, "monotonic": time.monotonic()}
+                self.last_recovery = None
             try:
                 self.window.hide()
             finally:

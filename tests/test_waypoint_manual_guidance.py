@@ -25,6 +25,53 @@ class ManualGuidanceTests(unittest.TestCase):
         self.guide = ManualGuidance()
         self.guide.begin(POINTS, "forward", 0, OWNER)
 
+    def test_measured_other_floor_blocks_planar_arrival_until_fresh_height_confirmation(self):
+        self.guide.begin(POINTS, owner=OWNER, measured_heights=[4, None, None])
+        for seq in (1, 2, 3):
+            result = self.guide.observe(pose(seq, seq * .2))
+            self.assertEqual(result['completedIndices'], [])
+            self.assertTrue(result['heightWarning'])
+            self.assertEqual(result['heightSeparation'], 4)
+        correct = pose(4, .8)
+        correct['position']['y'] = 4
+        self.assertEqual(self.guide.observe(correct)['completedIndices'], [])
+        self.assertEqual(self.guide.observe(correct)['completedIndices'], [])
+        correct = pose(5, 1.)
+        correct['position']['y'] = 4
+        result = self.guide.observe(correct)
+        self.assertEqual(result['completedIndices'], [0])
+        self.assertIsNone(result['heightSeparation'])  # next point has no measurement
+        self.assertFalse(result['heightWarning'])
+
+    def test_vertical_departure_resets_arrival_and_one_unit_boundary_is_allowed(self):
+        self.guide.begin([POINTS[0]], owner=OWNER, measured_heights=[1])
+        self.guide.observe(pose(1, 0))  # exactly one unit is within tolerance
+        wrong = pose(2, .2)
+        wrong['position']['y'] = -1
+        self.assertTrue(self.guide.observe(wrong)['heightWarning'])
+        self.assertFalse(self.guide.observe(pose(3, .4))['complete'])
+        self.assertTrue(self.guide.observe(pose(4, .6))['complete'])
+
+    def test_unknown_height_preserves_planar_arrival_without_floor_claim(self):
+        self.guide.begin([POINTS[0]], owner=OWNER, measured_heights=[None])
+        first, second = pose(1, 0), pose(2, .2)
+        first['position']['y'], second['position']['y'] = 100, -100
+        result = self.guide.observe(first)
+        self.assertIsNone(result['heightSeparation'])
+        self.assertFalse(result['heightWarning'])
+        self.assertTrue(self.guide.observe(second)['complete'])
+
+    def test_measured_height_alignment_validation_and_copy(self):
+        for heights in ([1], [None, float('nan'), None], [None, True, None]):
+            with self.assertRaises(ValueError):
+                self.guide.begin(POINTS, owner=OWNER, measured_heights=heights)
+        heights = [4, None, None]
+        self.guide.begin(POINTS, owner=OWNER, measured_heights=heights)
+        heights[0] = 0
+        self.assertTrue(self.guide.observe(pose(1, 0))['heightWarning'])
+        self.assertIsNone(self.guide.unavailable()['heightSeparation'])
+        self.assertFalse(self.guide.as_dict()['heightWarning'])
+
     def test_two_distinct_sustained_samples_advance_only_current_point(self):
         self.assertEqual(self.guide.observe(pose(1, 0))["activeIndex"], 0)
         self.assertEqual(self.guide.observe(pose(2, .1))["completedIndices"], [])

@@ -82,7 +82,7 @@ internal static class CurrentBuildFacingStreamCommand
                     await Task.Delay(delay, ct);
                     if (DeadlineReached()) break;
                 }
-                var captureTimer = Stopwatch.StartNew();
+                var queueTimer = Stopwatch.StartNew();
                 var leaseWait = TimeSpan.FromSeconds(30);
                 if (deadline is { } leaseDeadline)
                 {
@@ -93,6 +93,9 @@ internal static class CurrentBuildFacingStreamCommand
                 IAsyncDisposable lease;
                 try { lease = await acquireLease(pid, ticks, leaseWait, ct); }
                 catch (TimeoutException) when (DeadlineReached()) { break; }
+                queueTimer.Stop();
+                // Lease waiting is not sample age; start before session open and owner resolution.
+                var captureTimer = Stopwatch.StartNew();
                 CurrentBuildFacingCandidate sample;
                 NativeProcessIdentity currentIdentity;
                 await using (lease)
@@ -138,6 +141,7 @@ internal static class CurrentBuildFacingStreamCommand
                 await output.WriteLineAsync(JsonSerializer.Serialize(new {
                     recordType = "native-current-facing-stream-row/1", sequence = completed,
                     status = "candidate", identity = currentIdentity, observation, captureElapsedMilliseconds,
+                    queueWaitMilliseconds = queueTimer.Elapsed.TotalMilliseconds,
                     emittedAtUtc = DateTimeOffset.UtcNow
                 }, Compact));
                 await output.FlushAsync(ct);

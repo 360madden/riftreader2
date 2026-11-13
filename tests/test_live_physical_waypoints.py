@@ -479,6 +479,7 @@ class FeedTests(unittest.TestCase):
 
     def test_stream_validates_fresh_row_and_end_without_target_pair(self):
         packet = self.stream_packet()
+        packet["queueWaitMilliseconds"] = 123.5
         child = self.child([packet, dict(recordType="native-current-facing-stream-end/1",
             status="complete", requestedSamples=1, completedSamples=1)])
         provider = self.provider(clock=lambda: 10.)
@@ -490,6 +491,10 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(provider.stream_rows, 1)
         self.assertEqual(provider.last_stream_receipt["status"], "complete")
         self.assertEqual(counts["acquired"], 1)
+        self.assertEqual(counts["nativeStreamStarts"], 1)
+        self.assertIsNone(counts["currentChildPid"])
+        self.assertEqual(counts["maxNativeReadQueueWaitMilliseconds"], 123.5)
+        self.assertEqual(counts["maxNativeCaptureMilliseconds"], 40)
         self.assertIn("native diagnostic", provider.stream_stderr)
         self.assertTrue(child.stdout.closed)
 
@@ -680,6 +685,29 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(counts["rejectedRows"], 1)
         self.assertEqual(counts["failureReasons"], {"full-camera-projection-required": 1})
 
+    def test_expired_row_clears_and_continues_same_child_with_order_cursor(self):
+        packets = [dict(recordType="native-current-facing-stream-row/1", status="candidate", sequence=index)
+                   for index in range(2)]
+        packets.append(dict(recordType="native-current-facing-stream-end/1", status="complete",
+                            requestedSamples=2, completedSamples=2))
+        child = self.child(packets)
+        provider = self.provider()
+        provider.stream_row_timing = Mock(side_effect=[live.ExpiredStreamRow(1), (10.02, 2)])
+        provider.stream_frame_from_validated = Mock(return_value={"acquiredMonotonic": 10.02})
+        channel = queue.Queue(maxsize=1)
+        counts = dict(acquired=0, failures=0)
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live, "_latest", wraps=live._latest) as publish:
+            live.stream_burst(provider, channel, threading.Event(), counts,
+                              popen=Mock(return_value=child), samples=2)
+        self.assertEqual(provider.stream_row_timing.call_args_list[1].kwargs["previous_end"], 1)
+        self.assertEqual(counts["rejectedRows"], 1)
+        self.assertEqual(counts["failureReasons"], {"stream-row-expired": 1})
+        self.assertEqual(publish.call_args_list[0].args[1],
+                         {"reason": "stream-row-expired", "kind": "invalid-state"})
+        self.assertIn("frame", channel.get_nowait())
+        self.assertEqual(provider.stream_rows, 2)
+
     def test_extended_stream_is_explicit_and_preserves_legacy_defaults(self):
         receipt = dict(recordType="native-current-facing-stream-end/1", status="duration-limit",
                        requestedSamples=30000, completedSamples=0)
@@ -791,6 +819,7 @@ class FeedTests(unittest.TestCase):
         changed = dict(DEFAULT_STYLE, beaconScale=1.8, opacity=.3, labelsVisible=False)
         save_style(style_path, initial)
         clock, observed, channels = [10.], [], []
+        status_path, statuses = (self.root / "status.json").absolute(), []
         class Window:
             def protocol(self, *args):
                 pass
@@ -813,6 +842,7 @@ class FeedTests(unittest.TestCase):
                     action()
                     live._latest(channels[0], {"frame": {"acquiredMonotonic": at}})
                     self.window.poll()
+                    statuses.append(json.loads(status_path.read_text()))
                 live._latest(channels[0], {"terminal": True, "reason": "target-process-ended"})
                 self.window.poll()
             def hide(self, why):
@@ -832,16 +862,23 @@ class FeedTests(unittest.TestCase):
              patch.object(live.physical, "select_physical", return_value=self.selection), \
              patch.object(live.threading, "Thread", Worker), \
              patch.object(live.time, "monotonic", side_effect=lambda: clock[0]):
-            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, appearance_file=style_path)
+            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, appearance_file=style_path, status_file=status_path)
         self.assertEqual([row["appearance"] for row in observed], [initial, initial, changed, changed])
         self.assertEqual([row["acquiredMonotonic"] for row in observed], [10., 10.1, 10.21, 10.5])
         self.assertEqual(len(channels), 1)
         self.assertEqual(result["appearance"], changed)
+        self.assertEqual([s["sampledMonotonic"] for s in statuses], [10., 10., 10.21, 10.5])
+        self.assertEqual(statuses[-1]["presentationAccepted"], 4)
+        self.assertEqual(statuses[-1]["version"], 1)
+        self.assertEqual(statuses[-1]["target"], self.selection["target"])
+        self.assertIsNone(statuses[-1]["sessionId"])
+        self.assertEqual(json.loads(status_path.read_text())["status"], "stopped")
         self.assertEqual(result["reason"], "target-process-ended")
 
     def test_pose_feedback_is_rate_limited_empty_route_safe_and_io_failure_nonfatal(self):
         from scripts import waypoint_beacon_pose as beacon_pose
         pose_path = (self.root / "pose.json").absolute()
+        status_path = (self.root / "status.json").absolute()
         clock, channels, presented = [10.], [], []
         values = live.physical._native_values("facing", self.native)
         full_target = dict(IDENTITY, executablePath=r"C:\Games\RIFT\rift_x64.exe")
@@ -903,7 +940,8 @@ class FeedTests(unittest.TestCase):
              patch.object(live.time, "monotonic", side_effect=lambda: clock[0]), \
              patch.object(beacon_pose, "write_pose", write_pose), \
              patch.object(beacon_pose, "write_unavailable", write_unavailable):
-            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, pose_file=pose_path)
+            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, pose_file=pose_path, status_file=status_path)
+        self.assertEqual(json.loads(status_path.read_text())["sessionId"], pose_path.stem)
         self.assertEqual([call.args[1]["acquiredMonotonic"] for call in write_pose.call_args_list], [10., 10.21])
         self.assertEqual([call.args[2] for call in write_pose.call_args_list], [1, 1])
         self.assertEqual(presented, [10., 10.1, 10.19])

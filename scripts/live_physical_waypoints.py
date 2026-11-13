@@ -30,7 +30,8 @@ from scripts.waypoint_progress import write_json_atomic
 from scripts.waypoint_marker_style import DEFAULT_STYLE, load_style
 
 
-RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required", "route-update-unavailable"})
+RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required", "route-update-unavailable",
+                                             "native-sample-stale", "native-acquisition-expired"})
 TRANSPORT_GAP_REASONS = frozenset({"stream-child-timeout", "stream-end-missing", "stream-child-failed"})
 
 
@@ -68,6 +69,12 @@ def load_route_update(path, expected_identity):
             point["number"] == landmark for point in parsed["points"])), "landmark-number-not-in-route")
     return ({**parsed, "path": str(Path(path).resolve()), "sha256": hashlib.sha256(raw).hexdigest(),
              "document": update["route"]}, landmark)
+
+
+class ExpiredStreamRow(ValueError):
+    def __init__(self, completed):
+        super().__init__("stream-row-expired")
+        self.completed = completed
 
 
 class ProjectionProvider:
@@ -271,7 +278,8 @@ class ProjectionProvider:
         require(age >= -.1, "stream-clock-future")
         require((now - emitted[0]).total_seconds() >= -.1, "stream-clock-future")
         age = max(elapsed / 1000, age)
-        require(age <= self.max_age, "stream-row-expired")
+        if age > self.max_age:
+            raise ExpiredStreamRow(completed)
         return received - age, completed
 
     def stream_frame_from_validated(self, packet, before, acquired):
@@ -371,6 +379,9 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
     provider.stream_exit_code = None
     child = popen(command, cwd=ROOT, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    counts["nativeStreamStarts"] = counts.get("nativeStreamStarts", 0) + 1
+    child_pid = getattr(child, "pid", None)
+    counts["currentChildPid"] = child_pid if type(child_pid) is int and child_pid > 0 else None
     lines = queue.Queue(maxsize=32)
     stderr = bytearray()
     pump_stop = threading.Event()
@@ -438,10 +449,31 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
                 continue
             require((continuous or sequence < samples) and type(packet.get("sequence")) is int
                     and packet["sequence"] == sequence, "stream-sequence-invalid")
+            for source, metric in (("queueWaitMilliseconds", "maxNativeReadQueueWaitMilliseconds"),
+                                   ("captureElapsedMilliseconds", "maxNativeCaptureMilliseconds")):
+                value = packet.get(source)
+                try:
+                    valid_metric = type(value) in (int, float) and math.isfinite(value) and value >= 0
+                except OverflowError:
+                    valid_metric = False
+                if valid_metric:
+                    previous = counts.get(metric)
+                    counts[metric] = value if previous is None else max(previous, value)
             current = provider.snapshot(provider.target)
             require(_display_allowed(current) and current.get("clientRect") == before.get("clientRect"),
                     "target-foreground-or-geometry-changed")
-            acquired, completed = provider.stream_row_timing(packet, previous_end=previous_end)
+            try:
+                acquired, completed = provider.stream_row_timing(packet, previous_end=previous_end)
+            except ExpiredStreamRow as error:
+                # An expired row is never displayed. Keep its validated ordering
+                # cursor and drain newer rows without restarting the native child.
+                sequence += 1
+                previous_end = error.completed
+                provider.stream_rows += 1
+                _record_failure(counts, error, row=True)
+                if not stop.is_set():
+                    _latest(channel, {"reason": "stream-row-expired", "kind": "invalid-state"})
+                continue
             try:
                 frame = provider.stream_frame_from_validated(packet, current, acquired)
             except ValueError as error:
@@ -471,6 +503,7 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
         pump_stop.set()
         _stop_child(child)
         provider.stream_exit_code = child.poll()
+        counts["currentChildPid"] = None
         for pump in pumps:
             pump.join(timeout=1)
         provider.stream_stderr = bytes(stderr).decode("utf-8", errors="replace")
@@ -594,7 +627,7 @@ def apply_saved_progress(frame, progress_file, route):
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
         presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None,
-        companion_window=None, expected_unit_key=None, route_updates_file=None, pose_file=None, radar_file=None, exploration_file=None):
+        companion_window=None, expected_unit_key=None, route_updates_file=None, pose_file=None, radar_file=None, exploration_file=None, status_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -630,6 +663,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         pose_file = Path(pose_file)
         require(pose_file.is_absolute() and pose_file.parent.is_dir() and not pose_file.exists(),
                 "new-absolute-pose-file-required")
+    if status_file is not None:
+        status_file = Path(status_file)
+        require(status_file.is_absolute() and status_file.parent.is_dir() and not status_file.exists(),
+                "new-absolute-status-file-required")
     if radar_file is not None:
         radar_file = Path(radar_file)
         require(presenter == "qt" and radar_file.is_absolute() and radar_file.is_file(),
@@ -661,9 +698,16 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
     from scripts.physical_waypoint_overlay import PhysicalWaypointOverlay, target_snapshot
     window_options = {}
-    snapshot = target_snapshot
+    snapshot_observation = {"snapshot": None, "error": None, "monotonic": None}
+    def snapshot(target):
+        try:
+            value = target_snapshot(target, companion=companion_window) if companion_window is not None else target_snapshot(target)
+        except Exception as error:
+            snapshot_observation.update(snapshot=None, error=_reason_text(error), monotonic=time.monotonic())
+            raise
+        snapshot_observation.update(snapshot=dict(value), error=None, monotonic=time.monotonic())
+        return value
     if companion_window is not None:
-        snapshot = lambda target: target_snapshot(target, companion=companion_window)
         window_options["companion"] = companion_window
     provider = ProjectionProvider(selection, route, snapshot, max_age=max_age, target_beacon=target_beacon,
                                   landmark_number=landmark_number, route_updates_file=route_updates_file)
@@ -688,7 +732,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "presentationAcceptedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
         "presentedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
         "posePublishAttempts": 0, "posePublished": 0, "poseUnavailablePublished": 0,
-        "posePublishFailures": 0, "poseLatestError": None, "poseFailureReasons": {}}
+        "posePublishFailures": 0, "poseLatestError": None, "poseFailureReasons": {},
+        "nativeStreamStarts": 0, "currentChildPid": None,
+        "maxNativeReadQueueWaitMilliseconds": None, "maxNativeCaptureMilliseconds": None}
     worker_target = stream_feed if reader == "stream" else feed
     worker_args = (provider, channel, stop, counts)
     if reader == "stream" and duration == 0:
@@ -705,6 +751,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     last_hide_reason = None
     pose_sequence = 0
     next_pose_publish = 0.
+    next_status_publish = 0.
+    last_poll_at = None
+    max_poll_gap = 0.
+    max_poll_gap_at = None
     pose_pending_unavailable = None
     pose_last_unavailable = None
     pose_unavailable_attempt_reason = None
@@ -786,8 +836,57 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         hide(why)
         publish_unavailable()
         overlay.window.quit()
+    def publish_status(state="running"):
+        nonlocal next_status_publish
+        if status_file is None:
+            return
+        now = time.monotonic()
+        if state == "running" and now < next_status_publish:
+            return
+        next_status_publish = now + .2
+        frame = getattr(overlay, "frame", None)
+        acquired = frame.get("acquiredMonotonic") if isinstance(frame, dict) else None
+        widget = getattr(overlay.window, "widget", None)
+        qt_visible = widget.isVisible() if widget is not None else None
+        api = getattr(overlay.window, "api", None)
+        hwnd = getattr(overlay.window, "hwnd", None)
+        native_visible = bool(api.u.IsWindowVisible(hwnd)) if api is not None and hwnd else None
+        observed = dict(snapshot_observation)
+        sampled = observed.get("monotonic")
+        status = {"version": 1, "target": deepcopy(selection["target"]),
+                  "sessionId": pose_file.stem if pose_file is not None else None,
+                  "status": state, "sampledMonotonic": now, "targetHwnd": selection["target"]["hwnd"],
+                  "snapshot": observed.get("snapshot"), "snapshotError": observed.get("error"),
+                  "snapshotAgeSeconds": max(0, now - sampled) if sampled is not None else None,
+                  "presenterSnapshot": getattr(overlay, "last_snapshot", None),
+                  "overlayReason": getattr(overlay, "reason", None), "feedHideReason": last_hide_reason,
+                  "overlayHasFrame": frame is not None, "frameAgeSeconds": max(0, now - acquired) if acquired is not None else None,
+                  "maxAgeSeconds": max_age, "nativeWindowVisible": native_visible, "qtWidgetVisible": qt_visible,
+                  "lastClear": getattr(overlay, "last_clear", None),
+                  "lastRecovery": getattr(overlay, "last_recovery", None),
+                  "maxPollGapSeconds": max_poll_gap, "maxPollGapAtMonotonic": max_poll_gap_at,
+                  "hideReasons": dict(getattr(overlay, "hide_reasons", {})),
+                  "failureReasons": dict(counts.get("failureReasons", {})),
+                  "latestFailure": counts.get("latestFailure"), "acquired": counts.get("acquired"),
+                  "presentationAccepted": counts.get("presentationAccepted"), "rejectedRows": counts.get("rejectedRows"),
+                  "lastAcceptedAgeSeconds": max(0, now - counts["lastAcceptedMonotonic"]) if counts.get("lastAcceptedMonotonic") is not None else None,
+                  "nativeStreamStarts": counts.get("nativeStreamStarts", 0),
+                  "currentChildPid": counts.get("currentChildPid"),
+                  "maxNativeReadQueueWaitMilliseconds": counts.get("maxNativeReadQueueWaitMilliseconds"),
+                  "maxNativeCaptureMilliseconds": counts.get("maxNativeCaptureMilliseconds"),
+                  "lastStreamReceipt": getattr(provider, "last_stream_receipt", None)}
+        try:
+            write_json_atomic(status_file, status, durable=False)
+        except (OSError, ValueError, TypeError):
+            pass  # Diagnostics must never interrupt freshness enforcement.
     def poll():
         nonlocal latest_acquired, latest_progress, visible, appearance, next_appearance_poll
+        nonlocal last_poll_at, max_poll_gap, max_poll_gap_at
+        if status_file is not None:
+            now = time.monotonic()
+            if last_poll_at is not None and now - last_poll_at > max_poll_gap:
+                max_poll_gap, max_poll_gap_at = now - last_poll_at, now
+            last_poll_at = now
         if stop.is_set():
             return
         if stop_file is not None and stop_file.exists():
@@ -867,6 +966,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         if pose_frame is not None:
             publish_pose(pose_frame)
         publish_unavailable()
+        try:
+            publish_status()
+        except Exception:
+            pass  # Diagnostics cannot interfere with display or freshness.
         overlay.window.after(25, poll)
     overlay.window.protocol("WM_DELETE_WINDOW", lambda: cancel("window-closed"))
     worker.start()
@@ -881,6 +984,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         publish_unavailable()
         # read_native's child has its existing bounded timeout and native lease.
         worker.join()
+        try:
+            publish_status("stopped")
+        except Exception:
+            pass
         if radar is not None:
             radar.clear()
             radar.deleteLater()
@@ -912,6 +1019,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "companionWindow": companion_window,
         "routeUpdatesFile": str(route_updates_file) if route_updates_file is not None else None,
         "poseFile": str(pose_file) if pose_file is not None else None,
+        "statusFile": str(status_file) if status_file is not None else None,
         "poseSequence": pose_sequence,
         "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
@@ -945,6 +1053,7 @@ def main(argv=None):
     parser.add_argument("--exploration-file", type=Path, help="owned live guidance and trail feedback")
     parser.add_argument("--radar-file", type=Path, help="absolute live compact radar preferences")
     parser.add_argument("--pose-file", type=Path, help="new owned player-pose feedback file")
+    parser.add_argument("--status-file", type=Path, help="new owned live visibility diagnostics file")
     parser.add_argument("--companion-window", type=json.loads,
                         help="exact owning Waypoints window binding for live appearance preview")
     parser.add_argument("--expect-start-ticks")
@@ -963,7 +1072,7 @@ def main(argv=None):
                      progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
                      appearance_file=args.appearance_file, companion_window=args.companion_window,
                      expected_unit_key=args.expected_unit_key, route_updates_file=args.route_updates_file,
-                     pose_file=args.pose_file, radar_file=args.radar_file, exploration_file=args.exploration_file)
+                     pose_file=args.pose_file, radar_file=args.radar_file, exploration_file=args.exploration_file, status_file=args.status_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

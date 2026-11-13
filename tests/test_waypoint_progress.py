@@ -103,6 +103,25 @@ class ProgressTests(unittest.TestCase):
                 self.assertEqual(original, json.loads(path.read_text(encoding="utf-8")))
                 self.assertEqual([path], list(Path(temp).iterdir()))
 
+    def test_transient_atomic_write_omits_fsync_but_default_stays_durable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "state.json"
+            with patch("scripts.waypoint_progress.os.fsync") as sync:
+                write_json_atomic(path, {"value": "saved"})
+                sync.assert_called_once()
+                sync.reset_mock()
+                real_replace = os.replace
+                def check_replace(source, target):
+                    self.assertEqual({"value": "saved"}, json.loads(path.read_text(encoding="utf-8")))
+                    self.assertEqual({"value": "fresh"}, json.loads(Path(source).read_text(encoding="utf-8")))
+                    real_replace(source, target)
+                with patch("scripts.waypoint_progress.os.replace", side_effect=check_replace) as replace:
+                    write_json_atomic(path, {"value": "fresh"}, durable=False)
+                sync.assert_not_called()
+                replace.assert_called_once()
+            self.assertEqual({"value": "fresh"}, json.loads(path.read_text(encoding="utf-8")))
+            self.assertEqual([path], list(Path(temp).iterdir()))
+
     def test_invalid_checkpoint_cursor(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "progress.json"

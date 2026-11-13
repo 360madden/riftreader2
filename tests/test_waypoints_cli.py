@@ -45,7 +45,9 @@ class CliTests(unittest.TestCase):
                         'beacons.hide beacons.set guide.status guide.start guide.stop trail.status trail.start '
                         'trail.stop trail.list trail.save trail.clear record.status record.start record.stop '
                         'record.cancel move.to face playback.start playback.resume playback.status '
-                        'view.save view.open view.open-3d receipt.list receipt.show').split():
+                        'view.save view.open view.open-3d receipt.list receipt.show '
+                        'zone.status zone.refresh route.context route.tag-zone '
+                        'library.list library.save library.import library.load library.show').split():
             with self.subTest(command=command):
                 self.assertEqual(self.call(*command.split('.'), '--help')[0], 0)
 
@@ -55,6 +57,51 @@ class CliTests(unittest.TestCase):
                      ['radar','--session','a','set','--opacity','70'],
                      ['radar','set','--opacity','70','--session','a']):
             self.assertEqual(parser.parse_args(argv).session, 'a')
+
+    def test_library_and_zone_dispatch_use_existing_session_only(self):
+        cases = [
+            (("zone", "status"), "zone.status", {}),
+            (("zone", "refresh"), "zone.refresh", {}),
+            (("route", "context"), "route.context", {}),
+            (("route", "tag-zone"), "route.tag-zone", {}),
+            (("library", "list"), "library.list", {"zone":"all"}),
+            (("library", "list", "--zone", "matching", "--search", "Camp"), "library.list", {"zone":"matching", "search":"Camp"}),
+            (("library", "save", "Camp", "--id", "camp", "--overwrite"), "library.save", {"name":"Camp", "route_id":"camp", "overwrite":True}),
+            (("library", "import", "source.json", "--name", "Camp", "--id", "camp"), "library.import", {"file":str(Path("source.json").resolve()), "name":"Camp", "route_id":"camp", "overwrite":False}),
+            (("library", "load", "camp", "--discard"), "library.load", {"route_id":"camp", "discard":True}),
+            (("library", "show", "camp"), "library.show", {"route_id":"camp"}),
+        ]
+        for argv, operation, payload in cases:
+            with self.subTest(argv=argv), patch.object(protocol, 'resolve_session', return_value={}), patch.object(protocol, 'request', return_value=cli.result(operation, data={})) as request, patch.object(cli.subprocess, 'Popen') as spawn:
+                self.assertEqual(self.call(*argv, '--json')[0], 0)
+                self.assertEqual(request.call_args.args[1:3], (operation, payload))
+                spawn.assert_not_called()
+
+    def test_library_usage_and_help_never_resolve_native_or_session(self):
+        with patch.object(protocol, 'resolve_session', side_effect=AssertionError('session lookup')), patch.object(cli.subprocess, 'Popen', side_effect=AssertionError('process launch')):
+            for argv in (("library", "load"), ("library", "show"), ("library", "save"),
+                         ("library", "import"), ("library", "list", "--zone", "nearby"),
+                         ("library", "list", "--file", "routes.json"),
+                         ("zone", "refresh", "--execute")):
+                with self.subTest(argv=argv):
+                    self.assertEqual(self.call('--json', *argv)[0], 2)
+            for argv in (("zone", "refresh"), ("route", "tag-zone"), ("library", "import")):
+                code, out, _ = self.call(*argv, '--help')
+                self.assertEqual(code, 0)
+                self.assertIn('sends no game input', out)
+            self.assertIn('actual world instance', self.call('zone', 'refresh', '--help')[1])
+
+    def test_human_library_and_zone_are_candidate_labeled(self):
+        context = {'zoneIdCandidate':'z0000000100000000', 'source':'native-candidate'}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('library.list', data={'routes':[{'id':'camp', 'name':'Camp', 'waypointCount':3,
+                'measuredHeightCount':2, 'estimatedHeightCount':1, 'contextStatus':'matching', 'routeContext':context}]}))
+            cli.emit(cli.result('zone.status', data={'context':context, 'currentAgeSeconds':.25, 'status':'fresh'}))
+            cli.emit(cli.result('route.context', data={'routeContext':context, 'currentContext':context, 'comparison':'matching'}))
+        for phrase in ('camp | Camp', '3 points', '2 measured', '1 estimated/unknown', '0.25s old',
+                       'actual world instance unproven', 'Zone comparison: matching (candidate evidence only)'):
+            self.assertIn(phrase, out.getvalue())
 
     def test_usage_is_one_json_on_stdout(self):
         for argv in (['radar','set','--op','70'], ['face','nan','--execute'],

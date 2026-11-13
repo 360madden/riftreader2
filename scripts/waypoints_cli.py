@@ -90,6 +90,10 @@ def example(operation):
         "view.save":"view save view.json", "view.open":"view open view.json",
         "view.open-3d":"view open-3d view.json", "receipt.show":"receipt show waypoint-run-ID.json",
         "app.close":"app close --discard", "app.open":"app open --route route.json",
+        "zone.refresh":"zone refresh", "route.tag-zone":"route tag-zone",
+        "library.list":"library list --zone matching --search Camp",
+        "library.save":"library save Camp --id camp", "library.import":"library import route.json --name Camp",
+        "library.load":"library load camp --discard", "library.show":"library show camp",
     }.get(operation, operation.replace(".", " "))
 
 
@@ -128,7 +132,8 @@ def build_parser():
             p.add_argument("--interval", type=bounded(.1, 60), default=1., help="watch interval seconds, default 1")
             p.add_argument("--count", type=positive, help="stop watch after this many reports")
     for group, verbs in {
-        "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run",
+        "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
+        "zone":"status refresh", "library":"list save import load show",
         "radar":"status show hide set move lock unlock", "beacons":"status show hide set",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
         "move":"to", "playback":"start resume status", "view":"save open open-3d", "receipt":"list show"
@@ -146,6 +151,15 @@ def build_parser():
                 "app.close":"Close the selected helper after owned workers release; unsaved changes need --discard.",
                 "route.add":"Add an estimated point with --x/--z, measured player XYZ with --current, or a qualified target candidate with --target.",
                 "route.update":"Edit a point name or estimated X/Z; changed coordinates discard its prior measured height.",
+                "zone.status":"Show the current zone candidate and freshness; a candidate is not proof of the actual world instance.",
+                "zone.refresh":"Read a fresh native zone candidate under the helper's current identity; not proof of the actual world instance.",
+                "route.context":"Show the loaded route's saved zone binding and comparison with current candidate context.",
+                "route.tag-zone":"Explicitly attach the current fresh zone candidate to a legacy route; not proof of the actual world instance.",
+                "library.list":"List routes in the owned library, optionally filtering current zone comparisons and searching names/IDs.",
+                "library.save":"Copy the loaded route into the owned library with a display name; retain its context.",
+                "library.import":"Copy the explicit source file into the owned library, preserving its saved context and source file.",
+                "library.load":"Load a library route into the helper; unsaved changes require --discard.",
+                "library.show":"Inspect one owned library route, its zone context and measured/unknown heights.",
                 "beacons.show":"Start the owned shared beacon reader and wait for fresh pose; sends no game input.",
                 "beacons.hide":"Stop the owned beacon reader and wait for its exit.",
                 "view.save":"Save a JSON manifest at FILE referencing a newly captured image/3D bundle in artifacts.",
@@ -163,7 +177,10 @@ def build_parser():
                 "route.run":"Run the loaded route from a one-based point using face-then-walk mode.",
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
             }.get(operation, f"{verb.capitalize()} {group}.")
-            effects = ("Read-only; sends no game input." if read_only
+            effects = ("Read-only native candidate refresh; sends no game input." if operation == "zone.refresh"
+                       else "Read-only; sends no game input." if read_only or operation in {"route.context", "library.show"}
+                       else "Attaches fresh candidate provenance to the loaded route; sends no game input." if operation == "route.tag-zone"
+                       else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
                        else "Starts the owned shared reader; sends no game input." if operation == "beacons.show"
                        else "Changes helper visibility; sends no game input." if operation in {"app.show", "app.hide", "app.open"}
@@ -176,6 +193,18 @@ def build_parser():
     groups.add_parser("help", help="show the same help as COMMAND --help").add_argument("topic", nargs="*")
 
     def arg(op, *names, **kwargs): leaves[op].add_argument(*names, **kwargs)
+    arg("library.list", "--zone", choices=("all", "matching", "mismatch", "unknown"), default="all",
+        help="candidate comparison with current zone; default all; matching does not prove a world instance")
+    arg("library.list", "--search", help="filter library names or IDs by text")
+    arg("library.save", "name", help="display name for the saved copy")
+    arg("library.import", "file", type=Path, help="explicit source route file to copy; retains saved context")
+    arg("library.import", "--name", help="display name; defaults to source route name or filename")
+    for op in ("library.save", "library.import"):
+        arg(op, "--id", dest="route_id", help="library ID: 1-80 letters, digits, underscores or hyphens; starts with a letter or digit")
+        arg(op, "--overwrite", action="store_true", help="allow replacement of the specified library ID")
+    for op in ("library.load", "library.show"):
+        arg(op, "route_id", metavar="ID", help="owned library route ID")
+    arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
     for op in ("route.load", "route.save", "trail.save", "record.stop", "view.save", "view.open", "view.open-3d", "receipt.show"):
         arg(op, "file", type=Path, help="explicit file path; no file chooser")
     for op in ("route.save", "trail.save", "record.stop", "view.save"):
@@ -220,6 +249,7 @@ def build_parser():
     arg("app.open", "--route", type=Path)
     arg("app.open", "--basis", type=Path)
     arg("app.open", "--background", action="store_true", help="start the helper hidden")
+    arg("app.show", "--tab", choices=("replay","edit","scene","explore","library","activity"), help="show a workspace tab")
     arg("receipt.list", "--directory", type=Path, default=ROOT / "artifacts", help="receipt directory; offline")
     return parser
 
@@ -259,6 +289,13 @@ def human_pose(pose):
         print("Pose reason: " + str(pose["reason"]))
 
 
+def human_zone(context, *, label="Zone"):
+    context = context or {}
+    print(f"{label}: {context.get('zoneName') or context.get('zoneIdCandidate') or 'unknown'}"
+          + (f" | source {context['source']}" if context.get("source") else "")
+          + " | candidate; actual world instance unproven")
+
+
 def human_data(command, data):
     if not isinstance(data, dict): return False
     if command in {"status", "doctor"}:
@@ -270,6 +307,9 @@ def human_data(command, data):
         print(f"Route: {route.get('count', 0)} points | {'unsaved changes' if route.get('dirty') else 'saved'} | {route.get('file') or 'no file'}")
         human_pose(data.get("pose") or {})
         human_radar(data.get("radar") or {})
+        if data.get("zone"):
+            zone = data["zone"]
+            human_zone(zone.get("context", zone))
         if data.get("activeRequestId"): print("Active request: " + str(data["activeRequestId"]))
         for step in data.get("nextSteps", []): print("Next: " + str(step))
     elif command in {"route.list", "route.validate"}:
@@ -279,8 +319,45 @@ def human_data(command, data):
         if "measuredCount" in data:
             print(f"Heights: {data['measuredCount']} measured, {data['estimatedCount']} estimated/unknown")
         for p in points:
-            print(f"  {p.get('number')}. {p.get('name', '')}: X {p.get('x')} / Z {p.get('z')}")
+            height = next((h for h in data.get("heights",[]) if h.get("number")==p.get("number")),None)
+            note = (" | "+height["label"]+" ["+height["heightKind"]+"]") if height else ""
+            print(f"  {p.get('number')}. {p.get('name', '')}: X {p.get('x')} / Z {p.get('z')}{note}")
         if data.get("qualification"): print(data["qualification"])
+    elif command in {"zone.status", "zone.refresh"}:
+        human_zone(data.get("context"))
+        age = data.get("currentAgeSeconds")
+        age_text = f"{age:.2f}s old" if isinstance(age, (int, float)) else "age unavailable"
+        print(f"Zone observation: {data.get('status', 'unavailable')} | {age_text}")
+        if data.get("qualification"): print(data["qualification"])
+    elif command in {"route.context", "route.tag-zone"}:
+        human_zone(data.get("routeContext"), label="Route zone")
+        human_zone(data.get("currentContext"), label="Current zone")
+        print(f"Zone comparison: {data.get('comparison', 'unknown')} (candidate evidence only)")
+        if data.get("qualification"): print(data["qualification"])
+    elif command == "library.list":
+        rows = data.get("routes", [])
+        print(f"Route library: {len(rows)} routes | zone comparison is candidate evidence only")
+        for row in rows:
+            context = row.get("routeContext") or {}
+            zone = context.get("zoneName") or context.get("zoneIdCandidate") or "unknown"
+            print(f"  {row.get('id', '?')} | {row.get('name', '')} | zone {zone} ({row.get('contextStatus', 'unknown')}) | "
+                  f"{row.get('waypointCount', '?')} points | heights {row.get('measuredHeightCount', '?')} measured, "
+                  f"{row.get('estimatedHeightCount', '?')} estimated/unknown")
+            if row.get("error"): print("    Unavailable: " + str(row["error"]))
+    elif command == "library.show":
+        document = data.get("document") or {}
+        context = document.get("routeContext") or {}
+        print(f"Library route: {data.get('routeId', '?')} | {document.get('routeName', '')} | "
+              f"{len(document.get('waypoints', []))} points")
+        print(f"Zone: {context.get('zoneName') or context.get('zoneIdCandidate') or 'unknown'} | "
+              f"comparison {data.get('contextComparison', 'unknown')} (candidate evidence only)")
+        from scripts.waypoint_measurements import document_measurements
+        measured = sum(value is not None for value in document_measurements(document))
+        print(f"Heights: {measured} measured, {len(document.get('waypoints', [])) - measured} estimated/unknown")
+    elif command in {"library.save", "library.import"}:
+        print(f"Saved library copy: {data.get('routeId', '?')} | {data.get('file', 'owned library')}")
+        context = data.get("routeContext") or {}
+        print(f"Zone: {context.get('zoneName') or context.get('zoneIdCandidate') or 'unknown'} (saved candidate context)")
     elif command.startswith("radar."):
         human_radar(data)
     elif command.startswith("beacons."):
@@ -290,6 +367,10 @@ def human_data(command, data):
               f"labels {'on' if data.get('labels') else 'off'}, target {'on' if data.get('target') else 'off'}, "
               f"selected guide {'on' if data.get('guide') else 'off'}")
         human_pose(data.get("pose") or {})
+        display = data.get("display") or {}
+        if display:
+            print("Beacon display: " + str(display.get("overlayReason") or display.get("feedHideReason") or
+                                          ("frame available" if display.get("overlayHasFrame") else "no frame")))
         if data.get("qualification"): print(data["qualification"])
     elif command.startswith("guide."):
         index = data.get("activeIndex")

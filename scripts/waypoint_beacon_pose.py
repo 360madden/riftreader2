@@ -73,14 +73,14 @@ def write_pose(path, frame, sequence):
     document.update(position=dict(pose["position"]), bearing=pose["bearing"],
                     sampledAtUtc=pose["sampledAtUtc"], acquiredMonotonic=frame["acquiredMonotonic"])
     _validate_pose(document)
-    write_json_atomic(path, document)
+    write_json_atomic(path, document, durable=False)
     return document
 
 
 def write_unavailable(path, target, unit_key, sequence, reason):
     document = _base(path, target, unit_key, sequence, "unavailable")
     document["reason"] = (str(reason).strip() or "unavailable")[:160]
-    write_json_atomic(path, document)
+    write_json_atomic(path, document, durable=False)
     return document
 
 

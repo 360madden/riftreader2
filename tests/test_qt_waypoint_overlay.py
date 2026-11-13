@@ -31,7 +31,7 @@ class QtWindowTests(unittest.TestCase):
                                   widget.testAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating), widget.isVisible()))
             return hwnd
         self.api = NS(own_window=Mock(side_effect=own), show=Mock(), hide=Mock(), dpi=lambda: nullcontext(),
-                      u=NS(GetClientRect=rect, ClientToScreen=origin))
+                      u=NS(GetClientRect=rect, ClientToScreen=origin, IsWindowVisible=Mock(return_value=True)))
         self.window = overlay.QtOwnedWindow(self.api, "RR2 Waypoint Overlay | PID 123")
         self.addCleanup(self.window.destroy)
         def place(hwnd, physicalrect):
@@ -95,6 +95,16 @@ class QtWindowTests(unittest.TestCase):
         self.assertIsNotNone(self.window.widget.scene)
         self.window.paint(None)
         self.assertIsNone(self.window.widget.scene)
+
+    def test_same_geometry_recovers_native_hidden_window_on_next_frame(self):
+        self.window.paint_scene({"size": (320, 240), "commands": []})
+        self.window.show(self.rect)
+        self.assertTrue(self.window.widget.isVisible())
+        self.api.u.IsWindowVisible.return_value = False
+        self.window.show(self.rect)
+        self.assertEqual(2, self.api.show.call_count)
+        self.api.show.assert_called_with(self.window.hwnd, self.rect)
+        self.assertIsNotNone(self.window.widget.scene)
 
     def test_text_measurement_uses_painted_pixel_font_and_multiline_spacing(self):
         single = self.window.measure_text("NEXT 1", spacing=2, stroke_width=0)

@@ -1,13 +1,69 @@
 # Physical waypoint prototype
 
 The window groups its controls into **Replay**, **Edit waypoint**, **Scene &
-beacons**, **Explore**, and **Activity** tabs. The route list, local map, current pose and
+beacons**, **Explore**, **Library**, and **Activity** tabs. The route list, local map, current pose and
 STOP/F8 stay visible above them. Replay separates playback, recording and direct
 movement; Edit waypoint contains the coordinate fields and route-edit actions.
 F2 on a selected row opens Edit waypoint and focuses its name. Full receipt paths
 and detailed status remain in Activity. Load/Save and Recent routes stay with the
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
+
+## Route library and zone context
+
+**Library** keeps named route copies in `artifacts/waypoint-routes`. Search by
+name and filter by matching, mismatched or unknown zone context. Save copy never
+replaces the source route by default; Load selected retains the usual unsaved-edit
+refusal. Import copies an existing JSON file without changing its source.
+
+The native zone value is currently a **zone candidate**, not a qualified world or
+instance identifier. Legacy routes stay unknown until explicitly tagged. New
+routes and recordings retain fresh candidate context when available. A tagged
+route is freshly checked before route movement, playback and Resume; mismatch or
+unavailable context refuses input. Known mismatches also withhold route markers
+and passive guidance. Old route process IDs are provenance, not a requirement to
+reuse the old process after a same-build restart. Names are user labels, not an
+inferred mapping from native zone IDs.
+
+Use the attached CLI for the same operations:
+
+```powershell
+.\rr2-waypoints.cmd zone refresh
+.\rr2-waypoints.cmd route context
+.\rr2-waypoints.cmd route tag-zone
+.\rr2-waypoints.cmd library save "Courtyard loop" --id courtyard-loop
+.\rr2-waypoints.cmd library list --zone matching
+.\rr2-waypoints.cmd library load courtyard-loop
+.\rr2-waypoints.cmd library import route.json --name "Old route"
+```
+
+`route tag-zone` changes the open document; explicitly save it or save a library
+copy to retain the tag. `library save` requires `--overwrite` to replace an ID.
+`library show ID --json` exposes saved context and height evidence. `app show
+--tab library` opens the Library tab without sending game input.
+
+Height labels distinguish measured Y from estimated display heights. Radar
+arrows show above/below; `~` means approximate. A measured waypoint more than one
+unit above/below the player warns of a possible other floor. Manual guidance
+will not confirm that point solely from matching X/Z until measured vertical
+separation is within one unit. Estimates never become measurements or a floor
+identity; unknown heights retain the existing planar guidance behavior.
+
+Overlay diagnostics are available through `beacons status --json` under
+`data.display`. They report native visibility, frame age, clear/recovery reasons,
+reader starts and timing from the same owned reader. An expired stream row is
+discarded while the reader waits for a newer row; native-hidden Qt windows are
+reshown only on a fresh, identity/foreground/geometry-valid frame. Transient
+feedback uses atomic replacement without synchronous durable flushes; route and
+progress files retain durable writes. The normal 350 ms frame-age limit remains.
+
+On November 13, a 40-second foreground check and a separate 20-second turn check
+accepted 1,687 updates with no recorded clears or sampled invisible windows,
+including explicit/background zone reads. A later extended-session snapshot did
+record one frame-age clear recovering in 46 ms, so intermittent freshness hides
+remain possible. Local traces are under
+`artifacts/zone-library-overlay-transient-20261113` and
+`artifacts/zone-library-overlay-camera-final-20261113`.
 
 ## Explore while playing
 

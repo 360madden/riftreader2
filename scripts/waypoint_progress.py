@@ -45,8 +45,8 @@ def _canonical(value):
         raise ProgressError("invalid checkpoint data") from exc
 
 
-def write_json_atomic(path, document):
-    """Flush a JSON document to a sibling temporary file, then replace the target."""
+def write_json_atomic(path, document, *, durable=True):
+    """Atomically replace JSON; durable writes also synchronize the temporary file."""
     path = Path(path)
     temporary = None
     try:
@@ -55,7 +55,8 @@ def write_json_atomic(path, document):
             temporary = Path(stream.name)
             stream.write(_canonical(document) + "\n")
             stream.flush()
-            os.fsync(stream.fileno())
+            if durable:
+                os.fsync(stream.fileno())
         os.replace(temporary, path)
         temporary = None
     finally:

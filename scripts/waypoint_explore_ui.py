@@ -15,7 +15,7 @@ def write_feedback(path, document):
     """A Windows reader may briefly deny replacement; retry only this display file."""
     for attempt in range(3):
         try:
-            write_json_atomic(path, document)
+            write_json_atomic(path, document, durable=False)
             return
         except PermissionError:
             if attempt == 2:
@@ -177,13 +177,14 @@ class ExploreControls:
         return deepcopy(self.latest_pose)
 
     def start_guidance(self):
+        from scripts.waypoint_height_context import measured_heights
         try:
             document = deepcopy(self.get_document())
             points = document["waypoints"]
             direction = self.direction.get().lower()
             index = self.get_selected_index() if self.start_selected.get() else (0 if direction == "forward" else len(points)-1)
             owner = self._owner()
-            self.guidance.begin(points, direction, index, owner)
+            self.guidance.begin(points, direction, index, owner, measured_heights=measured_heights(document))
             self._route_signature = json.dumps(document, sort_keys=True, allow_nan=False)
             self.guidance.observe(owner)
             self.status.set("Manual route guidance started; walk using the game controls. No input is sent.")
@@ -294,6 +295,8 @@ class ExploreControls:
             text = f"Route complete · {len(state['completedIndices'])} points confirmed."
         elif active:
             text = f"{name}\n{distance}"
+            if state.get('heightWarning'):
+                text += f" · possible other floor ({state['heightSeparation']:+.1f}u)"
         else:
             text = "Manual guide stopped" + (" · route changed" if state["reason"] == "route-changed" else "; no input sent.")
         self.guide_text.set(text)

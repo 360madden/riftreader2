@@ -87,6 +87,23 @@ public sealed class CurrentBuildFacingStreamTests
         using var end = JsonDocument.Parse(lines[2]); Assert.Equal("complete", end.RootElement.GetProperty("status").GetString());
     }
     [Fact]
+    public async Task QueueWaitIsReportedSeparatelyFromSampleCapture()
+    {
+        var h = new Harness();
+        h.OptionsOverride["--samples"] = "1";
+        await h.Gate.WaitAsync();
+        var writer = new CheckingWriter(h);
+        var run = h.Run(writer);
+        await Task.Delay(500);
+        h.Gate.Release();
+        Assert.Equal(0, await run);
+        using var row = JsonDocument.Parse(writer.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)[0]);
+        var waited = row.RootElement.GetProperty("queueWaitMilliseconds").GetDouble();
+        var captured = row.RootElement.GetProperty("captureElapsedMilliseconds").GetDouble();
+        Assert.True(waited >= 400, $"Expected queue delay; got {waited} ms");
+        Assert.True(captured < waited, $"Capture {captured} ms included queue wait {waited} ms");
+    }
+    [Fact]
     public async Task ExecutablePinStartsAfterFirstAdmittedRowAndIsDisposed()
     {
         var h = new Harness { UseExecutablePin = true };

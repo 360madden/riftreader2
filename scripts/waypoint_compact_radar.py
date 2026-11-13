@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QWidget
 from scripts.waypoint_map import LocalMap, ZOOM_RADII, _clip_segment, _label_box
 from scripts.waypoint_beacon_pose import _target
 from scripts.waypoint_progress import write_json_atomic
+from scripts.waypoint_height_context import height_context, height_cue
 
 
 DEFAULT_CONFIG = {"version": 1, "enabled": False, "unlocked": False, "radius": 10, "opacity": .9}
@@ -97,6 +98,15 @@ def trail_lines(view, segments, bounds):
                     result.append(line)
             previous = current
     return result
+
+
+def radar_height_contexts(points, frame):
+    """Use the presenter's resolved estimates, retaining route measurement kinds."""
+    player_y = frame['playerPose']['position'].get('y')
+    projected = {point['number']: point for point in frame.get('points', [])}
+    return {point['number']: height_context(
+        projected[point['number']] if 'displayHeightCandidate' in projected.get(point['number'], {})
+        else point, player_y) for point in points}
 
 
 class CompactRadar(QWidget):
@@ -201,7 +211,7 @@ class CompactRadar(QWidget):
                   "unlocked": bool(self.config and self.config.get("unlocked")) if self.isVisible() else False,
                   "appliedRevision": self.applied_revision}
         try:
-            write_json_atomic(Path(self.status_path), status)
+            write_json_atomic(Path(self.status_path), status, durable=False)
             self.last_status_at = now
         except (OSError, ValueError, TypeError):
             pass  # Feedback is advisory; a bad destination must not crash the presenter.
@@ -264,6 +274,7 @@ class CompactRadar(QWidget):
         for line in trail_lines(view, exploration.get('trail', []), bounds):
             p.drawLine(QPointF(*line[:2]), QPointF(*line[2:]))
         visible, prior = [], (cx, cy)
+        contexts = radar_height_contexts(self.points, self.frame)
         guidance = exploration.get('guidance') or {}
         index = guidance.get('activeIndex') if guidance.get('status') == 'active' else None
         active = {index + 1} if type(index) is int and 0 <= index < len(self.points) else set()
@@ -281,15 +292,16 @@ class CompactRadar(QWidget):
             prior = pos
         occupied = [(cx-20, cy-20, cx+20, cy+25)] + [(x-8,y-8,x+8,y+8) for _,(x,y) in visible]
         for number, pos in visible:
-            box = _label_box(pos, number, (16, 16, 248, 234), occupied); occupied.append(box)
+            marker_label = str(number) + height_cue(contexts[number])
+            box = _label_box(pos, marker_label, (16, 16, 248, 234), occupied); occupied.append(box)
             endpoint = (max(box[0], min(box[2], pos[0])), max(box[1], min(box[3], pos[1])))
             p.setPen(QPen(QColor('#496172'), 1)); p.drawLine(QPointF(*pos), QPointF(*endpoint))
             p.setBrush(QColor('#1c3040')); p.drawRoundedRect(QRectF(box[0],box[1],box[2]-box[0],box[3]-box[1]), 4, 4)
             color = QColor('#f3c76a' if number in active else '#536b77' if number in completed else '#82bad0')
-            p.setPen(color); p.drawText(QRectF(box[0],box[1],box[2]-box[0],box[3]-box[1]), Qt.AlignmentFlag.AlignCenter, str(number))
+            p.setPen(color); p.drawText(QRectF(box[0],box[1],box[2]-box[0],box[3]-box[1]), Qt.AlignmentFlag.AlignCenter, marker_label)
             p.setBrush(color); p.setPen(QPen(QColor('#101e2b'), 2)); p.drawEllipse(QPointF(*pos), 5, 5)
         if active:
-            target = self.points[index] if type(index) is int and 0 <= index < len(self.points) else None
+            target = next((point for point in self.points if point['number'] in active), None)
             if target:
                 xy = view.world_to_canvas(float(target['xyz']['x']), float(target['xyz']['z']))
                 dx, dy = xy[0]-cx, xy[1]-cy
@@ -312,5 +324,12 @@ class CompactRadar(QWidget):
         footer = str(name)[:22] if isinstance(name, str) else 'PLAYER RELATIVE'
         if type(distance) in (int, float) and math.isfinite(distance) and distance >= 0:
             footer += f'  ·  {distance:.1f} units'
-        p.drawText(QRectF(16, 287, 232, 22), Qt.AlignmentFlag.AlignVCenter, footer)
+        p.drawText(QRectF(16, 281, 232, 20), Qt.AlignmentFlag.AlignVCenter, footer)
+        destination = next((point for point in self.points if point['number'] in active), None)
+        if destination:
+            context = contexts[destination['number']]
+            p.setFont(QFont('Segoe UI', 8))
+            p.setPen(QColor('#f3c76a' if context['floorWarning'] else '#96b0bd'))
+            p.drawText(QRectF(16, 301, 232, 15), Qt.AlignmentFlag.AlignVCenter,
+                       context['label'])
         p.end()

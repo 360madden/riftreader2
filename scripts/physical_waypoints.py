@@ -60,6 +60,7 @@ class OwnedWaypointMarkers:
         self.pose_path = None
         self.exploration_path = None
         self.radar_path = (self.root / "artifacts" / "waypoint-radar-style.json").absolute()
+        self.status_path = None
         self.identity = None
         self.stop_requested = False
         self.exit_code = None
@@ -93,6 +94,7 @@ class OwnedWaypointMarkers:
         self.stop_path = directory / ("waypoint-markers-stop-" + token + ".signal")
         self.route_updates_path = (directory / ("waypoint-markers-updates-" + token + ".json")).absolute()
         self.pose_path = (directory / ("waypoint-markers-pose-" + token + ".json")).absolute()
+        self.status_path = (directory / ("waypoint-markers-status-" + token + ".json")).absolute()
         self.exploration_path = (directory / ("waypoint-exploration-" + token + ".json")).absolute()
         write_json_atomic(self.exploration_path, {"version": 1, "owner": None,
                                                 "acquiredMonotonic": None, "guidance": None, "trail": []})
@@ -122,6 +124,7 @@ class OwnedWaypointMarkers:
                    "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]),
                    "--route", str(route_path), "--duration", "0", "--max-age", ".35", "--presenter", presenter,
                    "--output", str(self.output), "--stop-file", str(self.stop_path),
+                   "--status-file", str(self.status_path),
                    "--appearance-file", str(self.appearance_path),
                    "--route-updates-file", str(self.route_updates_path),
                    "--pose-file", str(self.pose_path),
@@ -836,6 +839,8 @@ def validate_route_document(document):
     from scripts.waypoint_progress import _route
     from scripts.waypoint_measurements import document_measurements, parse_projection_route
     _route(document)
+    from scripts.waypoint_route_library import normalize_context
+    normalize_context(document.get("routeContext"))
     if "recording" in document:
         parse_projection_route(document)
     elif "pointMeasurements" in document:
@@ -846,6 +851,23 @@ def validate_route_document(document):
         if any(receipt is not None and valid is None for receipt, valid in zip(raw, parsed)):
             raise WaypointError("Invalid waypoint measurement provenance")
     return document
+
+
+def read_route_context(adapter):
+    """One pinned zone-candidate acquisition; no instance/name inference."""
+    from scripts.save_physical_route_view import _zone_context
+    from scripts.waypoint_route_library import normalize_context
+    path = ROOT / "artifacts" / ("waypoint-zone-" + uuid.uuid4().hex + ".json")
+    entry = _zone_context(adapter.selection, {"identity": adapter.binding["runtimeIdentity"]}, path)
+    if entry.get("status") != "available-candidate" or entry.get("routePlayerMatches") is not True:
+        raise WaypointError("Zone candidate unavailable: " + str(entry.get("reason", "player mismatch")))
+    values = entry["values"]
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(values["sampledAtUtc"].replace("Z", "+00:00"))).total_seconds()
+    if not -.1 <= age <= 3:
+        raise WaypointError("Zone observation expired")
+    return normalize_context(dict(version=1, zoneIdCandidate=values["zoneIdCandidate"],
+        rawZoneKey=values["rawZoneKey"], source=str(path), observedAtUtc=values["sampledAtUtc"],
+        target=deepcopy(adapter.target), playerKey=values["selfKey"]))
 
 
 def launch_window(args):
@@ -909,9 +931,9 @@ def launch_window(args):
     editable = []
     workflow = ttk.Notebook(frame, height=184)
     workflow.grid(row=4, column=0, sticky="ew", pady=(10, 6))
-    replay_tab, edit_tab, scene_tab, explore_tab, activity_tab = [ttk.Frame(workflow, style="Surface.TFrame", padding=(14, 8)) for _ in range(5)]
+    replay_tab, edit_tab, scene_tab, explore_tab, library_tab, activity_tab = [ttk.Frame(workflow, style="Surface.TFrame", padding=(14, 8)) for _ in range(6)]
     for tab, title in ((replay_tab, "Replay"), (edit_tab, "Edit waypoint"),
-                       (scene_tab, "Scene & beacons"), (explore_tab, "Explore"), (activity_tab, "Activity")):
+                       (scene_tab, "Scene & beacons"), (explore_tab, "Explore"), (library_tab, "Library"), (activity_tab, "Activity")):
         workflow.add(tab, text=title)
     coordinates = ttk.Frame(edit_tab, style="Surface.TFrame")
     coordinates.pack(fill="x", pady=(0, 12))
@@ -942,6 +964,9 @@ def launch_window(args):
     summary = tk.StringVar(value="Refresh position to preview the route.")
     summary_label = ttk.Label(telemetry, textvariable=summary, style="Base.Muted.TLabel", wraplength=900)
     summary_label.pack(anchor="w", pady=(3, 0))
+    context_text = tk.StringVar(value="Zone context loading; legacy routes remain untagged.")
+    context_label = ttk.Label(telemetry, textvariable=context_text, style="Base.Muted.TLabel", wraplength=900)
+    context_label.pack(anchor="w", pady=(2, 0))
     telemetry.bind("<Configure>", lambda event: summary_label.configure(wraplength=max(200, event.width)))
     middle = ttk.Frame(frame)
     middle.grid(row=3, column=0, sticky="nsew")
@@ -1058,6 +1083,11 @@ def launch_window(args):
     cli_last_record_file = None
     cli_destroyed = False
     cli_cancelled_requests = set()
+    current_zone_context = None
+    zone_error = None
+    zone_observing = False
+    next_zone_at = time.monotonic() + 1
+    marker_anchor_y = None
     from scripts.waypoint_recent_display import route_labels, attach_path_tooltip
     activity_tab.columnconfigure(0, weight=1)
     activity_tab.rowconfigure(1, weight=1)
@@ -1073,7 +1103,8 @@ def launch_window(args):
     log.configure(yscrollcommand=log_scroll.set)
 
     def update_route_status():
-        title = route_path.name if route_path is not None else "Recovered route" if route_recovered else "New route"
+        friendly = route_metadata.get("routeName")
+        title = friendly if isinstance(friendly,str) and friendly.strip() else route_path.name if route_path is not None else "Recovered route" if route_recovered else "New route"
         status = "Unsaved changes" if route_dirty else "Saved" if route_path is not None else "Unsaved"
         route_status.set(f"{title} — {status}")
 
@@ -1122,7 +1153,8 @@ def launch_window(args):
                 invalidate_route_progress(checkpoint, progress_archive, route_document(),
                                           current_identity() or last_verified_owner)
             if clear_metadata:
-                route_metadata = {}
+                route_metadata = {key:value for key,value in route_metadata.items()
+                                  if key in ("routeContext", "routeName")}
             playback_view = None
             route_dirty = True
             update_route_status()
@@ -1296,6 +1328,8 @@ def launch_window(args):
 
     def redraw(*_):
         nonlocal map_view
+        if cli_server is not None:
+            update_context_text()
         if explore_controls is not None:
             explore_controls.route_changed()
         schedule_marker_update()
@@ -1391,19 +1425,20 @@ def launch_window(args):
         px, pz = map_view.canvas_to_world(event.x, event.y)
         start("map", (map_view, px, pz, name.get() or "Waypoint"))
 
-    def worker(operation, points=None, face_walk=False):
+    def worker(operation, points=None, face_walk=False, route_context=None):
         with operation_gate:
             if operation == "live" and closing:
                 events.put({"status": "live-idle"})
                 return
-            perform_operation(operation, points, face_walk)
+            perform_operation(operation, points, face_walk, route_context)
 
-    def perform_operation(operation, points=None, face_walk=False):
+    def perform_operation(operation, points=None, face_walk=False, route_context=None):
         nonlocal adapter, published_adapter
         retain = operation in ("go", "face", "face-bearing", "play", "resume", "teach")
         history, outcome, failure = [], None, None
         stop_verification = None
         receipt_path = None
+        observed_context = None
 
         def emit(event):
             if retain:
@@ -1418,7 +1453,21 @@ def launch_window(args):
             if retain:
                 adapter.input_receipt_path = ROOT / "artifacts" / ("waypoint-input-" + uuid.uuid4().hex + ".jsonl")
                 adapter.last_input_receipt = None
-            if operation in ("refresh", "save", "map", "live", "target"):
+            if route_context is not None or operation in ("zone", "zone-live", "record"):
+                try:
+                    observed_context = read_route_context(adapter)
+                    events.put({"status": "zone", "context": observed_context})
+                except Exception as exc:
+                    events.put({"status": "zone-unavailable", "reason": str(exc)})
+                    if route_context is not None or operation in ("zone", "zone-live"):
+                        raise
+                if route_context is not None:
+                    from scripts.waypoint_route_library import compare_context
+                    if compare_context(route_context, observed_context) != "matching":
+                        raise WaypointError("Route zone candidate does not match the current zone; no movement sent")
+            if operation in ("zone", "zone-live"):
+                outcome = observed_context
+            elif operation in ("refresh", "save", "map", "live", "target"):
                 adapter, pose, reconnected = idle_read(
                     adapter, args.expected_host, args.basis, physical_rift.select_physical,
                     PhysicalAdapter, include_target=operation == "target",
@@ -1483,6 +1532,7 @@ def launch_window(args):
                             "rerun": result.get("rerun", {}), "unitSample": result.get("unitSample")})
             elif operation == "record":
                 recorder = RouteRecorder(adapter.binding)
+                next_record_zone = time.monotonic()+3
                 while not record_stop.is_set() and not record_cancel.is_set():
                     # The batch revalidates process/build/player/owners itself.
                     # A read-only recorder must not contend for move-key's input
@@ -1491,12 +1541,19 @@ def launch_window(args):
                     # real handoff window for other guarded one-pose readers.
                     for pose in observe_batch(adapter, samples=6):
                         recorder.observe(pose)
+                    if observed_context is not None and time.monotonic() >= next_record_zone:
+                        from scripts.waypoint_route_library import compare_context
+                        if compare_context(observed_context, read_route_context(adapter)) != "matching":
+                            raise WaypointError("Zone candidate changed while recording; no mixed-zone route saved")
+                        next_record_zone = time.monotonic()+3
                     events.put({"status": "recording", "position": asdict(pose.position),
                                 "bearing": pose.bearing, **recorder.progress})
                     record_stop.wait(.15)
                 if record_cancel.is_set():
                     raise WaypointError("Recording cancelled; no route saved")
                 document = recorder.finish()
+                if observed_context is not None:
+                    document["routeContext"] = observed_context
                 events.put({"status": "recorded-pending", "document": document})
             elif operation == "teach":
                 from scripts.waypoint_playback import teach_route
@@ -1533,7 +1590,7 @@ def launch_window(args):
                     exc = WaypointError("STOP requested; stationary check unavailable: " + stop_verification["reason"])
                 elif is_stop and stop_verification["status"] != "pass":
                     exc = WaypointError(stop_verification["reason"])
-            failure = {"status": "live-unavailable" if operation == "live" else "view-failed" if operation == "view" else
+            failure = {"status": "zone-unavailable" if operation == "zone-live" else "live-unavailable" if operation == "live" else "view-failed" if operation == "view" else
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
                        "originalReason": original_reason,
                        **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
@@ -1558,13 +1615,13 @@ def launch_window(args):
                     events.put({"status": "run-receipt", "path": str(receipt_path), "failure": failure})
                 except (OSError, TypeError, ValueError) as exc:
                     events.put({"status": "receipt-error", "reason": str(exc), "failure": failure})
-            events.put({"status": "live-idle" if operation == "live" else "idle"})
-            if operation != "live":
+            events.put({"status": "zone-idle" if operation == "zone-live" else "live-idle" if operation == "live" else "idle"})
+            if operation not in ("live", "zone-live"):
                 events.put({"status": "operation-finished", "operation": operation,
                             "failure": failure, "result": outcome,
                             "receipt": str(receipt_path) if receipt_path else None})
 
-    def start(operation, points=None, *, face_walk=None):
+    def start(operation, points=None, *, face_walk=None, check_route_zone=True):
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         if busy or closing or nearby_picker is not None:
             return
@@ -1615,7 +1672,8 @@ def launch_window(args):
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
-        threading.Thread(target=worker, args=(operation, points, walk_facing.get() if face_walk is None else face_walk), daemon=False).start()
+        context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and operation in ("go", "face", "play", "resume", "teach") else None
+        threading.Thread(target=worker, args=(operation, points, walk_facing.get() if face_walk is None else face_walk, context), daemon=False).start()
         return True
 
     def request_stop():
@@ -1941,6 +1999,10 @@ def launch_window(args):
         if closing or loading_route or marker_identity is None or not markers.running() or markers.stop_requested:
             return
         try:
+            if zone_comparison() == "mismatch":
+                stop_markers()
+                state.set("Markers hidden: route zone candidate differs from current zone.")
+                return
             payload = marker_payload()
             signature = json.dumps(payload, sort_keys=True)
             if signature != marker_published:
@@ -1992,7 +2054,7 @@ def launch_window(args):
             return False
 
     def toggle_markers():
-        nonlocal marker_identity, marker_published
+        nonlocal marker_identity, marker_published, marker_anchor_y
         if markers.running():
             if stop_markers():
                 state.set("Hiding markers…")
@@ -2003,6 +2065,8 @@ def launch_window(args):
             state.set("Wait for the current RIFT connection before showing markers.")
             return
         try:
+            if zone_comparison() == "mismatch":
+                raise WaypointError("Saved route zone differs from current zone candidate; load a matching route first")
             options = {}
             from scripts.physical_waypoint_overlay import bind_companion_window
             if target_beacon.get():
@@ -2014,6 +2078,7 @@ def launch_window(args):
                 options["landmark_number"] = table.index(selected[0]) + 1
             options["companion"] = bind_companion_window(window.winfo_id())
             markers.start(route_document() if table.get_children() else {"waypoints": []}, adapter, **options)
+            marker_anchor_y = last_y
             marker_published = json.dumps(marker_payload(), sort_keys=True)
             target = adapter.target
             marker_identity = (adapter.pid, str(target["processStartUtcTicks"]),
@@ -2251,7 +2316,7 @@ def launch_window(args):
         nonlocal closing, close_prompt, cli_destroyed
         if cli_destroyed:
             return True
-        if (not closing or close_prompt or busy or observing or foreground_stop is not None
+        if (not closing or close_prompt or busy or observing or zone_observing or foreground_stop is not None
                 or markers.running()):
             return False
         close_prompt = True
@@ -2305,7 +2370,7 @@ def launch_window(args):
 
     def read_beacon_pose_display():
         nonlocal beacon_pose_token, beacon_pose_available, beacon_pose_stamp, beacon_display_active, next_beacon_pose_at, last_pose, last_y
-        nonlocal exploration_sample, beacon_latest_error
+        nonlocal exploration_sample, beacon_latest_error, marker_anchor_y
         beacon_display_active = True
         if time.monotonic() < next_beacon_pose_at:
             return
@@ -2319,6 +2384,8 @@ def launch_window(args):
             pose = read_pose(path, adapter.target, adapter.binding["runtimeIdentity"]["unitKey"], last_sequence=last_sequence)
             beacon_latest_error = None
             token = (str(path), pose["sequence"], pose["acquiredMonotonic"])
+            if beacon_pose_token is None or beacon_pose_token[0] != str(path):
+                marker_anchor_y = pose["position"]["y"]
             if token != beacon_pose_token or not beacon_pose_available:
                 exploration_sample = pose["acquiredMonotonic"]
                 explore_controls.on_pose(pose)
@@ -2360,6 +2427,65 @@ def launch_window(args):
     def cli_document():
         return route_document() if table.get_children() else {"waypoints": []}
 
+    def zone_state():
+        context, age = current_zone_context, None
+        if context is not None:
+            age = (datetime.now(timezone.utc) - datetime.fromisoformat(context["observedAtUtc"].replace("Z", "+00:00"))).total_seconds()
+        valid = (context is not None and adapter is not None and context["target"] == adapter.target
+                 and age is not None and -.1 <= age <= 30 and zone_error is None)
+        return dict(context=deepcopy(context) if valid else None, currentAgeSeconds=age,
+                    status="available-candidate" if valid else "unavailable", reason=zone_error,
+                    qualification="Zone ID candidate only; matching is not world/instance or terrain proof.")
+
+    def zone_comparison(document=None):
+        from scripts.waypoint_route_library import compare_context
+        return compare_context((document if document is not None else route_metadata).get("routeContext"), zone_state()["context"])
+
+    def route_heights(document=None):
+        from scripts.waypoint_measurements import document_measurements
+        from scripts.waypoint_height_context import height_context
+        document = cli_document() if document is None else document
+        rows = document.get("waypoints", [])
+        receipts = document_measurements(document)
+        measured = [(i, r["position"]["y"]) for i,r in enumerate(receipts) if r is not None]
+        result = []
+        for i,row in enumerate(rows):
+            receipt = receipts[i]
+            y, kind = (receipt["position"]["y"], "measured") if receipt else (None, "unknown")
+            if receipt is None and measured:
+                nearest = min(measured, key=lambda pair: math.hypot(row[1]-rows[pair[0]][1], row[2]-rows[pair[0]][2]))
+                y, kind = nearest[1], "nearest-measured-estimate"
+            elif receipt is None and (marker_anchor_y if markers.running() else last_y) is not None:
+                y, kind = marker_anchor_y if markers.running() else last_y, "startup-player-estimate"
+            context = height_context(dict(xyz={"y":y}, displayHeightKind=kind), last_y)
+            result.append(dict(number=i+1, height=y, **context))
+        return result
+
+    def update_context_text():
+        zone = zone_state()
+        current = (zone["context"] or {}).get("zoneName") or (zone["context"] or {}).get("zoneIdCandidate") or "unknown"
+        tagged = route_metadata.get("routeContext")
+        saved = (tagged or {}).get("zoneName") or (tagged or {}).get("zoneIdCandidate") or "unknown / legacy"
+        text = f"Zone candidate: {current} · Route: {saved} · {zone_comparison()}"
+        selected = table.selection()
+        if len(selected) == 1:
+            heights = route_heights()
+            index = table.index(selected[0])
+            if index < len(heights): text += " · " + heights[index]["label"]
+        context_text.set(text)
+
+    def cli_display_status():
+        path = markers.status_path
+        if path is None or not markers.running(): return None
+        try:
+            if path.stat().st_size > 262144: return None
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if (data.get("version") != 1 or adapter is None or data.get("target") != adapter.target
+                    or data.get("sessionId") != markers.pose_path.stem
+                    or not 0 <= time.monotonic()-data["sampledMonotonic"] <= 1): return None
+            return data
+        except (OSError, ValueError, KeyError, TypeError): return None
+
     def cli_pose():
         if adapter is None:
             return {"status": "unavailable", "reason": "RIFT is not connected"}
@@ -2398,7 +2524,7 @@ def launch_window(args):
         return dict(readerRunning=markers.running(), closing=markers.running() and markers.stop_requested,
                     size=round(beacon_size.get()) / 100, opacity=round(beacon_opacity.get()),
                     labels=beacon_labels.get(), target=target_beacon.get(), guide=landmark_guide.get(),
-                    pose=cli_pose(), qualification="Reader state; on-screen beacons also require a valid camera and foreground game/helper.")
+                    pose=cli_pose(), display=cli_display_status(), qualification="Reader state; on-screen beacons also require a valid camera and foreground game/helper.")
 
     def cli_snapshot():
         return dict(host=args.expected_host, target=deepcopy(getattr(adapter, "target", None)),
@@ -2407,6 +2533,8 @@ def launch_window(args):
                     route={"file": str(route_path) if route_path else None, "dirty": route_dirty,
                            "revision": route_revision, "count": len(table.get_children()),
                            "selected": [table.index(i)+1 for i in table.selection()]},
+                    zone=zone_state(), routeContext=deepcopy(route_metadata.get("routeContext")),
+                    contextComparison=zone_comparison(), heights=route_heights(),
                     pose=cli_pose(), radar=cli_radar_status(), beacons=cli_beacon_status(),
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
                     recording={"active": recording, "progress": recording_progress},
@@ -2455,7 +2583,7 @@ def launch_window(args):
                     return cli_error("cancelled", "Cancelled before starting", exit_code=130)
                 if markers.running() and operation in ("go", "face", "face-bearing", "record"):
                     return None
-                if not start(operation, payload, face_walk=True):
+                if not start(operation, payload, face_walk=True, check_route_zone=command not in ("move.to", "face")):
                     cli_action = None
                     return cli_error("start-refused", state.get(), exit_code=4)
                 job["started"] = True
@@ -2468,6 +2596,7 @@ def launch_window(args):
             data = dict(operation=event["operation"], receipt=event.get("receipt"), failure=failure,
                         recordedFile=job.get("recordedFile"), state=state.get())
             if operation == "view": data.update(image=saved_view, rerun=saved_rerun)
+            if operation == "zone" and not failure: data.update(zone_state())
             if operation in ("save", "target"): data.update(route=cli_snapshot()["route"])
             response = (cli_error("cancelled" if failure.get("status") == "stopped" else "operation-failed",
                                   failure["reason"], exit_code=130 if failure.get("status") == "stopped" else 1)
@@ -2486,6 +2615,64 @@ def launch_window(args):
         nonlocal playback_view, pending_progress_selection, checkpoint, cli_close_id, cli_record_output
         nonlocal saved_view, saved_rerun, rerun_viewer
         try:
+            if command == "zone.status": return cli_ok(zone_state())
+            if command == "zone.refresh": return cli_begin(rid, "zone", command=command)
+            if command == "route.context":
+                return cli_ok(dict(routeContext=deepcopy(route_metadata.get("routeContext")),
+                    currentContext=zone_state()["context"], comparison=zone_comparison()))
+            if command == "route.tag-zone":
+                if busy or cli_action is not None: raise CliError("busy", "Wait for the active action", exit_code=4)
+                if not table.get_children(): raise CliError("empty-route", "Add a waypoint before tagging its zone", exit_code=4)
+                pending = cli_begin(rid, "zone", command=command)
+                advance = cli_waiters[rid]
+                def tagged():
+                    nonlocal route_metadata, route_dirty, route_revision
+                    response = advance()
+                    if response is None or not response.get("ok"): return response
+                    context = zone_state()["context"]
+                    if context is None: return cli_error("zone-unavailable", "Wait for a current zone observation", exit_code=3)
+                    remember_edit()
+                    route_metadata["routeContext"] = context
+                    route_dirty = True
+                    route_revision += 1
+                    update_route_status()
+                    update_context_text()
+                    return cli_ok(dict(routeContext=context, currentContext=context, comparison="matching"))
+                cli_waiters[rid] = tagged
+                return pending
+            if command.startswith("library."):
+                from scripts import waypoint_route_library as library
+                directory = ROOT / "artifacts" / "waypoint-routes"
+                if command == "library.list":
+                    status = values.get("zone", "all")
+                    rows = library.list_routes(zone_state()["context"], None if status == "all" else status, library_dir=directory)
+                    search = values.get("search", "").casefold()
+                    if search: rows = [r for r in rows if search in r["name"].casefold() or search in r["id"].casefold()]
+                    return cli_ok(dict(routes=rows, directory=str(directory), zone=zone_state()))
+                if command == "library.show":
+                    document = library.load_route(values["route_id"], library_dir=directory)
+                    return cli_ok(dict(routeId=values["route_id"], document=document, contextComparison=zone_comparison(document), heights=route_heights(document)))
+                if busy or cli_action is not None or closing: raise CliError("busy", "Wait for the active action", exit_code=4)
+                if command == "library.load":
+                    library.load_route(values["route_id"], library_dir=directory)
+                    return cli_dispatch("route.load", dict(file=str(directory/(values["route_id"]+".json")), discard=values.get("discard",False)), rid)
+                if command == "library.save":
+                    route_id = library.save_route(route_document(), values["name"], values.get("route_id"),
+                        overwrite=values.get("overwrite",False), library_dir=directory)
+                elif command == "library.import":
+                    source = cli_file(values["file"])
+                    prepared_document(json.loads(source.read_text(encoding="utf-8-sig")))
+                    route_id = library.import_route(source, values.get("name"), values.get("route_id"),
+                        overwrite=values.get("overwrite",False), library_dir=directory)
+                else: raise CliError("unsupported-command", command, exit_code=2)
+                document = library.load_route(route_id, library_dir=directory)
+                if command == "library.save" and route_path is not None and route_path.absolute() == (directory/(route_id+".json")).absolute():
+                    route_metadata["routeName"] = document["routeName"]
+                    route_revision += 1
+                    mark_saved(route_path)
+                    cache_route(document,"Library route saved: "+document["routeName"])
+                refresh_library()
+                return cli_ok(dict(routeId=route_id, file=str(directory/(route_id+".json")), routeContext=document.get("routeContext")))
             if command in ("status", "doctor"):
                 data = cli_snapshot()
                 if command == "doctor":
@@ -2525,9 +2712,13 @@ def launch_window(args):
                                    "stationaryEvidence": "Inspect stopVerification in the action receipt; no arbitrary game autorun cancellation is claimed."})
                 return cli_wait(rid, stopped)
             if command == "app.show":
+                if values.get("tab") is not None:
+                    tabs = dict(replay=replay_tab,edit=edit_tab,scene=scene_tab,explore=explore_tab,library=library_tab,activity=activity_tab)
+                    if values["tab"] not in tabs: raise CliError("unknown-tab", "Choose replay, edit, scene, explore, library or activity", exit_code=2)
+                    workflow.select(tabs[values["tab"]])
                 window.deiconify()
                 window.lift()
-                return cli_ok({"visible": True, "windowState": window.state()})
+                return cli_ok({"visible": True, "windowState": window.state(), "tab": values.get("tab")})
             if command == "app.hide":
                 window.withdraw()
                 return cli_ok({"visible": False, "windowState": window.state()})
@@ -2577,6 +2768,7 @@ def launch_window(args):
                     return cli_ok(dict(document=document, file=str(route_path) if route_path else None,
                         dirty=route_dirty, revision=route_revision,
                         measuredCount=measured, estimatedCount=len(document["waypoints"])-measured,
+                        heights=route_heights(document), routeContext=document.get("routeContext"), contextComparison=zone_comparison(document),
                         points=[dict(number=i+1, name=r[0], x=float(r[1]), z=float(r[2])) for i,r in enumerate(selected_points(True))],
                         qualification="Route structure only; terrain, obstacle clearance and playback admission remain live checks."))
                 if command in ("route.load", "route.new"):
@@ -2595,7 +2787,8 @@ def launch_window(args):
                         cache_route(document, "Route loaded: " + str(path))
                     else:
                         clear_points()
-                        route_metadata = {"name": values["name"]} if values.get("name") else {}
+                        route_metadata = {"routeName": values["name"]} if values.get("name") else {}
+                        if zone_state()["context"] is not None: route_metadata["routeContext"] = zone_state()["context"]
                         route_path, route_dirty, route_recovered = None, False, False
                         update_route_status()
                     return cli_ok(cli_snapshot()["route"])
@@ -2710,7 +2903,9 @@ def launch_window(args):
                     if values.get("radius") is not None:
                         if not .05 <= finite(values["radius"]) <= 10: raise ValueError("radius must be .05..10")
                         explore_controls.guidance.radius = values["radius"]
-                    explore_controls.guidance.begin(document["waypoints"], direction, index, owner)
+                    from scripts.waypoint_height_context import measured_heights
+                    explore_controls.guidance.begin(document["waypoints"], direction, index, owner,
+                                                   measured_heights=measured_heights(document))
                     explore_controls._route_signature = json.dumps(document, sort_keys=True, allow_nan=False)
                     explore_controls.guidance.observe(owner)
                     explore_controls._refresh()
@@ -2814,19 +3009,110 @@ def launch_window(args):
             raise CliError("unsupported-command", command, exit_code=2)
         except CliError as exc:
             return cli_error(exc.code, str(exc), exit_code=exc.exit_code, hint=exc.hint)
+        except FileExistsError as exc:
+            return cli_error("file-exists", str(exc), exit_code=4, hint="Choose another ID or explicitly use --overwrite")
         except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
             return cli_error("operation-failed", str(exc))
+
+    library_name = tk.StringVar(value="My route")
+    library_search = tk.StringVar()
+    library_filter = tk.StringVar(value="all")
+    library_tab.columnconfigure(0, weight=1)
+    library_tab.rowconfigure(1, weight=1)
+    library_tools = ttk.Frame(library_tab, style="Surface.TFrame")
+    library_tools.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+    ttk.Label(library_tools, text="Find", style="Surface.TLabel").pack(side="left", padx=(0,5))
+    ttk.Entry(library_tools, textvariable=library_search, width=24).pack(side="left", padx=(0,8))
+    zone_filter = ttk.Combobox(library_tools, textvariable=library_filter,
+        values=("all","matching","mismatch","unknown"), state="readonly", width=10)
+    zone_filter.pack(side="left", padx=(0,8))
+    library_table = ttk.Treeview(library_tab, columns=("name","zone","heights"), show="headings", height=3)
+    for key,title,width in (("name","Saved route",330),("zone","Zone candidate",245),("heights","Height evidence",210)):
+        library_table.heading(key,text=title)
+        library_table.column(key,width=width,minwidth=90)
+    library_table.grid(row=1,column=0,sticky="nsew")
+    library_scroll = ttk.Scrollbar(library_tab,orient="vertical",command=library_table.yview)
+    library_scroll.grid(row=1,column=1,sticky="ns")
+    library_table.configure(yscrollcommand=library_scroll.set)
+    library_actions = ttk.Frame(library_tab,style="Surface.TFrame")
+    library_actions.grid(row=2,column=0,sticky="ew",pady=(5,0))
+    ttk.Entry(library_actions,textvariable=library_name,width=27).pack(side="left",padx=(0,6))
+
+    def refresh_library():
+        from scripts.waypoint_route_library import list_routes
+        selected = library_table.selection()
+        try:
+            rows = list_routes(zone_state()["context"],None if library_filter.get()=="all" else library_filter.get(),
+                               library_dir=ROOT/"artifacts"/"waypoint-routes")
+            library_table.delete(*library_table.get_children())
+            query = library_search.get().casefold()
+            for row in rows:
+                if query and query not in row["name"].casefold() and query not in row["id"].casefold(): continue
+                context = row.get("routeContext") or {}
+                zone = context.get("zoneName") or context.get("zoneIdCandidate") or "Unknown / legacy"
+                evidence = ("Unavailable: "+row["error"] if row.get("error") else
+                    f"{row['waypointCount']} points · {row['measuredHeightCount']} measured / {row['estimatedHeightCount']} estimated")
+                library_table.insert("","end",iid=row["id"],values=(row["name"],zone+" · "+row["contextStatus"],evidence))
+            for value in selected:
+                if library_table.exists(value): library_table.selection_set(value)
+        except (OSError,ValueError,TypeError) as exc:
+            state.set("Cannot read route library: "+str(exc))
+
+    def library_save_copy():
+        result = cli_dispatch("library.save",dict(name=library_name.get()),"gui-"+uuid.uuid4().hex)
+        state.set("Library copy saved; current file is unchanged." if result.get("ok") else result["error"]["message"])
+
+    def library_load_selected(_=None):
+        selected = library_table.selection()
+        if len(selected)!=1:
+            state.set("Choose a library route to load.")
+            return
+        load_from(ROOT/"artifacts"/"waypoint-routes"/(selected[0]+".json"))
+
+    def library_import_file():
+        path = filedialog.askopenfilename(parent=window,title="Import a route copy",filetypes=[("Waypoint JSON","*.json")])
+        if path:
+            result = cli_dispatch("library.import",dict(file=path),"gui-"+uuid.uuid4().hex)
+            state.set("Route copied into library." if result.get("ok") else result["error"]["message"])
+
+    for label,callback in (("Save copy",library_save_copy),("Load selected",library_load_selected),
+                           ("Import file",library_import_file),("Refresh zone",lambda:start("zone"))):
+        button = ttk.Button(library_actions,text=label,command=callback)
+        button.pack(side="left",padx=(0,6))
+        editable.append(button)
+    ttk.Button(library_tools,text="Refresh",command=refresh_library).pack(side="left")
+    library_search.trace_add("write",lambda *_:refresh_library())
+    zone_filter.bind("<<ComboboxSelected>>",lambda _:refresh_library())
+    library_table.bind("<Double-1>",library_load_selected)
+    workflow.bind("<<NotebookTabChanged>>",lambda _:workflow.configure(
+        height=220 if workflow.select()==str(library_tab) else 184))
 
     def poll():
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
         nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp, exploration_sample
         nonlocal cli_action, cli_record_output, cli_last_operation, cli_last_record_file
+        nonlocal current_zone_context, zone_error, zone_observing, next_zone_at
         cli_server.poll(cli_dispatch)
         if cli_destroyed:
             return
         while not events.empty():
             event = events.get_nowait()
             status = event["status"]
+            if status in ("zone", "zone-unavailable"):
+                current_zone_context = event.get("context")
+                zone_error = event.get("reason")
+                next_zone_at = time.monotonic()+15
+                if zone_comparison() == "mismatch":
+                    explore_controls.stop_guidance()
+                    explore_controls.unavailable("Route zone candidate differs from current zone")
+                    stop_markers()
+                    state.set("Route zone candidate differs; movement and markers require a matching route.")
+                update_context_text()
+                refresh_library()
+                continue
+            if status == "zone-idle":
+                zone_observing = False
+                continue
             if status == "operation-finished":
                 cli_last_operation = event
                 if cli_action is not None and cli_action["operation"] == event["operation"]:
@@ -3071,6 +3357,11 @@ def launch_window(args):
             observing = True
             next_live_at = time.monotonic() + 2
             threading.Thread(target=worker, args=("live",), daemon=False).start()
+        if (adapter is not None and not busy and not observing and not zone_observing and not closing
+                and time.monotonic() >= next_zone_at):
+            zone_observing = True
+            next_zone_at = time.monotonic()+15
+            threading.Thread(target=worker, args=("zone-live",), daemon=False).start()
         window.after(80, poll)
 
     def select_point(_, *, force_name=False):
@@ -3232,6 +3523,8 @@ def launch_window(args):
     cli_server = LocalSessionServer(launch_token=getattr(args, "launch_token", None))
     explore_controls.extra_settings["statusPath"] = str(cli_server.path / "radar-status.json")
     explore_controls.save()
+    refresh_library()
+    update_context_text()
     poll()
     start("refresh")
     try:

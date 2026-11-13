@@ -11,7 +11,8 @@ os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QPointF, Qt
-from scripts.waypoint_compact_radar import CompactRadar, DEFAULT_CONFIG, load_config, load_exploration, trail_lines
+from scripts.waypoint_compact_radar import (CompactRadar, DEFAULT_CONFIG, load_config,
+                                          load_exploration, trail_lines, radar_height_contexts)
 from scripts.waypoint_map import LocalMap
 
 
@@ -21,6 +22,20 @@ class Api:
 
 
 class RadarTests(unittest.TestCase):
+    def test_height_context_uses_current_projected_estimate_and_route_measurement(self):
+        points = [{'number': 1, 'xyz': {'y': 12}, 'displayHeightKind': 'measured'},
+                  {'number': 2, 'xyz': {'y': None}, 'displayHeightKind': 'unresolved-estimate'}]
+        frame = {'playerPose': {'position': {'y': 10}}, 'points': [
+            {'number': 1, 'displayLandmark': True},
+            {'number': 2, 'displayHeightCandidate': 8, 'displayHeightKind': 'nearest-measured-estimate'}]}
+        contexts = radar_height_contexts(points, frame)
+        self.assertTrue(contexts[1]['floorWarning'])
+        self.assertEqual(contexts[1]['verticalRelation'], 'above')
+        self.assertEqual(contexts[2]['heightKind'], 'nearest-measured-estimate')
+        self.assertEqual(contexts[2]['verticalRelation'], 'below')
+        self.assertFalse(contexts[2]['floorWarning'])
+        self.assertIsNone(points[1]['xyz']['y'])
+
     @unittest.skipUnless(os.name == 'nt', 'Windows physical offset check')
     def test_unlocked_drag_moves_panel_and_follows_target_with_saved_offset(self):
         from ctypes import wintypes
@@ -69,10 +84,11 @@ class RadarTests(unittest.TestCase):
         app = QApplication.instance() or QApplication([])
         api = Api(); radar = CompactRadar(api)
         frame = {'clientRect': [-1500, -300, 1200, 800],
-                 'playerPose': {'position': {'x': 1, 'z': 2}, 'bearing': 0},
+                 'playerPose': {'position': {'x': 1, 'y': 10, 'z': 2}, 'bearing': 0},
                  'points': [{'number': 1, 'displayLandmark': True}]}
-        route = {'points': [{'number': 1, 'xyz': {'x': 2, 'z': 3}},
-                            {'number': 2, 'xyz': {'x': 300, 'z': 400}}]}
+        route = {'points': [{'number': 1, 'xyz': {'x': 2, 'y': 13, 'z': 3}, 'displayHeightKind': 'measured'},
+                            {'number': 2, 'xyz': {'x': 300, 'y': 7, 'z': 400}, 'displayHeightKind': 'measured'},
+                            {'number': 3, 'xyz': {'x': 0, 'y': 9, 'z': 1}, 'displayHeightKind': 'startup-player-estimate'}]}
         radar.present(frame, route, dict(DEFAULT_CONFIG, enabled=True),
                       {'trail': [[(1,2),(2,3)]], 'guidance': {'status':'active','activeIndex':1,'activeName':'Far','distance':20}})
         app.processEvents()

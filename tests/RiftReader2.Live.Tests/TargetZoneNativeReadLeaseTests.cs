@@ -13,10 +13,11 @@ public sealed class TargetZoneNativeReadLeaseTests
         var path = Path.Combine(Path.GetTempPath(), "rr2-target-zone-lease-" + Guid.NewGuid().ToString("N") + ".json");
         var options = new Dictionary<string, string> { ["--pid"] = "123", ["--start-ticks"] = "456", ["--output"] = path };
         var session = new FakeSession(); var held = false; var disposedAfterSession = false; var read = false;
+        var outputExistsAtRelease = false;
         Task<IAsyncDisposable> Acquire(int p, long t, CancellationToken _)
         {
             Assert.Equal(123, p); Assert.Equal(456, t); held = true;
-            return Task.FromResult<IAsyncDisposable>(new FakeLease(() => { held = false; disposedAfterSession = session.Disposed; }));
+            return Task.FromResult<IAsyncDisposable>(new FakeLease(() => { held = false; disposedAfterSession = session.Disposed; outputExistsAtRelease = File.Exists(path); }));
         }
         Task<IReadOnlyNativeMemorySession> Open(int _, long __, CancellationToken ___)
         { Assert.True(held); return Task.FromResult<IReadOnlyNativeMemorySession>(session); }
@@ -37,6 +38,7 @@ public sealed class TargetZoneNativeReadLeaseTests
                     });
             Assert.Equal(0,result); Assert.True(read); Assert.True(session.Revalidated);
             Assert.True(session.Disposed); Assert.True(disposedAfterSession); Assert.False(held);
+            Assert.Equal(!zone, outputExistsAtRelease);
         }
         finally { if(File.Exists(path)) File.Delete(path); }
     }

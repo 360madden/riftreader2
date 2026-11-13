@@ -1,5 +1,25 @@
 # Current status
 
+**NOVEMBER 13 — ZONE ROUTE LIBRARY, HEIGHT CONTEXT AND OVERLAY RECOVERY:**
+On verified AMD-DESKTOP/PID40452, the Library tab and attached CLI now support
+named copies, import, search and candidate-zone filters. Legacy routes remain
+unknown until explicitly tagged. Fresh candidate checks gate tagged route input;
+a simulated mismatched-zone fixture refused live movement before input. Measured
+and estimated height cues appear in the radar, beacons and CLI; passive guidance
+does not confirm a measured point over one unit above/below the player from X/Z
+alone. Flat-ground guidance passed live; upstairs/downstairs remains untested.
+Overlay fixes recover native-hidden Qt windows, discard expired rows without
+restarting the reader, correct lease/capture timing and remove synchronous disk
+barriers from transient feedback. Final 40-second and 20-second foreground trials
+accepted 1,687 updates with zero recorded clears, including short A/D turns and
+zone refreshes. A later extended-session snapshot recorded one freshness clear
+recovering in 46 ms: this is improvement, not universal flicker elimination.
+Original seven-point route bytes and XYZ were preserved. Focused checks included
+29 native tests, 185 Python overlay/height/guidance checks and eight real-Tk CLI
+integration tests; two combined-run Tk checks skipped, not a full-repository gate.
+See [operation](workflows/physical-waypoints.md#route-library-and-zone-context)
+and the [updated roadmap](planning/five-hour-recorded-routes-2026-11-12.md).
+
 **NOVEMBER 13 — REAL CLI MOVEMENT, STOP AND RESUME PASSED:**
 On physical AMD-DESKTOP/PID40452, CLI Go moved 1.807438 units (0.007521 goal error).
 Reverse playback was stopped after a walking pulse with checkpoint 1/2 and zero
