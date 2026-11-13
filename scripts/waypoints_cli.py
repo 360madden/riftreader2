@@ -107,6 +107,7 @@ def example(operation):
         "library.list":"library list --zone matching --search Camp",
         "library.save":"library save Camp --id camp", "library.import":"library import route.json --name Camp",
         "library.load":"library load camp --discard", "library.show":"library show camp",
+        "library.select":"library select camp",
     }.get(operation, operation.replace(".", " "))
 
 
@@ -146,7 +147,7 @@ def build_parser():
             p.add_argument("--count", type=positive, help="stop watch after this many reports")
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
-        "zone":"status refresh", "library":"list save import load show",
+        "zone":"status refresh", "library":"list save import load show select",
         "diagnostics":"status show copy open",
         "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
@@ -169,11 +170,12 @@ def build_parser():
                 "zone.refresh":"Read a fresh native zone candidate under the helper's current identity; not proof of the actual world instance.",
                 "route.context":"Show the loaded route's saved zone binding and comparison with current candidate context.",
                 "route.tag-zone":"Explicitly attach the current fresh zone candidate to a legacy route; not proof of the actual world instance.",
-                "library.list":"List routes in the owned library, optionally filtering current zone comparisons and searching names/IDs.",
+                "library.list":"List routes in the owned library, optionally filtering current zone comparisons and searching names, IDs or saved zone context.",
                 "library.save":"Copy the loaded route into the owned library with a display name; retain its context.",
                 "library.import":"Copy the explicit source file into the owned library, preserving its saved context and source file.",
                 "library.load":"Load a library route into the helper; unsaved changes require --discard.",
                 "library.show":"Inspect one owned library route, its zone context and measured/unknown heights.",
+                "library.select":"Select a library entry and show its details without replacing the loaded route; clears filters if needed.",
                 "beacons.show":"Start the owned shared beacon reader and wait for fresh pose; sends no game input.",
                 "beacons.hide":"Stop the owned beacon reader and wait for its exit.",
                 "beacons.set":"Adjust beacon appearance and optional target/guide layers; target changes can restart the owned reader and are refused during manual guide/trail use.",
@@ -206,6 +208,7 @@ def build_parser():
             effects = ("Read-only native candidate refresh; sends no game input." if operation == "zone.refresh"
                        else "Read-only; sends no game input." if read_only or operation in {"route.context", "library.show"}
                        else "Attaches fresh candidate provenance to the loaded route; sends no game input." if operation == "route.tag-zone"
+                       else "Changes the helper's library selection only; sends no game input." if operation == "library.select"
                        else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
                        else "Starts the owned shared reader when needed; sends no game input." if operation in {"beacons.show", "radar.show", "guide.start", "trail.start"}
@@ -225,14 +228,14 @@ def build_parser():
     def arg(op, *names, **kwargs): leaves[op].add_argument(*names, **kwargs)
     arg("library.list", "--zone", choices=("all", "matching", "mismatch", "unknown"), default="all",
         help="candidate comparison with current zone; default all; matching does not prove a world instance")
-    arg("library.list", "--search", help="filter library names or IDs by text")
-    arg("library.save", "name", help="display name for the saved copy")
+    arg("library.list", "--search", help="case-insensitive text match in route name, ID or saved zone context; combines with --zone")
+    arg("library.save", "name", help="display name for a new saved copy; an ID is generated unless --id is supplied")
     arg("library.import", "file", type=Path, help="explicit source route file to copy; retains saved context")
     arg("library.import", "--name", help="display name; defaults to source route name or filename")
     for op in ("library.save", "library.import"):
         arg(op, "--id", dest="route_id", help="library ID: 1-80 letters, digits, underscores or hyphens; starts with a letter or digit")
-        arg(op, "--overwrite", action="store_true", help="allow replacement of the specified library ID")
-    for op in ("library.load", "library.show"):
+        arg(op, "--overwrite", action="store_true", help="explicitly allow replacement when --id names an existing entry")
+    for op in ("library.load", "library.show", "library.select"):
         arg(op, "route_id", metavar="ID", help="owned library route ID")
     arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
     for op in ("route.load", "route.save", "trail.save", "record.stop", "view.save", "view.load", "view.open", "view.open-3d", "receipt.show"):
@@ -337,6 +340,12 @@ def human_zone(context, *, label="Zone"):
     print(f"{label}: {context.get('zoneName') or context.get('zoneIdCandidate') or 'unknown'}"
           + (f" | source {context['source']}" if context.get("source") else "")
           + " | candidate; actual world instance unproven")
+
+
+def _library_zone(context):
+    context = context or {}
+    name, candidate = context.get("zoneName"), context.get("zoneIdCandidate")
+    return f"{name} [{candidate}]" if name and candidate else str(name or candidate or "unknown")
 
 
 def _playback_readiness_line(label, readiness):
@@ -447,24 +456,51 @@ def human_data(command, data):
         if data.get("qualification"): print(data["qualification"])
     elif command == "library.list":
         rows = data.get("routes", [])
-        print(f"Route library: {len(rows)} routes | zone comparison is candidate evidence only")
+        counts = (f"{data.get('shownCount', len(rows))} of {data['totalCount']} routes"
+                  if "totalCount" in data else f"{len(rows)} routes")
+        print(f"Route library: {counts} | zone comparison is candidate evidence only")
+        if data.get("directory"): print("Directory: " + str(data["directory"]))
+        filters = []
+        zone_filter = data.get("filter", data.get("zone"))
+        if zone_filter: filters.append("zone " + str(zone_filter))
+        if data.get("search"): filters.append("search " + repr(data["search"]))
+        if filters: print("Filters: " + " | ".join(filters))
+        if data.get("selectedId"): print("Selected: " + str(data["selectedId"]))
+        if not rows: print("No library routes match. Save the loaded route with library save NAME, or import FILE with library import FILE.")
         for row in rows:
-            context = row.get("routeContext") or {}
-            zone = context.get("zoneName") or context.get("zoneIdCandidate") or "unknown"
+            zone = _library_zone(row.get("routeContext"))
             print(f"  {row.get('id', '?')} | {row.get('name', '')} | zone {zone} ({row.get('contextStatus', 'unknown')}) | "
                   f"{row.get('waypointCount', '?')} points | heights {row.get('measuredHeightCount', '?')} measured, "
                   f"{row.get('estimatedHeightCount', '?')} estimated/unknown")
+            if row.get("file") or row.get("path"): print("    File: " + str(row.get("file") or row["path"]))
             if row.get("error"): print("    Unavailable: " + str(row["error"]))
-    elif command == "library.show":
+    elif command in {"library.show", "library.select"}:
         document = data.get("document") or {}
-        context = document.get("routeContext") or {}
-        print(f"Library route: {data.get('routeId', '?')} | {document.get('routeName', '')} | "
-              f"{len(document.get('waypoints', []))} points")
-        print(f"Zone: {context.get('zoneName') or context.get('zoneIdCandidate') or 'unknown'} | "
-              f"comparison {data.get('contextComparison', 'unknown')} (candidate evidence only)")
+        row = data.get("row") or data
+        route_id = data.get("routeId") or row.get("id", "?")
+        context = document.get("routeContext") or row.get("routeContext") or {}
+        count = row.get("waypointCount", len(document.get("waypoints", [])) if document else "?")
+        print(f"Library route: {route_id} | {document.get('routeName') or row.get('name') or route_id} | {count} points")
+        file = data.get("file") or row.get("file") or row.get("path")
+        if file: print("File: " + str(file))
+        print(f"Zone: {_library_zone(context)} | "
+              f"comparison {data.get('contextComparison', row.get('contextStatus', 'unknown'))} (candidate evidence only)")
+        if context.get("source"): print("Context source: " + str(context["source"]))
+        if context.get("observedAtUtc"): print("Context observed: " + str(context["observedAtUtc"]))
+        if row.get("modifiedAtUtc"): print("File modified: " + str(row["modifiedAtUtc"]))
+        if isinstance(row.get("planarDistance"), (int, float)):
+            print(f"Route distance: {row['planarDistance']:.2f} world units in X/Z")
         from scripts.waypoint_measurements import document_measurements
-        measured = sum(value is not None for value in document_measurements(document))
-        print(f"Heights: {measured} measured, {len(document.get('waypoints', [])) - measured} estimated/unknown")
+        try:
+            measured = row.get("measuredHeightCount")
+            estimated = row.get("estimatedHeightCount")
+            if measured is None and document:
+                measured = sum(value is not None for value in document_measurements(document))
+                estimated = len(document.get("waypoints", [])) - measured
+            print(f"Heights: {measured if measured is not None else '?'} measured, {estimated if estimated is not None else '?'} estimated/unknown")
+        except (ValueError, TypeError, KeyError) as error:
+            print("Heights: unavailable | " + str(error))
+        if row.get("error") or data.get("error"): print("Unavailable: " + str(row.get("error") or data["error"]))
     elif command in {"library.save", "library.import"}:
         print(f"Saved library copy: {data.get('routeId', '?')} | {data.get('file', 'owned library')}")
         context = data.get("routeContext") or {}

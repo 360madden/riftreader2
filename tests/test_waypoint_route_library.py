@@ -1,7 +1,10 @@
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from copy import deepcopy
 
 from scripts import waypoint_route_library as library
 from scripts.waypoint_measurements import measurement
@@ -43,6 +46,9 @@ class RouteLibraryTests(unittest.TestCase):
         entry = library.list_routes(self.ctx, library_dir=self.directory)[0]
         self.assertEqual((entry["name"], entry["waypointCount"], entry["estimatedHeightCount"], entry["contextStatus"]),
                          ("Test route", 2, 2, "matching"))
+        self.assertEqual(entry["path"], str((self.directory / "test.json").absolute()))
+        self.assertIsNotNone(entry["modifiedAtUtc"])
+        self.assertAlmostEqual(entry["planarDistance"], math.hypot(2, 2))
         with self.assertRaises(FileExistsError):
             library.save_route(route, "Other", "test", library_dir=self.directory)
         self.assertEqual(library.load_route("test", self.directory)["routeName"], "Test route")
@@ -65,6 +71,14 @@ class RouteLibraryTests(unittest.TestCase):
         row = library.list_routes(library_dir=self.directory)[0]
         self.assertEqual((row["measuredHeightCount"], row["estimatedHeightCount"]), (1, 1))
 
+    def test_numeric_string_coordinates_are_valid_metadata(self):
+        route = {"waypoints": [["Start", "1", "2"], ["End", "4", "6"]]}
+        library.save_route(route, "String coordinates", "strings", library_dir=self.directory)
+        row = library.list_routes(library_dir=self.directory)[0]
+        self.assertNotIn("error", row)
+        self.assertEqual(row["waypointCount"], 2)
+        self.assertEqual(row["planarDistance"], 5)
+
     def test_corrupt_receipts_and_oversized_entries_are_reported(self):
         corrupt = dict(self.route, pointMeasurements=[{"kind": "forged"}, None])
         with self.assertRaisesRegex(ValueError, "invalid-route-measurement"):
@@ -86,6 +100,57 @@ class RouteLibraryTests(unittest.TestCase):
             (self.directory / f"{i}.json").touch()
         with self.assertRaisesRegex(ValueError, "library-entry-limit-exceeded"):
             library.list_routes(library_dir=self.directory)
+
+    def test_search_sort_metadata_and_malformed_visibility_are_shared(self):
+        named_context = dict(self.ctx, zoneName="Silverwood", worldName="Telara")
+        library.save_route(dict(self.route, routeContext=named_context), "Zebra Path", "zebra",
+                           library_dir=self.directory)
+        library.save_route(self.route, "Alpha Path", "alpha", library_dir=self.directory)
+        (self.directory / "broken.json").write_text("{bad", encoding="utf-8")
+
+        rows = library.list_routes(self.ctx, library_dir=self.directory)
+        self.assertEqual([row["id"] for row in rows], ["alpha", "zebra", "broken"])
+        self.assertEqual([row["id"] for row in library.list_routes(
+            self.ctx, search="silver", library_dir=self.directory)], ["zebra"])
+        self.assertEqual([row["id"] for row in library.list_routes(
+            self.ctx, search="TELARA", library_dir=self.directory)], ["zebra"])
+        self.assertEqual([row["id"] for row in library.list_routes(
+            self.ctx, search="broken", library_dir=self.directory)], ["broken"])
+        self.assertEqual([row["id"] for row in library.list_routes(
+            self.ctx, search="matching", library_dir=self.directory)], ["zebra"])
+        with self.assertRaisesRegex(ValueError, "invalid-library-search"):
+            library.list_routes(search="x" * 201, library_dir=self.directory)
+
+        all_rows = library.list_routes(self.ctx, library_dir=self.directory)
+        original = deepcopy(all_rows)
+        for status, search in ((None, "path"), ("matching", "silver"),
+                               ("unknown", "broken"), (None, "missing")):
+            self.assertEqual(
+                library.filter_routes(all_rows, status, search=search),
+                library.list_routes(self.ctx, status, search=search, library_dir=self.directory))
+        self.assertEqual(all_rows, original)
+        self.assertEqual([row["id"] for row in library.filter_routes(all_rows, search="path")],
+                         ["alpha", "zebra"])
+        with self.assertRaisesRegex(ValueError, "invalid-context-filter"):
+            library.filter_routes(all_rows, "elsewhere")
+        with self.assertRaisesRegex(ValueError, "invalid-library-row"):
+            library.filter_routes(["not metadata"])
+
+    def test_route_ids_are_case_insensitive_and_never_ambiguous(self):
+        library.save_route(self.route, "First", "Camp", library_dir=self.directory)
+        with self.assertRaises(FileExistsError):
+            library.save_route(self.route, "Duplicate", "camp", library_dir=self.directory)
+        self.assertEqual(library.load_route("CAMP", self.directory)["routeName"], "First")
+        library.save_route(self.route, "Updated", "camp", overwrite=True, library_dir=self.directory)
+        self.assertEqual(library.load_route("Camp", self.directory)["routeName"], "Updated")
+
+        # Manually retained legacy duplicates fail explicitly instead of choosing
+        # a platform-dependent file. Mock the listing because Windows itself
+        # cannot create both names in an ordinary directory.
+        with patch.object(Path, "glob", return_value=[
+                self.directory / "Camp.json", self.directory / "camp.json"]):
+            with self.assertRaisesRegex(ValueError, "ambiguous-route-id-case"):
+                library.load_route("camp", self.directory)
 
 
 if __name__ == "__main__":

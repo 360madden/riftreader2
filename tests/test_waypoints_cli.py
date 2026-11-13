@@ -54,7 +54,7 @@ class CliTests(unittest.TestCase):
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
                         'diagnostics.status diagnostics.show diagnostics.copy diagnostics.open '
-                        'library.list library.save library.import library.load library.show').split():
+                        'library.list library.save library.import library.load library.show library.select').split():
             with self.subTest(command=command):
                 self.assertEqual(self.call(*command.split('.'), '--help')[0], 0)
 
@@ -77,6 +77,7 @@ class CliTests(unittest.TestCase):
             (("library", "import", "source.json", "--name", "Camp", "--id", "camp"), "library.import", {"file":str(Path("source.json").resolve()), "name":"Camp", "route_id":"camp", "overwrite":False}),
             (("library", "load", "camp", "--discard"), "library.load", {"route_id":"camp", "discard":True}),
             (("library", "show", "camp"), "library.show", {"route_id":"camp"}),
+            (("library", "select", "camp"), "library.select", {"route_id":"camp"}),
         ]
         for argv, operation, payload in cases:
             with self.subTest(argv=argv), patch.object(protocol, 'resolve_session', return_value={}), patch.object(protocol, 'request', return_value=cli.result(operation, data={})) as request, patch.object(cli.subprocess, 'Popen') as spawn:
@@ -201,6 +202,28 @@ class CliTests(unittest.TestCase):
         for phrase in ('camp | Camp', '3 points', '2 measured', '1 estimated/unknown', '0.25s old',
                        'actual world instance unproven', 'Zone comparison: matching (candidate evidence only)'):
             self.assertIn(phrase, out.getvalue())
+
+    def test_library_detail_and_filter_output(self):
+        row = {'id':'camp', 'name':'Camp route', 'waypointCount':4, 'measuredHeightCount':1,
+               'estimatedHeightCount':3, 'contextStatus':'mismatch', 'path':'C:/routes/camp.json',
+               'modifiedAtUtc':'2026-11-13T12:00:00Z', 'planarDistance':12.5,
+               'routeContext':{'zoneName':'Camp zone', 'zoneIdCandidate':'z0000000100000000'}}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('library.list', data={'routes':[], 'shownCount':0, 'totalCount':2,
+                'filter':'matching', 'search':'Camp', 'selectedId':'camp'}))
+            cli.emit(cli.result('library.select', data={'row':row}))
+            cli.emit(cli.result('library.show', data={'row':{'id':'broken', 'error':'invalid-route', 'path':'broken.json'}}))
+        text = out.getvalue()
+        for phrase in ('0 of 2 routes', "Filters: zone matching | search 'Camp'", 'Selected: camp',
+                       'No library routes match', 'Library route: camp | Camp route | 4 points',
+                       'Camp zone [z0000000100000000]', 'comparison mismatch',
+                       'File: C:/routes/camp.json', '1 measured, 3 estimated/unknown',
+                       'File modified: 2026-11-13T12:00:00Z', '12.50 world units', 'Unavailable: invalid-route'):
+            self.assertIn(phrase, text)
+        self.assertIn('saved zone context', self.call('library','list','--help')[1])
+        self.assertIn('without replacing the loaded route', self.call('library','select','--help')[1])
+        self.assertEqual(self.call('--json','library','select')[0],2)
 
     def test_usage_is_one_json_on_stdout(self):
         for argv in (['radar','set','--op','70'], ['face','nan','--execute'],

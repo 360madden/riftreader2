@@ -1,5 +1,29 @@
 # Current status
 
+**NOVEMBER 13 — LIBRARY DISCOVERY, DETAILS AND ACTION POLISH:**
+On verified AMD-DESKTOP, Library now shares case-insensitive name/ID/zone/error
+search with CLI, filters cached metadata, sorts by readable name, shows result
+counts/no matches and retains useful selection. Adjacent details expose ID/path,
+distance, modification time, height counts and candidate context. Save/Load
+readiness covers names, empty routes, drafts, busy work and malformed entries;
+GUI Cancel and CLI unsaved refusals preserve the current document. Save/import
+select the new copy; overwrite stays explicit CLI-only. `library select ID`
+inspects without loading; list/show/status include row metadata and GUI readiness.
+IDs resolve case-insensitively. Review caught and fixed valid numeric-string
+coordinates being mislabeled by the new distance summary. Native normal/compact
+captures exposed an overcrowded list; details moved alongside compact rows.
+Focused checks passed **91 tests and 117 subtests**, zero failures/skips. Live
+disposable save/import/load, duplicate refusal, explicit overwrite, search,
+selection-only behavior, unsaved save/load handling and malformed load refusal
+passed without game input. Original route/basis and existing library file hashes,
+XYZ/bearing, scene refs, overlay settings and absent checkpoint were preserved.
+Four disposable entries were archived outside the working library and their
+recent-route link removed. Helper PID69332/sessionc6f22df289464417959e7422dd35a0b0
+remains on Library, original route selected, bound to physical RIFT PID40452.
+Evidence: `artifacts/library-live-check-20261113/` and native
+`artifacts/library-{invalid,valid}-compact-20261113.png`.
+See [Library operation](workflows/physical-waypoints.md#route-library-and-zone-context).
+
 **NOVEMBER 13 — EXPLORE POLISH, RADAR RECOVERY AND CLI ALIGNMENT:**
 On verified AMD-DESKTOP, Explore now explains guide readiness, exposes the shared
 session arrival radius, shows progress/direction, and prevents accidental active

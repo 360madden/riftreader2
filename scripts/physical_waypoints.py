@@ -1415,6 +1415,7 @@ def launch_window(args):
             update_context_text()
             update_replay_status()
             update_edit_state()
+            update_library_readiness()
         if explore_controls is not None:
             explore_controls.route_changed()
             explore_controls.refresh_context()
@@ -1864,6 +1865,8 @@ def launch_window(args):
         else:
             edit_hint.set(f"{len(selected)} selected · Select one to edit; Remove supports multiple points." if selected
                           else "Select a waypoint to edit, or enter X / Z and choose Add X / Z.")
+        if cli_server is not None:
+            update_library_readiness()
 
     def capture_selected(label=None):
         selected = table.selection()
@@ -2981,6 +2984,7 @@ def launch_window(args):
                     pose=cli_pose(), radar=cli_radar_status(), beacons=cli_beacon_status(),
                     view=cli_view_status(),
                     guidance=explore_controls.navigation_state(), trail=cli_trail_status(),
+                    routeLibrary=library_view_state(),
                     recording={"active": recording, "progress": recording_progress},
                     playback=cli_playback_status(),
                     activeRequestId=cli_action["id"] if cli_action else None,
@@ -3138,35 +3142,47 @@ def launch_window(args):
                 directory = ROOT / "artifacts" / "waypoint-routes"
                 if command == "library.list":
                     status = values.get("zone", "all")
-                    rows = library.list_routes(zone_state()["context"], None if status == "all" else status, library_dir=directory)
-                    search = values.get("search", "").casefold()
-                    if search: rows = [r for r in rows if search in r["name"].casefold() or search in r["id"].casefold()]
-                    return cli_ok(dict(routes=rows, directory=str(directory), zone=zone_state()))
-                if command == "library.show":
-                    document = library.load_route(values["route_id"], library_dir=directory)
-                    return cli_ok(dict(routeId=values["route_id"], document=document, contextComparison=zone_comparison(document), heights=route_heights(document)))
+                    all_rows = library.list_routes(zone_state()["context"], library_dir=directory)
+                    rows = library.filter_routes(all_rows, None if status == "all" else status, search=values.get("search"))
+                    return cli_ok(dict(routes=rows, totalCount=len(all_rows), shownCount=len(rows),
+                        search=values.get("search") or "", filter=status, selectedId=library_selected_id(),
+                        directory=str(directory), zone=zone_state(), view=library_view_state()))
+                if command in ("library.show", "library.select", "library.load"):
+                    rows = library.list_routes(zone_state()["context"], library_dir=directory)
+                    requested = values["route_id"]
+                    row = next((r for r in rows if r["id"].casefold() == requested.casefold()), None)
+                    if row is None: raise CliError("library-entry-unavailable", "No library entry with that ID", "Use library list", 3)
+                    if command == "library.select":
+                        refresh_library(select_id=row["id"], clear_filters=True)
+                        return cli_ok(dict(routeId=row["id"], row=row, view=library_view_state()))
+                    document = library.load_route(requested, library_dir=directory)
+                    if command == "library.show":
+                        return cli_ok(dict(routeId=row["id"], file=row["path"], row=row, document=document,
+                            contextComparison=zone_comparison(document), heights=route_heights(document)))
                 if busy or cli_action is not None or closing: raise CliError("busy", "Wait for the active action", exit_code=4)
                 if command == "library.load":
-                    library.load_route(values["route_id"], library_dir=directory)
-                    return cli_dispatch("route.load", dict(file=str(directory/(values["route_id"]+".json")), discard=values.get("discard",False)), rid)
+                    return cli_dispatch("route.load", dict(file=row["path"], discard=values.get("discard",False)), rid)
                 if command == "library.save":
                     if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before saving a library copy", exit_code=4)
                     route_id = library.save_route(route_document(), values["name"], values.get("route_id"),
                         overwrite=values.get("overwrite",False), library_dir=directory)
                 elif command == "library.import":
                     source = cli_file(values["file"])
-                    prepared_document(json.loads(source.read_text(encoding="utf-8-sig")))
+                    prepared_document(library._read_document(source))
                     route_id = library.import_route(source, values.get("name"), values.get("route_id"),
                         overwrite=values.get("overwrite",False), library_dir=directory)
                 else: raise CliError("unsupported-command", command, exit_code=2)
                 document = library.load_route(route_id, library_dir=directory)
-                if command == "library.save" and route_path is not None and route_path.absolute() == (directory/(route_id+".json")).absolute():
+                saved_row = next(r for r in library.list_routes(zone_state()["context"], library_dir=directory)
+                                 if r["id"].casefold() == route_id.casefold())
+                if command == "library.save" and route_path is not None and route_path.absolute() == Path(saved_row["path"]):
                     route_metadata["routeName"] = document["routeName"]
                     route_revision += 1
                     mark_saved(route_path)
                     cache_route(document,"Library route saved: "+document["routeName"])
-                refresh_library()
-                return cli_ok(dict(routeId=route_id, file=str(directory/(route_id+".json")), routeContext=document.get("routeContext")))
+                refresh_library(select_id=saved_row["id"], clear_filters=True)
+                return cli_ok(dict(routeId=saved_row["id"], name=saved_row["name"], file=saved_row["path"],
+                                   row=saved_row, routeContext=document.get("routeContext")))
             if command in ("status", "doctor"):
                 data = cli_snapshot()
                 if command == "doctor":
@@ -3598,76 +3614,204 @@ def launch_window(args):
             diagnostics.exception("CLI command failed", exc=exc, command=command, requestId=rid)
             return cli_error("operation-failed", str(exc))
 
-    library_name = tk.StringVar(value="My route")
+    library_name = tk.StringVar()
     library_search = tk.StringVar()
     library_filter = tk.StringVar(value="all")
+    library_summary = tk.StringVar(value="No saved routes")
+    library_details = tk.StringVar(value="Choose a saved route to inspect it.")
+    library_hint = tk.StringVar()
+    library_rows, library_visible = {}, []
+    library_pending = None
+    library_auto_name = [None]
+    library_buttons = {}
     library_tab.columnconfigure(0, weight=1)
+    library_tab.columnconfigure(2, minsize=275)
     library_tab.rowconfigure(1, weight=1)
     library_tools = ttk.Frame(library_tab, style="Surface.TFrame")
-    library_tools.grid(row=0, column=0, sticky="ew", pady=(0, 5))
-    ttk.Label(library_tools, text="Find", style="Surface.TLabel").pack(side="left", padx=(0,5))
-    ttk.Entry(library_tools, textvariable=library_search, width=24).pack(side="left", padx=(0,8))
+    library_tools.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+    ttk.Label(library_tools, text="Find", style="Surface.Micro.TLabel").pack(side="left", padx=(0,5))
+    library_search_entry = ttk.Entry(library_tools, name="library_search", textvariable=library_search, width=22)
+    library_search_entry.pack(side="left", padx=(0,8))
+    attach_path_tooltip(library_search_entry, lambda:"Search names, IDs, saved zone/world context and entry errors.")
     zone_filter = ttk.Combobox(library_tools, textvariable=library_filter,
         values=("all","matching","mismatch","unknown"), state="readonly", width=10)
     zone_filter.pack(side="left", padx=(0,8))
-    library_table = ttk.Treeview(library_tab, columns=("name","zone","heights"), show="headings", height=3)
-    for key,title,width in (("name","Saved route",330),("zone","Zone candidate",245),("heights","Height evidence",210)):
+    ttk.Style(window).configure("Library.Treeview",rowheight=26)
+    ttk.Style(window).configure("Library.Treeview.Heading",padding=(7,3))
+    library_table = ttk.Treeview(library_tab, columns=("name","id","zone","heights"), displaycolumns=("name","id","zone"),
+        style="Library.Treeview", show="headings", height=3, selectmode="browse")
+    for key,title,width in (("name","Saved route",240),("id","Library ID",130),("zone","Zone candidate",190),("heights","Points / height evidence",180)):
         library_table.heading(key,text=title)
-        library_table.column(key,width=width,minwidth=90)
+        library_table.column(key,width=width,minwidth=70 if key=="id" else 100)
     library_table.grid(row=1,column=0,sticky="nsew")
     library_scroll = ttk.Scrollbar(library_tab,orient="vertical",command=library_table.yview)
     library_scroll.grid(row=1,column=1,sticky="ns")
     library_table.configure(yscrollcommand=library_scroll.set)
+    library_table.tag_configure("error", foreground="#ffb4a9")
+    library_detail_label = ttk.Label(library_tab, textvariable=library_details, style="Muted.TLabel", wraplength=260,width=43)
+    library_detail_label.grid(row=1,column=2,sticky="nw",padx=(12,0))
     library_actions = ttk.Frame(library_tab,style="Surface.TFrame")
-    library_actions.grid(row=2,column=0,sticky="ew",pady=(5,0))
-    ttk.Entry(library_actions,textvariable=library_name,width=27).pack(side="left",padx=(0,6))
+    library_actions.grid(row=3,column=0,columnspan=3,sticky="ew",pady=(5,0))
+    ttk.Label(library_actions,text="Copy name",style="Surface.Micro.TLabel").pack(side="left",padx=(0,6))
+    library_name_entry = ttk.Entry(library_actions,name="library_copy_name",textvariable=library_name,width=26)
+    library_name_entry.pack(side="left",padx=(0,6))
+    library_hint_label = ttk.Label(library_tab,textvariable=library_hint,style="Muted.TLabel",wraplength=850)
+    library_hint_label.grid(row=4,column=0,columnspan=3,sticky="ew",pady=(3,0))
+    def size_library(event):
+        library_hint_label.configure(wraplength=max(200,event.width-30))
+    library_tab.bind("<Configure>", size_library)
 
-    def refresh_library():
-        from scripts.waypoint_route_library import list_routes
+    def library_selected_id():
         selected = library_table.selection()
+        return selected[0] if len(selected)==1 else None
+
+    def library_block_reason():
+        if busy or cli_action is not None or closing: return "Wait for the active action to finish."
+        return None
+
+    def library_view_state():
+        selected = library_selected_id()
+        row = library_rows.get(selected)
+        common = library_block_reason()
+        load_reason = common or ("Apply or Reset fields before loading." if draft_pending() else None)
+        if load_reason is None:
+            load_reason = "Choose a saved route." if row is None else ("Selected entry is unavailable: "+row["error"] if row.get("error") else None)
+        save_reason = common or ("Apply or Reset fields before saving a copy." if draft_pending() else None)
+        if save_reason is None:
+            if not table.get_children(): save_reason="Add a waypoint before saving a copy."
+            elif not library_name.get().strip() or len(library_name.get().strip())>120: save_reason="Copy name must contain 1–120 characters."
+        return dict(directory=str(ROOT/"artifacts"/"waypoint-routes"),search=library_search.get(),filter=library_filter.get(),
+            selectedId=selected,totalCount=len(library_rows),shownCount=len(library_visible),
+            canLoad=load_reason is None,loadReason=load_reason,canSaveCopy=save_reason is None,saveReason=save_reason)
+
+    def update_library_readiness(*_):
+        default = route_metadata.get("routeName") or (route_path.stem if route_path else "My route")
+        if library_auto_name[0] is None or library_name.get()==library_auto_name[0]:
+            library_auto_name[0]=default
+            if library_name.get()!=default: library_name.set(default)
+        view=library_view_state()
+        for label,allowed in (("Load selected",view["canLoad"]),("Save copy",view["canSaveCopy"]),
+                              ("Import file",not library_block_reason()),("Refresh zone",not library_block_reason())):
+            if label in library_buttons: library_buttons[label].configure(state="normal" if allowed else "disabled")
+        if view["saveReason"]: hint=view["saveReason"]
+        elif view["loadReason"]: hint=view["loadReason"]
+        elif route_dirty: hint="Current route has unsaved changes; Load will ask. Save copy creates a separate entry."
+        else: hint="Save copy creates a new ID; Import keeps the source name. Zone matches are candidate evidence only."
+        library_hint.set(hint)
+
+    def library_selection_changed(*_):
+        row=library_rows.get(library_selected_id())
+        if row is None:
+            library_details.set("No routes match. Clear filters or import a route." if library_rows else "Library is empty. Save a copy of your route or import a JSON file.")
+        elif row.get("error"):
+            library_details.set("Unavailable: "+row["id"]+"\n"+str(row["error"])[:120])
+        else:
+            context=row.get("routeContext") or {}
+            zone=context.get("zoneName") or context.get("zoneIdCandidate") or "Unknown / legacy"
+            name=" ".join(row["name"].split())
+            name=name if len(name)<=36 else name[:33]+"…"
+            stamp=row.get("modifiedAtUtc")
+            updated=datetime.fromisoformat(stamp.replace("Z","+00:00")).astimezone().strftime("%b %d %H:%M") if stamp else "unknown"
+            library_details.set(f"Selected: {name}\nID {row['id']}\n"
+                f"{row['waypointCount']} points · {row['planarDistance']:.1f}u path · {updated}\n"
+                f"{row['measuredHeightCount']} measured / {row['estimatedHeightCount']} estimated heights\n"
+                f"{zone} · {row['contextStatus']} candidate")
+        update_library_readiness()
+
+    attach_path_tooltip(library_detail_label, lambda: ((library_rows.get(library_selected_id()) or {}).get("path") or str(ROOT/"artifacts"/"waypoint-routes")))
+
+    def filter_library(select_id=None):
+        nonlocal library_visible,library_pending
+        library_pending=None
+        from scripts.waypoint_route_library import filter_routes
+        selected=select_id or library_selected_id()
         try:
-            rows = list_routes(zone_state()["context"],None if library_filter.get()=="all" else library_filter.get(),
-                               library_dir=ROOT/"artifacts"/"waypoint-routes")
+            rows=filter_routes(list(library_rows.values()),None if library_filter.get()=="all" else library_filter.get(), search=library_search.get())
+            library_visible=[row["id"] for row in rows]
             library_table.delete(*library_table.get_children())
-            query = library_search.get().casefold()
             for row in rows:
-                if query and query not in row["name"].casefold() and query not in row["id"].casefold(): continue
-                context = row.get("routeContext") or {}
-                zone = context.get("zoneName") or context.get("zoneIdCandidate") or "Unknown / legacy"
-                evidence = ("Unavailable: "+row["error"] if row.get("error") else
-                    f"{row['waypointCount']} points · {row['measuredHeightCount']} measured / {row['estimatedHeightCount']} estimated")
-                library_table.insert("","end",iid=row["id"],values=(row["name"],zone+" · "+row["contextStatus"],evidence))
-            for value in selected:
-                if library_table.exists(value): library_table.selection_set(value)
+                context=row.get("routeContext") or {}
+                zone=context.get("zoneName") or context.get("zoneIdCandidate") or "Unknown / legacy"
+                evidence=("Unavailable" if row.get("error") else f"{row['waypointCount']} pts · {row['measuredHeightCount']} measured / {row['estimatedHeightCount']} est.")
+                library_table.insert("","end",iid=row["id"],values=(row["name"],row["id"],zone+" · "+row["contextStatus"],evidence),tags=("error",) if row.get("error") else ())
+            if selected not in library_visible: selected=next((r["id"] for r in rows if not r.get("error")),rows[0]["id"] if rows else None)
+            if selected:
+                library_table.selection_set(selected)
+                library_table.focus(selected)
+                library_table.see(selected)
+            library_summary.set(f"{len(rows)} / {len(library_rows)} routes" if rows else "No routes match" if library_rows else "No saved routes")
+            library_selection_changed()
         except (OSError,ValueError,TypeError) as exc:
+            diagnostics.exception("Unable to filter route library",exc=exc)
+            state.set("Cannot filter route library: "+str(exc))
+
+    def refresh_library(*,select_id=None,clear_filters=False):
+        nonlocal library_rows,library_pending
+        from scripts.waypoint_route_library import list_routes
+        if library_pending is not None:
+            window.after_cancel(library_pending)
+            library_pending=None
+        try:
+            rows=list_routes(zone_state()["context"],library_dir=ROOT/"artifacts"/"waypoint-routes")
+            library_rows={row["id"]:row for row in rows}
+            if clear_filters:
+                library_search.set("")
+                library_filter.set("all")
+                if library_pending is not None: window.after_cancel(library_pending); library_pending=None
+            filter_library(select_id)
+        except (OSError,ValueError,TypeError) as exc:
+            diagnostics.exception("Unable to read route library",exc=exc)
             state.set("Cannot read route library: "+str(exc))
+            library_summary.set("Library unavailable")
 
     def library_save_copy():
+        view=library_view_state()
+        if not view["canSaveCopy"]: state.set(view["saveReason"]); return
         result = cli_dispatch("library.save",dict(name=library_name.get()),"gui-"+uuid.uuid4().hex)
-        state.set("Library copy saved; current file is unchanged." if result.get("ok") else result["error"]["message"])
+        state.set((f"Library copy saved: {result['data']['name']} · ID {result['data']['routeId']}; current file unchanged.") if result.get("ok") else result["error"]["message"])
 
     def library_load_selected(_=None):
-        selected = library_table.selection()
-        if len(selected)!=1:
-            state.set("Choose a library route to load.")
-            return
-        load_from(ROOT/"artifacts"/"waypoint-routes"/(selected[0]+".json"))
+        view=library_view_state()
+        if not view["canLoad"]: state.set(view["loadReason"]); return
+        row=library_rows[library_selected_id()]
+        load_from(row["path"])
+        update_library_readiness()
 
     def library_import_file():
         path = filedialog.askopenfilename(parent=window,title="Import a route copy",filetypes=[("Waypoint JSON","*.json")])
         if path:
             result = cli_dispatch("library.import",dict(file=path),"gui-"+uuid.uuid4().hex)
-            state.set("Route copied into library." if result.get("ok") else result["error"]["message"])
+            state.set((f"Imported copy: {result['data']['name']} · ID {result['data']['routeId']}; source unchanged.") if result.get("ok") else result["error"]["message"])
 
-    for label,callback in (("Save copy",library_save_copy),("Load selected",library_load_selected),
-                           ("Import file",library_import_file),("Refresh zone",lambda:start("zone"))):
+    for label,callback in (("Save copy",library_save_copy),("Load selected",library_load_selected),("Import file",library_import_file)):
         button = ttk.Button(library_actions,text=label,command=callback)
         button.pack(side="left",padx=(0,6))
         editable.append(button)
-    ttk.Button(library_tools,text="Refresh",command=refresh_library).pack(side="left")
-    library_search.trace_add("write",lambda *_:refresh_library())
-    zone_filter.bind("<<ComboboxSelected>>",lambda _:refresh_library())
+        library_buttons[label]=button
+    attach_path_tooltip(library_buttons["Save copy"],lambda:"Save a new named library entry without changing the open file. Existing IDs require explicit CLI --id and --overwrite.")
+    attach_path_tooltip(library_buttons["Import file"],lambda:"Import a separate copy using the source route name or filename. CLI library import --name overrides that name.")
+    def clear_library_filters():
+        nonlocal library_pending
+        library_search.set("");library_filter.set("all")
+        if library_pending is not None: window.after_cancel(library_pending)
+        filter_library()
+    ttk.Button(library_tools,text="Clear filters",width=10,command=clear_library_filters).pack(side="left",padx=(0,6))
+    ttk.Button(library_tools,text="Refresh library",width=14,command=refresh_library).pack(side="left",padx=(0,6))
+    library_zone_button=ttk.Button(library_tools,text="Refresh zone",width=11,command=lambda:start("zone"))
+    library_zone_button.pack(side="left",padx=(0,6))
+    library_buttons["Refresh zone"]=library_zone_button
+    editable.append(library_zone_button)
+    ttk.Label(library_tools,textvariable=library_summary,style="Surface.Micro.TLabel").pack(side="right")
+    def schedule_library_filter(*_):
+        nonlocal library_pending
+        if library_pending is not None: window.after_cancel(library_pending)
+        library_pending=window.after(150,filter_library)
+    library_search.trace_add("write",schedule_library_filter)
+    library_name.trace_add("write",lambda *_:update_library_readiness())
+    zone_filter.bind("<<ComboboxSelected>>",lambda _:filter_library())
+    library_table.bind("<<TreeviewSelect>>",library_selection_changed)
     library_table.bind("<Double-1>",library_load_selected)
+    library_table.bind("<Return>",library_load_selected)
     workflow.bind("<<NotebookTabChanged>>",lambda _:workflow.configure(
         height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select() in (str(library_tab),str(scene_tab)) else 184))
 
@@ -3957,6 +4101,8 @@ def launch_window(args):
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
         update_scene_state()
+        if workflow.select() == str(library_tab):
+            update_library_readiness()
         if workflow.select() == str(explore_tab):
             explore_controls.refresh_context()
         if explore_controls.enabled.get() or workflow.select() == str(explore_tab):

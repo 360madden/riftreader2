@@ -184,9 +184,31 @@ normal/compact native UI captures were reviewed. No movement input was sent.
 ## Route library and zone context
 
 **Library** keeps named route copies in `artifacts/waypoint-routes`. Search by
-name and filter by matching, mismatched or unknown zone context. Save copy never
-replaces the source route by default; Load selected retains the usual unsaved-edit
-refusal. Import copies an existing JSON file without changing its source.
+name, ID, saved zone/world context or entry error, and filter by matching,
+mismatched or unknown zone context. Search is case-insensitive and shares the CLI's
+filtering rules. The list sorts by readable name, shows result counts and explains
+no matches; Clear filters restores the complete list. Search filters cached
+metadata rather than reopening every file on every keystroke. Refresh library
+rescans files; Refresh zone reads a new native zone candidate.
+
+Select a row to inspect its ID, waypoint count, planar distance, modification time,
+measured versus estimated heights and zone comparison in the adjacent details
+pane. Hover those details for the full file path. Malformed entries stay visible
+with their error but cannot be loaded. These summaries do not establish playback
+readiness, terrain clearance or floor identity.
+
+**Save copy** uses the labeled Copy name and always creates a new library ID. It
+selects the saved entry while preserving the open route, source file and dirty
+state. Empty/overlong names, empty routes and unapplied waypoint fields explain
+why Save is unavailable. Existing IDs are replaced only through explicit CLI
+`--id ID --overwrite`; IDs resolve case-insensitively. **Import file** keeps the
+source's saved route name or filename, independently of Copy name; CLI `--name`
+overrides the imported name. Import preserves the source and selects the new copy.
+
+**Load selected**, double-click and Enter share the same readiness checks. Pending
+fields must be applied/reset, active work must finish, and a selected entry must
+be healthy. GUI loading asks what to do with unsaved current-route changes;
+Cancel preserves them. CLI loading requires explicit `--discard` to abandon them.
 
 The native zone value is currently a **zone candidate**, not a qualified world or
 instance identifier. Legacy routes stay unknown until explicitly tagged. New
@@ -205,14 +227,23 @@ Use the attached CLI for the same operations:
 .\rr2-waypoints.cmd route tag-zone
 .\rr2-waypoints.cmd library save "Courtyard loop" --id courtyard-loop
 .\rr2-waypoints.cmd library list --zone matching
+.\rr2-waypoints.cmd library list --search "Courtyard"
+.\rr2-waypoints.cmd library select courtyard-loop
+.\rr2-waypoints.cmd library show courtyard-loop
 .\rr2-waypoints.cmd library load courtyard-loop
 .\rr2-waypoints.cmd library import route.json --name "Old route"
 ```
 
 `route tag-zone` changes the open document; explicitly save it or save a library
 copy to retain the tag. `library save` requires `--overwrite` to replace an ID.
-`library show ID --json` exposes saved context and height evidence. `app show
---tab library` opens the Library tab without sending game input.
+`library show ID --json` exposes the document, saved context, height evidence and
+`row` metadata (path, modification time, counts and planar distance). `library
+select ID` selects/details an entry without loading it and clears filters that
+could hide the selected entry. Malformed entries can be selected for inspection.
+`library list --json` reports total/shown counts and filters; its `view` and
+`status.routeLibrary` expose GUI selection and Save/Load readiness. A CLI list
+query does not change GUI search/filter controls. `app show --tab library` opens
+the Library tab without sending game input.
 
 Height labels distinguish measured Y from estimated display heights. Radar
 arrows show above/below; `~` means approximate. A measured waypoint more than one

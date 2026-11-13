@@ -5,6 +5,7 @@ Context matches are candidate comparisons, never proof of a world instance.
 from copy import deepcopy
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 import re
 from uuid import uuid4
@@ -95,6 +96,19 @@ def _path(route_id, library_dir):
     return Path(library_dir) / (route_id + ".json")
 
 
+def _existing_path(route_id, library_dir):
+    """Resolve a saved ID case-insensitively so one library ID is unambiguous."""
+    requested = _path(route_id, library_dir)
+    directory = Path(library_dir)
+    if not directory.is_dir():
+        return requested
+    matches = [path for path in directory.glob("*.json")
+               if path.stem.casefold() == route_id.casefold() and _ID.fullmatch(path.stem)]
+    if len(matches) > 1:
+        raise ValueError("ambiguous-route-id-case")
+    return matches[0] if matches else requested
+
+
 def _validate(document):
     _route(document)
     if "routeName" in document and (not isinstance(document["routeName"], str)
@@ -126,7 +140,7 @@ def _read_document(path):
 
 
 def load_route(route_id, library_dir=LIBRARY_DIR):
-    return _validate(_read_document(_path(route_id, library_dir)))
+    return _validate(_read_document(_existing_path(route_id, library_dir)))
 
 
 def save_route(document, name, route_id=None, *, overwrite=False, library_dir=LIBRARY_DIR):
@@ -134,7 +148,7 @@ def save_route(document, name, route_id=None, *, overwrite=False, library_dir=LI
     if not isinstance(name, str) or not name.strip() or len(name.strip()) > 120:
         raise ValueError("route-name-required")
     route_id = route_id or uuid4().hex
-    path = _path(route_id, library_dir)
+    path = _existing_path(route_id, library_dir)
     value = deepcopy(_validate(document))
     value["routeName"] = name.strip()
     if "routeContext" in value:
@@ -166,11 +180,33 @@ def import_route(source, name=None, route_id=None, *, overwrite=False, library_d
     return save_route(document, name, route_id, overwrite=overwrite, library_dir=library_dir)
 
 
-def list_routes(current_context=None, filter_status=None, *, library_dir=LIBRARY_DIR):
-    """List only this directory; malformed entries are reported rather than hidden."""
+def filter_routes(rows, filter_status=None, *, search=None):
+    """Filter already-read metadata without reparsing files or changing row order."""
     if filter_status not in (None, "matching", "mismatch", "unknown"):
         raise ValueError("invalid-context-filter")
+    if search is not None and (not isinstance(search, str) or len(search) > 200):
+        raise ValueError("invalid-library-search")
+    query = (search or "").strip().casefold()
+    result = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise ValueError("invalid-library-row")
+        context = row.get("routeContext") or {}
+        searchable = " ".join(str(value) for value in (
+            row.get("name"), row.get("id"), row.get("contextStatus"), row.get("error"),
+            context.get("zoneName"), context.get("zoneIdCandidate"),
+            context.get("worldName"), context.get("worldId")) if value is not None).casefold()
+        if ((filter_status is None or row.get("contextStatus") == filter_status)
+                and (not query or query in searchable)):
+            result.append(row)
+    return result
+
+
+def list_routes(current_context=None, filter_status=None, *, search=None, library_dir=LIBRARY_DIR):
+    """List only this directory; malformed entries are reported rather than hidden."""
     normalize_context(current_context)
+    # Validate filters before returning early for an absent library directory.
+    filter_routes((), filter_status, search=search)
     directory = Path(library_dir)
     if not directory.exists():
         return []
@@ -186,14 +222,23 @@ def list_routes(current_context=None, filter_status=None, *, library_dir=LIBRARY
         try:
             doc = load_route(path.stem, directory)
             status = compare_context(doc.get("routeContext"), current_context)
-            count = len(doc["waypoints"])
+            points, _ = _route(doc)
+            count = len(points)
             measured = sum(value is not None for value in document_measurements(doc))
+            distance = sum(math.hypot(b[1] - a[1], b[2] - a[2])
+                           for a, b in zip(points, points[1:]))
             row = {"id": path.stem, "name": doc.get("routeName") or path.stem,
                    "waypointCount": count, "measuredHeightCount": measured,
                    "estimatedHeightCount": count - measured, "contextStatus": status,
+                   "planarDistance": distance,
                    "routeContext": deepcopy(doc.get("routeContext"))}
         except (ValueError, OSError, TypeError, UnicodeError) as error:
             row = {"id": path.stem, "name": path.stem, "contextStatus": "unknown", "error": str(error)}
-        if filter_status is None or row["contextStatus"] == filter_status:
-            result.append(row)
-    return result
+        row["path"] = str(path.absolute())
+        try:
+            row["modifiedAtUtc"] = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat().replace("+00:00", "Z")
+        except OSError:
+            row["modifiedAtUtc"] = None
+        result.append(row)
+    ordered = sorted(result, key=lambda row: ("error" in row, row["name"].casefold(), row["id"].casefold()))
+    return filter_routes(ordered, filter_status, search=search)

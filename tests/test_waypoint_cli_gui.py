@@ -464,6 +464,82 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertFalse(current['dirty'])
         self.assertIsNone(json.loads(legacy.read_text()).get('routeContext'))
 
+    def test_library_selection_search_and_details_preserve_loaded_route(self):
+        self.assertTrue(self.call('route.add', {'name':'Unsaved current', 'x':8, 'z':9})['ok'])
+        before = self.call('route.list')['data']
+        source = self.root / 'harbor.json'
+        source.write_text(json.dumps({'routeName':'Coastal walk', 'waypoints':[['A',0,0],['B',3,4]],
+            'routeContext':{'version':1, 'zoneName':'Quiet Harbor'}}), encoding='utf-8')
+        imported = self.call('library.import', {'file':str(source), 'route_id':'Harbor'})
+        self.assertTrue(imported['ok'], imported)
+        self.assertEqual(self.call('library.list')['data']['view']['selectedId'], 'Harbor')
+        listing = self.call('library.list', {'search':'QUIET harbor'})
+        self.assertTrue(listing['ok'], listing)
+        self.assertEqual([row['id'] for row in listing['data']['routes']], ['Harbor'])
+        self.assertEqual(listing['data']['shownCount'], 1)
+        row = listing['data']['routes'][0]
+        self.assertEqual(row['planarDistance'], 5)
+        self.assertEqual(row['waypointCount'], 2)
+        self.assertEqual(row['measuredHeightCount'], 0)
+        self.assertEqual(row['estimatedHeightCount'], 2)
+        self.assertTrue(Path(row['path']).is_file())
+        self.assertIsNotNone(row['modifiedAtUtc'])
+        selected = self.call('library.select', {'route_id':'hARBOR'})
+        self.assertTrue(selected['ok'], selected)
+        self.assertEqual(selected['data']['routeId'], 'Harbor')
+        self.assertEqual(selected['data']['view']['selectedId'], 'Harbor')
+        shown = self.call('library.show', {'route_id':'harbor'})
+        self.assertTrue(shown['ok'], shown)
+        self.assertEqual(shown['data']['row'], row)
+        self.assertEqual(shown['data']['file'], row['path'])
+        self.assertEqual(shown['data']['document']['routeName'], 'Coastal walk')
+        after = self.call('route.list')['data']
+        for key in ('document','dirty','revision','file'):
+            self.assertEqual(after[key], before[key], key)
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_library_malformed_selection_is_inspectable_but_cannot_load(self):
+        self.assertTrue(self.call('route.add', {'name':'Keep', 'x':1, 'z':2})['ok'])
+        before = self.call('route.list')['data']
+        directory = self.root / 'artifacts' / 'waypoint-routes'
+        directory.mkdir(exist_ok=True)
+        broken = directory / 'broken.json'
+        broken.write_text('{"waypoints": [', encoding='utf-8')
+        selected = self.call('library.select', {'route_id':'BROKEN'})
+        self.assertTrue(selected['ok'], selected)
+        self.assertTrue(selected['data']['row']['error'])
+        self.assertEqual(selected['data']['row']['path'], str(broken.absolute()))
+        self.assertFalse(selected['data']['view']['canLoad'])
+        rejected = self.call('library.load', {'route_id':'broken', 'discard':True})
+        self.assertFalse(rejected['ok'], rejected)
+        after = self.call('route.list')['data']
+        for key in ('document','dirty','revision','file'):
+            self.assertEqual(after[key], before[key], key)
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_library_save_copy_selects_new_entry_and_requires_explicit_overwrite(self):
+        self.assertTrue(self.call('route.add', {'name':'Current', 'x':1, 'z':2})['ok'])
+        before = self.call('route.list')['data']
+        saved = self.call('library.save', {'name':'First copy', 'route_id':'copy'})
+        self.assertTrue(saved['ok'], saved)
+        self.assertEqual(self.call('library.list')['data']['view']['selectedId'], 'copy')
+        path = Path(saved['data']['file'])
+        first = path.read_bytes()
+        duplicate = self.call('library.save', {'name':'Duplicate', 'route_id':'copy'})
+        self.assertFalse(duplicate['ok'], duplicate)
+        self.assertEqual(path.read_bytes(), first)
+        replaced = self.call('library.save', {'name':'Explicit replacement', 'route_id':'copy', 'overwrite':True})
+        self.assertTrue(replaced['ok'], replaced)
+        self.assertEqual(json.loads(path.read_text())['routeName'], 'Explicit replacement')
+        generated = self.call('library.save', {'name':'Another copy'})
+        self.assertTrue(generated['ok'], generated)
+        self.assertNotEqual(generated['data']['routeId'], 'copy')
+        self.assertEqual(self.call('library.list')['data']['view']['selectedId'], generated['data']['routeId'])
+        after = self.call('route.list')['data']
+        for key in ('document','dirty','revision','file'):
+            self.assertEqual(after[key], before[key], key)
+        self.assertFalse((self.root / 'movement-called').exists())
+
     def test_replay_status_matches_snapshot_and_explains_endpoint(self):
         self.assertTrue(self.call('route.add', {'name': 'Here', 'x': 12, 'z': 24})['ok'])
         self.assertTrue(self.call('route.add', {'name': 'End', 'x': 13, 'z': 24})['ok'])
