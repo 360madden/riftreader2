@@ -1,5 +1,20 @@
 # Physical waypoint prototype
 
+The window groups its controls into **Replay**, **Edit waypoint**, **Scene &
+beacons**, and **Activity** tabs. The route list, local map, current pose and
+STOP/F8 stay visible above them. Replay separates playback, recording and direct
+movement; Edit waypoint contains the coordinate fields and route-edit actions.
+F2 on a selected row opens Edit waypoint and focuses its name. Full receipt paths
+and detailed status remain in Activity. Load/Save and Recent routes stay with the
+route list. The radar is a player-relative reference diagram; its dots and lines
+do not establish terrain visibility or clearance.
+
+The November 12 dark-theme redesign passed focused withdrawn GUI/map checks.
+Its offline layout gallery can be regenerated with
+`python scripts/preview_waypoint_ui.py`; those SVG representations are not native
+screenshots or proof of actual window clipping. Reopen the helper normally to
+load new source; reopening never starts playback automatically.
+
 Double-click **`Waypoints.cmd`** in the repository root to open the window for
 the single local physical RIFT client. If RIFT is absent or still loading, the
 default window opens in a waiting state and retries unique selection while idle.
