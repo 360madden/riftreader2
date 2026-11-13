@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from scripts import physical_rift as physical
 from scripts.waypoint_progress import write_json_atomic
+from scripts.waypoint_marker_style import DEFAULT_STYLE, load_style
 
 
 RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required"})
@@ -504,7 +505,7 @@ def apply_saved_progress(frame, progress_file, route):
 
 def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, output=None, reader="stream",
         expected_start_ticks=None, expected_sha256=None, expected_hwnd=None, stop_file=None,
-        presenter="native", progress_file=None, target_beacon=False, landmark_number=None):
+        presenter="native", progress_file=None, target_beacon=False, landmark_number=None, appearance_file=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
     require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
@@ -524,6 +525,11 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
     if progress_file is not None:
         progress_file = Path(progress_file)
         require(progress_file.is_absolute() and progress_file.parent.is_dir(), "absolute-progress-file-required")
+    if appearance_file is not None:
+        appearance_file = Path(appearance_file)
+        require(appearance_file.is_absolute() and appearance_file.parent.is_dir(), "absolute-appearance-file-required")
+    appearance = dict(DEFAULT_STYLE)
+    next_appearance_poll = 0.
     route = load_route(route_path)
     require(landmark_number is None or (type(landmark_number) is int and landmark_number > 0
             and any(point["number"] == landmark_number for point in route["points"])), "landmark-number-not-in-route")
@@ -582,7 +588,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         hide(why)
         overlay.window.quit()
     def poll():
-        nonlocal latest_acquired, latest_progress, visible
+        nonlocal latest_acquired, latest_progress, visible, appearance, next_appearance_poll
         if stop.is_set():
             return
         if stop_file is not None and stop_file.exists():
@@ -591,6 +597,11 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         if duration > 0 and time.monotonic() - started >= duration:
             cancel("duration-complete")
             return
+        if appearance_file is not None:
+            now = time.monotonic()
+            if now >= next_appearance_poll:
+                appearance = load_style(appearance_file, fallback=appearance)
+                next_appearance_poll = now + .2
         try:
             packet = channel.get_nowait()
         except queue.Empty:
@@ -603,6 +614,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                 if "frame" in packet:
                     age = time.monotonic() - packet["frame"]["acquiredMonotonic"]
                     if 0 <= age <= max_age:
+                        packet["frame"]["appearance"] = dict(appearance)
                         if progress_file is not None:
                             latest_progress = apply_saved_progress(packet["frame"], progress_file, route)
                         if overlay.present(packet["frame"]):
@@ -661,6 +673,8 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "nativeStreamCommand": provider.stream_command, "nativeStreamExitCode": provider.stream_exit_code,
         "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
         "progressFile": str(progress_file) if progress_file is not None else None,
+        "appearanceFile": str(appearance_file) if appearance_file is not None else None,
+        "appearance": appearance,
         "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
             "Presentation-accepted counts and intervals are asynchronous presenter requests, not physical display FPS.",
@@ -684,6 +698,8 @@ def main(argv=None):
     parser.add_argument("--output", type=Path)
     parser.add_argument("--reader", choices=("single", "stream"), default="stream")
     parser.add_argument("--presenter", choices=("native", "qt"), default="native")
+    parser.add_argument("--appearance-file", type=Path,
+                        help="live beacon display preferences saved by Waypoints")
     parser.add_argument("--expect-start-ticks")
     parser.add_argument("--expect-sha256")
     parser.add_argument("--expect-hwnd", type=_hwnd_argument)
@@ -697,7 +713,8 @@ def main(argv=None):
                      max_age=args.max_age, output=args.output, reader=args.reader,
                      expected_start_ticks=args.expect_start_ticks, expected_sha256=args.expect_sha256,
                      expected_hwnd=args.expect_hwnd, stop_file=args.stop_file, presenter=args.presenter,
-                     progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number)
+                     progress_file=args.progress_file, target_beacon=args.target_beacon, landmark_number=args.landmark_number,
+                     appearance_file=args.appearance_file)
     except (ValueError, OSError, KeyError, TypeError, AttributeError) as error:
         result = {"status": "blocked", "reason": str(error), "machine": socket.gethostname(), "inputSent": False}
         if args.output is not None and not args.output.exists() and args.output.parent.is_dir():

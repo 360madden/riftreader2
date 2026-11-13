@@ -119,4 +119,9 @@ def apply_theme(window):
                         lightcolor=field_border, darkcolor=field_border, arrowsize=12, gripcount=0, relief="flat")
         style.map(name, background=[("pressed", dim), ("active", dim)])
     style.configure("TSeparator", background=line)
+    style.configure("Beacon.Horizontal.TScale", background=p["blue"], troughcolor=inset,
+                    bordercolor=field_border, lightcolor=p["blue"], darkcolor=p["blue"],
+                    sliderlength=18, sliderthickness=14)
+    style.map("Beacon.Horizontal.TScale", background=[("disabled", dim), ("active", mint)],
+              lightcolor=[("active", mint)], darkcolor=[("active", mint)])
     return p

@@ -109,3 +109,23 @@ Continuous-stream native TRX:
 `C:\Temp\rr2-facing-continuous-20261112\test-results\continuous-stream.trx`.
 Deployed single-file native SHA256:
 `8bdc04de9048c59d02922d847461538d6f48f01b2768d77dbfb31a6bb6ada029`.
+
+## Live appearance controls — 21:35 EST follow-up
+
+The Scene & beacons panel now exposes size, opacity, label visibility and Reset.
+On AMD-DESKTOP/PID 40452, the default appearance was compared with **200% size,
+39% opacity, labels off** using the actual sliders and checkbox. The game showed
+larger translucent rings without label pills at the same projected locations;
+the owned overlay processes (58920/58652) stayed running. Reset restored 100% size,
+100% opacity and labels on. No gameplay input was sent. Reviewed images:
+`artifacts/beacon-style-default-20261112.png`,
+`artifacts/beacon-style-tuned-20261112.png`, and
+`artifacts/beacon-style-ui-final-20261112.png`.
+
+All **110 focused Python checks** passed, including live-feed preference changes,
+corrupt-file fallback, no-restart GUI callbacks, close flushing, renderer anchor
+preservation, label removal and rendered Qt alpha. The final slider theme also
+passed all five appearance GUI checks. Default-window pixels were reviewed;
+980px layout coverage uses actual withdrawn widget requests, not a claimed mapped
+minimum-window screenshot. Qt appearance was verified live; the native fallback's
+size/labels/opacity wiring was checked offline.

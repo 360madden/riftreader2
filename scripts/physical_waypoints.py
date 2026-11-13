@@ -55,6 +55,7 @@ class OwnedWaypointMarkers:
         self.child = None
         self.stop_path = None
         self.output = None
+        self.appearance_path = (self.root / "artifacts" / "waypoint-marker-style.json").absolute()
         self.stop_requested = False
         self.exit_code = None
 
@@ -102,6 +103,7 @@ class OwnedWaypointMarkers:
                    "--expect-sha256", target["executableSha256"], "--expect-hwnd", hex(target["hwnd"]),
                    "--route", str(route_path), "--duration", "0", "--max-age", ".35", "--presenter", presenter,
                    "--output", str(self.output), "--stop-file", str(self.stop_path),
+                   "--appearance-file", str(self.appearance_path),
                    "--progress-file", str(self.root / "artifacts" / "waypoint-current-progress.json")]
         if target_beacon:
             command.append("--target-beacon")
@@ -798,6 +800,7 @@ def launch_window(args):
 
     window = tk.Tk()
     from scripts.waypoint_ui_theme import PALETTE, apply_theme, summarize_status
+    from scripts.waypoint_marker_style import DEFAULT_STYLE, load_style, save_style
     apply_theme(window)
     from scripts.waypoint_connection import idle_read
     from scripts.waypoint_observation import observe_batch
@@ -860,6 +863,14 @@ def launch_window(args):
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
     target_beacon = tk.BooleanVar(value=False)
     landmark_guide = tk.BooleanVar(value=False)
+    appearance_path = (ROOT / "artifacts" / "waypoint-marker-style.json").absolute()
+    appearance = load_style(appearance_path)
+    beacon_size = tk.DoubleVar(value=appearance["beaconScale"] * 100)
+    beacon_opacity = tk.DoubleVar(value=appearance["opacity"] * 100)
+    beacon_labels = tk.BooleanVar(value=appearance["labelsVisible"])
+    size_percent = tk.StringVar(value=f"{round(beacon_size.get())}%")
+    opacity_percent = tk.StringVar(value=f"{round(beacon_opacity.get())}%")
+    appearance_after = None
     live_pose = tk.BooleanVar(value=True)
     view_bring_forward = tk.BooleanVar(value=False)
     view_include_units = tk.BooleanVar(value=False)
@@ -1851,6 +1862,33 @@ def launch_window(args):
         except (OSError, ValueError, KeyError, TypeError) as exc:
             state.set("Cannot show markers: " + str(exc))
 
+    def save_marker_appearance():
+        nonlocal appearance_after
+        if appearance_after is not None:
+            window.after_cancel(appearance_after)
+            appearance_after = None
+        try:
+            save_style(appearance_path, dict(schemaVersion=1, beaconScale=round(beacon_size.get()) / 100,
+                                            opacity=round(beacon_opacity.get()) / 100,
+                                            labelsVisible=beacon_labels.get()))
+        except (OSError, ValueError, TypeError) as exc:
+            state.set("Cannot save marker appearance: " + str(exc))
+
+    def change_marker_appearance(_=None):
+        nonlocal appearance_after
+        size_percent.set(f"{round(beacon_size.get())}%")
+        opacity_percent.set(f"{round(beacon_opacity.get())}%")
+        if appearance_after is not None:
+            window.after_cancel(appearance_after)
+        appearance_after = window.after(150, save_marker_appearance)
+
+    def reset_marker_appearance():
+        beacon_size.set(DEFAULT_STYLE["beaconScale"] * 100)
+        beacon_opacity.set(DEFAULT_STYLE["opacity"] * 100)
+        beacon_labels.set(DEFAULT_STYLE["labelsVisible"])
+        change_marker_appearance()
+        save_marker_appearance()
+
     buttons = ttk.Frame(edit_tab, style="Surface.TFrame")
     buttons.pack(fill="x", pady=(0, 10))
     buttons_second = ttk.Frame(edit_tab, style="Surface.TFrame")
@@ -1945,15 +1983,38 @@ def launch_window(args):
     editable.append(view_units_option)
     marker_controls = ttk.LabelFrame(scene_tab, text="WORLD BEACONS", padding=(12, 8), style="Card.TLabelframe")
     marker_controls.grid(row=0, column=1, sticky="nsew")
-    marker_button = ttk.Button(marker_controls, text="Show markers", command=toggle_markers)
+    marker_actions = ttk.Frame(marker_controls, style="Surface.TFrame")
+    marker_actions.pack(side="left", anchor="n", padx=(0, 12))
+    marker_button = ttk.Button(marker_actions, text="Show markers", command=toggle_markers)
     marker_button.pack(anchor="w", pady=(0, 8))
     editable.append(marker_button)
-    target_option = ttk.Checkbutton(marker_controls, text="Include selected target in markers", variable=target_beacon)
+    target_option = ttk.Checkbutton(marker_actions, text="Include selected target in markers", variable=target_beacon)
     target_option.pack(anchor="w")
     editable.append(target_option)
-    landmark_option = ttk.Checkbutton(marker_controls, text="Guide selected marker", variable=landmark_guide)
+    landmark_option = ttk.Checkbutton(marker_actions, text="Guide selected marker", variable=landmark_guide)
     landmark_option.pack(anchor="w", pady=(3, 0))
     editable.append(landmark_option)
+    appearance_controls = ttk.Frame(marker_controls, style="Surface.TFrame")
+    appearance_controls.pack(side="left", fill="both", expand=True)
+    appearance_controls.columnconfigure(1, weight=1)
+    appearance_widgets = []
+    for row, label, variable, lower, upper, percent in ((0, "Size", beacon_size, 50, 200, size_percent),
+                                                       (1, "Opacity", beacon_opacity, 20, 100, opacity_percent)):
+        ttk.Label(appearance_controls, text=label, style="Surface.Micro.TLabel").grid(row=row, column=0, sticky="w", padx=(0, 6))
+        slider = ttk.Scale(appearance_controls, from_=lower, to=upper, variable=variable,
+                           command=change_marker_appearance, length=80, style="Beacon.Horizontal.TScale")
+        slider.grid(row=row, column=1, sticky="ew", pady=4)
+        slider.bind("<ButtonRelease-1>", lambda _: save_marker_appearance())
+        appearance_widgets.append(slider)
+        ttk.Label(appearance_controls, textvariable=percent, style="Surface.Micro.TLabel", width=5).grid(
+            row=row, column=2, sticky="e", padx=(6, 0))
+    labels_option = ttk.Checkbutton(appearance_controls, text="Show labels", variable=beacon_labels,
+                                   command=save_marker_appearance)
+    labels_option.grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 0))
+    reset_appearance = ttk.Button(appearance_controls, text="Reset", command=reset_marker_appearance,
+                                  style="Ghost.TButton", width=5)
+    reset_appearance.grid(row=2, column=2, sticky="e", pady=(5, 0))
+    appearance_widgets.extend((labels_option, reset_appearance))
     recent_choice = tk.StringVar()
     ttk.Label(recent_controls, text="Recent routes", style="Surface.Micro.TLabel").grid(row=0, column=0, padx=(0, 8))
     recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=18)
@@ -2001,6 +2062,8 @@ def launch_window(args):
                     closing = False
                     restore_editing()
                     return False
+            if appearance_after is not None:
+                save_marker_appearance()
             window.destroy()
             return True
         finally:
@@ -2228,6 +2291,8 @@ def launch_window(args):
                 marker_button.configure(text="Markers closing…", state="disabled")
         target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
         landmark_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
+        for widget in appearance_widgets:
+            widget.configure(state="disabled" if closing else "normal")
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
         try:
             app_focused = window.focus_displayof() is not None

@@ -104,6 +104,19 @@ class QtWindowTests(unittest.TestCase):
         self.assertGreater(multiline[1], single[1] * 2)
         self.assertGreaterEqual(multiline[0], single[0])
 
+    def test_scene_opacity_applies_after_transparent_clear(self):
+        scene = {"size": (320, 240), "opacity": .4, "commands": [
+            {"kind": "ellipse", "xy": (40, 40, 80, 80), "color": "#ffd54f",
+             "fill": "#ffd54f", "width": 2},
+        ]}
+        self.window.paint_scene(scene)
+        self.window.show(self.rect)
+        rendered = self.window.widget.grab().toImage()
+        center = rendered.pixelColor(60, 60)
+        self.assertAlmostEqual(round(.4 * 255), center.alpha(), delta=2)
+        for actual, expected in zip((center.red(), center.green(), center.blue()), (255, 213, 79)):
+            self.assertAlmostEqual(expected, actual, delta=1)
+
     def test_flags_and_attributes_exist_before_first_explicit_native_handle_request(self):
         original = overlay._OverlayWidget.winId
         checks = []

@@ -1,6 +1,7 @@
 """Overlay presenter tests: fake Tk and Win32 only; no desktop/native reads."""
 from contextlib import nullcontext
 from copy import deepcopy
+import math
 import threading
 from types import SimpleNamespace as NS
 import unittest
@@ -162,6 +163,44 @@ class PresenterTests(unittest.TestCase):
                        if command["kind"] == "ellipse" and command["width"] == 2)
         self.assertAlmostEqual(960, (reticle[0] + reticle[2]) / 2)
         self.assertAlmostEqual(.12 * 1080, (reticle[1] + reticle[3]) / 2)
+
+    def test_live_appearance_scales_beacons_hides_every_label_and_sets_scene_opacity(self):
+        presenter = overlay.PhysicalWaypointOverlay(TARGET, window_factory=PolishedPrimitiveWindow)
+        self.addCleanup(presenter.close)
+        packet = frame()
+        packet["appearance"] = {"schemaVersion": 1, "beaconScale": 2., "opacity": .4,
+                                "labelsVisible": False}
+        packet["points"][0].update(routeState="next", horizontalDistanceCandidate=4,
+                                   ground=projection(.5, .5), beaconTop=projection(.5, .2))
+        self.assertTrue(presenter.present(packet))
+        scene = presenter.window.scenes[-1]
+        self.assertEqual(.4, scene["opacity"])
+        self.assertFalse(any(command["kind"] in ("text", "roundedRect") for command in scene["commands"]))
+        reticle = next(command for command in scene["commands"]
+                        if command["kind"] == "ellipse" and command["width"] == 4)
+        self.assertEqual((940., 520., 980., 560.), reticle["xy"])
+        self.assertEqual((960., 540.), ((reticle["xy"][0] + reticle["xy"][2]) / 2,
+                                        (reticle["xy"][1] + reticle["xy"][3]) / 2))
+        beam = next(command for command in scene["commands"]
+                    if command["kind"] == "line" and command["width"] == 4
+                    and command["xy"][:2] == (960., 540.))
+        self.assertAlmostEqual(108, math.dist(beam["xy"][:2], beam["xy"][2:]))
+
+        packet["viewportRectNormalized"] = [0, 0, 1, 1]
+        packet["points"][0]["ground"] = projection(1.2, .5)
+        packet["points"][0]["ground"]["insideViewportCandidate"] = False
+        self.assertTrue(presenter.present(packet))
+        commands = presenter.window.scenes[-1]["commands"]
+        self.assertFalse(any(command["kind"] == "text" for command in commands))
+        self.assertTrue(any(command["kind"] == "line" and command["color"] == "#7cffff"
+                            for command in commands), "label-free edge arrow remains visible")
+
+    def test_invalid_live_appearance_fails_closed(self):
+        packet = frame()
+        packet["appearance"] = {"schemaVersion": 1, "beaconScale": 3., "opacity": 1.,
+                                "labelsVisible": True}
+        self.assertFalse(self.presenter.present(packet))
+        self.assertIn("beaconScale", self.presenter.reason)
 
     def test_named_landmark_offscreen_and_behind_without_progress(self):
         row = dict(number=8, label="3rd Guard Soldier", displayLandmark=True, horizontalDistanceCandidate=7.44,
@@ -512,6 +551,8 @@ class NativeCallsTests(unittest.TestCase):
         self.assertEqual("RR2 Waypoint Overlay | PID 123", args[2])
         self.assertFalse(args[3] & 0x10000000, "Must be created hidden")
         api.u.SetLayeredWindowAttributes.assert_called_once_with(42, 0x030201, 255, 1)
+        window.set_opacity(.5)
+        api.u.SetLayeredWindowAttributes.assert_called_with(42, 0x030201, 128, 3)
         window.after(0, lambda: None)
         window.destroy()
         self.assertEqual({}, window.callbacks)

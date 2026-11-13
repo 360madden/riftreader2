@@ -59,6 +59,8 @@ class _OverlayWidget(QWidget):
         width, height = self.scene["size"]
         painter.save()
         try:
+            painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+            painter.setOpacity(self.scene.get("opacity", 1.))
             painter.scale(self.width() / width, self.height() / height)
             painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
             painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
@@ -183,7 +185,9 @@ class QtOwnedWindow:
         if scene is not None:
             if (not isinstance(scene, dict) or not isinstance(scene.get("size"), (list, tuple))
                     or len(scene["size"]) != 2 or any(type(value) is not int or value <= 0 for value in scene["size"])
-                    or not isinstance(scene.get("commands"), list)):
+                    or not isinstance(scene.get("commands"), list)
+                    or type(scene.get("opacity", 1.)) not in (int, float)
+                    or not math.isfinite(scene.get("opacity", 1.)) or not 0.2 <= scene.get("opacity", 1.) <= 1.):
                 raise ValueError("Invalid Qt overlay primitive scene")
         self.widget.image = None
         self.widget.scene = deepcopy(scene)

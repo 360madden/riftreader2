@@ -21,6 +21,12 @@ gold reticle, short beacon and name/distance pill; **Include selected target**
 adds a distinct magenta diamond when a fresh target projection is available.
 NEXT is cyan and ordinary/completed points remain subdued. **Hide markers** stops
 the owned feed. Markers are click-through and never start route playback.
+The same panel has **Size** (50–200%), **Opacity** (20–100%), **Show labels**,
+and **Reset**. These update an already enabled overlay without Hide/Show and
+persist for the next launch. Size adjusts beacon shapes and beams while label
+text stays readable; hiding labels keeps beacon shapes and off-screen arrows.
+Preferences are stored in `artifacts/waypoint-marker-style.json`. A malformed or
+temporarily unavailable preference file retains the last valid appearance.
 There is no marker session timer: the feed stays enabled until you hide it,
 close Waypoints or RIFT, or another existing owned-stop condition applies, such
 as replacing the route or pressing STOP/F8. Switching away from RIFT hides the

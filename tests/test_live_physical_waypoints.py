@@ -687,6 +687,61 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(counts["failureReasons"]["failure-0"], 2)
         self.assertEqual(counts["hideReasons"]["hide-0"], 2)
 
+    def test_live_appearance_updates_in_same_feed_and_keeps_last_valid_settings(self):
+        from scripts.waypoint_marker_style import DEFAULT_STYLE, save_style
+        style_path = self.root / "appearance.json"
+        initial = dict(DEFAULT_STYLE, beaconScale=.75, opacity=.6)
+        changed = dict(DEFAULT_STYLE, beaconScale=1.8, opacity=.3, labelsVisible=False)
+        save_style(style_path, initial)
+        clock, observed, channels = [10.], [], []
+        class Window:
+            def protocol(self, *args):
+                pass
+            def after(self, delay, callback):
+                self.poll = callback
+            def quit(self):
+                pass
+        class Overlay:
+            def __init__(self, target, max_age):
+                self.window = Window()
+            def present(self, frame):
+                observed.append(deepcopy(frame))
+                return True
+            def run(self):
+                for at, action in ((10., lambda: None),
+                                   (10.1, lambda: save_style(style_path, changed)),
+                                   (10.21, lambda: None),
+                                   (10.5, lambda: style_path.write_text("{", encoding="utf-8"))):
+                    clock[0] = at
+                    action()
+                    live._latest(channels[0], {"frame": {"acquiredMonotonic": at}})
+                    self.window.poll()
+                live._latest(channels[0], {"terminal": True, "reason": "target-process-ended"})
+                self.window.poll()
+            def hide(self, why):
+                pass
+            def close(self):
+                pass
+        class Worker:
+            def __init__(self, **kwargs):
+                channels.append(kwargs["args"][1])
+            def start(self):
+                pass
+            def join(self):
+                pass
+        presenter = types.SimpleNamespace(PhysicalWaypointOverlay=Overlay, target_snapshot=self.snapshot)
+        with patch.dict("sys.modules", {"scripts.physical_waypoint_overlay": presenter}), \
+             patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.physical, "select_physical", return_value=self.selection), \
+             patch.object(live.threading, "Thread", Worker), \
+             patch.object(live.time, "monotonic", side_effect=lambda: clock[0]):
+            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0, appearance_file=style_path)
+        self.assertEqual([row["appearance"] for row in observed], [initial, initial, changed, changed])
+        self.assertEqual([row["acquiredMonotonic"] for row in observed], [10., 10.1, 10.21, 10.5])
+        self.assertEqual(len(channels), 1)
+        self.assertEqual(result["appearance"], changed)
+        self.assertEqual(result["reason"], "target-process-ended")
+
     def test_continuous_run_ignores_elapsed_clock_and_terminal_packet_stops(self):
         events = []
         class Window:

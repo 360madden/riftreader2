@@ -43,6 +43,8 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertEqual("native", command[command.index("--presenter") + 1])
         self.assertNotIn("--target-beacon", command)
         self.assertNotIn("--landmark-number", command)
+        self.assertEqual(str((self.root / "artifacts" / "waypoint-marker-style.json").absolute()),
+                         command[command.index("--appearance-file") + 1])
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),
                                ("--max-age", ".35"), ("--duration", "0")):

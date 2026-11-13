@@ -16,6 +16,7 @@ import time
 import uuid
 
 from PIL import Image, ImageDraw, ImageFont, ImageWin
+from scripts.waypoint_marker_style import DEFAULT_STYLE, normalize_style
 
 
 OVERLAY_STYLES = 0x00080000 | 0x00000020 | 0x08000000 | 0x00000080
@@ -288,6 +289,13 @@ class _OwnedWindow:
         if self.hwnd and not self.destroyed:
             self.u.InvalidateRect(self.hwnd, None, True)
 
+    def set_opacity(self, opacity):
+        self._main()
+        alpha = max(0, min(255, round(opacity * 255)))
+        # LWA_COLORKEY | LWA_ALPHA preserves the existing keyed background.
+        if not self.u.SetLayeredWindowAttributes(self.hwnd, 0x030201, alpha, 3):
+            raise ValueError("Overlay opacity unavailable")
+
     def show(self, rect):
         self._main()
         self.api.show(self.hwnd, rect)
@@ -480,12 +488,25 @@ def _point_edge_hint(row, viewport, width, height, prefix):
             "text": f"{prefix} · {distance:.1f} units direct", "bounds": bounds}
 
 
-def _draw_next_edge_hint(draw, hint, font, *, occupied=()):
+def _draw_next_edge_hint(draw, hint, font, *, occupied=(), scale=1., labels_visible=True):
     left, top, right, bottom = hint["bounds"]
     text = hint["text"]
+    color = hint.get("color", "#7cffff")
+    if hint["kind"] == "arrow":
+        x, y = hint["anchor"]
+        ux, uy = hint["direction"]
+        if occupied:
+            x, y = x - ux * 24 * scale, y - uy * 24 * scale
+        px, py = -uy, ux
+        draw.line((x - ux*9*scale + px*7*scale, y - uy*9*scale + py*7*scale, x, y,
+                   x - ux*9*scale - px*7*scale, y - uy*9*scale - py*7*scale),
+                  fill=color, width=max(1, round(3 * scale)))
+        if not labels_visible:
+            return None
+    elif not labels_visible:
+        return None
     box = draw.textbbox((0, 0), text, font=font, anchor="lt", stroke_width=1)
     width, height = box[2] - box[0], box[3] - box[1]
-    color = hint.get("color", "#7cffff")
     # Keep the full label in the packet; shorten display text on narrow clients.
     if color == "#ffd54f":
         split = text.rfind(" · ")
@@ -498,14 +519,8 @@ def _draw_next_edge_hint(draw, hint, font, *, occupied=()):
     if width + 4 > right - left or height + 4 > bottom - top:
         return
     if hint["kind"] == "arrow":
-        x, y = hint["anchor"]
-        ux, uy = hint["direction"]
-        if occupied:
-            x, y = x - ux * 24, y - uy * 24
-        px, py = -uy, ux
-        draw.line((x - ux*9 + px*7, y - uy*9 + py*7, x, y,
-                   x - ux*9 - px*7, y - uy*9 - py*7), fill=color, width=3)
-        tx, ty = x - ux*(width/2 + 18) - width/2, y - uy*(height/2 + 18) - height/2
+        tx, ty = (x - ux*(width/2 + 18*scale) - width/2,
+                  y - uy*(height/2 + 18*scale) - height/2)
     else:
         tx, ty = left + 4, top + 4
     tx = max(left + 2, min(right - width - 2, tx))
@@ -572,18 +587,48 @@ def _short_beam(ground, top, limit=54):
 
 
 def _draw_polished_markers(draw, font, markers, width, height, *, measure=None, label_lanes=None,
-                           reserved=()):
+                           reserved=(), scale=1., labels_visible=True):
     """Draw a quiet field of pips with labels reserved for active landmarks."""
     prominent = []
     for marker in markers:
         x, y = marker["ground"]
         if not marker["prominent"]:
-            radius = 3 if marker["state"] == "completed" else 4
+            radius = (3 if marker["state"] == "completed" else 4) * scale
             draw.ellipse((x-radius, y-radius, x+radius, y+radius), outline=marker["color"],
-                         fill=marker["color"] if marker["state"] == "completed" else None, width=1)
+                         fill=marker["color"] if marker["state"] == "completed" else None,
+                         width=max(1, round(scale)))
             continue
-        endpoint = _short_beam(marker["ground"], marker["top"])
+        endpoint = _short_beam(marker["ground"], marker["top"], 54 * scale)
         prominent.append((endpoint, marker["display"], marker))
+    for endpoint, _, marker in prominent:
+        color = marker["color"]
+        x, y = marker["ground"]
+        ex, ey = endpoint
+        if endpoint != marker["ground"]:
+            draw.line((x, y, ex, ey), fill=color, width=max(1, round(2 * scale)))
+        if marker["role"] == "target":
+            # Shape, not color alone, distinguishes an explicit unit target.
+            draw.line((x, y-10*scale, x+10*scale, y, x, y+10*scale, x-10*scale, y, x, y-10*scale),
+                      fill=color, width=max(1, round(2 * scale)))
+            for corner in ((x-14*scale, y-8*scale, x-14*scale, y-14*scale, x-8*scale, y-14*scale),
+                           (x+8*scale, y-14*scale, x+14*scale, y-14*scale, x+14*scale, y-8*scale),
+                           (x+14*scale, y+8*scale, x+14*scale, y+14*scale, x+8*scale, y+14*scale),
+                           (x-8*scale, y+14*scale, x-14*scale, y+14*scale, x-14*scale, y+8*scale)):
+                draw.line(corner, fill=color, width=max(1, round(2 * scale)))
+        else:
+            # A compact two-ring reticle leaves the projected ground pixel legible.
+            draw.ellipse((x-10*scale, y-10*scale, x+10*scale, y+10*scale), outline=color,
+                         width=max(1, round(2 * scale)))
+            draw.ellipse((x-3*scale, y-3*scale, x+3*scale, y+3*scale), outline=color, fill=color,
+                         width=max(1, round(scale)))
+            if marker["role"] == "next":
+                draw.line((x-6*scale, y-15*scale, x, y-10*scale, x+6*scale, y-15*scale),
+                          fill=color, width=max(1, round(2 * scale)))
+
+    if not labels_visible:
+        if label_lanes is not None:
+            label_lanes.clear()
+        return
 
     labels = _label_layout([(endpoint, text) for endpoint, text, marker in prominent], width, height, font,
                            measure, reserved)
@@ -605,24 +650,6 @@ def _draw_polished_markers(draw, font, markers, width, height, *, measure=None, 
             label_lanes[key] = (box[0] - anchor[0], box[1] - anchor[1])
         occupied.append(box)
         color = marker["color"]
-        x, y = marker["ground"]
-        ex, ey = endpoint
-        if endpoint != marker["ground"]:
-            draw.line((x, y, ex, ey), fill=color, width=2)
-        if marker["role"] == "target":
-            # Shape, not color alone, distinguishes an explicit unit target.
-            draw.line((x, y-10, x+10, y, x, y+10, x-10, y, x, y-10), fill=color, width=2)
-            for corner in ((x-14, y-8, x-14, y-14, x-8, y-14),
-                           (x+8, y-14, x+14, y-14, x+14, y-8),
-                           (x+14, y+8, x+14, y+14, x+8, y+14),
-                           (x-8, y+14, x-14, y+14, x-14, y+8)):
-                draw.line(corner, fill=color, width=2)
-        else:
-            # A compact two-ring reticle leaves the projected ground pixel legible.
-            draw.ellipse((x-10, y-10, x+10, y+10), outline=color, width=2)
-            draw.ellipse((x-3, y-3, x+3, y+3), outline=color, fill=color, width=1)
-            if marker["role"] == "next":
-                draw.line((x-6, y-15, x, y-10, x+6, y-15), fill=color, width=2)
         padded = (max(0, box[0]-4), max(0, box[1]-2), min(width, box[2]+4), min(height, box[3]+2))
         draw.rounded_rectangle(padded, radius=7, fill="#dc111821", outline="#a0ffffff", width=1)
         endpoint_on_box = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
@@ -707,6 +734,8 @@ class PhysicalWaypointOverlay:
             return False
         try:
             rect = self._validate(frame)
+            appearance = normalize_style(frame.get("appearance", DEFAULT_STYLE))
+            scale, labels_visible = appearance["beaconScale"], appearance["labelsVisible"]
             # Inspect the class so permissive compatibility shims implementing
             # __getattr__ do not accidentally opt into the primitive contract.
             direct = callable(getattr(type(self.window), "paint_scene", None))
@@ -768,43 +797,50 @@ class PhysicalWaypointOverlay:
                 reserved = tuple((left * rect[2], top * rect[3], right * rect[2], bottom * rect[3])
                                  for left, top, right, bottom in self.polished_reserved_rects)
                 _draw_polished_markers(draw, font, polished_markers, *rect[2:], measure=measure_text,
-                                       label_lanes=self._label_lanes, reserved=reserved)
+                                       label_lanes=self._label_lanes, reserved=reserved, scale=scale,
+                                       labels_visible=labels_visible)
             else:
                 label_input = [(marker[0], marker[2]) for marker in markers]
-                labels = (_label_layout(label_input, *rect[2:], font, measure_text)
-                          if measure_text is not None else _label_layout(label_input, *rect[2:], font))
-                for (_, _, _, color, _, _), (text, box, anchor) in zip(markers, labels):
-                    endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
-                    draw.line((*anchor, *endpoint), fill=color, width=1)
-                    draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
-                                        anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
+                if labels_visible:
+                    labels = (_label_layout(label_input, *rect[2:], font, measure_text)
+                              if measure_text is not None else _label_layout(label_input, *rect[2:], font))
+                    for (_, _, _, color, _, _), (text, box, anchor) in zip(markers, labels):
+                        endpoint = (max(box[0], min(box[2], anchor[0])), max(box[1], min(box[3], anchor[1])))
+                        draw.line((*anchor, *endpoint), fill=color, width=1)
+                        draw.multiline_text((box[0]+2, box[1]+2), text, fill=color, font=font,
+                                            anchor="lt", spacing=2, stroke_width=1, stroke_fill="#151515")
             hint = next_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
             occupied = []
             if hint is not None:
-                box = _draw_next_edge_hint(draw, hint, font)
+                box = _draw_next_edge_hint(draw, hint, font, scale=scale, labels_visible=labels_visible)
                 if box is not None:
                     occupied.append(box)
             landmark = landmark_edge_hint(frame["points"], frame.get("viewportRectNormalized"), *rect[2:])
             if landmark is not None:
-                _draw_next_edge_hint(draw, landmark, font, occupied=occupied)
+                _draw_next_edge_hint(draw, landmark, font, occupied=occupied, scale=scale,
+                                     labels_visible=labels_visible)
             if not polished:
                 # Rings/beacons are painted last so labels and edge cues never erase
                 # the exact world-to-screen reference pixels.
                 for ground, top, text, color, width, kind in markers:
                     x, y = ground
                     if kind == "target":
-                        draw.line((x, y-8, x+8, y, x, y+8, x-8, y, x, y-8), fill=color, width=width)
+                        draw.line((x, y-8*scale, x+8*scale, y, x, y+8*scale, x-8*scale, y, x, y-8*scale),
+                                  fill=color, width=max(1, round(width * scale)))
                     else:
-                        draw.ellipse((x-7, y-7, x+7, y+7), outline=color, width=width)
+                        draw.ellipse((x-7*scale, y-7*scale, x+7*scale, y+7*scale), outline=color,
+                                     width=max(1, round(width * scale)))
                     if top is not None:
-                        draw.line((*ground, *top), fill=color, width=width)
+                        scaled_top = (x + (top[0] - x) * scale, y + (top[1] - y) * scale)
+                        draw.line((*ground, *scaled_top), fill=color, width=max(1, round(width * scale)))
             player = _projection(frame["playerGround"], *rect[2:])
             if player is not None:
                 x, y = player
                 draw.line((x-6, y, x+6, y), fill="#51e5ff", width=2)
                 draw.line((x, y-6, x, y+6), fill="#51e5ff", width=2)
             if direct:
-                self.window.paint_scene({"size": tuple(rect[2:]), "commands": draw.commands})
+                self.window.paint_scene({"size": tuple(rect[2:]), "opacity": appearance["opacity"],
+                                         "commands": draw.commands})
             else:
                 self.window.paint(image)
             # Scene construction (and native fallback painting) can consume the
@@ -813,6 +849,8 @@ class PhysicalWaypointOverlay:
             self._validate(frame)
             if not 0 <= time.monotonic() - frame["acquiredMonotonic"] <= self.max_age:
                 raise ValueError("Stale or future overlay frame")
+            if callable(getattr(type(self.window), "set_opacity", None)):
+                self.window.set_opacity(appearance["opacity"])
             self.window.show(rect)
             self.frame, self.reason = deepcopy(frame), None
             return True
