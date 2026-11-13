@@ -182,8 +182,10 @@ public sealed class CurrentBuildFacingStreamTests
     [InlineData(null, "31", "--samples must be in 1..30.")]
     [InlineData("2000", "31", "--samples must be in 1..30.")]
     [InlineData("5000", "30001", "--samples must be in 1..30000.")]
-    [InlineData("0", "2", "--duration-ms must be in 1..600000.")]
-    [InlineData("600001", "2", "--duration-ms must be in 1..600000.")]
+    [InlineData("0", "2", "--samples must be in 0..0.")]
+    [InlineData("2000", "0", "--samples must be in 1..30.")]
+    [InlineData("5000", "0", "--samples must be in 1..30000.")]
+    [InlineData("600001", "2", "--duration-ms must be in 0..600000.")]
     public async Task LongDurationAndSampleBoundsAreExplicit(string? duration, string samples, string message)
     {
         var h = new Harness();
@@ -194,6 +196,51 @@ public sealed class CurrentBuildFacingStreamTests
 
         Assert.Equal(message, error.Message);
         Assert.Equal(0, h.Acquires);
+    }
+    [Fact]
+    public async Task ContinuousModeRunsPastFiniteLimitUntilCancellationAndCleansUp()
+    {
+        using var cts = new CancellationTokenSource();
+        var reads = 0;
+        var h = new Harness {
+            UseExecutablePin = true,
+            Elapsed = () => TimeSpan.FromSeconds(700)
+        };
+        h.OptionsOverride["--duration-ms"] = "0";
+        h.OptionsOverride["--samples"] = "0";
+        h.Read = session => {
+            reads++;
+            if (reads == 3) cts.Cancel();
+            return Sample(session);
+        };
+        var writer = new StringWriter();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Run(writer, cts.Token));
+
+        Assert.Equal(3, h.Acquires);
+        Assert.Equal(3, h.Releases);
+        Assert.Equal(1, h.RegularOpens);
+        Assert.Equal(2, h.PinnedOpens);
+        Assert.Equal(1, h.PinCreates);
+        Assert.Equal(1, h.PinReleases);
+        Assert.All(h.Sessions, session => Assert.True(session.Disposed));
+        var lines = writer.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        Assert.DoesNotContain("stream-end", writer.ToString());
+    }
+    [Fact]
+    public async Task ContinuousModeDefaultsToUnlimitedSamples()
+    {
+        using var cts = new CancellationTokenSource();
+        var h = new Harness { Elapsed = () => TimeSpan.FromDays(1) };
+        h.OptionsOverride["--duration-ms"] = "0";
+        h.OptionsOverride.Remove("--samples");
+        h.Read = session => { cts.Cancel(); return Sample(session); };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => h.Run(new StringWriter(), cts.Token));
+
+        Assert.Equal(1, h.Acquires);
+        Assert.Equal(1, h.Releases);
     }
     [Fact]
     public async Task NativeRunnerAcceptsDurationOption()

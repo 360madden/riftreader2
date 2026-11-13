@@ -455,6 +455,18 @@ class PresenterTests(unittest.TestCase):
         self.assertTrue(any(name == "destroy" for name, args, kwargs in calls))
         self.assertFalse(self.presenter.present(frame()))
 
+    def test_hide_reason_telemetry_caps_distinct_strings(self):
+        for index in range(70):
+            self.presenter.frame = {}
+            self.presenter.hide(f"unique-{index}")
+        self.assertEqual(65, len(self.presenter.hide_reasons))
+        self.assertEqual(6, self.presenter.hide_reasons["other"])
+
+        self.presenter.frame = {}
+        self.presenter.hide("unique-0")
+        self.assertEqual(2, self.presenter.hide_reasons["unique-0"])
+        self.assertEqual(6, self.presenter.hide_reasons["other"])
+
     def test_worker_calls_rejected_before_tk(self):
         errors = []
         def worker():

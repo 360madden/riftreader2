@@ -503,9 +503,11 @@ measured points with actual heights matching the host/build/player are admitted.
 
 The waypoint window also has **Show markers / Hide markers** beside the recording
 controls. Load a recorded route or independently measured points, wait for its RIFT connection, press
-Show markers, then return to RIFT. Markers use the route's real saved heights and
-hide while another application is foreground. Hide markers, editing/replacing the
-route, reconnection and closing the waypoint window stop its one owned child;
+Show markers, then return to RIFT. Unlike the separately invoked bounded command above, the GUI's
+owned marker child remains open explicitly until Hide markers, route replacement,
+RIFT process/identity loss, or waypoint-window close. Markers use the route's real saved heights and
+hide while another application is foreground. Editing/replacing the route,
+reconnection and closing the waypoint window stop its one owned child;
 it never restarts automatically. Recorded Play Forward/Reverse and Resume can
 keep markers running. STOP/F8 latches movement cancellation first, then requests
 owned marker shutdown. Go/Face/Walk + Record/passive Record still close markers

@@ -45,7 +45,7 @@ class OwnedMarkerTests(unittest.TestCase):
         self.assertNotIn("--landmark-number", command)
         for flag, expected in (("--physical-pid", "123"), ("--expect-start-ticks", "1234"),
                                ("--expect-sha256", self.sha), ("--expect-hwnd", hex(12345)),
-                               ("--max-age", ".35"), ("--duration", "600")):
+                               ("--max-age", ".35"), ("--duration", "0")):
             self.assertEqual(expected, command[command.index(flag) + 1])
         route = Path(command[command.index("--route") + 1])
         self.assertEqual(str(self.root / "artifacts" / "waypoint-current-progress.json"),

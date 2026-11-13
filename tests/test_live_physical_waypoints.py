@@ -262,7 +262,8 @@ class FeedTests(unittest.TestCase):
     def test_invalid_cli_limits_fail_before_selection(self):
         with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(live.physical, "select_physical") as select:
-            for kwargs in (dict(duration=601), dict(max_age=.01), dict(physical_pid=0)):
+            for kwargs in (dict(duration=601), dict(duration=0, reader="single"),
+                           dict(max_age=.01), dict(physical_pid=0)):
                 arguments = dict(expected_host="AMD-DESKTOP", physical_pid=123, route_path=self.route_path)
                 arguments.update(kwargs)
                 with self.assertRaises(ValueError):
@@ -554,7 +555,7 @@ class FeedTests(unittest.TestCase):
                         worker(provider, channel, stop, counts)
                     self.assertEqual(channel.get_nowait(),
                         {"reason": "target-not-foreground", "kind": "invalid-state"})
-                    wait.assert_called_once()
+                    wait.assert_called_once_with(.15 if worker is live.stream_feed else .05)
                     self.assertEqual(counts["failures"], 1)
 
     def test_camera_unavailable_row_clears_then_recovers_in_same_child(self):
@@ -619,7 +620,74 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(counts["acquired"], 40)
         self.assertTrue(child.stdout.closed)
 
-    def test_terminal_packet_causes_main_hide_join_close(self):
+    def test_continuous_stream_has_no_elapsed_deadline_and_owned_stop_terminates_child(self):
+        stop = threading.Event()
+        child = self.child([])
+        class StopOnRead(BytesIO):
+            def readline(self, size=-1):
+                stop.set()
+                return b""
+        child.stdout = StopOnRead()
+        launch = Mock(return_value=child)
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live.time, "monotonic", return_value=10_000_000):
+            live.stream_burst(self.provider(), queue.Queue(maxsize=1), stop, dict(acquired=0),
+                              popen=launch, samples=0, interval_ms=20, duration_ms=0)
+        command = launch.call_args.args[0]
+        self.assertEqual(command[command.index("--duration-ms") + 1], "0")
+        self.assertEqual(command[command.index("--samples") + 1], "0")
+        self.assertTrue(child.terminated)
+
+    def test_continuous_feed_forwards_options_and_process_end_stays_terminal(self):
+        provider = Mock(target=IDENTITY)
+        channel, stop = queue.Queue(maxsize=1), threading.Event()
+        options = {"duration_ms": 0, "samples": 0, "interval_ms": 20}
+        counts = dict(attempts=0, acquired=0, failures=0, latestFailure=None)
+        with patch.object(live, "stream_burst", side_effect=ValueError("stream-child-failed")) as burst, \
+             patch.object(live, "_pinned_process_ended", return_value=True):
+            live.stream_feed(provider, channel, stop, counts, options)
+        burst.assert_called_once_with(provider, channel, stop, counts, **options)
+        self.assertEqual(channel.get_nowait(), {"terminal": True, "reason": "target-process-ended"})
+
+    def test_continuous_retry_backs_off_and_healthy_row_resets_delay(self):
+        provider = Mock(target=IDENTITY)
+        channel, stop = queue.Queue(maxsize=1), threading.Event()
+        options = {"duration_ms": 0, "samples": 0, "interval_ms": 20}
+        counts = dict(attempts=0, acquired=0, failures=0, latestFailure=None)
+        attempts = 0
+        def burst(*args, **kwargs):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 3:
+                counts["acquired"] += 1
+            raise ValueError("stream-child-failed")
+        delays = []
+        def waited(delay):
+            delays.append(delay)
+            if len(delays) == 4:
+                stop.set()
+        with patch.object(live, "stream_burst", side_effect=burst), \
+             patch.object(live, "_pinned_process_ended", return_value=False), \
+             patch.object(stop, "wait", side_effect=waited):
+            live.stream_feed(provider, channel, stop, counts, options)
+        self.assertEqual(delays, [1., 2., 1., 2.])
+        self.assertEqual(counts["attempts"], 4)
+
+    def test_reason_metrics_cap_distinct_labels_with_other_bucket(self):
+        counts = {"failures": 0, "failureReasons": {}, "hideReasons": {}}
+        for index in range(70):
+            live._record_failure(counts, ValueError(f"failure-{index}"))
+            live._record_hide(counts, f"hide-{index}")
+        self.assertEqual(len(counts["failureReasons"]), 65)
+        self.assertEqual(len(counts["hideReasons"]), 65)
+        self.assertEqual(counts["failureReasons"]["other"], 6)
+        self.assertEqual(counts["hideReasons"]["other"], 6)
+        live._record_failure(counts, ValueError("failure-0"))
+        live._record_hide(counts, "hide-0")
+        self.assertEqual(counts["failureReasons"]["failure-0"], 2)
+        self.assertEqual(counts["hideReasons"]["hide-0"], 2)
+
+    def test_continuous_run_ignores_elapsed_clock_and_terminal_packet_stops(self):
         events = []
         class Window:
             def protocol(self, name, callback):
@@ -656,9 +724,11 @@ class FeedTests(unittest.TestCase):
              patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
              patch.object(live.physical, "select_physical", return_value=self.selection), \
              patch.object(live.threading, "Thread", Worker), \
-             patch.object(live.time, "monotonic", return_value=10.):
-            result = live.run("AMD-DESKTOP", 123, self.route_path)
+             patch.object(live.time, "monotonic", side_effect=[0., 601.]):
+            result = live.run("AMD-DESKTOP", 123, self.route_path, duration=0)
         self.assertEqual(result["reason"], "target-process-ended")
+        self.assertEqual(result["durationSeconds"], 601.)
+        self.assertNotEqual(result["reason"], "duration-complete")
         self.assertLess(events.index("hide:target-process-ended"), events.index("join"))
         self.assertLess(events.index("join"), events.index("close"))
 

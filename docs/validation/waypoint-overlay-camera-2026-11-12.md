@@ -44,9 +44,10 @@ diamond/bracket styling is covered offline, not claimed as a live target result.
 
 - A camera-only coherence retry accepts at most three attempts, only for dynamic
   camera payload races. Structural/process/owner failures remain fail-closed.
-- One bounded stream replaces frequent child restart. Duration is at most 600s;
-  each cooperative lease wait retains its 30s limit and every row releases the
-  session and lease before writing output.
+- One stream replaces frequent child restart. The original trials below used
+  bounded runs; the GUI now explicitly requests continuous operation until an
+  owned stop or pinned-process loss. Each cooperative lease wait retains its 30s
+  limit and every row releases the session and lease before writing output.
 - A stream-scoped executable pin verifies SHA256, denies file writes/deletion,
   and checks fresh path file identity. PID/start/path/module/player checks remain
   per row. Other native readers retain their original hashing behavior.
@@ -81,3 +82,30 @@ Deployed single-file native build SHA256:
 `afa4113149b422f04af88d770932057a74c6d7f915ec530608da493654094f8b`.
 Intermediate failed launch trials exposed the inherited 30s lease-wait bound;
 the final long stream caps each wait separately. They are excluded from results.
+
+## Continuous marker sessions — 21:19 EST follow-up
+
+Removed the GUI's ten-minute lifetime limit on AMD-DESKTOP. The owned overlay
+now uses `--duration 0`, forwarding `--duration-ms 0 --samples 0` to the native
+reader. There is no elapsed-time or sample-count deadline. Hide, helper close,
+route replacement/STOP and pinned RIFT process loss retain their existing owned
+shutdown behavior; foreground and freshness checks still withhold invalid frames.
+Repeated continuous-mode failures back off from 1s to a maximum of 5s, reset
+after a healthy row, and diagnostic reason maps retain at most 64 labels plus
+an overflow bucket.
+
+Focused checks passed: **46 native tests** and **93 Python tests**. Injected
+clocks beyond 600s verified continuous acquisition/cancellation and the outer
+GUI feed path without a ten-minute wall-clock wait. A 125.07s live continuous
+session accepted 2,837 presentations, then stopped on Hide; all three owned
+overlay/native processes exited. This count measures accepted presentations,
+not monitor frames. Receipt:
+`artifacts/waypoint-markers-summary-97161f81218e49afbe7990a46a8fd878.json`.
+The final source was reloaded, markers enabled again, and the gold Olaf beacon
+was visually confirmed with RIFT foreground. Reviewed screenshot:
+`artifacts/beacon-continuous-final-20261112.png`. No gameplay input was sent.
+
+Continuous-stream native TRX:
+`C:\Temp\rr2-facing-continuous-20261112\test-results\continuous-stream.trx`.
+Deployed single-file native SHA256:
+`8bdc04de9048c59d02922d847461538d6f48f01b2768d77dbfb31a6bb6ada029`.

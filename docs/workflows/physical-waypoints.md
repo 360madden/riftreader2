@@ -21,8 +21,11 @@ gold reticle, short beacon and name/distance pill; **Include selected target**
 adds a distinct magenta diamond when a fresh target projection is available.
 NEXT is cyan and ordinary/completed points remain subdued. **Hide markers** stops
 the owned feed. Markers are click-through and never start route playback.
-The existing marker session cap is ten minutes. The helper pauses its duplicate
-idle pose reader while markers run and the helper is unfocused; focusing it
+There is no marker session timer: the feed stays enabled until you hide it,
+close Waypoints or RIFT, or another existing owned-stop condition applies, such
+as replacing the route or pressing STOP/F8. Switching away from RIFT hides the
+markers temporarily; returning to RIFT allows fresh markers to appear again.
+The helper pauses its duplicate idle pose reader while markers run and it is unfocused; focusing it
 resumes fresh pose updates. Foreground/identity/geometry/freshness failures still
 withhold markers. See the [camera-motion verification](../validation/waypoint-overlay-camera-2026-11-12.md).
 

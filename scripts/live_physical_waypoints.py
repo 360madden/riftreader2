@@ -210,12 +210,21 @@ def _reason_text(error):
     return text[:160]
 
 
+def _increment_reason(reasons, reason, *, limit=64):
+    if reason in reasons:
+        reasons[reason] += 1
+    elif len([key for key in reasons if key != "other"]) < limit:
+        reasons[reason] = 1
+    else:
+        reasons["other"] = reasons.get("other", 0) + 1
+
+
 def _record_failure(counts, error, *, row=False):
     reason = _reason_text(error)
     counts["failures"] = counts.get("failures", 0) + 1
     counts["latestFailure"] = reason
     reasons = counts.setdefault("failureReasons", {})
-    reasons[reason] = reasons.get(reason, 0) + 1
+    _increment_reason(reasons, reason)
     if row:
         counts["rejectedRows"] = counts.get("rejectedRows", 0) + 1
     return reason
@@ -240,7 +249,7 @@ def _record_interval(counts, prefix, observed):
 def _record_hide(counts, reason):
     reason = str(reason)
     reasons = counts.setdefault("hideReasons", {})
-    reasons[reason] = reasons.get(reason, 0) + 1
+    _increment_reason(reasons, reason)
 
 
 def _stop_child(child):
@@ -260,11 +269,14 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
         return
     before = provider.snapshot(provider.target)
     require(before.get("foreground") is True, "target-not-foreground")
+    continuous = type(duration_ms) is int and duration_ms == 0
     extended = type(duration_ms) is int and 2000 < duration_ms <= 600000
-    require(duration_ms is None or (type(duration_ms) is int and 1 <= duration_ms <= 600000),
+    require(duration_ms is None or continuous
+            or (type(duration_ms) is int and 1 <= duration_ms <= 600000),
             "stream-duration-invalid")
-    require(type(samples) is int and 1 <= samples <= (30000 if extended else 30), "stream-samples-invalid")
-    require(type(interval_ms) is int and 1 <= interval_ms <= 1000, "stream-interval-invalid")
+    require(type(samples) is int and ((continuous and samples == 0)
+            or (not continuous and 1 <= samples <= (30000 if extended else 30))), "stream-samples-invalid")
+    require(type(interval_ms) is int and 20 <= interval_ms <= 200, "stream-interval-invalid")
     require(provider.target["hostName"].casefold() == socket.gethostname().casefold(), "host-mismatch")
     command = [str(physical.NATIVE_EXE), "sample-current-facing-stream", "--pid",
         str(provider.target["processId"]), "--start-ticks", str(provider.target["processStartUtcTicks"]),
@@ -315,12 +327,13 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
     for pump in pumps:
         pump.start()
     deadline_seconds = 5 if duration_ms is None else duration_ms / 1000 + 3
-    deadline, sequence, receipt, previous_end = time.monotonic() + deadline_seconds, 0, None, None
+    deadline = None if continuous else time.monotonic() + deadline_seconds
+    sequence, receipt, previous_end = 0, None, None
     try:
         while True:
             if stop.is_set():
                 return
-            require(time.monotonic() < deadline, "stream-child-timeout")
+            require(deadline is None or time.monotonic() < deadline, "stream-child-timeout")
             try:
                 kind, raw = lines.get(timeout=.05)
             except queue.Empty:
@@ -335,13 +348,13 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
             packet = json.loads(raw)
             require(receipt is None, "stream-data-after-end")
             if packet.get("recordType") == "native-current-facing-stream-end/1":
-                require(packet.get("status") in ("complete", "duration-limit")
+                require(not continuous and packet.get("status") in ("complete", "duration-limit")
                         and packet.get("requestedSamples") == samples
                         and packet.get("completedSamples") == sequence
                         and (packet["status"] != "complete" or sequence == samples), "invalid-stream-end")
                 receipt = packet
                 continue
-            require(sequence < samples and type(packet.get("sequence")) is int
+            require((continuous or sequence < samples) and type(packet.get("sequence")) is int
                     and packet["sequence"] == sequence, "stream-sequence-invalid")
             current = provider.snapshot(provider.target)
             require(current.get("foreground") is True and current.get("clientRect") == before.get("clientRect"),
@@ -367,7 +380,8 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
                 _latest(channel, {"frame": frame})
                 counts["acquired"] += 1
                 _record_interval(counts, "Accepted", frame["acquiredMonotonic"])
-        provider.stream_exit_code = child.wait(timeout=max(.01, deadline - time.monotonic()))
+        wait_timeout = 3 if deadline is None else max(.01, deadline - time.monotonic())
+        provider.stream_exit_code = child.wait(timeout=wait_timeout)
         require(provider.stream_exit_code == 0, "stream-child-failed")
         require(receipt is not None, "stream-end-missing")
         provider.last_stream_receipt = receipt
@@ -397,11 +411,16 @@ def _pinned_process_ended(target, alive=None):
 
 def stream_feed(provider, channel, stop, counts, burst_options=None):
     burst_options = burst_options or {}
+    continuous = type(burst_options.get("duration_ms")) is int and burst_options["duration_ms"] == 0
+    retry_delay = 1.
     while not stop.is_set():
         counts["attempts"] += 1
+        acquired_before = counts.get("acquired", 0)
+        failed = False
         try:
             stream_burst(provider, channel, stop, counts, **burst_options)
         except Exception as error:
+            failed = True
             reason = _record_failure(counts, error)
             recent = counts.setdefault("recentStreamFailures", [])
             exit_code = getattr(provider, "stream_exit_code", None)
@@ -415,7 +434,13 @@ def stream_feed(provider, channel, stop, counts, burst_options=None):
                     return
                 _latest(channel, {"reason": reason,
                     "kind": "transport-gap" if reason in TRANSPORT_GAP_REASONS else "invalid-state"})
-        stop.wait(.15)
+        if continuous and failed:
+            if counts.get("acquired", 0) > acquired_before:
+                retry_delay = 1.
+            stop.wait(retry_delay)
+            retry_delay = min(5., retry_delay * 2)
+        else:
+            stop.wait(.15)
 
 
 def _latest(channel, packet):
@@ -482,9 +507,11 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         presenter="native", progress_file=None, target_beacon=False, landmark_number=None):
     require(isinstance(expected_host, str) and expected_host.casefold() == socket.gethostname().casefold(), "host-mismatch")
     require(type(physical_pid) is int and physical_pid > 0, "explicit-physical-pid-required")
-    require(type(duration) in (int, float) and math.isfinite(duration) and 0 < duration <= 600, "duration-must-be-positive-at-most-600")
+    require(type(duration) in (int, float) and math.isfinite(duration) and 0 <= duration <= 600,
+            "duration-must-be-zero-through-600")
     require(type(max_age) in (int, float) and math.isfinite(max_age) and .1 <= max_age <= 2, "max-age-must-be-0.1-through-2")
     require(reader in ("single", "stream"), "invalid-reader-mode")
+    require(duration != 0 or reader == "stream", "continuous-duration-requires-stream-reader")
     require(presenter in ("native", "qt"), "invalid-presenter")
     expected = _expected_target(expected_start_ticks, expected_sha256, expected_hwnd)
     if stop_file is not None:
@@ -530,7 +557,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "presentedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None}}
     worker_target = stream_feed if reader == "stream" else feed
     worker_args = (provider, channel, stop, counts)
-    if reader == "stream" and duration > 2:
+    if reader == "stream" and duration == 0:
+        worker_args += ({"duration_ms": 0, "samples": 0, "interval_ms": 20},)
+    elif reader == "stream" and duration > 2:
         worker_args += ({"duration_ms": min(600000, math.ceil(duration * 1000)),
                          "samples": 30000, "interval_ms": 20},)
     worker = threading.Thread(target=worker_target, args=worker_args, name="waypoint-native-reader")
@@ -559,7 +588,7 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         if stop_file is not None and stop_file.exists():
             cancel("stop-requested")
             return
-        if time.monotonic() - started >= duration:
+        if duration > 0 and time.monotonic() - started >= duration:
             cancel("duration-complete")
             return
         try:
@@ -649,7 +678,8 @@ def main(argv=None):
     parser.add_argument("--expected-host", required=True)
     parser.add_argument("--physical-pid", type=int, required=True)
     parser.add_argument("--route", type=Path, required=True)
-    parser.add_argument("--duration", type=float, default=60)
+    parser.add_argument("--duration", type=float, default=60,
+                        help="seconds through 600; 0 streams until owned stop, target loss or close")
     parser.add_argument("--max-age", type=float, default=.8)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--reader", choices=("single", "stream"), default="stream")

@@ -634,6 +634,16 @@ def _draw_polished_markers(draw, font, markers, width, height, *, measure=None, 
             del label_lanes[key]
 
 
+def _count_bounded_reason(counts, reason, *, max_distinct=64):
+    """Count recurring telemetry without retaining unbounded reason strings."""
+    if reason in counts:
+        counts[reason] += 1
+    elif len(counts) < max_distinct:
+        counts[reason] = 1
+    else:
+        counts["other"] = counts.get("other", 0) + 1
+
+
 class PhysicalWaypointOverlay:
     # RIFT's top-center chat/notification lane. Coordinates are normalized to
     # the current physical client and only constrain labels, never world anchors.
@@ -815,7 +825,7 @@ class PhysicalWaypointOverlay:
         if not self.closed:
             reason = str(reason)
             if self.frame is not None:
-                self.hide_reasons[reason] = self.hide_reasons.get(reason, 0) + 1
+                _count_bounded_reason(self.hide_reasons, reason)
             try:
                 self.window.hide()
             finally:
