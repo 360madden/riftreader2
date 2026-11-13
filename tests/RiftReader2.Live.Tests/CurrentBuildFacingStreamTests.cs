@@ -22,6 +22,8 @@ public sealed class CurrentBuildFacingStreamTests
     }
     private sealed class Lease(Action action) : IAsyncDisposable
     { public ValueTask DisposeAsync() { action(); return ValueTask.CompletedTask; } }
+    private sealed class ExecutablePin(Action action) : IAsyncDisposable
+    { public ValueTask DisposeAsync() { action(); return ValueTask.CompletedTask; } }
     private static CurrentBuildFacingCandidate Sample(Session session, ulong key = 42)
     {
         float[] matrix = [0, 0, -1, 0, 1, 0, 1, 0, 0];
@@ -35,8 +37,10 @@ public sealed class CurrentBuildFacingStreamTests
     private sealed class Harness
     {
         public readonly List<Session> Sessions = [];
-        public int Acquires, Releases;
+        public readonly List<TimeSpan> LeaseWaits = [];
+        public int Acquires, Releases, RegularOpens, PinnedOpens, PinCreates, PinReleases;
         public bool Held;
+        public bool UseExecutablePin;
         public readonly SemaphoreSlim Gate = new(1, 1);
         public Func<int, Session>? Create;
         public Func<TimeSpan>? Elapsed;
@@ -45,15 +49,26 @@ public sealed class CurrentBuildFacingStreamTests
         public Dictionary<string, string> OptionsOverride = new(Options);
         public Task<int> Run(TextWriter writer, CancellationToken ct = default) =>
             CurrentBuildFacingStreamCommand.RunAsync(OptionsOverride, writer, ct,
-                async (_, _, remaining, token) => { Assert.InRange(remaining.TotalMilliseconds, 0.001, 2000);
+                async (_, _, remaining, token) => { Assert.InRange(remaining.TotalMilliseconds, 0.001, 30_000);
+                    LeaseWaits.Add(remaining);
                     await Gate.WaitAsync(token); Assert.False(Held); Held = true; Acquires++;
                     return new Lease(() => {
                         if (Sessions.Count > Releases) Assert.True(Sessions[^1].Disposed);
                         Held = false; Releases++; Gate.Release();
                     }); },
-                (_, _, _) => { var session = Create?.Invoke(Sessions.Count) ?? new Session(); Sessions.Add(session);
+                (_, _, _) => { RegularOpens++; var session = Create?.Invoke(Sessions.Count) ?? new Session(); Sessions.Add(session);
                     return Task.FromResult<IReadOnlyNativeMemorySession>(session); },
-                (session, _) => Read?.Invoke((Session)session) ?? Sample((Session)session), Elapsed, ReadTarget);
+                (session, _) => Read?.Invoke((Session)session) ?? Sample((Session)session), Elapsed, ReadTarget,
+                UseExecutablePin ? (_, _) => {
+                    PinCreates++;
+                    return Task.FromResult<IAsyncDisposable>(new ExecutablePin(() => PinReleases++));
+                } : null,
+                UseExecutablePin ? (_, _, _, _) => {
+                    PinnedOpens++;
+                    var session = Create?.Invoke(Sessions.Count) ?? new Session();
+                    Sessions.Add(session);
+                    return Task.FromResult<IReadOnlyNativeMemorySession>(session);
+                } : null);
     }
     private sealed class CheckingWriter(Harness harness) : StringWriter
     {
@@ -70,6 +85,36 @@ public sealed class CurrentBuildFacingStreamTests
         Assert.Equal(3, lines.Length);
         for (var i = 0; i < 2; i++) { using var row = JsonDocument.Parse(lines[i]); Assert.Equal(i, row.RootElement.GetProperty("sequence").GetInt32()); Assert.True(row.RootElement.GetProperty("captureElapsedMilliseconds").GetDouble() > 0); }
         using var end = JsonDocument.Parse(lines[2]); Assert.Equal("complete", end.RootElement.GetProperty("status").GetString());
+    }
+    [Fact]
+    public async Task ExecutablePinStartsAfterFirstAdmittedRowAndIsDisposed()
+    {
+        var h = new Harness { UseExecutablePin = true };
+        var writer = new CheckingWriter(h);
+
+        Assert.Equal(0, await h.Run(writer));
+
+        Assert.Equal(1, h.RegularOpens);
+        Assert.Equal(1, h.PinnedOpens);
+        Assert.Equal(1, h.PinCreates);
+        Assert.Equal(1, h.PinReleases);
+        Assert.Equal(2, h.Releases);
+        Assert.All(h.Sessions, session => Assert.Equal(1, session.Validations));
+    }
+    [Fact]
+    public async Task ExecutablePinIsDisposedWhenPinnedRowFails()
+    {
+        var h = new Harness { UseExecutablePin = true };
+        h.Create = index => new Session { Failure = index == 1 ? "changed" : null };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => h.Run(new StringWriter()));
+
+        Assert.Equal(1, h.RegularOpens);
+        Assert.Equal(1, h.PinnedOpens);
+        Assert.Equal(1, h.PinCreates);
+        Assert.Equal(1, h.PinReleases);
+        Assert.Equal(2, h.Releases);
+        Assert.All(h.Sessions, session => Assert.True(session.Disposed));
     }
     [Fact]
     public async Task IdentityOwnerAndValidationChangesWithholdBadRow()
@@ -90,6 +135,79 @@ public sealed class CurrentBuildFacingStreamTests
         var h = new Harness(); h.Elapsed = () => h.Acquires > 0 ? TimeSpan.FromSeconds(2) : TimeSpan.Zero;
         var writer = new StringWriter(); Assert.Equal(0, await h.Run(writer));
         Assert.Empty(h.Sessions); Assert.Equal(1, h.Releases); Assert.Contains("duration-limit", writer.ToString());
+    }
+    [Fact]
+    public async Task ExplicitLongDurationAllowsLargeSampleBudget()
+    {
+        var h = new Harness { Elapsed = () => TimeSpan.FromSeconds(10) };
+        h.OptionsOverride["--duration-ms"] = "5000";
+        h.OptionsOverride["--samples"] = "30000";
+
+        var writer = new StringWriter();
+        Assert.Equal(0, await h.Run(writer));
+
+        Assert.Empty(h.Sessions);
+        using var end = JsonDocument.Parse(writer.ToString());
+        Assert.Equal("duration-limit", end.RootElement.GetProperty("status").GetString());
+        Assert.Equal(30000, end.RootElement.GetProperty("requestedSamples").GetInt32());
+    }
+    [Fact]
+    public async Task ExplicitLongDurationControlsDeadline()
+    {
+        var h = new Harness { Elapsed = () => TimeSpan.FromSeconds(3) };
+        h.OptionsOverride["--duration-ms"] = "5000";
+        h.OptionsOverride["--samples"] = "1";
+
+        var writer = new CheckingWriter(h);
+        Assert.Equal(0, await h.Run(writer));
+
+        Assert.Equal(1, h.Acquires);
+        Assert.Equal(1, h.Releases);
+        using var end = JsonDocument.Parse(writer.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries)[1]);
+        Assert.Equal("complete", end.RootElement.GetProperty("status").GetString());
+    }
+    [Fact]
+    public async Task LongDurationCapsEachCooperativeLeaseWait()
+    {
+        var h = new Harness();
+        h.OptionsOverride["--duration-ms"] = "600000";
+        h.OptionsOverride["--samples"] = "1";
+
+        Assert.Equal(0, await h.Run(new StringWriter()));
+
+        Assert.Single(h.LeaseWaits);
+        Assert.Equal(TimeSpan.FromSeconds(30), h.LeaseWaits[0]);
+    }
+    [Theory]
+    [InlineData(null, "31", "--samples must be in 1..30.")]
+    [InlineData("2000", "31", "--samples must be in 1..30.")]
+    [InlineData("5000", "30001", "--samples must be in 1..30000.")]
+    [InlineData("0", "2", "--duration-ms must be in 1..600000.")]
+    [InlineData("600001", "2", "--duration-ms must be in 1..600000.")]
+    public async Task LongDurationAndSampleBoundsAreExplicit(string? duration, string samples, string message)
+    {
+        var h = new Harness();
+        if (duration is not null) h.OptionsOverride["--duration-ms"] = duration;
+        h.OptionsOverride["--samples"] = samples;
+
+        var error = await Assert.ThrowsAsync<ArgumentException>(() => h.Run(new StringWriter()));
+
+        Assert.Equal(message, error.Message);
+        Assert.Equal(0, h.Acquires);
+    }
+    [Fact]
+    public async Task NativeRunnerAcceptsDurationOption()
+    {
+        var output = new StringWriter();
+        var error = new StringWriter();
+
+        Assert.Equal(2, await NativeCommandRunner.RunAsync([
+            "sample-current-facing-stream", "--pid", "bad", "--start-ticks", "456",
+            "--duration-ms", "5000"
+        ], output, error));
+
+        Assert.DoesNotContain("Unknown option", error.ToString());
+        Assert.Contains("requires --pid", error.ToString());
     }
     private sealed class BlockedWriter : StringWriter
     {

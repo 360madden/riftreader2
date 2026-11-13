@@ -20,6 +20,10 @@ internal sealed record CurrentBuildOpticalCameraCandidate(
 
 internal static class CurrentBuildOpticalCameraCandidateReader
 {
+    private const int PayloadReadAttempts = 3;
+
+    private sealed class OpticalCameraPayloadChangedException(string message) : IOException(message);
+
     internal static bool SameProjectionSnapshot(CurrentBuildOpticalCameraCandidate? first,
         CurrentBuildOpticalCameraCandidate? last) =>
         first is { Status: "available-candidate", RawBits: { } firstBits, ProjectionRawBits: { } firstProjection } &&
@@ -30,12 +34,26 @@ internal static class CurrentBuildOpticalCameraCandidateReader
     internal static CurrentBuildOpticalCameraCandidate TryRead(
         IReadOnlyNativeMemorySession session, ulong playerSystem)
     {
-        try { return Read(session, playerSystem); }
-        catch (Exception error) when (error is InvalidDataException or IOException or OverflowException)
+        for (var attempt = 1; attempt <= PayloadReadAttempts; attempt++)
         {
-            return new("unavailable", error.Message, null, null, null, null, null, null, null, null);
+            try { return Read(session, playerSystem); }
+            catch (OpticalCameraPayloadChangedException) when (attempt < PayloadReadAttempts)
+            {
+                // Camera matrices can change between individual process reads while the user turns.
+                // Retry immediately, but only for that expected payload race. Pointer ownership,
+                // process identity, type and structural failures still fail closed on the first read.
+            }
+            catch (Exception error) when (error is InvalidDataException or IOException or OverflowException)
+            {
+                return Unavailable(error.Message);
+            }
         }
+
+        return Unavailable("Optical camera payload changed during read.");
     }
+
+    private static CurrentBuildOpticalCameraCandidate Unavailable(string reason) =>
+        new("unavailable", reason, null, null, null, null, null, null, null, null);
 
     private static CurrentBuildOpticalCameraCandidate Read(
         IReadOnlyNativeMemorySession session, ulong playerSystem)
@@ -44,11 +62,11 @@ internal static class CurrentBuildOpticalCameraCandidateReader
         if (!string.Equals(identity.ExecutableSha256, CurrentBuildPlayerLookup.GameSha256,
                            StringComparison.OrdinalIgnoreCase) || identity.ModuleSize < 0x33724F8)
             throw new InvalidDataException("Optical camera build or module mismatch.");
-        var anchors = new List<(ulong Address, byte[] Bytes)>();
-        byte[] Take(ulong address, int count)
+        var anchors = new List<(ulong Address, byte[] Bytes, bool IsPayload)>();
+        byte[] Take(ulong address, int count, bool isPayload = false)
         {
             var bytes = CurrentBuildPlayerLookup.Exact(session, address, count);
-            anchors.Add((address, bytes));
+            anchors.Add((address, bytes, isPayload));
             return bytes;
         }
         ulong PointerAt(ulong address) => CurrentBuildPlayerLookup.Pointer(
@@ -69,10 +87,27 @@ internal static class CurrentBuildOpticalCameraCandidateReader
         var camera = PointerAt(checked(wrapper + 0x28));
         if (PointerAt(camera) != module + 0x274D630)
             throw new InvalidDataException("Optical camera type mismatch.");
-        var transform = Take(checked(camera + 0xD4), 48);
-        var origin = Take(checked(CurrentBuildPlayerLookup.Pointer(playerSystem, 0x444) + 0x438), 12);
-        var projection = Take(checked(camera + 0x138), 64);
-        var viewport = Take(checked(camera + 0x19C), 16);
+        var transform = Take(checked(camera + 0xD4), 48, isPayload: true);
+        var origin = Take(checked(CurrentBuildPlayerLookup.Pointer(playerSystem, 0x444) + 0x438), 12,
+            isPayload: true);
+        var projection = Take(checked(camera + 0x138), 64, isPayload: true);
+        var viewport = Take(checked(camera + 0x19C), 16, isPayload: true);
+        foreach (var anchor in anchors)
+        {
+            var reread = CurrentBuildPlayerLookup.Exact(session, anchor.Address, anchor.Bytes.Length);
+            if (!reread.AsSpan().SequenceEqual(anchor.Bytes))
+            {
+                if (anchor.IsPayload)
+                {
+                    if (session.Identity != identity)
+                        throw new InvalidDataException("Optical camera process epoch changed.");
+                    throw new OpticalCameraPayloadChangedException(
+                        "Optical camera payload changed during read.");
+                }
+                CurrentBuildPlayerLookup.RequireSame(reread, anchor.Bytes);
+            }
+        }
+        if (session.Identity != identity) throw new InvalidDataException("Optical camera process epoch changed.");
         var bits = new uint[15];
         var values = new float[15];
         var payload = transform.Concat(origin).ToArray();
@@ -112,10 +147,6 @@ internal static class CurrentBuildOpticalCameraCandidateReader
                     throw new InvalidDataException("Optical camera rotation is not orthonormal.");
             }
         }
-        foreach (var anchor in anchors)
-            CurrentBuildPlayerLookup.RequireSame(
-                CurrentBuildPlayerLookup.Exact(session, anchor.Address, anchor.Bytes.Length), anchor.Bytes);
-        if (session.Identity != identity) throw new InvalidDataException("Optical camera process epoch changed.");
         var forwardX = (double)values[0];
         var forwardY = (double)values[3];
         var forwardZ = (double)values[6];

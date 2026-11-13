@@ -13,11 +13,16 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
 {
     private readonly SafeProcessHandle handle;
     private readonly string initialExecutablePath;
+    private readonly VerifiedNativeExecutablePin? executablePin;
     private bool disposed;
 
-    private WindowsNativeMemorySession(SafeProcessHandle handle, NativeProcessIdentity identity)
+    private WindowsNativeMemorySession(
+        SafeProcessHandle handle,
+        NativeProcessIdentity identity,
+        VerifiedNativeExecutablePin? executablePin)
     {
         this.handle = handle;
+        this.executablePin = executablePin;
         Identity = identity;
         initialExecutablePath = identity.ExecutablePath;
     }
@@ -28,6 +33,15 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
         int processId,
         long? expectedStartUtcTicks,
         string? expectedExecutableSha256,
+        CancellationToken cancellationToken)
+        => await OpenAsync(
+            processId, expectedStartUtcTicks, expectedExecutableSha256, null, cancellationToken);
+
+    internal static async Task<WindowsNativeMemorySession> OpenAsync(
+        int processId,
+        long? expectedStartUtcTicks,
+        string? expectedExecutableSha256,
+        VerifiedNativeExecutablePin? executablePin,
         CancellationToken cancellationToken)
     {
         if (processId <= 0)
@@ -54,7 +68,9 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
             if (expectedStartUtcTicks is { } expectedStart && startTicks != expectedStart)
                 throw new InvalidDataException("The process start identity does not match the capture request.");
             var executablePath = QueryExecutablePath(handle);
-            var executableSha256 = await HashFileAsync(executablePath, cancellationToken);
+            var executableSha256 = executablePin is null
+                ? await HashFileAsync(executablePath, cancellationToken)
+                : executablePin.GetVerifiedSha256(executablePath, expectedExecutableSha256);
             if (expectedExecutableSha256 is not null &&
                 !string.Equals(executableSha256, expectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The executable SHA-256 does not match the capture request.");
@@ -70,7 +86,7 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
                 executableSha256,
                 module.BaseAddress,
                 module.Size);
-            return new(handle, identity);
+            return new(handle, identity, executablePin);
         }
         catch
         {
@@ -181,7 +197,9 @@ public sealed class WindowsNativeMemorySession : IReadOnlyNativeMemorySession
             var path = QueryExecutablePath(handle);
             if (!SamePath(path, initialExecutablePath))
                 return "Process executable path changed after capture.";
-            var hash = await HashFileAsync(path, cancellationToken);
+            var hash = executablePin is null
+                ? await HashFileAsync(path, cancellationToken)
+                : executablePin.GetVerifiedSha256(path, Identity.ExecutableSha256);
             if (!string.Equals(hash, Identity.ExecutableSha256, StringComparison.OrdinalIgnoreCase))
                 return "On-disk executable SHA-256 changed after capture.";
             var module = FindMainModule(Identity.ProcessId, path);

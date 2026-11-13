@@ -1,6 +1,7 @@
 """Playback/marker coordination using withdrawn Tk and fake child/readers."""
 import json
 import threading
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -147,6 +148,19 @@ class MarkerPlaybackTests(unittest.TestCase):
         self.wait_for(lambda: self.marker.stop.called)
         self.assertTrue(self.stopped.wait(1))
         self.wait_for(lambda: str(self.button("Refresh")["state"]) != "disabled")
+
+    def test_marker_feed_suspends_idle_pose_until_helper_has_focus(self):
+        read = Mock(return_value=self.pose(0))
+        self.adapter.read = read
+        with patch.object(self.window, "focus_displayof", return_value=None) as focused:
+            deadline = time.monotonic() + 2.2
+            while time.monotonic() < deadline:
+                self.window.update()
+                time.sleep(.01)
+            self.assertEqual(0, read.call_count)
+            focused.return_value = self.window
+            self.wait_for(lambda: read.call_count == 1)
+        self.assertTrue(self.marker.running())
 
 
 if __name__ == "__main__":

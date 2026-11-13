@@ -28,6 +28,10 @@ from scripts import physical_rift as physical
 from scripts.waypoint_progress import write_json_atomic
 
 
+RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required"})
+TRANSPORT_GAP_REASONS = frozenset({"stream-child-timeout", "stream-end-missing", "stream-child-failed"})
+
+
 def require(condition, reason):
     if not condition:
         raise ValueError(reason)
@@ -64,6 +68,9 @@ class ProjectionProvider:
         self.last_stream_receipt = None
         self.stream_rows = 0
         self.stream_stderr = ""
+        self.stream_command = None
+        self.stream_exit_code = None
+        self.stream_last_nonempty_stderr = ""
 
     def acquire(self):
         before = self.snapshot(self.target)
@@ -163,7 +170,8 @@ class ProjectionProvider:
                 pass  # Optional target data never replaces or invalidates route markers.
         return frame
 
-    def stream_frame(self, packet, before, *, previous_end=None):
+    def stream_row_timing(self, packet, *, previous_end=None):
+        """Validate a stream envelope and return its acquired time and order cursor."""
         require(packet.get("recordType") == "native-current-facing-stream-row/1"
                 and packet.get("status") == "candidate", "invalid-stream-row")
         row = packet["observation"]
@@ -182,10 +190,57 @@ class ProjectionProvider:
         require((now - emitted[0]).total_seconds() >= -.1, "stream-clock-future")
         age = max(elapsed / 1000, age)
         require(age <= self.max_age, "stream-row-expired")
+        return received - age, completed
+
+    def stream_frame_from_validated(self, packet, before, acquired):
+        """Project a row whose envelope/order/freshness was already checked."""
+        row = packet["observation"]
         report = dict(schemaVersion=1, status="complete", identity=packet["identity"],
             contractVersion="native-current-facing-candidate-samples/1", requestedSamples=1,
             completedSamples=1, observation=row, observations=[row])
-        return self.build_frame(report, received - age, before, stream=True), completed
+        return self.build_frame(report, acquired, before, stream=True)
+
+    def stream_frame(self, packet, before, *, previous_end=None):
+        acquired, completed = self.stream_row_timing(packet, previous_end=previous_end)
+        return self.stream_frame_from_validated(packet, before, acquired), completed
+
+
+def _reason_text(error):
+    text = str(error).strip() or error.__class__.__name__
+    return text[:160]
+
+
+def _record_failure(counts, error, *, row=False):
+    reason = _reason_text(error)
+    counts["failures"] = counts.get("failures", 0) + 1
+    counts["latestFailure"] = reason
+    reasons = counts.setdefault("failureReasons", {})
+    reasons[reason] = reasons.get(reason, 0) + 1
+    if row:
+        counts["rejectedRows"] = counts.get("rejectedRows", 0) + 1
+    return reason
+
+
+def _record_interval(counts, prefix, observed):
+    previous_key = "last" + prefix + "Monotonic"
+    previous = counts.get(previous_key)
+    counts[previous_key] = observed
+    if previous is None or observed < previous:
+        return
+    milliseconds = (observed - previous) * 1000
+    key = prefix[0].lower() + prefix[1:] + "IntervalMilliseconds"
+    timing = counts.setdefault(key, {"samples": 0, "minimum": None, "mean": None, "maximum": None})
+    samples = timing["samples"] + 1
+    timing["samples"] = samples
+    timing["minimum"] = milliseconds if timing["minimum"] is None else min(timing["minimum"], milliseconds)
+    timing["maximum"] = milliseconds if timing["maximum"] is None else max(timing["maximum"], milliseconds)
+    timing["mean"] = milliseconds if timing["mean"] is None else timing["mean"] + (milliseconds - timing["mean"]) / samples
+
+
+def _record_hide(counts, reason):
+    reason = str(reason)
+    reasons = counts.setdefault("hideReasons", {})
+    reasons[reason] = reasons.get(reason, 0) + 1
 
 
 def _stop_child(child):
@@ -198,38 +253,54 @@ def _stop_child(child):
         child.wait(timeout=1)
 
 
-def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, samples=20):
-    """One owned <=5-second child; bounded NDJSON and concurrent stderr draining."""
+def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, samples=20,
+                 interval_ms=50, duration_ms=None):
+    """One owned bounded child; NDJSON with concurrent stderr draining."""
     if stop.is_set():
         return
     before = provider.snapshot(provider.target)
     require(before.get("foreground") is True, "target-not-foreground")
-    require(type(samples) is int and 1 <= samples <= 30, "stream-samples-invalid")
+    extended = type(duration_ms) is int and 2000 < duration_ms <= 600000
+    require(duration_ms is None or (type(duration_ms) is int and 1 <= duration_ms <= 600000),
+            "stream-duration-invalid")
+    require(type(samples) is int and 1 <= samples <= (30000 if extended else 30), "stream-samples-invalid")
+    require(type(interval_ms) is int and 1 <= interval_ms <= 1000, "stream-interval-invalid")
     require(provider.target["hostName"].casefold() == socket.gethostname().casefold(), "host-mismatch")
     command = [str(physical.NATIVE_EXE), "sample-current-facing-stream", "--pid",
         str(provider.target["processId"]), "--start-ticks", str(provider.target["processStartUtcTicks"]),
-        "--samples", str(samples), "--interval-ms", "50"]
+        "--samples", str(samples), "--interval-ms", str(interval_ms)]
+    if duration_ms is not None:
+        command.extend(["--duration-ms", str(duration_ms)])
     if provider.target_beacon:
         command.extend(["--include-target", "true"])
+    provider.stream_command = list(command)
+    provider.stream_exit_code = None
     child = popen(command, cwd=ROOT, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     lines = queue.Queue(maxsize=32)
     stderr = bytearray()
+    pump_stop = threading.Event()
+    def enqueue(item):
+        while not stop.is_set() and not pump_stop.is_set():
+            try:
+                lines.put(item, timeout=.05)
+                return True
+            except queue.Full:
+                continue
+        return False
     def stdout_pump():
         try:
-            while True:
+            while not stop.is_set() and not pump_stop.is_set():
                 line = child.stdout.readline(1024 * 1024 + 1)
                 if not line:
-                    lines.put_nowait(("eof", None))
+                    enqueue(("eof", None))
                     return
                 if len(line) > 1024 * 1024:
                     raise ValueError("stream-line-too-large")
-                lines.put_nowait(("line", line))
+                if not enqueue(("line", line)):
+                    return
         except Exception as error:
-            try:
-                lines.put_nowait(("error", str(error)))
-            except queue.Full:
-                pass
+            enqueue(("error", str(error)))
     def stderr_pump():
         try:
             while True:
@@ -243,7 +314,8 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
     pumps = [threading.Thread(target=stdout_pump, daemon=True), threading.Thread(target=stderr_pump, daemon=True)]
     for pump in pumps:
         pump.start()
-    deadline, sequence, receipt, previous_end = time.monotonic() + 5, 0, None, None
+    deadline_seconds = 5 if duration_ms is None else duration_ms / 1000 + 3
+    deadline, sequence, receipt, previous_end = time.monotonic() + deadline_seconds, 0, None, None
     try:
         while True:
             if stop.is_set():
@@ -274,20 +346,40 @@ def stream_burst(provider, channel, stop, counts, *, popen=subprocess.Popen, sam
             current = provider.snapshot(provider.target)
             require(current.get("foreground") is True and current.get("clientRect") == before.get("clientRect"),
                     "target-foreground-or-geometry-changed")
-            frame, previous_end = provider.stream_frame(packet, current, previous_end=previous_end)
+            acquired, completed = provider.stream_row_timing(packet, previous_end=previous_end)
+            try:
+                frame = provider.stream_frame_from_validated(packet, current, acquired)
+            except ValueError as error:
+                reason = _reason_text(error)
+                if reason not in RECOVERABLE_STREAM_ROW_REASONS:
+                    raise
+                sequence += 1
+                previous_end = completed
+                provider.stream_rows += 1
+                _record_failure(counts, error, row=True)
+                if not stop.is_set():
+                    _latest(channel, {"reason": reason, "kind": "invalid-state"})
+                continue
             sequence += 1
+            previous_end = completed
             provider.stream_rows += 1
             if not stop.is_set():
                 _latest(channel, {"frame": frame})
                 counts["acquired"] += 1
+                _record_interval(counts, "Accepted", frame["acquiredMonotonic"])
+        provider.stream_exit_code = child.wait(timeout=max(.01, deadline - time.monotonic()))
+        require(provider.stream_exit_code == 0, "stream-child-failed")
         require(receipt is not None, "stream-end-missing")
-        require(child.wait(timeout=max(.01, deadline - time.monotonic())) == 0, "stream-child-failed")
         provider.last_stream_receipt = receipt
     finally:
+        pump_stop.set()
         _stop_child(child)
+        provider.stream_exit_code = child.poll()
         for pump in pumps:
             pump.join(timeout=1)
         provider.stream_stderr = bytes(stderr).decode("utf-8", errors="replace")
+        if provider.stream_stderr.strip():
+            provider.stream_last_nonempty_stderr = provider.stream_stderr
         child.stdout.close()
         child.stderr.close()
 
@@ -303,19 +395,26 @@ def _pinned_process_ended(target, alive=None):
         return False
 
 
-def stream_feed(provider, channel, stop, counts):
+def stream_feed(provider, channel, stop, counts, burst_options=None):
+    burst_options = burst_options or {}
     while not stop.is_set():
         counts["attempts"] += 1
         try:
-            stream_burst(provider, channel, stop, counts)
+            stream_burst(provider, channel, stop, counts, **burst_options)
         except Exception as error:
-            counts["failures"] += 1
-            counts["latestFailure"] = str(error)
+            reason = _record_failure(counts, error)
+            recent = counts.setdefault("recentStreamFailures", [])
+            exit_code = getattr(provider, "stream_exit_code", None)
+            stream_stderr = getattr(provider, "stream_stderr", "")
+            recent.append({"reason": reason, "exitCode": exit_code if type(exit_code) is int else None,
+                           "stderr": stream_stderr[-1000:] if isinstance(stream_stderr, str) else ""})
+            del recent[:-5]
             if not stop.is_set():
                 if _pinned_process_ended(provider.target):
                     _latest(channel, {"terminal": True, "reason": "target-process-ended"})
                     return
-                _latest(channel, {"reason": str(error)})
+                _latest(channel, {"reason": reason,
+                    "kind": "transport-gap" if reason in TRANSPORT_GAP_REASONS else "invalid-state"})
         stop.wait(.15)
 
 
@@ -335,14 +434,14 @@ def feed(provider, channel, stop, counts):
             if not stop.is_set():
                 _latest(channel, {"frame": frame})
                 counts["acquired"] += 1
+                _record_interval(counts, "Accepted", frame["acquiredMonotonic"])
         except Exception as error:
-            counts["failures"] += 1
-            counts["latestFailure"] = str(error)
+            reason = _record_failure(counts, error)
             if not stop.is_set():
                 if _pinned_process_ended(provider.target):
                     _latest(channel, {"terminal": True, "reason": "target-process-ended"})
                     return
-                _latest(channel, {"reason": str(error)})
+                _latest(channel, {"reason": reason, "kind": "invalid-state"})
         stop.wait(.05)
 
 
@@ -422,21 +521,39 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         window_options["window_factory"] = QtOwnedWindow
     overlay = PhysicalWaypointOverlay(selection["target"], max_age=max_age, **window_options)
     stop, channel = threading.Event(), queue.Queue(maxsize=1)
-    counts = {"attempts": 0, "acquired": 0, "presented": 0, "failures": 0, "latestFailure": None}
-    worker = threading.Thread(target=stream_feed if reader == "stream" else feed,
-        args=(provider, channel, stop, counts), name="waypoint-native-reader")
+    counts = {"attempts": 0, "acquired": 0, "presented": 0, "presentationAccepted": 0, "failures": 0,
+        "rejectedRows": 0, "latestFailure": None, "failureReasons": {}, "hideReasons": {},
+        "lastAcceptedMonotonic": None, "lastPresentedMonotonic": None,
+        "lastPresentationAcceptedMonotonic": None,
+        "acceptedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
+        "presentationAcceptedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None},
+        "presentedIntervalMilliseconds": {"samples": 0, "minimum": None, "mean": None, "maximum": None}}
+    worker_target = stream_feed if reader == "stream" else feed
+    worker_args = (provider, channel, stop, counts)
+    if reader == "stream" and duration > 2:
+        worker_args += ({"duration_ms": min(600000, math.ceil(duration * 1000)),
+                         "samples": 30000, "interval_ms": 20},)
+    worker = threading.Thread(target=worker_target, args=worker_args, name="waypoint-native-reader")
     started = time.monotonic()
     reason = "duration-complete"
     latest_acquired = None
     latest_progress = None
+    visible = False
+    def hide(why):
+        nonlocal latest_acquired, visible
+        if visible:
+            _record_hide(counts, why)
+        visible = False
+        latest_acquired = None
+        overlay.hide(why)
     def cancel(why):
         nonlocal reason
         reason = why
         stop.set()
-        overlay.hide(why)
+        hide(why)
         overlay.window.quit()
     def poll():
-        nonlocal latest_acquired, latest_progress
+        nonlocal latest_acquired, latest_progress, visible
         if stop.is_set():
             return
         if stop_file is not None and stop_file.exists():
@@ -461,20 +578,28 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                             latest_progress = apply_saved_progress(packet["frame"], progress_file, route)
                         if overlay.present(packet["frame"]):
                             latest_acquired = packet["frame"]["acquiredMonotonic"]
+                            visible = True
+                            counts["presentationAccepted"] += 1
                             counts["presented"] += 1
+                            _record_interval(counts, "PresentationAccepted", time.monotonic())
+                            counts["lastPresentedMonotonic"] = counts["lastPresentationAcceptedMonotonic"]
+                            counts["presentedIntervalMilliseconds"] = deepcopy(
+                                counts["presentationAcceptedIntervalMilliseconds"])
                         else:
-                            counts["latestFailure"] = getattr(overlay, "reason", "presenter-refused-frame")
-                            counts["failures"] += 1
+                            failure = getattr(overlay, "reason", "presenter-refused-frame")
+                            _record_failure(counts, ValueError(failure))
+                            hide(failure)
                     else:
-                        overlay.hide("queued-frame-expired")
+                        hide("queued-frame-expired")
+                elif packet.get("kind") == "transport-gap":
+                    pass  # A prior accepted frame remains bounded by the unchanged hard TTL.
                 else:
-                    overlay.hide(packet["reason"])
+                    hide(packet["reason"])
             if latest_acquired is not None and time.monotonic() - latest_acquired > max_age:
-                overlay.hide("frame-expired")
+                hide("frame-expired")
         except Exception as error:
-            counts["latestFailure"] = str(error)
-            counts["failures"] += 1
-            overlay.hide(str(error))
+            failure = _record_failure(counts, error)
+            hide(failure)
         overlay.window.after(25, poll)
     overlay.window.protocol("WM_DELETE_WINDOW", lambda: cancel("window-closed"))
     worker.start()
@@ -485,10 +610,13 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         reason = "interrupted"
     finally:
         stop.set()
-        overlay.hide(reason)
+        hide(reason)
         # read_native's child has its existing bounded timeout and native lease.
         worker.join()
         overlay.close()
+    overlay_hide_reasons = getattr(overlay, "hide_reasons", None)
+    if isinstance(overlay_hide_reasons, dict):
+        counts["hideReasons"] = dict(overlay_hide_reasons)
     result = {"status": "read-only-waypoint-feed-stopped", "reason": reason,
         "machine": socket.gethostname(), "target": selection["target"],
         "recordingIdentity": route["recordingIdentity"], "route": route["path"], "routeSha256": route["sha256"],
@@ -500,10 +628,14 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         "targetBeaconEnabled": target_beacon,
         "landmarkNumber": landmark_number,
         "streamRows": provider.stream_rows, "nativeStderr": provider.stream_stderr,
+        "nativeLastNonemptyStderr": provider.stream_last_nonempty_stderr,
+        "nativeStreamCommand": provider.stream_command, "nativeStreamExitCode": provider.stream_exit_code,
         "stopFile": str(stop_file) if stop_file is not None else None, "expectedTarget": expected,
         "progressFile": str(progress_file) if progress_file is not None else None,
         "latestSavedProgress": latest_progress,
         "limitations": ["Native software projection candidates; smooth streaming unqualified.",
+            "Presentation-accepted counts and intervals are asynchronous presenter requests, not physical display FPS.",
+            "Legacy presented fields are compatibility aliases for presentation-accepted fields.",
             "World/zone identity unavailable; matching host/build/player does not prove same world.",
             "Occlusion, depth and terrain not checked.", "Historical recording process epoch preserved.",
             "Marker progress is a saved checkpoint, not proof that playback is active or a point is currently reachable."]}

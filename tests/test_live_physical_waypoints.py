@@ -489,6 +489,7 @@ class FeedTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "clock-future"):
             provider.stream_frame(bad, self.snapshot.return_value)
         for packets, code, reason in (([packet], 0, "end-missing"),
+            ([], 2, "child-failed"),
             ([packet, dict(recordType="native-current-facing-stream-end/1", status="complete",
                            requestedSamples=1, completedSamples=0)], 0, "invalid-stream-end"),
             ([packet, dict(recordType="native-current-facing-stream-end/1", status="complete",
@@ -551,9 +552,72 @@ class FeedTests(unittest.TestCase):
                          patch.object(live, "stream_burst", side_effect=ValueError("target-not-foreground")), \
                          patch.object(stop, "wait", side_effect=lambda _: stop.set()) as wait:
                         worker(provider, channel, stop, counts)
-                    self.assertEqual(channel.get_nowait(), {"reason": "target-not-foreground"})
+                    self.assertEqual(channel.get_nowait(),
+                        {"reason": "target-not-foreground", "kind": "invalid-state"})
                     wait.assert_called_once()
                     self.assertEqual(counts["failures"], 1)
+
+    def test_camera_unavailable_row_clears_then_recovers_in_same_child(self):
+        packets = [dict(recordType="native-current-facing-stream-row/1", status="candidate", sequence=index)
+                   for index in range(2)]
+        packets.append(dict(recordType="native-current-facing-stream-end/1", status="complete",
+                            requestedSamples=2, completedSamples=2))
+        child = self.child(packets)
+        provider = self.provider()
+        provider.stream_row_timing = Mock(side_effect=[(10., 1), (10.02, 2)])
+        frame = {"acquiredMonotonic": 10.02}
+        provider.stream_frame_from_validated = Mock(
+            side_effect=[ValueError("full-camera-projection-required"), frame])
+        channel = queue.Queue(maxsize=1)
+        counts = dict(acquired=0, failures=0)
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(live, "_latest", wraps=live._latest) as publish:
+            live.stream_burst(provider, channel, threading.Event(), counts,
+                              popen=Mock(return_value=child), samples=2)
+        self.assertIn({"reason": "full-camera-projection-required", "kind": "invalid-state"},
+                      [call.args[1] for call in publish.call_args_list])
+        self.assertEqual(channel.get_nowait(), {"frame": frame})
+        self.assertEqual(provider.stream_rows, 2)
+        self.assertEqual(counts["acquired"], 1)
+        self.assertEqual(counts["rejectedRows"], 1)
+        self.assertEqual(counts["failureReasons"], {"full-camera-projection-required": 1})
+
+    def test_extended_stream_is_explicit_and_preserves_legacy_defaults(self):
+        receipt = dict(recordType="native-current-facing-stream-end/1", status="duration-limit",
+                       requestedSamples=30000, completedSamples=0)
+        launch = Mock(return_value=self.child([receipt]))
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"):
+            live.stream_burst(self.provider(), queue.Queue(maxsize=1), threading.Event(),
+                              dict(acquired=0), popen=launch, samples=30000,
+                              interval_ms=20, duration_ms=50000)
+        command = launch.call_args.args[0]
+        self.assertEqual(command[command.index("--duration-ms") + 1], "50000")
+        self.assertEqual(command[command.index("--interval-ms") + 1], "20")
+        with self.assertRaisesRegex(ValueError, "samples-invalid"):
+            live.stream_burst(self.provider(), queue.Queue(maxsize=1), threading.Event(),
+                              dict(acquired=0), popen=Mock(), samples=31)
+
+    def test_stream_stdout_backpressure_preserves_rows_and_eof(self):
+        packets = [dict(recordType="native-current-facing-stream-row/1", status="candidate", sequence=index)
+                   for index in range(40)]
+        packets.append(dict(recordType="native-current-facing-stream-end/1", status="complete",
+                            requestedSamples=40, completedSamples=40))
+        child = self.child(packets)
+        provider = self.provider()
+        provider.stream_row_timing = Mock(side_effect=[(10 + index / 1000, index) for index in range(40)])
+        def slow_frame(packet, before, acquired):
+            threading.Event().wait(.002)
+            return {"acquiredMonotonic": acquired}
+        provider.stream_frame_from_validated = Mock(side_effect=slow_frame)
+        counts = dict(acquired=0, failures=0)
+        with patch.object(live.socket, "gethostname", return_value="AMD-DESKTOP"):
+            live.stream_burst(provider, queue.Queue(maxsize=1), threading.Event(), counts,
+                              popen=Mock(return_value=child), samples=40,
+                              interval_ms=20, duration_ms=2001)
+        self.assertEqual(provider.stream_rows, 40)
+        self.assertEqual(provider.last_stream_receipt["completedSamples"], 40)
+        self.assertEqual(counts["acquired"], 40)
+        self.assertTrue(child.stdout.closed)
 
     def test_terminal_packet_causes_main_hide_join_close(self):
         events = []

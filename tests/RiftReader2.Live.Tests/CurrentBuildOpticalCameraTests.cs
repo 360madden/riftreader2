@@ -37,6 +37,41 @@ public sealed class CurrentBuildOpticalCameraTests
         Assert.Null(result.WorldEyeXYZ);
     }
 
+    [Fact]
+    public void PayloadChangeRetriesAndReturnsNextCoherentSnapshot()
+    {
+        var session = new Fake { ChangeTransformOnce = true };
+
+        var result = CurrentBuildOpticalCameraCandidateReader.TryRead(session, SystemAddress);
+
+        Assert.Equal("available-candidate", result.Status);
+        Assert.Equal(4, session.CameraTransformReadCount);
+    }
+
+    [Fact]
+    public void ContinuouslyChangingPayloadStopsAfterBoundedAttempts()
+    {
+        var session = new Fake { ChangeTransformEveryReread = true };
+
+        var result = CurrentBuildOpticalCameraCandidateReader.TryRead(session, SystemAddress);
+
+        Assert.Equal("unavailable", result.Status);
+        Assert.Contains("payload changed", result.UnavailableReason);
+        Assert.Equal(6, session.CameraTransformReadCount);
+    }
+
+    [Fact]
+    public void StructuralOwnerChangeDoesNotRetry()
+    {
+        var session = new Fake { ChangeCameraPointer = true };
+
+        var result = CurrentBuildOpticalCameraCandidateReader.TryRead(session, SystemAddress);
+
+        Assert.Equal("unavailable", result.Status);
+        Assert.Equal(2, session.CameraPointerReadCount);
+        Assert.Equal(1, session.CameraTransformReadCount);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -71,7 +106,12 @@ public sealed class CurrentBuildOpticalCameraTests
             CurrentBuildPlayerLookup.GameSha256, Module, 64 * 1024 * 1024);
         public Dictionary<ulong, byte[]> Memory { get; } = [];
         public bool ChangeCameraPointer { get; init; }
+        public bool ChangeTransformOnce { get; init; }
+        public bool ChangeTransformEveryReread { get; init; }
         private int cameraPointerReads;
+        private int cameraTransformReads;
+        public int CameraPointerReadCount => cameraPointerReads;
+        public int CameraTransformReadCount => cameraTransformReads;
         public Fake()
         {
             Qword(Module + 0x33724F0, 0x30000000);
@@ -101,6 +141,21 @@ public sealed class CurrentBuildOpticalCameraTests
                 return new("unavailable", [], null, "hole");
             if (address == 0x30003000 + 0x28 && ++cameraPointerReads > 1 && ChangeCameraPointer)
                 return new("success", new byte[8], null, null);
+            if (address == Camera + 0xD4)
+            {
+                cameraTransformReads++;
+                if ((ChangeTransformOnce && cameraTransformReads == 2) ||
+                    (ChangeTransformEveryReread && cameraTransformReads % 2 == 0))
+                {
+                    var changed = bytes.ToArray();
+                    BinaryPrimitives.WriteUInt32LittleEndian(changed.AsSpan(36),
+                        BitConverter.SingleToUInt32Bits(ChangeTransformEveryReread
+                            ? 3 + cameraTransformReads / 2
+                            : 4));
+                    Memory[address] = changed;
+                    return new("success", changed, null, null);
+                }
+            }
             return new("success", bytes.ToArray(), null, null);
         }
         public ValueTask<string?> RevalidateAsync(CancellationToken ct) => ValueTask.FromResult<string?>(null);

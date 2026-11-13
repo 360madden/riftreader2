@@ -2229,7 +2229,12 @@ def launch_window(args):
         target_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
         landmark_option.configure(state="disabled" if busy or closing or markers.running() else "normal")
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
-        if live_pose.get() and not busy and not observing and not closing and time.monotonic() >= next_live_at:
+        try:
+            app_focused = window.focus_displayof() is not None
+        except (AttributeError, tk.TclError):
+            app_focused = False
+        if (live_pose.get() and not busy and not observing and not closing
+                and time.monotonic() >= next_live_at and (not markers.running() or app_focused)):
             observing = True
             next_live_at = time.monotonic() + 2
             threading.Thread(target=worker, args=("live",), daemon=False).start()
