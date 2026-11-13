@@ -13,6 +13,43 @@ and detailed status remain in Activity. Load/Save and Recent routes stay with th
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
 
+## Activity and diagnostics
+
+**Activity → Open logs** opens the local log folder in Explorer. **Copy diagnostics**
+puts a bounded plain-text report on the Windows clipboard: app version, helper and
+RIFT identity, cached route/pose/overlay/playback state, receipt paths, and recent
+warnings/errors with tracebacks. These actions do not send game input or start a
+new sampler. The logging caption shows availability; hover for the current log
+path or storage error.
+
+Logs are UTF-8 JSON lines in `artifacts/waypoint-logs/`, with timestamps,
+severity, thread/context and CLI request IDs where available. Startup failures,
+handled operation errors, unexpected Tk callbacks and uncaught worker exceptions
+are captured. Repeated identical idle-reader failures are suppressed until the
+reader recovers. Logs rotate at 1 MiB with two backups per session; cleanup keeps
+the newest ten session groups and protects active processes' logs. Logging storage
+failure is reported without preventing ordinary app use.
+
+```powershell
+.\rr2-waypoints.cmd diagnostics status
+.\rr2-waypoints.cmd diagnostics show
+.\rr2-waypoints.cmd diagnostics copy
+.\rr2-waypoints.cmd diagnostics open
+.\rr2-waypoints.cmd app show --tab activity
+```
+
+`--json` retains the CLI envelope (`diagnostics show` returns `data.text`). When
+no helper is running and no explicit session is requested, these commands use the
+newest saved log without launching Waypoints or reading RIFT. The report clearly
+labels this as saved context rather than live state. Explicit missing sessions
+and ambiguous running helpers still require selection.
+
+Reports are limited to 32 KiB; individual tracebacks to 16 KiB. Environment
+variables and raw command lines are not collected; sensitive field names are
+redacted. Reports contain local paths and game/session details, so review before
+sharing. This is Python/application diagnostics, not a native crash-dump recorder;
+forced termination or a native crash may leave only the preceding log entries.
+
 ## Replay
 
 Replay separates explicit **Playback**, **Record a path**, and **Direct movement**.

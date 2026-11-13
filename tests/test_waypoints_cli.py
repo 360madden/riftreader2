@@ -53,6 +53,7 @@ class CliTests(unittest.TestCase):
                         'record.cancel move.to face playback.start playback.resume playback.status '
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
+                        'diagnostics.status diagnostics.show diagnostics.copy diagnostics.open '
                         'library.list library.save library.import library.load library.show').split():
             with self.subTest(command=command):
                 self.assertEqual(self.call(*command.split('.'), '--help')[0], 0)
@@ -123,6 +124,51 @@ class CliTests(unittest.TestCase):
                     protocol,'request',return_value=cli.result(operation,data={})) as request:
                 self.assertEqual(self.call(*argv,'--json')[0], 0)
                 self.assertEqual(request.call_args.args[1:3], (operation,payload))
+
+    def test_diagnostics_commands_dispatch_through_gui_owner(self):
+        for verb in ('status','show','copy','open'):
+            operation='diagnostics.'+verb
+            with self.subTest(verb=verb), patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                    protocol,'request',return_value=cli.result(operation,data={})) as request:
+                self.assertEqual(self.call('diagnostics',verb,'--session','running-helper','--json')[0], 0)
+                self.assertEqual(request.call_args.args[1:3], (operation,{}))
+                self.assertEqual(request.call_args.kwargs['timeout'], 10)
+
+    def test_diagnostics_fall_back_to_saved_logs_without_launching_helper(self):
+        status={'loggingAvailable':True,'logFile':'C:/logs/waypoints.log','directory':'C:/logs'}
+        report='saved diagnostics\n'
+        with patch.object(protocol,'discover_sessions',return_value=[]), patch(
+                'scripts.waypoint_diagnostics.existing_status',return_value=status,create=True), patch(
+                'scripts.waypoint_diagnostics.existing_report',return_value=report,create=True), patch.object(
+                cli.subprocess,'Popen',side_effect=AssertionError('must not launch helper')):
+            code,out,_=self.call('diagnostics','show')
+        self.assertEqual(code,0)
+        self.assertEqual(out,report)
+
+        with patch.object(protocol,'discover_sessions',return_value=[]), patch(
+                'scripts.waypoint_diagnostics.existing_status',return_value=status,create=True), patch(
+                'scripts.waypoint_diagnostics.existing_report',return_value=report,create=True), patch.object(
+                cli.subprocess,'run') as run:
+            self.assertEqual(self.call('diagnostics','copy','--json')[0],0)
+        run.assert_called_once()
+        self.assertEqual(run.call_args.args[0],['clip.exe'])
+        self.assertEqual(run.call_args.kwargs['input'],b'\xff\xfe'+report.encode('utf-16le'))
+        self.assertFalse(run.call_args.kwargs['shell'])
+
+    def test_offline_diagnostics_open_and_explicit_session_rules(self):
+        status={'loggingAvailable':True,'logFile':'C:/logs/waypoints.log','directory':'C:/logs'}
+        with patch.object(protocol,'discover_sessions',return_value=[]), patch(
+                'scripts.waypoint_diagnostics.existing_status',return_value=status,create=True), patch.object(
+                cli.Path,'is_dir',return_value=True), patch.object(cli.os,'startfile',create=True) as start:
+            code,out,_=self.call('diagnostics','open','--json')
+        self.assertEqual(code,0)
+        start.assert_called_once_with(Path('C:/logs'))
+        with patch.object(protocol,'resolve_session',side_effect=protocol.CliError(
+                'session-unavailable','No matching helper',exit_code=3)), patch.object(
+                protocol,'discover_sessions',side_effect=AssertionError('explicit session bypasses fallback')):
+            code,out,_=self.call('diagnostics','show','--session','missing','--json')
+        self.assertEqual(code,3)
+        self.assertEqual(json.loads(out)['error']['code'],'session-unavailable')
 
     def test_library_usage_and_help_never_resolve_native_or_session(self):
         with patch.object(protocol, 'resolve_session', side_effect=AssertionError('session lookup')), patch.object(cli.subprocess, 'Popen', side_effect=AssertionError('process launch')):
@@ -324,6 +370,16 @@ class CliTests(unittest.TestCase):
         load_help = self.call('view','load','--help')[1]
         self.assertIn('Load saved image and 3D asset references', load_help)
         self.assertIn('opens no viewer', load_help)
+        self.assertIn('Effects: Read-only;', self.call('diagnostics','status','--help')[1])
+        self.assertIn('Effects: Read-only;', self.call('diagnostics','show','--help')[1])
+        copy_help=self.call('diagnostics','copy','--help')[1]
+        self.assertIn('Windows clipboard', copy_help)
+        self.assertIn('does not change RIFT', copy_help)
+        open_help=self.call('diagnostics','open','--help')[1]
+        self.assertIn('Windows Explorer', open_help)
+        self.assertIn('does not change RIFT', open_help)
+        for verb in ('status','show','copy','open'):
+            self.assertIn('without a Waypoints window', self.call('diagnostics',verb,'--help')[1])
 
     def test_human_route_list_marks_selected_points(self):
         data={'points':[{'number':1,'name':'Start','x':1,'z':2},
@@ -412,6 +468,25 @@ class CliTests(unittest.TestCase):
                        'Last image: available | scene.png', '3D rerun: unavailable | scene.rrd',
                        'Last capture: complete'):
             self.assertIn(phrase, rendered)
+
+    def test_diagnostics_human_output_and_main_status_are_concise(self):
+        report='Joey D\'s Waypoints diagnostics\nTarget: AMD-DESKTOP\n'
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('diagnostics.show',data={'text':report,'logFile':'waypoints.log','directory':'logs'}))
+        self.assertEqual(out.getvalue(), report)
+        data={'host':'AMD-DESKTOP','target':{'processId':99},'app':{'busy':False,'visible':True},
+              'route':{'count':0,'dirty':False},'pose':{},'radar':{},
+              'diagnostics':{'loggingAvailable':True,'logFile':'C:/logs/waypoints.log'}}
+        out=io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('status',data=data))
+            cli.emit(cli.result('diagnostics.copy',data={'copied':True,'characters':52,'logFile':'waypoints.log'}))
+            cli.emit(cli.result('diagnostics.open',data={'opened':True,'directory':'C:/logs'}))
+        for phrase in ('Diagnostics: logging available | C:/logs/waypoints.log',
+                       'Diagnostics copied: 52 characters | waypoints.log',
+                       'Diagnostics directory opened: C:/logs'):
+            self.assertIn(phrase, out.getvalue())
 
     def test_offline_manual_route_does_not_resolve_session(self):
         with tempfile.TemporaryDirectory() as directory:

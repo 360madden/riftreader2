@@ -14,6 +14,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import json
 import math
+import os
 from pathlib import Path
 import queue
 import re
@@ -896,7 +897,24 @@ def launch_window(args):
     import tkinter as tk
     from tkinter import filedialog, messagebox, ttk
 
-    window = tk.Tk()
+    from scripts.waypoint_diagnostics import Diagnostics
+    from scripts.waypoint_brand import APP_NAME, APP_VERSION, APP_TITLE
+    owns_diagnostics = getattr(args, "diagnostics", None) is None
+    diagnostics = getattr(args, "diagnostics", None) or Diagnostics(ROOT)
+    diagnostics.set_context(appName=APP_NAME, appVersion=APP_VERSION, host=args.expected_host,
+                            guiPid=os.getpid(), phase="window")
+    diagnostics.install_hooks()
+    try:
+        window = tk.Tk()
+    except Exception as exc:
+        diagnostics.exception("GUI initialization failed", exc=exc)
+        if owns_diagnostics: diagnostics.close()
+        raise
+    def diagnostic_window_destroyed(event):
+        if event.widget is window:
+            diagnostics.info("Waypoint window closed")
+            if owns_diagnostics: diagnostics.close()
+    window.bind("<Destroy>", diagnostic_window_destroyed, add="+")
     if getattr(args, "background", False):
         window.withdraw()
     from scripts.waypoint_ui_theme import PALETTE, apply_theme, summarize_status
@@ -908,7 +926,6 @@ def launch_window(args):
     from scripts.waypoint_playback import play_route
     from scripts.waypoint_progress import _route as progress_route, write_json_atomic
 
-    from scripts.waypoint_brand import APP_NAME, APP_VERSION, APP_TITLE
     window.title(f"{APP_TITLE} — {args.expected_host} / "
                  + (f"PID {args.physical_pid}" if args.physical_pid is not None else "waiting for RIFT"))
     screen_height = window.winfo_screenheight()
@@ -954,6 +971,13 @@ def launch_window(args):
                                 "Ready — save a point, click the map, or enter X / Z."))
     status_brief = tk.StringVar(value=summarize_status(state.get()))
     state.trace_add("write", lambda *_: status_brief.set(summarize_status(state.get())))
+    last_logged_state = [None]
+    def log_state_change(*_):
+        text = state.get()
+        if text != last_logged_state[0]:
+            last_logged_state[0] = text
+            diagnostics.info("Activity", status=text)
+    state.trace_add("write", log_state_change)
     status_strip = ttk.Frame(frame, style="Card.TFrame", padding=(14, 6))
     status_strip.grid(row=1, column=0, sticky="ew", pady=(0, 8))
     status_label = ttk.Label(status_strip, textvariable=status_brief, style="Gold.TLabel", wraplength=900)
@@ -1066,6 +1090,7 @@ def launch_window(args):
     pending_recorded = None
     closing = False
     adapter = getattr(args, "initial_adapter", None)
+    diagnostics.set_context(riftTarget=deepcopy(getattr(adapter, "target", None)))
     published_adapter = adapter
     foreground_stop = None
     last_pose = None
@@ -1137,16 +1162,25 @@ def launch_window(args):
     marker_anchor_y = None
     from scripts.waypoint_recent_display import route_labels, attach_path_tooltip
     activity_tab.columnconfigure(0, weight=1)
-    activity_tab.rowconfigure(1, weight=1)
+    activity_tab.rowconfigure(2, weight=1)
+    diagnostic_toolbar = ttk.Frame(activity_tab, style="Surface.TFrame")
+    diagnostic_toolbar.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0,6))
+    ttk.Button(diagnostic_toolbar, text="Open logs", command=lambda: open_logs()).pack(side="left", padx=(0,6))
+    ttk.Button(diagnostic_toolbar, text="Copy diagnostics", command=lambda: copy_diagnostics(),
+               style="Primary.TButton").pack(side="left", padx=(0,12))
+    logging_health = tk.StringVar(value="Logging active" if diagnostics.status()["available"] else "Logging unavailable")
+    logging_health_label = ttk.Label(diagnostic_toolbar, textvariable=logging_health, style="Muted.TLabel")
+    logging_health_label.pack(side="left")
+    attach_path_tooltip(logging_health_label, lambda: diagnostics.status().get("error") or str(diagnostics.log_path))
     full_status_label = ttk.Label(activity_tab, textvariable=state, wraplength=860, style="Muted.TLabel")
-    full_status_label.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+    full_status_label.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 6))
     activity_tab.bind("<Configure>", lambda event: full_status_label.configure(wraplength=max(200, event.width - 30)))
     log = tk.Text(activity_tab, height=5, state="disabled", font=("Consolas", 10),
                   background="#0b1723", foreground="#dce8ef", insertbackground="#8dedc8",
                   relief="flat", borderwidth=0, padx=10, pady=8, wrap="word")
-    log.grid(row=1, column=0, sticky="nsew")
+    log.grid(row=2, column=0, sticky="nsew")
     log_scroll = ttk.Scrollbar(activity_tab, command=log.yview)
-    log_scroll.grid(row=1, column=1, sticky="ns")
+    log_scroll.grid(row=2, column=1, sticky="ns")
     log.configure(yscrollcommand=log_scroll.set)
 
     def update_route_status():
@@ -1273,6 +1307,7 @@ def launch_window(args):
                                            "recentPaths": list(recent_paths)})
             text = success
         except (OSError, ValueError, TypeError) as exc:
+            diagnostics.exception("Unable to cache route", exc=exc)
             text = success + "; last-route snapshot could not be saved: " + str(exc)
         state.set(text)
         log.configure(state="normal")
@@ -1348,6 +1383,7 @@ def launch_window(args):
                 progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
                 redraw()
         except (OSError, ValueError, KeyError, TypeError) as exc:
+            diagnostics.exception("Unable to restore saved progress", exc=exc)
             state.set("Cannot restore saved progress: " + str(exc))
 
     def prepared_document(document):
@@ -1453,20 +1489,24 @@ def launch_window(args):
         px, pz = map_view.canvas_to_world(event.x, event.y)
         start("map", (map_view, px, pz, name.get() or "Waypoint"))
 
-    def worker(operation, points=None, face_walk=False, route_context=None):
+    diagnostic_failures = {}
+
+    def worker(operation, points=None, face_walk=False, route_context=None, request_id=None):
         with operation_gate:
             if operation == "live" and closing:
                 events.put({"status": "live-idle"})
                 return
-            perform_operation(operation, points, face_walk, route_context)
+            perform_operation(operation, points, face_walk, route_context, request_id)
 
-    def perform_operation(operation, points=None, face_walk=False, route_context=None):
+    def perform_operation(operation, points=None, face_walk=False, route_context=None, request_id=None):
         nonlocal adapter, published_adapter
         retain = operation in ("go", "face", "face-bearing", "play", "resume", "teach")
         history, outcome, failure = [], None, None
         stop_verification = None
         receipt_path = None
         observed_context = None
+        if operation not in ("live", "zone-live"):
+            diagnostics.info("Operation started", operation=operation, requestId=request_id)
 
         def emit(event):
             if retain:
@@ -1611,6 +1651,12 @@ def launch_window(args):
                             "position": results[-1]["position"], "bearing": results[-1]["bearing"],
                             "distance": results[-1]["distance"]})
         except Exception as exc:
+            signature = (type(exc).__name__, str(exc))
+            if isinstance(exc, Stopped):
+                diagnostics.warning("Operation stopped", operation=operation, requestId=request_id, reason=str(exc))
+            elif operation not in ("live", "zone-live") or diagnostic_failures.get(operation) != signature:
+                diagnostics.exception("Operation failed", exc=exc, operation=operation, requestId=request_id)
+            diagnostic_failures[operation] = signature
             original_reason = str(exc)
             stopped_position = stopped_bearing = None
             if retain and adapter is not None:
@@ -1627,8 +1673,10 @@ def launch_window(args):
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
                        "originalReason": original_reason,
                        **({"position": stopped_position, "bearing": stopped_bearing} if stopped_position else {}),
-                       "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None}
+                       "inputReceiptPath": str(getattr(adapter, "input_receipt_path", None)) if getattr(adapter, "input_receipt_path", None) else None}
             emit(failure)
+        else:
+            diagnostic_failures.pop(operation, None)
         finally:
             if retain:
                 receipt = {"operation": operation,
@@ -1637,8 +1685,8 @@ def launch_window(args):
                            "failure": failure, "result": outcome, "events": history,
                            "completedLegs": [event for event in history if event.get("status") == "arrived"],
                            "calibrationBinding": getattr(adapter, "binding", None),
-                           "inputReceiptPath": str(adapter.input_receipt_path) if adapter else None,
-                           "inputReceiptPresent": bool(adapter and adapter.input_receipt_path.exists()),
+                           "inputReceiptPath": str(getattr(adapter, "input_receipt_path", None)) if getattr(adapter, "input_receipt_path", None) else None,
+                           "inputReceiptPresent": bool(getattr(adapter, "input_receipt_path", None) and adapter.input_receipt_path.exists()),
                            "stopVerification": stop_verification,
                            "releaseVerification": ("see individual native pulse receipts for key release; measured stationary evidence is separate in stopVerification"
                                                    if failure else "see completed result and pulse receipts")}
@@ -1647,7 +1695,12 @@ def launch_window(args):
                     receipt_path.write_text(json.dumps(receipt, indent=2), encoding="utf-8")
                     events.put({"status": "run-receipt", "path": str(receipt_path), "failure": failure})
                 except (OSError, TypeError, ValueError) as exc:
+                    diagnostics.exception("Unable to save operation receipt", exc=exc, operation=operation,
+                                          requestId=request_id, receipt=str(receipt_path))
                     events.put({"status": "receipt-error", "reason": str(exc), "failure": failure})
+            if operation not in ("live", "zone-live"):
+                diagnostics.info("Operation finished", operation=operation, requestId=request_id,
+                                 failed=failure is not None, receipt=str(receipt_path) if receipt_path else None)
             events.put({"status": "zone-idle" if operation == "zone-live" else "live-idle" if operation == "live" else "idle"})
             if operation not in ("live", "zone-live"):
                 events.put({"status": "operation-finished", "operation": operation,
@@ -1683,6 +1736,7 @@ def launch_window(args):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
             except Exception as exc:
+                diagnostics.exception("Unable to start foreground safety monitor", exc=exc, operation=operation)
                 busy = False
                 state.set("Cannot start safely: " + str(exc))
                 return
@@ -1713,7 +1767,8 @@ def launch_window(args):
                   else "Reading current RIFT pose…")
         context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and (operation in ("go", "face", "play", "resume", "teach") or operation == "save" and isinstance(points, dict)) else None
         mode = True if operation in ("play", "resume") else walk_facing.get() if face_walk is None else face_walk
-        threading.Thread(target=worker, args=(operation, points, mode, context), daemon=False).start()
+        request_id = cli_action["id"] if cli_action is not None else None
+        threading.Thread(target=worker, args=(operation, points, mode, context, request_id), daemon=False).start()
         return True
 
     def request_stop():
@@ -1874,6 +1929,7 @@ def launch_window(args):
                 cache_route(document, "Route saved: " + str(path))
                 return True
             except (ValueError, TypeError, OSError) as exc:
+                diagnostics.exception("Unable to save route", exc=exc)
                 messagebox.showerror("Cannot save route", str(exc))
         return False
 
@@ -1908,6 +1964,7 @@ def launch_window(args):
             mark_saved(path)
             cache_route(document, "Route loaded: " + str(path))
         except (ValueError, KeyError, TypeError, OSError) as exc:
+            diagnostics.exception("Unable to load route", exc=exc)
             messagebox.showerror("Cannot load route", str(exc))
 
     def load_route():
@@ -1967,6 +2024,7 @@ def launch_window(args):
             else:
                 start("play", (document, direction))
         except (ValueError, KeyError, TypeError, OSError) as exc:
+            diagnostics.exception("Unable to start playback", exc=exc)
             state.set("Cannot start playback: " + str(exc))
 
     def stop_recording():
@@ -1996,6 +2054,7 @@ def launch_window(args):
             start("view", (document, adapter.pid, deepcopy(adapter.target),
                            "desktop" if view_bring_forward.get() else "wgc", view_include_units.get()))
         except (ValueError, KeyError, TypeError) as exc:
+            diagnostics.exception("Unable to save view", exc=exc)
             state.set("Cannot save view: " + str(exc))
 
     def close_nearby_picker():
@@ -2024,6 +2083,7 @@ def launch_window(args):
             if not rows:
                 raise WaypointError("No saved nearby samples are available.")
         except (OSError, ValueError, KeyError, TypeError) as exc:
+            diagnostics.exception("Unable to add nearby sample", exc=exc)
             messagebox.showerror("Cannot add nearby sample", str(exc), parent=window)
             return
         picker = nearby_picker = tk.Toplevel(window)
@@ -2127,6 +2187,7 @@ def launch_window(args):
         try:
             load_saved_scene(chosen)
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            diagnostics.exception("Unable to load saved scene", exc=exc)
             state.set("Cannot load saved scene: " + str(exc))
 
     def open_view():
@@ -2136,6 +2197,7 @@ def launch_window(args):
             import os
             os.startfile(saved_view)
         except OSError as exc:
+            diagnostics.exception("Unable to open scene image", exc=exc)
             state.set("Cannot open view: " + str(exc))
 
     def open_3d_view():
@@ -2150,6 +2212,7 @@ def launch_window(args):
             rerun_viewer = launch_saved_rerun(saved_rerun)
             state.set("3D view opened: " + saved_rerun)
         except (OSError, ValueError, TypeError) as exc:
+            diagnostics.exception("Unable to open 3D scene", exc=exc)
             state.set("Cannot open 3D view: " + str(exc))
 
     def marker_payload():
@@ -2179,6 +2242,7 @@ def launch_window(args):
                 markers.update(payload["route"], landmark_number=payload["landmarkNumber"])
                 marker_published = signature
         except (OSError, ValueError, KeyError, TypeError) as exc:
+            diagnostics.exception("Unable to publish marker update", exc=exc)
             reason = "Cannot update markers: " + str(exc)
             if not stop_markers():
                 reason += "; marker shutdown could not be confirmed"
@@ -2191,6 +2255,7 @@ def launch_window(args):
         try:
             signature = json.dumps(marker_payload(), sort_keys=True)
         except (ValueError, KeyError, TypeError) as exc:
+            diagnostics.exception("Unable to prepare marker update", exc=exc)
             stop_markers()
             state.set("Cannot update markers: " + str(exc))
             return
@@ -2221,6 +2286,7 @@ def launch_window(args):
             marker_button.configure(text="Markers closing…", state="disabled")
             return True
         except OSError as exc:
+            diagnostics.exception("Unable to stop markers", exc=exc)
             state.set("Cannot hide markers: " + str(exc))
             return False
 
@@ -2259,6 +2325,7 @@ def launch_window(args):
             state.set("Overlay reader started; beacons appear with a fresh camera frame in RIFT or this window."
                       + " Route edits and selected-guide changes sync automatically.")
         except (OSError, ValueError, KeyError, TypeError) as exc:
+            diagnostics.exception("Unable to start marker reader", exc=exc)
             state.set("Cannot show markers: " + str(exc))
 
     def target_change_blocked():
@@ -2290,6 +2357,7 @@ def launch_window(args):
                                             labelsVisible=beacon_labels.get()))
             return True
         except (OSError, ValueError, TypeError) as exc:
+            diagnostics.exception("Unable to save marker appearance", exc=exc)
             state.set("Cannot save marker appearance: " + str(exc))
             return False
 
@@ -2499,6 +2567,7 @@ def launch_window(args):
                 acquiredMonotonic=exploration_sample, guidance=guidance, trail=segments))
             schedule_marker_update()
         except (OSError, ValueError, TypeError) as exc:
+            diagnostics.exception("Unable to publish exploration feedback", exc=exc)
             state.set("Exploration display temporarily unavailable; details in Activity.")
             log.configure(state="normal")
             log.insert("end", "Exploration feedback: " + str(exc) + "\n")
@@ -2635,6 +2704,8 @@ def launch_window(args):
         except (OSError, ValueError, KeyError, TypeError) as exc:
             if str(exc) != beacon_latest_error:
                 beacon_latest_error = str(exc)
+                diagnostics.warning("Beacon pose feedback unavailable", reason=str(exc),
+                                    poseFile=str(getattr(markers, "pose_path", None)))
                 log.configure(state="normal")
                 log.insert("end", "Beacon pose unavailable: " + beacon_latest_error + "\n")
                 log.see("end")
@@ -2658,6 +2729,14 @@ def launch_window(args):
         return {"ok": True, "status": status, "data": data, "target": deepcopy(getattr(adapter, "target", None))}
 
     def cli_error(code, message, *, exit_code=1, hint=None):
+        diagnostics.warning("CLI request refused", code=code, reason=message)
+        try:
+            log.configure(state="normal")
+            log.insert("end", f"CLI error [{code}]: {message}\n")
+            log.see("end")
+            log.configure(state="disabled")
+        except tk.TclError:
+            pass  # A closing window must not hide the saved error or CLI response.
         return {"ok": False, "status": "failed", "target": deepcopy(getattr(adapter, "target", None)), "error": {
             "code": code, "message": message, "exitCode": exit_code, "hint": hint}}
 
@@ -2767,6 +2846,7 @@ def launch_window(args):
                     labels=beacon_labels.get(), target=target_beacon.get(), guide=landmark_guide.get(),
                     appliedTarget=marker_running_target if markers.running() and not markers.stop_requested else None,
                     restartPending=marker_restart_pending, visibility=visibility,
+                    reportFile=str(markers.output) if getattr(markers, "output", None) else None,
                     pose=cli_pose(), display=display, qualification="Reader state; visible means a fresh allowed overlay window, not terrain/occlusion or individual point visibility proof.")
 
     def capture_readiness():
@@ -2872,6 +2952,7 @@ def launch_window(args):
 
     def cli_snapshot():
         return dict(host=args.expected_host, target=deepcopy(getattr(adapter, "target", None)),
+                    diagnostics=diagnostics.status(),
                     app={"name": APP_NAME, "version": APP_VERSION,
                          "visible": window.state() not in ("withdrawn", "iconic"), "windowState": window.state(),
                          "busy": busy, "closing": closing, "state": state.get()},
@@ -2887,6 +2968,40 @@ def launch_window(args):
                     playback=cli_playback_status(),
                     activeRequestId=cli_action["id"] if cli_action else None,
                     recentResults=deepcopy(cli_recent), inputSent=False)
+
+    def diagnostics_report():
+        try:
+            snapshot = cli_snapshot()
+        except Exception as exc:
+            diagnostics.exception("Unable to collect complete diagnostic state", exc=exc)
+            snapshot = dict(app=dict(state=state.get(), snapshotError=str(exc)),
+                            target=deepcopy(getattr(adapter, "target", None)),
+                            route=dict(file=str(route_path) if route_path else None, dirty=route_dirty))
+        return diagnostics.report(snapshot)
+
+    def open_logs():
+        try:
+            if not diagnostics.directory.is_dir(): raise OSError("Log directory is unavailable")
+            os.startfile(str(diagnostics.directory))
+            diagnostics.info("Log directory opened")
+            state.set("Log directory opened: " + str(diagnostics.directory))
+            return dict(opened=True, directory=str(diagnostics.directory))
+        except Exception as exc:
+            diagnostics.exception("Unable to open log directory", exc=exc)
+            state.set("Cannot open logs: " + str(exc))
+
+    def copy_diagnostics():
+        try:
+            text = diagnostics_report()
+            window.clipboard_clear()
+            window.clipboard_append(text)
+            window.update_idletasks()
+            diagnostics.info("Diagnostics copied", characters=len(text))
+            state.set(f"Diagnostics copied ({len(text):,} characters).")
+            return dict(copied=True, characters=len(text), logFile=str(diagnostics.log_path))
+        except Exception as exc:
+            diagnostics.exception("Unable to copy diagnostics", exc=exc)
+            state.set("Cannot copy diagnostics: " + str(exc))
 
     def cli_trail_status():
         snapshot = explore_controls.trail.snapshot()
@@ -2964,6 +3079,19 @@ def launch_window(args):
         nonlocal saved_view, saved_rerun, rerun_viewer
         nonlocal last_capture_state, last_capture_error
         try:
+            if not command.endswith(".status") and command not in ("status", "route.list", "diagnostics.show"):
+                diagnostics.info("CLI request", command=command, requestId=rid)
+            if command == "diagnostics.status": return cli_ok(diagnostics.status())
+            if command == "diagnostics.show":
+                return cli_ok(dict(text=diagnostics_report(), **diagnostics.status()))
+            if command == "diagnostics.copy":
+                result = copy_diagnostics()
+                if result is None: raise CliError("clipboard-unavailable", state.get())
+                return cli_ok(result)
+            if command == "diagnostics.open":
+                result = open_logs()
+                if result is None: raise CliError("log-directory-unavailable", state.get())
+                return cli_ok(result)
             if command == "zone.status": return cli_ok(zone_state())
             if command == "zone.refresh": return cli_begin(rid, "zone", command=command)
             if command == "route.context":
@@ -3089,7 +3217,7 @@ def launch_window(args):
                 # STOP also retires older mailbox work that has not yet started.
                 if (cli_server.path / "requests" / (rid+".json")).stat().st_mtime <= cli_stop_at:
                     return cli_error("cancelled-by-stop", "This request was queued before STOP; send a new explicit command", exit_code=130)
-            read_only = command.endswith(".status") or command in ("route.list", "route.validate", "trail.list")
+            read_only = command.endswith(".status") or command in ("route.list", "route.validate", "trail.list", "diagnostics.show")
             passive = command.startswith(("radar.", "beacons.", "guide.", "trail."))
             if closing or (busy or cli_action is not None) and not (read_only or passive or command in ("record.stop", "record.cancel")):
                 raise CliError("busy", "The helper is busy", "Use status or stop", 4)
@@ -3410,10 +3538,13 @@ def launch_window(args):
                 return cli_ok({"file": str(path), "opened": True})
             raise CliError("unsupported-command", command, exit_code=2)
         except CliError as exc:
+            diagnostics.warning("CLI command refused", command=command, requestId=rid, code=exc.code, reason=str(exc))
             return cli_error(exc.code, str(exc), exit_code=exc.exit_code, hint=exc.hint)
         except FileExistsError as exc:
+            diagnostics.warning("CLI file already exists", command=command, requestId=rid, reason=str(exc))
             return cli_error("file-exists", str(exc), exit_code=4, hint="Choose another ID or explicitly use --overwrite")
         except (OSError, ValueError, TypeError, KeyError, IndexError) as exc:
+            diagnostics.exception("CLI command failed", exc=exc, command=command, requestId=rid)
             return cli_error("operation-failed", str(exc))
 
     library_name = tk.StringVar(value="My route")
@@ -3531,6 +3662,8 @@ def launch_window(args):
                 if not stop_markers():
                     event = dict(event, reason=event.get("reason", "STOP requested.") + " Could not hide markers.")
             if status == "reconnected":
+                diagnostics.set_context(riftTarget=deepcopy(getattr(adapter, "target", None)))
+                diagnostics.info("RIFT connection changed", processId=event.get("pid"))
                 if not stop_markers():
                     state.set("Cannot hide markers after RIFT reconnected.")
                 pending_progress_selection = bool(table.get_children())
@@ -3732,6 +3865,7 @@ def launch_window(args):
             try:
                 response = callback()
             except Exception as exc:
+                diagnostics.exception("Deferred CLI request failed", exc=exc, requestId=rid)
                 response = cli_error("operation-failed", str(exc))
             if response is not None:
                 cli_server.complete(rid, response)
@@ -3752,6 +3886,8 @@ def launch_window(args):
                 stop_markers()
             if not markers.running():
                 if markers.exit_code and not markers.stop_requested:
+                    diagnostics.warning("Overlay reader exited unexpectedly", exitCode=markers.exit_code,
+                                        reportFile=str(getattr(markers,"output",None)))
                     state.set("Markers unavailable; check the route and RIFT connection.")
                 elif state.get() == "Hiding markers…":
                     state.set("Markers hidden.")
@@ -3770,6 +3906,9 @@ def launch_window(args):
         for widget in appearance_widgets:
             widget.configure(state="disabled" if closing else "normal")
         update_scene_state()
+        if workflow.select() == str(activity_tab):
+            diagnostic_status = diagnostics.status()
+            logging_health.set("Logging active" if diagnostic_status["available"] else "Logging unavailable — Copy diagnostics for details")
         nearby_button.configure(state="disabled" if busy or closing or markers.running() else "normal")
         if markers.running():
             if live_pose.get() and not busy and not closing:
@@ -3964,6 +4103,19 @@ def launch_window(args):
         except (OSError, ValueError, KeyError, TypeError):
             pass  # Keep recovered content unbound if the source is unavailable or changed.
     cli_server = LocalSessionServer(launch_token=getattr(args, "launch_token", None))
+    diagnostics.set_context(sessionId=cli_server.session_id, riftTarget=deepcopy(getattr(adapter, "target", None)))
+    diagnostics.info("Waypoint window ready")
+    previous_callback_handler = window.report_callback_exception
+    def callback_exception(exc_type, exc_value, exc_tb):
+        diagnostics.exception("GUI callback failed", exc=exc_value.with_traceback(exc_tb))
+        if busy:
+            stop.set()
+            record_cancel.set()
+            record_stop.set()
+        state.set("Unexpected UI error recorded. Open Activity for logs and diagnostics.")
+        if sys.stderr is not None or getattr(previous_callback_handler, "__module__", "") != "tkinter":
+            previous_callback_handler(exc_type, exc_value, exc_tb)
+    window.report_callback_exception = callback_exception
     explore_controls.extra_settings["statusPath"] = str(cli_server.path / "radar-status.json")
     explore_controls.save()
     refresh_library()

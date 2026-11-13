@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import socket
 import sys
@@ -27,6 +28,12 @@ def main(argv=None):
     parser.add_argument("--launch-token", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     host = socket.gethostname().upper()
+    from scripts.waypoint_diagnostics import Diagnostics
+    from scripts.waypoint_brand import APP_NAME, APP_VERSION
+    diagnostics = Diagnostics(ROOT)
+    diagnostics.set_context(appName=APP_NAME, appVersion=APP_VERSION, host=host, guiPid=os.getpid(), phase="startup")
+    diagnostics.install_hooks()
+    diagnostics.info("Waypoint launcher started")
     try:
         if args.cli and args.route is not None:
             from scripts.physical_waypoints import validate_route_document
@@ -39,10 +46,12 @@ def main(argv=None):
             if selected.get("status") != "ready":
                 raise ValueError(selected.get("reason", "Physical RIFT is unavailable"))
             pid = selected["target"]["processId"]
+            diagnostics.set_context(target=selected["target"])
             # Validate current epoch and calibration before using a connection.
             adapter = PhysicalAdapter(host, pid, args.basis)
             pose = adapter.read()
         except Exception as exc:
+            diagnostics.exception("Initial RIFT connection unavailable", exc=exc)
             if args.check or args.physical_pid is not None:
                 raise
             # Re-select uniquely on each later attempt; do not retain a stale PID.
@@ -56,9 +65,11 @@ def main(argv=None):
                                           basis=args.basis, route=args.route,
                                           face_waypoints=True, auto_reconnect=args.physical_pid is None,
                                           initial_adapter=adapter, initial_reason=waiting_reason,
-                                          background=args.background, cli=args.cli, launch_token=args.launch_token))
+                                          background=args.background, cli=args.cli, launch_token=args.launch_token,
+                                          diagnostics=diagnostics))
         return 0
     except Exception as exc:
+        diagnostics.exception("Waypoint startup failed", exc=exc)
         if args.check:
             print(json.dumps({"status": "blocked", "host": host, "reason": str(exc), "inputSent": False}))
         elif args.cli:
@@ -67,12 +78,17 @@ def main(argv=None):
         else:
             import tkinter as tk
             from tkinter import messagebox
-            root = tk.Tk()
-            root.withdraw()
-            from scripts.waypoint_brand import APP_TITLE
-            messagebox.showerror(APP_TITLE, str(exc), parent=root)
-            root.destroy()
+            try:
+                root = tk.Tk()
+                root.withdraw()
+                from scripts.waypoint_brand import APP_TITLE
+                messagebox.showerror(APP_TITLE, f"{exc}\n\nDetails: {diagnostics.log_path}", parent=root)
+                root.destroy()
+            except Exception as dialog_error:
+                diagnostics.exception("Unable to show startup error dialog", exc=dialog_error)
         return 2
+    finally:
+        diagnostics.close()
 
 
 if __name__ == "__main__":

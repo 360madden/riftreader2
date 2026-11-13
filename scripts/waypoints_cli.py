@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -93,6 +94,8 @@ def example(operation):
         "record.stop":"record stop recorded-route.json", "radar.set":"radar set --range 10 --opacity 85",
         "radar.move":"radar move --x 30 --y 50", "beacons.set":"beacons set --size 1 --labels on",
         "beacons.reset":"beacons reset", "view.status":"view status",
+        "diagnostics.status":"diagnostics status", "diagnostics.show":"diagnostics show",
+        "diagnostics.copy":"diagnostics copy", "diagnostics.open":"diagnostics open",
         "move.to":"move to 123 456 --execute", "face":"face 90 --execute",
         "playback.start":"playback start --direction forward --execute",
         "playback.resume":"playback resume --execute", "route.run":"route run --execute",
@@ -143,6 +146,7 @@ def build_parser():
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show",
+        "diagnostics":"status show copy open",
         "radar":"status show hide set move lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
         "move":"to", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
@@ -153,7 +157,7 @@ def build_parser():
         sub = gp.add_subparsers(dest="verb", title="Commands")
         for verb in verbs.split():
             operation = f"{group}.{verb}"
-            read_only = verb in {"status", "list", "validate"} or operation == "receipt.show"
+            read_only = verb in {"status", "list", "validate"} or operation in {"receipt.show", "diagnostics.show"}
             purpose = {
                 "app.open":"Open Waypoints, or reuse the selected existing helper without replacing its route.",
                 "app.show":"Show the selected helper window.", "app.hide":"Hide the selected helper window.",
@@ -178,6 +182,10 @@ def build_parser():
                 "view.load":"Load saved image and 3D asset references into Scene & beacons without opening a viewer.",
                 "view.open":"Open a saved JSON view manifest or image file.",
                 "view.open-3d":"Open a saved JSON view manifest or exported .rrd recording in the 3D viewer.",
+                "diagnostics.status":"Show diagnostics logging availability and the owned log path; saved logs work without a Waypoints window.",
+                "diagnostics.show":"Print the current diagnostics report; saved logs work without a Waypoints window.",
+                "diagnostics.copy":"Copy diagnostics to the Windows clipboard; saved logs work without a Waypoints window.",
+                "diagnostics.open":"Open the diagnostics log directory in Windows Explorer; saved logs work without a Waypoints window.",
                 "record.start":"Start read-only route recording; capture continues until explicit stop or cancel.",
                 "record.stop":"Stop recording and save its measured route at the explicit FILE.",
                 "record.cancel":"Stop recording and discard its captured route.",
@@ -200,6 +208,8 @@ def build_parser():
                        else "Changes helper visibility; sends no game input." if operation in {"app.show", "app.hide", "app.open"}
                        else "Writes the explicit JSON manifest and a new capture bundle; sends no game input." if operation == "view.save"
                        else "Loads saved asset references into the helper; opens no viewer and sends no game input." if operation == "view.load"
+                       else "Writes diagnostics text to the Windows clipboard; does not change RIFT or send game input." if operation == "diagnostics.copy"
+                       else "Opens the diagnostics directory in Windows Explorer; does not change RIFT or send game input." if operation == "diagnostics.open"
                        else "Opens a saved local asset in its viewer; sends no game input." if group == "view"
                        else "Changes helper state or the explicitly named file; sends no game input.")
             leaf(sub, verb, operation, purpose, effects)
@@ -371,6 +381,11 @@ def human_data(command, data):
         human_radar(data.get("radar") or {})
         if data.get("playback"):
             human_playback(data["playback"], compact=True)
+        diagnostics = data.get("diagnostics")
+        if isinstance(diagnostics, dict):
+            available = diagnostics.get("loggingAvailable", diagnostics.get("available"))
+            print(f"Diagnostics: {'logging available' if available is True else 'logging unavailable' if available is False else 'availability unknown'}"
+                  + (f" | {diagnostics['logFile']}" if diagnostics.get("logFile") else ""))
         if data.get("zone"):
             zone = data["zone"]
             human_zone(zone.get("context", zone))
@@ -481,6 +496,16 @@ def human_data(command, data):
         print("Last capture: " + str(data.get("lastCaptureState") or "none"))
         if data.get("nearbySample") is not None:
             print("Nearby sample: retained")
+    elif command == "diagnostics.status":
+        available = data.get("loggingAvailable", data.get("available"))
+        print(f"Diagnostics logging: {'available' if available is True else 'unavailable' if available is False else 'unknown'}")
+        if data.get("logFile"): print("Log file: " + str(data["logFile"]))
+        if data.get("directory"): print("Directory: " + str(data["directory"]))
+    elif command == "diagnostics.copy":
+        print(f"Diagnostics copied: {data.get('characters', '?')} characters"
+              + (f" | {data['logFile']}" if data.get("logFile") else ""))
+    elif command == "diagnostics.open":
+        print("Diagnostics directory opened: " + str(data.get("directory", "unknown")))
     elif command.startswith("guide."):
         index = data.get("activeIndex")
         point = index + 1 if isinstance(index, int) else "none"
@@ -516,6 +541,9 @@ def emit(envelope, machine=False):
         return
     command = envelope.get("command", "waypoints")
     data = envelope.get("data")
+    if command == "diagnostics.show" and envelope.get("ok") and isinstance(data, dict):
+        print(str(data.get("text", "")), end="" if str(data.get("text", "")).endswith("\n") else "\n")
+        return
     if envelope.get("ok"):
         print(f"{command}: {envelope.get('status', 'completed')}"
               + (f" | session {envelope['sessionId']}" if envelope.get("sessionId") else ""))
@@ -542,6 +570,31 @@ def offline_route(path, operation):
         from scripts.waypoint_measurements import parse_projection_route
         data["projection"] = parse_projection_route(document)
     return result(operation, data=data)
+
+
+def offline_diagnostics(command):
+    """Use existing owned logs when startup failed before a helper was published."""
+    from scripts.waypoint_diagnostics import existing_report, existing_status
+    status = existing_status(ROOT)
+    if command == "diagnostics.status":
+        return result(command, data=status)
+    if command == "diagnostics.show":
+        text = existing_report(ROOT)
+        return result(command, data={"text": text, **status})
+    if command == "diagnostics.copy":
+        text = existing_report(ROOT)
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.run(["clip.exe"], input=b"\xff\xfe" + text.encode("utf-16le"), check=True,
+                       shell=False, creationflags=creationflags)
+        return result(command, data={"copied": True, "characters": len(text),
+                                     "logFile": status.get("logFile")})
+    if command == "diagnostics.open":
+        directory = Path(status["directory"])
+        if not directory.is_dir():
+            raise ValueError("diagnostics directory is unavailable")
+        os.startfile(directory)
+        return result(command, data={"opened": True, "directory": str(directory)})
+    raise UsageError("unsupported offline diagnostics command")
 
 
 def _launch(args, protocol):
@@ -657,6 +710,15 @@ def main(argv=None):
         elif command == "receipt.list":
             if not args.directory.is_dir(): raise ValueError("receipt directory does not exist")
             envelope = result(command, data={"files":[str(p.resolve()) for p in sorted({*args.directory.glob("waypoint-run-*.json"), *args.directory.glob("waypoint-input-*.jsonl")})], "inputSent":False})
+        elif command.startswith("diagnostics.") and getattr(args, "session", None) is None:
+            from scripts import waypoint_cli_protocol as protocol
+            sessions = protocol.discover_sessions()
+            if not sessions:
+                envelope = offline_diagnostics(command)
+            else:
+                session = protocol.resolve_session(None)
+                payload = {}
+                envelope = protocol.request(session, command, payload, timeout=args.timeout, request_id=uuid.uuid4().hex)
         else:
             from scripts import waypoint_cli_protocol as protocol
             if command == "app.list": envelope = result(command, data={"sessions":protocol.discover_sessions()})

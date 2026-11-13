@@ -1,6 +1,10 @@
 import contextlib
 import io
 import json
+from pathlib import Path
+import sys
+import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -9,6 +13,14 @@ from scripts import launch_physical_waypoints as launcher
 
 
 class LauncherTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name)
+        root_patcher = patch.object(launcher, "ROOT", self.root)
+        root_patcher.start()
+        self.addCleanup(root_patcher.stop)
+
     def run_launcher(self, args):
         adapter = SimpleNamespace(read=lambda: SimpleNamespace(bearing=12), binding={"mode": "reused-seed"})
         with patch.object(launcher.socket, "gethostname", return_value="AMD-DESKTOP"), \
@@ -74,6 +86,35 @@ class LauncherTests(unittest.TestCase):
              patch("tkinter.Tk"), patch("tkinter.messagebox.showerror"):
             self.assertEqual(launcher.main(["--physical-pid", "7"]), 2)
             window.assert_not_called()
+
+    def test_cli_invalid_route_logs_full_stack_without_starting_helper_or_native_reader(self):
+        route = self.root / "invalid-route.json"
+        route.write_text('{"waypoints": [', encoding="utf-8")
+        previous_sys_hook = sys.excepthook
+        previous_thread_hook = threading.excepthook
+
+        with patch.object(launcher.socket, "gethostname", return_value="AMD-DESKTOP"), \
+             patch.object(launcher.physical_rift, "select_physical") as select_physical, \
+             patch.object(launcher, "PhysicalAdapter") as adapter, \
+             patch.object(launcher, "launch_window") as window, \
+             contextlib.redirect_stderr(io.StringIO()) as errors:
+            self.assertEqual(launcher.main(["--cli", "--route", str(route)]), 2)
+
+        self.assertIn("Expecting value", errors.getvalue())
+        select_physical.assert_not_called()
+        adapter.assert_not_called()
+        window.assert_not_called()
+        self.assertIs(sys.excepthook, previous_sys_hook)
+        self.assertIs(threading.excepthook, previous_thread_hook)
+
+        logs = list((self.root / "artifacts" / "waypoint-logs").glob("waypoints-*.log"))
+        self.assertEqual(len(logs), 1)
+        records = [json.loads(line) for line in logs[0].read_text(encoding="utf-8").splitlines()]
+        failure = next(record for record in records if record["message"] == "Waypoint startup failed")
+        self.assertEqual(failure["exceptionType"], "JSONDecodeError")
+        self.assertIn("Traceback (most recent call last)", failure["traceback"])
+        self.assertIn("in main", failure["traceback"])
+        self.assertIn("json.loads", failure["traceback"])
 
 
 if __name__ == "__main__":

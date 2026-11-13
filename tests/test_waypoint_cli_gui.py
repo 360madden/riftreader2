@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import os
 import sys
+import threading
 import time
 import scripts.physical_waypoints as app
 import scripts.waypoint_connection as connection
@@ -28,6 +29,9 @@ import scripts.waypoint_cli_protocol as protocol
 root = Path(sys.argv[1])
 app.ROOT = root
 (root / 'artifacts').mkdir(exist_ok=True)
+def fake_startfile(path):
+    (root / 'opened-log-directory').write_text(str(path), encoding='utf-8')
+app.os.startfile = fake_startfile
 original_server = protocol.LocalSessionServer
 class Server(original_server):
     def __init__(self, *args, **kwargs):
@@ -37,9 +41,43 @@ class Server(original_server):
         # Let the test atomically stage both requests before this poll.
         if (root / 'hold-poll').exists():
             return
+        import tkinter as tk
+        tkroot = tk._default_root
+        if not getattr(tkroot, '_diagnostic_test_clipboard', False):
+            def clipboard_clear():
+                (root / 'clipboard.txt').write_text('', encoding='utf-8')
+            def clipboard_append(text):
+                with (root / 'clipboard.txt').open('a', encoding='utf-8') as stream: stream.write(text)
+            tkroot.clipboard_clear = clipboard_clear
+            tkroot.clipboard_append = clipboard_append
+            tkroot._diagnostic_test_clipboard = True
+        def invoke_button(label):
+            def visit(widget):
+                for child in widget.winfo_children():
+                    if child.winfo_class() == 'TButton' and child.cget('text') == label:
+                        child.invoke(); return True
+                    if visit(child): return True
+                return False
+            return visit(tkroot)
+        if (root / 'gui-copy-diagnostics').exists():
+            invoke_button('Copy diagnostics')
+            (root / 'gui-copy-diagnostics').unlink()
+            (root / 'gui-copy-complete').touch()
+        if (root / 'gui-open-logs').exists():
+            invoke_button('Open logs')
+            (root / 'gui-open-logs').unlink()
+            (root / 'gui-open-complete').touch()
+        if (root / 'gui-callback-failure').exists():
+            (root / 'gui-callback-failure').unlink()
+            def fail_callback(): raise RuntimeError('gui-callback-marker')
+            tkroot.after(0, fail_callback)
+        if (root / 'thread-failure').exists():
+            (root / 'thread-failure').unlink()
+            def fail_thread(): raise RuntimeError('thread-failure-marker')
+            worker = threading.Thread(target=fail_thread, name='diagnostic-test-worker')
+            worker.start(); worker.join()
         draft = root / 'draft-fields'
         if draft.exists():
-            import tkinter as tk
             entries = []
             def collect(widget):
                 for child in widget.winfo_children():
@@ -51,7 +89,6 @@ class Server(original_server):
             draft.unlink()
         gui_stop = root / 'gui-stop'
         if gui_stop.exists():
-            import tkinter as tk
             def visit(widget):
                 for child in widget.winfo_children():
                     if child.winfo_class() == 'TButton' and child.cget('text') == 'Stop Recording':
@@ -385,6 +422,68 @@ class GuiBridgeTests(unittest.TestCase):
         listing = self.call('route.list')['data']
         self.assertFalse(listing['editDraft']['pending'])
         self.assertEqual(listing['selected'], [1])
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_diagnostics_report_keeps_route_request_and_full_malformed_json_trace(self):
+        self.assertTrue(self.call('route.add', {'name':'Current', 'x':1, 'z':2})['ok'])
+        current = self.root / 'current-route.json'
+        self.assertTrue(self.call('route.save', {'file':str(current)})['ok'])
+        malformed = self.root / 'malformed-route.json'
+        malformed.write_text('{"waypoints": [', encoding='utf-8')
+        failed = self.call('route.load', {'file':str(malformed)}, rid='malformed-route-request')
+        self.assertFalse(failed['ok'], failed)
+        report = self.call('diagnostics.show')['data']['text']
+        for marker in ("Joey D's Waypoints diagnostics", 'App version: 1.1.0',
+                       current.name, 'malformed-route-request', 'JSONDecodeError',
+                       'Traceback (most recent call last):'):
+            self.assertIn(marker, report)
+        self.assertFalse((self.root / 'movement-called').exists())
+
+    def test_diagnostics_capture_unhandled_gui_callback_and_thread_failure(self):
+        (self.root / 'gui-callback-failure').touch()
+        (self.root / 'thread-failure').touch()
+        end = time.monotonic() + 5
+        report = ''
+        while time.monotonic() < end:
+            self.assertTrue(self.call('status')['ok'])
+            report = self.call('diagnostics.show')['data']['text']
+            if 'gui-callback-marker' in report and 'thread-failure-marker' in report:
+                break
+            time.sleep(.03)
+        for marker in ('gui-callback-marker', 'thread-failure-marker',
+                       'diagnostic-test-worker', 'Traceback (most recent call last):'):
+            self.assertIn(marker, report)
+        self.assertIsNone(self.child.poll())
+
+    def test_diagnostics_cli_and_activity_buttons_use_mocked_clipboard_and_explorer(self):
+        copied = self.call('diagnostics.copy')
+        self.assertTrue(copied['ok'], copied)
+        self.assertTrue(copied['data']['copied'])
+        text = (self.root / 'clipboard.txt').read_text(encoding='utf-8')
+        self.assertEqual(copied['data']['characters'], len(text))
+        self.assertIn("Joey D's Waypoints diagnostics", text)
+        opened = self.call('diagnostics.open')
+        self.assertTrue(opened['ok'], opened)
+        self.assertEqual((self.root / 'opened-log-directory').read_text(encoding='utf-8'),
+                         opened['data']['directory'])
+
+        (self.root / 'clipboard.txt').unlink(missing_ok=True)
+        (self.root / 'opened-log-directory').unlink(missing_ok=True)
+        (self.root / 'gui-copy-diagnostics').touch()
+        (self.root / 'gui-open-logs').touch()
+        end = time.monotonic() + 5
+        while time.monotonic() < end:
+            self.call('status')
+            if ((self.root / 'gui-copy-complete').exists()
+                    and (self.root / 'gui-open-complete').exists()):
+                break
+            time.sleep(.03)
+        self.assertTrue((self.root / 'gui-copy-complete').exists())
+        self.assertTrue((self.root / 'gui-open-complete').exists())
+        self.assertIn("Joey D's Waypoints diagnostics",
+                      (self.root / 'clipboard.txt').read_text(encoding='utf-8'))
+        self.assertIn('waypoint-logs',
+                      (self.root / 'opened-log-directory').read_text(encoding='utf-8'))
         self.assertFalse((self.root / 'movement-called').exists())
 
     def test_zone_guard_rechecks_before_movement(self):

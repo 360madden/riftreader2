@@ -1,5 +1,23 @@
 # Current status
 
+**NOVEMBER 13 — PERSISTENT WAYPOINT ERROR LOGGING AND DIAGNOSTICS:**
+On verified AMD-DESKTOP, Waypoints now saves rotating JSON-line logs with app,
+session, thread and target context; Python failures retain bounded tracebacks and
+CLI errors retain request IDs. Activity adds Open logs, Copy diagnostics and
+logging health. The matching `diagnostics status/show/copy/open` CLI commands use
+the running helper or explicitly labeled saved logs when no helper is running.
+Startup, handled operation, unexpected Tk callback and worker errors are covered;
+storage failure is fail-soft. The focused run passed **105 tests and 116 subtests**,
+zero failures/skips/warnings. Live invalid-route and pre-window startup failures
+were logged; real clipboard and Explorer actions worked. Normal/compact native
+Activity captures fit. Original route/basis hashes, cached XYZ/bearing, disabled
+overlays, scene references and absent checkpoint were preserved; no game input.
+Helper PID34644/session43f3cadd5fb549a2b5ce90a28d93409c remains open on Activity,
+bound to physical RIFT PID40452. Local evidence:
+`artifacts/diagnostics-live-verification-20261113.json` and
+`artifacts/diagnostics-activity-{normal,compact}-20261113.png`.
+See [Activity and diagnostics](workflows/physical-waypoints.md#activity-and-diagnostics).
+
 **NOVEMBER 13 — SCENE & BEACONS POLISH AND CLI PARITY:**
 On verified AMD-DESKTOP/PID40452, the Scene tab shows fresh overlay visibility
 separately from reader state, selection-aware marker guidance, controlled target
