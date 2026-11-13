@@ -1,5 +1,30 @@
 # Current status
 
+**NOVEMBER 13 — FINAL CROSS-TAB USABILITY PASS:**
+On verified AMD-DESKTOP, unapplied edits now show a persistent clickable notice
+and Edit tab star, with immediate Replay/direct movement/record/add/preview
+readiness updates. Add X/Z refuses an existing draft consistently with CLI.
+New point and `route select --clear [--discard-draft]` clear form selection
+without editing the route. Repeated named current-position additions no longer
+create a synthetic draft; explicit target labels retain their native provenance.
+Scene/CLI capture readiness shares connection/busy/draft refusal reasons while
+retaining separate measured-height counts and evidence readiness. General status
+includes active tab/draft; CLI Scene output exposes capture errors and actual
+nearby-file availability. Focused checks covered **150 tests and 162 subtests**
+across runs. A stale recent-route fixture selected the wrong combobox/full path;
+it now selects the actual readable recent entry and retains the Cancel guard.
+Its final follow-up and new target-label check passed, with no unresolved failures.
+Live CLI exercised all six tabs, selection clear, two named measured captures,
+manual addition, capture ready/blocked transitions, rename, reorder and Undo on
+a temporary unsaved route. Original route/basis/library/style hashes, recent
+paths, selected point 7, preview range 10, scene references and empty trail were
+preserved/restored; no game input or new input receipts. All twelve native
+normal (1120×850) and compact (980×740) tab captures were inspected; controls,
+hints and footer fit. Helper PID48540/session 2598e37b1c334ddeaae58777b5af27cc
+remains on Replay, Live pose on, overlays off, physical RIFT PID34468.
+Evidence: `artifacts/usability-live-verification-20261113.json`,
+`artifacts/usability-{normal,compact}-{replay,edit,scene,explore,library,activity}-20261113.png`.
+
 **NOVEMBER 13 — HEADER, LIVE POSE AND STOP:**
 On verified AMD-DESKTOP, the header now has readable rounded XYZ/facing plus a
 Fresh/Cached/Unavailable badge with acquisition age, paused refresh and pending

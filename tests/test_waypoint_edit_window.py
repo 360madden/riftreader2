@@ -166,6 +166,10 @@ class WaypointEditTests(unittest.TestCase):
 
     def test_new_addition_keeps_form_coherent_with_selected_row(self):
         self.prepare()
+        self.button("New point").invoke()
+        self.assertEqual((), self.table.selection())
+        self.assertEqual(self.items, self.table.get_children())
+        self.assertEqual(self.original, self.checkpoint.read_bytes())
         self.enter("New point", "2", "0")
         self.button("Add X / Z").invoke()
         self.root.update()
@@ -182,6 +186,10 @@ class WaypointEditTests(unittest.TestCase):
         # Values that serialize to the same stored precision are no-ops.
         self.enter("First", "0.0000001", "0")
         self.button("Update Selected").invoke()
+        self.assertEqual(self.original, self.checkpoint.read_bytes())
+        self.button("New point").invoke()
+        self.assertEqual((), self.table.selection())
+        self.assertEqual(self.items, self.table.get_children())
         self.assertEqual(self.original, self.checkpoint.read_bytes())
         self.enter("New point", "2", "0")
         self.button("Add X / Z").invoke()

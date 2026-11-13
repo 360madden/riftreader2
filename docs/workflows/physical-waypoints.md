@@ -210,12 +210,21 @@ the updated admission/display path; it is not a new moving-route/STOP trial.
 
 ## Edit waypoint
 
-The fields always describe the selected row, including immediately after adding,
-loading or Undo. **Enter** or **Update Selected** applies them. **Reset fields**
+The fields describe the selected row, including immediately after adding,
+loading or Undo. **New point** clears selection and fields for a new waypoint
+without changing the route or its saved progress. Enter new X/Z, then choose
+Add X / Z. Apply or Reset an existing edit before starting a new point.
+**Enter** or **Update Selected** applies edits. **Reset fields**
 restores the selected row without changing the route. Unapplied fields are marked
 explicitly and preserved when another row is clicked; Apply or Reset before
 switching rows, saving or starting another action. Up/Down, Remove and Update
 follow selection and boundary conditions. The selected row is scrolled into view.
+
+An unapplied edit adds a star to the Edit tab and a persistent clickable notice
+beside Details, visible from every tab. Click it to return to Edit. Replay/direct
+movement, recording, Add X/Z and preview hints update immediately when fields
+change, so a hidden draft explains unavailable actions consistently. Add X/Z
+cannot convert an unapplied edit into a new point.
 
 The hint shows measured Y or estimated/unknown height. Renaming retains height
 evidence. Changing X/Z removes that point's old measurement and recorded-route
@@ -235,10 +244,17 @@ The same operations are available through the attached CLI:
 .\rr2-waypoints.cmd route update 7 --x 7420.25 --z 2940.5
 .\rr2-waypoints.cmd route undo
 .\rr2-waypoints.cmd route select 7 --discard-draft
+.\rr2-waypoints.cmd route select --clear
+.\rr2-waypoints.cmd route select --clear --discard-draft
 ```
 
-`--current` may include `--name` but cannot include manual `--x`/`--z`. Route list
-reports selected point numbers and `editDraft` state. Update responses report
+`--current` may include `--name` but cannot include manual `--x`/`--z`. Repeated
+named `route add --current` calls pass labels with the capture request and leave
+existing form fields alone until the point is admitted. An explicit target-add
+name is also retained. `route select --clear` matches New point; it requires a
+point number or `--clear`, never both. Route list and general `status.route`
+report selected numbers and `editDraft`; `status.app.tab` reports the active
+workspace (`replay`, `edit`, `scene`, `explore`, `library`, `activity`). Update responses report
 `change` fields for renamed coordinates, replaced/discarded measurements and
 discarded recording provenance. `--discard-draft` explicitly abandons unapplied
 GUI fields; normal selection preserves them. Existing load/new/close `--discard`
@@ -277,6 +293,12 @@ uses the existing strict measured-XYZ path: every route point needs measurement
 provenance. A mixed measured/estimated route remains usable for live beacons,
 but Save view explains its measured count and stays unavailable until a fully
 measured route is loaded.
+
+Capture readiness also explains an active action, missing connection or pending
+Edit fields. The GUI button, Scene hint and CLI `view status` share that result;
+`measurementReady`/`measurementReason` retain the separate height-evidence result
+and measured/total counts. CLI output also shows the latest capture error and
+whether a retained nearby-sample path still points to an available file.
 
 ```powershell
 .\rr2-waypoints.cmd beacons status

@@ -193,6 +193,7 @@ def build_parser():
                 "app.close":"Close the selected helper after owned workers release; unsaved changes need --discard.",
                 "route.add":"Add an estimated point with --x/--z, measured player XYZ with --current, or a qualified target candidate with --target.",
                 "route.update":"Edit a point name/manual X/Z, or use --current to replace its coordinates with freshly measured player XYZ.",
+                "route.select":"Select one waypoint, or use --clear to prepare the Add X/Z form; pending fields require --discard-draft.",
                 "zone.status":"Show the current zone candidate and freshness; a candidate is not proof of the actual world instance.",
                 "zone.refresh":"Read a fresh native zone candidate under the helper's current identity; not proof of the actual world instance.",
                 "route.context":"Show the loaded route's saved zone binding and comparison with current candidate context.",
@@ -303,8 +304,10 @@ def build_parser():
         help="replace coordinates and height with a fresh measured player XYZ capture; may be combined with --name, not --x/--z")
     for op in ("route.add", "route.update"):
         for axis in "xz": arg(op, "--" + axis, type=number, help=f"world {axis.upper()} units; finite")
-    for op in ("route.update", "route.remove", "route.reorder", "route.select"):
+    for op in ("route.update", "route.remove", "route.reorder"):
         arg(op, "point", type=positive, help="one-based waypoint number")
+    arg("route.select", "point", nargs="?", type=positive, help="one-based waypoint number; omit with --clear")
+    arg("route.select", "--clear", action="store_true", help="clear selection to prepare a new Add X/Z point")
     arg("route.select", "--discard-draft", action="store_true",
         help="explicitly discard unapplied Edit waypoint fields before selecting the point")
     arg("route.reorder", "--to", type=positive, required=True, help="one-based destination position")
@@ -411,6 +414,14 @@ def human_controls(controls, *, stopping=False):
         print(str(controls["qualification"]))
 
 
+def human_edit_draft(draft):
+    if isinstance(draft, dict) and draft.get("pending"):
+        point = draft.get("point") if draft.get("point") is not None else "unselected"
+        validity = "valid" if draft.get("valid") else "invalid"
+        reason = f" | {draft['reason']}" if draft.get("reason") else ""
+        print(f"Edit draft: pending for point {point} | {validity}{reason} | apply it or select with --discard-draft")
+
+
 def human_zone(context, *, label="Zone"):
     context = context or {}
     print(f"{label}: {context.get('zoneName') or context.get('zoneIdCandidate') or 'unknown'}"
@@ -503,8 +514,10 @@ def human_data(command, data):
         print(f"Host: {data.get('host', target.get('hostName', '?'))} | RIFT PID: {target.get('processId', 'unavailable')}")
         ready = data.get("ready", data.get("pose", {}).get("status") == "fresh")
         print(f"App: {'busy' if app.get('busy') else 'ready' if ready else 'waiting'} | "
-              f"{'visible' if app.get('visible') else 'hidden'} | {app.get('state', '')}")
+              f"{'visible' if app.get('visible') else 'hidden'} | {app.get('state', '')}"
+              + (f" | tab {app['tab']}" if app.get("tab") else ""))
         print(f"Route: {route.get('count', 0)} points | {'unsaved changes' if route.get('dirty') else 'saved'} | {route.get('file') or 'no file'}")
+        human_edit_draft(route.get("editDraft"))
         human_pose(data.get("pose") or {})
         if isinstance(data.get("controls"), dict):
             human_controls(data["controls"])
@@ -533,12 +546,7 @@ def human_data(command, data):
         print(f"Route: {data.get('file') or 'loaded in helper'} | {len(points)} points | "
               f"{'unsaved changes' if data.get('dirty') else 'saved'} | revision {data.get('revision', 'offline')}")
         if selected: print("Selected: " + ", ".join(str(number) for number in sorted(selected)))
-        draft = data.get("editDraft")
-        if isinstance(draft, dict) and draft.get("pending"):
-            point = draft.get("point") if draft.get("point") is not None else "unselected"
-            validity = "valid" if draft.get("valid") else "invalid"
-            reason = f" | {draft['reason']}" if draft.get("reason") else ""
-            print(f"Edit draft: pending for point {point} | {validity}{reason} | apply it or select with --discard-draft")
+        human_edit_draft(data.get("editDraft"))
         if "measuredCount" in data:
             print(f"Heights: {data['measuredCount']} measured, {data['estimatedCount']} estimated/unknown")
         if data.get("preview"):
@@ -552,6 +560,7 @@ def human_data(command, data):
     elif command in {"route.update", "route.add", "route.remove", "route.reorder", "route.select", "route.undo"}:
         selected = data.get("selected") or []
         if selected: print("Selected waypoint" + ("s" if len(selected) != 1 else "") + ": " + ", ".join(map(str, selected)))
+        elif command == "route.select": print("Waypoint selection cleared; Add X/Z form is ready.")
         change = data.get("change")
         if isinstance(change, dict):
             details = []
@@ -661,8 +670,12 @@ def human_data(command, data):
         print(f"3D rerun: {'available' if data.get('rerunAvailable') else 'unavailable'}"
               + (f" | {data['rerun']}" if data.get('rerun') else ""))
         print("Last capture: " + str(data.get("lastCaptureState") or "none"))
+        if data.get("lastCaptureError"):
+            print("Capture error: " + str(data["lastCaptureError"]))
         if data.get("nearbySample") is not None:
-            print("Nearby sample: retained")
+            available = data.get("nearbyAvailable")
+            state = "available" if available is True else "unavailable" if available is False else "availability unknown"
+            print(f"Nearby sample: {state} | {data['nearbySample']}")
     elif command == "diagnostics.status":
         available = data.get("loggingAvailable", data.get("available"))
         scope = " | saved/offline logs" if data.get("offline") else ""
@@ -914,6 +927,8 @@ def main(argv=None):
             raise UsageError("status --watch uses --jsonl, not --json")
         if command in MOVEMENT and not args.execute:
             raise UsageError("movement requires explicit --execute before dispatch")
+        if command == "route.select" and (args.point is None) == (not args.clear):
+            raise UsageError("route select requires one waypoint number or --clear")
         if command == "route.add":
             explicit = args.x is not None or args.z is not None
             if (args.current or args.target) and explicit:

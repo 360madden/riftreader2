@@ -105,9 +105,41 @@ class CliTests(unittest.TestCase):
                 protocol,'request',return_value=cli.result('route.select',data={})) as request:
             self.assertEqual(self.call('route','select','3','--discard-draft','--json')[0], 0)
         self.assertEqual(request.call_args.args[1:3], ('route.select', {
-            'point':3, 'discard_draft':True}))
+            'point':3, 'clear':False, 'discard_draft':True}))
         help_text = self.call('route','select','--help')[1]
         self.assertIn('explicitly discard unapplied Edit waypoint fields', help_text)
+
+    def test_route_select_clear_prepares_new_point_form_and_requires_exclusive_choice(self):
+        with patch.object(protocol,'resolve_session',return_value={}), patch.object(
+                protocol,'request',return_value=cli.result('route.select',data={'selected':[]})) as request:
+            code,out,_ = self.call('route','select','--clear','--discard-draft')
+        self.assertEqual(code, 0)
+        self.assertEqual(request.call_args.args[1:3], ('route.select', {'clear':True,'discard_draft':True}))
+        self.assertIn('Waypoint selection cleared; Add X/Z form is ready.', out)
+        for args in (('route','select'), ('route','select','3','--clear')):
+            with self.subTest(args=args), patch.object(protocol,'resolve_session') as resolve:
+                self.assertEqual(self.call(*args)[0], 2)
+                resolve.assert_not_called()
+
+    def test_status_reports_current_tab_and_unapplied_edit_fields(self):
+        data = {'app':{'tab':'edit','visible':True}, 'route':{'count':3,'dirty':False,
+                'editDraft':{'pending':True,'point':2,'valid':False,'reason':'Enter finite X and Z'}}}
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('status', data=data))
+        for phrase in ('tab edit', 'Edit draft: pending for point 2 | invalid | Enter finite X and Z',
+                       'apply it or select with --discard-draft'):
+            self.assertIn(phrase, out.getvalue())
+
+    def test_scene_status_reports_failed_capture_and_missing_nearby_asset(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result('view.status',data={'lastCaptureState':'failed',
+                'lastCaptureError':'RIFT identity changed', 'nearbySample':'missing.json', 'nearbyAvailable':False}))
+        for phrase in ('Last capture: failed', 'Capture error: RIFT identity changed',
+                       'Nearby sample: unavailable | missing.json'):
+            self.assertIn(phrase, out.getvalue())
+        self.assertNotIn('Nearby sample: retained', out.getvalue())
 
     def test_preview_commands_are_small_display_only_controls(self):
         cases = [

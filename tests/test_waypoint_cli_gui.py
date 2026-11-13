@@ -262,6 +262,22 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertEqual(before['revision'],after['revision'])
         self.assertFalse((self.root/'movement-called').exists())
 
+    def test_new_point_selection_and_repeated_named_current_additions(self):
+        for name in ('First measured','Second measured'):
+            result=self.call('route.add',{'current':True,'name':name})
+            self.assertTrue(result['ok'],result)
+        before=self.call('route.list')['data']
+        self.assertEqual(['First measured','Second measured'],[p['name'] for p in before['points']])
+        self.assertEqual(2,before['measuredCount'])
+        cleared=self.call('route.select',{'clear':True})
+        self.assertTrue(cleared['ok'],cleared)
+        self.assertEqual([],cleared['data']['selected'])
+        self.assertFalse(cleared['data']['editDraft']['pending'])
+        after=self.call('route.list')['data']
+        self.assertEqual(before['document'],after['document'])
+        self.assertEqual(before['revision'],after['revision'])
+        self.assertFalse((self.root/'movement-called').exists())
+
     def test_radar_rejects_invalid_or_unpersisted_changes_transactionally(self):
         keys = ('enabled', 'unlocked', 'range', 'opacity', 'requestedPosition', 'readerRunning')
         baseline = self.call('radar.status')['data']

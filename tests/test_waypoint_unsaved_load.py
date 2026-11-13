@@ -122,8 +122,10 @@ class UnsavedLoadTests(unittest.TestCase):
     def test_load_recent_uses_same_cancel_guard(self):
         self.dirty_route()
         before = self.snapshot()
-        dropdown = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Combobox))
-        dropdown.set(str(self.source))
+        recent_button=self.button("Load recent")
+        dropdown = next(w for w in recent_button.master.winfo_children() if isinstance(w, fixture.ttk.Combobox))
+        dropdown.current(0)
+        self.assertIn(self.source.name,dropdown.get())
         with patch("tkinter.messagebox.askyesnocancel", return_value=None) as ask:
             self.button("Load recent").invoke()
         ask.assert_called_once()

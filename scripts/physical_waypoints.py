@@ -987,9 +987,14 @@ def launch_window(args):
     status_details = ttk.Button(status_strip, text="Details", style="Header.Ghost.TButton",
                                 command=lambda: workflow.select(activity_tab))
     status_details.pack(side="right", padx=(10,0))
+    draft_notice_text=tk.StringVar(value="")
+    draft_notice=ttk.Button(status_strip,textvariable=draft_notice_text,style="Header.Ghost.TButton",
+                            command=lambda: workflow.select(edit_tab))
     status_label.pack(side="left", fill="x", expand=True)
-    status_strip.bind("<Configure>", lambda event: status_label.configure(
-        wraplength=max(200, event.width - status_details.winfo_reqwidth() - 42)))
+    def size_status(_=None):
+        draft_width=draft_notice.winfo_reqwidth()+8 if draft_notice.winfo_manager() else 0
+        status_label.configure(wraplength=max(200,status_strip.winfo_width()-status_details.winfo_reqwidth()-draft_width-42))
+    status_strip.bind("<Configure>",size_status)
     pose_text = tk.StringVar(value="Position is loading…")
     telemetry = ttk.Frame(frame)
     telemetry.grid(row=2, column=0, sticky="ew", pady=(0, 8))
@@ -1476,8 +1481,7 @@ def launch_window(args):
         hidden=map_render["offscreen_count"]
         map_title.set((f"LOCAL PREVIEW · {visible}/{len(points)} visible"+(f" · {hidden} off-screen" if hidden else ""))
                       if points else "LOCAL PREVIEW · no waypoints")
-        map_hint_text.set("Apply / Reset first" if draft_pending() else "Preview only" if busy or closing or cli_action is not None
-                          else "Select · list full" if len(points)>=20 else "Click: select / add" if points else "Click to add")
+        update_preview_hint()
         remaining = points[index:] if playback_view is not None else points
         distance = route_length(*last_pose[:2], [row[1:] for row in remaining])
         planned_distance = route_length(*last_pose[:2], selected_points(True))
@@ -1501,11 +1505,7 @@ def launch_window(args):
                            if original_points else "")
                         + ("   •   Shorten the route to run it" if distance > 20 else ""))
         if not busy:
-            go_button.configure(state="normal" if selected and chosen <= 20 else "disabled")
-            route_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
-            teach_button.configure(state="normal" if points and planned_distance <= 20 else "disabled")
-            face_button.configure(state="normal" if len(selected) == 1 and .3 < chosen <= 20 else "disabled")
-            record_button.configure(state="normal")
+            update_direct_state()
             if cli_server is not None:
                 update_replay_status()
 
@@ -1595,6 +1595,7 @@ def launch_window(args):
                     pose, waypoint, name_candidate = _read_target_waypoint(adapter, pose)
                 result = {"status": operation, "position": asdict(pose.position), "bearing": pose.bearing,
                           "acquired": pose.acquired}
+                if operation in ("save","target") and isinstance(points,str): result["newLabel"]=points
                 if operation == "save" and isinstance(getattr(adapter, "binding", None), dict):
                     try:
                         from scripts.waypoint_measurements import measurement
@@ -1628,6 +1629,8 @@ def launch_window(args):
                         result.update(status="notice", reason="Player moved; map refreshed. Click again to choose a waypoint.")
                     else:
                         result["waypoint"] = (label, px, pz)
+                if operation=="target" and result.get("newLabel") and result.get("waypoint"):
+                    result["waypoint"]=(result["newLabel"],*result["waypoint"][1:])
                 events.put(result)
             elif operation == "face":
                 outcome = run_facing(adapter, stop, emit, point=points[0][1:])
@@ -1884,6 +1887,24 @@ def launch_window(args):
         return dict(pending=bool(draft_pending()), point=table.index(form_item)+1 if form_item and table.exists(form_item) else None,
                     valid=valid, reason=reason)
 
+    def update_preview_hint():
+        points=table.get_children()
+        map_hint_text.set("No pose · Refresh" if last_pose is None else "Apply / Reset first" if draft_pending()
+            else "Preview only" if busy or closing or cli_action is not None else "Select · list full" if len(points)>=20
+            else "Click: select / add" if points else "Click to add")
+
+    def update_direct_state():
+        idle=not busy and not closing and cli_action is None and not draft_pending() and last_pose is not None
+        selected=selected_points()
+        points=selected_points(True)
+        chosen=route_length(*last_pose[:2],selected) if idle and selected else None
+        planned=route_length(*last_pose[:2],points) if idle and points else None
+        for button,allowed in ((go_button,chosen is not None and chosen<=20),
+            (face_button,len(selected)==1 and chosen is not None and .3<chosen<=20),
+            (route_button,planned is not None and planned<=20),(teach_button,planned is not None and planned<=20),
+            (record_button,True)):
+            button.configure(state="normal" if idle and allowed else "disabled")
+
     def update_edit_state(*_):
         if not edit_buttons:
             return
@@ -1901,7 +1922,8 @@ def launch_window(args):
                    "Remove": bool(selected) and not draft["pending"], "Clear": count > 0 and not draft["pending"],
                    "Load": not draft["pending"], "Save Route": count>0 and not draft["pending"],
                    "Save As": count>0 and not draft["pending"],
-                   "Add X / Z": draft["valid"] and count < 20,
+                   "Add X / Z": draft["valid"] and count < 20 and not draft["pending"],
+                   "New point": not draft["pending"],
                    "Save Current": adapter is not None and count < 20 and not draft["pending"],
                    "Add Target": adapter is not None and count < 20 and not draft["pending"],
                    "Add nearby": adapter is not None and count < 20 and not draft["pending"] and not markers.running()}
@@ -1910,6 +1932,9 @@ def launch_window(args):
                 button.configure(state="normal" if idle and allowed[label] else "disabled")
         undo_button.configure(state="normal" if idle and edit_history and not draft["pending"] else "disabled")
         if draft["pending"]:
+            draft_notice_text.set(f"Unapplied edit · point {draft['point']}")
+            if not draft_notice.winfo_manager(): draft_notice.pack(side="right",after=status_details,padx=(8,0))
+            workflow.tab(edit_tab,text="Edit waypoint *")
             warning = ""
             if single and point_receipts.get(selected[0]) is not None:
                 old = table.item(selected[0], "values")
@@ -1926,8 +1951,28 @@ def launch_window(args):
         else:
             edit_hint.set(f"{len(selected)} selected · Select one to edit; Remove supports multiple points." if selected
                           else "Select a waypoint to edit, or enter X / Z and choose Add X / Z.")
+        if not draft["pending"]:
+            draft_notice.pack_forget()
+            workflow.tab(edit_tab,text="Edit waypoint")
+        size_status()
         if cli_server is not None:
+            update_direct_state()
+            update_preview_hint()
+            update_replay_status()
             update_library_readiness()
+            update_scene_state(force=True)
+
+    def new_point(*,discard_draft=False):
+        if busy or closing or cli_action is not None:
+            state.set("Wait for the active action before starting a new point.")
+            return False
+        if draft_pending() and not discard_draft:
+            state.set("Apply or Reset fields before starting a new point.")
+            return False
+        table.selection_remove(*table.selection())
+        fill_fields(None)
+        redraw()
+        return True
 
     def capture_selected(label=None):
         selected = table.selection()
@@ -1938,6 +1983,9 @@ def launch_window(args):
                                  label=label or table.item(selected[0], "values")[0]))
 
     def add_entered():
+        if busy or closing or cli_action is not None or draft_pending():
+            state.set("Apply or Reset fields and wait for the active action before adding another point.")
+            return
         try:
             add_point(name.get() or "Waypoint", x.get(), z.get())
         except (ValueError, TypeError):
@@ -2451,6 +2499,7 @@ def launch_window(args):
     buttons_second = ttk.Frame(edit_tab, style="Surface.TFrame")
     buttons_second.pack(fill="x")
     for label, parent, callback in (("Refresh", header_actions, lambda: start("refresh")),
+            ("New point", buttons, new_point),
             ("Save Current", buttons, lambda: start("save")), ("Add X / Z", buttons, add_entered),
             ("Add Target", buttons, lambda: start("target")), ("Add nearby", buttons, add_nearby),
             ("Update Selected", buttons_selected, update_selected),
@@ -2998,13 +3047,22 @@ def launch_window(args):
         count = len(document.get("waypoints", []))
         try:
             parse_projection_route(document)
-            return dict(ready=True, reason="Measured route ready for capture", measured=count, total=count)
+            measured=count
+            measurement_ready=True
+            measurement_reason="Measured route ready for capture"
         except (ValueError, TypeError, KeyError):
             try: measured = sum(r is not None for r in document_measurements(document))
             except (ValueError, TypeError, KeyError): measured = 0
-            reason = ("Load a measured route before capture" if not count else
+            measurement_ready=False
+            measurement_reason = ("Load a measured route before capture" if not count else
                       f"Capture needs measured XYZ for all points ({measured}/{count}); estimated beacons still work")
-            return dict(ready=False, reason=reason, measured=measured, total=count)
+        reason=("Helper is closing" if closing else "Another action is active" if busy or cli_action is not None else
+                "Connect to RIFT before capture" if adapter is None else
+                "Apply or Reset Edit waypoint fields before capture" if draft_pending() else
+                measurement_reason)
+        return dict(ready=measurement_ready and not (closing or busy or cli_action is not None or adapter is None or draft_pending()),
+                    reason=reason,measured=measured,total=count,
+                    measurementReady=measurement_ready,measurementReason=measurement_reason)
 
     def cli_view_status():
         def available(value):
@@ -3016,22 +3074,22 @@ def launch_window(args):
                     nearbyAvailable=available(saved_unit_sample), lastCaptureState=last_capture_state,
                     lastCaptureError=last_capture_error, readiness=capture_readiness())
 
-    def update_scene_state():
+    def update_scene_state(*,force=False):
         nonlocal next_scene_at
-        if workflow.select() != str(scene_tab) or time.monotonic() < next_scene_at: return
+        if workflow.select() != str(scene_tab) or not force and time.monotonic() < next_scene_at: return
         next_scene_at = time.monotonic()+.25
         view = cli_view_status()
-        idle = not busy and not closing
+        idle = not busy and not closing and cli_action is None
         open_view_button.configure(state="normal" if idle and view["imageAvailable"] else "disabled")
         open_3d_button.configure(state="normal" if idle and view["rerunAvailable"] else "disabled")
-        save_view_button.configure(state="normal" if idle and adapter is not None and view["readiness"]["ready"] and not draft_pending() else "disabled")
+        save_view_button.configure(state="normal" if view["readiness"]["ready"] else "disabled")
         if last_capture_state == "none":
             capture_hint.set("No capture yet · Save view or Open saved…" if view["readiness"]["ready"] else view["readiness"]["reason"])
         else:
             text = f"Last scene: image {'ready' if view['imageAvailable'] else 'unavailable'} · 3D {'ready' if view['rerunAvailable'] else 'unavailable'}"
             if last_capture_state == "failed": text += " · latest capture failed; previous assets retained"
             if not view["readiness"]["ready"]:
-                text += f"\nCapture requires measured XYZ: {view['readiness']['measured']}/{view['readiness']['total']} points ready."
+                text += "\n"+view["readiness"]["reason"]
             capture_hint.set(text)
         beacon = cli_beacon_status()
         hint = beacon["visibility"]["reason"]
@@ -3097,11 +3155,13 @@ def launch_window(args):
         return dict(host=args.expected_host, target=deepcopy(getattr(adapter, "target", None)),
                     diagnostics=diagnostics.status(),
                     app={"name": APP_NAME, "version": APP_VERSION,
+                         "tab":next((key for key,tab in (("replay",replay_tab),("edit",edit_tab),("scene",scene_tab),
+                            ("explore",explore_tab),("library",library_tab),("activity",activity_tab)) if workflow.select()==str(tab)),None),
                          "visible": window.state() not in ("withdrawn", "iconic"), "windowState": window.state(),
                          "busy": busy, "closing": closing, "state": state.get()},
                     route={"file": str(route_path) if route_path else None, "dirty": route_dirty,
                            "revision": route_revision, "count": len(table.get_children()),
-                           "selected": [table.index(i)+1 for i in table.selection()]},
+                           "selected": [table.index(i)+1 for i in table.selection()],"editDraft":edit_draft_status()},
                     zone=zone_state(), routeContext=deepcopy(route_metadata.get("routeContext")),
                     contextComparison=zone_comparison(), heights=route_heights(),
                     pose=cli_pose(), controls=cli_controls(), radar=cli_radar_status(), beacons=cli_beacon_status(),
@@ -3485,10 +3545,18 @@ def launch_window(args):
                     if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before adding another point", "Use route select N --discard-draft", 4)
                     if len(table.get_children()) >= 20: raise CliError("route-full", "Routes support at most 20 points", exit_code=4)
                     if values.get("current") or values.get("target"):
-                        name.set(values.get("name") or f"Point {len(table.get_children())+1}")
-                        return cli_begin(rid, "target" if values.get("target") else "save", command=command)
+                        label=values.get("name") or (None if values.get("target") else f"Point {len(table.get_children())+1}")
+                        return cli_begin(rid,"target" if values.get("target") else "save",label,command=command)
                     add_point(values.get("name") or f"Point {len(table.get_children())+1}", values["x"], values["z"])
                 elif command in ("route.select", "route.update", "route.remove", "route.reorder"):
+                    if command=="route.select" and values.get("clear"):
+                        if values.get("point") is not None:
+                            raise CliError("invalid-selection","Choose a point number or --clear",exit_code=2)
+                        if draft_pending() and not values.get("discard_draft"):
+                            raise CliError("unapplied-edit","Apply or Reset fields before starting a new point",
+                                           "Use route select --clear --discard-draft to abandon the draft",4)
+                        new_point(discard_draft=bool(values.get("discard_draft")))
+                        return cli_ok(dict(cli_snapshot()["route"],editDraft=edit_draft_status()))
                     children = table.get_children()
                     index = values["point"]-1
                     if not 0 <= index < len(children): raise CliError("point-out-of-range", "Choose an existing one-based point number")
@@ -4184,7 +4252,7 @@ def launch_window(args):
                     event["measurementReason"] = "Selected waypoint replaced with current measured XYZ; save the route to keep it."
                     redraw()
                 else:
-                    item = add_point(name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
+                    item = add_point(event.get("newLabel") or name.get() or "Waypoint", event["position"]["x"], event["position"]["z"])
                 if item is not None and event.get("measurement") is not None:
                     point_receipts[item] = event["measurement"]
                     redraw()
@@ -4353,6 +4421,8 @@ def launch_window(args):
     live_pose_option.configure(command=change_live_pose)
     attach_path_tooltip(status_label,lambda:state.get())
     attach_path_tooltip(status_details,lambda:"Open Activity for complete status messages, receipts and errors.")
+    attach_path_tooltip(draft_notice,lambda:"This waypoint has unapplied fields. Open Edit waypoint, then Apply or Reset before another action.")
+    attach_path_tooltip(edit_buttons["New point"],lambda:"Clear the selection and fields to enter a new waypoint. Apply or Reset existing edits first; the route is unchanged.")
     attach_path_tooltip(connection_label,lambda:
         json.dumps(getattr(adapter,"target",None),indent=2) if adapter is not None else "Waiting for a verified local RIFT process.")
     attach_path_tooltip(pose_label,lambda:json.dumps(cli_pose(),indent=2))
