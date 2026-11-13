@@ -8,8 +8,19 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
+from scripts.waypoint_recent_display import route_labels
 from scripts.waypoint_progress import RouteProgress
 from tests import test_waypoint_playback_window_state as fixture
+
+
+class RecentRouteLabelTests(unittest.TestCase):
+    def test_unique_names_and_duplicate_folders_remain_distinguishable(self):
+        paths = [r"C:\one\route.json", r"D:\one\route.json", r"C:\two\route.json", r"C:\ready.json"]
+        labels = route_labels(paths)
+        self.assertEqual("ready.json", labels[-1])
+        self.assertEqual(len(labels), len(set(labels)))
+        self.assertTrue(all(label.startswith("route.json") for label in labels[:3]))
+        self.assertFalse(any(":" in label for label in labels))
 
 
 @unittest.skipIf(fixture.tk is None, "Tk unavailable")
@@ -54,20 +65,21 @@ class RecentRoutesTests(unittest.TestCase):
             with patch("tkinter.filedialog.askopenfilename", return_value=str(path)):
                 self.button("Load").invoke()
         history = list(self.combo.cget("values"))
-        self.assertEqual([str(p) for p in reversed(paths[1:])], history)
+        self.assertEqual(route_labels([str(p) for p in reversed(paths[1:])]), history)
         checkpoint = self.path / "artifacts" / "waypoint-current-progress.json"
         progress = RouteProgress(document, "reverse", self.identity)
         progress.begin({"x": 1, "y": 6, "z": 0})
         progress.confirm_arrival(0, progress.ordered_points[0])
         progress.save(checkpoint)
         prior = checkpoint.read_bytes()
-        self.combo.set(str(paths[2]))
+        self.combo.current(6)
         self.button("Load recent").invoke()
         self.assertEqual(prior, checkpoint.read_bytes())
-        self.assertEqual(str(paths[2]), list(self.combo.cget("values"))[0])
+        self.assertEqual("route.json â€” 2", list(self.combo.cget("values"))[0])
         saved = json.loads((self.path / "artifacts" / "waypoint-last-route.json").read_text(encoding="utf-8"))
         self.assertEqual(document, saved["route"])
-        self.assertEqual(list(self.combo.cget("values")), saved["recentPaths"])
+        self.assertEqual(str(paths[2]), saved["recentPaths"][0])
+        self.assertTrue(all(Path(value).is_absolute() for value in saved["recentPaths"]))
 
     def test_corrupt_history_and_failed_recent_load_are_nonfatal(self):
         local_missing = self.path / "missing.json"
@@ -75,9 +87,9 @@ class RecentRoutesTests(unittest.TestCase):
         cache.write_text(json.dumps({"version": 1, "route": {"waypoints": [["A", 0, 0]]},
                                      "sourcePath": None, "recentPaths": [r"\\other\share\x.json", 7, str(local_missing)]}), encoding="utf-8")
         self.prepare()
-        self.assertEqual([str(local_missing)], list(self.combo.cget("values")))
+        self.assertEqual(["missing.json"], list(self.combo.cget("values")))
         original = cache.read_bytes()
-        self.combo.set(str(local_missing))
+        self.combo.current(0)
         with patch("tkinter.messagebox.showerror") as error:
             self.button("Load recent").invoke()
         error.assert_called_once()
@@ -100,7 +112,7 @@ class RecentRoutesTests(unittest.TestCase):
             self.button("Load").invoke()
         self.assertFalse(checkpoint.exists())
         self.assertEqual("disabled", str(self.button("Resume")["state"]))
-        self.combo.set(str(path_a))
+        self.combo.set("a.json")
         self.button("Load recent").invoke()
         self.assertEqual(original, checkpoint.read_bytes())
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
@@ -219,7 +231,7 @@ class RecentRoutesTests(unittest.TestCase):
             select_route_progress(checkpoint, archive, document, None)
 
         self.adapter.binding = None
-        self.combo.set(str(source))
+        self.combo.set(source.name)
         self.button("Load recent").invoke()
         table = next(w for w in self.widgets(self.window) if isinstance(w, fixture.ttk.Treeview))
         table.selection_set(table.get_children()[0])
@@ -229,7 +241,7 @@ class RecentRoutesTests(unittest.TestCase):
         self.adapter.read = lambda **kwargs: app.Snapshot(app.Position(0, 0, 0), 0, time.monotonic(), "fake")
         self.button("Refresh").invoke()
         self.wait_idle()
-        self.combo.set(str(source))
+        self.combo.set(source.name)
         with patch("tkinter.messagebox.askyesnocancel", return_value=False) as discard:
             self.button("Load recent").invoke()
         discard.assert_called_once()

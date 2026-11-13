@@ -966,6 +966,7 @@ def launch_window(args):
     added_selection = None
     edit_history = []
     recent_paths = []
+    from scripts.waypoint_recent_display import route_labels, attach_path_tooltip
     activity_tab.columnconfigure(0, weight=1)
     activity_tab.rowconfigure(1, weight=1)
     full_status_label = ttk.Label(activity_tab, textvariable=state, wraplength=860, style="Muted.TLabel")
@@ -1014,8 +1015,8 @@ def launch_window(args):
         value = str(source)
         recent_paths[:] = [value] + [old for old in recent_paths if old.casefold() != value.casefold()]
         del recent_paths[8:]
-        recent_dropdown.configure(values=recent_paths)
-        recent_choice.set(value)
+        recent_dropdown.configure(values=route_labels(recent_paths))
+        recent_dropdown.current(0)
         recent_load_button.configure(state="normal" if not busy and not closing else "disabled")
 
     def invalidate_progress(*, clear_metadata=True):
@@ -1611,8 +1612,9 @@ def launch_window(args):
             load_from(path)
 
     def load_recent():
-        value = recent_choice.get()
-        if value not in recent_paths or local_source_path(value) is None:
+        index = recent_dropdown.current()
+        value = recent_paths[index] if 0 <= index < len(recent_paths) else None
+        if value is None or local_source_path(value) is None:
             state.set("Choose a recent local route to load.")
             return
         load_from(value)
@@ -1956,6 +1958,8 @@ def launch_window(args):
     ttk.Label(recent_controls, text="Recent routes", style="Surface.Micro.TLabel").grid(row=0, column=0, padx=(0, 8))
     recent_dropdown = ttk.Combobox(recent_controls, textvariable=recent_choice, state="readonly", width=18)
     recent_dropdown.grid(row=0, column=1, sticky="ew", padx=(0, 6))
+    attach_path_tooltip(recent_dropdown, lambda: recent_paths[recent_dropdown.current()]
+                        if 0 <= recent_dropdown.current() < len(recent_paths) else "")
     editable.append(recent_dropdown)
     recent_load_button = ttk.Button(recent_controls, text="Load recent", command=load_recent, state="disabled")
     recent_load_button.grid(row=0, column=2)
@@ -2301,9 +2305,9 @@ def launch_window(args):
                         recent_paths.append(str(source))
                         if len(recent_paths) == 8:
                             break
-            recent_dropdown.configure(values=recent_paths)
+            recent_dropdown.configure(values=route_labels(recent_paths))
             if recent_paths:
-                recent_choice.set(recent_paths[0])
+                recent_dropdown.current(0)
                 recent_load_button.configure(state="normal")
         except (OSError, ValueError, TypeError):
             pass  # Damaged history does not prevent route recovery.
