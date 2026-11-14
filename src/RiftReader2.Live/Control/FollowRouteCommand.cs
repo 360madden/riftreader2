@@ -22,9 +22,15 @@ internal static class FollowRouteCommand
         double? ExpectedX = null, double? ExpectedZ = null, double? ExpectedBearing = null);
 
     internal sealed record Pose(double X, double Y, double Z, double Bearing, ulong PlayerKey,
-        ulong PlayerEntity, ulong PlayerSystem, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc);
+        ulong PlayerEntity, ulong PlayerSystem, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
+        double? OpticalCameraBearingDegreesCandidate = null,
+        double? OpticalCameraPitchDegreesCandidate = null,
+        string? OpticalCameraStatus = null);
     internal sealed record PathPoint(double X, double Y, double Z, double Bearing,
-        double Distance, DateTimeOffset ObservedAtUtc);
+        double Distance, DateTimeOffset ObservedAtUtc,
+        double? OpticalCameraBearingDegreesCandidate = null,
+        double? OpticalCameraPitchDegreesCandidate = null,
+        string? OpticalCameraStatus = null);
     internal sealed record Result(string Status, string? Reason, Pose? FinalPose,
         double InitialDistance, double FinalDistance, int ReadCount, PathPoint[] Path,
         double ElapsedMilliseconds, bool InputSent, bool ReleaseSucceeded);
@@ -158,7 +164,11 @@ internal static class FollowRouteCommand
     private static bool FinitePose(Pose pose) =>
         double.IsFinite(pose.X) && double.IsFinite(pose.Y) && double.IsFinite(pose.Z)
         && double.IsFinite(pose.Bearing) && pose.PlayerKey != 0
-        && pose.PlayerEntity != 0 && pose.PlayerSystem != 0;
+        && pose.PlayerEntity != 0 && pose.PlayerSystem != 0
+        && (pose.OpticalCameraBearingDegreesCandidate is not double cameraBearing
+            || double.IsFinite(cameraBearing))
+        && (pose.OpticalCameraPitchDegreesCandidate is not double cameraPitch
+            || double.IsFinite(cameraPitch));
 
     internal static async Task<Result> FollowAsync(
         Options options, Func<CancellationToken, Task<Pose>> readPose, IInput input,
@@ -288,7 +298,10 @@ internal static class FollowRouteCommand
             finalPose = pose;
             finalDistance = Distance(pose, options.X, options.Z);
             var point = new PathPoint(pose.X, pose.Y, pose.Z, pose.Bearing,
-                finalDistance, pose.CompletedAtUtc);
+                finalDistance, pose.CompletedAtUtc,
+                pose.OpticalCameraBearingDegreesCandidate,
+                pose.OpticalCameraPitchDegreesCandidate,
+                pose.OpticalCameraStatus);
             if (path.Count < 500)
                 path.Add(point);
             else
@@ -683,6 +696,10 @@ internal static class FollowRouteCommand
                     goal = new { x = options.X, z = options.Z },
                     position = new { x = preFocusPose.X, y = preFocusPose.Y, z = preFocusPose.Z },
                     bodyBearingDegreesCandidate = preFocusPose.Bearing,
+                    opticalCameraBearingDegreesCandidate = preFocusPose.OpticalCameraBearingDegreesCandidate,
+                    opticalCameraPitchDegreesCandidate = preFocusPose.OpticalCameraPitchDegreesCandidate,
+                    opticalCameraStatus = preFocusPose.OpticalCameraStatus,
+                    opticalCameraYawQualified = false,
                     initialDistance = Distance(preFocusPose, options.X, options.Z),
                     finalDistance = Distance(preFocusPose, options.X, options.Z),
                     stopFile = options.StopFile,
@@ -725,6 +742,10 @@ internal static class FollowRouteCommand
                     playerKey = options.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
                     goal = new { x = options.X, z = options.Z }, position,
                     bodyBearingDegreesCandidate = result.FinalPose?.Bearing,
+                    opticalCameraBearingDegreesCandidate = result.FinalPose?.OpticalCameraBearingDegreesCandidate,
+                    opticalCameraPitchDegreesCandidate = result.FinalPose?.OpticalCameraPitchDegreesCandidate,
+                    opticalCameraStatus = result.FinalPose?.OpticalCameraStatus,
+                    opticalCameraYawQualified = false,
                     result.InitialDistance, result.FinalDistance, result.ReadCount, result.Path,
                     result.ElapsedMilliseconds, result.InputSent, result.ReleaseSucceeded,
                     keySendEvents = timeline.Snapshot(), releaseFallbacks = keyInput.ReleaseFallbacks,
@@ -755,6 +776,10 @@ internal static class FollowRouteCommand
                 position = completedResult?.FinalPose is null ? null : new
                 { x = completedResult.FinalPose.X, y = completedResult.FinalPose.Y, z = completedResult.FinalPose.Z },
                 bodyBearingDegreesCandidate = completedResult?.FinalPose?.Bearing,
+                opticalCameraBearingDegreesCandidate = completedResult?.FinalPose?.OpticalCameraBearingDegreesCandidate,
+                opticalCameraPitchDegreesCandidate = completedResult?.FinalPose?.OpticalCameraPitchDegreesCandidate,
+                opticalCameraStatus = completedResult?.FinalPose?.OpticalCameraStatus,
+                opticalCameraYawQualified = false,
                 initialDistance = completedResult?.InitialDistance,
                 finalDistance = completedResult?.FinalDistance,
                 readCount = completedResult?.ReadCount ?? 0,
@@ -812,8 +837,10 @@ internal static class FollowRouteCommand
                 throw new InvalidDataException("Native player owner changed during follow.");
             if (await session.RevalidateAsync(token) is not null || session.Identity != sample.Identity)
                 throw new InvalidDataException("Native process identity changed during follow.");
+            var camera = sample.OpticalCameraCandidate;
             return new(position.X, position.Y, position.Z, bearing, sample.PlayerKey,
-                sample.PlayerEntity, sample.PlayerSystem, sample.StartedAtUtc, sample.CompletedAtUtc);
+                sample.PlayerEntity, sample.PlayerSystem, sample.StartedAtUtc, sample.CompletedAtUtc,
+                camera?.BearingDegreesCandidate, camera?.PitchDegreesCandidate, camera?.Status);
         }
 
         public ValueTask DisposeAsync() => pin.DisposeAsync();

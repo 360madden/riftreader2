@@ -1,3 +1,5 @@
+using System.Text.Json;
+using RiftReader2.Infrastructure;
 using RiftReader2.Live.Control;
 
 namespace RiftReader2.Live.Tests;
@@ -166,6 +168,49 @@ public sealed class FollowRouteCommandTests
         Assert.Equal(1, input.Events.Count(x => x == "up:w"));
         Assert.DoesNotContain("down:a", input.Events);
         Assert.DoesNotContain("down:d", input.Events);
+    }
+
+    [Fact]
+    public async Task SameReadOpticalCameraTelemetryIsRetainedForEveryPathPoint()
+    {
+        var poses = new[]
+        {
+            Pose(0, 0) with { OpticalCameraBearingDegreesCandidate = 1,
+                OpticalCameraPitchDegreesCandidate = -5, OpticalCameraStatus = "available-candidate" },
+            Pose(0, 3) with { OpticalCameraBearingDegreesCandidate = 2,
+                OpticalCameraPitchDegreesCandidate = -4, OpticalCameraStatus = "available-candidate" },
+            Pose(0, 7) with { OpticalCameraBearingDegreesCandidate = 3,
+                OpticalCameraPitchDegreesCandidate = -3, OpticalCameraStatus = "available-candidate" },
+            Pose(0, 9.8) with { OpticalCameraBearingDegreesCandidate = 4,
+                OpticalCameraPitchDegreesCandidate = -2, OpticalCameraStatus = "available-candidate" },
+            Pose(0, 9.8) with { OpticalCameraBearingDegreesCandidate = 5,
+                OpticalCameraPitchDegreesCandidate = -1, OpticalCameraStatus = "available-candidate" },
+            Pose(0, 9.8) with { OpticalCameraBearingDegreesCandidate = 6,
+                OpticalCameraPitchDegreesCandidate = 0, OpticalCameraStatus = "available-candidate" }
+        };
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(poses), new Input(), () => null, NoDelay);
+
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(result.ReadCount, result.Path.Length);
+        Assert.Equal(poses.Select(p => p.OpticalCameraBearingDegreesCandidate),
+            result.Path.Select(p => p.OpticalCameraBearingDegreesCandidate));
+        Assert.Equal(poses.Select(p => p.OpticalCameraPitchDegreesCandidate),
+            result.Path.Select(p => p.OpticalCameraPitchDegreesCandidate));
+        Assert.All(result.Path, point => Assert.Equal("available-candidate", point.OpticalCameraStatus));
+        Assert.Equal(6, result.FinalPose?.OpticalCameraBearingDegreesCandidate);
+        Assert.Equal(6, result.Path[^1].OpticalCameraBearingDegreesCandidate);
+    }
+
+    [Fact]
+    public void PathPointSerializesExplicitNullableCandidateCameraFields()
+    {
+        var point = new FollowRouteCommand.PathPoint(1, 2, 3, 4, 5, DateTimeOffset.UnixEpoch);
+        var json = JsonSerializer.SerializeToElement(point, JsonFormat.Options);
+
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("opticalCameraBearingDegreesCandidate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("opticalCameraPitchDegreesCandidate").ValueKind);
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("opticalCameraStatus").ValueKind);
     }
 
     [Fact]

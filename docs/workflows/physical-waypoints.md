@@ -61,6 +61,14 @@ time and travel progress, rather than repeated left/right tracking. The last
 1.5 units use a straight final approach. The existing 0.50-unit corridor limit
 still stops a drifting run; reducing corrections does not widen that limit.
 
+The longer sparse-steering acceptance covered 72.802 planned courtyard units
+over eight completed legs/corners. All forward holds had zero A/D corrections;
+same-read optical camera candidates showed no significant straight-leg yaw
+reversals and at most 0.02524 degrees of yaw variation. Recorded frame sequences
+showed steady follow. This is a scoped clear-ground result; the optical angle
+remains a candidate field. Retained video and analysis are under
+`artifacts/movement-upgrade/long-camera-route-final/`.
+
 ```powershell
 .\rr2-waypoints.cmd move mode --engine continuous
 .\rr2-waypoints.cmd move mode --engine pulse
