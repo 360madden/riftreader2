@@ -48,6 +48,10 @@ python scripts/survival_waypoints.py run @survivalArgs @routeArgs --execute
 
 Press Ctrl+C during execution to request the shared STOP and release owned input. After a stop or a resolved safety halt, explicitly continue the same saved route and checkpoint with `python scripts/survival_waypoints.py resume @survivalArgs @routeArgs --execute`.
 
+### Offline route-completion gate
+
+`python scripts/summarize_survival_acceptance.py --route <retained-route.jsonl> --require-complete-route` now exits **2** unless the final recorded terminal status is `arrived`, its terminal input-release receipt explicitly verifies no held keys, all other retained release receipts verify, and that terminal record has `nextWaypoint == waypointCount` with a positive total. Exit **0** only means these *offline source receipts* passed the gate; it does not validate safe-anchor position, HP recovery, live game semantics, or a mission kill. Earlier archived logs with missing flat terminal release/progress fields remain blocked, even if separately documented as successful, until independently qualified evidence is available. The default summary remains informational and compatible with prior use.
+
 ### CLI for an open Waypoints helper
 
 ```powershell

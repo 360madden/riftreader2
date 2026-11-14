@@ -225,6 +225,26 @@ def _verified_release(row):
             and ("allInputsReleased" not in row or row["allInputsReleased"] is True))
 
 
+def _completion_gate(terminal, receipts):
+    """Offline admission only; retained route receipts are not live game proof."""
+    if terminal is None:
+        reason = "terminal-missing"
+    elif terminal.get("status") != "arrived":
+        reason = "terminal-not-arrived"
+    elif not _verified_release(terminal):
+        reason = "terminal-release-unverified"
+    elif any(not _verified_release(receipt) for receipt in receipts):
+        reason = "prior-release-unverified"
+    elif (type(terminal.get("waypointCount")) is not int
+          or terminal["waypointCount"] < 1
+          or type(terminal.get("nextWaypoint")) is not int
+          or terminal["nextWaypoint"] != terminal["waypointCount"]):
+        reason = "incomplete-waypoint-progress"
+    else:
+        return {"status": "admitted", "reason": "full-arrival-receipts-only"}
+    return {"status": "blocked", "reason": reason}
+
+
 def summarize(route_rows, telemetry_rows=None):
     terminal = next((row for row in reversed(route_rows)
                      if row.get("status") in {
@@ -245,6 +265,7 @@ def summarize(route_rows, telemetry_rows=None):
                 _verified_release(row) for row in interrupted),
             "allRetainedReleasesVerified": release_ok,
             "terminalInputsReleased": bool(terminal and _verified_release(terminal)),
+            "completionGate": _completion_gate(terminal, receipts),
             "finalNextIndex": (progress.get("nextWaypoint")
                                if type(progress.get("nextWaypoint")) is int
                                else progress.get("nextIndex")),
@@ -310,6 +331,8 @@ def main(argv=None):
     parser.add_argument("--route", type=Path, required=True, help="retained survival route JSONL")
     parser.add_argument("--telemetry", type=Path, help="optional retained telemetry wrapper JSONL")
     parser.add_argument("--output", type=Path, help="optional new summary JSON path")
+    parser.add_argument("--require-complete-route", action="store_true",
+                        help="exit 2 unless final route arrival, all waypoint progress and input releases are evidenced")
     args = parser.parse_args(argv)
     result = summarize(_rows(args.route), _rows(args.telemetry) if args.telemetry else None)
     text = json.dumps(result, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -318,7 +341,8 @@ def main(argv=None):
             raise AcceptanceError("output-exists")
         args.output.write_text(text + "\n", encoding="utf-8")
     print(text)
-    return 0
+    return (2 if args.require_complete_route
+            and result["route"]["completionGate"]["status"] != "admitted" else 0)
 
 
 if __name__ == "__main__":

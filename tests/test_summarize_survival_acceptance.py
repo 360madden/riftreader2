@@ -212,6 +212,46 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                     with self.assertRaisesRegex(summary.AcceptanceError, "duplicate-json-key"):
                         summary._rows(path)
 
+    def test_strict_route_gate_admits_only_full_final_arrival_with_release(self):
+        route = [{"status": "moving", "nextWaypoint": 2, "waypointCount": 3},
+                 {"status": "arrived", "nextWaypoint": 3, "waypointCount": 3,
+                  "releaseSucceeded": True, "desktopInputsDown": [],
+                  "allInputsReleased": True}]
+        report = summary.summarize(route)
+        self.assertEqual({"status": "admitted", "reason": "full-arrival-receipts-only"},
+                         report["route"]["completionGate"])
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "route.jsonl"
+            source.write_text("".join(json.dumps(row) + "\n" for row in route),
+                              encoding="utf-8")
+            self.assertEqual(0, summary.main(["--route", str(source),
+                                              "--require-complete-route"]))
+
+    def test_strict_route_gate_blocks_partial_failure_and_unverified_release(self):
+        good = {"status": "arrived", "nextWaypoint": 3, "waypointCount": 3,
+                "releaseSucceeded": True, "desktopInputsDown": []}
+        cases = (
+            ([{**good, "nextWaypoint": 2}], "incomplete-waypoint-progress"),
+            ([{**good, "releaseSucceeded": False}], "terminal-release-unverified"),
+            ([good, {"status": "failed", "reason": "target-lost"}], "terminal-not-arrived"),
+            ([{"status": "encounter-interrupted", "releaseSucceeded": False,
+               "desktopInputsDown": ["w"]}, good], "prior-release-unverified"),
+            ([{"status": "moving", "nextWaypoint": 3, "waypointCount": 3}],
+             "terminal-missing"),
+            ([{**good, "waypointCount": None}], "incomplete-waypoint-progress"),
+        )
+        for route, reason in cases:
+            with self.subTest(reason=reason):
+                report = summary.summarize(route)
+                self.assertEqual("blocked", report["route"]["completionGate"]["status"])
+                self.assertEqual(reason, report["route"]["completionGate"]["reason"])
+                with tempfile.TemporaryDirectory() as directory:
+                    source = Path(directory) / "route.jsonl"
+                    source.write_text("".join(json.dumps(row) + "\n" for row in route),
+                                      encoding="utf-8")
+                    self.assertEqual(2, summary.main(
+                        ["--route", str(source), "--require-complete-route"]))
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
