@@ -1,4 +1,5 @@
 import io
+from copy import deepcopy
 import json
 import math
 import threading
@@ -645,39 +646,86 @@ class ContinuousMoveTests(unittest.TestCase):
             legs = move.run_continuous_route(self.adapter,
                 [["A", 0, 0], ["B", 10, 0], ["C", 10, 10]],
                 threading.Event(), events.append)
-        self.assertEqual([(10, 0), (10, 10)], [(x, z) for x, z, _, _ in calls])
-        self.assertIs(calls[0][2], calls[1][2])
+        self.assertEqual([(10, 10)], [(x, z) for x, z, _, _ in calls])
+        self.assertTrue(calls[0][3][1]["controlPause"])
         self.assertEqual(1, self.adapter.reservations)
         self.assertEqual(["passed", "passed", "arrived"], [e["status"] for e in events])
         self.assertEqual(["A", "B", "C"], [leg["name"] for leg in legs])
 
     def test_auto_corner_preserves_pass_and_stop_between_spans(self):
+        from scripts.physical_waypoints import Stopped
         events, calls = [], []
         stop = threading.Event()
         lease = SimpleNamespace(check=lambda: None)
         def mover(adapter, x, z, stop_flag, emit, **kwargs):
             calls.append((x, z, kwargs))
-            adapter.last_input_receipt = {"status": "arrived"}
-            emit({"status": "arrived", "name": "CLI destination"})
-            return {"status": "arrived", "position": {"x": x, "y": 10, "z": z},
-                    "releaseSucceeded": True, "desktopInputsDown": []}
-        def observed(event):
-            events.append(event)
-            if event.get("source") == "settled-corner":
-                stop.set()
+            adapter.last_input_receipt = {"status": "stopped"}
+            emit({"status": "passed", "index": 0, "name": "A"})
+            emit({"status": "passed", "index": 1, "name": "B",
+                  "source": "settled-corner", "releaseSucceeded": True})
+            stop_flag.set()
+            raise Stopped("Stopped; no continuation")
         with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
              patch.object(move, "move_to", side_effect=mover):
-            with self.assertRaisesRegex(Exception, "Stopped"):
+            with self.assertRaisesRegex(Stopped, "Stopped"):
                 move.run_continuous_route(self.adapter,
-                    [["A", 0, 0], ["B", 10, 0], ["C", 10, 10]], stop, observed,
+                    [["A", 0, 0], ["B", 10, 0], ["C", 10, 10]], stop, events.append,
                     reservation=lease, deadline=time.monotonic()+20)
         self.assertEqual(1, len(calls))
         self.assertIs(lease, calls[0][2]["reservation"])
+        self.assertTrue(calls[0][2]["control_pauses"])
         self.assertLessEqual(calls[0][2]["max_seconds"], 20)
         self.assertEqual(0, self.adapter.reservations)
-        self.assertEqual(["passed"], [e["status"] for e in events])
-        self.assertEqual("B", events[0]["name"])
-        self.assertTrue(events[0]["releaseSucceeded"])
+        self.assertEqual(["A", "B"], [e["name"] for e in events])
+
+    def test_control_pause_stopped_receipt_commits_only_validated_prefix(self):
+        now = datetime.now(timezone.utc)
+        final = receipt("stopped", reason="operator STOP")
+        stop_path = self.root / "protocol-prefix.stop"
+        final["stopFile"] = str(stop_path.absolute())
+        point = {"x": 5.0, "y": 10.0, "z": 0.0}
+        before, after = (now-timedelta(seconds=.4)).isoformat(), (now-timedelta(seconds=.2)).isoformat()
+        final["passedWaypoints"] = [{"index": 0, "name": "B", "position": point,
+                                      "observedAtUtc": after, "source": "settled-corner"}]
+        final.update(controlPauseVersion=1, pathTruncated=False, controlPauseReceipts=[{
+            "index": 0, "name": "B", "position": point, "observedAtUtc": after,
+            "releaseSucceeded": True, "desktopInputsDown": [],
+            "stationaryBefore": {"position": point, "bearingDegrees": 90, "observedAtUtc": before},
+            "stationaryAfter": {"position": point, "bearingDegrees": 90, "observedAtUtc": after}}])
+        events = []
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             self.assertRaises(move.ContinuousStopped) as error:
+            move.move_to(self.adapter, 100, 0, threading.Event(), events.append,
+                path_points=[{"name": "B", "x": 5, "z": 0, "controlPause": True},
+                             {"name": "later", "x": 10, "z": 0}],
+                control_pauses=True, popen=lambda cmd, **kw: FakeProcess(cmd, final),
+                native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                stop_path=stop_path, recovery_run=successful_recovery)
+        self.assertEqual(["B"], [event["name"] for event in events if event["status"] == "passed"])
+        self.assertEqual(1, error.exception.receipt["controlPauseVersion"])
+        self.assertTrue(error.exception.receipt["releaseSucceeded"])
+
+    def test_control_pause_missing_protocol_never_emits_passage(self):
+        now = datetime.now(timezone.utc)
+        final = receipt("stopped", reason="operator STOP")
+        stop_path = self.root / "protocol.stop"
+        final["stopFile"] = str(stop_path.absolute())
+        final["passedWaypoints"] = [{"index": 0, "name": "B", "position":
+            {"x": 5, "y": 10, "z": 0}, "observedAtUtc": now.isoformat(),
+            "source": "settled-corner"}]
+        events, commands = [], []
+        def spawn(command, **kwargs):
+            commands.append(command)
+            return FakeProcess(command, final)
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             self.assertRaisesRegex(Exception, "control-pause protocol"):
+            move.move_to(self.adapter, 100, 0, threading.Event(), events.append,
+                path_points=[{"name": "B", "x": 5, "z": 0, "controlPause": True}],
+                control_pauses=True, popen=spawn, native_exe=self.root / "native.exe",
+                owner_identity=(55, 66), stop_path=stop_path, recovery_run=successful_recovery)
+        self.assertIn("--control-pauses", commands[0])
+        self.assertFalse(any(event["status"] == "passed" for event in events))
+        self.assertFalse(self.adapter._continuous_move_receipt_trusted)
 
     def test_continuous_route_rejects_total_distance_before_native_launch(self):
         with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
@@ -711,6 +759,21 @@ class ContinuousMoveTests(unittest.TestCase):
         self.assertEqual([(0, 1, 4), (2, 3, 4)],
                          [(event["index"], event["observedPointNumber"], event["waypointCount"]
                            ) for event in progress])
+
+    def test_passage_indices_are_global_across_explicit_stops_with_duplicate_names(self):
+        events = []
+        def mover(adapter, x, z, stop, emit, **kwargs):
+            for index, guide in enumerate(kwargs["path_points"]):
+                emit({"status": "passed", "index": index, "name": guide["name"]})
+            adapter.last_input_receipt = {"status": "arrived"}
+            return {"status": "arrived", "position": {"x": x, "y": 10, "z": z}}
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             patch.object(move, "move_to", side_effect=mover):
+            move.run_continuous_route(self.adapter,
+                [["same", 1, 0], ["stop", 2, 0], ["same", 3, 0], ["end", 4, 0]],
+                threading.Event(), events.append, point_kinds=["pass", "stop", "pass", "pass"])
+        self.assertEqual([(0, 0, "same"), (2, 0, "same")],
+                         [(e["index"], e["batchIndex"], e["name"]) for e in events])
 
     def test_guides_require_valid_final_release_before_passage_events(self):
         for valid in (True, False):
@@ -850,6 +913,65 @@ class ContinuousMoveTests(unittest.TestCase):
         executed.assert_called_once()
         previewed.assert_not_called()
         self.assertEqual([state for state, _ in entered], ["enter", "exit"])
+
+
+class ControlPauseProofTests(unittest.TestCase):
+    def fixture(self):
+        now = datetime.now(timezone.utc)
+        before = now - timedelta(seconds=.3)
+        after = now - timedelta(seconds=.1)
+        pos = {"x": 10.0, "y": 10.0, "z": 0.0}
+        sample1 = {"position": pos.copy(), "bearingDegrees": 30.0,
+                   "observedAtUtc": before.isoformat()}
+        sample2 = {"position": pos.copy(), "bearingDegrees": 30.2,
+                   "observedAtUtc": after.isoformat()}
+        guides = [{"name": "corner", "x": 10.0, "y": 10.0, "z": 0.0, "controlPause": True},
+                  {"name": "later", "x": 20.0, "z": 0.0}]
+        passes = [{"index": 0, "name": "corner", "source": "settled-corner",
+                   "position": pos.copy(), "observedAtUtc": after.isoformat()}]
+        proof = {"index": 0, "name": "corner", "position": pos.copy(),
+                 "observedAtUtc": after.isoformat(), "releaseSucceeded": True,
+                 "desktopInputsDown": [], "stationaryBefore": sample1,
+                 "stationaryAfter": sample2}
+        receipt = {"status": "stopped", "controlPauseVersion": 1,
+                   "controlPauseReceipts": [proof], "pathTruncated": False}
+        return receipt, guides, passes, now-timedelta(seconds=1)
+
+    def test_release_validated_stop_prefix(self):
+        receipt, guides, passes, start = self.fixture()
+        move._validate_control_pauses(receipt, guides, passes, start)
+        receipt["controlPauseReceipts"] = []
+        move._validate_control_pauses(receipt, guides, [], start)
+
+    def test_missing_protocol_and_false_settlement_fail_closed(self):
+        original, guides, passes, start = self.fixture()
+        for mutate in (
+            lambda r: r.pop("controlPauseVersion"),
+            lambda r: r.update(controlPauseVersion=True),
+            lambda r: r.update(controlPauseReceipts=[]),
+            lambda r: r["controlPauseReceipts"][0].update(index=1),
+            lambda r: r["controlPauseReceipts"][0].update(releaseSucceeded=False),
+            lambda r: r["controlPauseReceipts"][0].update(desktopInputsDown=["W"]),
+            lambda r: r["controlPauseReceipts"][0]["stationaryBefore"]["position"].update(x=11),
+            lambda r: r["controlPauseReceipts"][0]["stationaryAfter"].update(bearingDegrees=31),
+            lambda r: r["controlPauseReceipts"][0]["stationaryBefore"].update(
+                observedAtUtc=r["controlPauseReceipts"][0]["observedAtUtc"]),
+        ):
+            receipt = deepcopy(original); mutate(receipt)
+            with self.subTest(receipt=receipt), self.assertRaises(ValueError):
+                move._validate_control_pauses(receipt, guides, passes, start)
+
+    def test_truncated_path_is_not_a_survival_trail(self):
+        receipt, guides, passes, start = self.fixture()
+        receipt["pathTruncated"] = False
+        receipt["readCount"] = 3
+        receipt["path"] = [{}, {}]
+        with self.assertRaisesRegex(ValueError, "survival trail"):
+            move._validate_control_pauses(receipt, guides, passes, start, survival_guard=True)
+        receipt["pathTruncated"] = True
+        move._validate_control_pauses(receipt, guides, passes, start)
+        with self.assertRaisesRegex(ValueError, "survival trail"):
+            move._validate_control_pauses(receipt, guides, passes, start, survival_guard=True)
 
 
 class ResponseEstimateTests(unittest.TestCase):

@@ -93,11 +93,13 @@ progress. Live guide observations update the display, while durable progress
 advances only from validated passage evidence after input release. STOP remains
 latched and Resume rechecks the unfinished route corridor.
 
-This changes continuous playback; pulse fallback and survival playback retain
-their existing per-point stopping behavior. It adds no obstacle planner. Tight
-turns still have to fit the guarded route corridor; smooth playback does not
-authorize cutting corners through unknown ground. Physical acceptance of the
-new pass-through controller remains pending.
+Normal and survival playback now share continuous spans and automatic control
+pauses; pulse fallback keeps its earlier behavior. This adds no obstacle planner.
+Tight turns still have to fit the guarded route corridor; smooth playback does
+not authorize cutting corners through unknown ground. The retained 24-point
+physical route passed forward STOP/Resume and a separately authorized full
+reverse run. This does not qualify arbitrary routes, visual camera smoothness,
+survival recovery/rejoin, or swept clearance.
 
 Focused native simulations passed dense guides with one forward hold, two
 25-degree bends at 6.25 units/second and two 90-degree bends at 3.5 units/second,

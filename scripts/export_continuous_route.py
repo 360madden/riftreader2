@@ -123,6 +123,18 @@ def _samples(receipt, source, spacing, endpoints_only):
              and receipt.get("desktopInputsDown") == [], "native-release-required")
     path = receipt.get("path")
     _require(isinstance(path, list) and len(path) >= 2, "native-path-required")
+    # Completeness must be checked before endpoint selection or thinning. Native
+    # rolling buffers can preserve admission and a nearby final pose while losing
+    # a large intervening loop, which endpoint distances cannot reconstruct.
+    if "pathTruncated" in receipt:
+        _require(type(receipt["pathTruncated"]) is bool, "invalid-native-path-truncation")
+        _require(not receipt["pathTruncated"], "native-path-truncated")
+    if "readCount" in receipt:
+        count = receipt["readCount"]
+        _require(type(count) is int and count >= 0, "invalid-native-read-count")
+        _require(count <= len(path), "native-path-observations-lost")
+    # Legacy receipts without count/flag remain usable as retained samples;
+    # absence is unknown completeness, never proof of a complete walked trace.
     parsed = []
     previous_time = None
     for raw in path:

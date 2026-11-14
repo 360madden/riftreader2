@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.survival_route_runner import (_coalesce_retained_corridor,
-                                            _corridor_arrival,
+                                            _corridor_arrival, _traversed_path,
                                             run_survival_route)
 from scripts.waypoint_survival import VerifiedBindingProfile
 
@@ -149,6 +149,8 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         self.assertEqual([("passed", "one"), ("passed", "two"), ("arrived", "end")],
                          [(e["status"], e["name"]) for e in events
                           if e["status"] in ("passed", "arrived")])
+        self.assertEqual([(0, 0), (1, 0)], [(e["index"], e["batchIndex"])
+                         for e in events if e.get("status") == "passed"])
         self.assertEqual(1, len(results[-1]["survival"]["encounters"]))
 
     def test_interrupted_span_does_not_publish_passage_without_retained_path(self):
@@ -218,6 +220,114 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                 self.assertEqual(["one", "two"] if valid_path else [],
                                  [e["name"] for e in events if e.get("status") == "passed"])
                 self.assertEqual([], backend.calls)
+
+    def test_truncated_loop_path_never_becomes_a_retreat_corridor(self):
+        # Endpoints and retained sample gaps are close; the missing loop cannot
+        # be detected from geometry alone.
+        anchor = {"x": 0, "y": 5, "z": 0}
+        end = {"x": .1, "y": 5, "z": 0}
+        path = [anchor, {"x": 1, "y": 5, "z": 0}, end]
+        for extra in ({"pathTruncated": True, "readCount": 3},
+                      {"readCount": 12}, {"pathTruncated": False, "readCount": 12}):
+            with self.subTest(extra=extra):
+                with self.assertRaisesRegex(ValueError, "truncated"):
+                    _traversed_path({"path": path, **extra}, end, anchor)
+        self.assertEqual(path, _traversed_path({"path": path, "pathTruncated": False,
+                                                 "readCount": 3}, end, anchor))
+
+    def test_truncated_arrival_cannot_advance_survival_checkpoint(self):
+        events = []
+        def mover(adapter, x, z, stop, emit, **options):
+            result = arrived(x, z)
+            result["pathTruncated"] = True
+            emit(result)
+            return result
+        with self.assertRaisesRegex(Exception, "truncated"):
+            self.invoke([("end", 1, 0)], Backend([observed()]), mover, events=events)
+        self.assertFalse(any(e.get("status") == "arrived" for e in events))
+
+    def test_survival_corner_pauses_share_one_native_span_and_forward_progress(self):
+        calls, events = [], []
+        def mover(adapter, x, z, stop, emit, **options):
+            calls.append(options)
+            guides = options["path_points"]
+            for index, guide in enumerate(guides):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": [],
+                      "source": "settled-corner" if guide.get("controlPause") else "pose"})
+            result = arrived(x, z)
+            result["path"] = ([{"x": 0, "y": 5, "z": 0}]
+                              + [{"x": g["x"], "y": 5, "z": g["z"]} for g in guides]
+                              + [{"x": x, "y": 5, "z": z}])
+            result["pathTruncated"] = False
+            result["readCount"] = len(result["path"])
+            return result
+        self.invoke([("one", 1, 0), ("bend", 1, 2), ("end", 3, 2)],
+                    Backend([observed()]), mover, events=events,
+                    goal_heights=[5, 5, 5], point_kinds=["pass", "pass", "stop"])
+        self.assertEqual(1, len(calls))
+        self.assertTrue(calls[0]["control_pauses"])
+        self.assertTrue(any(p.get("controlPause") for p in calls[0]["path_points"]))
+        self.assertEqual([("passed", "one"), ("passed", "bend"), ("arrived", "end")],
+                         [(e["status"], e["name"]) for e in events
+                          if e.get("status") in ("passed", "arrived")])
+
+    def test_encounter_after_settled_corner_keeps_prefix_and_retries_unfinished_span(self):
+        calls, events = [], []
+        current = [0.0, 0.0]
+        def mover(adapter, x, z, stop, emit, **options):
+            guides = options.get("path_points", [])
+            calls.append((x, z, [dict(g) for g in guides]))
+            for index, guide in enumerate(guides[:1] if len(calls) == 1 else guides):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": [],
+                      "source": "settled-corner" if guide.get("controlPause") else "pose"})
+            if len(calls) == 1:
+                self.assertTrue(guides[0].get("controlPause"))
+                current[:] = [1, 0]
+                path = [{"x": 0, "y": 5, "z": 0}, {"x": 1, "y": 5, "z": 0}]
+                raise Interrupted({"status": "halted", "releaseSucceeded": True,
+                                   "desktopInputsDown": [], "pathTruncated": False,
+                                   "readCount": 2, "path": path},
+                                  {"x": 1, "y": 5, "z": 0})
+            result = arrived(x, z, *current)
+            result["path"] = ([{"x": current[0], "y": 5, "z": current[1]}]
+                              + [{"x": g["x"], "y": 5, "z": g["z"]} for g in guides]
+                              + [{"x": x, "y": 5, "z": z}])
+            return result
+        backend = Backend([observed(present=True, combat=True), observed(), observed(on=True)])
+        backend.position = current
+        self.invoke([("one", 1, 0), ("bend", 1, 2), ("end", 3, 2)],
+                    backend, mover, events=events, goal_heights=[5, 5, 5],
+                    point_kinds=["pass", "pass", "stop"])
+        self.assertEqual(2, len(calls))
+        self.assertEqual(["bend"], [g["name"] for g in calls[1][2]])
+        self.assertEqual(["one", "bend", "end"], [e["name"] for e in events
+            if e.get("status") in ("passed", "arrived")])
+
+    def test_auxiliary_interruption_halts_without_rejoining_or_advancing(self):
+        calls, events = [], []
+        unknown = observed(present=True, combat=True)
+        unknown["encounter"]["threatKnown"] = False
+        backend = Backend([observed(present=True, combat=True), unknown])
+        def mover(adapter, x, z, stop, emit, **options):
+            calls.append(options["survival_guard"])
+            if len(calls) == 1:
+                raise Interrupted({"releaseSucceeded": True, "desktopInputsDown": [],
+                    "path": [{"x": 0, "y": 5, "z": 0},
+                             {"x": 1, "y": 5, "z": 0},
+                             {"x": 2, "y": 5, "z": 0}]},
+                    {"x": 2, "y": 5, "z": 0})
+            raise Interrupted({"releaseSucceeded": True, "desktopInputsDown": [],
+                "path": [{"x": 2, "y": 5, "z": 0},
+                         {"x": 1, "y": 5, "z": 0}]},
+                {"x": 1, "y": 5, "z": 0})
+        with self.assertRaisesRegex(Exception, "auxiliary survival movement"):
+            self.invoke([("end", 5, 0)], backend, mover, events=events)
+        self.assertEqual([True, "retreat"], calls)
+        self.assertFalse(any(e.get("status") in ("passed", "arrived") for e in events))
 
     def test_arrived_without_confirmed_key_release_must_not_complete_route(self):
         def mover(adapter, x, z, stop, emit, **options):
@@ -593,7 +703,8 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
             for index, guide in enumerate(options.get("path_points", [])):
                 emit({"status": "passed", "index": index, "name": guide["name"],
                       "goal": guide, "position": {"x": guide["x"], "y": guide.get("y", 5), "z": guide["z"]},
-                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": []})
+                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": [],
+                      "source": "settled-corner" if guide.get("controlPause") else "pose"})
             current.update(x=x, z=z)
             result = arrived(x, z, start_x, start_z)
             emit(result)
@@ -606,8 +717,7 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                 action_backend=backend, mover=mover,
                 encounter_error=Interrupted, wait_seconds=0)
         self.assertEqual([(0.0, 5.0, True), (5.0, 5.0, True),
-                          (0.0, 5.0, "retreat"), (0.0, 0.0, "retreat"),
-                          (0.0, 5.0, True), (2.0, 5.0, True),
+                          (0.0, 0.0, "retreat"), (2.0, 5.0, True),
                           (5.0, 5.0, True)], calls)
         self.assertGreater(len(backend.corridor_points), 2)
         self.assertEqual((2.0, 5.0, 5.0), backend.corridor_points[0])

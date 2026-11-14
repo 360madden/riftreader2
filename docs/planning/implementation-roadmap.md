@@ -124,6 +124,16 @@ specific gaps without stalling useful recorded-route travel or the bounded
 combat outcome below. Architecture planning uses ultra reasoning; implementation
 and research workers have bounded ownership and dependency-ready assignments.
 
+**Scoped navigation acceptance update:** The saved 24-point route completed
+forward with deliberate STOP/Resume and separately completed reverse after the
+one-shot reader correction. Final reverse error was 0.158 units, released input
+and zero settled drift. Tight-corner pauses still contain 2.08–2.52 seconds
+between adjacent native processes. Removing that overhead is the current bounded
+movement task, alongside closing missing survival-frame acquisition; it is not
+an invitation to defer the combat outcome for general world reconstruction.
+Recast-derived publication now has a small historically walked bidirectional
+pilot and shared runtime admission checks. Full clearance remains unqualified.
+
 The subsequently reported camera-shake defect was brought forward under that
 failure-driven rule. Sparse travel steering and settled initial alignment now
 have a complete live 72.802-unit courtyard loop with eight legs/corners, zero

@@ -84,6 +84,51 @@ class ExportContinuousRouteTests(unittest.TestCase):
                           "2026-11-14T12:00:05Z"],
                          [row["observedAtUtc"] for row in document["pointMeasurements"]])
 
+    def test_rejects_explicit_or_count_proven_loss_before_any_thinning(self):
+        # The original walk went out around a loop and returned near admission.
+        # A capped native receipt may retain only admission plus its final tail;
+        # nearby retained endpoints cannot prove that omitted middle was walked.
+        original = [point(0, 0, 0), point(0, 10, 1), point(10, 10, 2),
+                    point(10, 0, 3), point(.1, 0, 4)]
+        retained = [original[0], original[-1]]
+        for metadata in ({"pathTruncated": True},
+                         {"readCount": len(original)},
+                         {"pathTruncated": False, "readCount": len(original)}):
+            value = native(retained)
+            value.update(metadata)
+            path = self.save("missing-loop.json", value)
+            for endpoints in (False, True):
+                with self.subTest(metadata=metadata, endpoints=endpoints):
+                    with self.assertRaisesRegex(export.ExportError,
+                                                "native-path-(truncated|observations-lost)"):
+                        export.export_route([path], self.zone, endpoints_only=endpoints)
+                    # Candidate corroboration consumes this same unsimplified seam.
+                    with self.assertRaises(export.ExportError):
+                        export._samples(value, path, 0.0, endpoints)
+
+    def test_legacy_absent_completeness_metadata_retains_existing_export(self):
+        points = [point(0, 0, 0), point(0, 1, 1), point(0, 2, 2)]
+        for metadata in ({}, {"pathTruncated": False}, {"readCount": 3},
+                         {"pathTruncated": False, "readCount": 3}):
+            value = native(points)
+            value.update(metadata)
+            path = self.save("legacy.json", value)
+            with self.subTest(metadata=metadata):
+                document = export.export_route([path], self.zone)
+                self.assertEqual([row[2] for row in document["waypoints"]], [0, 1, 2])
+                self.assertNotIn("pathComplete", document)
+                self.assertNotIn("pathComplete", document["pointMeasurements"][0])
+
+    def test_rejects_malformed_completeness_metadata(self):
+        for metadata in ({"pathTruncated": 1}, {"pathTruncated": "false"},
+                         {"pathTruncated": None}, {"readCount": True},
+                         {"readCount": -1}, {"readCount": 2.0}, {"readCount": None}):
+            value = native([point(0, 0, 0), point(0, 1, 1)])
+            value.update(metadata)
+            path = self.save("malformed.json", value)
+            with self.subTest(metadata=metadata), self.assertRaises(export.ExportError):
+                export.export_route([path], self.zone)
+
     def test_rejects_unreleased_or_nonarrival_receipt(self):
         for value in (native([point(0, 0, 0), point(0, 1, 1)], release=False),
                       native([point(0, 0, 0), point(0, 1, 1)], status="stopped"),

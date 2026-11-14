@@ -23,9 +23,9 @@ internal static class FollowRouteCommand
         double X, double Z, string StopFile, int MaxSeconds, bool Execute, bool Json,
         double? ExpectedX = null, double? ExpectedZ = null, double? ExpectedBearing = null,
         bool SurvivalInterrupt = false, bool SurvivalRetreat = false, double? GoalY = null,
-        RoutePoint[]? RoutePoints = null);
+        RoutePoint[]? RoutePoints = null, bool ControlPauses = false, double? ExpectedY = null);
 
-    internal sealed record RoutePoint(string Name, double X, double Z, double? Y = null);
+    internal sealed record RoutePoint(string Name, double X, double Z, double? Y = null, bool ControlPause = false);
     internal sealed record WaypointPass(int Index, string Name, ReceiptPosition Position,
         DateTimeOffset ObservedAtUtc, string Source = "pose",
         PassSample? CrossingBefore = null, PassSample? CrossingAfter = null);
@@ -57,7 +57,12 @@ internal static class FollowRouteCommand
     internal sealed record Result(string Status, string? Reason, Pose? FinalPose,
         double InitialDistance, double FinalDistance, int ReadCount, PathPoint[] Path,
         double ElapsedMilliseconds, bool InputSent, bool ReleaseSucceeded,
-        SurvivalSnapshot? SurvivalSnapshot = null, WaypointPass[]? PassedWaypoints = null);
+        SurvivalSnapshot? SurvivalSnapshot = null, WaypointPass[]? PassedWaypoints = null,
+        bool PathTruncated = false, ControlPauseReceipt[]? ControlPauseReceipts = null);
+    internal sealed record StationarySample(ReceiptPosition Position, double BearingDegrees, DateTimeOffset ObservedAtUtc);
+    internal sealed record ControlPauseReceipt(int Index, string Name, ReceiptPosition Position,
+        DateTimeOffset ObservedAtUtc, bool ReleaseSucceeded, string[] DesktopInputsDown,
+        StationarySample StationaryBefore, StationarySample StationaryAfter);
     internal sealed record ReceiptPosition(double X, double Y, double Z);
     internal sealed record ResultReceiptProjection(
         ReceiptPosition? Position,
@@ -89,7 +94,7 @@ internal static class FollowRouteCommand
         for (var i = 0; i < args.Length; i++)
         {
             var option = args[i];
-            if (option is "--execute" or "--json" or "--survival-interrupt" or "--survival-retreat")
+            if (option is "--execute" or "--json" or "--survival-interrupt" or "--survival-retreat" or "--control-pauses")
             {
                 if (!flags.Add(option)) throw new InvalidDataException("Repeated option: " + option);
                 continue;
@@ -140,6 +145,12 @@ internal static class FollowRouteCommand
         var survivalRetreat = flags.Contains("--survival-retreat");
         if (survivalRetreat && !survivalInterrupt)
             throw new InvalidDataException("--survival-retreat requires --survival-interrupt.");
+        var controlPauses = flags.Contains("--control-pauses");
+        var routePoints = values.TryGetValue("--path-file", out var file) ? ReadRoutePoints(file, controlPauses) : null;
+        if (routePoints?.Any(point => point.ControlPause) == true && !controlPauses)
+            throw new InvalidDataException("controlPause requires --control-pauses.");
+        if (controlPauses && routePoints?.Any(point => point.ControlPause) != true)
+            throw new InvalidDataException("--control-pauses requires a marked intermediate waypoint.");
         return new(Required("--expected-host"), PositiveInt(Required("--pid"), "--pid"),
             PositiveTicks(Required("--expect-start-ticks"), "--expect-start-ticks"),
             sha.ToUpperInvariant(), MoveKeyCommand.ParseWindowHandle(Required("--expect-hwnd")),
@@ -151,21 +162,24 @@ internal static class FollowRouteCommand
             originCount == 0 ? null : Finite(values["--expect-z"], "--expect-z"),
             originCount == 0 ? null : Finite(values["--expect-bearing"], "--expect-bearing"),
             survivalInterrupt, survivalRetreat, values.TryGetValue("--goal-y", out var y) ? Finite(y, "--goal-y") : null,
-            values.TryGetValue("--path-file", out var file) ? ReadRoutePoints(file) : null);
+            routePoints, controlPauses);
     }
 
-    private static RoutePoint[] ReadRoutePoints(string file)
+    private static RoutePoint[] ReadRoutePoints(string file, bool controlPauses)
     {
         using var stream = File.OpenRead(file);
         using var document = JsonDocument.Parse(stream);
         var items = document.RootElement.GetProperty("waypoints");
         if (items.GetArrayLength() > 499)
             throw new InvalidDataException("A route supports at most 499 intermediate waypoints.");
+        if (!controlPauses && items.EnumerateArray().Any(item => item.TryGetProperty("controlPause", out _)))
+            throw new InvalidDataException("controlPause requires --control-pauses.");
         return items.EnumerateArray().Select(item => new RoutePoint(
             item.GetProperty("name").GetString() ?? "",
             item.GetProperty("x").GetDouble(), item.GetProperty("z").GetDouble(),
             item.TryGetProperty("y", out var y) && y.ValueKind != JsonValueKind.Null
-                ? y.GetDouble() : null)).ToArray();
+                ? y.GetDouble() : null,
+            item.TryGetProperty("controlPause", out var pause) ? pause.GetBoolean() : false)).ToArray();
     }
 
     internal static string SurvivalMode(Options options) => options.SurvivalRetreat
@@ -193,7 +207,8 @@ internal static class FollowRouteCommand
     {
         if (options.ExpectedX is not double x) return;
         if (Math.Sqrt(Math.Pow(pose.X - x, 2) + Math.Pow(pose.Z - options.ExpectedZ!.Value, 2)) > .05
-            || Math.Abs(HeadingError(pose.Bearing, options.ExpectedBearing!.Value)) > .5)
+            || Math.Abs(HeadingError(pose.Bearing, options.ExpectedBearing!.Value)) > .5
+            || options.ExpectedY is double expectedY && Math.Abs(pose.Y - expectedY) > .05)
             throw new InvalidOperationException("Current native pose differs from the rendered map origin.");
     }
 
@@ -368,12 +383,29 @@ internal static class FollowRouteCommand
         && (pose.OpticalCameraPitchDegreesCandidate is not double cameraPitch
             || double.IsFinite(cameraPitch));
 
+    internal sealed class SurvivalState { public long? Baseline; public SurvivalSnapshot? Latest; }
+
+    private static string? CheckSurvival(Options options, SurvivalState state, SurvivalSnapshot snapshot)
+    {
+        state.Latest = snapshot;
+        if (snapshot.Status != "available-candidate" || snapshot.HealthCurrent is not long current
+            || snapshot.HealthMaximum is not long maximum || snapshot.CombatCandidate is not bool combat
+            || current < 0 || maximum <= 0 || current > maximum) return "survival-unavailable";
+        if (current == 0) return "survival-dead";
+        state.Baseline ??= current;
+        if (options.SurvivalRetreat) return null;
+        if (combat) return "survival-combat";
+        return current < state.Baseline ? "survival-hp-drop" : null;
+    }
+
     internal static async Task<Result> FollowAsync(
         Options options, Func<CancellationToken, Task<Pose>> readPose, IInput input,
         Func<string?> safetyReason, Func<TimeSpan, CancellationToken, Task>? delay = null,
-        CancellationToken token = default, Action<WaypointPass>? onWaypointPassed = null)
+        CancellationToken token = default, Action<WaypointPass>? onWaypointPassed = null,
+        SurvivalState? sharedSurvival = null)
     {
         delay ??= Task.Delay;
+        sharedSurvival ??= new SurvivalState();
         var clock = Stopwatch.StartNew();
         var down = new HashSet<string>(StringComparer.Ordinal);
         var gate = new object();
@@ -394,7 +426,6 @@ internal static class FollowRouteCommand
         var initialDistance = double.NaN;
         var finalDistance = double.NaN;
         Pose? finalPose = null;
-        long? survivalBaselineHealth = null;
         SurvivalSnapshot? survivalSnapshot = null;
         using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         var operationToken = operationCancellation.Token;
@@ -495,26 +526,7 @@ internal static class FollowRouteCommand
         string? SurvivalReason(SurvivalSnapshot snapshot)
         {
             survivalSnapshot = snapshot;
-            if (snapshot.Status != "available-candidate"
-                || snapshot.HealthCurrent is not long current
-                || snapshot.HealthMaximum is not long maximum
-                || snapshot.CombatCandidate is not bool combat
-                || current < 0 || maximum <= 0 || current > maximum)
-                return "survival-unavailable";
-            if (current == 0)
-                return "survival-dead";
-            if (survivalBaselineHealth is null)
-            {
-                survivalBaselineHealth = current;
-            }
-            // The caller may authorize this only for an owned reverse-known-trail
-            // retreat. Combat and ordinary damage are expected while disengaging;
-            // unavailable survival data and death remain terminal above.
-            if (options.SurvivalRetreat)
-                return null;
-            if (combat)
-                return "survival-combat";
-            return current < survivalBaselineHealth ? "survival-hp-drop" : null;
+            return CheckSurvival(options, sharedSurvival, snapshot);
         }
         async Task<Pose> Read()
         {
@@ -558,7 +570,7 @@ internal static class FollowRouteCommand
             }
             var survivalReason = options.SurvivalInterrupt && pose.Survival is { } survival
                 ? SurvivalReason(survival)
-                : options.SurvivalInterrupt && survivalBaselineHealth is null
+                : options.SurvivalInterrupt && sharedSurvival.Baseline is null
                     ? "survival-unavailable" : null;
             if (survivalReason is not null)
             {
@@ -1131,8 +1143,163 @@ internal static class FollowRouteCommand
                 finalPose.OpticalCameraStatus));
         return new(status, terminalReason, finalPose, initialDistance, finalDistance,
             reads, path.ToArray(), clock.Elapsed.TotalMilliseconds, inputSent, releaseSucceeded,
-            survivalSnapshot, passed.ToArray());
+            survivalSnapshot, passed.ToArray(), reads > path.Count);
     }
+
+    internal static async Task<Result> FollowWithPausesAsync(
+        Options options, Func<CancellationToken, Task<Pose>> readPose, IInput input,
+        Func<string?> safetyReason, Func<TimeSpan, CancellationToken, Task>? delay = null,
+        CancellationToken token = default, Action<WaypointPass>? onWaypointPassed = null)
+    {
+        if (!options.ControlPauses)
+            return await FollowAsync(options, readPose, input, safetyReason, delay, token, onWaypointPassed);
+        delay ??= Task.Delay;
+        var clock = Stopwatch.StartNew();
+        var allGuides = options.RoutePoints ?? [];
+        var passed = new List<WaypointPass>();
+        var pauses = new List<ControlPauseReceipt>();
+        var path = new List<PathPoint>();
+        var readCount = 0;
+        var truncated = false;
+        var sent = false;
+        var released = true;
+        var initialDistance = double.NaN;
+        Pose? last = null;
+        SurvivalSnapshot? survival = null;
+        ulong? entity = null, system = null;
+        DateTimeOffset? previous = null;
+        var sharedSurvival = new SurvivalState();
+        string? SharedSafety()
+        {
+            if (token.IsCancellationRequested) return "cancelled";
+            var reason = safetyReason();
+            if (reason is not null) return reason;
+            if (clock.Elapsed >= TimeSpan.FromSeconds(options.MaxSeconds)) return "time-limit";
+            return null;
+        }
+        async Task<Pose> SharedRead(CancellationToken ct)
+        {
+            var pose = await readPose(ct);
+            var now = DateTimeOffset.UtcNow;
+            if (!FinitePose(pose) || pose.PlayerKey != options.ExpectedPlayerKey
+                || pose.CompletedAtUtc < pose.StartedAtUtc
+                || pose.CompletedAtUtc - pose.StartedAtUtc > TimeSpan.FromMilliseconds(PoseTimeoutMilliseconds)
+                || now - pose.CompletedAtUtc > TimeSpan.FromMilliseconds(PoseTimeoutMilliseconds)
+                || pose.CompletedAtUtc - now > TimeSpan.FromMilliseconds(100)
+                || previous is DateTimeOffset prior && pose.StartedAtUtc < prior)
+                throw new InvalidDataException("Native pose is stale, invalid or out of order.");
+            entity ??= pose.PlayerEntity; system ??= pose.PlayerSystem;
+            if (pose.PlayerEntity != entity || pose.PlayerSystem != system)
+                throw new InvalidDataException("Native pose owner changed.");
+            previous = pose.CompletedAtUtc;
+            return pose;
+        }
+        static StationarySample Sample(Pose p) => new(new(p.X, p.Y, p.Z), p.Bearing, p.CompletedAtUtc.ToUniversalTime());
+        string status = "blocked";
+        string? reason = null;
+        var offset = 0;
+        Pose? pauseAnchor = null;
+        try
+        {
+            while (true)
+            {
+                if (SharedSafety() is string before) throw new InvalidOperationException(before);
+                var nextPause = Array.FindIndex(allGuides, offset, p => p.ControlPause);
+                var end = nextPause < 0 ? allGuides.Length : nextPause;
+                var target = nextPause < 0 ? null : allGuides[end];
+                var span = options with {
+                    X = target?.X ?? options.X, Z = target?.Z ?? options.Z,
+                    GoalY = target is null ? options.GoalY : target.Y,
+                    RoutePoints = allGuides[offset..end], ControlPauses = false,
+                    ExpectedX = offset == 0 ? options.ExpectedX : pauseAnchor!.X,
+                    ExpectedZ = offset == 0 ? options.ExpectedZ : pauseAnchor!.Z,
+                    ExpectedBearing = offset == 0 ? options.ExpectedBearing : pauseAnchor!.Bearing,
+                    ExpectedY = offset == 0 ? options.ExpectedY : pauseAnchor!.Y
+                };
+                var result = await FollowAsync(span, SharedRead, input, SharedSafety, delay, token, sharedSurvival: sharedSurvival);
+                sent |= result.InputSent; released &= result.ReleaseSucceeded;
+                readCount += result.ReadCount;
+                if (!double.IsFinite(initialDistance) && result.FinalPose is not null)
+                    initialDistance = result.InitialDistance; // corrected below from first recorded pose
+                if (path.Count == 0 && result.Path.Length > 0)
+                    initialDistance = Math.Sqrt(Math.Pow(options.X - result.Path[0].X, 2) + Math.Pow(options.Z - result.Path[0].Z, 2));
+                foreach (var point in result.Path)
+                {
+                    if (path.Count < 500) path.Add(point with { Distance = Math.Sqrt(Math.Pow(options.X - point.X, 2) + Math.Pow(options.Z - point.Z, 2)) });
+                    else { truncated = true; path.RemoveAt(1); path.Add(point with { Distance = Math.Sqrt(Math.Pow(options.X - point.X, 2) + Math.Pow(options.Z - point.Z, 2)) }); }
+                }
+                truncated |= result.PathTruncated;
+                last = result.FinalPose ?? last;
+                survival = result.SurvivalSnapshot ?? survival;
+                var down = input.ReadPressedInputs().ToArray();
+                if (!released || down.Length != 0)
+                    throw new InvalidOperationException("release-proof-unavailable");
+                foreach (var pass in result.PassedWaypoints ?? [])
+                {
+                    var global = pass with { Index = pass.Index + offset };
+                    passed.Add(global); onWaypointPassed?.Invoke(global);
+                }
+                status = result.Status == "blocked" && sent ? "halted" : result.Status;
+                reason = result.Reason;
+                if (status != "arrived" || target is null) break;
+                if (truncated && options.SurvivalInterrupt)
+                    throw new InvalidOperationException("path-truncated");
+                if (SharedSafety() is string stopBefore) throw new InvalidOperationException(stopBefore);
+                if (!input.IsTargetCurrent() || input.ReadPressedInputs().Count != 0)
+                    throw new InvalidOperationException("pause-release-or-target-unavailable");
+                async Task<Pose> ReadPauseSample()
+                {
+                    var pose = await SharedRead(token);
+                    readCount++; last = pose;
+                    var point = new PathPoint(pose.X, pose.Y, pose.Z, pose.Bearing, Distance(pose, options.X, options.Z), pose.CompletedAtUtc,
+                        pose.OpticalCameraBearingDegreesCandidate, pose.OpticalCameraPitchDegreesCandidate, pose.OpticalCameraStatus);
+                    if (path.Count < 500) path.Add(point);
+                    else { truncated = true; path.RemoveAt(1); path.Add(point); }
+                    if (options.SurvivalInterrupt && pose.Survival is { } snapshot)
+                    {
+                        survival = snapshot;
+                        if (CheckSurvival(options, sharedSurvival, snapshot) is string interrupt)
+                            throw new InvalidOperationException(interrupt);
+                    }
+                    return pose;
+                }
+                var first = await ReadPauseSample();
+                await delay(TimeSpan.FromMilliseconds(150), token);
+                var second = await ReadPauseSample();
+                if (SharedSafety() is string stopAfter) throw new InvalidOperationException(stopAfter);
+                down = input.ReadPressedInputs().ToArray();
+                if (!input.IsTargetCurrent() || down.Length != 0
+                    || second.CompletedAtUtc - first.CompletedAtUtc < TimeSpan.FromMilliseconds(150)
+                    || Math.Sqrt(Math.Pow(first.X-second.X, 2) + Math.Pow(first.Y-second.Y, 2) + Math.Pow(first.Z-second.Z, 2)) > .05
+                    || Math.Abs(HeadingError(first.Bearing, second.Bearing)) > .5
+                    || Distance(first, target.X, target.Z) > ArrivalRadius || Distance(second, target.X, target.Z) > ArrivalRadius
+                    || target.Y is double y && (Math.Abs(first.Y-y) > .5 || Math.Abs(second.Y-y) > .5))
+                    throw new InvalidOperationException("control-pause-not-settled");
+                if (truncated && options.SurvivalInterrupt) throw new InvalidOperationException("path-truncated");
+                var a = Sample(first); var b = Sample(second);
+                pauses.Add(new(end, target.Name, b.Position, b.ObservedAtUtc, true, [], a, b));
+                var settled = new WaypointPass(end, target.Name, b.Position, b.ObservedAtUtc, "settled-corner");
+                passed.Add(settled); onWaypointPassed?.Invoke(settled);
+                pauseAnchor = second;
+                offset = end + 1;
+            }
+        }
+        catch (Exception error)
+        {
+            reason = error is OperationCanceledException ? "cancelled" : error.Message;
+            status = reason == "stop-file-requested" ? "stopped" : sent ? "halted" : "blocked";
+        }
+        return new(status, reason, last, initialDistance,
+            last is null ? double.NaN : Distance(last, options.X, options.Z), readCount, path.ToArray(),
+            clock.Elapsed.TotalMilliseconds, sent, released, survival, passed.ToArray(), truncated, pauses.ToArray());
+    }
+
+    internal static int ResultExitCode(string status) => status switch
+    {
+        "arrived" or "stopped" => 0,
+        "blocked" => 2,
+        _ => 3
+    };
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken token)
     {
@@ -1229,7 +1396,7 @@ internal static class FollowRouteCommand
                     WindowsControlDesktop.PinInputTarget(ready), timeline);
                 if (options.SurvivalInterrupt)
                     reader.ForceSurvivalSample();
-                var result = await FollowAsync(options, reader.ReadAsync,
+                var result = await FollowWithPausesAsync(options, reader.ReadAsync,
                     new KeyInputAdapter(keyInput), Safety, token: token, onWaypointPassed: pass =>
                     {
                         MoveKeyCommand.Report(true, new { status = "waypoint-passed",
@@ -1254,6 +1421,8 @@ internal static class FollowRouteCommand
                     survivalMode = SurvivalMode(options),
                     receipt.SurvivalSnapshot,
                     receipt.InitialDistance, receipt.FinalDistance, receipt.ReadCount, receipt.Path, receipt.PassedWaypoints,
+                    controlPauseVersion = options.ControlPauses ? 1 : (int?)null,
+                    controlPauseReceipts = result.ControlPauseReceipts ?? [], pathTruncated = result.PathTruncated,
                     receipt.ElapsedMilliseconds, receipt.InputSent, receipt.ReleaseSucceeded,
                     keySendEvents = timeline.Snapshot(), releaseFallbacks = keyInput.ReleaseFallbacks,
                     desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
@@ -1262,7 +1431,7 @@ internal static class FollowRouteCommand
                     watchdog = new { poseTimeoutMilliseconds = PoseTimeoutMilliseconds,
                         pollMilliseconds = WatchdogPollMilliseconds, maxSeconds = options.MaxSeconds }
                 });
-                return result.Status is "arrived" or "stopped" ? 0 : 3;
+                return ResultExitCode(result.Status);
             }
             finally { owner.Release(); }
         }
@@ -1295,6 +1464,9 @@ internal static class FollowRouteCommand
                 receipt.ReadCount,
                 receipt.Path,
                 receipt.PassedWaypoints,
+                controlPauseVersion = options?.ControlPauses == true ? 1 : (int?)null,
+                controlPauseReceipts = completedResult?.ControlPauseReceipts ?? [],
+                pathTruncated = completedResult?.PathTruncated ?? false,
                 receipt.ElapsedMilliseconds,
                 keySendEvents = Array.Empty<object>(),
                 releaseFallbacks = 0,

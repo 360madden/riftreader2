@@ -1,5 +1,20 @@
 # Current status
 
+**November 14 — batched navigation control pauses verified offline on AMD-DESKTOP.**
+Normal and survival route playback now use one native process per explicit-stop
+interval, retaining automatic corner pauses inside that process. Versioned pause
+receipts require released input and a stationary pose pair before advancing the
+durable checkpoint. STOP, ownership, position/height/bearing, survival baseline
+and the shared deadline are checked before another span starts. Truncated native
+paths are reported explicitly and rejected as survival/export corridor evidence.
+The combined focused Python suite passed 139 tests; the native follower suite
+passed 74 tests. These changes have not yet received physical acceptance or a
+measured timing comparison. Earlier separate 24-point forward STOP/Resume and
+full reverse tests passed using the preceding reader-fixed build; reverse final
+error was 0.158 units with released input and zero settled drift. Visual camera
+smoothness and hostile recovery/rejoin remain unverified. Next: verify batched
+travel timing in an authorized bounded run and restore fresh survival telemetry.
+
 **November 14 — hunt safety retreat wired and tested offline; live Resume pending.**
 After verified encounter cleanup, low health/losing conditions or the local
 two-minute hunt timeout now use the same run's retained outbound corridor toward

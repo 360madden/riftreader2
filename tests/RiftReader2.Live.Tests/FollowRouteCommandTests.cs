@@ -1150,4 +1150,104 @@ public sealed class FollowRouteCommandTests
         Assert.Contains("up:w", input.Events);
         Assert.True(result.ReleaseSucceeded);
     }
+    [Fact]
+    public void PauseMarkersRequireExplicitCapabilityAndBoolean()
+    {
+        var path = Path.GetTempFileName();
+        try
+        {
+            var args = new[] { "--expected-host", "AMD-DESKTOP", "--pid", "5",
+                "--expect-start-ticks", "100", "--expect-sha256", new string('a', 64),
+                "--expect-hwnd", "0x8", "--expect-player-key", "42", "--owner-pid", "10",
+                "--owner-start-ticks", "200", "--x", "0", "--z", "4", "--stop-file", @"C:\temp\stop.signal",
+                "--path-file", path };
+            File.WriteAllText(path, "{\"waypoints\":[{\"name\":\"turn\",\"x\":0,\"z\":2,\"controlPause\":true}]}");
+            Assert.Throws<InvalidDataException>(() => FollowRouteCommand.Parse(args));
+            Assert.True(FollowRouteCommand.Parse([.. args, "--control-pauses"]).RoutePoints![0].ControlPause);
+            File.WriteAllText(path, "{\"waypoints\":[{\"name\":\"turn\",\"x\":0,\"z\":2,\"controlPause\":\"true\"}]}");
+            Assert.Throws<InvalidOperationException>(() => FollowRouteCommand.Parse([.. args, "--control-pauses"]));
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task ControlPauseRequiresReleasedStationaryPairBeforeNextSpan()
+    {
+        var input = new Input();
+        var options = Options(z: 4) with { ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var result = await FollowRouteCommand.FollowWithPausesAsync(options,
+            Reader(Pose(0,0), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9),
+                Pose(0,1.9), Pose(0,1.9), Pose(0,1.9), Pose(0,3.9), Pose(0,3.9), Pose(0,3.9)),
+            input, () => null);
+        Assert.Equal("arrived", result.Status);
+        var pause = Assert.Single(result.ControlPauseReceipts!);
+        Assert.True(pause.StationaryAfter.ObservedAtUtc - pause.StationaryBefore.ObservedAtUtc >= TimeSpan.FromMilliseconds(150));
+        Assert.Equal("settled-corner", Assert.Single(result.PassedWaypoints!).Source);
+        Assert.Equal(new[] { "down:w", "up:w", "down:w", "up:w" }, input.Events);
+        Assert.False(result.PathTruncated);
+    }
+
+    [Fact]
+    public async Task StopAtPauseDoesNotLaunchNextSpanOrPublishPause()
+    {
+        var input = new Input();
+        var stop = false;
+        var options = Options(z: 4) with { ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        async Task Delay(TimeSpan duration, CancellationToken token)
+        {
+            if (duration == TimeSpan.FromMilliseconds(150)) stop = true;
+            await Task.Delay(duration, token);
+        }
+        var result = await FollowRouteCommand.FollowWithPausesAsync(options,
+            Reader(Pose(0,0), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9)),
+            input, () => stop ? "stop-file-requested" : null, Delay);
+        Assert.Equal("stopped", result.Status);
+        Assert.Empty(result.ControlPauseReceipts!);
+        Assert.Empty(result.PassedWaypoints!);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+    }
+
+    [Fact]
+    public async Task PauseAnchorRejectsDisplacementBeforeNextInput()
+    {
+        var input = new Input();
+        var options = Options(z: 4) with { ControlPauses = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var result = await FollowRouteCommand.FollowWithPausesAsync(options,
+            Reader(Pose(0,0), Pose(0,1.9), Pose(0,1.9), Pose(0,1.9),
+                Pose(0,1.9), Pose(0,1.9), Pose(0,2.1)), input, () => null);
+        Assert.Equal("halted", result.Status);
+        Assert.Contains("differs", result.Reason);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+        Assert.Equal(2.1, result.FinalPose!.Z);
+    }
+
+    [Fact]
+    public async Task SparseSurvivalSamplesShareBaselineAndRetainInterruptPose()
+    {
+        var input = new Input();
+        var options = Options(z: 4) with { ControlPauses = true, SurvivalInterrupt = true,
+            RoutePoints = [new("turn", 0, 2, 7, true)] };
+        var result = await FollowRouteCommand.FollowWithPausesAsync(options,
+            Reader(Pose(0,0) with { Survival = Survival() }, Pose(0,1.9), Pose(0,1.9), Pose(0,1.9),
+                Pose(0,1.9), Pose(0,1.9), Pose(0,1.9) with { Survival = Survival(health: 99) }),
+            input, () => null);
+        Assert.Equal("halted", result.Status);
+        Assert.Equal("survival-hp-drop", result.Reason);
+        Assert.Equal(99, result.FinalPose!.Survival!.HealthCurrent);
+        Assert.Equal(99, result.SurvivalSnapshot!.HealthCurrent);
+        Assert.Equal(1.9, result.Path[^1].Z);
+        Assert.Equal(new[] { "down:w", "up:w" }, input.Events);
+    }
+
+    [Theory]
+    [InlineData("arrived", 0)]
+    [InlineData("stopped", 0)]
+    [InlineData("blocked", 2)]
+    [InlineData("halted", 3)]
+    public void ResultStatusUsesExpectedExitCode(string status, int code) =>
+        Assert.Equal(code, FollowRouteCommand.ResultExitCode(status));
+
 }

@@ -141,6 +141,72 @@ def _validate_passes(receipt, guides, started):
     return passes
 
 
+def _validate_control_pauses(receipt, guides, passes, started, *, survival_guard=False):
+    """Validate versioned pause proofs before any durable guide callbacks."""
+    if receipt.get("controlPauseVersion") != 1 or type(receipt.get("controlPauseVersion")) is not int:
+        raise ValueError("Native control-pause protocol is unavailable")
+    if type(receipt.get("pathTruncated")) is not bool:
+        raise ValueError("Native control-pause path completeness is unavailable")
+    if survival_guard and (receipt["pathTruncated"] or
+            (type(receipt.get("readCount")) is int and isinstance(receipt.get("path"), list)
+             and receipt["readCount"] > len(receipt["path"]))):
+        raise ValueError("Truncated movement path cannot establish a survival trail")
+    records = receipt.get("controlPauseReceipts")
+    if not isinstance(records, list):
+        raise ValueError("Native control-pause proofs are unavailable")
+    expected = [i for i, guide in enumerate(guides[:len(passes)]) if guide.get("controlPause") is True]
+    if len(records) != len(expected):
+        raise ValueError("Native control-pause proof prefix is incomplete")
+    previous = started - timedelta(seconds=1)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
+    def stamp(value):
+        try:
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if value.tzinfo is None:
+                raise ValueError()
+            return value
+        except (TypeError, ValueError, AttributeError):
+            raise ValueError("Native control-pause time is invalid")
+    def position(item):
+        if not isinstance(item, dict):
+            raise ValueError("Native control-pause position is unavailable")
+        return tuple(_finite(item.get(axis), "control-pause " + axis) for axis in ("x", "y", "z"))
+    for proof, index in zip(records, expected):
+        guide, passage = guides[index], passes[index]
+        if (not isinstance(proof, dict) or type(proof.get("index")) is not int
+                or proof["index"] != index or proof.get("name") != guide["name"]
+                or proof.get("releaseSucceeded") is not True or proof.get("desktopInputsDown") != []):
+            raise ValueError("Native control-pause identity or release proof changed")
+        before, after = proof.get("stationaryBefore"), proof.get("stationaryAfter")
+        if not isinstance(before, dict) or not isinstance(after, dict):
+            raise ValueError("Native control-pause stationary pair is unavailable")
+        bp, ap = position(before.get("position")), position(after.get("position"))
+        bt, at = stamp(before.get("observedAtUtc")), stamp(after.get("observedAtUtc"))
+        ptime = stamp(proof.get("observedAtUtc"))
+        preceding_pass = stamp(passes[index-1]["observedAtUtc"]) if index else previous
+        if (not max(previous, preceding_pass) <= bt <= at <= now
+                or (at - bt).total_seconds() < .150):
+            raise ValueError("Native control-pause stationary timing is invalid")
+        if (position(proof.get("position")) != ap or ptime != at
+                or position(passage.get("position")) != ap
+                or stamp(passage.get("observedAtUtc")) != at
+                or passage.get("source") != "settled-corner"):
+            raise ValueError("Native control-pause and passage evidence disagree")
+        bearing_before = _finite(before.get("bearingDegrees"), "control-pause bearing")
+        bearing_after = _finite(after.get("bearingDegrees"), "control-pause bearing")
+        if (math.dist(bp, ap) > .05 + 1e-9
+                or abs((bearing_after-bearing_before+180) % 360 - 180) > .5 + 1e-9):
+            raise ValueError("Native control-pause did not settle")
+        for px, py, pz in (bp, ap):
+            if (math.hypot(px-guide["x"], pz-guide["z"]) > .30 + 1e-9
+                    or ("y" in guide and abs(py-guide["y"]) > .5 + 1e-9)):
+                raise ValueError("Native control-pause outside settled destination")
+        previous = at
+    for index, passage in enumerate(passes):
+        if index not in expected and passage.get("source") == "settled-corner":
+            raise ValueError("Native control-pause marked an ordinary passage")
+
+
 def _parse_final(stdout):
     if not isinstance(stdout, str):
         raise ValueError("Native movement result is unavailable")
@@ -434,7 +500,8 @@ def preview_move(adapter, x, z, stop):
 def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Popen,
             native_exe=None, owner_identity=None, max_seconds=MAX_TRIP_SECONDS,
             stop_path=None, expected_origin=None, reservation=None,
-            recovery_run=subprocess.run, survival_guard=False, goal_y=None, path_points=None):
+            recovery_run=subprocess.run, survival_guard=False, goal_y=None, path_points=None,
+            control_pauses=False):
     """Run one native continuous destination movement under Python ownership."""
     from scripts.physical_waypoints import read_stationary, Stopped, WaypointError
     adapter._continuous_move_launched = False
@@ -454,7 +521,14 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                  "z": _finite(point.get("z"), "guide Z")}
         if point.get("y") is not None:
             guide["y"] = _finite(point["y"], "guide Y")
+        if "controlPause" in point:
+            if type(point["controlPause"]) is not bool:
+                raise ValueError("Guide controlPause must be a boolean")
+            if point["controlPause"]:
+                guide["controlPause"] = True
         guides.append(guide)
+    if type(control_pauses) is not bool or control_pauses != any(g.get("controlPause") is True for g in guides):
+        raise ValueError("Control-pause flag must match marked guides")
     if (type(max_seconds) is not int or not 1 <= max_seconds <= MAX_TRIP_SECONDS):
         raise WaypointError(f"Movement time must be 1-{MAX_TRIP_SECONDS} seconds")
     if stop.is_set():
@@ -505,6 +579,8 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
             with path_file.open("x", encoding="utf-8") as stream:
                 json.dump({"waypoints": guides}, stream, allow_nan=False, separators=(",", ":"))
             command[command.index("--stop-file"):command.index("--stop-file")] = ["--path-file", str(path_file)]
+        if control_pauses:
+            command.insert(command.index("--execute"), "--control-pauses")
         if goal_y is not None:
             insertion = command.index("--stop-file")
             command[insertion:insertion] = ["--goal-y", repr(goal_y)]
@@ -599,6 +675,9 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
             receipt = _validate_receipt(parsed_receipt, adapter, (x, z, goal_y), stop_path,
                                         owner, child.returncode)
             passes = _validate_passes(receipt, guides, started_utc)
+            if control_pauses:
+                _validate_control_pauses(receipt, guides, passes, started_utc,
+                                         survival_guard=bool(survival_guard))
             receipt_path = _retain(adapter, receipt)
             adapter._continuous_move_receipt_trusted = True
             adapter._continuous_input_release_fault = False
@@ -619,6 +698,14 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         pulses = sum(event.get("phase") == "key-down" for event in events)
         held_ms = _held_input_milliseconds(events)
         observed_at = receipt["path"][-1]["observedAtUtc"] if receipt.get("path") else None
+        if receipt.get("pathTruncated") is True and position is not None:
+            last_pose = receipt["path"][-1] if receipt.get("path") else None
+            if (not isinstance(last_pose, dict) or
+                    any(type(last_pose.get(axis)) not in (int, float) or
+                        not math.isfinite(last_pose[axis]) or
+                        abs(float(last_pose[axis])-position[axis]) > 1e-6
+                        for axis in ("x", "y", "z"))):
+                observed_at = None
         result = dict(receipt, name="CLI destination", start=asdict(start.position),
                       goal={"x": x, "y": goal_y if goal_y is not None else start.position.y,
                             "z": z}, position=position,
@@ -999,11 +1086,13 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
         batch_start = 0
         origin = (initial.position.x, initial.position.z)
         while batch_start < len(rows):
-            _, relative_end, automatic_corner = route_spans(
+            planned_spans = route_spans(
                 rows[batch_start:], heights[batch_start:], kinds[batch_start:],
                 origin=origin, speed=speed, turn_rate=turn_rate, response_delay=response_delay,
-                observed_coast=observed_coast)[0]
-            end = batch_start + relative_end
+                observed_coast=observed_coast)
+            automatic_indices = {batch_start + span_end for _, span_end, automatic in planned_spans
+                                 if automatic}
+            end = next(i for i in range(batch_start, len(rows)) if kinds[i] == "stop")
             label, x, z = rows[end]
             goal_y = heights[end]
             guides = []
@@ -1011,6 +1100,8 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                 guide = {"name": rows[index][0], "x": rows[index][1], "z": rows[index][2]}
                 if heights[index] is not None:
                     guide["y"] = heights[index]
+                if index in automatic_indices:
+                    guide["controlPause"] = True
                 guides.append(guide)
             if stop.is_set():
                 raise Stopped("Stopped; no further input")
@@ -1020,6 +1111,10 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
 
             def named(event):
                 if event.get("status") == "passed":
+                    index = event.get("index")
+                    if type(index) is not int or not 0 <= index < len(guides):
+                        raise WaypointError("Native passage index is invalid")
+                    event = dict(event, batchIndex=index, index=batch_start + index)
                     legs.append(dict(event, elapsedSeconds=None, totalHoldMs=None,
                                      nativeReceipt=adapter.last_input_receipt))
                     emit(event)
@@ -1038,21 +1133,21 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                     emit(dict(event, batchIndex=index, index=batch_start + index,
                               waypointCount=len(rows), observedPointNumber=batch_start + index + 1,
                               source=event.get("source", "pose")))
-                elif not (automatic_corner and event.get("status") == "arrived"):
+                else:
                     emit(dict(event, name=label))
 
-            leg = move_to(adapter, x, z, stop, named, reservation=lease,
-                          max_seconds=remaining, survival_guard=survival_guard,
-                          goal_y=goal_y, path_points=guides)
+            move_options = {"reservation": lease, "max_seconds": remaining,
+                            "survival_guard": survival_guard, "goal_y": goal_y,
+                            "path_points": guides}
+            if any(guide.get("controlPause") for guide in guides):
+                move_options["control_pauses"] = True
+            leg = move_to(adapter, x, z, stop, named, **move_options)
             leg = dict(leg, name=label,
                        elapsedSeconds=round(float(leg.get("elapsedMilliseconds", 0)) / 1000, 3),
                        totalHoldMs=(float(leg["heldInputMilliseconds"])
                                     if (type(leg.get("heldInputMilliseconds")) in (int, float)
                                         and math.isfinite(leg["heldInputMilliseconds"])) else None),
                        nativeReceipt=adapter.last_input_receipt)
-            if automatic_corner:
-                leg.update(status="passed", passageVerified=True)
-                emit(dict(leg, index=end, source="settled-corner"))
             trusted_receipt = adapter.last_input_receipt or {}
             speed = _receipt_speed_seed(trusted_receipt, speed)
             response_delay, turn_rate, response = merge_response_seed(
