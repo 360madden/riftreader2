@@ -5,6 +5,7 @@ import time
 from types import SimpleNamespace as NS
 
 from scripts.waypoint_beacon_pose import SOURCE, QUALIFICATION, _target, _utc, _validate_pose
+from scripts.waypoint_limits import MAX_RECORDING_SAMPLES, MAX_ROUTE_DISTANCE, MAX_WAYPOINTS
 from scripts.waypoint_measurements import measurement, parse_projection_route
 from scripts.waypoint_progress import write_json_atomic
 from scripts.waypoint_recording import RecordingError, RouteRecorder
@@ -13,11 +14,12 @@ from scripts.waypoint_recording import RecordingError, RouteRecorder
 class BreadcrumbTrail:
     """Caller validates packet freshness/ownership using read_pose before observe.
 
-    Segments never span unavailable data, epochs or discontinuities. The 20-unit
-    segment limit matches the existing recorder/replay format. Snapshot data are
-    copies; clearing/stopping never modifies a route or playback checkpoint.
+    Segments never span unavailable data, epochs or discontinuities. The shared
+    route-distance limit keeps exported trails compatible with recording and
+    playback. Snapshot data are copies; clearing/stopping never modifies a route
+    or playback checkpoint.
     """
-    def __init__(self, *, max_points=2000, max_gap_seconds=3.):
+    def __init__(self, *, max_points=MAX_RECORDING_SAMPLES, max_gap_seconds=3.):
         if type(max_points) is not int or max_points < 2:
             raise ValueError("breadcrumb point cap must be at least two")
         if type(max_gap_seconds) not in (int, float) or not math.isfinite(max_gap_seconds) or max_gap_seconds <= 0:
@@ -124,11 +126,11 @@ class BreadcrumbTrail:
                 segment["points"].append(bridge)
                 previous = bridge
             distance = math.hypot(point["x"] - previous["x"], point["z"] - previous["z"])
-            if segment["observedPathLength"] + distance > 20:
+            if segment["observedPathLength"] + distance > MAX_ROUTE_DISTANCE:
                 # The boundary is an actual observed point, never interpolation.
                 reason = "route-length-limit"
                 segment = self._new_segment(key, reason)
-                if distance <= 20:
+                if distance <= MAX_ROUTE_DISTANCE:
                     segment["points"].append(deepcopy(previous))
                 else:
                     distance = 0.
@@ -264,8 +266,9 @@ class BreadcrumbTrail:
                 raise RecordingError("Breadcrumb retained-point provenance missing")
         retained = [points[i] for i in sorted(retained_indices)]
         # The recorder deduplicates XZ; restore genuine measured vertical corners.
-        if len(retained) > 20:
-            raise RecordingError("Breadcrumb segment requires more than 20 genuine waypoints")
+        if len(retained) > MAX_WAYPOINTS:
+            raise RecordingError(
+                f"Breadcrumb segment requires more than {MAX_WAYPOINTS} genuine waypoints")
         document = dict(waypoints=[[f"Trail {i+1}", round(p["x"],6), round(p["z"],6)]
                                    for i,p in enumerate(retained)],
                         heights=[round(p["y"],6) for p in retained], pointMeasurements=[])

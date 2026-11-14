@@ -13,6 +13,35 @@ and detailed status remain in Activity. Load/Save and Recent routes stay with th
 route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
 
+## Longer routes
+
+Routes now support **1,000 world units of planned travel and 500 waypoints**.
+Recording accepts up to 30,000 fresh observations; saved routes, Library,
+Forward/Reverse playback, explicit Resume and Explore trail export share the
+same route limits. Existing route files and checkpoints retain their format and
+hashes. No conversion is required.
+
+Each explicit trip has a shared 30-minute, 8,192-pulse and 600-second requested
+key-hold budget. STOP/F8 still prevents the next pulse, preserves unfinished
+playback progress and lets the current bounded pulse release. Resume rechecks
+the saved route, direction, host/build/player, current position and height before
+continuing, with a fresh trip budget. Reconnection never auto-resumes.
+
+These larger trip budgets do not enlarge individual movements: requested pulses
+remain at most 150 ms; intermediate targets remain at most four units apart;
+per-target progress, drift, freshness, ownership and release checks remain in
+force. Use a clear taught path: there is still no obstacle avoidance or terrain
+planner. The longer envelope is covered by simulated runner and withdrawn-window
+checks; the earlier short-route live trials do not qualify a 1,000-unit live trip.
+
+To keep large routes responsive, world beacons display at most 64 route markers
+per frame, favoring nearby points and retaining the saved next waypoint and
+selected landmark. The complete route and progress remain intact. The main
+preview offers larger zoom ranges and Fit. It draws every waypoint and connector
+while displaying up to 64 number badges, prioritizing selected/active points,
+nearby points and route coverage. All true nodes remain selectable. Explore's
+compact radar retains its separate local ranges.
+
 ## Header, live pose and STOP
 
 The header keeps the verified host/PID, Refresh, Live pose and STOP together.
@@ -80,7 +109,7 @@ height evidence until explicitly measured.
 
 The header reports visible/off-screen point counts for the local viewport.
 **+**, **−** and **Fit** affect this reference display only. Fit needs a cached
-position and at least one route point; it remains capped at 20 units and may leave
+position and at least one route point; it remains capped at 1,500 units and may leave
 distant points off-screen. Its hover explanation and CLI status expose that cap.
 No edge-clamped points or terrain clearance are implied. The preview starts at
 10 units on reopening; its range is separate from Explore's compact radar.
@@ -92,13 +121,13 @@ No edge-clamped points or terrain clearance are implied. The preview starts at
 .\rr2-waypoints.cmd route select 7
 ```
 
-Allowed preview ranges are 2, 5, 10 and 20 units. These commands use existing
+Allowed preview ranges are 2, 5, 10, 20, 50, 100, 250, 500, 1,000 and 1,500 units. These commands use existing
 cached data, obtain no new pose and send no game input. `status.preview` and live
 `route list --json` expose radius, selected numbers, viewport counts, named
 off-screen points, cached/fresh/unavailable pose status and age, and
 `fitLimited`/`requiredRadius`. Offline route inspection does not fabricate a live
 preview. `terrainAvailable` and `inputSent` remain false. Zoom/Fit never alter
-route coordinates, saved progress, movement admission or the 20-unit trip limit.
+route coordinates, saved progress, movement admission or the 1,000-unit trip limit.
 
 ## Activity and diagnostics
 
@@ -228,8 +257,8 @@ passed Play Forward, Play Reverse, STOP and Resume in the saved reverse directio
 All 20 turn/walk pulses released; Resume was ready immediately after STOP without
 another Refresh. The return ended 0.0455 units and 0.1726° from the starting pose.
 Completed Resume was refused without input. Original route/settings, checkpoint
-binding/content and progress archives were restored. The existing 20-unit trip
-limit and open-ground requirement remain.
+binding/content and progress archives were restored. This historical trial used
+the then-current 20-unit trip limit and open-ground requirement.
 
 ## Edit waypoint
 
@@ -335,8 +364,9 @@ whether a retained nearby-sample path still points to an available file.
 
 CLI capture defaults to focus-neutral WGC and no nearby-unit sampling; both
 options are explicit per-capture opt-ins and are reflected in the GUI afterward.
-Capture gets a 120-second CLI deadline; movement remains 150 seconds and ordinary
-commands 10 seconds. `view status` reports options, capture readiness and actual
+Capture gets a 120-second CLI deadline; route playback and direct movement get
+1,830 seconds (30 minutes plus completion grace), facing 150 seconds and ordinary
+commands including STOP 10 seconds. `view status` reports options, capture readiness and actual
 asset availability. `beacons status` adds `visibility` and `restartPending`.
 
 November 13 live checks on AMD-DESKTOP/PID40452 verified target restarts retaining
@@ -465,7 +495,7 @@ The compact radar requires the existing Qt overlay environment.
   stopped. Choose a recorded segment and **Save segment** to write a separate
   waypoint JSON file without replacing the current route. Load that file normally
   to inspect it. Gaps, teleports and owner changes split segments; long trails also
-  split at the existing 20-unit recording limit. Exact stationary positions keep
+  split at the 1,000-unit recording limit. Exact stationary positions keep
   sparse real heartbeat samples so standing still does not quickly erase a walk.
   Segment selection stays on your chosen segment when a new segment arrives.
   Save is enabled only when the actual export rules accept that segment; the
@@ -593,9 +623,9 @@ Initial Play buttons are disabled if the observed endpoint is too far away, its
 recorded height differs by more than one unit, or the directed route exceeds 20
 units. The backend repeats admission checks using a fresh stationary pose.
 
-**+ / −** change preview radius through 2, 5, 10 and 20 units; **Fit** chooses a
+**+ / −** change preview radius from 2 through 1,500 units; **Fit** chooses a
 radius for the loaded points around the observed player. Rings show half/full radius.
-Farther points can remain outside the maximum 20-unit preview. Zoom only redraws
+Farther points can remain outside the maximum 1,500-unit preview. Zoom only redraws
 the display, preserving world coordinates and movement limits. Each click checks
 a fresh pose; if the player moved or
 turned, it refreshes the preview and requires another click. It shows waypoint
@@ -667,9 +697,9 @@ Waypoints.cmd --route docs/validation/gui-taught-route-2026-11-12.json
 
 **Record** passively observes the player's movement without sending input.
 While recording, the summary shows accumulated observed distance against the
-20-unit cap and the accepted sample count. Stop before the cap; the readout
+1,000-unit cap and the accepted sample count (up to 30,000). Stop before the cap; the readout
 updates after each capture burst and does not enlarge the recording limits.
-After moving along a short open-ground path, choose **Stop Recording** to finish,
+After moving along a clear path, choose **Stop Recording** to finish,
 save a new `artifacts/recorded-route-*.json`, and load its points into the window.
 **STOP** cancels recording without saving; capture or identity errors also leave
 the recording incomplete.
@@ -784,8 +814,8 @@ Live updates were checked against an independently issued facing command: the
 preview updated to the new -16.51-degree bearing while an edited X coordinate
 remained unchanged.
 
-Each route is limited to 20 world units of planned travel, 64 pulses, 9 seconds
-total requested key hold and 120 seconds overall. Actual Windows insertion-time
+Each route is limited to 1,000 world units of planned travel, 500 waypoints,
+8,192 pulses, 600 seconds total requested key hold and 30 minutes overall. Actual Windows insertion-time
 bounds remain in the native pulse receipts. Long waypoints are split into targets
 at most 4 units apart. Each target retains the existing controller's six-pulse,
 900-ms hold, 12-second and 6-unit radius limits. Input ownership and the trip

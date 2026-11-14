@@ -639,7 +639,7 @@ class GuiBridgeTests(unittest.TestCase):
         self.assertEqual(listing['selected'], [1])
         self.assertFalse((self.root / 'movement-called').exists())
 
-    def test_preview_controls_use_cached_pose_cap_fit_and_preserve_route(self):
+    def test_preview_controls_fit_long_route_using_cached_pose_and_preserve_route(self):
         self.assertTrue(self.call('route.add', {'name': 'Near', 'x': 12, 'z': 24})['ok'])
         self.assertTrue(self.call('route.add', {'name': 'Far', 'x': 62, 'z': 24})['ok'])
         before = self.call('route.list')['data']
@@ -658,15 +658,15 @@ class GuiBridgeTests(unittest.TestCase):
         fitted = self.call('preview.fit')
         self.assertTrue(fitted['ok'], fitted)
         preview = fitted['data']
-        self.assertEqual(preview['radius'], 20)
-        self.assertTrue(preview['fitLimited'])
+        self.assertEqual(preview['radius'], 100)
+        self.assertFalse(preview['fitLimited'])
         self.assertGreater(preview['requiredRadius'], 20)
-        self.assertIn({'number': 2, 'name': 'Far'}, preview['offscreenPoints'])
+        self.assertNotIn({'number': 2, 'name': 'Far'}, preview['offscreenPoints'])
 
         refused = self.call('preview.set', {'range': 3})
         self.assertFalse(refused['ok'], refused)
         self.assertEqual(refused['error']['code'], 'invalid-preview-range')
-        self.assertEqual(self.call('preview.status')['data']['radius'], 20)
+        self.assertEqual(self.call('preview.status')['data']['radius'], 100)
 
         chosen = self.call('route.select', {'point': 1})
         self.assertTrue(chosen['ok'], chosen)

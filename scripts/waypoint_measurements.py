@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 import math
 import re
 
+from scripts.waypoint_limits import MAX_WAYPOINTS
+
 
 TARGET_POSITION_QUALIFICATION = (
     "Static selected-target native-position candidate; no live-follow or passive-freshness "
@@ -117,7 +119,7 @@ def loaded_unit_measurement(position, identity, source, observed_at, *, unit_key
 def _points(document):
     _require(isinstance(document, dict), "projection-route-required")
     points, heights = document.get("waypoints"), document.get("heights")
-    _require(isinstance(points, list) and 1 <= len(points) <= 20 and isinstance(heights, list)
+    _require(isinstance(points, list) and 1 <= len(points) <= MAX_WAYPOINTS and isinstance(heights, list)
              and len(points) == len(heights), "recorded-xyz-heights-required")
     parsed = []
     for number, (point, height) in enumerate(zip(points, heights), 1):
@@ -175,7 +177,7 @@ def parse_marker_projection_route(document, expected_identity, *, allow_empty=Fa
 
     _require(isinstance(document, dict), "marker-projection-route-required")
     waypoints = document.get("waypoints")
-    _require(isinstance(waypoints, list) and 1 <= len(waypoints) <= 20,
+    _require(isinstance(waypoints, list) and 1 <= len(waypoints) <= MAX_WAYPOINTS,
              "marker-waypoints-required")
     heights = document.get("heights", [None] * len(waypoints))
     receipts = document.get("pointMeasurements", [None] * len(waypoints))

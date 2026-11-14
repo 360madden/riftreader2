@@ -149,7 +149,7 @@ class WindowReceiptTests(unittest.TestCase):
                 with patch("scripts.waypoint_playback.teach_route", side_effect=teach):
                     self.button("Auto-walk + record").invoke()
                     self.assertTrue(ready.wait(1))
-                    self.wait_for(lambda: any("Recording: 1.25 / 20 units" in self.window.getvar(w["textvariable"])
+                    self.wait_for(lambda: any("Recording: 1.25 / 1000 units" in self.window.getvar(w["textvariable"])
                                              and "8 samples" in self.window.getvar(w["textvariable"])
                                              for w in self.widgets() if isinstance(w, fixture.ttk.Label)
                                              and w["textvariable"]))

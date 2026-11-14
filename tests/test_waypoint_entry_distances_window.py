@@ -41,7 +41,7 @@ class EntryDistanceWindowTests(unittest.TestCase):
         self.launch(SimpleNamespace(read=reader, pid=123))
         self.root = self.roots[0]
         self.assertEqual(1, reader.call_count)
-        self.assertIn("Remaining: 0.00 / 20 units", self.summary())
+        self.assertIn("Remaining: 0.00 / 1000 units", self.summary())
         self.assertIn("Start: 0.00 • End: 5.00 units", self.summary())
         table = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Treeview)
                      and tuple(w["columns"]) == ("name", "x", "z"))

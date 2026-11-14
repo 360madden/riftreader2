@@ -180,7 +180,7 @@ class RecordingWindowTests(unittest.TestCase):
         def label_values():
             return [str(self.window.getvar(w["textvariable"])) for w in self.widgets()
                     if isinstance(w, ttk.Label) and w["textvariable"]]
-        self.assertTrue(any("Recording: 2.00 / 20 units" in value and "3 samples" in value
+        self.assertTrue(any("Recording: 2.00 / 1000 units" in value and "3 samples" in value
                             for value in label_values()), label_values())
         self.button("STOP").invoke()
         self.release_capture.set()

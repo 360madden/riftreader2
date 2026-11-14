@@ -79,6 +79,14 @@ class RouteLibraryTests(unittest.TestCase):
         self.assertEqual(row["waypointCount"], 2)
         self.assertEqual(row["planarDistance"], 5)
 
+    def test_longer_route_round_trips_and_reports_full_metadata(self):
+        route = {"waypoints": [[f"Point {i}", i, 0] for i in range(25)]}
+        library.save_route(route, "Longer route", "longer", library_dir=self.directory)
+        loaded = library.load_route("longer", self.directory)
+        self.assertEqual(route["waypoints"], loaded["waypoints"])
+        row = library.list_routes(library_dir=self.directory)[0]
+        self.assertEqual((25, 24), (row["waypointCount"], row["planarDistance"]))
+
     def test_corrupt_receipts_and_oversized_entries_are_reported(self):
         corrupt = dict(self.route, pointMeasurements=[{"kind": "forged"}, None])
         with self.assertRaisesRegex(ValueError, "invalid-route-measurement"):

@@ -33,6 +33,7 @@ from scripts.waypoint_marker_style import DEFAULT_STYLE, load_style
 RECOVERABLE_STREAM_ROW_REASONS = frozenset({"full-camera-projection-required", "route-update-unavailable",
                                              "native-sample-stale", "native-acquisition-expired"})
 TRANSPORT_GAP_REASONS = frozenset({"stream-child-timeout", "stream-end-missing", "stream-child-failed"})
+MAX_FRAME_MARKERS = 64
 
 
 def require(condition, reason):
@@ -102,6 +103,7 @@ class ProjectionProvider:
         self._next_route_update = 0.
         self._startup_player_y = None
         self.marker_points = self._prepare_marker_points(self.route)
+        self.progress_next_number = None
         self.latest_native = None
         self.last_stream_receipt = None
         self.stream_rows = 0
@@ -122,6 +124,32 @@ class ProjectionProvider:
                 point["displayHeightKind"] = "nearest-measured-estimate"
                 point["heightReferenceNumber"] = nearest["number"]
         return points
+
+    def set_progress_next_number(self, number):
+        """Keep the saved next marker in the bounded display set.
+
+        The saved cursor remains historical display evidence. It does not alter
+        route order, movement, or the complete progress summary.
+        """
+        require(number is None or (type(number) is int and number > 0),
+                "invalid-progress-next-number")
+        with self.route_lock:
+            self.progress_next_number = number
+
+    def _display_marker_points(self, player_xyz):
+        """Choose a bounded visual subset while retaining the complete route."""
+        forced_numbers = {number for number in (self.progress_next_number, self.landmark_number)
+                          if number is not None}
+        forced = [point for point in self.marker_points if point["number"] in forced_numbers]
+        forced_ids = {point["number"] for point in forced}
+        nearby = sorted((point for point in self.marker_points if point["number"] not in forced_ids),
+                        key=lambda point: (math.hypot(point["xyz"]["x"] - player_xyz["x"],
+                                                     point["xyz"]["z"] - player_xyz["z"]),
+                                           point["number"]))
+        selected = forced_ids | {point["number"] for point in
+                                 nearby[:max(0, MAX_FRAME_MARKERS - len(forced))]}
+        # Retain route order so connectors, numbering and progress remain legible.
+        return [point for point in self.marker_points if point["number"] in selected]
 
     def _refresh_route(self):
         if self.route_updates_file is None:
@@ -216,7 +244,8 @@ class ProjectionProvider:
                 point["xyz"]["y"] = self._startup_player_y
                 point["displayHeightKind"] = "startup-player-estimate"
         points = []
-        for point in self.marker_points:
+        display_points = self._display_marker_points(player_xyz)
+        for point in display_points:
             xyz = point["xyz"]
             points.append({"number": point["number"], "label": point["label"],
                 "horizontalDistanceCandidate": math.hypot(xyz["x"] - player_xyz["x"],
@@ -229,6 +258,8 @@ class ProjectionProvider:
                 points[-1]["displayLandmark"] = True
         frame = {"target": deepcopy(self.target), "acquiredMonotonic": acquired,
                  "clientRect": list(after["clientRect"]), "points": points,
+                 "routePointCount": len(self.marker_points), "displayPointCount": len(points),
+                 "displayLimited": len(points) < len(self.marker_points),
                  "viewportRectNormalized": [left, 1 - top, right, 1 - bottom],
                  "playerGround": physical._project_world_point(camera, values["positionXYZCandidate"]),
                  "playerPose": {"position": deepcopy(values["positionXYZCandidate"]),
@@ -711,6 +742,10 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
         window_options["companion"] = companion_window
     provider = ProjectionProvider(selection, route, snapshot, max_age=max_age, target_beacon=target_beacon,
                                   landmark_number=landmark_number, route_updates_file=route_updates_file)
+    if progress_file is not None and route["points"]:
+        from scripts.waypoint_marker_progress import read_marker_progress
+        initial_progress = read_marker_progress(progress_file, route["document"], route["identity"])
+        provider.set_progress_next_number(initial_progress.get("nextNumber"))
     if presenter == "qt":
         try:
             from scripts.qt_waypoint_overlay import QtOwnedWindow
@@ -917,6 +952,9 @@ def run(expected_host, physical_pid, route_path, *, duration=60, max_age=.8, out
                         packet_route = packet.get("route", route)
                         saved_progress = (apply_saved_progress(packet["frame"], progress_file, packet_route)
                                           if progress_file is not None and packet_route["points"] else None)
+                        if progress_file is not None:
+                            provider.set_progress_next_number(saved_progress.get("nextNumber")
+                                                              if saved_progress is not None else None)
                         with provider.route_lock if route_updates_file is not None else nullcontext():
                             if route_updates_file is not None:
                                 require(packet["frame"].get("routeRevision") == provider.route_revision

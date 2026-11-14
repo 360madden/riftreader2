@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from scripts.waypoint_map import (LocalMap, ZOOM_RADII, draw_route, fit_route_radius,
+from scripts.waypoint_map import (LocalMap, MAX_NUMBER_BADGES, ZOOM_RADII, draw_route, fit_route_radius,
                                   fit_route_status, hit_test_route, route_length)
 from scripts.waypoint_ui_theme import PALETTE
 
@@ -51,18 +51,34 @@ class LocalMapTests(unittest.TestCase):
         self.assertEqual(2, fit_route_radius(100, 200, []))
         self.assertEqual(2, fit_route_radius(100, 200, [("Here", 100, 200)]))
         self.assertEqual(10, fit_route_radius(0, 0, [("Needs room", 5, 0)]))
-        self.assertEqual(20, fit_route_radius(0, 0, [("Beyond preview", 50, 0)]))
+        self.assertEqual(100, fit_route_radius(0, 0, [("Long route", 50, 0)]))
         for bad in (float("nan"), float("inf")):
             with self.assertRaises(ValueError):
                 fit_route_radius(0, 0, [("Invalid", bad, 0)])
 
-    def test_fit_status_makes_twenty_unit_cap_explicit(self):
-        status = fit_route_status(0, 0, [("Beyond preview", 50, 0)])
-        self.assertEqual(20, status["radius"])
-        self.assertEqual(50, status["farthest_distance"])
-        self.assertAlmostEqual(55, status["required_radius"])
+    def test_fit_status_supports_long_route_and_makes_maximum_cap_explicit(self):
+        status = fit_route_status(0, 0, [("Long route", 1000, 0)])
+        self.assertEqual(1500, status["radius"])
+        self.assertEqual(1000, status["farthest_distance"])
+        self.assertAlmostEqual(1100, status["required_radius"])
+        self.assertFalse(status["capped"])
+
+        status = fit_route_status(0, 0, [("Beyond preview", 1500, 0)])
+        self.assertEqual(1500, status["radius"])
+        self.assertEqual(1500, status["farthest_distance"])
+        self.assertAlmostEqual(1650, status["required_radius"])
         self.assertTrue(status["capped"])
         self.assertFalse(fit_route_status(0, 0, [("Nearby", 3, 4)])["capped"])
+
+    def test_long_route_fit_includes_entry_leg_and_round_trips_at_large_zoom(self):
+        points = [("First", 800, 0), ("Second", 800, 200)]
+        self.assertEqual(1000, route_length(0, 0, points))
+        self.assertEqual(1000, fit_route_radius(0, 0, points))
+        view = LocalMap(0, 0, 31, 440, 370, fit_route_radius(0, 0, points))
+        for _, x, z in points:
+            recovered = view.canvas_to_world(*view.world_to_canvas(x, z))
+            self.assertAlmostEqual(x, recovered[0], places=9)
+            self.assertAlmostEqual(z, recovered[1], places=9)
 
     def test_ring_labels_follow_radius_and_default_stays_five_ten(self):
         class Canvas:
@@ -191,6 +207,28 @@ class LocalMapTests(unittest.TestCase):
             self.assertTrue(all(12 <= value <= 288 for value in line[::2]))
             self.assertTrue(all(12 <= value <= 268 for value in line[1::2]))
         self.assertGreater(abs(view.world_to_canvas(100, 0)[0]), 300)
+
+    def test_five_hundred_point_draw_keeps_every_node_and_bounds_number_badges(self):
+        class Canvas:
+            def __init__(self): self.calls = []
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: self.calls.append((name, args, kwargs))
+        points = [(str(i), f"Point {i}", (i % 25 - 12) * 6, (i // 25 - 10) * 6)
+                  for i in range(1, 501)]
+        canvas = Canvas()
+        render = draw_route(canvas, LocalMap(0, 0, 17, 440, 370, 250), points,
+                            {"499"}, active="500")
+        badges = [node for node in render["nodes"] if node["badge_box"] is not None]
+        self.assertEqual(500, render["visible_count"])
+        self.assertEqual(500, len(render["nodes"]))
+        self.assertEqual(MAX_NUMBER_BADGES, len(badges))
+        self.assertTrue({"499", "500"}.issubset({node["identifier"] for node in badges}))
+        self.assertEqual(500, len([call for call in canvas.calls
+                                  if call[2].get("tags") == "waypoint-node"]))
+        self.assertEqual(MAX_NUMBER_BADGES, len([call for call in canvas.calls
+                                                if call[2].get("tags") == "number-badge"]))
+        node = next(node for node in render["nodes"] if node["identifier"] == "250")
+        self.assertEqual("node", hit_test_route(render, *node["point"])["part"])
 
     def test_route_preview_includes_start_and_every_leg(self):
         self.assertEqual(route_length(0, 0, [("A", 3, 4), ("B", 3, 0)]), 9)

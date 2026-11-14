@@ -47,9 +47,9 @@ class ZoomWindowTests(unittest.TestCase):
         self.assertEqual("disabled", str(self.button("+")["state"]))
         self.button("Fit").invoke()
         self.assertIn("5 units", self.labels())
-        for _ in range(3):
+        for _ in app.ZOOM_RADII:
             self.button("-").invoke()
-        self.assertIn("20 units", self.labels())
+        self.assertIn("1500 units", self.labels())
         self.assertEqual("disabled", str(self.button("-")["state"]))
         self.assertEqual(reads, self.read.call_count)
         self.assertEqual(selected, self.table.selection())
@@ -58,8 +58,8 @@ class ZoomWindowTests(unittest.TestCase):
         # coordinates remain exactly the same through every redraw.
         texts = [self.canvas.itemcget(i, "text") for i in self.canvas.find_all()
                  if self.canvas.type(i) == "text"]
-        self.assertIn("10", texts)
-        self.assertIn("20", texts)
+        self.assertIn("750", texts)
+        self.assertIn("1500", texts)
 
     def test_fit_disabled_without_pose_zoom_remains_display_only(self):
         with patch.object(app, "PhysicalAdapter", side_effect=ValueError("offline")):

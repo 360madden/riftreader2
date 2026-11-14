@@ -16,15 +16,22 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.waypoint_brand import APP_NAME, APP_VERSION
+from scripts.waypoint_limits import MAX_TRIP_SECONDS
+from scripts.waypoint_map import ZOOM_RADII
 
 VERSION = APP_VERSION
 MOVEMENT = {"move.to", "face", "route.run", "playback.start", "playback.resume"}
+LONG_ROUTE_MOVEMENT = {"move.to", "route.run", "playback.start", "playback.resume"}
 COMMON = {"session", "timeout", "json", "jsonl", "no_color"}
+LONG_ROUTE_TIMEOUT = MAX_TRIP_SECONDS + 30
+PREVIEW_RANGES = ", ".join(str(radius) for radius in ZOOM_RADII[:-1]) + f" or {ZOOM_RADII[-1]}"
 
 
 def default_timeout(operation):
     """One timeout policy for parsing, help and dispatch."""
-    return 150 if operation in MOVEMENT else 120 if operation == "view.save" else 10
+    return (LONG_ROUTE_TIMEOUT if operation in LONG_ROUTE_MOVEMENT else
+            150 if operation in MOVEMENT else
+            120 if operation == "view.save" else 10)
 
 
 class UsageError(ValueError):
@@ -95,7 +102,8 @@ def common(parser, operation=None):
     # Suppressed defaults let an option before a group survive leaf parsing.
     parser.add_argument("--session", default=argparse.SUPPRESS, help="select the exact helper session ID")
     timeout_help = (f"seconds to wait; default {default_timeout(operation)} for this command" if operation else
-                    "seconds to wait; defaults: view save 120, movement 150, other commands 10")
+                    f"seconds to wait; defaults: route playback {LONG_ROUTE_TIMEOUT}, "
+                    "facing 150, view save 120, other commands 10")
     parser.add_argument("--timeout", type=bounded(.05, 3600), default=argparse.SUPPRESS, help=timeout_help)
     output = parser.add_mutually_exclusive_group()
     output.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="one versioned JSON result")
@@ -206,7 +214,7 @@ def build_parser():
                 "library.select":"Select a library entry and show its details without replacing the loaded route; clears filters if needed.",
                 "preview.status":"Show the local route preview range, cached-pose availability and off-screen point summary.",
                 "preview.set":"Set the local route preview range without reading RIFT or sending game input.",
-                "preview.fit":"Fit the local route preview to the loaded route using only the helper's cached finite pose; the preview remains capped at 20 units.",
+                "preview.fit":f"Fit the local route preview to the loaded route using only the helper's cached finite pose; the preview remains capped at {ZOOM_RADII[-1]} units.",
                 "pose.status":"Show Live pose refresh, current or cached sample freshness and the existing reader source.",
                 "pose.set":"Turn the helper's Live pose refresh on or off; retained samples remain subject to freshness checks.",
                 "pose.refresh":"Refresh pose with one fresh read through the existing native reader; sends no game input.",
@@ -234,10 +242,10 @@ def build_parser():
                 "trail.start":"Start observing a breadcrumb trail from the existing owned pose feed.",
                 "trail.stop":"Stop breadcrumb observation and retain its history.",
                 "trail.save":"Export one observed trail segment to a separate existing-format route file.",
-                "playback.start":"Start a new Forward or Reverse run at its route endpoint; replaces saved progress only after fresh admission. Faces before each leg.",
-                "playback.resume":"Resume the validated saved direction and next unfinished waypoint. An explicit direction must match the saved direction. Faces before each leg.",
+                "playback.start":"Start a new Forward or Reverse run at its route endpoint; replaces saved progress only after fresh admission. Faces before each leg and supports a full bounded long route.",
+                "playback.resume":"Resume the validated saved direction and next unfinished waypoint. An explicit direction must match the saved direction. Faces before each leg and supports the remaining bounded long route.",
                 "playback.status":"Show Forward, Reverse and Resume readiness from the helper's existing pose; execution rechecks live admission.",
-                "route.run":"Run the loaded route from a one-based point using face-then-walk mode.",
+                "route.run":"Run the loaded route from a one-based point using face-then-walk mode, with the full bounded long-route deadline.",
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
             }.get(operation, f"{verb.capitalize()} {group}.")
             effects = ("Read-only native candidate refresh; sends no game input." if operation in {"zone.refresh", "pose.refresh"}
@@ -277,8 +285,8 @@ def build_parser():
     for op in ("library.load", "library.show", "library.select"):
         arg(op, "route_id", metavar="ID", help="owned library route ID")
     arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
-    arg("preview.set", "--range", dest="range", type=number, choices=(2., 5., 10., 20.), required=True,
-        help="preview radius in world units: 2, 5, 10 or 20")
+    arg("preview.set", "--range", dest="range", type=number, choices=tuple(float(radius) for radius in ZOOM_RADII), required=True,
+        help=f"preview radius in world units: {PREVIEW_RANGES}")
     arg("diagnostics.events", "--level", choices=("all", "warning", "error"), default="all",
         help="minimum severity: all, warning (includes errors), or error; default all")
     arg("diagnostics.events", "--limit", type=bounded_integer(1, 200), default=100,
@@ -505,7 +513,7 @@ def human_preview(preview):
     if preview.get("fitLimited"):
         required = preview.get("requiredRadius")
         detail = f"; route requires about {required:g} units" if isinstance(required, (int, float)) else ""
-        print(f"Fit limited: preview is capped at 20 units{detail}")
+        print(f"Fit limited: preview is capped at {ZOOM_RADII[-1]} units{detail}")
     points = preview.get("offscreenPoints")
     if points:
         labels = []

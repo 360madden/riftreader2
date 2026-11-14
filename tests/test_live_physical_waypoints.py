@@ -88,6 +88,36 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(json.loads(self.route_path.read_text(encoding="utf-8")), document)
         self.assertTrue(all(p["xyz"]["y"] is None for p in self.route["points"][2:]))
 
+    def test_five_hundred_point_frame_bounds_projection_and_keeps_next_and_landmark(self):
+        provider = self.provider(clock=lambda: 10.)
+        provider.marker_points = [
+            {"number": number, "label": f"Point {number}",
+             "xyz": {"x": 7424. + number, "y": 871., "z": 2942.}}
+            for number in range(1, 501)
+        ]
+        provider.landmark_number = 500
+        provider.set_progress_next_number(499)
+        with patch.object(live.physical, "_project_world_point",
+                          wraps=live.physical._project_world_point) as project:
+            frame = provider.acquire()
+        numbers = {point["number"] for point in frame["points"]}
+        self.assertEqual(live.MAX_FRAME_MARKERS, len(frame["points"]))
+        self.assertEqual((500, live.MAX_FRAME_MARKERS, True),
+                         (frame["routePointCount"], frame["displayPointCount"], frame["displayLimited"]))
+        self.assertTrue({499, 500}.issubset(numbers))
+        self.assertTrue(next(point for point in frame["points"] if point["number"] == 500)["displayLandmark"])
+        # Two projections per displayed marker, the player, and bounded native
+        # target/camera reduction work: the other 436 route points are not projected.
+        self.assertLessEqual(project.call_count, live.MAX_FRAME_MARKERS * 2 + 3)
+        states = {number: ("next" if number == 499 else "pending") for number in range(1, 501)}
+        progress = {"status": "saved-progress-candidate", "nextNumber": 499, "states": states}
+        with patch("scripts.waypoint_marker_progress.read_marker_progress", return_value=progress):
+            summary = live.apply_saved_progress(frame, self.root / "progress.json",
+                                                {"document": {}, "identity": {}})
+        self.assertEqual(500, len(summary["states"]))
+        self.assertEqual("next", next(point for point in frame["points"]
+                                      if point["number"] == 499)["routeState"])
+
     def test_plain_map_route_freezes_player_height_only_after_owner_validation(self):
         identity = deepcopy(self.route["identity"])
         document = dict(waypoints=[["Click one", 7427, 2946], ["Click two", 7428, 2947]])

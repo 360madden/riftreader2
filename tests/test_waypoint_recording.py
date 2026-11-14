@@ -3,6 +3,7 @@ from types import SimpleNamespace as NS
 from unittest.mock import patch
 
 from scripts.waypoint_recording import RecordingError, RouteRecorder
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE, MAX_WAYPOINTS
 
 
 def pose(x, z, at, y=0, source="native.json"):
@@ -66,15 +67,41 @@ class RecorderTests(unittest.TestCase):
         rec.observe(pose(0, 0, 95))
         with self.assertRaises(RecordingError): rec.observe(pose(1, 0, 99))
         rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3)
-        for i in range(21): rec.observe(pose(i * .1, 0, 80 + i), boundary=True)
-        with self.assertRaisesRegex(RecordingError, "2–20"): rec.finish()
+        with patch("scripts.waypoint_recording.MAX_WAYPOINTS", 20):
+            for i in range(21): rec.observe(pose(i * .1, 0, 80 + i), boundary=True)
+            with self.assertRaisesRegex(RecordingError, "2–20"): rec.finish()
 
     def test_long_path_and_no_movement_refused(self):
         rec = RouteRecorder(self.identity, max_age_seconds=100)
-        for i in range(11): rec.observe(pose(i * 2, 0, 89 + i))
-        with self.assertRaises(RecordingError): rec.observe(pose(20.1, 0, 100))
+        with patch("scripts.waypoint_recording.MAX_ROUTE_DISTANCE", 20):
+            for i in range(11): rec.observe(pose(i * 2, 0, 89 + i))
+            with self.assertRaises(RecordingError): rec.observe(pose(20.1, 0, 100))
         self.rec.observe(pose(0, 0, 99)); self.rec.observe(pose(0, 0, 100))
         with self.assertRaises(RecordingError): self.rec.finish()
+
+    def test_longer_route_and_more_than_twenty_waypoints_are_retained(self):
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3)
+        for i in range(25):
+            rec.observe(pose(i, i % 2, 75 + i), boundary=True)
+        route = rec.finish()
+        self.assertEqual(25, len(route["waypoints"]))
+        self.assertGreater(route["recording"]["routeLength"], 20)
+        self.assertLess(route["recording"]["routeLength"], MAX_ROUTE_DISTANCE)
+
+    def test_route_limits_still_fail_closed(self):
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3)
+        with patch("scripts.waypoint_recording.MAX_ROUTE_DISTANCE", 2):
+            rec.observe(pose(0, 0, 97))
+            rec.observe(pose(2, 0, 98))
+            with self.assertRaisesRegex(RecordingError, "exceeds 2 units"):
+                rec.observe(pose(2.1, 0, 99))
+
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3)
+        with patch("scripts.waypoint_recording.MAX_RECORDING_SAMPLES", 2):
+            rec.observe(pose(0, 0, 97))
+            rec.observe(pose(1, 0, 98))
+            with self.assertRaisesRegex(RecordingError, "sample limit"):
+                rec.observe(pose(2, 0, 99))
 
     def test_retained_corner_heights_align_with_waypoints(self):
         for sample in (pose(0, 0, 97, y=10.1234567), pose(1, 0, 98, y=11),

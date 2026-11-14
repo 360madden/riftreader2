@@ -6,6 +6,7 @@ import unittest
 from scripts.waypoint_breadcrumbs import BreadcrumbTrail
 from scripts.waypoint_beacon_pose import SOURCE, QUALIFICATION
 from scripts.waypoint_measurements import parse_projection_route
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE, MAX_WAYPOINTS
 from scripts.live_physical_waypoints import load_route
 from scripts.waypoint_recording import RecordingError
 
@@ -117,11 +118,15 @@ class BreadcrumbTests(unittest.TestCase):
 
     def test_length_limit_uses_real_shared_endpoint(self):
         trail=self.trail()
-        for i in range(1,14): trail.observe(packet(i,2*i))
+        step=10
+        count=int(MAX_ROUTE_DISTANCE/step)+3
+        for i in range(1,count): trail.observe(packet(i,step*i))
         segments=trail.snapshot()["segments"]
         self.assertEqual(len(segments),2)
         self.assertEqual(segments[0]["points"][-1],segments[1]["points"][0])
         self.assertEqual(segments[1]["reason"],"route-length-limit")
+        self.assertLessEqual(segments[0]["observedPathLength"],MAX_ROUTE_DISTANCE)
+        self.assertLessEqual(segments[1]["observedPathLength"],MAX_ROUTE_DISTANCE)
         parse_projection_route(trail.export_segment())
 
     def test_invalid_unmeasured_pose_rejected(self):
@@ -151,15 +156,29 @@ class BreadcrumbTests(unittest.TestCase):
         self.assertIn((1.,0.),list(zip([p[1] for p in doc["waypoints"]],doc["heights"])))
         self.assertIn((1.,1.),list(zip([p[1] for p in doc["waypoints"]],doc["heights"])))
 
-    def test_source_clock_regression_and_too_many_corners_refuse(self):
+    def test_source_clock_regression_and_more_than_twenty_corners_export(self):
         trail=self.trail()
         trail.observe(packet(2))
         self.assertFalse(trail.observe(packet(3,1,sampledAtUtc=packet(1)["sampledAtUtc"])))
         trail=self.trail()
-        for i in range(1,25):
+        for i in range(1,32):
             trail.observe(packet(i,i*.1,z=(i%2)*.1))
-        with self.assertRaises(RecordingError):
-            trail.export_segment()
+        document=trail.export_segment()
+        self.assertGreater(len(document["waypoints"]),20)
+        self.assertLessEqual(len(document["waypoints"]),MAX_WAYPOINTS)
+        parse_projection_route(document)
+
+    def test_more_than_twenty_units_export_without_synthesized_points(self):
+        trail=self.trail()
+        for i in range(1,32):
+            trail.observe(packet(i,i))
+        segment=trail.snapshot()["segments"][0]
+        source=segment["points"]
+        document=trail.export_segment()
+        self.assertGreater(segment["observedPathLength"],20)
+        self.assertEqual([row[1] for row in document["waypoints"]],[source[0]["x"],source[-1]["x"]])
+        self.assertEqual([row[2] for row in document["waypoints"]],[source[0]["z"],source[-1]["z"]])
+        parse_projection_route(document)
 
     def test_stationary_heartbeat_keeps_walk_and_real_source_times(self):
         trail=self.trail()

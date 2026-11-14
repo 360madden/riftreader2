@@ -1,5 +1,27 @@
 # Current status
 
+**NOVEMBER 13 — LONGER WAYPOINT ROUTES IMPLEMENTED (OFFLINE VERIFIED):**
+On verified AMD-DESKTOP, recording, saved routes, Forward/Reverse playback,
+explicit Resume and Explore trail export now share 1,000-world-unit / 500-point
+limits, with up to 30,000 recording samples. Whole-trip limits are 30 minutes,
+8,192 pulses and 600 seconds requested key hold; the existing short-pulse,
+per-segment progress/drift, freshness, identity, ownership and release checks
+remain. CLI movement deadlines cover a full trip while STOP retains its short
+deadline. Existing route/checkpoint formats and hashes remain compatible.
+Preview Fit reaches 1,500 units. All route nodes/connectors remain visible and
+selectable; number badges and world-beacon frames are bounded to 64 annotations
+to keep large routes responsive. CLI transport admits large measured documents
+under a bounded 2 MiB envelope. Focused checks passed **386 tests** after updating
+old-limit GUI expectations, including a simulated 1,000-unit / 500-point trip,
+90-unit face-then-walk Forward/Reverse, STOP/Resume within a long leg and beyond
+20 units, blocked/stale-pose stops, shared budget exhaustion, legacy checkpoints
+and large measured-route transport. Python compilation and Git whitespace checks
+passed. Qt-specific compact-radar checks could not collect without PySide6;
+no live game reads, movement, desktop control or helper restart occurred.
+The larger route envelope is implemented, not live-qualified. Clear paths are
+still required; terrain/obstacle planning is unchanged. See
+[longer-route usage](workflows/physical-waypoints.md#longer-routes).
+
 **NOVEMBER 13 — PLAYBACK FORWARD / REVERSE / RESUME HARDENING:**
 On verified AMD-DESKTOP, all three actions now keep endpoint/readiness details
 inside PLAYBACK, highlight ready actions, expose saved Resume direction and

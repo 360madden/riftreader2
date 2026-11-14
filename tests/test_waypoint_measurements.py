@@ -29,6 +29,13 @@ class MeasurementTests(unittest.TestCase):
         retained["identity"]["runtimeIdentity"]["processId"] = 999
         self.assertEqual(self.receipt["identity"]["runtimeIdentity"]["processId"], 10)
 
+    def test_marker_projection_accepts_more_than_twenty_waypoints(self):
+        document = {"waypoints": [[f"Point {i}", i, -i] for i in range(25)]}
+        parsed = parse_marker_projection_route(document, self.identity)
+        self.assertEqual(25, len(parsed["points"]))
+        self.assertEqual(25, parsed["recordingIdentity"]["pointCount"])
+        self.assertEqual([], parsed["recordingIdentity"]["measuredPointNumbers"])
+
     def test_selected_target_receipt_preserves_static_xyz_observer_and_lossless_key(self):
         position = deepcopy(self.xyz)
         receipt = measurement(position, self.identity, "target-native.json", "2026-11-12T20:00:00Z",

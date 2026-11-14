@@ -1,4 +1,4 @@
-"""Record and explicitly replay short routes through the existing runner."""
+"""Record and explicitly replay routes through the existing bounded runner."""
 from dataclasses import asdict
 import math
 
@@ -82,6 +82,8 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
               RouteProgress(document, direction, identity))
     if cursor.direction != direction:
         raise ProgressError("Resume direction does not match saved progress")
+    if cursor.next_index >= len(cursor.ordered_points):
+        raise ProgressError("route already complete")
 
     def enter(position):
         cursor.begin(asdict(position))

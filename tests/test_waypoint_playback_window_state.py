@@ -190,14 +190,14 @@ class PlaybackWindowStateTests(unittest.TestCase):
         self.launch(SimpleNamespace(read=lambda **kwargs: pose, pid=123), route)
         self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
 
-    def test_play_rejects_wrong_height_and_route_over_twenty(self):
+    def test_long_route_still_requires_correct_height(self):
         route = self.path / "route.json"
         route.write_text(json.dumps({"waypoints": [["Start", 0, 0], ["End", 21, 0]], "heights": [10, 10]}), encoding="utf-8")
         current = {"pose": app.Snapshot(app.Position(0, 12, 0), 0, time.monotonic(), "fake")}
         self.launch(SimpleNamespace(read=lambda **kwargs: current["pose"], pid=123), route)
         self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
         self.assertEqual("disabled", str(self.button("Play Reverse")["state"]))
-        # Correct the height; excessive route length still blocks forward play.
+        # Correct the height; a route longer than the old 20-unit limit is ready.
         current["pose"] = app.Snapshot(app.Position(0, 10, 0), 0, time.monotonic(), "fake")
         self.button("Refresh").invoke()
         deadline = time.monotonic() + 3
@@ -206,7 +206,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
             if all(not thread.is_alive() for thread in self.threads) and str(self.button("Refresh")["state"]) != "disabled":
                 break
             time.sleep(.01)
-        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertEqual("normal", str(self.button("Play Forward")["state"]))
 
     def test_complete_checkpoint_cannot_resume(self):
         self.write_checkpoint({"waypoints": [["A", 0, 0], ["B", 1, 0]]}, "forward", 2)
@@ -299,7 +299,7 @@ class PlaybackWindowStateTests(unittest.TestCase):
             self.roots[0].update()
             labels = [self.roots[0].getvar(w["textvariable"]) for w in self.widgets(self.roots[0])
                       if isinstance(w, ttk.Label) and w["textvariable"]]
-            if any("Recording: 1.25 / 20 units" in value and "8 samples" in value for value in labels):
+            if any("Recording: 1.25 / 1000 units" in value and "8 samples" in value for value in labels):
                 found = True
                 break
             time.sleep(.01)

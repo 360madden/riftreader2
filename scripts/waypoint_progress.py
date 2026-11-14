@@ -12,6 +12,8 @@ import os
 from pathlib import Path
 import tempfile
 
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE, MAX_WAYPOINTS
+
 
 class ProgressError(ValueError):
     pass
@@ -68,13 +70,16 @@ def _route(document):
     if not isinstance(document, dict):
         raise ProgressError("route document must be an object")
     rows = document.get("waypoints")
-    if not isinstance(rows, list) or not 1 <= len(rows) <= 20:
-        raise ProgressError("route must have 1-20 waypoints")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_WAYPOINTS:
+        raise ProgressError(f"route must have 1-{MAX_WAYPOINTS} waypoints")
     points = []
     for row in rows:
         if not isinstance(row, (list, tuple)) or len(row) != 3 or not isinstance(row[0], str):
             raise ProgressError("each waypoint needs name, X and Z")
         points.append([row[0], _number(row[1]), _number(row[2])])
+    distance = sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(points, points[1:]))
+    if distance > MAX_ROUTE_DISTANCE:
+        raise ProgressError(f"route exceeds {MAX_ROUTE_DISTANCE:g} world units")
     heights = document.get("heights")
     if heights is not None:
         if not isinstance(heights, list) or len(heights) != len(points):
@@ -158,8 +163,8 @@ class RouteProgress:
         remaining = self.remaining_points()
         distance = _distance(current, goal)
         distance += sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(remaining, remaining[1:]))
-        if distance > 20:
-            raise ProgressError("remaining route exceeds 20 world units")
+        if distance > MAX_ROUTE_DISTANCE:
+            raise ProgressError(f"remaining route exceeds {MAX_ROUTE_DISTANCE:g} world units")
         if self.start is None:
             self.start = current
         return distance

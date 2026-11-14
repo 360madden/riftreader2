@@ -5,6 +5,7 @@ import unittest
 
 from scripts.movement_controller import Calibration, MovementHalted, Position
 from scripts.physical_waypoints import Snapshot, Stopped, run_leg, run_route
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE
 
 
 class SimulatedRift:
@@ -109,8 +110,8 @@ class WaypointRunnerTests(unittest.TestCase):
 
     def test_route_total_length_is_checked_before_any_input(self):
         adapter = SimulatedRift()
-        with self.assertRaisesRegex(ValueError, "20 world units"):
-            run_route(adapter, [("Out", 11, 0), ("Return", 0, 0)], threading.Event())
+        with self.assertRaisesRegex(ValueError, "1000 world units"):
+            run_route(adapter, [("Out", MAX_ROUTE_DISTANCE / 2 + 1, 0), ("Return", 0, 0)], threading.Event())
         self.assertFalse(adapter.calls)
 
     def test_stop_at_intermediate_arrival_does_not_start_the_next_segment(self):

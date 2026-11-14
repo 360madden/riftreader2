@@ -109,3 +109,27 @@ def test_busy_result_and_poll_limit(tmp_path):
     server.poll(lambda *args: {'ok': False, 'status': 'busy', 'error': {'code': 'busy'}})
     assert len(list((server.path / 'responses').glob('*.json'))) == p.MAX_PER_POLL
     assert response(server, 'r00')['status'] == 'busy'
+
+
+def test_transport_accepts_maximum_measured_route_response_but_stays_bounded(tmp_path):
+    identity = {'runtimeIdentity': {'machine': 'AMD-DESKTOP',
+                'gameBuildSha256': 'a' * 64, 'unitKey': '18446744073709551615'}}
+    points = [[('Point ' + str(i)).ljust(80, 'x'), float(i), float(i)] for i in range(500)]
+    measurements = [
+        {'version': 1, 'kind': 'native-loaded-unit-position',
+         'position': {'x': point[1], 'y': 800.0, 'z': point[2]},
+         'identity': identity, 'source': 'C:/work/riftreader2/artifacts/' + 's' * 220,
+         'observedAtUtc': '2026-11-13T23:16:00.123456+00:00',
+         'subjectKey': '18446744073709551615', 'entityAddressDecimal': '140737488355320',
+         'sourceSha256': 'b' * 64, 'qualification': 'q' * 160}
+        for point in points]
+    result = {'document': {'waypoints': points, 'heights': [800.0] * 500,
+                           'pointMeasurements': measurements},
+              'points': [{'number': i + 1, 'name': point[0], 'x': point[1], 'z': point[2]}
+                         for i, point in enumerate(points)]}
+    path = tmp_path / 'large-response.json'
+    p._write_once(path, result)
+    assert path.stat().st_size > 262144
+    assert p._read(path) == result
+    with pytest.raises(ValueError, match='message too large'):
+        p._write_once(tmp_path / 'too-large.json', {'value': 'x' * p.MAX_BYTES})

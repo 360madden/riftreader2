@@ -13,7 +13,10 @@ import time
 import uuid
 
 VERSION = 1
-MAX_BYTES = 262144
+# A 500-point measured route can legitimately exceed the former 256 KiB cap
+# when route list/edit responses include point provenance. Keep transport bounded
+# while leaving room for the largest admitted route and its response envelope.
+MAX_BYTES = 2 * 1024 * 1024
 MAX_PER_POLL = 16
 _ID = re.compile(r'^[A-Za-z0-9_-]{1,80}$')
 

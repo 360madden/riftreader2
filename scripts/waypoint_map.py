@@ -4,15 +4,16 @@ import math
 
 from scripts.waypoint_ui_theme import PALETTE
 
-ZOOM_RADII = (2, 5, 10, 20)
+ZOOM_RADII = (2, 5, 10, 20, 50, 100, 250, 500, 1000, 1500)
+MAX_NUMBER_BADGES = 64
 
 
 def fit_route_status(x, z, points):
     """Describe the best available fit for ``(name, X, Z)`` route points.
 
-    ``required_radius`` includes 10% headroom. ``capped`` makes the fixed
-    20-unit preview limit explicit to callers instead of silently implying
-    that every route point will fit.
+    ``required_radius`` includes 10% headroom from the current player position,
+    so the entry leg is part of the fit. ``capped`` makes the fixed maximum
+    preview radius explicit instead of silently implying every point will fit.
     """
     x, z = float(x), float(z)
     if not math.isfinite(x) or not math.isfinite(z):
@@ -123,7 +124,10 @@ def hit_test_route(render, x, y, *, node_radius=11):
         if math.hypot(float(x) - px, float(y) - py) <= node_radius:
             return {"identifier": node["identifier"], "number": node["number"], "part": "node"}
     for node in reversed(nodes):
-        left, top, right, bottom = node["badge_box"]
+        box = node.get("badge_box")
+        if box is None:
+            continue
+        left, top, right, bottom = box
         if left <= x <= right and top <= y <= bottom:
             return {"identifier": node["identifier"], "number": node["number"], "part": "badge"}
     return None
@@ -196,11 +200,39 @@ def draw_route(canvas, view, points, selected, *, completed=None, active=None, t
     occupied = [(cx-20, cy-20, cx+20, cy+37)]
     occupied += [(p[0]-8, p[1]-8, p[0]+8, p[1]+8) for _, _, _, p, _ in visible]
     occupied += [(cx-42, 12, cx+42, 32)]
-    for number, identifier, world, point, color in visible:
+    metadata["nodes"] = [{"identifier": identifier, "number": number, "world": world,
+                          "point": point, "badge_box": None}
+                         for number, identifier, world, point, _ in visible]
+    # Number badges are an annotation layer. Keep every exact node and connector,
+    # but bound label placement for long routes. Selection/active points win,
+    # followed by nearby points and an even sample across the full route.
+    required = [row for row in visible if row[1] in selected or row[1] == active]
+    badge_rows = required[:MAX_NUMBER_BADGES]
+    chosen = {row[1] for row in badge_rows}
+    remaining = MAX_NUMBER_BADGES - len(badge_rows)
+    nearest = sorted((row for row in visible if row[1] not in chosen),
+                     key=lambda row: (math.hypot(row[2][0]-view.x, row[2][1]-view.z), row[0]))
+    for row in nearest[:min(16, remaining)]:
+        badge_rows.append(row)
+        chosen.add(row[1])
+    remaining = MAX_NUMBER_BADGES - len(badge_rows)
+    available = [row for row in visible if row[1] not in chosen]
+    if available and remaining:
+        slots = min(remaining, len(available))
+        indices = ([0] if slots == 1 else
+                   [round(i * (len(available)-1) / (slots-1)) for i in range(slots)])
+        for index in indices:
+            row = available[index]
+            if row[1] not in chosen:
+                badge_rows.append(row)
+                chosen.add(row[1])
+    route_order = {row[1]: index for index, row in enumerate(visible)}
+    badge_rows.sort(key=lambda row: route_order[row[1]])
+    node_by_id = {node["identifier"]: node for node in metadata["nodes"]}
+    for number, identifier, world, point, color in badge_rows:
         box = _label_box(point, number, (16, 36, view.width-16, view.height-16), occupied)
         occupied.append(box)
-        metadata["nodes"].append({"identifier": identifier, "number": number,
-                                  "world": world, "point": point, "badge_box": box})
+        node_by_id[identifier]["badge_box"] = box
         endpoint = (max(box[0], min(box[2], point[0])), max(box[1], min(box[3], point[1])))
         canvas.create_line(*point, *endpoint, fill=c["line"], width=1, tags="number-leader")
         canvas.create_rectangle(*box, fill=c["surface"], outline=c["gold"] if identifier in selected else c["line"],

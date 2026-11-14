@@ -155,6 +155,23 @@ class ReplayReadinessTests(unittest.TestCase):
                                                     result["resume"]["nextName"]))
             self.assertEqual("pose is refreshing", result["resume"]["reason"])
 
+    def test_long_route_readiness_and_resume_preserve_cursor_integrity(self):
+        route = {"waypoints": [[f"Point {index + 1}", index * 5, 0]
+                                for index in range(101)]}
+        ready = replay_readiness(route, IDENTITY, {"x": 0, "z": 0})
+        self.assertTrue(ready["forward"]["ready"])
+        self.assertEqual((101, 500.0),
+                         (ready["forward"]["pointCount"], ready["forward"]["remainingDistance"]))
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self.checkpoint(temporary, document=route, arrivals=40)
+            before = path.read_bytes()
+            resumed = replay_readiness(route, IDENTITY, {"x": 197.5, "z": 0}, path)["resume"]
+            self.assertTrue(resumed["ready"])
+            self.assertEqual((40, "Point 41", 302.5),
+                             (resumed["completedCount"], resumed["nextName"],
+                              resumed["remainingDistance"]))
+            self.assertEqual(before, path.read_bytes())
+
 
 if __name__ == "__main__":
     unittest.main()

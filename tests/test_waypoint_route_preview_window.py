@@ -188,13 +188,24 @@ class RoutePreviewWindowTests(unittest.TestCase):
                       for item in self.canvas.find_withtag("waypoint-number")]
         self.assertEqual(["3", "2", "1"], badge_text)
 
-    def test_fit_is_cached_and_reports_capped_points(self):
+    def test_fit_is_cached_and_shows_long_route(self):
         self.prepare(points=[["Near", 0, 1], ["Beyond preview", 0, 50]])
         before_reads = self.read.call_count
         self.button("Fit").invoke()
         self.root.update()
         self.assertEqual(before_reads, self.read.call_count)
-        self.assertTrue(any("off-screen" in value.casefold() for value in self.labels()), self.labels())
+        self.assertFalse(self.canvas.find_withtag("waypoint-offscreen"))
+        self.assertEqual(2, len(self.canvas.find_withtag("waypoint-node")))
+
+    def test_long_route_load_and_direct_controls_accept_more_than_twenty_points(self):
+        points = [[f"Point {i}", 0, i * 2] for i in range(30)]
+        self.prepare(points=points)
+        self.assertEqual(30, len(self.table.get_children()))
+        self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertNotEqual("disabled", str(self.button("Auto-walk + record")["state"]))
+        self.button("Fit").invoke()
+        self.root.update()
+        self.assertEqual(30, len(self.canvas.find_withtag("waypoint-node")))
 
     def test_empty_route_disables_fit_and_compact_toolbar_fits_budget(self):
         self.prepare(points=[], heights=[])

@@ -36,6 +36,10 @@ from scripts.physical_move_basis_waypoint import read_basis, candidate_calibrati
 from scripts.waypoint_map import LocalMap, ZOOM_RADII, draw_route, fit_route_radius, route_length
 from scripts.waypoint_heading import choose_turn, heading_error
 from scripts.waypoint_seed_feedback import verify_translation, verify_turn
+from scripts.waypoint_limits import (
+    MAX_ROUTE_DISTANCE, MAX_WAYPOINTS, MAX_TRIP_SECONDS,
+    MAX_TRIP_PULSES, MAX_TRIP_HOLD_MS,
+)
 
 DEFAULT_BASIS = ROOT / "config/physical-movement-basis.amd-desktop.json"
 
@@ -277,9 +281,9 @@ class TripBudget:
     hold_ms: int = 0
 
     def check(self, action=None):
-        if time.monotonic() - self.started > 120:
-            raise WaypointError("Trip exceeded 120 seconds")
-        if action is not None and (self.pulses >= 64 or self.hold_ms + action.hold_ms > 9000):
+        if time.monotonic() - self.started > MAX_TRIP_SECONDS:
+            raise WaypointError(f"Trip exceeded {MAX_TRIP_SECONDS // 60} minutes")
+        if action is not None and (self.pulses >= MAX_TRIP_PULSES or self.hold_ms + action.hold_ms > MAX_TRIP_HOLD_MS):
             raise WaypointError("Trip input budget reached; stopped before the next pulse")
 
 
@@ -673,8 +677,8 @@ def run_facing(adapter, stop, emit=lambda event: None, *, bearing=None, point=No
         if point is not None:
             px, pz = (finite(value) for value in point)
             distance = math.hypot(px-current.position.x, pz-current.position.z)
-            if distance > 20:
-                raise WaypointError("Facing waypoint exceeds 20 units")
+            if distance > MAX_ROUTE_DISTANCE:
+                raise WaypointError(f"Facing waypoint exceeds {MAX_ROUTE_DISTANCE:g} units")
             bearing = (math.degrees(math.atan2(px-current.position.x, pz-current.position.z))
                        if distance > .3 else current.bearing)
         target = heading_error(finite(bearing), 0)
@@ -779,8 +783,8 @@ def run_leg(adapter, goal_x, goal_z, stop, emit=lambda event: None, *, focus=Tru
 
 
 def route_points(rows):
-    if not isinstance(rows, list) or not 1 <= len(rows) <= 20:
-        raise WaypointError("Route must have 1–20 points")
+    if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_WAYPOINTS:
+        raise WaypointError(f"Route must have 1–{MAX_WAYPOINTS} points")
     if any(not isinstance(row, (list, tuple)) or len(row) != 3 for row in rows):
         raise WaypointError("Each point needs name, X and Z")
     return [(str(row[0])[:80], finite(row[1]), finite(row[2])) for row in rows]
@@ -788,7 +792,7 @@ def route_points(rows):
 
 def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=False,
               entry_check=None):
-    """Follow up to 20 units of route using <=4-unit intermediate targets.
+    """Follow a bounded route using <=4-unit intermediate targets.
 
     The original controller's six-action, 900-ms, 12-second and corridor limits
     remain in force for each intermediate target. Ownership, STOP and the trip
@@ -802,8 +806,8 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
         if entry_check is not None:
             entry_check(current.position)
         planned = route_length(current.position.x, current.position.z, points)
-        if planned > 20:
-            raise WaypointError("Route exceeds 20 world units; choose a shorter route")
+        if planned > MAX_ROUTE_DISTANCE:
+            raise WaypointError(f"Route exceeds {MAX_ROUTE_DISTANCE:g} world units; choose a shorter route")
         budget = TripBudget(time.monotonic())
         results = []
         movement_started = False
@@ -1264,7 +1268,7 @@ def launch_window(args):
 
     def add_point(label, px, pz):
         nonlocal added_selection
-        if len(table.get_children()) >= 20:
+        if len(table.get_children()) >= MAX_WAYPOINTS:
             state.set("Waypoint list is full; remove a point before adding another.")
             return
         px, pz = finite(px), finite(pz)
@@ -1488,7 +1492,7 @@ def launch_window(args):
         selected = selected_points()
         chosen = route_length(*last_pose[:2], selected) if selected else None
         if recording_progress is not None:
-            summary.set(f"Recording: {recording_progress['observedPathLength']:.2f} / 20 units"
+            summary.set(f"Recording: {recording_progress['observedPathLength']:.2f} / {MAX_ROUTE_DISTANCE:g} units"
                         f"   •   {recording_progress['sampleCount']} samples"
                         + ("   •   Stop Recording saves" if recording else "   •   STOP cancels"))
         else:
@@ -1497,13 +1501,13 @@ def launch_window(args):
                 distances = [math.hypot(finite(row[2]) - last_pose[0], finite(row[3]) - last_pose[1])
                              for row in (original_points[0], original_points[-1])]
                 endpoints = f"   •   Start: {distances[0]:.2f} • End: {distances[1]:.2f} units"
-            summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / 20 units"
+            summary.set(f"{'Remaining' if playback_view is not None else 'Route'}: {distance:.2f} / {MAX_ROUTE_DISTANCE:g} units"
                         + (f"   •   Selected: {chosen:.2f} units" if chosen is not None else "")
                         + endpoints
                         + (f"   •   Beacons: {sum(1 for row in original_points if point_receipts.get(row[0]) is not None)} measured"
                            f" · {sum(1 for row in original_points if point_receipts.get(row[0]) is None)} estimated"
                            if original_points else "")
-                        + ("   •   Shorten the route to run it" if distance > 20 else ""))
+                        + ("   •   Shorten the route to run it" if distance > MAX_ROUTE_DISTANCE else ""))
         if not busy:
             update_direct_state()
             if cli_server is not None:
@@ -1530,7 +1534,7 @@ def launch_window(args):
         if not (12<=event.x<=map_view.width-12 and 12<=event.y<=map_view.height-12):
             state.set("Click inside the preview to add a waypoint.")
             return
-        if len(table.get_children())>=20:
+        if len(table.get_children())>=MAX_WAYPOINTS:
             state.set("Waypoint list is full; remove a point before adding another.")
             return
         px, pz = map_view.canvas_to_world(event.x, event.y)
@@ -1772,8 +1776,8 @@ def launch_window(args):
         if draft_pending() and operation in ("go", "face", "face-bearing", "play", "resume", "teach", "record", "map", "target", "save"):
             state.set("Apply or Reset fields before starting another action.")
             return
-        if operation in ("go", "teach") and (not points or len(points) > 20):
-            messagebox.showinfo("Choose waypoints", "Select a waypoint, or add up to 20 points for a route.")
+        if operation in ("go", "teach") and (not points or len(points) > MAX_WAYPOINTS):
+            messagebox.showinfo("Choose waypoints", f"Select a waypoint, or add up to {MAX_WAYPOINTS} points for a route.")
             return
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
@@ -1891,7 +1895,7 @@ def launch_window(args):
     def update_preview_hint():
         points=table.get_children()
         map_hint_text.set("No pose · Refresh" if last_pose is None else "Apply / Reset first" if draft_pending()
-            else "Preview only" if busy or closing or cli_action is not None else "Select · list full" if len(points)>=20
+            else "Preview only" if busy or closing or cli_action is not None else "Select · list full" if len(points)>=MAX_WAYPOINTS
             else "Click: select / add" if points else "Click to add")
 
     def update_direct_state():
@@ -1900,9 +1904,9 @@ def launch_window(args):
         points=selected_points(True)
         chosen=route_length(*last_pose[:2],selected) if idle and selected else None
         planned=route_length(*last_pose[:2],points) if idle and points else None
-        for button,allowed in ((go_button,chosen is not None and chosen<=20),
-            (face_button,len(selected)==1 and chosen is not None and .3<chosen<=20),
-            (route_button,planned is not None and planned<=20),(teach_button,planned is not None and planned<=20),
+        for button,allowed in ((go_button,chosen is not None and chosen<=MAX_ROUTE_DISTANCE),
+            (face_button,len(selected)==1 and chosen is not None and .3<chosen<=MAX_ROUTE_DISTANCE),
+            (route_button,planned is not None and planned<=MAX_ROUTE_DISTANCE),(teach_button,planned is not None and planned<=MAX_ROUTE_DISTANCE),
             (record_button,True)):
             button.configure(state="normal" if idle and allowed else "disabled")
 
@@ -1923,11 +1927,11 @@ def launch_window(args):
                    "Remove": bool(selected) and not draft["pending"], "Clear": count > 0 and not draft["pending"],
                    "Load": not draft["pending"], "Save Route": count>0 and not draft["pending"],
                    "Save As": count>0 and not draft["pending"],
-                   "Add X / Z": draft["valid"] and count < 20 and not draft["pending"],
+                   "Add X / Z": draft["valid"] and count < MAX_WAYPOINTS and not draft["pending"],
                    "New point": not draft["pending"],
-                   "Save Current": adapter is not None and count < 20 and not draft["pending"],
-                   "Add Target": adapter is not None and count < 20 and not draft["pending"],
-                   "Add nearby": adapter is not None and count < 20 and not draft["pending"] and not markers.running()}
+                   "Save Current": adapter is not None and count < MAX_WAYPOINTS and not draft["pending"],
+                   "Add Target": adapter is not None and count < MAX_WAYPOINTS and not draft["pending"],
+                   "Add nearby": adapter is not None and count < MAX_WAYPOINTS and not draft["pending"] and not markers.running()}
         for label, button in edit_buttons.items():
             if label in allowed:
                 button.configure(state="normal" if idle and allowed[label] else "disabled")
@@ -2729,7 +2733,7 @@ def launch_window(args):
     recent_load_button = ttk.Button(recent_controls, text="Load recent", command=load_recent, state="disabled")
     recent_load_button.grid(row=0, column=2)
     editable.append(recent_load_button)
-    footer_label = ttk.Label(frame, text="Open ground · route ≤ 20 units · requested pulses ≤ 150 ms · STOP prevents the next pulse. "
+    footer_label = ttk.Label(frame, text=f"Clear path · route ≤ {MAX_ROUTE_DISTANCE:g} units / {MAX_WAYPOINTS} points · pulses ≤ 150 ms · STOP/F8 prevents the next pulse. "
               "Stop Recording saves; STOP cancels recording. Play starts within 0.30 units of Start (Forward) or End (Reverse).",
               style="Base.Micro.TLabel", wraplength=900)
     footer_label.grid(row=5, column=0, sticky="w")
@@ -3358,7 +3362,7 @@ def launch_window(args):
                 if command == "preview.set":
                     radius=values.get("range")
                     if type(radius) not in (int,float) or radius not in ZOOM_RADII:
-                        raise CliError("invalid-preview-range","Preview range must be 2, 5, 10 or 20",exit_code=2)
+                        raise CliError("invalid-preview-range", "Preview range must be one of: " + ", ".join(map(str, ZOOM_RADII)), exit_code=2)
                     map_radius=int(radius)
                     redraw()
                 elif command == "preview.fit":
@@ -3594,7 +3598,7 @@ def launch_window(args):
                     return cli_ok({"file": str(path), "revision": route_revision})
                 if command == "route.add":
                     if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before adding another point", "Use route select N --discard-draft", 4)
-                    if len(table.get_children()) >= 20: raise CliError("route-full", "Routes support at most 20 points", exit_code=4)
+                    if len(table.get_children()) >= MAX_WAYPOINTS: raise CliError("route-full", f"Routes support at most {MAX_WAYPOINTS} points", exit_code=4)
                     if values.get("current") or values.get("target"):
                         label=values.get("name") or (None if values.get("target") else f"Point {len(table.get_children())+1}")
                         return cli_begin(rid,"target" if values.get("target") else "save",label,command=command)
@@ -4514,7 +4518,7 @@ def launch_window(args):
     canvas.bind("<Motion>",preview_hover)
     attach_path_tooltip(canvas,lambda:point_tooltip(map_hover[0]) if map_hover[0] else
         "Player-relative cached reference; no terrain or obstacle clearance. Click a marker to select it; click open space to add a point after a fresh pose check.")
-    attach_path_tooltip(fit_button,lambda:"Fit route around the cached player position, capped at 20 units. "+(
+    attach_path_tooltip(fit_button,lambda:f"Fit route around the cached player position, capped at {ZOOM_RADII[-1]} units. "+(
         "Some points require a larger view than this preview allows." if cli_preview_status()["fitLimited"] else "Zoom never changes the route or movement limits."))
     attach_path_tooltip(route_status_label,lambda:str(route_path) if route_path else "Current route has no saved file.")
     def keep_selection_visible(_):

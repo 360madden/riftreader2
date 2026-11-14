@@ -153,11 +153,11 @@ class CliTests(unittest.TestCase):
                 self.assertEqual(self.call(*argv, "--json")[0], 0)
                 self.assertEqual(request.call_args.args[1:3], (operation, payload))
         set_help = self.call("preview", "set", "--help")[1]
-        self.assertIn("2, 5, 10 or 20", set_help)
+        self.assertIn("2, 5, 10, 20, 50, 100, 250, 500, 1000 or 1500", " ".join(set_help.split()))
         self.assertIn("reads no new pose", set_help)
         fit_help = self.call("preview", "fit", "--help")[1]
         self.assertIn("cached finite pose", fit_help)
-        self.assertIn("capped at 20 units", fit_help)
+        self.assertIn("capped at 1500 units", fit_help)
 
     def test_preview_range_is_validated_before_dispatch(self):
         with patch.object(protocol, "resolve_session") as resolve:
@@ -338,6 +338,23 @@ class CliTests(unittest.TestCase):
                 protocol,'request',return_value=cli.result('view.save',data={})) as request:
             self.assertEqual(self.call('view','save','scene.json','--json')[0], 0)
             self.assertEqual(request.call_args.kwargs['timeout'], 120)
+
+    def test_long_route_commands_get_full_trip_deadline_without_slowing_stop(self):
+        expected = cli.MAX_TRIP_SECONDS + 30
+        self.assertEqual(expected, cli.LONG_ROUTE_TIMEOUT)
+        for argv, operation in ((('move','to','500','0','--execute'), 'move.to'),
+                                (('route','run','--execute'), 'route.run'),
+                                (('playback','start','--execute'), 'playback.start'),
+                                (('playback','resume','--execute'), 'playback.resume')):
+            with self.subTest(operation=operation), patch.object(
+                    protocol, 'resolve_session', return_value={}), patch.object(
+                    protocol, 'request', return_value=cli.result(operation)) as request:
+                self.assertEqual(self.call(*argv, '--json')[0], 0)
+                self.assertEqual(request.call_args.kwargs['timeout'], expected)
+        with patch.object(protocol, 'resolve_session', return_value={}), patch.object(
+                protocol, 'request', return_value=cli.result('stop')) as request:
+            self.assertEqual(self.call('stop', '--json')[0], 0)
+            self.assertEqual(request.call_args.kwargs['timeout'], 10)
 
     def test_refusal_and_unavailable_are_not_success(self):
         with patch.object(protocol,'resolve_session',side_effect=protocol.CliError('session-unavailable','No app',exit_code=3)):
@@ -542,7 +559,7 @@ class CliTests(unittest.TestCase):
         rendered = out.getvalue()
         for phrase in ('Local preview: 20 units | 2/4 points visible | 2 off-screen',
                        'Preview pose: cached | 1.25s old | Fit available',
-                       'Fit limited: preview is capped at 20 units; route requires about 33.4 units',
+                       'Fit limited: preview is capped at 1500 units; route requires about 33.4 units',
                        'Off-screen points: 3 (Far camp), 4 (Cliff)',
                        'terrain and clearance are not shown'):
             self.assertIn(phrase, rendered)

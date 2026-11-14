@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from scripts.waypoint_progress import (ProgressError, RouteProgress, invalidate_route_progress,
                                        select_route_progress, write_json_atomic)
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE, MAX_WAYPOINTS
 
 
 IDENTITY = {"machine": "AMD-DESKTOP", "gameBuildSha256": "ABCD", "unitKey": "player"}
@@ -72,8 +73,29 @@ class ProgressTests(unittest.TestCase):
             p.begin({"x": 0, "z": 0, "y": 12})
         p.begin({"x": 0, "z": 0, "y": 10})
         long_route = {"waypoints": [["a", 0, 0], ["b", 11, 0], ["c", 22, 0]]}
-        with self.assertRaisesRegex(ProgressError, "20 world"):
-            RouteProgress(long_route, identity=IDENTITY).begin({"x": 0, "z": 0})
+        self.assertEqual(22, RouteProgress(long_route, identity=IDENTITY).begin({"x": 0, "z": 0}))
+        too_long = {"waypoints": [["a", 0, 0], ["b", MAX_ROUTE_DISTANCE + 1, 0]]}
+        with self.assertRaisesRegex(ProgressError, f"{MAX_ROUTE_DISTANCE:g} world"):
+            RouteProgress(too_long, identity=IDENTITY)
+
+    def test_more_than_twenty_waypoints_and_resume_hash_compatibility(self):
+        route = {"waypoints": [[f"P{i}", i, 0] for i in range(25)]}
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "progress.json"
+            cursor = RouteProgress(route, identity=IDENTITY)
+            self.assertEqual(24, cursor.begin({"x": 0, "z": 0}))
+            cursor.confirm_arrival(0, cursor.ordered_points[0])
+            cursor.save(path)
+            resumed = RouteProgress.load(path, route, IDENTITY)
+            self.assertEqual((1, cursor.route_hash), (resumed.next_index, resumed.route_hash))
+        self.assertEqual(RouteProgress(ROUTE, identity=IDENTITY).route_hash,
+                         "c84c8058a83e1c62e28e5ec609c3aa222e4e262b2df24ea36ba5699f6c67eb2a")
+
+    def test_waypoint_count_limit(self):
+        accepted = {"waypoints": [[f"P{i}", i, 0] for i in range(MAX_WAYPOINTS)]}
+        self.assertEqual(MAX_WAYPOINTS, len(RouteProgress(accepted, identity=IDENTITY).points))
+        with self.assertRaisesRegex(ProgressError, f"1-{MAX_WAYPOINTS}"):
+            RouteProgress({"waypoints": accepted["waypoints"] + [["extra", 0, 0]]}, identity=IDENTITY)
 
     def test_failed_atomic_replace_preserves_previous_checkpoint(self):
         with tempfile.TemporaryDirectory() as temp:
