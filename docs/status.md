@@ -1,5 +1,14 @@
 # Current status
 
+Planning clarification November 14: **per-level skill/build choices and
+conditional combat ability priorities** are required parts of progression.
+The [roadmap](planning/implementation-roadmap.md#skill-progression-and-combat-decision-requirements)
+now covers learned versus planned abilities, prerequisite order, damage/resource
+trade-offs, cooldown/GCD/cast/channel timing, defensive decisions, level-up
+reconciliation and whole-cycle XP/survival/recovery metrics. These systems are
+not implemented by the existing casting diagnostics. No skills were allocated
+and no game actions were performed in this planning update.
+
 Planning clarification November 14: route travel also includes **threat
 assessment and level-appropriate XP/level progression**. Avoid high-risk
 hostiles, select suitable encounters, recover and preserve route progress;

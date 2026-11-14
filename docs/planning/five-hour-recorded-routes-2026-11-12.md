@@ -131,13 +131,22 @@ connecting segment. Full saved world mapping remains later work.
    ability catalogs do not supply a working combat controller. The
    [overall roadmap](implementation-roadmap.md#remaining-work-ranked) ranks its
    prerequisite and implementation slices first.
-2. **Useful leveling along the way.** Select suitable reachable XP targets,
-   verify actual XP gain, recover and re-evaluate after level-up. An unsafe
+2. **Skill progression and effective ability priorities.** Use one actual
+   character/build profile with a valid per-level skill/point plan and actual
+   learned/unlocked state. Choose combat actions conditionally using survival,
+   target health, useful damage/healing, costs, cast/channel/GCD occupancy,
+   cooldowns, effects/combinations and recovery downtime. Update the policy after
+   level-up/build changes. Existing catalogs/readiness panels do not provide a
+   build planner or an action-selection engine. Follow the
+   [detailed build/combat requirements](implementation-roadmap.md#skill-progression-and-combat-decision-requirements).
+3. **Useful leveling along the way.** Select suitable reachable XP targets,
+   verify actual XP gain, recover and reconcile skills/abilities after level-up.
+   Measure survival and XP over travel, fights and recovery. An unsafe
    destination may need a safer known route or leveling in a suitable area first.
    Preserve the travel objective and genuine checkpoint during bounded detours;
    return through known traversable ground before normal Resume admission.
    Existing level/XP candidates are not yet a functioning progression system.
-3. **One useful longer taught route in the real game.** Record a known-traversable
+4. **One useful longer taught route in the real game.** Record a known-traversable
    50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
    and Reverse. Add unsuitable-target rejection plus suitable combat, measured XP,
    recovery and Resume before calling it dependable leveling travel;
@@ -145,10 +154,10 @@ connecting segment. Full saved world mapping remains later work.
    Include full-game restart/Resume when appropriate and authorized.
    Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
    trial and a broad stress sweep are not required.
-4. **Location and height context for saved-route reuse.** Test actual slopes,
+5. **Location and height context for saved-route reuse.** Test actual slopes,
    different floors and zone/world/instance transitions. Keep measured and
    estimated heights distinct; reject inappropriate context before movement.
-5. **Resolve observed presentation/recovery failures during use.** Large-route
+6. **Resolve observed presentation/recovery failures during use.** Large-route
    display limiting is implemented; extended sessions, camera/window variations
    and mixed-DPI transitions have incomplete live coverage. Address a concrete
    failing case when it affects the next useful route rather than starting

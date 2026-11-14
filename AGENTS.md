@@ -83,6 +83,16 @@ route checkpoints, one input owner, STOP and explicit Resume; kills/detours do
 not silently advance route progress. This is planning direction, not an order
 to start combat/grinding or expand live-action authority.
 
+**Build and combat-choice requirements (Joey, 2026-11-14):** Plan future skills
+as the character levels and select combat abilities/spells in an effective
+conditional order. Include build prerequisites and actually learned abilities,
+damage/healing, resource efficiency, cooldown/GCD/cast/channel timing, defense,
+useful combinations and recovery downtime. Optimize useful survival/progression
+over the whole travel/fight/recovery cycle, not just peak damage. Reconcile
+actual unlocks/points/abilities after level-up; a plan is not proof it was
+applied. These are roadmap requirements, not authorization to spend points,
+respec, train skills or start live combat during a planning task.
+
 **Discovery framework — Joey's clarification, 2026-11-07:** A useful finding
 should feed a practical repeatable retrieval capability: resolve the current
 source/owner, acquire the requested data under fresh identity and applicable

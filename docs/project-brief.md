@@ -61,6 +61,14 @@ XP/level progress and reassessment after leveling. An unsafe destination may
 require a safer known route or leveling in an appropriate area first. Survival
 comes before taking an optional fight; a trip retains its objective and limits.
 
+Skill/build progression is also part of this goal: choose future skills in a
+valid per-level plan, reconcile actual learned state after leveling, and use a
+matching conditional combat policy. Ability/spell choices and ordering must
+account for damage/healing, costs, cooldown/GCD/cast timing, defensive needs,
+useful combinations and downtime. Useful progress is measured across travel,
+fights and recovery, rather than maximizing isolated damage numbers. No live
+point spending, training or respec is performed by documenting that requirement.
+
 ## What should survive
 
 The durable result should identify a field's meaning and units, how to locate

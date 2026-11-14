@@ -5,7 +5,7 @@ topic below instead of loading every document for each task.
 
 For what is done and what to work on next, start with the
 [current ranked RR2 roadmap](planning/implementation-roadmap.md), refreshed
-November 14 with threat-aware combat/leveling priorities, the longer-route release and
+November 14 with skill/build progression, combat/leveling priorities, the longer-route release and
 current physical-reader evidence.
 
 | Area | Document | Status or role |
