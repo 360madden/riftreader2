@@ -117,7 +117,7 @@ public sealed class FollowRouteCommandTests
     {
         var input = new Input();
         var result = await FollowRouteCommand.FollowAsync(Options(10,0),
-            Reader(Pose(0,0,0), Pose(0,0,80), Pose(0,0,88), Pose(0,0,95),
+            Reader(Pose(0,0,0), Pose(0,0,80), Pose(0,0,88), Pose(0,0,92), Pose(0,0,91.5),
                 Pose(5,0,95), Pose(9.8,0,90),
                 Pose(9.8,0,90), Pose(9.8,0,90)),
             input, () => null, NoDelay);
@@ -128,6 +128,30 @@ public sealed class FollowRouteCommandTests
         Assert.Equal(1, input.Events.Count(x => x == "up:w"));
         Assert.True(input.Events.IndexOf("up:a") < input.Events.IndexOf("down:w"));
         Assert.Equal(result.ReadCount, result.Path.Length);
+    }
+
+    [Fact]
+    public async Task LongTurnCoastIsSettledAndNudgedBeforeForwardStarts()
+    {
+        var input = new Input();
+        const double goalX = 1.039558454;
+        const double goalZ = 4.890738004;
+        var result = await FollowRouteCommand.FollowAsync(Options(goalX, goalZ),
+            Reader(Pose(0,0,-168), Pose(0,0,-138), Pose(0,0,-108), Pose(0,0,-78),
+                Pose(0,0,-48), Pose(0,0,-18), Pose(0,0,0),
+                Pose(0,0,10.8), Pose(0,0,18.9), Pose(0,0,21.6), Pose(0,0,21.6),
+                Pose(0,0,18), Pose(0,0,14), Pose(0,0,12.5), Pose(0,0,12.2),
+                Pose(.52,2.45,12.2), Pose(1.0,4.7,12.2),
+                Pose(1.0,4.7,12.2), Pose(1.0,4.7,12.2)),
+            input, () => null, NoDelay);
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(1, input.Events.Count(x => x == "down:a"));
+        Assert.Equal(1, input.Events.Count(x => x == "down:d"));
+        Assert.True(input.Events.IndexOf("up:a") < input.Events.IndexOf("down:w"));
+        Assert.True(input.Events.IndexOf("up:d") < input.Events.IndexOf("down:w"));
+        var forwardRead = Array.FindIndex(result.Path,
+            point => Math.Sqrt(point.X * point.X + point.Z * point.Z) > .1);
+        Assert.True(forwardRead >= 15, "Forward movement began before coast and residual nudge settled.");
     }
 
     [Fact]
@@ -159,6 +183,72 @@ public sealed class FollowRouteCommandTests
         Assert.Equal("stopped", result.Status);
         Assert.Equal("stop-file-requested", result.Reason);
         Assert.Contains("up:w", input.Events);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task ForwardSteeringIsOneBriefNudgeInsteadOfAlternatingCorrections()
+    {
+        var input = new Input();
+        var delays = new List<TimeSpan>();
+        Task Delay(TimeSpan duration, CancellationToken _) { delays.Add(duration); return Task.CompletedTask; }
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(Pose(0,0), Pose(.3,3,8), Pose(.15,4,-12),
+                Pose(.1,5,8), Pose(0,9.8), Pose(0,9.8), Pose(0,9.8)),
+            input, () => null, Delay);
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(1, input.Events.Count(x => x == "down:d"));
+        Assert.DoesNotContain("down:a", input.Events);
+        Assert.Contains(TimeSpan.FromMilliseconds(FollowRouteCommand.SteeringPulseMilliseconds), delays);
+        Assert.True(input.Events.IndexOf("up:d") < input.Events.IndexOf("up:w"));
+        Assert.Equal(1, input.Events.Count(x => x == "down:w"));
+    }
+
+    [Fact]
+    public async Task FinalApproachDoesNotChaseLeftRightHeadingChanges()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(Pose(0,0), Pose(.15,8.5,-12), Pose(.15,9.3,12),
+                Pose(.15,9.8), Pose(.15,9.8), Pose(.15,9.8)),
+            input, () => null, NoDelay);
+        Assert.Equal("arrived", result.Status);
+        Assert.DoesNotContain("down:a", input.Events);
+        Assert.DoesNotContain("down:d", input.Events);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task SmallRouteOffsetsDoNotTriggerHeadingOnlyCorrections()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(Pose(0,0), Pose(.1,1,-8), Pose(.1,3,8), Pose(.1,5,-8),
+                Pose(.1,9.8), Pose(.1,9.8), Pose(.1,9.8)),
+            input, () => null, NoDelay);
+        Assert.Equal("arrived", result.Status);
+        Assert.DoesNotContain("down:a", input.Events);
+        Assert.DoesNotContain("down:d", input.Events);
+        Assert.Equal(1, input.Events.Count(x => x == "down:w"));
+    }
+
+    [Fact]
+    public async Task StopDuringSteeringNudgeReleasesBothKeys()
+    {
+        var input = new Input();
+        var stop = false;
+        async Task Delay(TimeSpan duration, CancellationToken cancellation)
+        {
+            if (duration.TotalMilliseconds != FollowRouteCommand.SteeringPulseMilliseconds) return;
+            stop = true;
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellation);
+        }
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(Pose(0,0), Pose(.3,3,8)), input,
+            () => stop ? "stop-file-requested" : null, Delay);
+        Assert.Equal("stopped", result.Status);
+        Assert.Contains("up:w", input.Events);
+        Assert.Contains("up:d", input.Events);
         Assert.True(result.ReleaseSucceeded);
     }
 
@@ -224,7 +314,9 @@ public sealed class FollowRouteCommandTests
             Reader(Pose(0,0)), input, () => null,
             (_, cancellation) => Task.Delay(Timeout.InfiniteTimeSpan, cancellation));
         Assert.Equal("blocked", result.Status);
-        Assert.StartsWith("watchdog-fault:", result.Reason);
+        // Either independent watchdog or synchronous pre-input guard may win.
+        Assert.True(result.Reason?.StartsWith("watchdog-fault:") == true
+            || result.Reason?.StartsWith("safety-check-failed:") == true);
         Assert.Empty(input.Events);
     }
 

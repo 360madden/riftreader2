@@ -10,6 +10,10 @@ internal static class FollowRouteCommand
     internal const int WatchdogPollMilliseconds = 25;
     internal const double ArrivalRadius = .30;
     internal const double MaximumDistance = 1000;
+    internal const int SteeringPulseMilliseconds = 20;
+    internal const int SteeringSettleMilliseconds = 600;
+    internal const double SteeringDeadbandDegrees = 8;
+    internal const double NearGoalStraightDistance = 1.5;
 
     internal sealed record Options(
         string ExpectedHost, int Pid, long ExpectedStartTicks, string ExpectedSha256,
@@ -345,43 +349,97 @@ internal static class FollowRouteCommand
                 var alignmentAnchor = pose;
                 var alignmentStarted = clock.Elapsed;
                 var unresponsiveTurns = 0;
+                var residualNudges = 0;
+                // Retained physical evidence is approximately 175 degrees/s.
+                // Live samples refine this seed before the release decision.
+                var observedTurnRate = 175.0;
                 string? alignmentKey = null;
+                var alignmentRequiresSettlement = false;
+                void GuardAlignmentPose(Pose candidate)
+                {
+                    if (Math.Sqrt(Math.Pow(candidate.X - alignmentAnchor.X, 2)
+                            + Math.Pow(candidate.Z - alignmentAnchor.Z, 2)) > .10
+                        || Math.Abs(candidate.Y - alignmentAnchor.Y) > .10)
+                        throw new InvalidOperationException("Position drifted during initial turn.");
+                    if (clock.Elapsed - alignmentStarted > TimeSpan.FromSeconds(20))
+                        throw new InvalidOperationException("Initial turn exceeded 20 seconds.");
+                }
+                async Task<bool> ObserveSettledAlignment()
+                {
+                    var previous = pose;
+                    // A stable pair, not a single permissive sample, proves that
+                    // key-up coast ended before forward movement begins.
+                    for (var attempt = 0; attempt < 4; attempt++)
+                    {
+                        await delay(TimeSpan.FromMilliseconds(50), operationToken);
+                        pose = await Read();
+                        GuardAlignmentPose(pose);
+                        var bearingMotion = Math.Abs(HeadingError(pose.Bearing, previous.Bearing));
+                        var remaining = Math.Abs(HeadingError(
+                            BearingTo(pose, options.X, options.Z), pose.Bearing));
+                        if (bearingMotion <= .75 && remaining <= 2)
+                            return true;
+                        previous = pose;
+                    }
+                    return false;
+                }
                 while (Volatile.Read(ref terminalReason) is null)
                 {
                     var error = HeadingError(BearingTo(pose, options.X, options.Z), pose.Bearing);
-                    if (Math.Abs(error) <= 5)
+                    if (alignmentKey is null && Math.Abs(error) <= 2)
                     {
-                        if (alignmentKey is null) break;
-                        SetKey("a", false);
-                        SetKey("d", false);
-                        alignmentKey = null;
-                        // Observe post-key-up inertia before committing to W.
-                        await delay(TimeSpan.FromMilliseconds(50), operationToken);
-                        pose = await Read();
-                        if (Math.Sqrt(Math.Pow(pose.X - alignmentAnchor.X, 2)
-                                + Math.Pow(pose.Z - alignmentAnchor.Z, 2)) > .10
-                            || Math.Abs(pose.Y - alignmentAnchor.Y) > .10)
-                            throw new InvalidOperationException("Position drifted during initial turn.");
-                        if (Math.Abs(HeadingError(BearingTo(pose, options.X, options.Z), pose.Bearing)) <= 8)
+                        if (!alignmentRequiresSettlement || await ObserveSettledAlignment())
                             break;
                         continue;
+                    }
+                    if (alignmentKey is not null)
+                    {
+                        var coastAllowance = Math.Clamp(observedTurnRate * .060 + 2, 5, 14);
+                        var crossedTarget = alignmentKey == "a" ? error <= 0 : error >= 0;
+                        if (Math.Abs(error) <= coastAllowance || crossedTarget)
+                        {
+                            SetKey("a", false);
+                            SetKey("d", false);
+                            alignmentKey = null;
+                            if (await ObserveSettledAlignment()) break;
+                            continue;
+                        }
                     }
                     if (clock.Elapsed - alignmentStarted > TimeSpan.FromSeconds(20))
                         throw new InvalidOperationException("Initial turn exceeded 20 seconds.");
                     var turn = error > 0 ? "a" : "d";
+                    if (alignmentKey is null && Math.Abs(error) <= 12)
+                    {
+                        if (++residualNudges > 6)
+                            throw new InvalidOperationException("Initial alignment did not settle after bounded nudges.");
+                        var nudgeMilliseconds = Math.Clamp(
+                            Math.Abs(error) / Math.Max(100, observedTurnRate) * 600, 6, 16);
+                        alignmentRequiresSettlement = true;
+                        SetKey(turn, true);
+                        await delay(TimeSpan.FromMilliseconds(nudgeMilliseconds), operationToken);
+                        SetKey(turn, false);
+                        if (await ObserveSettledAlignment()) break;
+                        continue;
+                    }
                     var previousBearing = pose.Bearing;
+                    var previousCompletedAt = pose.CompletedAtUtc;
                     var previousError = Math.Abs(error);
+                    alignmentRequiresSettlement = true;
                     SetKey(turn, true);
                     SetKey(turn == "a" ? "d" : "a", false);
                     alignmentKey = turn;
                     await delay(TimeSpan.FromMilliseconds(Math.Abs(error) <= 30 ? 25 : 50), operationToken);
                     if (Volatile.Read(ref terminalReason) is not null) break;
                     pose = await Read();
-                    if (Math.Sqrt(Math.Pow(pose.X - alignmentAnchor.X, 2)
-                            + Math.Pow(pose.Z - alignmentAnchor.Z, 2)) > .10
-                        || Math.Abs(pose.Y - alignmentAnchor.Y) > .10)
-                        throw new InvalidOperationException("Position drifted during initial turn.");
+                    GuardAlignmentPose(pose);
                     var delta = HeadingError(pose.Bearing, previousBearing);
+                    var turnSeconds = (pose.CompletedAtUtc - previousCompletedAt).TotalSeconds;
+                    if (turnSeconds is > .005 and < .5)
+                    {
+                        var rate = Math.Abs(delta) / turnSeconds;
+                        if (rate is >= 20 and <= 400)
+                            observedTurnRate = observedTurnRate * .65 + rate * .35;
+                    }
                     var nextError = Math.Abs(HeadingError(BearingTo(pose, options.X, options.Z), pose.Bearing));
                     if (Math.Abs(delta) < .05 || Math.Abs(delta) > 45
                         || turn == "a" && delta <= 0 || turn == "d" && delta >= 0
@@ -400,14 +458,17 @@ internal static class FollowRouteCommand
                 var best = finalDistance;
                 var lastProgress = clock.Elapsed;
                 var divergence = 0;
-                string? steeringKey = null;
+                var nextSteeringAt = clock.Elapsed;
+                var nextOppositeSteeringAt = clock.Elapsed;
+                string? lastSteeringKey = null;
+                Pose? lastSteeringPose = null;
                 var observedSpeed = 0.0;
                 var arrivalObserved = finalDistance <= ArrivalRadius;
                 while (Volatile.Read(ref terminalReason) is null && !arrivalObserved)
                 {
                     var previousTravelPose = pose;
                     await delay(TimeSpan.FromMilliseconds(
-                        steeringKey is not null || finalDistance <= 2 ? 25 : 75), operationToken);
+                        finalDistance <= 2 ? 25 : 75), operationToken);
                     if (Volatile.Read(ref terminalReason) is not null) break;
                     pose = await Read();
                     var sampleSeconds = (pose.CompletedAtUtc - previousTravelPose.CompletedAtUtc).TotalSeconds;
@@ -445,23 +506,40 @@ internal static class FollowRouteCommand
                         throw new InvalidOperationException("Cross-track drift exceeded the direct-path guard.");
                     var error = HeadingError(
                         CorridorBearing(pose, travelStart, options.X, options.Z), pose.Bearing);
-                    if (steeringKey == "a" && error <= 0 || steeringKey == "d" && error >= 0)
+                    var crossTrack = CrossTrack(pose, travelStart, options.X, options.Z);
+                    var displacement = Distance(pose, previousTravelPose.X, previousTravelPose.Z);
+                    var projectedCrossTrack = crossTrack;
+                    if (displacement >= .10)
                     {
-                        SetKey(steeringKey, false);
-                        steeringKey = null;
+                        var lookahead = Math.Min(1.5, finalDistance);
+                        var projected = pose with
+                        {
+                            X = pose.X + (pose.X - previousTravelPose.X) / displacement * lookahead,
+                            Z = pose.Z + (pose.Z - previousTravelPose.Z) / displacement * lookahead
+                        };
+                        projectedCrossTrack = CrossTrack(projected, travelStart, options.X, options.Z);
                     }
-                    if (Math.Abs(error) > 5)
+                    var nextSteeringKey = error > 0 ? "a" : "d";
+                    var departingCorridor = crossTrack >= .22 && projectedCrossTrack >= .32
+                        && projectedCrossTrack >= crossTrack + .05;
+                    var needsCorrection = Math.Abs(error) >= SteeringDeadbandDegrees && departingCorridor
+                        || Math.Abs(error) >= 5 && crossTrack >= .38;
+                    // Keep forward travel quiet: one brief nudge, then allow
+                    // key-up and body response to settle before reconsidering.
+                    // Small errors and final approach do not chase A/D at all.
+                    if (finalDistance > NearGoalStraightDistance
+                        && clock.Elapsed >= nextSteeringAt
+                        && (lastSteeringPose is null || Distance(pose, lastSteeringPose.X, lastSteeringPose.Z) >= 1.5)
+                        && (lastSteeringKey is null || lastSteeringKey == nextSteeringKey || clock.Elapsed >= nextOppositeSteeringAt)
+                        && needsCorrection)
                     {
-                        var nextSteeringKey = error > 0 ? "a" : "d";
                         SetKey(nextSteeringKey, true);
-                        SetKey(nextSteeringKey == "a" ? "d" : "a", false);
-                        steeringKey = nextSteeringKey;
-                    }
-                    else if (Math.Abs(error) < 2)
-                    {
-                        SetKey("a", false);
-                        SetKey("d", false);
-                        steeringKey = null;
+                        await delay(TimeSpan.FromMilliseconds(SteeringPulseMilliseconds), operationToken);
+                        SetKey(nextSteeringKey, false);
+                        nextSteeringAt = clock.Elapsed + TimeSpan.FromMilliseconds(SteeringSettleMilliseconds);
+                        nextOppositeSteeringAt = clock.Elapsed + TimeSpan.FromSeconds(1);
+                        lastSteeringKey = nextSteeringKey;
+                        lastSteeringPose = pose;
                     }
                     if (finalDistance + .03 < best)
                     {

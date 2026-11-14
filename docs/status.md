@@ -1,5 +1,20 @@
 # Current status
 
+**November 14 — reduced left/right movement corrections:** The user reported
+camera shaking with Smart Camera both on and off. Retained traces showed repeated
+A/D turns while forward input remained held. Continuous travel now ignores small
+heading changes, reserves brief nudges for meaningful corridor departure, spaces
+corrections by time/progress and suppresses steering in the final 1.5 units.
+Initial turns release early for observed coast and must settle within 2 degrees
+before W. The first sparse return trial safely hit the unchanged drift guard;
+that exposed the initial-alignment coast issue and led to the settlement fix.
+The corrected live out/back legs covered 4.890 and 4.807 units and arrived with
+0.227/0.194-unit error, **zero A/D corrections after W began**, and verified
+release/no held inputs. STOP and the original route/selection were retained.
+119 focused native/legacy tests pass; Debug and Release builds pass. Evidence:
+`artifacts/movement-upgrade/sparse-steering-live-final.json`. These traces verify
+reduced steering; camera appearance across other routes remains a user check.
+
 ## November 14, 2026 — Waypoints v1.2.0 movement helper
 
 On AMD-DESKTOP, the CLI can now select a destination on the Waypoints map or

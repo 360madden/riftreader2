@@ -94,6 +94,12 @@ unless an observed movement failure blocks it. Establish the actual current
 build/learned actions for the first fight, then expand to the per-level plan.
 A full future build planner must not delay the first useful defensive response.
 
+The subsequently reported camera-shake defect was brought forward under that
+failure-driven rule. Sparse travel steering and settled initial alignment now
+have a live ~5-unit out/back case with zero moving A/D corrections and verified
+arrival/release; broader camera smoothness remains unqualified. The combat and
+survival ranking below resumes after this targeted movement correction.
+
 The next product outcome is a character that can judge encounters, win suitable
 fights, gain useful experience and preserve its route. Avoiding a fight can be
 the correct decision; a reactive fight loop alone cannot make an over-levelled

@@ -54,6 +54,13 @@ remains available as a fallback: clear the **Continuous travel** checkbox, or
 change the running helper's setting from the CLI. Changing the setting sends no
 game input and applies to subsequent route, playback and direct-move runs.
 
+The controller finishes and settles its initial turn before forward travel.
+While running, it tolerates small heading differences and steers only for
+meaningful route departure. Corrections are brief nudges separated by settling
+time and travel progress, rather than repeated left/right tracking. The last
+1.5 units use a straight final approach. The existing 0.50-unit corridor limit
+still stops a drifting run; reducing corrections does not widen that limit.
+
 ```powershell
 .\rr2-waypoints.cmd move mode --engine continuous
 .\rr2-waypoints.cmd move mode --engine pulse
