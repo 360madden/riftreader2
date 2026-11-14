@@ -294,7 +294,15 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             return None
         if not isinstance(result, dict) or result.get("status") != "arrived":
             raise WaypointError("Survival movement did not return an arrived leg")
+        if not _release_confirmed(result):
+            policy.coordinator.critical("critical-unavailable")
+            policy.state = "halt"
+            raise WaypointError("Survival arrived leg has unverified input release")
         current = _position(result.get("position"))
+        if forward and math.hypot(current["x"] - x, current["z"] - z) > .5:
+            policy.coordinator.critical("critical-unavailable")
+            policy.state = "halt"
+            raise WaypointError("Survival arrived leg is not at the requested destination")
         if (not forward and expected_height is not None
                 and not _corridor_arrival(current, x, expected_height, z)):
             raise WaypointError(

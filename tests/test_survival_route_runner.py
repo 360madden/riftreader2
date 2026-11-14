@@ -114,6 +114,25 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                                            if event["status"] == "arrived"])
         self.assertEqual(2, len(results))
 
+    def test_arrived_without_confirmed_key_release_must_not_complete_route(self):
+        def mover(adapter, x, z, stop, emit, **options):
+            receipt = arrived(x, z)
+            receipt["releaseSucceeded"] = False
+            receipt["desktopInputsDown"] = ["w"]
+            return receipt
+
+        backend = Backend([observed()])
+        with self.assertRaisesRegex(Exception, "arrived.*release"):
+            self.invoke([("pending", 4, 0)], backend, mover)
+
+    def test_arrived_at_wrong_destination_must_not_advance_checkpoint(self):
+        def mover(adapter, x, z, stop, emit, **options):
+            return arrived(1, 0)  # Valid-looking receipt for the wrong goal.
+
+        backend = Backend([observed()])
+        with self.assertRaisesRegex(Exception, "arrived.*destination"):
+            self.invoke([("pending", 4, 0)], backend, mover)
+
     def test_encounter_releases_then_fights_rejoins_and_retries_same_leg(self):
         calls = []
         interrupted = {"releaseSucceeded": True, "desktopInputsDown": [],
