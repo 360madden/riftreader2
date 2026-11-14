@@ -83,7 +83,7 @@ def arrived(x, z, start_x=0, start_z=0):
 
 class SurvivalRouteRunnerTests(unittest.TestCase):
     def invoke(self, points, backend, mover, **kwargs):
-        events, entered = [], []
+        events, entered = kwargs.pop("events", []), []
         stop = kwargs.pop("stop", threading.Event())
         with patch("scripts.physical_waypoints.read_stationary", return_value=pose()):
             result = run_survival_route(
@@ -132,6 +132,31 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         backend = Backend([observed()])
         with self.assertRaisesRegex(Exception, "arrived.*destination"):
             self.invoke([("pending", 4, 0)], backend, mover)
+
+    def test_arrived_callback_is_not_published_before_receipt_validation(self):
+        cases = (
+            ("release", lambda receipt: receipt.update(releaseSucceeded=False),
+             "unverified input release"),
+            ("destination", lambda receipt: receipt.update(
+                position={"x": 1, "y": 5, "z": 0}),
+             "not at the requested destination"),
+            ("path", lambda receipt: receipt.update(path=[]),
+             "cannot establish a known traversed corridor"),
+        )
+        for label, corrupt, reason in cases:
+            with self.subTest(label=label):
+                events = []
+
+                def mover(adapter, x, z, stop, emit, **options):
+                    receipt = arrived(x, z)
+                    corrupt(receipt)
+                    emit(dict(receipt))  # Native mover currently emits before returning.
+                    return receipt
+
+                with self.assertRaisesRegex(Exception, reason):
+                    self.invoke([("pending", 4, 0)], Backend([observed()]),
+                                mover, events=events)
+                self.assertNotIn("arrived", [e.get("status") for e in events])
 
     def test_encounter_releases_then_fights_rejoins_and_retries_same_leg(self):
         calls = []

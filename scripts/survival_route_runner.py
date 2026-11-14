@@ -251,8 +251,9 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
 
         def named(event):
             event = dict(event, name=label)
-            # A survival rejoin is not a route-checkpoint arrival.
-            if forward or event.get("status") != "arrived":
+            # The mover emits arrival before its final receipt is validated.
+            # Never publish an unverified route or auxiliary arrival.
+            if event.get("status") != "arrived":
                 emit(event)
 
         try:
@@ -322,7 +323,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             # The post-release stationary endpoint may be slightly newer than
             # the native movement path's final sample; retain both.
             policy.record_route_trail_point((current["x"], current["y"], current["z"]))
-        return dict(result, name=label)
+        verified = dict(result, name=label)
+        if forward:
+            emit(verified)
+        return verified
 
     def execute_requested_moves():
         while requested_moves:
