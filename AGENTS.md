@@ -45,6 +45,19 @@ Build a functional RR2 capability, not a process around it. Use this short loop:
    candidate results honestly.
 4. Commit verified files, push when authorized, and move to the next result.
 
+**Adaptive priorities (Joey, 2026-11-14):** After each major milestone,
+re-evaluate the ranked remaining work against new evidence, dependencies,
+feasibility, value and effort. Reassess earlier when a material blocker appears.
+The roadmap is not a fixed execution sequence. Use a practical workaround
+(including beneficial temporary AI scaffolding), or move useful independent
+work forward when a blocked path has no productive next step. Retain the blocked
+item, its reason and what would unblock it; do not stall the entire project or
+repeat failed attempts without new information. Reprioritize within authorized
+scope, update the canonical roadmap with a short reason for material changes,
+and choose the next useful outcome. Keep this proportional: no new planning
+framework, approval ritual or review cycle for routine edits. Workarounds retain
+host/action authority, input ownership, STOP and honest evidence limits.
+
 For ordinary changes, a one-sentence goal and brief outcome are enough.
 Do **not** require per-batch plans, broad test sweeps, repeated reviews,
 new frameworks, manifests, handoffs, or status artifacts. Create a handoff

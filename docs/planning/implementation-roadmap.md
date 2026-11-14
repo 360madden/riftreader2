@@ -244,6 +244,30 @@ optimal build/rotation or reliable behavior across every class and enemy.
 
 ## Keeping this roadmap current
 
+**Re-evaluate priorities after every major milestone**, and earlier when new
+evidence or a material blocker changes the best next step. This ranked list is
+an adaptive plan, not a fixed sequence to follow despite changing conditions.
+
+At each such checkpoint, mark what actually finished and reassess the remaining
+outcomes by usefulness, dependencies, feasibility, effort and newly exposed gaps.
+Keep the order when it still makes sense; reorder when a different outcome now
+offers better progress. A completed milestone may unlock a previously blocked
+path or make an earlier proposal unnecessary.
+
+For a blocked item, identify the concrete missing dependency and a productive
+next step. Use an existing alternative or beneficial temporary AI scaffolding
+where applicable. If no practical route through the blocker is available, move
+the highest-value independent work forward. Keep the blocked item visible with
+its reason and an unblock condition; revisit when new evidence, tools or a
+completed dependency changes that condition. Do not stall unrelated work or
+repeat the same unsuccessful approach without a new hypothesis.
+
+Reprioritize autonomously within the authorized scope. Record a short reason
+for material ranking changes here and name the next useful outcome. This is a
+brief milestone decision, not a new process/framework, mandatory broad test
+sweep or approval round for every edit. A workaround must preserve existing
+host/action authority, input ownership, STOP and evidence/qualification limits.
+
 Update this document when a useful capability ships or its remaining gap changes.
 Keep detailed receipts in [status](../status.md) and the owning workflow/reference.
 Use **implemented**, **observed live in stated cases**, **candidate/partial**, and
