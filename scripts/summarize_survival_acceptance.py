@@ -121,8 +121,24 @@ def _drops(samples, field):
     for before, after in zip(samples, samples[1:]):
         left, right = before.get(field), after.get(field)
         if left is not None and right is not None and right < left:
+            # A health decline remains observable, but is not attributable to
+            # one selected opponent across an owner/target switch, epoch
+            # boundary or replayed/non-advancing telemetry frame.
+            context_stable = (
+                all(isinstance(before.get(key), str) and before[key]
+                    and _same(before[key], after.get(key))
+                    for key in ("sessionId", "playerId", "targetId"))
+                and type(before.get("epoch")) is int
+                and before["epoch"] == after.get("epoch")
+                and type(before.get("sequence")) is int
+                and type(after.get("sequence")) is int
+                and before["sequence"] < after["sequence"]
+                and before.get("clock") is not None
+                and after.get("clock") is not None
+                and before["clock"] < after["clock"])
             result.append({"amount": left - right, "from": left, "to": right,
-                           "startClock": before.get("clock"), "endClock": after.get("clock")})
+                           "startClock": before.get("clock"), "endClock": after.get("clock"),
+                           "attributionEligible": context_stable})
     return result
 
 
@@ -138,10 +154,17 @@ def _events(samples, field, incoming):
             continue
         seen.add(identity)
         damage = _number(event.get("damage"))
-        selected = event.get("selectedTargetId") or sample.get("targetId")
-        expected = (_same(event.get("caster"), selected)
+        selected = event.get("selectedTargetId")
+        # Do not synthesize a missing event-time selection from the current
+        # target, or mistake a heal/diagnostic event for damage.
+        exact_selection = (event.get("kind") == "damage"
+                           and isinstance(selected, str)
+                           and _same(selected, sample.get("targetId")))
+        expected = (exact_selection
+                    and _same(event.get("caster"), selected)
                     and _same(event.get("target"), sample.get("playerId")) if incoming else
-                    _same(event.get("caster"), sample.get("playerId"))
+                    exact_selection
+                    and _same(event.get("caster"), sample.get("playerId"))
                     and _same(event.get("target"), selected))
         if damage is not None and damage > 0 and expected:
             result.append({"sequence": sequence, "clock": _number(event.get("clock")),
@@ -156,9 +179,10 @@ def _correlation(drops, events):
     paired = 0
     for drop in drops:
         start, end = drop["startClock"], drop["endClock"]
-        if start is None or end is None:
+        if start is None or end is None or not drop["attributionEligible"]:
             continue
-        if any(event["clock"] is not None and start - .25 <= event["clock"] <= end + 2
+        # A later event cannot retrospectively explain an earlier health loss.
+        if any(event["clock"] is not None and start <= event["clock"] <= end
                for event in events):
             paired += 1
     return {"status": "correlated" if paired else "observed-unpaired",
