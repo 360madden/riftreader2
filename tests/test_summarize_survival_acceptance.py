@@ -37,7 +37,8 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                      self.sample(13, 88, 80, state="recover"),
                      self.sample(14, 100, 80, state="rejoin"),
                      self.sample(15, 100, 80, state="travel")]
-        route = [{"status": "encounter-interrupted", "releaseSucceeded": True},
+        route = [{"status": "encounter-interrupted", "releaseSucceeded": True,
+                  "desktopInputsDown": []},
                  {"status": "arrived", "releaseSucceeded": True,
                   "desktopInputsDown": [], "nextIndex": 3}]
 
@@ -171,6 +172,30 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
         self.assertFalse(result["acceptance"]["incomingDamage"])
         self.assertEqual([], result["telemetry"]["selfHealthDrops"])
+
+    def test_conflicting_or_incomplete_release_receipts_fail_closed(self):
+        bad_receipts = (
+            {"releaseSucceeded": True, "allInputsReleased": False, "desktopInputsDown": []},
+            {"releaseSucceeded": True, "allInputsReleased": "true", "desktopInputsDown": []},
+            {"releaseSucceeded": True, "allInputsReleased": True, "desktopInputsDown": ["w"]},
+            {"releaseSucceeded": True},
+        )
+        for receipt in bad_receipts:
+            with self.subTest(receipt=receipt):
+                route = [{"status": "encounter-interrupted", **receipt},
+                         {"status": "arrived", **receipt}]
+                observed = summary.summarize(route)
+                self.assertFalse(observed["route"]["encounterReleaseVerified"])
+                self.assertFalse(observed["route"]["allRetainedReleasesVerified"])
+                self.assertFalse(observed["route"]["terminalInputsReleased"])
+
+    def test_terminal_without_release_receipt_cannot_borrow_earlier_cleanup(self):
+        route = [{"status": "encounter-interrupted", "releaseSucceeded": True,
+                  "desktopInputsDown": []}, {"status": "arrived"}]
+        observed = summary.summarize(route)
+        self.assertTrue(observed["route"]["encounterReleaseVerified"])
+        self.assertTrue(observed["route"]["allRetainedReleasesVerified"])
+        self.assertFalse(observed["route"]["terminalInputsReleased"])
 
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:

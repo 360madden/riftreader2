@@ -210,6 +210,13 @@ def _correlation(drops, events):
             "pairedCount": paired}
 
 
+def _verified_release(row):
+    """Require a positive release receipt without contradictory held-key data."""
+    return (row.get("releaseSucceeded") is True
+            and row.get("desktopInputsDown") == []
+            and ("allInputsReleased" not in row or row["allInputsReleased"] is True))
+
+
 def summarize(route_rows, telemetry_rows=None):
     terminal = next((row for row in reversed(route_rows)
                      if row.get("status") in {
@@ -218,22 +225,18 @@ def summarize(route_rows, telemetry_rows=None):
                      if type(row.get("nextWaypoint")) is int
                      or type(row.get("nextIndex")) is int), {})
     interrupted = [row for row in route_rows if row.get("status") == "encounter-interrupted"]
-    receipts = [row for row in route_rows if "releaseSucceeded" in row]
-    release_ok = bool(receipts) and all(row.get("releaseSucceeded") is True
-                                        and row.get("desktopInputsDown", []) == []
-                                        for row in receipts)
-    cleanup = terminal if terminal and "releaseSucceeded" in terminal else (
-        receipts[-1] if receipts else None)
+    receipts = [row for row in route_rows if any(
+        key in row for key in ("releaseSucceeded", "allInputsReleased", "desktopInputsDown"))]
+    release_ok = bool(receipts) and all(_verified_release(row) for row in receipts)
     summary = {
         "version": 1, "kind": "survival-acceptance-summary",
         "route": {
             "rowCount": len(route_rows), "terminalStatus": terminal.get("status") if terminal else None,
             "encounterInterruptCount": len(interrupted),
             "encounterReleaseVerified": bool(interrupted) and all(
-                row.get("releaseSucceeded") is True for row in interrupted),
+                _verified_release(row) for row in interrupted),
             "allRetainedReleasesVerified": release_ok,
-            "terminalInputsReleased": bool(cleanup and cleanup.get("releaseSucceeded") is True
-                                            and cleanup.get("desktopInputsDown", []) == []),
+            "terminalInputsReleased": bool(terminal and _verified_release(terminal)),
             "finalNextIndex": (progress.get("nextWaypoint")
                                if type(progress.get("nextWaypoint")) is int
                                else progress.get("nextIndex")),
