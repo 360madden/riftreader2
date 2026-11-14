@@ -32,6 +32,17 @@ def _deviation(p, a, b):
     return math.hypot(p["x"] - (a["x"] + t * dx), p["z"] - (a["z"] + t * dz))
 
 
+def _height_deviation(p, a, b):
+    """Vertical error from the planar chord, without inventing a floor model."""
+    dx, dz = b["x"] - a["x"], b["z"] - a["z"]
+    length2 = dx * dx + dz * dz
+    if not length2:
+        return abs(p["y"] - a["y"])
+    t = max(0., min(1., ((p["x"] - a["x"]) * dx +
+                          (p["z"] - a["z"]) * dz) / length2))
+    return abs(p["y"] - (a["y"] + t * (b["y"] - a["y"])))
+
+
 class RouteRecorder:
     """Observe fresh, sequential snapshots; never send input or read a process.
 
@@ -39,14 +50,19 @@ class RouteRecorder:
     identity and separate runtime identity. Identity changes require a new recorder.
     The caller owns reservation and validates identity for every observation.
     """
-    def __init__(self, identity, *, max_gap_seconds=3.0, max_age_seconds=2.0):
+    def __init__(self, identity, *, max_gap_seconds=3.0, max_age_seconds=2.0,
+                 waypoint_spacing=5.0):
         if not isinstance(identity, dict) or not identity:
             raise RecordingError("Recording identity is required")
         self.identity = deepcopy(identity)
         self.max_gap = _finite(max_gap_seconds)
         self.max_age = _finite(max_age_seconds)
+        self.waypoint_spacing = _finite(waypoint_spacing)
         if self.max_gap <= 0 or self.max_age <= 0:
             raise RecordingError("Recording timing limits must be positive")
+        if not .05 <= self.waypoint_spacing <= MAX_ROUTE_DISTANCE:
+            raise RecordingError(
+                f"Waypoint spacing must be between 0.05 and {MAX_ROUTE_DISTANCE:g} units")
         self._points = []
         self._length = 0.
         self._failed = False
@@ -105,21 +121,35 @@ class RouteRecorder:
         if len(points) < 2 or self._length < .05:
             raise RecordingError("Recording has no useful movement")
         # Iterative bounded-error simplification between mandatory boundaries.
-        keep = {0, len(points) - 1} | {i for i, p in enumerate(points) if p["boundary"]}
+        # Retain practical intervals along actual accumulated travel.  When a
+        # threshold falls between samples, keep the first real sample beyond it;
+        # never interpolate a pose the reader did not observe.
+        spaced = {0}
+        accumulated = 0.
+        for index in range(1, len(points)):
+            accumulated += _distance(points[index - 1], points[index])
+            if accumulated >= self.waypoint_spacing:
+                spaced.add(index)
+                accumulated = 0.
+        keep = ({0, len(points) - 1} | spaced |
+                {i for i, p in enumerate(points) if p["boundary"]})
         ordered = sorted(keep)
         stack = list(zip(ordered, ordered[1:]))
         while stack:
             first, last = stack.pop()
             if last <= first + 1:
                 continue
-            index, error = max(((i, _deviation(points[i], points[first], points[last]))
-                                for i in range(first + 1, last)), key=lambda pair: pair[1])
+            index, error, height_error = max(
+                ((i, _deviation(points[i], points[first], points[last]),
+                  _height_deviation(points[i], points[first], points[last]))
+                 for i in range(first + 1, last)),
+                key=lambda value: max(value[1] / .05, value[2] / .30))
             # A collinear reversal has zero perpendicular error but is still a
             # real turn; do not collapse a traversal that doubles back.
             a, b = points[first], points[last]
             dx, dz = b["x"] - a["x"], b["z"] - a["z"]
             length = math.hypot(dx, dz)
-            if error <= .05 and length > 0:
+            if error <= .05 and height_error <= .30 and length > 0:
                 peak, peak_index = 0., first
                 for i in range(first + 1, last + 1):
                     projection = ((points[i]["x"] - a["x"]) * dx +
@@ -127,9 +157,9 @@ class RouteRecorder:
                     if projection > peak:
                         peak, peak_index = projection, i
                     elif peak - projection > .05 and peak_index != first:
-                        index, error = peak_index, peak - projection
+                        index, error, height_error = peak_index, peak - projection, 0.
                         break
-            if error > .05:
+            if error > .05 or height_error > .30:
                 keep.add(index)
                 stack.extend(((first, index), (index, last)))
         retained = [points[i] for i in sorted(keep)]
@@ -149,7 +179,9 @@ class RouteRecorder:
                 "recording": {"version": 1, "complete": True, "identity": deepcopy(self.identity),
                               "sampleCount": len(points), "retainedCount": len(deduped),
                               "observedPathLength": self._length, "routeLength": route_length,
-                              "maxDeviation": .05, "maxGapSeconds": self.max_gap,
+                              "maxDeviation": .05, "maxHeightDeviation": .30,
+                              "waypointSpacing": self.waypoint_spacing,
+                              "maxGapSeconds": self.max_gap,
                               "firstObservedAtUtc": points[0]["observedAtUtc"],
                               "lastObservedAtUtc": points[-1]["observedAtUtc"],
                               "sources": list(dict.fromkeys(p["source"] for p in points))}}

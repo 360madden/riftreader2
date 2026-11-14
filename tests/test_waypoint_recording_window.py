@@ -81,7 +81,7 @@ class RecordingWindowTests(unittest.TestCase):
         self.addCleanup(self.cleanup_windows)
         app.launch_window(args)
         self.window = self.roots[0]
-        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
+        self.wait_for(lambda: str(self.button("Record")["text"]) == "Record" and str(self.button("Record")["state"]) != "disabled")
 
     @staticmethod
     def pose(x):
@@ -106,6 +106,8 @@ class RecordingWindowTests(unittest.TestCase):
             yield from self.widgets(widget)
 
     def button(self, label):
+        if label == "Record" and hasattr(self, "record_toggle"):
+            return self.record_toggle
         return next(w for w in self.widgets()
                     if isinstance(w, (tk.Button, ttk.Button)) and str(w["text"]) == label)
 
@@ -118,11 +120,14 @@ class RecordingWindowTests(unittest.TestCase):
             time.sleep(.01)
 
     def start_pending_recording(self):
-        self.button("Record").invoke()
+        self.record_toggle = self.button("Record")
+        self.record_toggle.invoke()
         self.wait_for(self.capture_pending.is_set)
+        self.assertEqual("Stop Recording", self.record_toggle["text"])
+        self.assertNotEqual("disabled", str(self.record_toggle["state"]))
 
     def saved(self):
-        return list((self.root_path / "artifacts").glob("recorded-route-*.json"))
+        return list((self.root_path / "artifacts" / "waypoint-routes").glob("recorded-route-*.json"))
 
     def destroyed(self):
         try:
@@ -151,7 +156,7 @@ class RecordingWindowTests(unittest.TestCase):
 
     def test_normal_stop_publishes_and_loads_recorded_route(self):
         self.start_pending_recording()
-        self.button("Stop Recording").invoke()
+        self.record_toggle.invoke()
         self.release_capture.set()
         self.wait_for(lambda: bool(self.saved()))
         document = json.loads(self.saved()[0].read_text(encoding="utf-8"))
@@ -165,15 +170,26 @@ class RecordingWindowTests(unittest.TestCase):
         self.assertEqual(len(document["waypoints"]), len(points))
         self.assertEqual([0., 2.], [float(row[1]) for row in points])
         self.assertTrue(document["recording"]["complete"])
-        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
+        self.wait_for(lambda: str(self.button("Record")["text"]) == "Record" and str(self.button("Record")["state"]) != "disabled")
         self.assertEqual("disabled", str(self.button("Stop Recording")["state"]))
 
     def test_stop_cancels_without_publishing(self):
         self.start_pending_recording()
         self.button("STOP").invoke()
         self.release_capture.set()
-        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
+        self.wait_for(lambda: str(self.button("Record")["text"]) == "Record" and str(self.button("Record")["state"]) != "disabled")
         self.assertEqual([], self.saved())
+
+    def test_toggle_saves_to_selected_new_route_file(self):
+        chosen = self.root_path / "my-walk.json"
+        with patch("tkinter.filedialog.asksaveasfilename", return_value=str(chosen)):
+            self.button("New Route…").invoke()
+        self.window.update()
+        self.start_pending_recording()
+        self.record_toggle.invoke()
+        self.release_capture.set()
+        self.wait_for(chosen.exists)
+        self.assertEqual(5.0, json.loads(chosen.read_text())["recording"]["waypointSpacing"])
 
     def test_recording_displays_actual_capture_budget_then_clears_on_cancel(self):
         self.start_pending_recording()
@@ -184,7 +200,7 @@ class RecordingWindowTests(unittest.TestCase):
                             for value in label_values()), label_values())
         self.button("STOP").invoke()
         self.release_capture.set()
-        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
+        self.wait_for(lambda: str(self.button("Record")["text"]) == "Record" and str(self.button("Record")["state"]) != "disabled")
         self.assertFalse(any(value.startswith("Recording:") for value in label_values()))
         self.assertEqual([], self.saved())
 
@@ -207,7 +223,7 @@ class RecordingWindowTests(unittest.TestCase):
             thread.join(timeout=2)
             self.assertFalse(thread.is_alive())
         self.button("STOP").invoke()
-        self.wait_for(lambda: str(self.button("Record")["state"]) != "disabled")
+        self.wait_for(lambda: str(self.button("Record")["text"]) == "Record" and str(self.button("Record")["state"]) != "disabled")
         self.assertEqual([], self.saved())
 
 

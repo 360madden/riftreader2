@@ -88,6 +88,44 @@ class RecorderTests(unittest.TestCase):
         self.assertGreater(route["recording"]["routeLength"], 20)
         self.assertLess(route["recording"]["routeLength"], MAX_ROUTE_DISTANCE)
 
+    def test_default_spacing_retains_actual_samples_about_five_units_apart(self):
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3)
+        for i in range(21):
+            rec.observe(pose(i, 0, 80 + i))
+        route = rec.finish()
+        self.assertEqual([point[1] for point in route["waypoints"]], [0, 5, 10, 15, 20])
+        self.assertEqual(route["recording"]["waypointSpacing"], 5.0)
+        self.assertEqual(route["recording"]["sampleCount"], 21)
+
+    def test_spacing_keeps_real_samples_and_planar_turns(self):
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3,
+                            waypoint_spacing=5)
+        samples = [(0, 0), (3, 0), (6, 0), (6, 2), (6, 5), (6, 8)]
+        for i, (x, z) in enumerate(samples):
+            rec.observe(pose(x, z, 90 + i))
+        points = [(point[1], point[2]) for point in rec.finish()["waypoints"]]
+        self.assertEqual(points, [(0, 0), (6, 0), (6, 5), (6, 8)])
+        self.assertTrue(all(point in samples for point in points))
+
+    def test_height_curve_over_point_three_is_retained(self):
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3,
+                            waypoint_spacing=50)
+        for i, (x, y) in enumerate(((0, 0), (1, .1), (2, .7), (3, .1), (4, 0))):
+            rec.observe(pose(x, 0, 95 + i, y=y))
+        route = rec.finish()
+        self.assertEqual([point[1] for point in route["waypoints"]], [0, 2, 4])
+        self.assertEqual(route["heights"], [0, .7, 0])
+        self.assertEqual(route["recording"]["maxHeightDeviation"], .30)
+
+    def test_idle_samples_do_not_create_spaced_waypoints(self):
+        rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3,
+                            waypoint_spacing=2)
+        samples = [(0, 0), (0, 0), (0, 0), (1, 0), (1, 0), (2, 0), (2, 0),
+                   (3, 0), (4, 0)]
+        for i, (x, z) in enumerate(samples):
+            rec.observe(pose(x, z, 90 + i))
+        self.assertEqual([point[1] for point in rec.finish()["waypoints"]], [0, 2, 4])
+
     def test_route_limits_still_fail_closed(self):
         rec = RouteRecorder(self.identity, max_age_seconds=100, max_gap_seconds=3)
         with patch("scripts.waypoint_recording.MAX_ROUTE_DISTANCE", 2):

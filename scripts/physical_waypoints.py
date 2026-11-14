@@ -1918,7 +1918,7 @@ def launch_window(args):
             redraw()
         state.set(("Starting action — F8 or STOP releases owned movement." if getattr(foreground_stop,"registered",False)
                    else "Starting action — use STOP; F8 is unavailable.") if operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go")
-                  else "Recording your movement; choose Stop Recording to save." if operation == "record"
+                  else "Recording your movement; click Stop Recording to save this route." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
         context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and (operation in ("go", "face", "play", "resume", "teach") or operation == "save" and isinstance(points, dict)) else None
@@ -2012,6 +2012,10 @@ def launch_window(args):
             (route_button,planned is not None and planned<=MAX_ROUTE_DISTANCE),(teach_button,planned is not None and planned<=MAX_ROUTE_DISTANCE),
             (record_button,True)):
             button.configure(state="normal" if idle and allowed else "disabled")
+        if recording:
+            record_button.configure(text="Stop Recording", state="disabled" if record_stop.is_set() else "normal")
+        else:
+            record_button.configure(text="Record")
 
     def update_edit_state(*_):
         if not edit_buttons:
@@ -2301,8 +2305,15 @@ def launch_window(args):
     def stop_recording():
         if recording:
             record_stop.set()
+            record_button.configure(state="disabled")
             record_end_button.configure(state="disabled")
             state.set("Finishing recording…")
+
+    def toggle_recording():
+        if recording:
+            stop_recording()
+        else:
+            start("record")
 
     def save_view():
         nonlocal saved_unit_sample
@@ -2742,7 +2753,7 @@ def launch_window(args):
     stop_hint = tk.StringVar(value="F8 inactive · Esc in app")
     ttk.Label(stop_slot, textvariable=stop_hint, style="Base.Micro.TLabel").pack(anchor="center", pady=(5, 0))
     playback_buttons = {}
-    for label, parent, row, column, callback in (("Record", recording_controls, 0, 0, lambda: start("record")),
+    for label, parent, row, column, callback in (("Record", recording_controls, 0, 0, toggle_recording),
             ("Play Forward", playback_group, 0, 0, lambda: playback("forward")),
             ("Play Reverse", playback_group, 1, 0, lambda: playback("reverse")),
             ("Resume", playback_group, 2, 0, playback)):
@@ -2758,13 +2769,15 @@ def launch_window(args):
     resume_button = playback_buttons["Resume"]
     record_end_button = ttk.Button(recording_controls, text="Stop Recording", command=stop_recording, state="disabled")
     record_end_button.grid(row=0, column=1, sticky="ew", padx=(5, 0), pady=(0, 7))
+    record_end_button.grid_remove()  # The main Record button now toggles stop/save.
+    record_button.grid_configure(columnspan=2)
     for group in (playback_group, recording_controls, controls):
         group.columnconfigure(0, weight=1)
         group.columnconfigure(1, weight=1)
     playback_group.columnconfigure(0,weight=0)
     playback_group.columnconfigure(1,weight=1)
     ttk.Label(playback_group, text="Face before each leg · Play starts a new run", style="Micro.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
-    ttk.Label(recording_controls, text="Record follows your manual walk", style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w")
+    ttk.Label(recording_controls, text="Click to start / stop · 5-unit spacing + turns", style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w")
     progress_text = tk.StringVar(value="No playback started.")
     progress_label = ttk.Label(replay_tab, textvariable=progress_text, style="Muted.TLabel", wraplength=860)
     progress_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(7, 0))
@@ -4468,9 +4481,12 @@ def launch_window(args):
                 # This runs on the UI thread: STOP/close cannot race publication.
                 recording = False
                 record_end_button.configure(state="disabled")
-                output = cli_record_output or ROOT / "artifacts" / ("recorded-route-" + uuid.uuid4().hex + ".json")
+                directory = ROOT / "artifacts" / "waypoint-routes"
+                directory.mkdir(parents=True, exist_ok=True)
+                output = cli_record_output or route_path or directory / ("recorded-route-" + uuid.uuid4().hex + ".json")
                 cli_record_output = None
                 try:
+                    event["document"].setdefault("routeName", route_metadata.get("routeName", Path(output).stem))
                     write_json_atomic(output, event["document"])
                     document = prepared_document(event["document"])
                     progress = select_progress(document)
