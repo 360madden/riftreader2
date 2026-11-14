@@ -27,6 +27,12 @@ class SurvivalActionError(ValueError):
     pass
 
 
+class SurvivalActionPreInputError(SurvivalActionError):
+    """A protected action was refused before any survival input was sent."""
+
+    pass
+
+
 def _require(condition, reason):
     if not condition:
         raise SurvivalActionError(reason)
@@ -239,6 +245,7 @@ class SurvivalActions:
         self._monotonic = monotonic
         self._cancel_admission = None
         self._cancel_reference = cancel_reference
+        self._native_attempted = False
 
     @property
     def cleanup_verified(self):
@@ -247,6 +254,10 @@ class SurvivalActions:
     @property
     def cleanup_uncertain(self):
         return self._cleanup_uncertain
+
+    @property
+    def native_attempted(self):
+        return self._native_attempted
 
     def _run(self, action, *, ability_id=None, allow_stopped=False):
         _require(allow_stopped or not self.stop.is_set(),
@@ -281,6 +292,7 @@ class SurvivalActions:
                      "survival-action-stopped-before-click")
             action_id = ("controls.actions." + ability_id
                          if action == "cast" else "controls.cancel")
+            self._native_attempted = True
             receipt = self.native_click(action=action, action_id=action_id,
                                         rectangle=rect, pin=self.pin,
                                         stop_event=self.stop)
@@ -537,6 +549,7 @@ class ActionBackend:
         self.native_exe, self.run = native_exe, run
         self._actions = None
         self._action_diagnostic = None
+        self._no_action_owned = None
 
     def begin_encounter(self):
         """Open a new target pin only after the prior encounter cleaned up."""
@@ -546,6 +559,7 @@ class ActionBackend:
             _require(not self.input_release_fault,
                      "survival-prior-encounter-input-release-fault")
         self._actions = None
+        self._no_action_owned = None
         return {"status": "encounter-ready", "inputSent": False}
 
     @property
@@ -625,11 +639,36 @@ class ActionBackend:
             minimum_generation=generation, cancel_reference=retained_reference)
 
     def cast(self, ability_id):
-        if self._actions is None:
-            self._actions = self._build()
-        return self._actions.cast(ability_id)
+        previous_receipt = getattr(self.adapter, "_survival_action_receipt", None)
+        try:
+            if self._actions is None:
+                self._actions = self._build()
+            return self._actions.cast(ability_id)
+        except Exception as exc:
+            latest_receipt = getattr(self.adapter, "_survival_action_receipt", None)
+            attempted = bool(self._actions is not None
+                             and self._actions.native_attempted)
+            receipt_from_attempt = latest_receipt is not previous_receipt
+            explicit_no_input = bool(
+                receipt_from_attempt and isinstance(latest_receipt, dict)
+                and latest_receipt.get("inputSent") is False)
+            if not attempted or explicit_no_input:
+                self._no_action_owned = {
+                    "status": "no-survival-action-owned", "inputSent": False,
+                    "reason": str(exc), "errorType": type(exc).__name__}
+                self._action_diagnostic = {
+                    "operation": "cast", "stage": "cast-admission",
+                    "error": {"type": type(exc).__name__, "reason": str(exc)},
+                    "nativeReceiptFromAttempt": receipt_from_attempt,
+                    "rawNativeReceipt": deepcopy(latest_receipt)}
+                self._actions = None
+                raise SurvivalActionPreInputError(
+                    "survival-pre-input-action-refused: " + str(exc)) from exc
+            raise
 
     def cancel(self):
+        if self._no_action_owned is not None:
+            return deepcopy(self._no_action_owned)
         stage = "cancel-existing-owner"
         previous_receipt = getattr(self.adapter, "_survival_action_receipt", None)
         try:

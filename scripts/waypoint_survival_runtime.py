@@ -17,6 +17,7 @@ import time
 import uuid
 
 from scripts.survival_live import SurvivalLiveConsumer, assess_incoming, assess_outcome
+from scripts.survival_actions import SurvivalActionPreInputError
 from scripts.survival_profile import load_survival_profile
 from scripts.survival_route_runner import run_survival_route
 from scripts.waypoint_survival import VerifiedBindingProfile
@@ -116,6 +117,7 @@ class _PolicyBackend:
         self.recovery_cast = False
         self.corridor_points = None
         self.faced_target = False
+        self.no_action_owned_encounter_ended = False
 
     def telemetry(self):
         value = self.runtime._next_telemetry()
@@ -157,7 +159,18 @@ class _PolicyBackend:
                          _finite(target.get("coordZ"), "survival-target-position-unavailable"))
                 self.runtime._face_target(point)
                 self.faced_target = True
-        receipt = self.actions.cast(ability_id)
+        try:
+            receipt = self.actions.cast(ability_id)
+        except SurvivalActionPreInputError as exc:
+            post = self.runtime._next_telemetry()
+            if (post["encounter"]["present"] is False
+                    and post["player"]["inCombat"] is False):
+                self.no_action_owned_encounter_ended = True
+                return {"accepted": False, "encounterEnded": True,
+                        "inputSent": False,
+                        "reason": "target-ended-before-action-admission",
+                        "admissionError": str(exc)}
+            raise
         baseline = receipt.get("outcomeBaseline") if isinstance(receipt, dict) else None
         baseline_clock = receipt.get("admissionFrameTime") if isinstance(receipt, dict) else None
         _require(type(receipt.get("admissionEpoch")) is int
@@ -215,12 +228,27 @@ class _PolicyBackend:
         _require(callable(begin), "survival-encounter-reset-unavailable")
         begin()
         self.faced_target = False
+        self.no_action_owned_encounter_ended = False
         self.mode = "combat"
 
     def release_combat(self, reason):
         result = self.actions.cancel()
         self.mode = None
-        receipt = self.runtime._release_receipt(result, reason)
+        if isinstance(result, dict) and result.get("status") == "no-survival-action-owned":
+            telemetry = self.runtime._latest_telemetry or {}
+            clean = bool(
+                self.no_action_owned_encounter_ended
+                and (telemetry.get("encounter") or {}).get("present") is False
+                and (telemetry.get("player") or {}).get("inCombat") is False)
+            if not clean:
+                raise WaypointSurvivalRuntimeError(
+                    "survival-no-action-owned-cleanup-unverified")
+            receipt = {"releaseSucceeded": True, "desktopInputsDown": [],
+                       "inputSent": False, "reason": reason,
+                       "ownership": "no-survival-action-owned",
+                       "admissionReason": result.get("reason")}
+        else:
+            receipt = self.runtime._release_receipt(result, reason)
         if receipt["releaseSucceeded"]:
             self.runtime._target_id = None
         return receipt
@@ -518,10 +546,14 @@ class WaypointSurvivalRuntime:
             native_target_number = 0
         native_target = (f"u{native_target_number:016X}"
                          if 0 < native_target_number < 2**64 else None)
-        _require(_same(native_target, frame.get("targetId")),
-                 "native-survival-target-mismatch")
         combat = (native_player.get("combat") or {}).get("value")
         _require(type(combat) is bool, "native-survival-combat-unavailable")
+        api_target_id = frame.get("targetId")
+        selection_cleared = bool(
+            native_target is None and isinstance(api_target_id, str)
+            and api_target_id and combat is False)
+        _require(_same(native_target, api_target_id) or selection_cleared,
+                 "native-survival-target-mismatch")
         addon_health = _finite(player.get("health"), "player-health-unavailable")
         addon_health_max = _finite(player.get("healthMax"), "player-health-unavailable")
         _require(addon_health_max > 0 and 0 <= addon_health <= addon_health_max,
@@ -563,7 +595,7 @@ class WaypointSurvivalRuntime:
                      "player-power-max-unavailable")
             result_player["resourcePct"] = power * 100.0 / maximum
 
-        target_id = frame.get("targetId")
+        target_id = None if selection_cleared else api_target_id
         selected_exists = target_id is not None
         player_level = player.get("level")
         target_level = target.get("level")
@@ -629,7 +661,9 @@ class WaypointSurvivalRuntime:
                      "levelDelta": (float(target_level - player_level)
                                     if threat_known else None),
                      "losing": False, "incomingDamageObserved": incoming_exact,
-                     "targetHealthReconciliation": target_reconciliation}
+                     "targetHealthReconciliation": target_reconciliation,
+                     "selectionReconciliation": (
+                         "cleared-during-acquisition" if selection_cleared else "matched")}
         if self._profile["abilities"].get("interrupt") is not None and threat_known:
             _require(type(target.get("casting")) is bool,
                      "target-cast-state-unavailable")
@@ -691,7 +725,9 @@ class WaypointSurvivalRuntime:
 
     def _fresh_action_report(self):
         """Acquire and publish a newer admitted frame immediately before an action."""
-        self._next_telemetry()
+        telemetry = self._next_telemetry()
+        _require(telemetry["encounter"]["present"] is True,
+                 "survival-action-encounter-ended")
         return deepcopy(self._latest_report)
 
     def _build_actions(self, adapter, stop):

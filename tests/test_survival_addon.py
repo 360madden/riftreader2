@@ -265,6 +265,22 @@ class SurvivalAddonTests(unittest.TestCase):
         self.assertTrue(self.command("setup "+new+" A01")[0])
         self.assertEqual(set(self.observe(28)["controls"]["actions"]),{"A01"})
 
+    def test_all_secure_profile_buttons_fit_left_of_chat_below_character_frame(self):
+        self.lua.execute("UIParent.GetHeight=function() return 1024 end")
+        ids=[f"A{i:02}" for i in range(1,9)]
+        for key in ids:
+            self.st.abilityList[key]=True
+            self.st.abilities[key]=self.lua.table(id=key,name=key)
+        self.assertTrue(self.command("setup "+NONCE+" "+",".join(ids))[0])
+        for i in range(8):
+            frame=self.g.TEST_FRAMES[f"RR2SurvivalSlot{i+1}"]
+            self.assertEqual((frame.SetPointValue[4],frame.SetPointValue[5],
+                              frame.SetWidthValue[1],frame.SetHeightValue[1]),
+                             (20+120*(i%2),180+43*(i//2),116,40))
+        cancel=self.g.TEST_FRAMES.RR2SurvivalCancel
+        self.assertEqual((cancel.SetPointValue[4],cancel.SetPointValue[5],
+                          cancel.SetWidthValue[1],cancel.SetHeightValue[1]),(20,352,236,40))
+
 
 if __name__ == "__main__":
     unittest.main()

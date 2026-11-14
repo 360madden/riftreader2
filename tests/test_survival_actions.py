@@ -9,7 +9,8 @@ from unittest.mock import patch
 
 from scripts import survival_actions as actions_module
 from scripts.survival_actions import (ActionBackend, ActionPin, SurvivalActions,
-                                      SurvivalActionError, client_rectangle,
+                                      SurvivalActionError, SurvivalActionPreInputError,
+                                      client_rectangle,
                                       native_combat_click)
 
 
@@ -506,6 +507,36 @@ class SurvivalActionTests(unittest.TestCase):
         self.assertEqual("cancel-click", diagnostic["stage"])
         self.assertTrue(diagnostic["nativeReceiptFromAttempt"])
         self.assertEqual(raw, diagnostic["rawNativeReceipt"])
+
+    def test_cast_target_disappears_before_native_admission_needs_no_cleanup_click(self):
+        initial = frame()
+        ended = frame()
+        ended["snapshot"].update(sequence=3, frameTime=3.0, targetId=None)
+        ended["snapshot"]["target"] = {}
+        ended["snapshot"]["controls"]["actions"]["ability-1"]["ability"].pop(
+            "target", None)
+        reports = iter([initial, ended])
+        adapter = SimpleNamespace(host="AMD-DESKTOP", pid=7,
+                                  reserve=lambda: Lease([]))
+        profile = {"coordinateBasis": BASIS, "abilities": {"damage": "ability-1"}}
+        with patch.object(actions_module, "inspect_client_geometry", return_value=TARGET), \
+             patch.object(actions_module, "native_combat_click") as native:
+            backend = ActionBackend(adapter, lambda: next(reports), profile,
+                                    threading.Event())
+            backend.begin_encounter()
+            with self.assertRaisesRegex(
+                    SurvivalActionPreInputError,
+                    "survival-pre-input-action-refused: survival-frame-target-mismatch"):
+                backend.cast("ability-1")
+            release = backend.cancel()
+        native.assert_not_called()
+        self.assertEqual(
+            {"status": "no-survival-action-owned", "inputSent": False,
+             "reason": "survival-frame-target-mismatch",
+             "errorType": "SurvivalActionError"}, release)
+        self.assertFalse(backend.input_release_fault)
+        self.assertEqual("cast-admission", backend.action_diagnostic["stage"])
+        self.assertFalse(backend.action_diagnostic["nativeReceiptFromAttempt"])
 
 
 if __name__ == "__main__":

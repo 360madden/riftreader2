@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 from scripts.waypoint_survival_runtime import (
     _PolicyBackend, WaypointSurvivalRuntime, WaypointSurvivalRuntimeError)
+from scripts.survival_actions import SurvivalActionPreInputError
 
 
 NONCE = "0123456789abcdef0123456789abcdef"
@@ -314,6 +315,56 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual("changed-during-acquisition",
                          telemetry["encounter"]["targetHealthReconciliation"])
         self.assertFalse(telemetry["encounter"]["present"])
+
+    def test_native_selection_clear_out_of_combat_wins_over_stale_api_target(self):
+        self.runtime.configure(self.profile, Adapter())
+        self.runtime._adapter, self.runtime._player_id = Adapter(), PLAYER
+        stale = frame(2)
+        cleared = native()
+        cleared["player"]["combat"]["value"] = False
+        cleared["selectedTarget"] = {
+            "available": False, "key": None,
+            "health": {"available": False}, "level": {"available": False}}
+        telemetry = self.runtime._normalize(stale, cleared)
+        self.assertFalse(telemetry["encounter"]["present"])
+        self.assertEqual("cleared-during-acquisition",
+                         telemetry["encounter"]["selectionReconciliation"])
+        cleared["player"]["combat"]["value"] = True
+        with self.assertRaisesRegex(WaypointSurvivalRuntimeError,
+                                    "native-survival-target-mismatch"):
+            self.runtime._normalize(stale, cleared)
+
+    def test_preinput_target_end_is_clean_only_after_fresh_out_of_combat_proof(self):
+        self.runtime.configure(self.profile, Adapter())
+        self.runtime.preflight(Adapter(), threading.Event())
+
+        class EndedActions(Actions):
+            def cast(self, ability_id):
+                raise SurvivalActionPreInputError(
+                    "survival-pre-input-action-refused: survival-frame-target-mismatch")
+
+            def cancel(self):
+                return {"status": "no-survival-action-owned", "inputSent": False,
+                        "reason": "survival-frame-target-mismatch"}
+
+        backend = _PolicyBackend(self.runtime, EndedActions())
+        backend.start_combat()
+        ended = deepcopy(self.runtime._latest_telemetry)
+        ended["encounter"]["present"] = False
+        ended["player"]["inCombat"] = False
+
+        def next_telemetry():
+            self.runtime._latest_telemetry = deepcopy(ended)
+            return deepcopy(ended)
+
+        self.runtime._next_telemetry = next_telemetry
+        result = backend.cast(ABILITY)
+        self.assertEqual((False, True, False),
+                         (result["accepted"], result["encounterEnded"],
+                          result["inputSent"]))
+        release = backend.release_combat("combat-complete")
+        self.assertTrue(release["releaseSucceeded"])
+        self.assertEqual("no-survival-action-owned", release["ownership"])
 
     def test_cancel_reference_forwards_to_active_consumer_without_snapshot(self):
         self.runtime.configure(self.profile, Adapter())

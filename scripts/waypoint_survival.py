@@ -351,7 +351,16 @@ class WaypointSurvivalRunner:
                 if chosen is not None:
                     role, binding = chosen
                     receipt = self.ports.cast(binding)
-                    if not isinstance(receipt, dict) or receipt.get("accepted") is not True:
+                    if (isinstance(receipt, dict)
+                            and receipt.get("encounterEnded") is True
+                            and receipt.get("accepted") is False):
+                        # A fresh action admission may observe that the target
+                        # ended after policy selection but before any owned
+                        # input.  The next fresh step performs the ordinary
+                        # fight-end/recovery handoff.
+                        pass
+                    elif (not isinstance(receipt, dict)
+                          or receipt.get("accepted") is not True):
                         self._critical("critical-unavailable")
                     else:
                         self.last_action = {"role": role, "binding": binding,

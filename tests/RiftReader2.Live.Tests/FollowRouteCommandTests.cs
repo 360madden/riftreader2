@@ -635,6 +635,46 @@ public sealed class FollowRouteCommandTests
     }
 
     [Fact]
+    public async Task OvershotBrakeEndpointTurnsInPlaceBeforeBoundedFinishPulse()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(Pose(0, 0), Pose(0, 9.7), Pose(0, 10.31),
+                Pose(0, 10.309), Pose(0, 10.309),
+                Pose(0, 10.309, -170), Pose(0, 10.309, -179),
+                Pose(0, 10.309, 180), Pose(0, 10.309, 180),
+                Pose(0, 10.20, 180), Pose(0, 10.20, 180)),
+            input, () => null, NoDelay);
+
+        Assert.Equal("arrived", result.Status);
+        Assert.Equal(2, input.Events.Count(x => x == "down:w"));
+        Assert.Equal(2, input.Events.Count(x => x == "up:w"));
+        Assert.True(input.Events.IndexOf("up:w") < input.Events.IndexOf("down:d"));
+        Assert.True(input.Events.LastIndexOf("up:d") < input.Events.LastIndexOf("down:w"));
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task FinishAlignmentRemainsBoundedAndNeverMovesForwardUnverified()
+    {
+        var input = new Input();
+        var poses = new List<FollowRouteCommand.Pose>
+        {
+            Pose(0, 0), Pose(0, 9.7), Pose(0, 10.31),
+            Pose(0, 10.31), Pose(0, 10.31)
+        };
+        poses.AddRange(Enumerable.Repeat(Pose(0, 10.31), 8));
+        var result = await FollowRouteCommand.FollowAsync(Options(),
+            Reader(poses.ToArray()), input, () => null, NoDelay);
+
+        Assert.Equal("halted", result.Status);
+        Assert.Equal("post-release-finish-alignment-not-settled", result.Reason);
+        Assert.Equal(1, input.Events.Count(x => x == "down:w"));
+        Assert.Equal(1, input.Events.Count(x => x == "up:w"));
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
     public async Task DirectPathAndTurnGuardsHaltAndRelease()
     {
         var turnInput = new Input();
@@ -674,15 +714,20 @@ public sealed class FollowRouteCommandTests
     public async Task CoarseSamplePassingGoalReleasesBeforeAnySteering()
     {
         var input = new Input();
+        var poses = new List<FollowRouteCommand.Pose>
+        {
+            Pose(0, 0), Pose(0, 9.5), Pose(0, 10.5),
+            Pose(0, 10.5), Pose(0, 10.5)
+        };
+        poses.AddRange(Enumerable.Repeat(Pose(0, 10.5), 8));
         var result = await FollowRouteCommand.FollowAsync(Options(),
-            Reader(Pose(0, 0), Pose(0, 9.5), Pose(0, 10.5), Pose(0, 10.5), Pose(0, 10.5)),
+            Reader(poses.ToArray()),
             input, () => null, NoDelay);
         Assert.Equal("halted", result.Status);
-        Assert.Equal("post-release-arrival-not-settled", result.Reason);
+        Assert.Equal("post-release-finish-alignment-not-settled", result.Reason);
         Assert.Equal(1, input.Events.Count(x => x == "down:w"));
         Assert.DoesNotContain("down:a", input.Events);
-        Assert.DoesNotContain("down:d", input.Events);
-        Assert.True(input.Events.IndexOf("up:w") < input.Events.Count);
+        Assert.True(input.Events.IndexOf("up:w") < input.Events.IndexOf("down:d"));
     }
 
     [Fact]

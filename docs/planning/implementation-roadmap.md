@@ -113,9 +113,10 @@ Automatic retreat, healthy recovery and rejoin now pass for an unsuitable
 level 50 dummy. Trial 05 followed the walked corridor back to the interruption
 point before completing all three waypoints, with 18.988 auxiliary units over
 retreat and return. The dummy did not retaliate
-and its API relation was absent. Next verify exact attacker/target attribution
-and measured incoming damage from a suitable hostile, then recovery and route
-continuation. Expand learned skill/effect mappings against observed outcomes
+and its API relation was absent. Hostile run 09 then observed exact Coastal
+Stalker Maul damage, native HP down to 18,049 and subsequent full HP. Target
+loss halted that run. Next verify the corrected target-ending path, recovery
+and automatic continuation in the same hostile encounter. Expand learned skill/effect mappings against observed outcomes
 for progression before further visual polish. [Acceptance record](../reference/waypoint-survival-2026-11-14.md).
 
 The original survival foundation provided the following diagnostic intake

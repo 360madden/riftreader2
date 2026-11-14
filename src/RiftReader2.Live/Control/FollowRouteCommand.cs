@@ -687,27 +687,79 @@ internal static class FollowRouteCommand
                         && CrossTrack(settledTwo, travelStart, options.X, options.Z) <= .50;
                     if (stationary && settleOneDistance > ArrivalRadius && settleTwoDistance > ArrivalRadius
                         && settledOnDirectPath
-                        && settleTwoDistance <= .75
-                        && Math.Abs(HeadingError(BearingTo(settledTwo, options.X, options.Z), settledTwo.Bearing)) <= 10)
+                        && settleTwoDistance <= .75)
                     {
-                        SetKey("w", true);
-                        var correctionMilliseconds = observedSpeed > .1
-                            ? Math.Clamp((settleTwoDistance - .20) / observedSpeed * 1000, 20, 120)
-                            : 50;
-                        await delay(TimeSpan.FromMilliseconds(correctionMilliseconds), operationToken);
-                        SetKey("w", false);
-                        await delay(TimeSpan.FromMilliseconds(75), operationToken);
-                        settledOne = await Read();
-                        await delay(TimeSpan.FromMilliseconds(75), operationToken);
-                        settledTwo = await Read();
-                        settledMotion = Distance(settledTwo, settledOne.X, settledOne.Z);
-                        settleOneDistance = Distance(settledOne, options.X, options.Z);
-                        settleTwoDistance = Distance(settledTwo, options.X, options.Z);
-                        stationary = settledMotion <= .05 && Math.Abs(settledTwo.Y - settledOne.Y) <= .10;
-                        settledOnDirectPath = Math.Abs(settledOne.Y - travelStart.Y) <= 1.5
-                            && Math.Abs(settledTwo.Y - travelStart.Y) <= 1.5
-                            && CrossTrack(settledOne, travelStart, options.X, options.Z) <= .50
-                            && CrossTrack(settledTwo, travelStart, options.X, options.Z) <= .50;
+                        // Braking can stop a few centimetres beyond the goal,
+                        // leaving the body pointed away from the tiny remaining
+                        // vector.  Turn in place and prove the turn has settled
+                        // before the one bounded finish-forward pulse.  This is
+                        // not moving steering: no W is held during alignment.
+                        var finishAnchor = settledTwo;
+                        var finishAligned = false;
+                        for (var attempt = 0; attempt < 8
+                            && Volatile.Read(ref terminalReason) is null; attempt++)
+                        {
+                            var finishError = HeadingError(
+                                BearingTo(settledTwo, options.X, options.Z), settledTwo.Bearing);
+                            if (Math.Abs(finishError) <= 2)
+                            {
+                                await delay(TimeSpan.FromMilliseconds(50), operationToken);
+                                var confirmed = await Read();
+                                var positionMotion = Distance(confirmed, finishAnchor.X, finishAnchor.Z);
+                                var bearingMotion = Math.Abs(HeadingError(confirmed.Bearing, settledTwo.Bearing));
+                                var confirmedError = Math.Abs(HeadingError(
+                                    BearingTo(confirmed, options.X, options.Z), confirmed.Bearing));
+                                var confirmedOnPath = Math.Abs(confirmed.Y - travelStart.Y) <= 1.5
+                                    && CrossTrack(confirmed, travelStart, options.X, options.Z) <= .50;
+                                settledTwo = confirmed;
+                                if (positionMotion <= .10 && bearingMotion <= .75
+                                    && confirmedError <= 2 && confirmedOnPath)
+                                {
+                                    finishAligned = true;
+                                    break;
+                                }
+                                continue;
+                            }
+                            var finishTurn = finishError > 0 ? "a" : "d";
+                            var pulseMilliseconds = Math.Clamp(
+                                Math.Abs(finishError) / Math.Max(100, observedTurnRate) * 600, 6, 20);
+                            SetKey(finishTurn, true);
+                            await delay(TimeSpan.FromMilliseconds(pulseMilliseconds), operationToken);
+                            SetKey(finishTurn, false);
+                            await delay(TimeSpan.FromMilliseconds(50), operationToken);
+                            settledTwo = await Read();
+                            if (Distance(settledTwo, finishAnchor.X, finishAnchor.Z) > .10
+                                || Math.Abs(settledTwo.Y - travelStart.Y) > 1.5
+                                || CrossTrack(settledTwo, travelStart, options.X, options.Z) > .50)
+                                break;
+                        }
+                        SetKey("a", false);
+                        SetKey("d", false);
+                        if (!finishAligned)
+                            Interlocked.CompareExchange(ref terminalReason,
+                                "post-release-finish-alignment-not-settled", null);
+                        else
+                        {
+                            settleTwoDistance = Distance(settledTwo, options.X, options.Z);
+                            SetKey("w", true);
+                            var correctionMilliseconds = observedSpeed > .1
+                                ? Math.Clamp((settleTwoDistance - .20) / observedSpeed * 1000, 20, 120)
+                                : 50;
+                            await delay(TimeSpan.FromMilliseconds(correctionMilliseconds), operationToken);
+                            SetKey("w", false);
+                            await delay(TimeSpan.FromMilliseconds(75), operationToken);
+                            settledOne = await Read();
+                            await delay(TimeSpan.FromMilliseconds(75), operationToken);
+                            settledTwo = await Read();
+                            settledMotion = Distance(settledTwo, settledOne.X, settledOne.Z);
+                            settleOneDistance = Distance(settledOne, options.X, options.Z);
+                            settleTwoDistance = Distance(settledTwo, options.X, options.Z);
+                            stationary = settledMotion <= .05 && Math.Abs(settledTwo.Y - settledOne.Y) <= .10;
+                            settledOnDirectPath = Math.Abs(settledOne.Y - travelStart.Y) <= 1.5
+                                && Math.Abs(settledTwo.Y - travelStart.Y) <= 1.5
+                                && CrossTrack(settledOne, travelStart, options.X, options.Z) <= .50
+                                && CrossTrack(settledTwo, travelStart, options.X, options.Z) <= .50;
+                        }
                     }
                     if (settleOneDistance > ArrivalRadius || settleTwoDistance > ArrivalRadius
                         || !stationary || !settledOnDirectPath)

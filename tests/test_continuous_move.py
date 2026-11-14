@@ -318,6 +318,42 @@ class ContinuousMoveTests(unittest.TestCase):
                      self.assertRaisesRegex(Exception, "release is not verified"):
                     self.run_move(final)
 
+    def test_rejected_release_retains_bounded_untrusted_diagnostic_before_recovery(self):
+        final = receipt()
+        final["releaseSucceeded"] = False
+        final["desktopInputsDown"] = ["mouse-left"]
+        final["diagnosticPadding"] = "x" * 40_000
+
+        with self.assertRaisesRegex(Exception, "release is not verified.*recovery verified"):
+            self.run_move(final)
+
+        rows = [json.loads(line) for line in
+                self.adapter.input_receipt_path.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(2, len(rows))
+        rejected, recovery = rows
+        self.assertEqual("native-continuous-move-untrusted", rejected["kind"])
+        self.assertIs(rejected["trusted"], False)
+        self.assertEqual("rejected", rejected["status"])
+        self.assertEqual(0, rejected["childExitCode"])
+        self.assertIn("release is not verified", rejected["validationError"])
+        self.assertEqual({"status": "arrived", "reason": None,
+                          "inputSent": True, "inputSentType": "bool",
+                          "releaseSucceeded": False, "releaseSucceededType": "bool",
+                          "desktopInputsDown": ["mouse-left"],
+                          "desktopInputsDownType": "list",
+                          "desktopInputsDownTruncated": False},
+                         rejected["parsedReleaseFields"])
+        self.assertTrue(rejected["rawStdout"]["truncated"])
+        self.assertGreater(rejected["rawStdout"]["originalCharacters"],
+                           move._UNTRUSTED_OUTPUT_CHARACTERS)
+        self.assertLessEqual(len(rejected["rawStdout"]["text"]),
+                             move._UNTRUSTED_OUTPUT_CHARACTERS + 64)
+        self.assertEqual("native-continuous-move-recovery", recovery["kind"])
+        self.assertTrue(recovery["releaseSucceeded"])
+        self.assertIsNone(self.adapter.last_input_receipt)
+        self.assertFalse(self.adapter._continuous_move_receipt_trusted)
+        self.assertEqual(self.adapter._continuous_move_untrusted, rejected)
+
     def test_blocked_before_first_pose_allows_null_pose_but_retains_trusted_receipt(self):
         final = receipt("blocked", reason="target unavailable")
         final.update(target=None, playerKey=None, position=None,

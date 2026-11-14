@@ -368,6 +368,7 @@ local function actionRect(frame, mapped)
     return rect
 end
 local profileSlots, profileCancel = {}, nil
+local profileLeft, profileTop = 20, 180
 local function prepareSlot(index, id)
     if not nonSecure() then return false end
     local entry = profileSlots[index]
@@ -389,13 +390,14 @@ local function prepareSlot(index, id)
             or d.name:find("[%z\1-\31]") or d.positioned or d.autoattack or d.passive then return false end
     for i, existing in pairs(profileSlots) do if i ~= index and existing.id == id then return false end end
     local w,h = viewport()
-    if not w or w < 246 or h < 222 then return false end
-    -- Two columns at the top-right, independent of the draggable dashboard.
-    local x, y = w-244+((index-1)%2)*120, 2+math.floor((index-1)/2)*43
+    local cancelTop = profileTop + 172
+    if not w or w < profileLeft + 236 or h < cancelTop + 40 then return false end
+    local x = profileLeft + ((index-1)%2)*120
+    local y = profileTop + math.floor((index-1)/2)*43
     local monitor = private.Casting.New(Inspect)
     if not monitor:Select(id) then return false end
     if not profileCancel then
-        profileCancel = secureButton("RR2SurvivalCancel","CANCEL / STOP",w-244,174,236,"danger")
+        profileCancel = secureButton("RR2SurvivalCancel","CANCEL / STOP",profileLeft,cancelTop,236,"danger")
         if not safeVisible(profileCancel,false) then profileCancel=nil; return false end
     end
     local cancelOk,cancelResult = pcall(profileCancel.EventMacroSet,profileCancel,

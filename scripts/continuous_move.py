@@ -32,6 +32,7 @@ from scripts.waypoint_limits import MAX_ROUTE_DISTANCE, MAX_TRIP_SECONDS, MAX_WA
 _DOTNET_FILETIME_OFFSET = 504911232000000000
 _RELEASE_GRACE_SECONDS = 10.0
 _FORCED_EXIT_GRACE_SECONDS = 15.0
+_UNTRUSTED_OUTPUT_CHARACTERS = 16_384
 
 
 class EncounterInterrupted(RuntimeError):
@@ -214,6 +215,59 @@ def _retain(adapter, receipt):
     return path
 
 
+def _bounded_text(value):
+    if isinstance(value, Exception):
+        value = f"{type(value).__name__}: {value}"
+    elif not isinstance(value, str):
+        value = "" if value is None else str(value)
+    size = len(value)
+    if size <= _UNTRUSTED_OUTPUT_CHARACTERS:
+        return {"text": value, "originalCharacters": size, "truncated": False}
+    half = _UNTRUSTED_OUTPUT_CHARACTERS // 2
+    return {"text": value[:half] + "\n...[bounded untrusted output]...\n" + value[-half:],
+            "originalCharacters": size, "truncated": True}
+
+
+def _retain_untrusted(adapter, *, returncode, stdout, stderr, parsed, failure):
+    """Retain bounded diagnostics without admitting an untrusted move receipt."""
+    def scalar(value):
+        if value is None or type(value) in (bool, int, float):
+            return value
+        return value[:128] if isinstance(value, str) else None
+
+    release = None
+    if isinstance(parsed, dict):
+        down = parsed.get("desktopInputsDown")
+        release = {
+            "status": parsed.get("status") if isinstance(parsed.get("status"), str) else None,
+            "reason": (parsed.get("reason")[:512]
+                       if isinstance(parsed.get("reason"), str) else None),
+            "inputSent": scalar(parsed.get("inputSent")),
+            "inputSentType": type(parsed.get("inputSent")).__name__,
+            "releaseSucceeded": scalar(parsed.get("releaseSucceeded")),
+            "releaseSucceededType": type(parsed.get("releaseSucceeded")).__name__,
+            "desktopInputsDown": ([str(value)[:128] for value in down[:32]]
+                                  if isinstance(down, list) else None),
+            "desktopInputsDownType": type(down).__name__,
+            "desktopInputsDownTruncated": isinstance(down, list) and len(down) > 32,
+        }
+    record = {
+        "version": 1, "kind": "native-continuous-move-untrusted",
+        "trusted": False, "status": "rejected", "childExitCode": returncode,
+        "validationError": str(failure)[:1024], "parsedReleaseFields": release,
+        "rawStdout": _bounded_text(stdout), "rawStderr": _bounded_text(stderr),
+    }
+    adapter._continuous_move_untrusted = record
+    try:
+        path = Path(adapter.input_receipt_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, separators=(",", ":"), allow_nan=False) + "\n")
+    except (OSError, TypeError, ValueError) as exc:
+        record["receiptWriteError"] = str(exc)
+    return record
+
+
 def _validate_recovery(receipt, adapter, key, returncode):
     """Validate one exact-target move-key --release-only receipt."""
     if not isinstance(receipt, dict):
@@ -330,6 +384,7 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         raise WaypointError(
             "Previous continuous movement cleanup remains unverified; recreate the exact-target adapter")
     adapter._continuous_move_recovery = None
+    adapter._continuous_move_untrusted = None
     x, z = _finite(x, "goal X"), _finite(z, "goal Z")
     if (type(max_seconds) is not int or not 1 <= max_seconds <= MAX_TRIP_SECONDS):
         raise WaypointError(f"Movement time must be 1-{MAX_TRIP_SECONDS} seconds")
@@ -433,6 +488,7 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                     _create_stop(stop_path)
                 except OSError as exc:
                     forced_exit_reason = f"Could not publish native STOP: {exc}"
+        parsed_receipt = None
         try:
             for reader in readers:
                 reader.join(timeout=5)
@@ -446,12 +502,18 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                 detail = stderr[0].strip()[:4000] if stderr and isinstance(stderr[0], str) else ""
                 raise ValueError(f"Native movement result unavailable (exit code {child.returncode})"
                                  + (": " + detail if detail else ""))
-            receipt = _validate_receipt(_parse_final(stdout[0]), adapter, (x, z), stop_path,
+            parsed_receipt = _parse_final(stdout[0])
+            receipt = _validate_receipt(parsed_receipt, adapter, (x, z), stop_path,
                                         owner, child.returncode)
             receipt_path = _retain(adapter, receipt)
             adapter._continuous_move_receipt_trusted = True
             adapter._continuous_input_release_fault = False
         except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raw_stdout = stdout[0] if stdout else None
+            raw_stderr = stderr[0] if stderr else None
+            _retain_untrusted(adapter, returncode=child.returncode,
+                              stdout=raw_stdout, stderr=raw_stderr,
+                              parsed=parsed_receipt, failure=exc)
             recovery = _recover_after_untrusted_exit(adapter, executable, exc, recovery_run)
             release = ("explicit W/A/D key-up recovery verified"
                        if recovery["releaseSucceeded"]

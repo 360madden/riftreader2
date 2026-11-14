@@ -182,6 +182,27 @@ class WaypointSurvivalTests(unittest.TestCase):
         self.assertEqual("fight", state["state"])
         self.assertFalse(any(call[0] == "cast" for call in h.calls))
 
+    def test_target_ending_before_owned_action_uses_normal_fight_end_handoff(self):
+        runner, h = self.runner([
+            observation(present=True, combat=True),
+            observation(present=True, combat=True),
+            observation(present=False, combat=False),
+        ])
+        h.cast = lambda binding: {
+            "accepted": False, "encounterEnded": True, "inputSent": False,
+            "reason": "target-ended-before-action-admission"}
+        runner = WaypointSurvivalRunner(
+            PROFILE, h.ports(), checkpoint=7, pending_leg={"from": 7, "to": 8})
+        runner.record_route_trail_point((1, 2, 3))
+        runner.start()
+        self.assertEqual("fight", runner.step()["state"])
+        raced = runner.step()
+        self.assertEqual("fight", raced["state"])
+        self.assertIsNone(raced["coordinator"]["latchReason"])
+        ended = runner.step()
+        self.assertEqual("rejoin", ended["state"])
+        self.assertIn(("combat-release", "combat-complete"), h.calls)
+
     def test_knockback_rejoins_known_corridor_without_advancing_checkpoint(self):
         runner, h = self.runner([observation(off=True), observation(on=True)])
         runner.record_route_trail_point((1, 2, 3))

@@ -1,5 +1,16 @@
 # Current status
 
+**November 14 — incoming damage measured in a physical Coastal Stalker encounter.**
+On AMD-DESKTOP, run 09 captured Maul from the selected hostile to the exact
+player. Native HP reached 18,049 then returned to 18,208/18,208, while separately
+timed addon samples reached 18,014. Target loss halted the run before automatic
+route continuation. A separate explicit Resume finished all three waypoints.
+After addon reload and setup, the left-side ability toolbar and Cancel/STOP
+were visibly clear of the minimap at 1266×714.
+[Hostile telemetry](../artifacts/survival-hostile-20261114/telemetry09.jsonl) ·
+[Run result](../artifacts/survival-hostile-20261114/run09.jsonl) ·
+[Resume receipt](../artifacts/survival-waypoint-run-d14c38a5a8ed47aca94b5a4a2129a7d2.json).
+
 **November 14 — survival route automatically retreated and finished on AMD-DESKTOP.**
 Trial 05 handled one native combat interruption, retreated, then retraced the
 walked corridor to the interruption point before continuing to its pending
