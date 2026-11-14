@@ -22,6 +22,13 @@ The route follower and combat response must share the existing input ownership
 and STOP controls. Their final module/product placement is an implementation
 choice, not a reason to omit the capability.
 
+**Progression clarification, November 14:** Joey also wants leveling along the
+way. A low-level character must not blindly fight a stronger hostile just because
+it is on the route. The product goal is to arrive alive while making useful,
+appropriate XP/level progress: assess encounters before engagement, choose
+suitable fights, avoid excessive danger, and level in a suitable area first if
+the destination cannot yet be reached through a known safe route.
+
 This updates planning direction; it does not start combat implementation or
 grant new game-input, casting, restart or cross-host authority. Live work still
 requires its applicable authority and fresh identity/ownership checks.
@@ -39,12 +46,15 @@ requires its applicable authority and fresh identity/ownership checks.
 | Longer routes | Shared 1,000-unit / 500-waypoint envelope, 30,000 recording samples, 30-minute trip budget, larger CLI transport, preview Fit to 1,500 units and bounded display annotations. | **Implemented and offline verified**, including simulated 1,000-unit/500-point execution and long STOP/Resume; no long-route live trip was performed. Existing files/checkpoints are compatible. [Longer routes](../workflows/physical-waypoints.md#longer-routes). |
 | Other native research | Ability/catalog/name, stats/XP, target/unit, buff and cost/cooldown/cast candidates and locating tools exist. | Field-specific partial readers/static findings and historical samples; not a fully qualified live combat/telemetry API. [Earlier discovery packages](discovery-roadmap-2026-11-06.md). |
 | Casting diagnostics | Casting addon readout, ability selection, API checks, outcome recording and protected manual Cast/Stop controls exist, with historical dummy-test evidence. | **No working route-integrated combat system.** Manual addon controls and native ability catalogs do not establish external ability execution, defensive decisions or current physical-host combat acceptance. [Casting readout](../reference/casting-readout.md). |
+| Level/XP research | Native player/target level branches and experience seed/value readers exist, including accumulated/needed XP and explicit unavailable states. | No demonstrated current physical kill-to-XP correlation or working leveling loop. Hostility, attacker/aggro and elite/rank classification are missing; a combat byte or target level is insufficient. [Player/target/experience findings](../reference/native-player-context-candidates.md). |
 
 ## Remaining work, ranked
 
-The next product outcome is a character that can survive an encounter while
-travelling and preserve its route. Combat prerequisites should deliver only the
-data/actions needed for the first useful encounter, not wait for every stat,
+The next product outcome is a character that can judge encounters, win suitable
+fights, gain useful experience and preserve its route. Avoiding a fight can be
+the correct decision; a reactive fight loop alone cannot make an over-levelled
+route safe. Combat prerequisites should deliver only the data/actions needed
+for the first useful encounter, not wait for every stat,
 ability, buff or cooldown to be discovered. Native research can proceed in
 parallel without competing for the live reader or input owner. Useful scoped
 candidate output remains acceptable for research; gameplay decisions need the
@@ -52,15 +62,16 @@ specific freshness/meaning and action feedback they depend on.
 
 | Rank | Work | Current gap and useful completion point |
 | --- | --- | --- |
-| **1** | **Combat essentials: usable state and verified actions** | Reuse player/vitals, target/unit, ability and casting work to supply the minimum live state: alive/dead, HP, applicable resource, combat/engagement state, relevant target identity/health/range and readiness of a small selected ability set. Establish a bounded, normal game-input action path and verify what actually happened. Missing/stale state must stop decisions; a catalog or sent key is not successful targeting/casting. Current physical HP/resource/target limits and historical manual casting evidence remain gaps. |
-| **2** | **A minimal defensive combat system that actually survives an encounter** | Start with the current character/build and a small explicit attack/defensive/recovery set against one ordinary enemy. Handle being attacked, valid engaged-target selection, attack/defense decisions, resource/cooldown constraints, target death and disengagement. Stop repeated failed actions on wrong target, range/facing/LOS failure or lack of progress; define bounded retreat/help behavior for a bad fight rather than improvising indefinite combat. Useful completion is surviving and verifying one real encounter, not finishing an exhaustive rotation engine. |
-| **3** | **Connect travel, combat, recovery and Resume** | Pause route movement when combat response takes ownership; release movement keys and retain the genuine unfinished checkpoint. Use one controller so walking/turning and fighting cannot issue conflicting actions. STOP overrides travel, combat and recovery. After the encounter, verify alive/out-of-combat state, acceptable health/resource and current route position before offering explicit Resume. Death, stale telemetry or failed recovery stops the run without automatic retrials. Pausing alone is an interruption safeguard, not a solved survival system. |
-| **4** | **Prove useful longer travel with an encounter** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, travel, respond to an encounter, recover and Resume, then Reverse where useful. Retain separate STOP-mid-leg and same-build restart/Resume coverage as appropriate. Success means arriving alive with correct progress and released input. Fix actual failures, then extend distance/complexity; 1,000 units is capacity, not a mandatory first trial. Clear-ground distance-only checks can proceed independently, but do not establish survival. |
-| **5** | **Make route location and height context dependable** | Zone tagging and measured/estimated height cues already work. Remaining work is actual different-floor/elevation and zone/world/instance cases, preserving measured path corners and refusing an inappropriate route/Resume. Combat does not replace terrain/obstacle checks. |
-| **6** | **Broaden useful player, target and ability retrieval and expose it to consumers** | Extend beyond the combat essentials with coherent nearby-unit detail, additional stats/XP, ability costs, cooldown/cast/buff outputs and consistent source/time/identity/availability contracts. Reuse the physical commands, composite reader, catalog and exports. Prove useful consumer requests before adding another service/SDK/framework. Research-only candidates do not become gameplay decision inputs automatically. |
-| **7** | **Finish physical-host addon reference acceptance where it adds value** | Establish the loaded RR2R1 producer, nonce/session binding and advancing same-player observations when needed as independent reference/fallback. Disk hashes and old lab success are insufficient. This can move earlier for a concrete combat-data need; native work need not wait for unrelated addon completion. |
+| **1** | **Combat essentials and encounter assessment** | Reuse player/vitals, target/unit, ability and casting work for alive/dead state, usable HP/resource/combat state, player/enemy levels, relevant enemy identity/health/range and a small ability set. Before voluntarily engaging, consider level difference, ordinary/elite/group status where known, nearby additional enemies, current readiness and observed fight outcomes. Initially prefer isolated ordinary enemies near the player's level; avoid stronger, elite, grouped or unknown-risk targets. Choose a safer known route or appropriate leveling area when needed. Establish a bounded normal-input action path with actual target/cast feedback. Missing/stale/unqualified decision data is not permission to assume a fight is safe. |
+| **2** | **A small working combat and recovery loop** | Start with the current character/build and a limited attack/defensive/recovery set against one suitable enemy. Support deliberate engagement for XP as well as defense when attacked. Observe outcomes, health loss, resource/cooldown state, target death and disengagement. Stop blind retries on wrong target, range/facing/LOS failure or no progress. Define bounded retreat/help behavior for a losing fight. Useful completion is winning and recovering from one real suitable encounter, not a rotation engine for every class. |
+| **3** | **A bounded leveling loop with observed progress** | Select suitable reachable XP targets; fight, verify any XP gain, recover, then choose another target only while health/resource/readiness and the trip's limits permit. Track player level and XP-to-next-level using valid field semantics; do not assume every kill rewards XP or that XP remains monotonic across a level-up. Detect level-up, refresh stats/resources/available ability state and reassess suitable enemies. Use a travel objective, XP/level objective, detour/time budget or explicit stop condition; do not turn a trip into indefinite grinding. |
+| **4** | **Connect travel, threat avoidance, leveling and Resume** | Share one input owner across movement, combat and recovery. Preserve the genuine unfinished route checkpoint while fighting or taking a bounded XP detour. Skipping dangerous encounters requires a known traversable alternative; no planner/escape path is assumed to exist. Return from a detour to a valid route admission point through known traversable ground rather than loosening Resume checks or advancing the cursor for kills. After recovery, recheck alive/out-of-combat state, health/resource and route context, then offer explicit Resume. STOP overrides every mode; death or failed recovery stops without automatic retrials. |
+| **5** | **Prove useful longer travel and progression** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, travel, reject a clearly unsuitable encounter, win a suitable one, observe XP, recover and Resume. Success means arriving alive with valid progress and released input, with actual XP reported separately from any level-up. Retain STOP-mid-leg, Reverse and same-build restart/Resume cases as useful. Fix actual failures, then extend distance/complexity; 1,000 units is capacity, not a mandatory first trial. Clear-ground distance-only tests do not establish safe leveling travel. |
+| **6** | **Make route location and height context dependable** | Zone tags and measured/estimated height cues already work. Cover actual floors/elevation and zone/world/instance changes; preserve measured path corners and refuse inappropriate route/Resume. Move a specific context check earlier if an XP detour requires it. Combat/level advantage does not establish walkability or obstacle clearance. |
+| **7** | **Broaden retrieval and expose useful data to consumers** | Extend beyond the survival/progression essentials with coherent nearby-unit detail, additional stats, ability costs, cooldown/cast/buff outputs and consistent source/time/identity/availability contracts. Reuse physical commands, the composite reader, catalog and exports. Prove useful consumer requests before adding a service/SDK/framework. |
+| **8** | **Finish physical-host addon reference acceptance where useful** | Establish the loaded RR2R1 producer, nonce/session binding and advancing same-player observations when needed as independent reference/fallback. Disk hashes and old lab success are insufficient. Move this earlier for a concrete combat/XP-data need; native work need not wait for unrelated addon completion. |
 
-For ranks 1–4, current input/health-change deferrals and action authority must be
+For ranks 1–5, current input/health-change deferrals and action authority must be
 resolved for the specific live experiment before it runs. The roadmap correction
 does not itself initiate an attack, health-change test or uncontrolled run.
 
@@ -79,9 +90,11 @@ does not itself initiate an attack, health-change test or uncontrolled run.
 - **Terrain/navmesh, obstacle avoidance and automatic stuck detours:** not
   implemented. Longer routes still require a known clear taught path. Dedicated
   terrain routing, indefinite patrol and quest automation remain future work.
-  Defensive combat and survival during route travel are now ranked above; a
-  general combat engine for every class/build or unattended farming is not the
-  first combat milestone.
+  Combat, level-appropriate encounters and bounded XP/level progression during
+  travel are ranked above. Leveling is part of the goal; a general engine for
+  every class/build, automatic build/gear allocation, quests or indefinite
+  unattended farming is not the first progression milestone. Threat-based
+  avoidance must use known traversable routes until useful path data exists.
 - **VMware labs:** retired as active RR2 targets. Their code/evidence remains
   historical; this roadmap does not restart them or authorize another physical
   host. A session operates only its verified local host.

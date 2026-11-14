@@ -1,5 +1,13 @@
 # Current status
 
+Planning clarification November 14: route travel also includes **threat
+assessment and level-appropriate XP/level progression**. Avoid high-risk
+hostiles, select suitable encounters, recover and preserve route progress;
+use a safer known route or suitable leveling area when a destination is too
+dangerous. XP/level readers are candidates, not a working leveling system.
+The [ranked roadmap](planning/implementation-roadmap.md) now includes this
+scope. No game input, combat or leveling run was started.
+
 Planning correction November 14: **combat and survival are required for useful
 route travel**. The [ranked roadmap](planning/implementation-roadmap.md) now puts
 combat essentials, a minimal defensive encounter and travel/combat/recovery/Resume

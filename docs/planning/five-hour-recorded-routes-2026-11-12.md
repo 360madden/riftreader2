@@ -119,25 +119,36 @@ connecting segment. Full saved world mapping remains later work.
 
 ## Remaining Waypoints work, ranked
 
-1. **Survival-aware route execution.** A route is not successful if the character
-   dies along the way. Supply the combat state/actions needed for a minimal
-   defensive fight, then connect travel interruption, checkpoint preservation,
+1. **Threat-aware combat and route execution.** A route is not successful if the
+   character dies along the way. Assess encounters before engagement; low-level
+   characters must avoid high-level hostiles rather than blindly fight them.
+   Enemy level alone is insufficient: consider current readiness, additional
+   enemies and elite/hostility information where available; do not assume unknown
+   targets are safe. Supply state/actions for a suitable first fight, then connect
+   travel interruption, checkpoint preservation,
    one shared input owner, combat, recovery and explicit Resume. STOP must
    override every mode. This capability is missing; casting diagnostics and
    ability catalogs do not supply a working combat controller. The
    [overall roadmap](implementation-roadmap.md#remaining-work-ranked) ranks its
    prerequisite and implementation slices first.
-2. **One useful longer taught route in the real game.** Record a known-traversable
+2. **Useful leveling along the way.** Select suitable reachable XP targets,
+   verify actual XP gain, recover and re-evaluate after level-up. An unsafe
+   destination may need a safer known route or leveling in a suitable area first.
+   Preserve the travel objective and genuine checkpoint during bounded detours;
+   return through known traversable ground before normal Resume admission.
+   Existing level/XP candidates are not yet a functioning progression system.
+3. **One useful longer taught route in the real game.** Record a known-traversable
    50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
-   and Reverse. Add an encounter/defense/recovery/Resume case before calling it
-   dependable travel; distance-only clear-ground checks remain separately useful.
+   and Reverse. Add unsuitable-target rejection plus suitable combat, measured XP,
+   recovery and Resume before calling it dependable leveling travel;
+   distance-only clear-ground checks remain separately useful.
    Include full-game restart/Resume when appropriate and authorized.
    Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
    trial and a broad stress sweep are not required.
-3. **Location and height context for saved-route reuse.** Test actual slopes,
+4. **Location and height context for saved-route reuse.** Test actual slopes,
    different floors and zone/world/instance transitions. Keep measured and
    estimated heights distinct; reject inappropriate context before movement.
-4. **Resolve observed presentation/recovery failures during use.** Large-route
+5. **Resolve observed presentation/recovery failures during use.** Large-route
    display limiting is implemented; extended sessions, camera/window variations
    and mixed-DPI transitions have incomplete live coverage. Address a concrete
    failing case when it affects the next useful route rather than starting
@@ -158,8 +169,9 @@ These are planning recommendations, not new game-input or restart authority.
   and obstacle clearance remain unresolved; a projected point proves none of them.
 - Defer automatic obstacle avoidance, terrain extraction/navmeshes, automatic
   stuck detours, quests and indefinite patrol. Defensive combat and survival are
-  now near-term roadmap priorities, not deferred merely because they involve
-  combat. Longer taught routes are
+  now near-term roadmap priorities, including suitable XP/level progression
+  along the way. A general indefinite farming system is not the first milestone.
+  Longer taught routes are
   already implemented; they do not add terrain or obstacle clearance.
   Revisit terrain tooling when actual usable geometry is available.
 - Black captures alone are not proof that RIFT is black or crashed. Joey reported

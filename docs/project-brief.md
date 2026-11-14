@@ -54,6 +54,13 @@ automation does not exclude those requirements from planning. Final module or
 program placement remains an implementation decision; no new live combat or
 health-change experiment is started by this clarification.
 
+Joey further clarified that low-level characters need to avoid high-level
+hostiles and should level along the way. Travel planning therefore includes
+pre-engagement threat assessment, suitable XP encounters, recovery, measured
+XP/level progress and reassessment after leveling. An unsafe destination may
+require a safer known route or leveling in an appropriate area first. Survival
+comes before taking an optional fight; a trip retains its objective and limits.
+
 ## What should survive
 
 The durable result should identify a field's meaning and units, how to locate
@@ -88,8 +95,9 @@ Git author identity is repository-local: `360madden <360madden@gmail.com>`.
 Use the [ranked RR2 roadmap](planning/implementation-roadmap.md) for completed
 capabilities and remaining work. The Lua/C# producer/contract and selected saved
 wall-motion replay have been delivered; the original October starting tasks
-are historical. Current priorities include combat essentials, surviving an
-encounter, travel/combat/recovery integration, longer routes and dependable route context. Live qualification is
+are historical. Current priorities include encounter assessment, useful combat
+and recovery, bounded leveling, travel/progression integration, longer routes
+and dependable route context. Live qualification is
 specific to each field/build/session and does not follow from offline tests.
 
 Source: Joey's requests in the RiftReader v2 conversation on 2026-10-18.

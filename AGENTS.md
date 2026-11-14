@@ -74,6 +74,15 @@ for the revised priority. Product/module placement remains open. This correction
 updates requirements and planning, not implementation or live combat authority;
 it does not itself resume deferred health-change tests or permit game actions.
 
+**Travel-progression clarification (Joey, 2026-11-14):** Low-level characters
+must not blindly engage high-level hostiles. Include pre-engagement threat
+assessment, avoidance/safer known routes, suitable combat encounters and bounded
+XP/level progression along the way in the roadmap. If a destination is too
+dangerous, consider a suitable leveling area before attempting it. Preserve
+route checkpoints, one input owner, STOP and explicit Resume; kills/detours do
+not silently advance route progress. This is planning direction, not an order
+to start combat/grinding or expand live-action authority.
+
 **Discovery framework — Joey's clarification, 2026-11-07:** A useful finding
 should feed a practical repeatable retrieval capability: resolve the current
 source/owner, acquire the requested data under fresh identity and applicable
