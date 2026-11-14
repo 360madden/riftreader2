@@ -97,6 +97,30 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                                   [self.sample(10, 100, 100), after])
         self.assertFalse(value["acceptance"]["incomingDamage"])
 
+    def test_single_boundary_event_cannot_explain_two_health_drops(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        event = {"sequence": 7, "clock": 11.0, "kind": "damage", "damage": 10,
+                 "caster": target_id, "target": player_id, "selectedTargetId": target_id}
+        telemetry = [self.sample(10, 100, 100),
+                     self.sample(11, 90, 100, incoming=event),
+                     self.sample(12, 80, 100, incoming=event)]
+        observed = summary.summarize([{"status": "encounter-interrupted"}], telemetry)
+        self.assertEqual(2, len(observed["telemetry"]["selfHealthDrops"]))
+        self.assertEqual(1, len(observed["telemetry"]["incomingEvents"]))
+        self.assertEqual(1, observed["telemetry"]["incomingCorrelation"]["pairedCount"])
+
+    def test_distinct_damage_events_can_correlate_distinct_drops(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        def event(sequence, clock):
+            return {"sequence": sequence, "clock": clock, "kind": "damage",
+                    "damage": 10, "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        telemetry = [self.sample(10, 100, 100),
+                     self.sample(11, 90, 100, incoming=event(7, 10.5)),
+                     self.sample(12, 80, 100, incoming=event(8, 11.5))]
+        observed = summary.summarize([{"status": "encounter-interrupted"}], telemetry)
+        self.assertEqual(2, observed["telemetry"]["incomingCorrelation"]["pairedCount"])
+
     def test_target_switch_between_samples_blocks_prior_event_attribution(self):
         player_id, target_id = "u0000000000000001", "u0000000000000002"
         event = {"sequence": 7, "clock": 10, "kind": "damage", "damage": 12,

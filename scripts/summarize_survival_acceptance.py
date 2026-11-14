@@ -205,15 +205,19 @@ def _events(samples, field, incoming):
 def _correlation(drops, events):
     if not drops or not events:
         return {"status": "unavailable", "pairedCount": 0}
-    paired = 0
+    paired, consumed = 0, set()
     for drop in drops:
         start, end = drop["startClock"], drop["endClock"]
         if start is None or end is None or not drop["attributionEligible"]:
             continue
-        # A later event cannot retrospectively explain an earlier health loss.
-        if any(event["clock"] is not None and start <= event["clock"] <= end
-               for event in events):
-            paired += 1
+        # A single event at a shared sample boundary cannot justify two
+        # separate HP declines. Each distinct event supports at most one drop.
+        for index, event in enumerate(events):
+            if (index not in consumed and event["clock"] is not None
+                    and start <= event["clock"] <= end):
+                consumed.add(index)
+                paired += 1
+                break
     return {"status": "correlated" if paired else "observed-unpaired",
             "pairedCount": paired}
 
