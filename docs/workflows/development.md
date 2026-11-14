@@ -3,6 +3,36 @@
 Use this as a reference when needed, not a mandatory checklist for every edit.
 The default is a short path to a working RR2 feature.
 
+## Proactive discovery and efficient live sessions
+
+Choose the next useful capability with its dependencies and likely follow-on
+discoveries in view. Prefer a small probe that can unlock several consumers over
+repeated isolated checks with high setup cost. Read retained RR2/RRE findings
+first, including unavailable results and their scope. Record a promising lead
+with the next discriminating observation and the capability it could unlock;
+it remains a lead until evidence supports it.
+
+Before live access, finish useful offline implementation and focused checks.
+Group compatible live questions sharing the same build/session, target, route
+or state change. Use existing captures/receipts and telemetry together so one
+fight can inform action effects, resource/timing observations, target ending,
+recovery and route return. Reuse observations for later analysis; keep native
+and API clocks, source identities and availability distinct. Co-occurrence is
+not causation and a shared capture does not make every field qualified.
+
+Reuse the setup, not stale action admission: keep current identity, freshness,
+ownership, readiness and release checks on each action. A STOP exercise ends its
+run until explicit Resume/new-run authority; do not merge incompatible tests or
+expand live scope to fill a batch. Do not add every possible measurement as a
+prerequisite to the useful result. After a failure, retain the capture and narrow
+the next probe instead of rerunning the whole sequence without a new hypothesis.
+
+Keep independent workers preparing the next needed code, profiles, targeted
+checks or evidence analysis while the single live owner operates. Material
+discoveries and blockers should change priorities promptly. Use short notes in
+the current workflow/roadmap; this is an operating habit, not a new framework or
+a mandatory checklist for routine edits.
+
 ## CLI-first application interfaces
 
 Joey's November 14 direction applies to all apps: **CLI first, GUI second, both

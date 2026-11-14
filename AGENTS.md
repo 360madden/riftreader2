@@ -45,6 +45,23 @@ Build a functional RR2 capability, not a process around it. Use this short loop:
    candidate results honestly.
 4. Commit verified files, push when authorized, and move to the next result.
 
+**Proactive discovery and time management (Joey, 2026-11-14):** Optimize for
+useful capabilities and information gained per live setup, not isolated task
+completion. Group compatible checks that share a build/session, target, route,
+state transition or capture. Prepare code and focused offline checks before
+scarce live access; collect the useful existing telemetry together and replay
+it for independent questions instead of repeating game actions. Reuse setup
+and evidence, never stale per-action identity/readiness or mixed-source causal
+claims. Consult retained RR2/RRE results before repeating discovery, including
+negative results; retry a blocked hypothesis only with a relevant state change
+or new evidence. Follow promising findings that could unlock several useful
+capabilities, with a small bounded next probe and an explicit expected payoff.
+Keep workers on independent prerequisites, upcoming implementation or analysis
+while one owner controls live input. Sequence dependent or incompatible checks
+separately; STOP remains latched and grouping grants no new action authority.
+Reprioritize on material findings or blockers. A few notes in existing docs are
+enough: no mandatory batch framework, new manifest, broad suite or filler work.
+
 **Adaptive priorities (Joey, 2026-11-14):** After each major milestone,
 re-evaluate the ranked remaining work against new evidence, dependencies,
 feasibility, value and effort. Reassess earlier when a material blocker appears.

@@ -87,6 +87,32 @@ The hunt/target-selection stage is additional work beyond the existing reactive
 travel/fight/retreat/rejoin runner. Existing recorded retreat and rejoin paths
 are reuse candidates, not proof that an outbound hunting corridor is safe.
 
+### Shared live evidence for this mission
+
+Prepare the hunt-state/selection changes, profile and focused checks before
+the next live session. Reuse the installed casting interface checks already
+completed; refresh only what the current process, session or changed code needs.
+The next run should answer several compatible questions from the same evidence:
+
+| Stage | Shared observations and reuse |
+| --- | --- |
+| Safe anchor | Current identity, zone, HP/resource/readiness, clean input and verified return anchor form the baseline for the entire mission. Per-action guards still refresh normally. |
+| Outbound corridor | Record the actual walked path while observing available NPC identities/reactions and camera/movement behavior. Reuse this path for return and retreat assessment. |
+| Suitable encounter | Capture exact selected target/attacker/effect IDs, incoming/outgoing events and source-consistent HP/resource/cooldown/cast observations together. Use the same action receipts to separate submission, delivery and effect. |
+| Ending and recovery | Preserve target-ending evidence, cancel/release receipts and HP/resource recovery. Target disappearance alone does not establish a kill or XP. |
+| Return and finish | Reuse walked breadcrumbs, movement receipts and checkpoint events to verify return, arrival and released input. Analyze the shared capture offline instead of repeating the trip for each question. |
+
+Do not repeat the earlier 35-ID unavailable Detail probe without a relevant new
+state or hypothesis. Observe whether approaching, selecting or mousing over a
+specific unit changes its availability; a successful exact-ID transition could
+improve nearby-NPC acquisition. During an already useful ability test, retained
+changed-state resource/cooldown observations may also advance native-reader
+qualification. These are bounded opportunities, not prerequisites or permission
+to perform extra game actions. Explicit STOP/channel-cancellation exercises stay
+separate when they would invalidate normal mission continuation. Workers can
+analyze the same receipts for route, NPC and combat questions without another
+live owner or a broad repeated test sweep.
+
 ## Interpreting an action
 
 The producer exposes separately configured action rectangles, API ability targets and readiness. A self-targeted slot can report its player effect target while a hostile remains selected. A native click receipt establishes input delivery and release. Exact action verification additionally checks a fresh, matching event after submission, including its sequence, clock, player, selected encounter, effect target and ability ID. Effective damage or healing is retained by ability ID for up to five seconds. The latest diagnostic event can independently report immune, dodge or miss. Confirmed incoming damage from the selected actor to the player has a two-second window. A missing relation or event leaves hostility unresolved. [Addon producer](../../addon/RiftReader2Casting/survival.lua) · [Consumer](../../scripts/survival_live.py)
