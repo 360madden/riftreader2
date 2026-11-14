@@ -105,9 +105,18 @@ def replay(plan):
                     if isinstance(event, dict) else None, "reason": str(exc),
                     "final": coordinator.snapshot(), "states": states, "callbackTrace": trace,
                     "gameInputSent": False}
-    return {"schemaVersion": 1, "mode": "offline-scripted-receipts-only",
-            "status": "complete", "final": coordinator.snapshot(), "states": states,
-            "callbackTrace": trace, "gameInputSent": False}
+    final = coordinator.snapshot()
+    # A transition can refuse release without throwing. Even after a successful
+    # release retry the uncertainty latch requires explicit Resume/new run;
+    # never report such a truncated action plan as a completed handoff.
+    unresolved = final["latchReason"] in {"uncertain-release", "action-start-failed"}
+    result = {"schemaVersion": 1, "mode": "offline-scripted-receipts-only",
+              "status": "blocked" if unresolved else "complete", "final": final,
+              "states": states, "callbackTrace": trace, "gameInputSent": False}
+    if unresolved:
+        result.update(failedStep=len(states), event=states[-1]["event"],
+                      reason="unresolved-" + final["latchReason"])
+    return result
 
 
 def main(argv=None):

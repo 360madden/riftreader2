@@ -70,6 +70,30 @@ class ReplayPlayerActionsTests(unittest.TestCase):
                 self.assertEqual(result["callbackTrace"], [])
                 self.assertFalse(result["gameInputSent"])
 
+    def test_final_uncertain_release_is_not_reported_as_completed(self):
+        # An encounter refusal returns a latched snapshot, not an exception.
+        # The CLI must not label the whole run successful if replay ends here.
+        result = self.run_plan(event("new-run", BAD), event("encounter"))
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "unresolved-uncertain-release")
+        self.assertEqual(result["failedStep"], 2)
+        self.assertEqual(result["final"]["activeAction"], "movement")
+        self.assertFalse(any(t["callback"] == "start" and t["owner"] == "combat"
+                             for t in result["callbackTrace"]))
+
+    def test_cleanup_retry_still_requires_explicit_resume(self):
+        result = self.run_plan(event("new-run", BAD), event("encounter"),
+                               event("retry-release", OK))
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["reason"], "unresolved-uncertain-release")
+        self.assertIsNone(result["final"]["activeAction"])
+        self.assertEqual(result["final"]["latchReason"], "uncertain-release")
+        recovered = self.run_plan(event("new-run", BAD), event("encounter"),
+                                  event("retry-release", OK), event("resume"),
+                                  {"action": "operator-stop"})
+        self.assertEqual(recovered["status"], "complete")
+        self.assertEqual(recovered["final"]["latchReason"], "operator-stop")
+
     def test_input_bounds_and_duplicate_json_fail_closed(self):
         with self.assertRaisesRegex(ValueError, "invalid-action-plan"):
             cli.replay({"schemaVersion": 1, "events": [event("new-run")] * 65})
@@ -78,6 +102,20 @@ class ReplayPlayerActionsTests(unittest.TestCase):
                        object_pairs_hook=cli._unique_object)
         with self.assertRaisesRegex(ValueError, "nonfinite-json-number"):
             json.loads('{"x":NaN}', parse_constant=cli._invalid_constant)
+
+    def test_headless_cli_returns_blocked_exit_for_unresolved_release(self):
+        with TemporaryDirectory() as temp:
+            source = Path(temp) / "uncertain.json"
+            source.write_text(json.dumps({"schemaVersion": 1, "events": [
+                event("new-run", BAD), event("encounter")]}), encoding="utf-8")
+            capture = StringIO()
+            with redirect_stdout(capture):
+                code = cli.main(["--events", str(source)])
+            payload = json.loads(capture.getvalue())
+            self.assertEqual(code, 2)
+            self.assertEqual(payload["status"], "blocked")
+            self.assertEqual(payload["reason"], "unresolved-uncertain-release")
+            self.assertFalse(payload["gameInputSent"])
 
     def test_real_headless_cli_reads_only_plan_file(self):
         with TemporaryDirectory() as temp:
