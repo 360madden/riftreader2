@@ -20,6 +20,16 @@ public sealed class FollowRouteCommandTests
             completed.AddMilliseconds(-2), completed);
     }
 
+    private static FollowRouteCommand.SurvivalSnapshot Survival(
+        long? health = 100, long? maximum = 100, bool? combat = false,
+        string status = "available-candidate", byte? rawCombat = 0,
+        string? reason = null)
+    {
+        var completed = DateTimeOffset.UtcNow;
+        return new(status, health, maximum, combat, rawCombat,
+            completed.AddMilliseconds(-2), completed, reason);
+    }
+
     private sealed class Input : FollowRouteCommand.IInput
     {
         public readonly List<string> Events = [];
@@ -211,6 +221,230 @@ public sealed class FollowRouteCommandTests
         Assert.Equal(JsonValueKind.Null, json.GetProperty("opticalCameraBearingDegreesCandidate").ValueKind);
         Assert.Equal(JsonValueKind.Null, json.GetProperty("opticalCameraPitchDegreesCandidate").ValueKind);
         Assert.Equal(JsonValueKind.Null, json.GetProperty("opticalCameraStatus").ValueKind);
+    }
+
+    [Fact]
+    public async Task SurvivalHealthDropReleasesForwardAndRetainsTriggeringSnapshot()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true },
+            Reader(Pose(0, 0) with { Survival = Survival() },
+                Pose(0, 1) with { Survival = null },
+                Pose(0, 2) with { Survival = Survival(99) }),
+            input, () => null, NoDelay);
+
+        Assert.Equal("halted", result.Status);
+        Assert.Equal("survival-hp-drop", result.Reason);
+        Assert.Contains("down:w", input.Events);
+        Assert.Contains("up:w", input.Events);
+        Assert.Equal(99, result.SurvivalSnapshot?.HealthCurrent);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public async Task SurvivalCombatReleasesForwardWithoutWaitingForRouteFailure()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true },
+            Reader(Pose(0, 0) with { Survival = Survival() },
+                Pose(0, 1) with { Survival = Survival(combat: true, rawCombat: 1) }),
+            input, () => null, NoDelay);
+
+        Assert.Equal("halted", result.Status);
+        Assert.Equal("survival-combat", result.Reason);
+        Assert.Contains("up:w", input.Events);
+        Assert.True(result.SurvivalSnapshot?.CombatCandidate);
+    }
+
+    [Fact]
+    public async Task BaselineCombatRetainsFiniteSerializableTerminalReceipt()
+    {
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true },
+            Reader(Pose(1, 2, 15) with { Survival = Survival(combat: true, rawCombat: 1) }),
+            new Input(), () => null, NoDelay);
+        var receipt = FollowRouteCommand.ProjectResult(result);
+
+        var json = JsonSerializer.SerializeToElement(new
+        {
+            result.Status,
+            result.Reason,
+            receipt.Position,
+            receipt.BodyBearingDegreesCandidate,
+            receipt.OpticalCameraBearingDegreesCandidate,
+            receipt.OpticalCameraPitchDegreesCandidate,
+            receipt.OpticalCameraStatus,
+            receipt.InitialDistance,
+            receipt.FinalDistance,
+            receipt.ReadCount,
+            receipt.Path,
+            receipt.ElapsedMilliseconds,
+            receipt.InputSent,
+            receipt.ReleaseSucceeded,
+            receipt.SurvivalSnapshot
+        }, JsonFormat.Options);
+
+        Assert.Equal("halted", json.GetProperty("status").GetString());
+        Assert.Equal("survival-combat", json.GetProperty("reason").GetString());
+        Assert.Equal(JsonValueKind.Object, json.GetProperty("position").ValueKind);
+        Assert.Equal(15, json.GetProperty("bodyBearingDegreesCandidate").GetDouble());
+        Assert.Equal(JsonValueKind.Number, json.GetProperty("initialDistance").ValueKind);
+        Assert.Equal(JsonValueKind.Number, json.GetProperty("finalDistance").ValueKind);
+        Assert.Equal(1, json.GetProperty("readCount").GetInt32());
+        Assert.Single(json.GetProperty("path").EnumerateArray());
+        Assert.False(json.GetProperty("inputSent").GetBoolean());
+        Assert.True(json.GetProperty("releaseSucceeded").GetBoolean());
+    }
+
+    [Fact]
+    public void ReceiptProjectionConvertsAllNonfiniteTopLevelMetricsToNull()
+    {
+        var result = new FollowRouteCommand.Result("blocked", "read-failed", null,
+            double.NaN, double.PositiveInfinity, 0, [], double.NegativeInfinity,
+            false, true);
+
+        var receipt = FollowRouteCommand.ProjectResult(result);
+        var json = JsonSerializer.SerializeToElement(receipt, JsonFormat.Options);
+
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("initialDistance").ValueKind);
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("finalDistance").ValueKind);
+        Assert.Equal(0, json.GetProperty("elapsedMilliseconds").GetDouble());
+    }
+
+    [Fact]
+    public async Task SurvivalBaselineCancellationCallbackFaultCannotEscapeControllerReceipt()
+    {
+        var input = new Input();
+        var registration = default(CancellationTokenRegistration);
+        Task<FollowRouteCommand.Pose> Read(CancellationToken token)
+        {
+            registration = token.Register(() => throw new InvalidOperationException("callback failed"));
+            var now = DateTimeOffset.UtcNow;
+            return Task.FromResult(Pose(0, 0) with
+            {
+                StartedAtUtc = now,
+                CompletedAtUtc = now,
+                Survival = Survival(combat: true, rawCombat: 1)
+            });
+        }
+
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true }, Read,
+            input, () => null, NoDelay);
+        registration.Dispose();
+
+        Assert.Equal("halted", result.Status);
+        Assert.Equal("survival-combat", result.Reason);
+        Assert.Empty(input.Events);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Theory]
+    [InlineData(0L, "available-candidate", "survival-dead")]
+    [InlineData(null, "unavailable", "survival-unavailable")]
+    public async Task CriticalBaselineSurvivalStateHaltsBeforeAnyInput(
+        long? health, string snapshotStatus, string expectedReason)
+    {
+        var input = new Input();
+        var snapshot = Survival(health, status: snapshotStatus,
+            combat: snapshotStatus == "available-candidate" ? false : null,
+            rawCombat: snapshotStatus == "available-candidate" ? (byte)0 : null,
+            reason: snapshotStatus == "unavailable" ? "capture-failed" : null);
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true },
+            Reader(Pose(0, 0) with { Survival = snapshot }),
+            input, () => null, NoDelay);
+
+        Assert.Equal("halted", result.Status);
+        Assert.Equal(expectedReason, result.Reason);
+        Assert.Empty(input.Events);
+        Assert.Same(snapshot, result.SurvivalSnapshot);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Fact]
+    public void SurvivalInterruptIsExplicitOptIn()
+    {
+        var options = FollowRouteCommand.Parse([
+            "--expected-host", "AMD-DESKTOP", "--pid", "5",
+            "--expect-start-ticks", "100", "--expect-sha256", new string('A', 64),
+            "--expect-hwnd", "8", "--expect-player-key", Player.ToString(),
+            "--owner-pid", "10", "--owner-start-ticks", "200",
+            "--x", "0", "--z", "10", "--stop-file", @"C:\temp\stop.signal",
+            "--survival-interrupt", "--execute", "--json"
+        ]);
+        Assert.True(options.SurvivalInterrupt);
+        Assert.False(options.SurvivalRetreat);
+        Assert.Equal("interrupt", FollowRouteCommand.SurvivalMode(options));
+    }
+
+    [Fact]
+    public void SurvivalRetreatRequiresInterruptAndHasExplicitMode()
+    {
+        string[] Args(params string[] flags) => [
+            "--expected-host", "AMD-DESKTOP", "--pid", "5",
+            "--expect-start-ticks", "100", "--expect-sha256", new string('A', 64),
+            "--expect-hwnd", "8", "--expect-player-key", Player.ToString(),
+            "--owner-pid", "10", "--owner-start-ticks", "200",
+            "--x", "0", "--z", "10", "--stop-file", @"C:\temp\stop.signal",
+            .. flags, "--execute", "--json"
+        ];
+
+        Assert.Throws<InvalidDataException>(() =>
+            FollowRouteCommand.Parse(Args("--survival-retreat")));
+        var options = FollowRouteCommand.Parse(Args("--survival-interrupt", "--survival-retreat"));
+        Assert.True(options.SurvivalInterrupt);
+        Assert.True(options.SurvivalRetreat);
+        Assert.Equal("retreat", FollowRouteCommand.SurvivalMode(options));
+    }
+
+    [Fact]
+    public async Task RetreatSurvivalPermitsCombatAndHealthLossWhileForwardRemainsOwned()
+    {
+        var input = new Input();
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true, SurvivalRetreat = true },
+            Reader(Pose(0, 0) with { Survival = Survival(combat: true, rawCombat: 1) },
+                Pose(0, 4) with { Survival = Survival(99, combat: true, rawCombat: 1) },
+                Pose(0, 9.8) with { Survival = Survival(98, combat: true, rawCombat: 1) },
+                Pose(0, 9.8) with { Survival = Survival(98, combat: true, rawCombat: 1) },
+                Pose(0, 9.8) with { Survival = Survival(98, combat: true, rawCombat: 1) }),
+            input, () => null, NoDelay);
+
+        Assert.Equal("arrived", result.Status);
+        Assert.Null(result.Reason);
+        Assert.Equal(1, input.Events.Count(x => x == "down:w"));
+        Assert.Equal(1, input.Events.Count(x => x == "up:w"));
+        Assert.Equal(98, result.SurvivalSnapshot?.HealthCurrent);
+        Assert.True(result.SurvivalSnapshot?.CombatCandidate);
+        Assert.True(result.ReleaseSucceeded);
+    }
+
+    [Theory]
+    [InlineData(0L, "available-candidate", "survival-dead")]
+    [InlineData(null, "unavailable", "survival-unavailable")]
+    public async Task RetreatSurvivalStillHaltsAndReleasesForDeathOrUnavailable(
+        long? health, string snapshotStatus, string expectedReason)
+    {
+        var input = new Input();
+        var critical = Survival(health, status: snapshotStatus,
+            combat: snapshotStatus == "available-candidate" ? true : null,
+            rawCombat: snapshotStatus == "available-candidate" ? (byte)1 : null,
+            reason: snapshotStatus == "unavailable" ? "capture-failed" : null);
+        var result = await FollowRouteCommand.FollowAsync(
+            Options() with { SurvivalInterrupt = true, SurvivalRetreat = true },
+            Reader(Pose(0, 0) with { Survival = Survival(combat: true, rawCombat: 1) },
+                Pose(0, 1) with { Survival = critical }),
+            input, () => null, NoDelay);
+
+        Assert.Equal("halted", result.Status);
+        Assert.Equal(expectedReason, result.Reason);
+        Assert.Contains("down:w", input.Events);
+        Assert.Contains("up:w", input.Events);
+        Assert.Same(critical, result.SurvivalSnapshot);
+        Assert.True(result.ReleaseSucceeded);
     }
 
     [Fact]

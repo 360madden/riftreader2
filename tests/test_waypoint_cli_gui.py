@@ -10,6 +10,7 @@ import time
 import unittest
 
 from scripts import waypoint_cli_protocol as protocol
+from scripts.waypoint_brand import APP_VERSION
 
 
 CHILD = r'''
@@ -600,7 +601,7 @@ class GuiBridgeTests(unittest.TestCase):
         snapshot = self.call('status')['data']
         self.assertEqual(playback['readiness'], snapshot['playback']['readiness'])
         self.assertEqual(snapshot['app']['name'], "Joey D's Waypoints")
-        self.assertEqual(snapshot['app']['version'], '1.1.0')
+        self.assertEqual(snapshot['app']['version'], APP_VERSION)
         self.assertFalse((self.root / 'movement-called').exists())
 
     def test_current_update_replaces_measurement_and_manual_edit_reports_loss(self):
@@ -688,7 +689,7 @@ class GuiBridgeTests(unittest.TestCase):
         failed = self.call('route.load', {'file':str(malformed)}, rid='malformed-route-request')
         self.assertFalse(failed['ok'], failed)
         report = self.call('diagnostics.show')['data']['text']
-        for marker in ("Joey D's Waypoints diagnostics", 'App version: 1.1.0',
+        for marker in ("Joey D's Waypoints diagnostics", f'App version: {APP_VERSION}',
                        current.name, 'malformed-route-request', 'JSONDecodeError',
                        'Traceback (most recent call last):'):
             self.assertIn(marker, report)

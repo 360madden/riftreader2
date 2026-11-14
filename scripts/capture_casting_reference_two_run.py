@@ -1,7 +1,7 @@
 """Capture two bounded RR2CASTREF1 runs on Lab 1 with one pinned reader upload.
 
 The wrapper sends no game input and performs no addon deployment, reload or
-restart.  It requires the four installed RiftReader2Casting files to match the
+restart.  It requires the installed RiftReader2Casting files to match the
 current repository sources before and after two exact-process read-only scans.
 """
 from __future__ import annotations
@@ -28,7 +28,7 @@ from scripts.sample_current_native_xyz import GAME_SHA, digest
 
 EVIDENCE = ROOT / "artifacts/casting-reference-two-run/runs"
 ADDON_ROOT = ROOT / "addon/RiftReader2Casting"
-ADDON_FILES = ("RiftAddon.toc", "model.lua", "ability_reference.lua", "main.lua")
+ADDON_FILES = ("RiftAddon.toc", "model.lua", "ability_reference.lua", "survival.lua", "main.lua")
 GUEST_ADDON = PureWindowsPath(
     r"C:\Users\mrkoo\OneDrive\Documents\RIFT\Interface\AddOns\RiftReader2Casting")
 SOURCE_FILES = (

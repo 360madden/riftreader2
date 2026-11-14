@@ -1,4 +1,8 @@
 from contextlib import nullcontext
+import json
+from pathlib import Path
+import subprocess
+import sys
 import threading
 import time
 import unittest
@@ -40,6 +44,32 @@ class SimulatedRift:
 
 
 class WaypointRunnerTests(unittest.TestCase):
+    def test_direct_script_and_package_import_share_stopped_identity(self):
+        root = Path(__file__).resolve().parents[1]
+        script = root / "scripts" / "physical_waypoints.py"
+        probe = """
+import json
+from pathlib import Path
+
+path = Path(__import__('sys').argv[1])
+source = path.read_text(encoding='utf-8')
+source = source.rsplit('\\nif __name__ == "__main__":', 1)[0]
+globals()['__file__'] = str(path)
+exec(compile(source, str(path), 'exec'), globals())
+from scripts.physical_waypoints import Stopped as PackageStopped
+print(json.dumps({
+    'sameClass': Stopped is PackageStopped,
+    'classified': isinstance(PackageStopped('STOP requested'), Stopped),
+}))
+"""
+        completed = subprocess.run(
+            [sys.executable, "-c", probe, str(script)], cwd=root,
+            capture_output=True, text=True, timeout=20, check=False)
+        self.assertEqual(0, completed.returncode, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertTrue(result["sameClass"])
+        self.assertTrue(result["classified"])
+
     def test_arrives_using_feedback_and_only_first_pulse_can_focus(self):
         adapter = SimulatedRift()
         result = run_leg(adapter, -2, 0, threading.Event())

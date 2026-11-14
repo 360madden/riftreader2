@@ -1,5 +1,5 @@
 local addonInfo, private = ...
-local FALLBACK_VERSION = "0.4.1"
+local FALLBACK_VERSION = "0.4.2"
 local function versionFromMetadata(info)
     local toc = type(info) == "table" and info.toc
     local value = type(toc) == "table" and toc.Version
@@ -354,6 +354,107 @@ local function selectAbility(id)
 end
 private.SelectAbility = selectAbility
 
+-- Export the actual restricted frames in UIParent coordinates. The external
+-- reader owns process/window binding and the conversion to client pixels.
+local function actionRect(frame, mapped)
+    local rect = {mapped = mapped}
+    local ok, x, y, w, h = pcall(function()
+        return frame:GetLeft()-UIParent:GetLeft(), frame:GetTop()-UIParent:GetTop(),
+            frame:GetWidth(), frame:GetHeight()
+    end)
+    if ok and coordinate(x) and coordinate(y) and coordinate(w) and coordinate(h) and w > 0 and h > 0 then
+        rect.left, rect.top, rect.width, rect.height = x, y, w, h
+    end
+    return rect
+end
+local profileSlots, profileCancel = {}, nil
+local function prepareSlot(index, id)
+    if not nonSecure() then return false end
+    local entry = profileSlots[index]
+    if id == "clear" then
+        if not entry then return true end
+        if not safeVisible(entry.frame,false) then return false end
+        entry.id, entry.name, entry.monitor = nil,nil,nil
+        if profileCancel then
+            local used = false
+            for _, item in pairs(profileSlots) do if item.id then used=true end end
+            if not used then safeVisible(profileCancel,false) end
+        end
+        return true
+    end
+    local learned = Inspect.Ability.New.List()
+    if type(learned) ~= "table" or not learned[id] then return false end
+    local d = Inspect.Ability.New.Detail(id)
+    if type(d) ~= "table" or type(d.name) ~= "string" or #d.name == 0 or #d.name > 120
+            or d.name:find("[%z\1-\31]") or d.positioned or d.autoattack or d.passive then return false end
+    for i, existing in pairs(profileSlots) do if i ~= index and existing.id == id then return false end end
+    local w,h = viewport()
+    if not w or w < 246 or h < 222 then return false end
+    -- Two columns at the top-right, independent of the draggable dashboard.
+    local x, y = w-244+((index-1)%2)*120, 2+math.floor((index-1)/2)*43
+    local monitor = private.Casting.New(Inspect)
+    if not monitor:Select(id) then return false end
+    if not profileCancel then
+        profileCancel = secureButton("RR2SurvivalCancel","CANCEL / STOP",w-244,174,236,"danger")
+        if not safeVisible(profileCancel,false) then profileCancel=nil; return false end
+    end
+    local cancelOk,cancelResult = pcall(profileCancel.EventMacroSet,profileCancel,
+        Event.UI.Input.Mouse.Left.Click,"stopcasting\nstopattack")
+    if not cancelOk or cancelResult == false or not safeVisible(profileCancel,true) then return false end
+    if not entry then
+        local f, caption = secureButton("RR2SurvivalSlot"..index,"UNBOUND",x,y,116,"primary")
+        entry={frame=f,caption=caption}; profileSlots[index]=entry
+        if not safeVisible(f,false) then return false end
+    end
+    local macro = "cast "..d.name.."\nstopattack"
+    local ok,accepted = pcall(entry.frame.EventMacroSet,entry.frame,Event.UI.Input.Mouse.Left.Click,macro)
+    if not ok or accepted == false then return false end
+    entry.id,entry.name,entry.macro,entry.monitor = id,d.name,macro,monitor
+    entry.caption:SetText(shortName(d.name,13))
+    if not safeVisible(entry.frame,true) then
+        entry.id,entry.name,entry.monitor=nil,nil,nil
+        return false
+    end
+    return true
+end
+local function survivalControls(playerId,targetId)
+    local bound = evidence.castButton
+    local mapped = type(bound) == "table" and type(model.selected) == "string" and
+        bound.abilityId == model.selected
+    local cast = actionRect(castButton, mapped)
+    if mapped then cast.abilityId, cast.abilityName, cast.macro = bound.abilityId, bound.abilityName, bound.macro end
+    local width, height = viewport()
+    local actions = {}
+    for i, slot in pairs(profileSlots) do
+        if slot.id then
+            local v = actionRect(slot.frame,true)
+            v.slot,v.abilityId,v.abilityName,v.macro,v.visible = i,slot.id,slot.name,slot.macro,true
+            local r = slot.monitor:Read(true)
+            if r.playerId == playerId and r.targetId == targetId and r.abilityId == slot.id then
+                v.readiness = {status=r.status,reason=r.reason}
+                v.ability = {target=r.ability.target,idNew=r.ability.idNew,currentCooldownRemaining=r.ability.currentCooldownRemaining,
+                    outOfRange=r.ability.outOfRange,unusable=r.ability.unusable,costPower=r.ability.costPower}
+            else v.readiness={status="blocked",reason="profile-identity-changed"}; v.ability={} end
+            actions[slot.id]=v
+        end
+    end
+    local cancel
+    if profileCancel and next(actions) then
+        cancel = actionRect(profileCancel,true); cancel.visible=true
+        cancel.macro="stopcasting\nstopattack"; cancel.effectQualification="unverified"
+    end
+    return {visible = panelVisible, space = "UIParent", viewportWidth = width, viewportHeight = height,
+        actions=actions,cancel=cancel,cast = cast, stop = actionRect(stopButton, stopOk and stopResult ~= false)}
+end
+if private.Survival then
+    private.Survival.Start(Inspect, model, selectAbility, survivalControls, prepareSlot,function()
+        if not nonSecure() then return false end
+        local p=Inspect.Unit.Lookup("player")
+        local detail=p and Inspect.Unit.Detail(p)
+        return type(detail)=="table" and detail.combat~=true
+    end)
+end
+
 -- Retain the installed game's API descriptions as offline evidence.
 if type(Inspect.Documentation) == "function" then
     evidence.runtimeApi = {}
@@ -514,6 +615,7 @@ local function update()
     if now - lastUpdate < .1 then return end
     lastUpdate = now
     local r = model:Read()
+    if private.Survival and private.Survival.Publish then private.Survival.Publish(r) end
     evidence.last = r; evidence.trial = model.trial
     if savedLoaded then RiftReader2CastingEvidence = evidence end
 
@@ -573,7 +675,10 @@ end, "RR2 casting readout")
 for _, spec in ipairs({{"Damage","damage"},{"Heal","heal"},{"Miss","miss"},{"Immune","immune"},{"Resist","resist"},{"Dodge","dodge"},{"Parry","parry"}}) do
     local kind = spec[2]
     if Event.Combat[spec[1]] then
-        Command.Event.Attach(Event.Combat[spec[1]], function(_, info) model:Combat(kind, info) end, "RR2 casting " .. kind)
+        Command.Event.Attach(Event.Combat[spec[1]], function(_, info)
+            model:Combat(kind, info)
+            if private.Survival then private.Survival.ObserveCombat(kind, info) end
+        end, "RR2 casting " .. kind)
     end
 end
 if Event.Ability and Event.Ability.New and Event.Ability.New.Cooldown then

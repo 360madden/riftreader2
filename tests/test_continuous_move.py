@@ -186,6 +186,77 @@ class ContinuousMoveTests(unittest.TestCase):
         self.assertEqual([event["status"] for event in events], ["moving"])
         self.assertEqual(self.adapter.last_input_receipt["status"], "arrived")
 
+    def test_trusted_native_encounter_interrupt_bridges_without_operator_stop(self):
+        for reason in ("survival-combat", "survival-hp-drop"):
+            with self.subTest(reason=reason):
+                final = receipt("halted", reason=reason)
+                final["survivalInterrupt"] = True
+                final["survivalSnapshot"] = {
+                    "status": "available-candidate", "healthCurrent": 99,
+                    "healthMaximum": 100, "combatCandidate": reason == "survival-combat",
+                    "rawCombat": 1 if reason == "survival-combat" else 0}
+                stop = threading.Event()
+                stop_path = self.root / (reason + ".stop")
+                final["stopFile"] = str(stop_path.absolute())
+                children = []
+                def launch(command, **kwargs):
+                    child = FakeProcess(command, final); children.append(child); return child
+                with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+                     self.assertRaises(move.EncounterInterrupted) as caught:
+                    move.move_to(self.adapter, 100, 0, stop, popen=launch,
+                        native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                        stop_path=stop_path, survival_guard=True)
+                self.assertFalse(stop.is_set())
+                self.assertFalse(stop_path.exists())
+                self.assertIn("--survival-interrupt", children[0].command)
+                self.assertEqual(reason, caught.exception.receipt["reason"])
+                self.assertEqual("halted", caught.exception.receipt["status"])
+                self.assertEqual(final["survivalSnapshot"],
+                                 caught.exception.receipt["survivalSnapshot"])
+                self.assertTrue(caught.exception.receipt["releaseSucceeded"])
+                self.assertTrue(self.adapter._continuous_move_receipt_trusted)
+                self.assertFalse(self.adapter._continuous_input_release_fault)
+                self.assertEqual(reason, self.adapter.last_input_receipt["reason"])
+
+    def test_operator_stop_wins_race_with_trusted_encounter_interrupt(self):
+        from scripts.physical_waypoints import Stopped
+        final = receipt("halted", reason="survival-combat")
+        stop = threading.Event()
+        stop_path = self.root / "stop-wins-encounter.stop"
+        final["stopFile"] = str(stop_path.absolute())
+        children = []
+        def launch(command, **kwargs):
+            stop.set()
+            child = FakeProcess(command, final); children.append(child); return child
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             self.assertRaises(Stopped):
+            move.move_to(self.adapter, 100, 0, stop, popen=launch,
+                native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                stop_path=stop_path, survival_guard=True)
+        self.assertIn("--survival-interrupt", children[0].command)
+        self.assertTrue(self.adapter.last_input_receipt["releaseSucceeded"])
+        self.assertFalse(self.adapter._continuous_input_release_fault)
+
+    def test_dead_and_unavailable_survival_halts_remain_ordinary_critical_failures(self):
+        from scripts.physical_waypoints import WaypointError
+        for reason in ("survival-dead", "survival-unavailable"):
+            with self.subTest(reason=reason):
+                final = receipt("halted", reason=reason)
+                stop_path = self.root / (reason + ".stop")
+                final["stopFile"] = str(stop_path.absolute())
+                children = []
+                def launch(command, **kwargs):
+                    child = FakeProcess(command, final); children.append(child); return child
+                with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+                     self.assertRaisesRegex(WaypointError, reason):
+                    move.move_to(self.adapter, 100, 0, threading.Event(), popen=launch,
+                        native_exe=self.root / "native.exe", owner_identity=(55, 66),
+                        stop_path=stop_path, survival_guard=True)
+                self.assertIn("--survival-interrupt", children[0].command)
+                self.assertEqual(reason, self.adapter.last_input_receipt["reason"])
+                self.assertTrue(self.adapter.last_input_receipt["releaseSucceeded"])
+                self.assertFalse(self.adapter._continuous_input_release_fault)
+
     def test_preset_stop_and_far_goal_never_launch(self):
         for stopped, goal, reason in ((True, 1, "Stopped"), (False, 1001, "exceeds 1000")):
             with self.subTest(reason=reason), patch("scripts.physical_waypoints.read_stationary",

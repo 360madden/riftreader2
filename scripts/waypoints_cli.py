@@ -20,10 +20,13 @@ from scripts.waypoint_limits import MAX_TRIP_SECONDS
 from scripts.waypoint_map import ZOOM_RADII
 
 VERSION = APP_VERSION
-MOVEMENT = {"move.to", "move.pick", "face", "route.run", "playback.start", "playback.resume"}
-LONG_ROUTE_MOVEMENT = {"move.to", "move.pick", "route.run", "playback.start", "playback.resume"}
+MOVEMENT = {"move.to", "move.pick", "face", "route.run", "playback.start", "playback.resume",
+            "survival.run", "survival.resume"}
+LONG_ROUTE_MOVEMENT = {"move.to", "move.pick", "route.run", "playback.start", "playback.resume",
+                       "survival.run", "survival.resume"}
 COMMON = {"session", "timeout", "json", "jsonl", "no_color"}
 LONG_ROUTE_TIMEOUT = MAX_TRIP_SECONDS + 30
+MAX_SURVIVAL_PROFILE_BYTES = 64 * 1024
 PREVIEW_RANGES = ", ".join(str(radius) for radius in ZOOM_RADII[:-1]) + f" or {ZOOM_RADII[-1]}"
 
 
@@ -98,6 +101,26 @@ def positive(value):
     return result
 
 
+def survival_profile(value):
+    """Validate a small finite JSON object before sending its absolute path."""
+    path = Path(value)
+    try:
+        size = path.stat().st_size
+        if not path.is_file():
+            raise ValueError("not a file")
+        if size > MAX_SURVIVAL_PROFILE_BYTES:
+            raise ValueError(f"larger than {MAX_SURVIVAL_PROFILE_BYTES} bytes")
+        text = path.read_text(encoding="utf-8-sig")
+        def reject_constant(constant):
+            raise ValueError(f"non-finite JSON number {constant}")
+        profile = json.loads(text, parse_constant=reject_constant)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise argparse.ArgumentTypeError(f"survival profile must be a readable finite JSON object: {exc}") from None
+    if not isinstance(profile, dict):
+        raise argparse.ArgumentTypeError("survival profile must contain one JSON object")
+    return path
+
+
 def common(parser, operation=None):
     # Suppressed defaults let an option before a group survive leaf parsing.
     parser.add_argument("--session", default=argparse.SUPPRESS, help="select the exact helper session ID")
@@ -142,6 +165,9 @@ def example(operation):
         "preview.status":"preview status", "preview.set":"preview set --range 10",
         "preview.fit":"preview fit", "preview.project":"preview project --canvas-x 220 --canvas-y 120",
         "pose.status":"pose status", "pose.set":"pose set --live on", "pose.refresh":"pose refresh",
+        "survival.configure":"survival configure --profile survival.json",
+        "survival.set":"survival set --enabled on", "survival.run":"survival run --execute",
+        "survival.resume":"survival resume --execute",
     }.get(operation, operation.replace(".", " "))
 
 
@@ -188,7 +214,9 @@ def build_parser():
         "diagnostics":"status show events copy open",
         "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
-        "move":"to pick mode", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
+        "move":"to pick mode", "playback":"start resume status",
+        "survival":"status configure set preflight run resume",
+        "view":"status save load open open-3d", "receipt":"list show"
     }.items():
         gp = groups.add_parser(group, help=f"{group.capitalize()} controls", description=f"{group.capitalize()} commands")
         common(gp)
@@ -252,6 +280,12 @@ def build_parser():
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
                 "move.pick":"Project owned-preview canvas pixels and move there through the guarded route runner.",
                 "move.mode":"Choose continuous held-forward or legacy pulse movement for subsequent runs.",
+                "survival.status":"Show survival integration configuration, readiness and owned-action state.",
+                "survival.configure":"Validate and select a local JSON survival profile without sending game input.",
+                "survival.set":"Enable or disable survival integration for subsequent authorized runs.",
+                "survival.preflight":"Diagnose survival, route and action-owner readiness without sending game input.",
+                "survival.run":"Start survival-aware execution of the currently loaded route.",
+                "survival.resume":"Resume the survival-aware loaded-route run after an explicit STOP or safety halt.",
             }.get(operation, f"{verb.capitalize()} {group}.")
             effects = ("Read-only native candidate refresh; sends no game input." if operation in {"zone.refresh", "pose.refresh"}
                        else "Read-only; sends no game input." if read_only or operation in {"route.context", "library.show"}
@@ -261,6 +295,10 @@ def build_parser():
                        else "Changes only the local preview display; reads no new pose and sends no game input." if operation in {"preview.set", "preview.fit"}
                        else "Changes the helper's idle pose refresh setting; sends no game input." if operation == "pose.set"
                        else "Changes the helper's movement engine setting; sends no game input." if operation == "move.mode"
+                       else "Validates and selects a local profile; sends no game input." if operation == "survival.configure"
+                       else "Changes survival integration configuration; sends no game input." if operation == "survival.set"
+                       else "Reads current survival/route readiness; sends no game input." if operation == "survival.preflight"
+                       else "Starts the configured survival-aware loaded-route action only with --execute; the existing STOP cancels all owned work." if operation in {"survival.run", "survival.resume"}
                        else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
                        else "Starts the owned shared reader when needed; sends no game input." if operation in {"beacons.show", "radar.show", "guide.start", "trail.start"}
@@ -362,6 +400,10 @@ def build_parser():
     arg("move.to", "z", type=number, help="destination world Z")
     arg("move.mode", "--engine", choices=("continuous", "pulse"), required=True,
         help="movement engine for subsequent runs: continuous (default) or legacy pulse")
+    arg("survival.configure", "--profile", type=survival_profile, required=True,
+        help=f"readable finite JSON object profile, at most {MAX_SURVIVAL_PROFILE_BYTES} bytes; sends no game input")
+    arg("survival.set", "--enabled", choices=("on", "off"), required=True,
+        help="enable or disable survival integration for subsequent authorized runs")
     arg("face", "bearing", type=bounded(0, 359.999999999), help="absolute bearing degrees [0,360)")
     arg("app.open", "--pid", type=positive, help="explicit physical RIFT process ID")
     arg("app.open", "--route", type=Path)
@@ -509,6 +551,34 @@ def human_playback(data, *, compact=False):
             print(_playback_readiness_line(label, readiness[key]))
 
 
+def human_survival(data):
+    enabled = data.get("enabled")
+    enabled_text = ("on" if enabled is True or enabled == "on" else
+                    "off" if enabled is False or enabled == "off" else "unknown")
+    active = data.get("active")
+    active_text = ("active" if active is True else "idle" if active is False else
+                   str(data.get("state") or "unknown"))
+    profile = data.get("profile")
+    if isinstance(profile, dict):
+        profile = profile.get("path") or profile.get("name") or "configured"
+    print(f"Survival integration: {enabled_text} | {active_text} | profile {profile or 'not configured'}")
+    readiness = data.get("readiness")
+    if not isinstance(readiness, dict):
+        readiness = {"ready": data.get("ready"), "reason": data.get("reason")}
+    ready = readiness.get("ready")
+    ready_text = "ready" if ready is True else "blocked" if ready is False else "unknown"
+    print("Survival preflight: " + ready_text
+          + (" | " + str(readiness["reason"]) if readiness.get("reason") else ""))
+    for check in data.get("checks") or readiness.get("checks") or []:
+        if isinstance(check, dict):
+            name = check.get("name") or check.get("check") or "check"
+            state = check.get("status") or ("pass" if check.get("ready") is True else
+                                             "blocked" if check.get("ready") is False else "unknown")
+            print(f"  {name}: {state}" + (f" | {check['reason']}" if check.get("reason") else ""))
+    if data.get("qualification"):
+        print("Qualification: " + str(data["qualification"]))
+
+
 def human_preview(preview):
     """Render bounded local-preview state without implying terrain awareness."""
     radius = preview.get("radius", "?")
@@ -575,6 +645,8 @@ def human_data(command, data):
         for step in data.get("nextSteps", []): print("Next: " + str(step))
     elif command in {"pose.status", "pose.set", "pose.refresh"}:
         human_pose(data)
+    elif command in {"survival.status", "survival.configure", "survival.set", "survival.preflight"}:
+        human_survival(data)
     elif command == "stop":
         human_controls(data, stopping=True)
     elif command in {"route.list", "route.validate"}:

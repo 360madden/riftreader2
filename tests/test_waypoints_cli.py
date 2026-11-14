@@ -51,6 +51,7 @@ class CliTests(unittest.TestCase):
                         'beacons.hide beacons.set beacons.reset guide.status guide.start guide.stop trail.status trail.start '
                         'trail.stop trail.list trail.save trail.clear record.status record.start record.stop '
                         'record.cancel move.to move.pick move.mode face playback.start playback.resume playback.status '
+                        'survival.status survival.configure survival.set survival.preflight survival.run survival.resume '
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
                         'preview.status preview.set preview.fit preview.project pose.status pose.set pose.refresh '
@@ -210,6 +211,85 @@ class CliTests(unittest.TestCase):
             with contextlib.redirect_stdout(out):
                 cli.emit(cli.result(command, data=data))
             self.assertIn("Movement engine: " + data["movementEngine"], out.getvalue())
+
+    def test_survival_commands_dispatch_with_explicit_input_authority(self):
+        with tempfile.TemporaryDirectory() as directory:
+            profile = Path(directory) / "survival.json"
+            profile.write_text('{"version":1,"healthThreshold":0.25}', encoding="utf-8")
+            cases = (
+                (("survival", "status"), "survival.status", {}, 10),
+                (("survival", "configure", "--profile", str(profile)), "survival.configure",
+                 {"profile": str(profile.resolve())}, 10),
+                (("survival", "set", "--enabled", "on"), "survival.set", {"enabled":"on"}, 10),
+                (("survival", "preflight"), "survival.preflight", {}, 10),
+                (("survival", "run", "--execute"), "survival.run", {"execute":True}, cli.LONG_ROUTE_TIMEOUT),
+                (("survival", "resume", "--execute"), "survival.resume", {"execute":True}, cli.LONG_ROUTE_TIMEOUT),
+            )
+            for argv, operation, payload, timeout in cases:
+                with self.subTest(operation=operation), patch.object(
+                        protocol, "resolve_session", return_value={}), patch.object(
+                        protocol, "request", return_value=cli.result(operation, data={})) as request:
+                    self.assertEqual(self.call(*argv, "--json")[0], 0)
+                    self.assertEqual(request.call_args.args[1:3], (operation, payload))
+                    self.assertEqual(request.call_args.kwargs["timeout"], timeout)
+
+    def test_survival_profile_and_execute_are_validated_before_dispatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            invalid = []
+            for name, content in (("array.json", "[]"), ("syntax.json", "{"),
+                                  ("nan.json", '{"threshold":NaN}')):
+                path = root / name
+                path.write_text(content, encoding="utf-8")
+                invalid.append(path)
+            oversized = root / "large.json"
+            oversized.write_text('{"padding":"' + "x" * cli.MAX_SURVIVAL_PROFILE_BYTES + '"}', encoding="utf-8")
+            invalid.extend((oversized, root / "missing.json"))
+            for path in invalid:
+                with self.subTest(path=path), patch.object(protocol, "resolve_session") as resolve:
+                    self.assertEqual(self.call("survival", "configure", "--profile", str(path), "--json")[0], 2)
+                    resolve.assert_not_called()
+        for argv in (("survival", "configure"), ("survival", "set"),
+                     ("survival", "set", "--enabled", "maybe"),
+                     ("survival", "run"), ("survival", "resume")):
+            with self.subTest(argv=argv), patch.object(protocol, "resolve_session") as resolve:
+                self.assertEqual(self.call(*argv, "--json")[0], 2)
+                resolve.assert_not_called()
+
+    def test_survival_help_and_human_status_preserve_backend_boundary(self):
+        configure = self.call("survival", "configure", "--help")[1]
+        self.assertIn("finite JSON object", configure)
+        self.assertIn("sends no game input", configure)
+        self.assertNotIn("--execute", configure)
+        preflight = self.call("survival", "preflight", "--help")[1]
+        self.assertIn("Diagnose survival, route and action-owner readiness", preflight)
+        self.assertIn("sends no game input", preflight)
+        run = self.call("survival", "run", "--help")[1]
+        self.assertIn("currently loaded route", run)
+        self.assertIn("--execute", run)
+        self.assertIn("existing STOP cancels all owned work", run)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result("survival.preflight", data={
+                "enabled":True, "active":False, "profile":{"path":"survival.json"},
+                "readiness":{"ready":False, "reason":"health unavailable",
+                             "checks":[{"name":"route", "ready":True}]},
+                "qualification":"Diagnostic only; no backend run started."}))
+        for phrase in ("Survival integration: on | idle | profile survival.json",
+                       "Survival preflight: blocked | health unavailable",
+                       "route: pass", "Diagnostic only; no backend run started"):
+            self.assertIn(phrase, out.getvalue())
+
+    def test_survival_ctrl_c_requests_existing_global_stop(self):
+        with patch.object(protocol, "resolve_session", return_value={}), patch.object(
+                protocol, "request", side_effect=[KeyboardInterrupt(), cli.result(
+                    "stop", data={"stopLatched":True, "keyReleaseEvidence":"released"})]) as request:
+            code, out, _ = self.call("survival", "run", "--execute", "--json")
+        self.assertEqual(code, 130)
+        response = json.loads(out)
+        self.assertEqual(response["status"], "cancelled")
+        owned = request.call_args_list[0].kwargs["request_id"]
+        self.assertEqual(request.call_args_list[1].args[1:3], ("stop", {"requestId":owned}))
 
     def test_map_projection_arguments_and_execute_are_required(self):
         for argv in (("preview","project","--canvas-x","1"),

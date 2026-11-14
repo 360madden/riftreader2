@@ -83,6 +83,7 @@ local function jsonEncode(value, stack)
     stack[value] = nil
     return "{" .. table.concat(parts, ",") .. "}"
 end
+Reference.EncodeJson = jsonEncode
 
 local function addonVersion()
     local toc = type(addonInfo) == "table" and addonInfo.toc

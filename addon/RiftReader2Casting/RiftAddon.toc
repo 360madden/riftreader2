@@ -3,7 +3,7 @@ Name = "RiftReader2 Casting Readout"
 Description = "Read-only casting readiness and bounded training-dummy evidence"
 Author = "360madden"
 Email = "360madden@gmail.com"
-Version = "0.4.1"
+Version = "0.4.2"
 Environment = "4.4"
 SavedVariables = { RiftReader2CastingEvidence = "character" }
-RunOnStartup = { "model.lua", "ability_reference.lua", "main.lua" }
+RunOnStartup = { "model.lua", "ability_reference.lua", "survival.lua", "main.lua" }

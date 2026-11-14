@@ -1,6 +1,22 @@
 # Current status
 
-**November 14 — long-route camera acceptance and survival foundations:** On
+**November 14 — survival route automatically retreated and finished on AMD-DESKTOP.**
+Trial 05 handled one native combat interruption, retreated, then retraced the
+walked corridor to the interruption point before continuing to its pending
+waypoint. Retreat and return together covered 18.987737 auxiliary units. The
+helper reached all three waypoints in 39.037 seconds with final error 0.208768
+units, verified release and no pressed inputs. The level 50 Elite Practice Dummy
+did not retaliate. The damage-only level 45 Warrior profile's next case is an
+appropriately leveled hostile with measured incoming damage and recovery.
+After trial 05, the native sample showed full HP and raw combat byte 0.
+The compact Waypoints GUI displayed all controls and was idle on the original
+six-point route with the damage profile configured, survival enabled and
+preflight ready.
+[Trial 05 receipt](../artifacts/survival-waypoint-run-8ba1a1565aad434aaa91b55d3da65621.json) ·
+[Survival results and CLI](reference/waypoint-survival-2026-11-14.md).
+
+**Earlier November 14 — long-route camera acceptance and survival foundations.**
+This entry records the starting point for the live survival milestone above. On
 AMD-DESKTOP, the sparse-steering controller completed a 72.802-unit configured
 courtyard loop with eight legs/corners and returned within 0.254 units of its
 starting area. Every leg used one forward hold with zero moving A/D corrections.

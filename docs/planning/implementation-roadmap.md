@@ -1,9 +1,10 @@
 # RR2 roadmap
 
 Updated **November 14, 2026 (America/New_York)** from checkout
-`C:\work\riftreader2`, branch `codex/modular-foundation`, implementation through
-`a394022` (Waypoints v1.2.0 movement milestone; longer routes in `b91e2b4`,
-composite-source guard in `570414c`).
+`C:\work\riftreader2`, branch `codex/modular-foundation`. This revision covers
+Waypoints v1.2.0 movement (`a394022`), the committed survival intake and action
+handoff foundation (`233249d`), and physical retreat/rejoin acceptance for the
+current survival integration.
 Review host: **AMD-DESKTOP**. This is the current overall roadmap;
 older discovery dispatch plans and the foundation history below are references.
 Existing uncommitted native research is work in progress, not a delivered result.
@@ -81,7 +82,7 @@ requires its applicable authority and fresh identity/ownership checks.
 | Longer routes | Shared 1,000-unit / 500-waypoint envelope, 30,000 recording samples, 30-minute trip budget, larger CLI transport, preview Fit to 1,500 units and bounded display annotations. | **Implemented and full-envelope offline verified.** One live nine-point STOP/Resume case covered 23.10184156 total planned units on a repeated 2.89-unit clear segment. A separate ten-unit clear-path out-and-back used one W hold per leg (1.601/1.560 seconds), ended 0.243274/0.252260 units from its goals, released all input and settled with zero drift. These cases do not qualify obstacle travel, arbitrary longer routes or the 1,000-unit envelope. Existing files/checkpoints are compatible. [Longer routes](../workflows/physical-waypoints.md#longer-routes). |
 | Continuous movement helper and owned map destinations | **Waypoints v1.2.0 implements** continuous held-W travel as the GUI/headless default, legacy pulse fallback, an RR2-owned flat-X/Z Click-to-move mode and CLI projection/movement controls. Existing identity, progress, foreground, STOP/release and explicit playback Resume checks remain in the path. | **Scoped live acceptance passed for continuous clear-path route/STOP/Resume plus CLI and physical-GUI owned-map movement.** The resumed route reached nine of nine over 23.10184156 planned units; a separate ten-unit out-and-back used one W hold per leg, arrived within 0.253 units, released input and settled with zero drift. CLI `preview project`/`move pick` used the actual mapped 411×182 rendered map and arrived within 0.203314 units. In the physical GUI test, the first stale-origin click was refused before input; after an explicit new click at screen pixel 879,390, shared `map-go` arrived within 0.2644456 units. Both map cases left the original six-point route, revision 1, selection 6 and clean state unchanged; final restoration returned within 0.166 units of the original position with STOP latched and no release fault. These are clear-path controls, not obstacle navigation or NumLock autorun; the flat X/Z map supplies no terrain, height, obstacle or clearance knowledge. [Route result](../../artifacts/movement-upgrade/long-route-resumed.json); [ten-unit result](../../artifacts/movement-upgrade/10-unit-out-and-back.json); [CLI map result](../../artifacts/movement-upgrade/map-click-move.json); [GUI status](../../artifacts/movement-upgrade/gui-click-status.json); [usage and limits](../workflows/physical-waypoints.md#movement-modes-and-map-destinations). |
 | Other native research | Ability/catalog/name, stats/XP, target/unit, buff and cost/cooldown/cast candidates and locating tools exist. | Field-specific partial readers/static findings and historical samples; not a fully qualified live combat/telemetry API. [Earlier discovery packages](discovery-roadmap-2026-11-06.md). |
-| Casting diagnostics | Casting addon readout, ability selection, API checks, outcome recording and protected manual Cast/Stop controls exist, with historical dummy-test evidence. | **No working route-integrated combat system.** Manual addon controls and native ability catalogs do not establish external ability execution, defensive decisions or current physical-host combat acceptance. [Casting readout](../reference/casting-readout.md). |
+| Casting and survival | Waypoints exposes survival configuration, preflight, run and Resume. Casting 0.4.2 supplies nonce-bound current state, learned ability pages and secure per-ability controls. | On physical AMD, native Pacifying Strike dealt 212 exact-target damage and STOP released input during autoattack. A three-waypoint courtyard run automatically retreated from an unsuitable encounter over 9.729 retained path units, passed the healthy recovery check, rejoined and finished within 0.128 units. A separate run completed after explicit Resume from a halt. [Physical results and CLI](../reference/waypoint-survival-2026-11-14.md). |
 | Level/XP research | Native player/target level branches and experience seed/value readers exist, including accumulated/needed XP and explicit unavailable states. | No demonstrated current physical kill-to-XP correlation or working leveling loop. Hostility, attacker/aggro and elite/rank classification are missing; a combat byte or target level is insufficient. [Player/target/experience findings](../reference/native-player-context-candidates.md). |
 
 ## Remaining work, ranked
@@ -102,14 +103,24 @@ camera candidates and recorded frame sequences show steady straight-leg follow
 in this case; broader camera smoothness remains unqualified. The combat and
 survival ranking below resumes after this targeted movement correction.
 
-Ranks 1–2 are now in implementation: source-verified survival assessment and the
-local action handoff model have focused tests. Fresh composite and decoded
-ReaderBridge packets supply scoped observations, including API-published Power;
-they do not establish a complete threat model or engagement readiness. The next
-useful gap is current learned abilities/bindings and verified action/readiness
-feedback, alongside reliable survival observations and the live owner adapter.
+The completed survival route integration supplies the CLI, shared action owner
+and physical telemetry for the remaining work.
+The current level 45 Warrior reported 55 learned abilities and 100 absolute
+Power. Native STOP/Cancel during autoattack left input released and the combat
+candidate returned to zero. The accepted Pacifying Strike mapping distinguishes
+its cast ID from its damage event and excludes an independent Auto Attack.
+Automatic retreat, healthy recovery and rejoin now pass for an unsuitable
+level 50 dummy. Trial 05 followed the walked corridor back to the interruption
+point before completing all three waypoints, with 18.988 auxiliary units over
+retreat and return. The dummy did not retaliate
+and its API relation was absent. Next verify exact attacker/target attribution
+and measured incoming damage from a suitable hostile, then recovery and route
+continuation. Expand learned skill/effect mappings against observed outcomes
+for progression before further visual polish. [Acceptance record](../reference/waypoint-survival-2026-11-14.md).
 
-The first working survival intake commands are:
+The original survival foundation provided the following diagnostic intake
+commands. The integrated route runtime above uses additional live sources and
+owns the travel, combat and recovery handoff.
 
 ```powershell
 python scripts/survival_state.py --summary PATH_TO_COMPOSITE_SUMMARY
@@ -120,10 +131,11 @@ python scripts/capture_readerbridge_v3.py --expected-host AMD-DESKTOP --physical
 The acquisition command reacquires packet addresses in a bounded scope from a
 fresh same-process scout; a seed from another process epoch is refused. A live
 pair matched two advancing packet generations to exact same-generation player
-identity companions and exposed HP 18208/18208 and Power 100. Producer defaults,
-changed-state qualification, learned abilities and action readiness remain gaps;
-the result deliberately reports `ready: false`. The local action coordinator is
-an offline-tested handoff component, not yet a live travel/combat runtime.
+identity companions and exposed HP 18208/18208 and Power 100. This foundation
+intake reports `ready: false` because its packet alone cannot establish changed
+state, learned abilities or action readiness. At that stage the local action
+coordinator had offline handoff coverage. The later physical route results are
+recorded above.
 
 The next product outcome is a character that can judge encounters, win suitable
 fights, gain useful experience and preserve its route. Avoiding a fight can be
@@ -137,18 +149,17 @@ specific freshness/meaning and action feedback they depend on.
 
 | Rank | Work | Current gap and useful completion point |
 | --- | --- | --- |
-| **1** | **Usable survival state and encounter assessment** | Establish fresh same-player alive/dead, HP/max-HP, required resources, combat state, level, target identity and action readiness for the first supported encounter. Reuse current readers; baseline candidate values need the independent meaning/change evidence required by decisions. Compare enemy level, known hostility/elite/group status, nearby danger and character readiness. Unknown critical danger is grounds to avoid/refuse engagement. Deliver only the data and bounded normal-input action feedback needed for the first suitable encounter; acquire additional fields as actual decisions require them. |
-| **2** | **One shared local runtime and input owner** | Put route travel, combat, recovery and later progression behind one local coordinator and the existing exclusive action owner. Treat the continuous helper as a bounded clear-path travel actuator, not a second controller or a terrain planner. One STOP/safety latch must halt every mode and stay latched until explicit Resume/new run; no subsystem may silently clear it or advance another subsystem's checkpoint. |
-| **3** | **One working defensive encounter and recovery** | Bind the actual current class/soul/role and learned abilities/ranks. Implement a small local conditional policy: emergency defense/heal or retreat, useful interrupt/setup, suitable damage and sustainable fallback. Respect target identity, range, resources, cooldown/GCD/cast/channel occupancy and verify outcomes. Survive and finish one suitable isolated encounter, recover to readiness, and stop/retreat when losing or evidence is unavailable. Use current learned actions; the full future build plan is rank 5. Tune useful damage, costs and downtime from observed results rather than requiring every mechanic before this works. |
-| **4** | **Travel/combat/recovery handoff and continuation** | Interrupt an owned movement leg, verify key release and retain the pending waypoint before combat takes input. Avoid unsuitable fights using known traversable alternatives or halt when no safe option is known. After an ordinary supported encounter, automatically continue only after alive/out-of-combat, recovery, identity, freshness, path/context and budget checks pass. Death, failed recovery, unavailable critical state and operator STOP remain latched until explicit Resume/new run. Fights and later XP detours never advance a route checkpoint. |
-| **5** | **Plan skills and build progression for the actual character** | Establish the current class/soul/role/build, learned abilities/ranks, unspent points and applicable prerequisites. Start with one solo-leveling/survival build and a per-level plan for skill/talent choices, passives, unlocks and training where applicable. Balance useful damage, sustain, defense and synergy; a future unlock is not currently usable. Detect level-up/build changes, reconcile the plan with actual learned state and refresh action choices. Applying a plan requires a supported, verified game interaction; proposing an allocation does not prove allocation automation exists. |
-| **6** | **A bounded leveling loop with observed progress** | Select suitable reachable XP targets; fight, verify XP, recover and continue while ready and within the trip objective/limits. Detect level-up, reconcile skill/build progression and newly available abilities, refresh stats/resources and reassess suitable enemies. Do not assume every kill rewards XP or that accumulated XP is monotonic across a level-up. Track whole-cycle progress and downtime rather than kills or peak damage alone. |
-| **7** | **Prove useful longer travel and progression** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, reject an unsuitable encounter, win a suitable one using the build's action policy, observe XP, recover and Resume. Success means arriving alive with valid progress and released input, with actual XP reported separately from level-up. Include level-up/build reconciliation when one occurs. Retain STOP-mid-leg, Reverse and same-build restart/Resume as useful. Fix real failures, then expand; full 1,000-unit capacity is not a mandatory first trial. |
-| **8** | **Make route location and height context dependable** | Zone tags and measured/estimated height cues already work. Cover actual floors/elevation and zone/world/instance changes; preserve measured corners and refuse inappropriate route/Resume. Move a specific context check earlier when an XP detour requires it. Combat/level advantage does not establish walkability. |
-| **9** | **Broaden retrieval and expose useful data to consumers** | Extend beyond the survival/build/progression essentials with coherent nearby-unit detail, more stats and ability/cooldown/cast/buff outputs, retaining consistent source/time/identity/availability contracts. Reuse physical commands, the composite reader, catalog and exports. Prove useful requests before adding a service/SDK/framework. |
-| **10** | **Finish physical-host addon reference acceptance where useful** | Establish the loaded RR2R1 producer, nonce/session binding and advancing same-player observations when needed as independent reference/fallback. Disk hashes and old lab success are insufficient. Move this earlier for concrete build/combat/XP data; native work need not wait for unrelated addon completion. |
+| **1** | **Survive one suitable hostile encounter and continue the route** | Use an isolated, appropriately leveled hostile that deals measurable incoming damage. Pin the attacker, player and intended target, act with the current learned profile, and verify outgoing effects, HP change and the encounter outcome. Recover HP and Power to the configured thresholds and finish the pending route leg. Keep the self-heal role disabled until a self-targeted action and its effect are verified. |
+| **2** | **Identify threats, select targets and qualify suitability** | Bind observed incoming damage to its actual caster, distinguish selected target from attacker, and check target changes, relation, level, elite/group status, nearby danger and readiness as each decision needs them. Qualify target selection against fresh exact IDs. Unavailable critical information must cause avoidance or a halt. |
+| **3** | **Qualify remaining handoff and cleanup cases** | Use retained diagnostics to investigate trial 04's uncertain cleanup if it recurs. Verify STOP during an active cast/channel, then repeated encounters on a route with corners. Check released input, the preserved pending waypoint, return along the traversed corridor and the shared trip deadline. An operator STOP still requires explicit Resume. |
+| **4** | **Plan skills and build progression for the actual character** | Establish the current class/soul/role/build, learned abilities/ranks, unspent points and applicable prerequisites. Start with one solo-leveling/survival build and a per-level plan for skill/talent choices, passives, unlocks and training where applicable. Balance useful damage, sustain, defense and synergy; a future unlock is not currently usable. Detect level-up/build changes, reconcile the plan with actual learned state and refresh action choices. Applying a plan requires a supported, verified game interaction; proposing an allocation does not prove allocation automation exists. |
+| **5** | **A bounded leveling loop with observed progress** | Select suitable reachable XP targets; fight, verify XP, recover and continue while ready and within the trip objective/limits. Detect level-up, reconcile skill/build progression and newly available abilities, refresh stats/resources and reassess suitable enemies. Do not assume every kill rewards XP or that accumulated XP is monotonic across a level-up. Track whole-cycle progress and downtime rather than kills or peak damage alone. |
+| **6** | **Prove useful longer travel and progression** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, reject an unsuitable encounter, win a suitable one using the build's action policy, observe XP, recover and Resume. Success means arriving alive with valid progress and released input, with actual XP reported separately from level-up. Include level-up/build reconciliation when one occurs. Retain STOP-mid-leg, Reverse and same-build restart/Resume as useful. Fix real failures, then expand; full 1,000-unit capacity is not a mandatory first trial. |
+| **7** | **Make route location and height context dependable** | Zone tags and measured/estimated height cues already work. Cover actual floors/elevation and zone/world/instance changes; preserve measured corners and refuse inappropriate route/Resume. Move a specific context check earlier when an XP detour requires it. Combat/level advantage does not establish walkability. |
+| **8** | **Broaden retrieval and expose useful data to consumers** | Extend beyond the survival/build/progression essentials with coherent nearby-unit detail, more stats and ability/cooldown/cast/buff outputs, retaining consistent source/time/identity/availability contracts. Reuse physical commands, the composite reader, catalog and exports. Prove useful requests before adding a service/SDK/framework. |
+| **9** | **Finish physical-host addon reference acceptance where useful** | Establish the loaded RR2R1 producer, nonce/session binding and advancing same-player observations when needed as independent reference/fallback. Disk hashes and old lab success are insufficient. Move this earlier for concrete build/combat/XP data; native work need not wait for unrelated addon completion. |
 
-For ranks 1–7, current input/health-change deferrals and action authority must be
+For ranks 1–6, applicable live input and health-change authority must be
 resolved for the specific live experiment before it runs. The roadmap correction
 does not itself initiate an attack, health-change test or uncontrolled run.
 
@@ -203,8 +214,9 @@ autonomous runtime or its combat/progression features is implemented today.
 
 ## Skill progression and combat decision requirements
 
-These are required parts of ranks 3, 5 and 6, not delivered capabilities. Implement the
-first useful character/build profile with existing readers and input controls;
+Ranks 1, 4 and 5 use these requirements for the first suitable fight, build
+progression and the leveling loop. Extend the current damage-only profile with
+verified learned abilities and effects using existing readers and input controls;
 do not wait for a universal simulator or an AI training system.
 
 **A shared character/ability model.** Bind the active class/souls/role, level,

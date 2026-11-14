@@ -25,7 +25,7 @@ local abilityKeys = {"id", "idNew", "name", "description", "target", "castingTim
     "currentCooldownExpired", "currentCooldownPaused", "unusable", "outOfRange", "rangeMin", "rangeMax",
     "costPower", "costMana", "costEnergy", "costCharge", "costSpirit", "costPlanarCharge", "positioned", "passive",
     "continuous", "autoattack", "weapon", "stealthRequired", "icon", "focusMin", "focusMax"}
-local unitKeys = {"id", "name", "health", "healthMax", "power", "mana", "energy", "charge", "spirit", "planar", "combo",
+local unitKeys = {"id", "name", "level", "calling", "dead", "health", "healthMax", "power", "mana", "energy", "charge", "spirit", "planar", "combo",
     "combat", "relation", "player", "coordX", "coordY", "coordZ"}
 local function outcome(t)
     if t.hit then return "intended-hit-confirmed" end
@@ -67,7 +67,7 @@ function M.New(api)
         self.selected = id
         return true
     end
-    function self:Read()
+    function self:Read(allowSelfTarget)
         self.sequence = self.sequence + 1
         local now = call(section("Time").Frame)
         local player = call(section("Unit").Lookup, "player")
@@ -75,22 +75,25 @@ function M.New(api)
         local pd = player and call(section("Unit").Detail, player)
         local td = target and call(section("Unit").Detail, target)
         local ad = self.selected and call(section("Ability", "New").Detail, self.selected)
+        local selfTarget = allowSelfTarget == true and player ~= nil and type(ad) == "table" and ad.target == player
         local castOk, cast = false, nil
         if player and type(section("Unit").Castbar) == "function" then castOk, cast = pcall(section("Unit").Castbar, player) end
         local r = {sequence = self.sequence, clock = now, playerId = player, targetId = target,
             player = copy(pd, unitKeys), target = copy(td, unitKeys), abilityId = self.selected,
             ability = copy(ad, abilityKeys), cast = copy(cast, {"ability", "abilityName", "begin", "duration", "remaining", "expired", "channeled"}),
+            castStatus = castOk and (cast == nil and "idle" or type(cast) == "table" and
+                (cast.ability or cast.abilityName) and "active") or "unavailable",
             status = "blocked", reason = "unavailable", facingAndLineOfSight = "unverified"}
         -- Keep long tooltip descriptions once in the inventory, not every 100 ms.
         r.ability.description = nil
         if not number(now) or type(pd) ~= "table" then r.reason = "player-unavailable"
-        elseif not target or type(td) ~= "table" then r.reason = "no-target"
+        elseif not selfTarget and (not target or type(td) ~= "table") then r.reason = "no-target"
         elseif type(ad) ~= "table" then r.reason = "select-ability"
         elseif call(section("Unit").Lookup, "player") ~= player or call(section("Unit").Lookup, "player.target") ~= target then r.reason = "identity-changed"
         elseif not number(pd.health) or pd.health <= 0 then r.reason = "player-not-alive"
-        elseif not number(td.health) or td.health <= 0 then r.reason = "target-not-alive"
+        elseif not selfTarget and (not number(td.health) or td.health <= 0) then r.reason = "target-not-alive"
         elseif ad.passive or ad.positioned or ad.autoattack then r.reason = "unsupported-ability-type"
-        elseif ad.target ~= target then r.reason = "ability-target-mismatch"
+        elseif not selfTarget and ad.target ~= target then r.reason = "ability-target-mismatch"
         elseif ad.outOfRange then r.reason = "out-of-range"
         elseif not castOk then r.reason = "cast-state-unavailable"
         elseif ad.currentCooldownRemaining ~= nil and (not number(ad.currentCooldownRemaining) or ad.currentCooldownRemaining < 0) then r.reason = "invalid-cooldown"

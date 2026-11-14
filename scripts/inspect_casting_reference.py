@@ -175,7 +175,7 @@ def decode_wire(raw: bytes) -> dict:
     if (root.get("schemaVersion") != 1
             or root.get("producer") != "RiftReader2CastingAbilityReference"
             or root.get("producerVersion") != "0.1.0"
-            or root.get("addonVersion") != "0.4.1"
+            or root.get("addonVersion") not in ("0.4.1", "0.4.2")
             or root.get("source") != "rift-api"
             or root.get("lineage") != LINEAGE
             or root.get("referenceAbility") != {

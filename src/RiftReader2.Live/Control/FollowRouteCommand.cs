@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using RiftReader2.Application;
 using RiftReader2.Infrastructure;
 
 namespace RiftReader2.Live.Control;
@@ -19,13 +20,23 @@ internal static class FollowRouteCommand
         string ExpectedHost, int Pid, long ExpectedStartTicks, string ExpectedSha256,
         long ExpectedHwnd, ulong ExpectedPlayerKey, int OwnerPid, long OwnerStartTicks,
         double X, double Z, string StopFile, int MaxSeconds, bool Execute, bool Json,
-        double? ExpectedX = null, double? ExpectedZ = null, double? ExpectedBearing = null);
+        double? ExpectedX = null, double? ExpectedZ = null, double? ExpectedBearing = null,
+        bool SurvivalInterrupt = false, bool SurvivalRetreat = false);
+
+    internal sealed record SurvivalSnapshot(string Status, long? HealthCurrent,
+        long? HealthMaximum, bool? CombatCandidate, byte? RawCombat,
+        DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc, string? Reason = null)
+    {
+        public string Qualification =>
+            "candidate-only native self health/combat guard; changed-state and restart qualification remain limited";
+    }
 
     internal sealed record Pose(double X, double Y, double Z, double Bearing, ulong PlayerKey,
         ulong PlayerEntity, ulong PlayerSystem, DateTimeOffset StartedAtUtc, DateTimeOffset CompletedAtUtc,
         double? OpticalCameraBearingDegreesCandidate = null,
         double? OpticalCameraPitchDegreesCandidate = null,
-        string? OpticalCameraStatus = null);
+        string? OpticalCameraStatus = null,
+        SurvivalSnapshot? Survival = null);
     internal sealed record PathPoint(double X, double Y, double Z, double Bearing,
         double Distance, DateTimeOffset ObservedAtUtc,
         double? OpticalCameraBearingDegreesCandidate = null,
@@ -33,7 +44,23 @@ internal static class FollowRouteCommand
         string? OpticalCameraStatus = null);
     internal sealed record Result(string Status, string? Reason, Pose? FinalPose,
         double InitialDistance, double FinalDistance, int ReadCount, PathPoint[] Path,
-        double ElapsedMilliseconds, bool InputSent, bool ReleaseSucceeded);
+        double ElapsedMilliseconds, bool InputSent, bool ReleaseSucceeded,
+        SurvivalSnapshot? SurvivalSnapshot = null);
+    internal sealed record ReceiptPosition(double X, double Y, double Z);
+    internal sealed record ResultReceiptProjection(
+        ReceiptPosition? Position,
+        double? BodyBearingDegreesCandidate,
+        double? OpticalCameraBearingDegreesCandidate,
+        double? OpticalCameraPitchDegreesCandidate,
+        string? OpticalCameraStatus,
+        double? InitialDistance,
+        double? FinalDistance,
+        int ReadCount,
+        PathPoint[] Path,
+        double ElapsedMilliseconds,
+        bool InputSent,
+        bool ReleaseSucceeded,
+        SurvivalSnapshot? SurvivalSnapshot);
 
     internal interface IInput
     {
@@ -50,7 +77,7 @@ internal static class FollowRouteCommand
         for (var i = 0; i < args.Length; i++)
         {
             var option = args[i];
-            if (option is "--execute" or "--json")
+            if (option is "--execute" or "--json" or "--survival-interrupt" or "--survival-retreat")
             {
                 if (!flags.Add(option)) throw new InvalidDataException("Repeated option: " + option);
                 continue;
@@ -97,6 +124,10 @@ internal static class FollowRouteCommand
         var originCount = new[] { "--expect-x", "--expect-z", "--expect-bearing" }.Count(values.ContainsKey);
         if (originCount is not (0 or 3))
             throw new InvalidDataException("--expect-x, --expect-z and --expect-bearing are all-or-none.");
+        var survivalInterrupt = flags.Contains("--survival-interrupt");
+        var survivalRetreat = flags.Contains("--survival-retreat");
+        if (survivalRetreat && !survivalInterrupt)
+            throw new InvalidDataException("--survival-retreat requires --survival-interrupt.");
         return new(Required("--expected-host"), PositiveInt(Required("--pid"), "--pid"),
             PositiveTicks(Required("--expect-start-ticks"), "--expect-start-ticks"),
             sha.ToUpperInvariant(), MoveKeyCommand.ParseWindowHandle(Required("--expect-hwnd")),
@@ -106,7 +137,29 @@ internal static class FollowRouteCommand
             Path.GetFullPath(stopRaw), maximum, flags.Contains("--execute"), flags.Contains("--json"),
             originCount == 0 ? null : Finite(values["--expect-x"], "--expect-x"),
             originCount == 0 ? null : Finite(values["--expect-z"], "--expect-z"),
-            originCount == 0 ? null : Finite(values["--expect-bearing"], "--expect-bearing"));
+            originCount == 0 ? null : Finite(values["--expect-bearing"], "--expect-bearing"),
+            survivalInterrupt, survivalRetreat);
+    }
+
+    internal static string SurvivalMode(Options options) => options.SurvivalRetreat
+        ? "retreat" : options.SurvivalInterrupt ? "interrupt" : "disabled";
+
+    internal static ResultReceiptProjection ProjectResult(Result? result)
+    {
+        static double? Finite(double? value) => value is double number && double.IsFinite(number)
+            ? number : null;
+        var pose = result?.FinalPose;
+        var position = pose is not null && double.IsFinite(pose.X)
+            && double.IsFinite(pose.Y) && double.IsFinite(pose.Z)
+            ? new ReceiptPosition(pose.X, pose.Y, pose.Z) : null;
+        return new(position, Finite(pose?.Bearing),
+            Finite(pose?.OpticalCameraBearingDegreesCandidate),
+            Finite(pose?.OpticalCameraPitchDegreesCandidate), pose?.OpticalCameraStatus,
+            Finite(result?.InitialDistance), Finite(result?.FinalDistance),
+            result?.ReadCount ?? 0, result?.Path ?? [],
+            Finite(result?.ElapsedMilliseconds) ?? 0,
+            result?.InputSent ?? false, result?.ReleaseSucceeded ?? true,
+            result?.SurvivalSnapshot);
     }
 
     internal static void ValidateExpectedOrigin(Options options, Pose pose)
@@ -191,8 +244,20 @@ internal static class FollowRouteCommand
         var initialDistance = double.NaN;
         var finalDistance = double.NaN;
         Pose? finalPose = null;
+        long? survivalBaselineHealth = null;
+        SurvivalSnapshot? survivalSnapshot = null;
         using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         var operationToken = operationCancellation.Token;
+
+        void CancelOperation()
+        {
+            try { operationCancellation.Cancel(); }
+            catch (Exception error)
+            {
+                Interlocked.CompareExchange(ref terminalReason,
+                    "cancellation-fault: " + error.GetType().Name, null);
+            }
+        }
 
         void ReleaseKeyLocked(string key)
         {
@@ -212,7 +277,7 @@ internal static class FollowRouteCommand
                 }
             }
             down.Remove(key);
-            operationCancellation.Cancel();
+            CancelOperation();
         }
         void SetKey(string key, bool pressed)
         {
@@ -242,7 +307,7 @@ internal static class FollowRouteCommand
                     if (immediateReason is not null)
                     {
                         Interlocked.CompareExchange(ref terminalReason, immediateReason, null);
-                        operationCancellation.Cancel();
+                        CancelOperation();
                     }
                     if (Volatile.Read(ref terminalReason) is not null || operationToken.IsCancellationRequested)
                         throw new OperationCanceledException(operationToken);
@@ -277,6 +342,30 @@ internal static class FollowRouteCommand
                     : "external-input-held: " + string.Join(", ", external);
             }
         }
+        string? SurvivalReason(SurvivalSnapshot snapshot)
+        {
+            survivalSnapshot = snapshot;
+            if (snapshot.Status != "available-candidate"
+                || snapshot.HealthCurrent is not long current
+                || snapshot.HealthMaximum is not long maximum
+                || snapshot.CombatCandidate is not bool combat
+                || current < 0 || maximum <= 0 || current > maximum)
+                return "survival-unavailable";
+            if (current == 0)
+                return "survival-dead";
+            if (survivalBaselineHealth is null)
+            {
+                survivalBaselineHealth = current;
+            }
+            // The caller may authorize this only for an owned reverse-known-trail
+            // retreat. Combat and ordinary damage are expected while disengaging;
+            // unavailable survival data and death remain terminal above.
+            if (options.SurvivalRetreat)
+                return null;
+            if (combat)
+                return "survival-combat";
+            return current < survivalBaselineHealth ? "survival-hp-drop" : null;
+        }
         async Task<Pose> Read()
         {
             var pose = await readPose(operationToken);
@@ -297,6 +386,11 @@ internal static class FollowRouteCommand
             reads++;
             finalPose = pose;
             finalDistance = Distance(pose, options.X, options.Z);
+            // The first accepted pose is also the admission metric. Establish it
+            // before a survival refusal so halted receipts retain finite position,
+            // distance and path evidence instead of NaN/Infinity placeholders.
+            if (!double.IsFinite(initialDistance))
+                initialDistance = finalDistance;
             var point = new PathPoint(pose.X, pose.Y, pose.Z, pose.Bearing,
                 finalDistance, pose.CompletedAtUtc,
                 pose.OpticalCameraBearingDegreesCandidate,
@@ -310,6 +404,17 @@ internal static class FollowRouteCommand
                 // Short live runs therefore retain every control-law sample.
                 path.RemoveAt(1);
                 path.Add(point);
+            }
+            var survivalReason = options.SurvivalInterrupt && pose.Survival is { } survival
+                ? SurvivalReason(survival)
+                : options.SurvivalInterrupt && survivalBaselineHealth is null
+                    ? "survival-unavailable" : null;
+            if (survivalReason is not null)
+            {
+                Interlocked.CompareExchange(ref terminalReason, survivalReason, null);
+                ReleaseAll();
+                CancelOperation();
+                throw new OperationCanceledException(operationToken);
             }
             return pose;
         }
@@ -338,7 +443,7 @@ internal static class FollowRouteCommand
                 {
                     Interlocked.CompareExchange(ref terminalReason, reason, null);
                     ReleaseAll();
-                    operationCancellation.Cancel();
+                    CancelOperation();
                     return;
                 }
                 await Task.Delay(WatchdogPollMilliseconds, CancellationToken.None);
@@ -616,7 +721,8 @@ internal static class FollowRouteCommand
         {
             Interlocked.CompareExchange(ref terminalReason, "cancelled", null);
             status = terminalReason == "stop-file-requested" ? "stopped"
-                : inputSent ? "halted" : "blocked";
+                : terminalReason?.StartsWith("survival-", StringComparison.Ordinal) == true
+                    ? "halted" : inputSent ? "halted" : "blocked";
         }
         catch (Exception error)
         {
@@ -627,7 +733,13 @@ internal static class FollowRouteCommand
         {
             ReleaseAll();
             watchdogCancellation.Cancel();
-            await watchdog;
+            try { await watchdog; }
+            catch (Exception error)
+            {
+                Interlocked.CompareExchange(ref terminalReason,
+                    "watchdog-fault: " + error.GetType().Name, null);
+                ReleaseAll();
+            }
         }
         if (terminalReason is not null && status == "arrived")
             status = terminalReason == "stop-file-requested" ? "stopped" : "halted";
@@ -635,9 +747,13 @@ internal static class FollowRouteCommand
             status = "halted";
         if (finalPose is not null && (path.Count == 0 || path[^1].ObservedAtUtc != finalPose.CompletedAtUtc))
             path.Add(new(finalPose.X, finalPose.Y, finalPose.Z, finalPose.Bearing,
-                finalDistance, finalPose.CompletedAtUtc));
+                finalDistance, finalPose.CompletedAtUtc,
+                finalPose.OpticalCameraBearingDegreesCandidate,
+                finalPose.OpticalCameraPitchDegreesCandidate,
+                finalPose.OpticalCameraStatus));
         return new(status, terminalReason, finalPose, initialDistance, finalDistance,
-            reads, path.ToArray(), clock.Elapsed.TotalMilliseconds, inputSent, releaseSucceeded);
+            reads, path.ToArray(), clock.Elapsed.TotalMilliseconds, inputSent, releaseSucceeded,
+            survivalSnapshot);
     }
 
     internal static async Task<int> RunAsync(string[] args, CancellationToken token)
@@ -671,6 +787,8 @@ internal static class FollowRouteCommand
             }
             var target = Inspect();
             await using var reader = await NativePoseReader.CreateAsync(options, executable, token);
+            if (options.SurvivalInterrupt)
+                reader.EnableSurvival();
             // The rendered map origin is checked against a fresh self pose before
             // focus can change. Default one-point CLI use may omit this triplet.
             var preFocusPose = await reader.ReadAsync(token);
@@ -700,6 +818,9 @@ internal static class FollowRouteCommand
                     opticalCameraPitchDegreesCandidate = preFocusPose.OpticalCameraPitchDegreesCandidate,
                     opticalCameraStatus = preFocusPose.OpticalCameraStatus,
                     opticalCameraYawQualified = false,
+                    survivalInterrupt = options.SurvivalInterrupt,
+                    survivalMode = SurvivalMode(options),
+                    survivalSnapshot = preFocusPose.Survival,
                     initialDistance = Distance(preFocusPose, options.X, options.Z),
                     finalDistance = Distance(preFocusPose, options.X, options.Z),
                     stopFile = options.StopFile,
@@ -728,26 +849,28 @@ internal static class FollowRouteCommand
                 var timeline = new MoveKeyCommand.KeySendTimeline();
                 using var keyInput = new MoveKeyCommand.KeyInput(
                     WindowsControlDesktop.PinInputTarget(ready), timeline);
+                if (options.SurvivalInterrupt)
+                    reader.ForceSurvivalSample();
                 var result = await FollowAsync(options, reader.ReadAsync,
                     new KeyInputAdapter(keyInput), Safety, token: token);
                 completedResult = result;
                 completedTarget = ready;
-                var position = result.FinalPose is null ? null : new
-                {
-                    x = result.FinalPose.X, y = result.FinalPose.Y, z = result.FinalPose.Z
-                };
+                var receipt = ProjectResult(result);
                 MoveKeyCommand.Report(options.Json, new
                 {
                     result.Status, result.Reason, target = ready,
                     playerKey = options.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
-                    goal = new { x = options.X, z = options.Z }, position,
-                    bodyBearingDegreesCandidate = result.FinalPose?.Bearing,
-                    opticalCameraBearingDegreesCandidate = result.FinalPose?.OpticalCameraBearingDegreesCandidate,
-                    opticalCameraPitchDegreesCandidate = result.FinalPose?.OpticalCameraPitchDegreesCandidate,
-                    opticalCameraStatus = result.FinalPose?.OpticalCameraStatus,
+                    goal = new { x = options.X, z = options.Z }, receipt.Position,
+                    receipt.BodyBearingDegreesCandidate,
+                    receipt.OpticalCameraBearingDegreesCandidate,
+                    receipt.OpticalCameraPitchDegreesCandidate,
+                    receipt.OpticalCameraStatus,
                     opticalCameraYawQualified = false,
-                    result.InitialDistance, result.FinalDistance, result.ReadCount, result.Path,
-                    result.ElapsedMilliseconds, result.InputSent, result.ReleaseSucceeded,
+                    survivalInterrupt = options.SurvivalInterrupt,
+                    survivalMode = SurvivalMode(options),
+                    receipt.SurvivalSnapshot,
+                    receipt.InitialDistance, receipt.FinalDistance, receipt.ReadCount, receipt.Path,
+                    receipt.ElapsedMilliseconds, receipt.InputSent, receipt.ReleaseSucceeded,
                     keySendEvents = timeline.Snapshot(), releaseFallbacks = keyInput.ReleaseFallbacks,
                     desktopInputsDown = WindowsControlDesktop.ReadPressedInputs(),
                     stopFile = options.StopFile,
@@ -764,7 +887,8 @@ internal static class FollowRouteCommand
             IReadOnlyList<string> inputsDown;
             try { inputsDown = WindowsControlDesktop.ReadPressedInputs(); }
             catch { inputsDown = ["input-state-unavailable"]; }
-            var executionStarted = completedResult?.InputSent ?? false;
+            var receipt = ProjectResult(completedResult);
+            var executionStarted = receipt.InputSent;
             MoveKeyCommand.Report(json, new
             {
                 status = executionStarted ? "halted" : "blocked",
@@ -773,18 +897,20 @@ internal static class FollowRouteCommand
                 playerKey = completedTarget is null ? null
                     : options?.ExpectedPlayerKey.ToString(CultureInfo.InvariantCulture),
                 goal = options is null ? null : new { x = options.X, z = options.Z },
-                position = completedResult?.FinalPose is null ? null : new
-                { x = completedResult.FinalPose.X, y = completedResult.FinalPose.Y, z = completedResult.FinalPose.Z },
-                bodyBearingDegreesCandidate = completedResult?.FinalPose?.Bearing,
-                opticalCameraBearingDegreesCandidate = completedResult?.FinalPose?.OpticalCameraBearingDegreesCandidate,
-                opticalCameraPitchDegreesCandidate = completedResult?.FinalPose?.OpticalCameraPitchDegreesCandidate,
-                opticalCameraStatus = completedResult?.FinalPose?.OpticalCameraStatus,
+                receipt.Position,
+                receipt.BodyBearingDegreesCandidate,
+                receipt.OpticalCameraBearingDegreesCandidate,
+                receipt.OpticalCameraPitchDegreesCandidate,
+                receipt.OpticalCameraStatus,
                 opticalCameraYawQualified = false,
-                initialDistance = completedResult?.InitialDistance,
-                finalDistance = completedResult?.FinalDistance,
-                readCount = completedResult?.ReadCount ?? 0,
-                path = completedResult?.Path ?? [],
-                elapsedMilliseconds = completedResult?.ElapsedMilliseconds ?? 0,
+                survivalInterrupt = options?.SurvivalInterrupt ?? false,
+                survivalMode = options is null ? "unavailable" : SurvivalMode(options),
+                receipt.SurvivalSnapshot,
+                receipt.InitialDistance,
+                receipt.FinalDistance,
+                receipt.ReadCount,
+                receipt.Path,
+                receipt.ElapsedMilliseconds,
                 keySendEvents = Array.Empty<object>(),
                 releaseFallbacks = 0,
                 desktopInputsDown = inputsDown,
@@ -792,7 +918,7 @@ internal static class FollowRouteCommand
                 owner = options is null ? null : new
                 { processId = options.OwnerPid, processStartUtcTicks = options.OwnerStartTicks },
                 inputSent = executionStarted,
-                releaseSucceeded = completedResult?.ReleaseSucceeded ?? !executionStarted,
+                receipt.ReleaseSucceeded,
                 watchdog = options is null ? null : new { poseTimeoutMilliseconds = PoseTimeoutMilliseconds,
                     pollMilliseconds = WatchdogPollMilliseconds, maxSeconds = options.MaxSeconds }
             });
@@ -812,11 +938,22 @@ internal static class FollowRouteCommand
     {
         private ulong? entity;
         private ulong? system;
+        private readonly Stopwatch survivalClock = Stopwatch.StartNew();
+        private TimeSpan nextSurvivalSample = TimeSpan.Zero;
+        private bool survivalEnabled;
 
         internal static async Task<NativePoseReader> CreateAsync(
             Options options, string executablePath, CancellationToken token) =>
             new(options, await VerifiedNativeExecutablePin.OpenAsync(
                 executablePath, options.ExpectedSha256, token));
+
+        internal void EnableSurvival()
+        {
+            survivalEnabled = true;
+            nextSurvivalSample = TimeSpan.Zero;
+        }
+
+        internal void ForceSurvivalSample() => nextSurvivalSample = TimeSpan.Zero;
 
         internal async Task<Pose> ReadAsync(CancellationToken token)
         {
@@ -835,12 +972,52 @@ internal static class FollowRouteCommand
             system ??= sample.PlayerSystem;
             if (sample.PlayerEntity != entity || sample.PlayerSystem != system)
                 throw new InvalidDataException("Native player owner changed during follow.");
+            SurvivalSnapshot? survival = null;
+            if (survivalEnabled && survivalClock.Elapsed >= nextSurvivalSample)
+            {
+                survival = ReadSurvival(session, sample, token);
+                nextSurvivalSample = survivalClock.Elapsed + TimeSpan.FromMilliseconds(250);
+            }
             if (await session.RevalidateAsync(token) is not null || session.Identity != sample.Identity)
                 throw new InvalidDataException("Native process identity changed during follow.");
             var camera = sample.OpticalCameraCandidate;
             return new(position.X, position.Y, position.Z, bearing, sample.PlayerKey,
                 sample.PlayerEntity, sample.PlayerSystem, sample.StartedAtUtc, sample.CompletedAtUtc,
-                camera?.BearingDegreesCandidate, camera?.PitchDegreesCandidate, camera?.Status);
+                camera?.BearingDegreesCandidate, camera?.PitchDegreesCandidate, camera?.Status, survival);
+        }
+
+        private static SurvivalSnapshot ReadSurvival(IReadOnlyNativeMemorySession session,
+            CurrentBuildFacingCandidate pose, CancellationToken token)
+        {
+            var started = DateTimeOffset.UtcNow;
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                var context = CurrentBuildPlayerContextCandidateReader.Read(session);
+                var vitals = CurrentBuildVitalsCandidateReader.Read(session);
+                token.ThrowIfCancellationRequested();
+                if (context.Identity != pose.Identity || vitals.Identity != pose.Identity
+                    || context.UnitKey != pose.PlayerKey || vitals.UnitKey != pose.PlayerKey
+                    || context.Entity != pose.PlayerEntity)
+                    throw new InvalidDataException("Survival self owner changed during capture.");
+                var health = vitals.Health;
+                var available = health.Status == "calculated-candidate"
+                    && health.Current is long && health.Maximum is long
+                    && context.CombatStatus == "raw-byte-candidate";
+                return new(available ? "available-candidate" : "unavailable",
+                    health.Current, health.Maximum,
+                    available ? context.CombatCandidate : null,
+                    available ? context.RawCombat : null,
+                    started, DateTimeOffset.UtcNow,
+                    available ? null : health.UnavailableReason ?? "health-or-combat-candidate-unavailable");
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception error) when (error is InvalidDataException or IOException or OverflowException)
+            {
+                return new("unavailable", null, null, null, null,
+                    started, DateTimeOffset.UtcNow,
+                    error.GetType().Name + ": " + error.Message);
+            }
         }
 
         public ValueTask DisposeAsync() => pin.DisposeAsync();

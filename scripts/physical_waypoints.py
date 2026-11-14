@@ -29,6 +29,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Direct execution names this module ``__main__``.  Movement and survival
+# helpers import the canonical package name, so publish that alias before any
+# helper can define an exception boundary against a second copy of this module.
+if __name__ == "__main__":
+    sys.modules["scripts.physical_waypoints"] = sys.modules[__name__]
+
 from scripts import physical_rift
 from scripts.movement_controller import Position, WaypointController, planar_distance
 from scripts.nav_physical_reservation import PhysicalClientIdentity, PhysicalClientReservation
@@ -1045,6 +1051,10 @@ def launch_window(args):
     last_edit_change = None
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
     continuous_travel = tk.BooleanVar(value=getattr(args, "movement_engine", "pulse") == "continuous")
+    survival_enabled = tk.BooleanVar(value=False)
+    survival_summary = tk.StringVar(value="Survival: choose a verified ability profile")
+    from scripts.waypoint_survival_runtime import WaypointSurvivalRuntime
+    survival_runtime = WaypointSurvivalRuntime()
     target_beacon = tk.BooleanVar(value=False)
     landmark_guide = tk.BooleanVar(value=False)
     appearance_path = (ROOT / "artifacts" / "waypoint-marker-style.json").absolute()
@@ -1620,7 +1630,9 @@ def launch_window(args):
 
         try:
             runner = run_route
-            if engine == "continuous" and operation in ("go", "play", "resume"):
+            if engine == "survival" and operation in ("go", "play", "resume"):
+                runner = survival_runtime.route_runner
+            elif engine == "continuous" and operation in ("go", "play", "resume"):
                 from scripts.continuous_move import run_continuous_route
                 runner = run_continuous_route
             if adapter is None:
@@ -1642,7 +1654,10 @@ def launch_window(args):
                     from scripts.waypoint_route_library import compare_context
                     if compare_context(route_context, observed_context) != "matching":
                         raise WaypointError("Route zone candidate does not match the current zone; no movement sent")
-            if operation in ("zone", "zone-live"):
+            if operation == "survival-preflight":
+                outcome = survival_runtime.preflight(adapter, stop)
+                emit({"status": "survival-state", "survival": outcome})
+            elif operation in ("zone", "zone-live"):
                 outcome = observed_context
             elif operation in ("refresh", "save", "map", "live", "target"):
                 adapter, pose, reconnected = idle_read(
@@ -1858,7 +1873,7 @@ def launch_window(args):
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
             return
-        if operation in ("go", "face", "face-bearing", "teach", "record", "map-go", "play", "resume") and markers.running():
+        if operation in ("go", "face", "face-bearing", "teach", "record", "map-go", "play", "resume", "survival-preflight") and markers.running():
             if stop_markers():
                 state.set("Markers are closing; try the action again when they are hidden.")
             return
@@ -1910,6 +1925,8 @@ def launch_window(args):
         mode = True if operation in ("play", "resume") else walk_facing.get() if face_walk is None else face_walk
         request_id = cli_action["id"] if cli_action is not None else None
         engine = "continuous" if continuous_travel.get() else "pulse"
+        if survival_enabled.get() and operation in ("go", "play", "resume"):
+            engine = "survival"
         threading.Thread(target=worker, args=(operation, points, mode, context, request_id, engine), daemon=False).start()
         return True
 
@@ -2621,14 +2638,17 @@ def launch_window(args):
     playback_group.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
     recording_controls = ttk.LabelFrame(replay_tab, text="RECORD A PATH", padding=(10, 5), style="Card.TLabelframe")
     recording_controls.grid(row=0, column=1, sticky="nsew", padx=(0, 10))
-    controls = ttk.LabelFrame(replay_tab, text="DIRECT MOVEMENT", padding=(10, 5), style="Card.TLabelframe")
+    controls = ttk.LabelFrame(replay_tab, text="DIRECT MOVEMENT", padding=(10, 3), style="Card.TLabelframe")
     controls.grid(row=0, column=2, sticky="nsew")
+    compact_style = ttk.Style(window)
+    compact_style.configure("Direct.TButton", padding=(7, 2), font=("Segoe UI", 9, "bold"))
+    compact_style.configure("Direct.TCheckbutton", padding=(2, 0), font=("Segoe UI", 9))
     for label, row, column, span, callback in (
             ("Go Selected", 0, 0, 1, lambda: start("go", selected_points())),
             ("Face Selected", 0, 1, 1, lambda: start("face", selected_points())),
             ("Run Route", 1, 0, 2, lambda: start("go", selected_points(True)))):
-        button = ttk.Button(controls, text=label, command=callback)
-        button.grid(row=row, column=column, columnspan=span, sticky="ew", padx=(0, 5), pady=(0, 5))
+        button = ttk.Button(controls, text=label, command=callback, style="Direct.TButton")
+        button.grid(row=row, column=column, columnspan=span, sticky="ew", padx=(0, 5), pady=(0, 2))
         editable.append(button)
         if label == "Go Selected":
             go_button = button
@@ -2636,12 +2656,36 @@ def launch_window(args):
             route_button = button
         else:
             face_button = button
-    face_option = ttk.Checkbutton(controls, text="Face before direct / auto-walk", variable=walk_facing)
+    face_option = ttk.Checkbutton(controls, text="Face before direct / auto-walk",
+                                  variable=walk_facing, style="Direct.TCheckbutton")
     face_option.grid(row=2, column=0, columnspan=2, sticky="w")
     editable.append(face_option)
-    engine_option = ttk.Checkbutton(controls, text="Continuous travel", variable=continuous_travel)
+    engine_option = ttk.Checkbutton(controls, text="Continuous travel", variable=continuous_travel,
+                                    style="Direct.TCheckbutton")
     engine_option.grid(row=3, column=0, columnspan=2, sticky="w")
     editable.append(engine_option)
+    def configure_survival(path=None):
+        if busy or closing or cli_action is not None:
+            raise WaypointError("Wait for the active action before changing survival")
+        if path is None:
+            path = filedialog.askopenfilename(parent=window, title="Choose survival ability profile",
+                                             filetypes=[("Survival profile", "*.json")])
+        if not path:
+            return
+        result = survival_runtime.configure(path, adapter)
+        survival_summary.set("Survival: configured " + str(result.get("profileSource")))
+        return result
+    survival_option = ttk.Checkbutton(controls, text="Fight / retreat / recover on routes",
+                                      variable=survival_enabled, style="Direct.TCheckbutton")
+    survival_option.grid(row=4, column=0, columnspan=2, sticky="w")
+    editable.append(survival_option)
+    for column, label, callback in ((0, "Ability profile…", configure_survival),
+                                     (1, "Check survival", lambda: start("survival-preflight"))):
+        button = ttk.Button(controls, text=label, command=callback, style="Direct.TButton")
+        button.grid(row=5, column=column, sticky="ew")
+        editable.append(button)
+    ttk.Label(controls, textvariable=survival_summary, style="Micro.TLabel", wraplength=260).grid(
+        row=6, column=0, columnspan=2, sticky="w")
     teach_button = ttk.Button(recording_controls, text="Auto-walk + record", command=lambda: start("teach", selected_points(True)))
     teach_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
     editable.append(teach_button)
@@ -3320,6 +3364,7 @@ def launch_window(args):
                     preview=cli_preview_status(),
                     recording={"active": recording, "progress": recording_progress},
                     playback=cli_playback_status(),
+                    survival=dict(survival_runtime.status(), enabled=survival_enabled.get()),
                     movementEngine="continuous" if continuous_travel.get() else "pulse",
                     clickMovementEngine="continuous",
                     activeRequestId=cli_action["id"] if cli_action else None,
@@ -3388,7 +3433,7 @@ def launch_window(args):
         job = {"id": rid, "command": command or operation, "operation": operation,
                "started": False, "finished": None, "recordedFile": None, "cancelled": False}
         cli_action = job
-        if operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume") and markers.running():
+        if operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume", "survival-preflight") and markers.running():
             stop_markers()
 
         def advance():
@@ -3397,7 +3442,7 @@ def launch_window(args):
                 if job["cancelled"]:
                     cli_action = None
                     return cli_error("cancelled", "Cancelled before starting", exit_code=130)
-                if markers.running() and operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume"):
+                if markers.running() and operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume", "survival-preflight"):
                     return None
                 if not start(operation, payload, face_walk=True, check_route_zone=command not in ("move.to", "face")):
                     cli_action = None
@@ -3413,6 +3458,9 @@ def launch_window(args):
                         recordedFile=job.get("recordedFile"), state=state.get())
             if operation == "view": data.update(image=saved_view, rerun=saved_rerun)
             if operation == "zone" and not failure: data.update(zone_state())
+            if operation == "survival-preflight" and not failure:
+                data["result"] = deepcopy(event.get("result"))
+                data["survival"] = deepcopy(event.get("result"))
             if operation in ("save", "target"):
                 data.update(route=cli_snapshot()["route"], selected=[table.index(i)+1 for i in table.selection()])
                 if job.get("change") is not None: data["change"] = job["change"]
@@ -3437,6 +3485,26 @@ def launch_window(args):
         nonlocal saved_view, saved_rerun, rerun_viewer
         nonlocal last_capture_state, last_capture_error
         try:
+            if command.startswith("survival."):
+                if command == "survival.status":
+                    return cli_ok(dict(survival_runtime.status(), enabled=survival_enabled.get()))
+                if busy or cli_action is not None or closing:
+                    raise CliError("busy", "Wait for the active action", exit_code=4)
+                if command == "survival.configure":
+                    return cli_ok(configure_survival(values["profile"]))
+                if command == "survival.set":
+                    if values.get("enabled") not in ("on", "off"):
+                        raise ValueError("enabled must be on or off")
+                    survival_enabled.set(values["enabled"] == "on")
+                    return cli_ok(dict(survival_runtime.status(), enabled=survival_enabled.get()))
+                if command == "survival.preflight":
+                    return cli_begin(rid, "survival-preflight", command=command)
+                if command in ("survival.run", "survival.resume"):
+                    if values.get("execute") is not True:
+                        raise CliError("execute-required", "Survival route execution requires --execute", exit_code=2)
+                    survival_enabled.set(True)
+                    return cli_dispatch("playback.resume" if command.endswith("resume") else "playback.start", values, rid)
+                raise ValueError("Unknown survival operation")
             if not command.endswith(".status") and command not in ("status", "route.list", "diagnostics.show", "diagnostics.events"):
                 diagnostics.info("CLI request", command=command, requestId=rid)
             if command == "diagnostics.status": return cli_ok(dict(diagnostics.status(), activity=activity_controls.view_state()))
@@ -4265,6 +4333,23 @@ def launch_window(args):
                     stop_waiting_operation=False
                 if cli_action is not None and cli_action["operation"] == event["operation"]:
                     cli_action["finished"] = event
+                continue
+            if status == "survival-state":
+                survival = event.get("survival")
+                if isinstance(survival, dict) and survival.get("status") == "ready":
+                    target = survival.get("targetId") or "no selected target"
+                    text = ("Survival ready · advancing telemetry · qualified controls · "
+                            + str(target))
+                elif isinstance(survival, dict) and survival.get("state"):
+                    owner = survival.get("owner") or "no action owner"
+                    text = ("Survival " + str(survival["state"]) + " · " + str(owner)
+                            + " · encounters " + str(survival.get("encounterCount", 0)))
+                    if survival.get("reason"):
+                        text += " · " + str(survival["reason"])
+                else:
+                    text = "Survival unavailable: " + str(survival)
+                survival_summary.set(text)
+                state.set(text)
                 continue
             if status == "recording" and cli_action is not None and cli_action["operation"] == "record":
                 cli_action["recordingObserved"] = True

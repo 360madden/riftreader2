@@ -34,6 +34,15 @@ _RELEASE_GRACE_SECONDS = 10.0
 _FORCED_EXIT_GRACE_SECONDS = 15.0
 
 
+class EncounterInterrupted(RuntimeError):
+    """A verified, released native movement interruption, distinct from STOP."""
+
+    def __init__(self, receipt):
+        self.receipt = receipt
+        self.position = receipt.get("position")
+        super().__init__(receipt.get("reason") or "Encounter interrupted travel")
+
+
 def _finite(value, name):
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
         raise ValueError(f"{name} must be finite")
@@ -312,7 +321,7 @@ def preview_move(adapter, x, z, stop):
 def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Popen,
             native_exe=None, owner_identity=None, max_seconds=MAX_TRIP_SECONDS,
             stop_path=None, expected_origin=None, reservation=None,
-            recovery_run=subprocess.run):
+            recovery_run=subprocess.run, survival_guard=False):
     """Run one native continuous destination movement under Python ownership."""
     from scripts.physical_waypoints import read_stationary, Stopped, WaypointError
     adapter._continuous_move_launched = False
@@ -366,6 +375,10 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                    "--owner-start-ticks", str(owner[1]), "--x", repr(x), "--z", repr(z),
                    "--stop-file", str(stop_path), "--max-seconds", str(max_seconds),
                    "--execute", "--json"]
+        if survival_guard:
+            command.insert(command.index("--execute"), "--survival-interrupt")
+            if survival_guard == "retreat":
+                command.insert(command.index("--execute"), "--survival-retreat")
         if origin is not None:
             insertion = command.index("--execute")
             command[insertion:insertion] = ["--expect-x", repr(origin[0]),
@@ -430,7 +443,9 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
             if not stdout or isinstance(stdout[0], Exception):
                 raise ValueError(f"Native movement result unavailable (exit code {child.returncode})")
             if not isinstance(stdout[0], str) or not stdout[0].strip():
-                raise ValueError(f"Native movement result unavailable (exit code {child.returncode})")
+                detail = stderr[0].strip()[:4000] if stderr and isinstance(stderr[0], str) else ""
+                raise ValueError(f"Native movement result unavailable (exit code {child.returncode})"
+                                 + (": " + detail if detail else ""))
             receipt = _validate_receipt(_parse_final(stdout[0]), adapter, (x, z), stop_path,
                                         owner, child.returncode)
             receipt_path = _retain(adapter, receipt)
@@ -475,8 +490,15 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         if "acquired" in result:
             final_event["acquired"] = result["acquired"]
         emit(final_event)
+        # Operator STOP always wins, including a race with an encounter receipt.
+        if stop.is_set():
+            raise Stopped((receipt.get("reason") if receipt["status"] == "stopped" else None)
+                          or "operator STOP; native movement release verified")
         if receipt["status"] == "stopped":
             raise Stopped(receipt.get("reason") or "Stopped; native release verified")
+        if (survival_guard and receipt["status"] == "halted"
+                and receipt.get("reason") in {"survival-hp-drop", "survival-combat"}):
+            raise EncounterInterrupted(result)
         if receipt["status"] != "arrived":
             reason = receipt.get("reason") or (str(stderr[0]) if stderr and stderr[0] else None)
             raise WaypointError(reason or "Native continuous movement failed")
@@ -484,7 +506,7 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
 
 
 def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
-                         face_waypoints=True, entry_check=None):
+                         face_waypoints=True, entry_check=None, survival_guard=False):
     """Follow real route waypoints with one reservation and one shared deadline.
 
     The native backend performs continuous turn/forward control for each real
@@ -522,7 +544,7 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                 emit(dict(event, name=label))
 
             leg = move_to(adapter, x, z, stop, named, reservation=lease,
-                          max_seconds=remaining)
+                          max_seconds=remaining, survival_guard=survival_guard)
             leg = dict(leg, name=label,
                        elapsedSeconds=round(float(leg.get("elapsedMilliseconds", 0)) / 1000, 3),
                        totalHoldMs=(float(leg["heldInputMilliseconds"])
