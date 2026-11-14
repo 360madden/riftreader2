@@ -1,0 +1,7 @@
+Identifier = "RiftReader2NpcSurvey"
+Name = "RiftReader2 NPC Survey"
+Description = "Read-only observations of explicitly requested unit IDs"
+Author = "360madden"
+Version = "0.1.0"
+Environment = "4.4"
+RunOnStartup = { "survey.lua" }
