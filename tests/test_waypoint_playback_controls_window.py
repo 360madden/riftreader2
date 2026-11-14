@@ -91,7 +91,10 @@ class PlaybackControlsWindowTests(unittest.TestCase):
         readiness = self.read_status()["playback"]["readiness"]
         self.assertEqual(3, readiness["resume"]["nextPointNumber"])
         self.assertEqual(1, readiness["resume"]["completedCount"])
-        self.assertEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertNotEqual("disabled", str(self.button("Play Forward")["state"]))
+        self.assertTrue(readiness["forward"]["approachRequired"])
+        self.assertEqual(3., readiness["forward"]["approachDistance"])
+        self.assertTrue(any("Walk to start: 3.00u" in line for line in text), text)
         self.assertNotEqual("disabled", str(self.button("Play Reverse")["state"]))
         self.assertNotEqual("disabled", str(self.button("Resume")["state"]))
         self.assertEqual(before, self.reader.call_count)

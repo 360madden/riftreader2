@@ -121,6 +121,40 @@ class ReplayReadinessTests(unittest.TestCase):
             self.assertIn("unfinished leg", result["resume"]["reason"])
             self.assertEqual(before, path.read_bytes())
 
+    def test_play_approaches_nearby_start_only_when_enabled(self):
+        position = {"x": -4, "y": 0, "z": 0}
+        self.assertFalse(replay_readiness(ROUTE, IDENTITY, position)["forward"]["ready"])
+        result = replay_readiness(ROUTE, IDENTITY, position, approach_start=True)
+        self.assertTrue(result["forward"]["ready"])
+        self.assertTrue(result["forward"]["approachRequired"])
+        self.assertEqual(4., result["forward"]["approachDistance"])
+        self.assertEqual(11., result["forward"]["remainingDistance"])
+        self.assertTrue(result["reverse"]["ready"])
+
+    def test_approach_keeps_distance_height_and_freshness_checks(self):
+        route = {**ROUTE, "heights": [0, 0, 0]}
+        for position, reason in (({"x": -21, "y": 0, "z": 0}, "approach limit"),
+                                 ({"x": -4, "y": 5, "z": 0}, "height")):
+            with self.subTest(position=position):
+                item = replay_readiness(route, IDENTITY, position, approach_start=True)["forward"]
+                self.assertFalse(item["ready"])
+                self.assertIn(reason, item["reason"])
+        result = replay_readiness(route, IDENTITY, None, unavailable_reason="pose unavailable",
+                                  approach_start=True)
+        self.assertFalse(result["forward"]["ready"])
+        self.assertEqual("pose unavailable", result["forward"]["reason"])
+
+    def test_approach_does_not_relax_resume_or_change_checkpoint(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self.checkpoint(temporary, arrivals=1)
+            before = path.read_bytes()
+            result = replay_readiness(ROUTE, IDENTITY, {"x": 2, "z": 1}, path,
+                                      approach_start=True)
+            self.assertTrue(result["forward"]["ready"])
+            self.assertFalse(result["resume"]["ready"])
+            self.assertIn("unfinished leg", result["resume"]["reason"])
+            self.assertEqual(before, path.read_bytes())
+
     def test_completed_and_missing_checkpoint_are_clear(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = self.checkpoint(temporary, arrivals=3)

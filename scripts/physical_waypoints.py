@@ -1774,7 +1774,7 @@ def launch_window(args):
                 document, direction = points
                 results, cursor = play_route(adapter, document, stop, emit, runner=runner,
                                              checkpoint=checkpoint, direction=direction,
-                                             resume=operation == "resume", face_waypoints=face_walk)
+                                             resume=operation == "resume", face_waypoints=face_walk, approach_start=True)
                 outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
                             "nextWaypoint": cursor.next_index, "totalWaypoints": len(cursor.ordered_points),
@@ -2780,7 +2780,7 @@ def launch_window(args):
         group.columnconfigure(1, weight=1)
     playback_group.columnconfigure(0,weight=0)
     playback_group.columnconfigure(1,weight=1)
-    ttk.Label(playback_group, text="Face before each leg · Play starts a new run", style="Micro.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
+    ttk.Label(playback_group, text="Play walks to a nearby start, then follows the route", style="Micro.TLabel").grid(row=3, column=0, columnspan=2, sticky="w")
     ttk.Label(recording_controls, text="Click to start / stop · 5-unit spacing + turns", style="Muted.TLabel").grid(row=2, column=0, columnspan=2, sticky="w")
     progress_text = tk.StringVar(value="No playback started.")
     progress_label = ttk.Label(replay_tab, textvariable=progress_text, style="Muted.TLabel", wraplength=860)
@@ -3351,7 +3351,7 @@ def launch_window(args):
         key = (route_revision, repr(identity), repr(position), reason, checkpoint_key)
         if key != replay_cache["key"]:
             try:
-                readiness = replay_readiness(cli_document(), identity, position, checkpoint, reason)
+                readiness = replay_readiness(cli_document(), identity, position, checkpoint, reason, approach_start=True)
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 readiness = {action: dict(ready=False, reason=str(exc), direction=None, nextIndex=None,
                                          nextName=None, remainingDistance=None) for action in ("forward", "reverse", "resume")}
@@ -3374,7 +3374,10 @@ def launch_window(args):
                 label=item.get("startName") or (table.item(table.get_children()[endpoint-1],"values")[0] if count and endpoint<=count else "No waypoint")
                 title=f"{'Start' if action=='forward' else 'End'} #{endpoint} · {shorten(label,width=18,placeholder='…')}" if count else "No waypoints"
                 full=f"Play {action.title()} starts a new run at {'Start' if action=='forward' else 'End'} #{endpoint}: {label}.\n{detail}\nA new admitted run replaces saved progress. Each leg faces before walking."
-                if item.get("endpointDistance") is not None:
+                if item.get("approachRequired"):
+                    detail=f"Walk to start: {item['approachDistance']:.2f}u · then follow route"
+                    full += "\nApproaches a nearby start on clear ground before following the route; STOP covers both."
+                elif item.get("endpointDistance") is not None:
                     detail=f"{item['endpointDistance']:.2f}u away · need ≤ 0.30u"
             elif item.get("complete"):
                 title=f"{item['direction'].title()} · Complete {count}/{count}"
@@ -4961,7 +4964,7 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--go", nargs=2, type=float, metavar=("X", "Z"))
     mode.add_argument("--run-route", type=Path, help="run a saved waypoint JSON with --execute")
-    mode.add_argument("--play-route", type=Path, help="replay a recorded route from its endpoint with --execute")
+    mode.add_argument("--play-route", type=Path, help="approach a recorded route start within 20 units, then replay with --execute")
     mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
     parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
     parser.add_argument("--movement-engine", choices=("continuous", "pulse"), default="continuous",
@@ -5012,7 +5015,7 @@ def main(argv=None):
                     checkpoint = args.progress or args.play_route.with_suffix(".progress.json")
                     legs, _ = play_route(adapter, document, stop, emit, runner=runner,
                                         checkpoint=checkpoint, direction="reverse" if args.reverse else "forward",
-                                        resume=args.resume, face_waypoints=args.face_waypoints)
+                                        resume=args.resume, face_waypoints=args.face_waypoints, approach_start=True)
                 elif args.record_to:
                     from scripts.waypoint_playback import teach_route
                     legs, recorded = teach_route(adapter, points, stop, emit, runner=run_route,

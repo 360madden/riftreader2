@@ -548,7 +548,7 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                           distance=settled_distance, acquired=settled.acquired)
         final_event = {key: result[key] for key in
             ("status", "name", "goal", "start", "position", "bearing", "distance", "pulses",
-             "observedAtUtc")}
+             "observedAtUtc", "releaseSucceeded", "desktopInputsDown")}
         if "acquired" in result:
             final_event["acquired"] = result["acquired"]
         emit(final_event)

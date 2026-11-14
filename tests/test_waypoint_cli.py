@@ -92,7 +92,7 @@ class WaypointCliTests(unittest.TestCase):
         adapter = SimpleNamespace(input_receipt_path=self.test_root / "pulses.jsonl")
         output = io.StringIO()
         with patch.object(waypoint, "PhysicalAdapter", return_value=adapter), \
-                patch.object(waypoint, "run_route", side_effect=ValueError("action failed")), \
+                patch("scripts.continuous_move.run_continuous_route", side_effect=ValueError("action failed")), \
                 patch("scripts.waypoint_progress.write_json_atomic", side_effect=OSError("disk full")), \
                 redirect_stdout(output):
             code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
@@ -143,7 +143,7 @@ class WaypointCliTests(unittest.TestCase):
             output = io.StringIO()
             with patch.object(waypoint, "ROOT", root), patch.object(waypoint, "PhysicalAdapter", return_value=adapter), redirect_stdout(output):
                 code = waypoint.main(["--expected-host", "AMD-DESKTOP", "--physical-pid", "123",
-                                      "--run-route", str(route), "--execute"])
+                                      "--run-route", str(route), "--movement-engine", "pulse", "--execute"])
             receipt = json.loads(output.getvalue().splitlines()[-1])
             result = json.loads(Path(receipt["receipt"]).read_text())
             self.assertEqual(0, code)

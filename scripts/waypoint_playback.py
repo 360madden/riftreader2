@@ -3,7 +3,35 @@ from dataclasses import asdict
 import math
 
 from scripts.waypoint_recording import RouteRecorder
-from scripts.waypoint_progress import RouteProgress, ProgressError
+from scripts.waypoint_limits import MAX_ROUTE_DISTANCE
+from scripts.waypoint_progress import RouteProgress, ProgressError, _position
+
+
+MAX_START_APPROACH_DISTANCE = 20.0
+MAX_START_APPROACH_HEIGHT_DELTA = 1.5
+
+
+def assess_start_approach(cursor, position):
+    """Assess a fresh Play start without changing or saving the route cursor."""
+    if cursor.start is not None or cursor.next_index != 0:
+        raise ProgressError("Start approach requires a new playback cursor")
+    pos = _position(position)
+    points = cursor.remaining_points()
+    _, x, z = points[0]
+    y = cursor.heights[0 if cursor.direction == "forward" else -1] if cursor.heights else None
+    distance = math.hypot(pos["x"] - x, pos["z"] - z)
+    required = distance > .30 + 1e-9
+    if required:
+        if distance > MAX_START_APPROACH_DISTANCE:
+            raise ProgressError(f"Route start is {distance:.2f}u away; approach limit is {MAX_START_APPROACH_DISTANCE:g}u")
+        if y is not None and ("y" not in pos or abs(pos["y"] - y) > MAX_START_APPROACH_HEIGHT_DELTA):
+            raise ProgressError("Route start approach is on a different or unknown current height")
+    elif y is not None and ("y" not in pos or abs(pos["y"] - y) > 1.0):
+        raise ProgressError("position is on a different height")
+    remaining = distance + sum(math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(points, points[1:]))
+    if remaining > MAX_ROUTE_DISTANCE:
+        raise ProgressError(f"Remaining route including approach exceeds {MAX_ROUTE_DISTANCE:g} world units")
+    return {"required": required, "distance": distance, "goalHeight": y, "remainingDistance": remaining}
 
 
 class RecordingAdapter:
@@ -75,7 +103,8 @@ def validate_playback_document(document, identity):
 
 
 def play_route(adapter, document, stop, emit, *, runner, checkpoint,
-               direction="forward", resume=False, face_waypoints=True):
+               direction="forward", resume=False, face_waypoints=True,
+               approach_start=False):
     identity = adapter.binding["runtimeIdentity"]
     validate_playback_document(document, identity)
     cursor = (RouteProgress.load(checkpoint, document, identity) if resume else
@@ -85,17 +114,30 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
     if cursor.next_index >= len(cursor.ordered_points):
         raise ProgressError("route already complete")
 
+    approach = None
+
     def enter(position):
-        cursor.begin(asdict(position))
+        nonlocal approach
+        actual = asdict(position)
+        if approach_start and not resume:
+            assessment = assess_start_approach(cursor, actual)
+            if assessment["required"]:
+                approach = assessment
+                emit({"status": "approaching-route", "name": cursor.remaining_points()[0][0],
+                      "position": actual, "approachDistance": approach["distance"],
+                      "nextWaypoint": 0, "waypointCount": len(cursor.ordered_points)})
+                return
+        cursor.begin(actual)
         cursor.save(checkpoint)
 
     def progress(event):
+        nonlocal approach
         if event["status"] == "arrived":
             expected = cursor.remaining_points()[0]
             goal = event["goal"]
             if (event.get("name"), goal["x"], goal["z"]) != expected:
                 raise ProgressError("Runner arrival does not match the route cursor")
-            actual = event["position"]
+            actual = _position(event["position"])
             if math.hypot(actual["x"]-expected[1], actual["z"]-expected[2]) > .30 + 1e-9:
                 raise ProgressError("Settled position is outside the waypoint arrival radius")
             heights = document.get("heights")
@@ -105,8 +147,23 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
                 y = heights[original_index]
                 if y is not None and abs(actual["y"]-y) > 1:
                     raise ProgressError("Settled waypoint is on a different height")
+            if approach is not None:
+                if "releaseSucceeded" in event or "desktopInputsDown" in event:
+                    released = event.get("releaseSucceeded") is True and event.get("desktopInputsDown") == []
+                else:
+                    released = event.get("allPulsesReleased") is True
+                if not released:
+                    raise ProgressError("Route start approach input release is unverified")
+                if stop.is_set():
+                    from scripts.physical_waypoints import Stopped
+                    raise Stopped("Stopped before route start approach was confirmed")
+                cursor.begin(actual)
             cursor.confirm_arrival(cursor.next_index, expected)
             cursor.save(checkpoint)
+            if approach is not None:
+                emit(dict(event, status="route-approach-complete", approachDistance=approach["distance"],
+                          nextWaypoint=cursor.next_index, waypointCount=len(cursor.ordered_points)))
+                approach = None
         emit(dict(event, nextWaypoint=cursor.next_index, waypointCount=len(cursor.ordered_points)))
 
     legs = runner(adapter, cursor.remaining_points(), stop, progress,

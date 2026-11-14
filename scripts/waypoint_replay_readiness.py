@@ -30,7 +30,7 @@ def _summary(cursor, *, ready=False, reason=""):
     }
 
 
-def _assess(cursor, position, unavailable_reason):
+def _assess(cursor, position, unavailable_reason, *, approach_start=False):
     result = _summary(cursor)
     if not cursor.remaining_points():
         result["reason"] = "route already complete"
@@ -46,6 +46,17 @@ def _assess(cursor, position, unavailable_reason):
     except (ProgressError, OSError, KeyError, TypeError, ValueError) as exc:
         result["reason"] = str(exc) or "playback readiness unavailable"
         if str(exc) == "start is too far from the route endpoint":
+            if approach_start:
+                from scripts.waypoint_playback import assess_start_approach
+                try:
+                    approach = assess_start_approach(cursor, position)
+                    result.update(ready=True, reason="approach-start", approachRequired=True,
+                                  approachDistance=approach["distance"],
+                                  remainingDistance=approach["remainingDistance"])
+                    return result
+                except (ProgressError, KeyError, TypeError, ValueError) as refused:
+                    result["reason"] = str(refused)
+                    return result
             endpoint = cursor.remaining_points()[0]
             distance = math.hypot(position["x"] - endpoint[1], position["z"] - endpoint[2])
             result["endpointDistance"] = distance
@@ -67,7 +78,8 @@ def _blocked(direction, reason):
     }
 
 
-def replay_readiness(document, identity, position, checkpoint=None, unavailable_reason=None):
+def replay_readiness(document, identity, position, checkpoint=None, unavailable_reason=None,
+                     *, approach_start=False):
     """Return forward, reverse, and resume admission without sending input.
 
     ``unavailable_reason`` lets a caller represent transient GUI ownership, pose,
@@ -83,7 +95,7 @@ def replay_readiness(document, identity, position, checkpoint=None, unavailable_
     for direction in ("forward", "reverse"):
         try:
             cursor = RouteProgress(document, direction, identity)
-            result[direction] = _assess(cursor, position, unavailable_reason)
+            result[direction] = _assess(cursor, position, unavailable_reason, approach_start=approach_start)
         except (ProgressError, OSError, KeyError, TypeError, ValueError) as exc:
             result[direction] = _blocked(direction, unavailable_reason or str(exc) or "invalid route")
 
