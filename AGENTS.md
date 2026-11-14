@@ -65,6 +65,15 @@ usable retrieval, efficiency, durable knowledge, restart recovery, update recove
 and less repetitive AI work. Movement and turning support controlled tests.
 Dedicated navigation, combat, and player automation belong to a future program.
 
+**Travel-survival planning correction (Joey, 2026-11-14):** Combat and survival
+must be included in the route-travel roadmap: arriving at a destination is not
+useful if the character dies along the way. The older future-program boundary
+does not justify omitting a defensive combat system or travel/combat/recovery
+integration from current planning. Use `docs/planning/implementation-roadmap.md`
+for the revised priority. Product/module placement remains open. This correction
+updates requirements and planning, not implementation or live combat authority;
+it does not itself resume deferred health-change tests or permit game actions.
+
 **Discovery framework — Joey's clarification, 2026-11-07:** A useful finding
 should feed a practical repeatable retrieval capability: resolve the current
 source/owner, acquire the requested data under fresh identity and applicable

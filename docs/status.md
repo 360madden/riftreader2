@@ -1,5 +1,11 @@
 # Current status
 
+Planning correction November 14: **combat and survival are required for useful
+route travel**. The [ranked roadmap](planning/implementation-roadmap.md) now puts
+combat essentials, a minimal defensive encounter and travel/combat/recovery/Resume
+integration ahead of longer-route expansion. Existing casting diagnostics are
+not a combat controller. This is a planning update only; no new game actions.
+
 Planning: the [current ranked RR2 roadmap](planning/implementation-roadmap.md)
 and [Waypoints roadmap](planning/five-hour-recorded-routes-2026-11-12.md) were
 reconciled November 13 with the longer-route release and physical-reader record.

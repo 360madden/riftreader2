@@ -1,6 +1,6 @@
 # RR2 roadmap
 
-Updated **November 13, 2026 (America/New_York)** from checkout
+Updated **November 14, 2026 (America/New_York)** from checkout
 `C:\work\riftreader2`, branch `codex/modular-foundation`, implementation through
 `6fe3f29` (longer routes in `b91e2b4`, composite-source guard in `570414c`).
 Review host: **AMD-DESKTOP**. This is the current overall roadmap;
@@ -14,10 +14,17 @@ semantics or game observation. See the Nov 13 23:54 entry in the
 [RRE intake record](../workflows/rre-discovery-intake.md).
 
 RR2's purpose remains useful RIFT discovery and repeatable retrieval for other
-programs. The authorized Waypoints work is a working consumer of those readers.
-The order below is a recommended development priority, not new permission for
-game input, casting, process restarts or cross-host operation. Live work still
-requires its existing authority and fresh identity/ownership checks.
+programs. Waypoints is a working consumer. **Joey's November 14 correction:
+route travel must account for combat and survival; reaching a destination is not
+useful if the character dies on the way.** Combat is now a first-class roadmap
+priority, rather than merely a source of telemetry or deferred future work.
+The route follower and combat response must share the existing input ownership
+and STOP controls. Their final module/product placement is an implementation
+choice, not a reason to omit the capability.
+
+This updates planning direction; it does not start combat implementation or
+grant new game-input, casting, restart or cross-host authority. Live work still
+requires its applicable authority and fresh identity/ownership checks.
 
 ## Completed capabilities
 
@@ -31,23 +38,31 @@ requires its existing authority and fresh identity/ownership checks.
 | Waypoints daily use | Six-tab GUI and CLI controls, draft-safe editing/Undo, route Library, zone tags, live-pose status, Activity/error diagnostics, scene capture, beacons, compact radar, manual guidance and breadcrumb export. | Local live cases and native normal/compact UI checks recorded; zone/floor identity and universal display continuity remain limited. [Waypoints capability inventory](five-hour-recorded-routes-2026-11-12.md#what-is-done). |
 | Longer routes | Shared 1,000-unit / 500-waypoint envelope, 30,000 recording samples, 30-minute trip budget, larger CLI transport, preview Fit to 1,500 units and bounded display annotations. | **Implemented and offline verified**, including simulated 1,000-unit/500-point execution and long STOP/Resume; no long-route live trip was performed. Existing files/checkpoints are compatible. [Longer routes](../workflows/physical-waypoints.md#longer-routes). |
 | Other native research | Ability/catalog/name, stats/XP, target/unit, buff and cost/cooldown/cast candidates and locating tools exist. | Field-specific partial readers/static findings and historical samples; not a fully qualified live combat/telemetry API. [Earlier discovery packages](discovery-roadmap-2026-11-06.md). |
+| Casting diagnostics | Casting addon readout, ability selection, API checks, outcome recording and protected manual Cast/Stop controls exist, with historical dummy-test evidence. | **No working route-integrated combat system.** Manual addon controls and native ability catalogs do not establish external ability execution, defensive decisions or current physical-host combat acceptance. [Casting readout](../reference/casting-readout.md). |
 
 ## Remaining work, ranked
 
-The first item is the next useful Waypoints outcome. Native data work can proceed
-independently when it does not contend for the same live reader or input owner.
-Accept useful candidate output with its limits; do not require every field or
-the entire 1,000-unit envelope to be qualified before using the next result.
+The next product outcome is a character that can survive an encounter while
+travelling and preserve its route. Combat prerequisites should deliver only the
+data/actions needed for the first useful encounter, not wait for every stat,
+ability, buff or cooldown to be discovered. Native research can proceed in
+parallel without competing for the live reader or input owner. Useful scoped
+candidate output remains acceptable for research; gameplay decisions need the
+specific freshness/meaning and action feedback they depend on.
 
 | Rank | Work | Current gap and useful completion point |
 | --- | --- | --- |
-| **1** | **Use longer taught routes in the real game** | Start with one useful known-clear 50–100-unit route with corners: record, save/load, Forward, STOP during an unfinished leg, Resume and Reverse. Check released/stationary behavior and useful arrival accuracy. Exercise full-game restart/Resume during an appropriate authorized run. Fix actual failures, then extend distance/route complexity as useful. The 1,000-unit maximum is capacity, not a mandatory first live test. |
-| **2** | **Improve useful native player stats and resource retrieval** | Reuse the existing composite/stat/vitals readers. Establish which resource is applicable to the selected player, return its value or a precise unavailable reason, and compare actual changes using an available independent reference. Current AMD HP is an unchanged candidate; Mana/Energy availability and broad stat meanings are incomplete. Keep resource kinds distinct. Health-change experiments remain deferred unless Joey resumes them; no casting/combat authority is implied. |
-| **3** | **Make route location and height context dependable** | Zone tagging and measured/estimated height cues already work. Remaining work is actual different-floor/elevation and zone/world/instance cases, preserving measured path corners and refusing an inappropriate route/Resume. Prefer the smallest useful context checks; candidate zone IDs and projected beacons do not establish traversability. |
-| **4** | **Make selected-target and nearby-unit retrieval repeatable** | Reuse current unit lookup, target and name/position readers. Return coherent key/name/position and available detail under fresh owner identity, including target switches, no-target, despawn and process changes. Existing target/name/nearby bookmarks are partial candidates, not proof that all target fields are live or that template names identify a unique unit. |
-| **5** | **Make delivered data easier for another program to request** | Extend the existing physical commands, composite reader, catalog and export contracts to cover useful fields from ranks 2–4 with consistent source/time/identity/availability output. Prove one real consumer can request the needed data without reconstructing dated artifact scripts. Do not build another general service/SDK/framework before a consumer requires it. |
-| **6** | **Turn ability, cooldown, cast and buff findings into useful field outputs** | Reuse existing catalog/static maps and partial readers. Deliver one concrete field at a time with player ownership, timer/ID meaning, availability and changed-state evidence where required. Definitions differ from active casts; a buff's raw records differ from a timed live effect. Any active cast/combat experiment needs its own applicable authority. |
-| **7** | **Finish physical-host addon reference acceptance where it adds value** | Establish the actual loaded RR2R1 producer, nonce/session binding and advancing same-player observations on the physical host. Disk hashes and old lab success are insufficient. Use this independent API path for validation/fallback when useful; native candidate work need not wait for it. |
+| **1** | **Combat essentials: usable state and verified actions** | Reuse player/vitals, target/unit, ability and casting work to supply the minimum live state: alive/dead, HP, applicable resource, combat/engagement state, relevant target identity/health/range and readiness of a small selected ability set. Establish a bounded, normal game-input action path and verify what actually happened. Missing/stale state must stop decisions; a catalog or sent key is not successful targeting/casting. Current physical HP/resource/target limits and historical manual casting evidence remain gaps. |
+| **2** | **A minimal defensive combat system that actually survives an encounter** | Start with the current character/build and a small explicit attack/defensive/recovery set against one ordinary enemy. Handle being attacked, valid engaged-target selection, attack/defense decisions, resource/cooldown constraints, target death and disengagement. Stop repeated failed actions on wrong target, range/facing/LOS failure or lack of progress; define bounded retreat/help behavior for a bad fight rather than improvising indefinite combat. Useful completion is surviving and verifying one real encounter, not finishing an exhaustive rotation engine. |
+| **3** | **Connect travel, combat, recovery and Resume** | Pause route movement when combat response takes ownership; release movement keys and retain the genuine unfinished checkpoint. Use one controller so walking/turning and fighting cannot issue conflicting actions. STOP overrides travel, combat and recovery. After the encounter, verify alive/out-of-combat state, acceptable health/resource and current route position before offering explicit Resume. Death, stale telemetry or failed recovery stops the run without automatic retrials. Pausing alone is an interruption safeguard, not a solved survival system. |
+| **4** | **Prove useful longer travel with an encounter** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, travel, respond to an encounter, recover and Resume, then Reverse where useful. Retain separate STOP-mid-leg and same-build restart/Resume coverage as appropriate. Success means arriving alive with correct progress and released input. Fix actual failures, then extend distance/complexity; 1,000 units is capacity, not a mandatory first trial. Clear-ground distance-only checks can proceed independently, but do not establish survival. |
+| **5** | **Make route location and height context dependable** | Zone tagging and measured/estimated height cues already work. Remaining work is actual different-floor/elevation and zone/world/instance cases, preserving measured path corners and refusing an inappropriate route/Resume. Combat does not replace terrain/obstacle checks. |
+| **6** | **Broaden useful player, target and ability retrieval and expose it to consumers** | Extend beyond the combat essentials with coherent nearby-unit detail, additional stats/XP, ability costs, cooldown/cast/buff outputs and consistent source/time/identity/availability contracts. Reuse the physical commands, composite reader, catalog and exports. Prove useful consumer requests before adding another service/SDK/framework. Research-only candidates do not become gameplay decision inputs automatically. |
+| **7** | **Finish physical-host addon reference acceptance where it adds value** | Establish the loaded RR2R1 producer, nonce/session binding and advancing same-player observations when needed as independent reference/fallback. Disk hashes and old lab success are insufficient. This can move earlier for a concrete combat-data need; native work need not wait for unrelated addon completion. |
+
+For ranks 1–4, current input/health-change deferrals and action authority must be
+resolved for the specific live experiment before it runs. The roadmap correction
+does not itself initiate an attack, health-change test or uncontrolled run.
 
 ## Conditional work and deferred scope
 
@@ -63,8 +78,10 @@ the entire 1,000-unit envelope to be qualified before using the next result.
   another executable hash requires new evidence.
 - **Terrain/navmesh, obstacle avoidance and automatic stuck detours:** not
   implemented. Longer routes still require a known clear taught path. Dedicated
-  autonomous navigation, patrol, combat and quest automation are future-program
-  work, beyond the current Waypoints route-following scope.
+  terrain routing, indefinite patrol and quest automation remain future work.
+  Defensive combat and survival during route travel are now ranked above; a
+  general combat engine for every class/build or unattended farming is not the
+  first combat milestone.
 - **VMware labs:** retired as active RR2 targets. Their code/evidence remains
   historical; this roadmap does not restart them or authorize another physical
   host. A session operates only its verified local host.

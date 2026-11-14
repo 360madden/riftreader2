@@ -43,8 +43,16 @@ Movement, turning, and similar actions are relevant as controlled experimental
 stimuli: they help distinguish what a candidate value represents and whether
 a reader remains correct while the game changes.
 
-Dedicated player automation, navigation, and combat are intended for a separate
-future program. Their implementation is outside the current project preparation.
+The original October scope placed dedicated player automation, navigation and
+combat in a separate future program, outside the initial project preparation.
+
+**Planning correction — November 14, 2026:** Joey identified combat and survival
+as essential to useful route travel. The current roadmap therefore includes a
+defensive combat system and travel/combat/recovery integration as near-term
+product priorities. The earlier separation of RR2 discovery from downstream
+automation does not exclude those requirements from planning. Final module or
+program placement remains an implementation decision; no new live combat or
+health-change experiment is started by this clarification.
 
 ## What should survive
 
@@ -80,8 +88,8 @@ Git author identity is repository-local: `360madden <360madden@gmail.com>`.
 Use the [ranked RR2 roadmap](planning/implementation-roadmap.md) for completed
 capabilities and remaining work. The Lua/C# producer/contract and selected saved
 wall-motion replay have been delivered; the original October starting tasks
-are historical. Current priorities include useful longer routes, physical
-player/resource retrieval and dependable route context. Live qualification is
+are historical. Current priorities include combat essentials, surviving an
+encounter, travel/combat/recovery integration, longer routes and dependable route context. Live qualification is
 specific to each field/build/session and does not follow from offline tests.
 
 Source: Joey's requests in the RiftReader v2 conversation on 2026-10-18.

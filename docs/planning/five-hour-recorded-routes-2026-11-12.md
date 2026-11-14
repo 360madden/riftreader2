@@ -1,6 +1,6 @@
 # Waypoints roadmap
 
-Updated November 13, 2026. Scope: the Waypoints app in `C:\work\riftreader2`
+Updated November 14, 2026. Scope: the Waypoints app in `C:\work\riftreader2`
 on verified **AMD-DESKTOP**, using physical RIFT. This is the current capability
 and priority list; it does not activate a timed goal or start game input.
 
@@ -119,15 +119,25 @@ connecting segment. Full saved world mapping remains later work.
 
 ## Remaining Waypoints work, ranked
 
-1. **One useful longer taught route in the real game.** Record a known-clear
+1. **Survival-aware route execution.** A route is not successful if the character
+   dies along the way. Supply the combat state/actions needed for a minimal
+   defensive fight, then connect travel interruption, checkpoint preservation,
+   one shared input owner, combat, recovery and explicit Resume. STOP must
+   override every mode. This capability is missing; casting diagnostics and
+   ability catalogs do not supply a working combat controller. The
+   [overall roadmap](implementation-roadmap.md#remaining-work-ranked) ranks its
+   prerequisite and implementation slices first.
+2. **One useful longer taught route in the real game.** Record a known-traversable
    50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
-   and Reverse. Include full-game restart/Resume when appropriate and authorized.
+   and Reverse. Add an encounter/defense/recovery/Resume case before calling it
+   dependable travel; distance-only clear-ground checks remain separately useful.
+   Include full-game restart/Resume when appropriate and authorized.
    Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
    trial and a broad stress sweep are not required.
-2. **Location and height context for saved-route reuse.** Test actual slopes,
+3. **Location and height context for saved-route reuse.** Test actual slopes,
    different floors and zone/world/instance transitions. Keep measured and
    estimated heights distinct; reject inappropriate context before movement.
-3. **Resolve observed presentation/recovery failures during use.** Large-route
+4. **Resolve observed presentation/recovery failures during use.** Large-route
    display limiting is implemented; extended sessions, camera/window variations
    and mixed-DPI transitions have incomplete live coverage. Address a concrete
    failing case when it affects the next useful route rather than starting
@@ -147,7 +157,9 @@ These are planning recommendations, not new game-input or restart authority.
   can place them above/below terrain. Qualified world/instance and floor identity, occlusion, walkability
   and obstacle clearance remain unresolved; a projected point proves none of them.
 - Defer automatic obstacle avoidance, terrain extraction/navmeshes, automatic
-  stuck detours, combat/quests and indefinite patrol. Longer taught routes are
+  stuck detours, quests and indefinite patrol. Defensive combat and survival are
+  now near-term roadmap priorities, not deferred merely because they involve
+  combat. Longer taught routes are
   already implemented; they do not add terrain or obstacle clearance.
   Revisit terrain tooling when actual usable geometry is available.
 - Black captures alone are not proof that RIFT is black or crashed. Joey reported
