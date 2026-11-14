@@ -1,5 +1,36 @@
 # Current status
 
+**November 14 — long-route camera acceptance and survival foundations:** On
+AMD-DESKTOP, the sparse-steering controller completed a 72.802-unit configured
+courtyard loop with eight legs/corners and returned within 0.254 units of its
+starting area. Every leg used one forward hold with zero moving A/D corrections.
+Same-read optical camera candidates showed zero significant straight-leg yaw
+reversals; maximum yaw range was 0.02524 degrees. The recording and inspected
+straight-leg frames show steady follow without the previous alternating shake.
+This qualifies this clear courtyard case, not arbitrary routes or universal
+camera behavior. A first attempt halted safely on native-read lease contention;
+the complete rerun retained release/stationarity and all eight arrivals.
+Evidence: `artifacts/movement-upgrade/long-camera-route-final/receipt.json`,
+`camera-analysis.json`, `route-camera.mp4`, `straight-leg-contact-sheet.png`.
+
+Combat/survival implementation has started: `survival_state.py` re-verifies
+composite sources and reports per-field observations/readiness gaps;
+`player_action_coordinator.py` implements tested logical movement/combat/recovery
+handoffs with latched STOP and uncertain-release handling. It is not yet wired
+as a live combat runtime. A fresh physical composite reports HP candidate
+18208/18208, level 45 and combat byte zero. A new strict ReaderBridge 0.3.2
+decoder recovered checksum-valid API-published HP 18208/18208 and Power 100 from
+two advancing same-process packets. The reusable bounded acquisition CLI then
+captured generations 14244 and 14246, each matched to its same-generation
+coordinate companion and exact native player ID. Power maximum may be the
+producer's default; field-specific freshness and changed-state meaning remain
+unqualified. The successful retained pair is under
+`artifacts/survival-readerbridge-20261114/verified-pair/`.
+Learned abilities, current action bindings/readiness and defensive actions remain
+the next implementation dependencies. No attack, cast, heal or retreat was run.
+Evidence: `artifacts/survival-initial-20261114/assessment.json` and
+`artifacts/survival-readerbridge-20261114/`.
+
 **November 14 — reduced left/right movement corrections:** The user reported
 camera shaking with Smart Camera both on and off. Retained traces showed repeated
 A/D turns while forward input remained held. Continuous travel now ignores small

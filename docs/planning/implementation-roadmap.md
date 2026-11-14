@@ -96,9 +96,34 @@ A full future build planner must not delay the first useful defensive response.
 
 The subsequently reported camera-shake defect was brought forward under that
 failure-driven rule. Sparse travel steering and settled initial alignment now
-have a live ~5-unit out/back case with zero moving A/D corrections and verified
-arrival/release; broader camera smoothness remains unqualified. The combat and
+have a complete live 72.802-unit courtyard loop with eight legs/corners, zero
+moving A/D corrections and verified arrival/release/stationarity. Same-read
+camera candidates and recorded frame sequences show steady straight-leg follow
+in this case; broader camera smoothness remains unqualified. The combat and
 survival ranking below resumes after this targeted movement correction.
+
+Ranks 1–2 are now in implementation: source-verified survival assessment and the
+local action handoff model have focused tests. Fresh composite and decoded
+ReaderBridge packets supply scoped observations, including API-published Power;
+they do not establish a complete threat model or engagement readiness. The next
+useful gap is current learned abilities/bindings and verified action/readiness
+feedback, alongside reliable survival observations and the live owner adapter.
+
+The first working survival intake commands are:
+
+```powershell
+python scripts/survival_state.py --summary PATH_TO_COMPOSITE_SUMMARY
+python scripts/readerbridge_v3.py --packet PATH_TO_RETAINED_PACKET
+python scripts/capture_readerbridge_v3.py --expected-host AMD-DESKTOP --physical-pid PID --seed-index PATH_TO_CURRENT_EPOCH_SCOUT_INDEX --output NEW_DIRECTORY
+```
+
+The acquisition command reacquires packet addresses in a bounded scope from a
+fresh same-process scout; a seed from another process epoch is refused. A live
+pair matched two advancing packet generations to exact same-generation player
+identity companions and exposed HP 18208/18208 and Power 100. Producer defaults,
+changed-state qualification, learned abilities and action readiness remain gaps;
+the result deliberately reports `ready: false`. The local action coordinator is
+an offline-tested handoff component, not yet a live travel/combat runtime.
 
 The next product outcome is a character that can judge encounters, win suitable
 fights, gain useful experience and preserve its route. Avoiding a fight can be
