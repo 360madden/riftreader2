@@ -59,6 +59,34 @@ python scripts/waypoints_cli.py survival preflight --json
 
 Run preflight with the intended route loaded and player idle. It checks the current telemetry, geometry, ownership and STOP state without sending game input. The live route entry points are `survival run --execute` and explicit `survival resume --execute`. Global STOP latches across the handoff. A route checkpoint advances only after the original route leg arrives. [CLI](../../scripts/waypoints_cli.py) · [Route runner](../../scripts/survival_route_runner.py)
 
+## Next mission: safe-area round trip
+
+Joey's November 14 direction makes the next acceptance a deliberate loop:
+verified safe anchor → recorded outbound corridor → small bounded hunt area →
+recorded return corridor → verified safe-anchor arrival and recovery. This is
+the next mission definition, not an implemented hunt mode or a qualified route.
+The concrete corridor and safe anchor still need current physical verification.
+
+At the hunt area, select currently observed hostile targets whose suitability
+and action checks pass. Skip friendly, neutral/unknown, unsuitable or otherwise
+unqualified targets. Stay within the hunt boundary; do not chase beyond it or
+wait indefinitely for respawns. Initial proposed limits are two verified kills
+or two minutes in the hunt area, whichever comes first, within the overall trip
+deadline. A target disappearing is an ended/unknown encounter, not proof of a
+kill. Return when no eligible targets remain, a limit is reached, or readiness
+requires leaving. High danger triggers the existing bounded retreat path where
+that path is verified; unresolved state retains the existing safe-halt behavior.
+
+Recovery may occur between fights when necessary. The mission finishes only
+after return arrival is independently verified, owned input is released and
+HP/resource recovery thresholds are met. An operator STOP always interrupts the
+mission and remains latched until explicit Resume. The initial trial requires
+one complete successful hostile encounter; a second kill is a bound, not a quota.
+
+The hunt/target-selection stage is additional work beyond the existing reactive
+travel/fight/retreat/rejoin runner. Existing recorded retreat and rejoin paths
+are reuse candidates, not proof that an outbound hunting corridor is safe.
+
 ## Interpreting an action
 
 The producer exposes separately configured action rectangles, API ability targets and readiness. A self-targeted slot can report its player effect target while a hostile remains selected. A native click receipt establishes input delivery and release. Exact action verification additionally checks a fresh, matching event after submission, including its sequence, clock, player, selected encounter, effect target and ability ID. Effective damage or healing is retained by ability ID for up to five seconds. The latest diagnostic event can independently report immune, dodge or miss. Confirmed incoming damage from the selected actor to the player has a two-second window. A missing relation or event leaves hostility unresolved. [Addon producer](../../addon/RiftReader2Casting/survival.lua) · [Consumer](../../scripts/survival_live.py)
