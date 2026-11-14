@@ -12,6 +12,12 @@ the completed runtime should handle supported routine gameplay without model
 calls or human decisions per action, reducing latency, compute and tokens.
 This states the intended product, not completed autonomous-player capability.
 
+**Application interfaces — November 14:** All apps should be CLI-centric first
+with GUI second, and both are preferred. Shared core operations/state support
+scriptable, discoverable commands and consistent GUI actions. Important workflows
+must be accessible without manually driving the GUI; headless paths apply where
+useful. This supports local automation and efficient temporary AI scaffolding.
+
 **AI scaffolding clarification:** ChatGPT/AI may temporarily control the player
 when there are gaps, blockers or insufficient local decisions, and can be the
 preferred approach when it provides better overall benefits. Compare useful

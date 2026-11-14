@@ -3,6 +3,27 @@
 Use this as a reference when needed, not a mandatory checklist for every edit.
 The default is a short path to a working RR2 feature.
 
+## CLI-first application interfaces
+
+Joey's November 14 direction applies to all apps: **CLI first, GUI second, both
+preferred**. A useful operation should be callable through shared application
+code and a scriptable CLI; the GUI presents and controls the same operation and
+state. Important workflows should not require automation to click through UI.
+Support headless operational paths where applicable; visualization can still
+require a window, with CLI launch/configuration/control where useful.
+
+Use discoverable command groups/help, structured JSON when needed, meaningful
+exit/refusal states and consistent status/start/stop/resume behavior where those
+operations exist. Preserve identity, ownership, STOP/release and availability
+checks equally through both interfaces. Prefer CLI for AI scaffolding and
+automation when it supplies the required capability; GUI interaction remains a
+useful fallback for a genuine interface gap.
+
+Implement CLI support with the next useful feature and align the corresponding
+GUI behavior. Choose routine command details without requiring Joey to specify
+each flag. Reuse existing commands/contracts; do not invent a new generic CLI
+framework or retrofit every historical app before delivering useful work.
+
 ## Current live workflow: physical RIFT only (2026-11-10)
 
 The production RR2 observation target is the actual Windows host running RIFT:

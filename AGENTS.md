@@ -58,6 +58,17 @@ and choose the next useful outcome. Keep this proportional: no new planning
 framework, approval ritual or review cycle for routine edits. Workarounds retain
 host/action authority, input ownership, STOP and honest evidence limits.
 
+**CLI-first apps (Joey, 2026-11-14):** All apps should be CLI-centric first,
+GUI second; both interfaces are preferred, as with Waypoints. Put core operations
+and state behind shared code, expose useful workflows through discoverable,
+scriptable commands, then build the GUI over the same behavior. Provide help,
+structured output, meaningful exit/refusal states and operational status/control
+as appropriate. CLI use must not depend on manually driving GUI controls; support
+headless operation where applicable. Add CLI support alongside new capabilities
+and keep GUI/CLI semantics aligned. Resolve routine command design with judgment.
+Apply this to useful development increments, not an unrelated rewrite of every
+existing app or a prerequisite that stalls other valuable work.
+
 For ordinary changes, a one-sentence goal and brief outcome are enough.
 Do **not** require per-batch plans, broad test sweeps, repeated reviews,
 new frameworks, manifests, handoffs, or status artifacts. Create a handoff

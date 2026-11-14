@@ -45,6 +45,16 @@ or bridge capability gaps. The completed local runtime should not depend on
 per-action LLM calls or human approvals for supported routine behavior. Effective
 decisions and low compute/token overhead are product requirements.
 
+**CLI-first applications, November 14:** All apps should expose core workflows
+through a discoverable, scriptable CLI first, with a GUI over shared operations
+and state second; both are preferred. This applies across the runtime, build,
+combat, discovery and Waypoints work rather than being a separate late polish
+task. Avoid GUI-click dependencies for important operations; provide headless
+paths where applicable and consistent status/control, errors and structured
+output. Existing Waypoints CLI support is a starting pattern, not proof that
+every app already meets this requirement. Apply incrementally to useful work;
+see the [development guide](../workflows/development.md#cli-first-application-interfaces).
+
 **Temporary AI-control scaffolding:** ChatGPT/AI can directly control the player
 when local behavior is missing, blocked or insufficient, and may be preferred
 when the overall benefit is better. Compare useful progress, reliability,
