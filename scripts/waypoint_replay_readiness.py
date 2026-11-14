@@ -7,7 +7,7 @@ from pathlib import Path
 import math
 
 from scripts.waypoint_progress import ProgressError, RouteProgress
-from scripts.waypoint_playback import validate_playback_document
+from scripts.waypoint_playback import validate_checkpoint_scope, validate_playback_document
 
 
 def _summary(cursor, *, ready=False, reason=""):
@@ -79,7 +79,7 @@ def _blocked(direction, reason):
 
 
 def replay_readiness(document, identity, position, checkpoint=None, unavailable_reason=None,
-                     *, approach_start=False):
+                     *, approach_start=False, current_context=None, candidate_engine=True):
     """Return forward, reverse, and resume admission without sending input.
 
     ``unavailable_reason`` lets a caller represent transient GUI ownership, pose,
@@ -91,11 +91,30 @@ def replay_readiness(document, identity, position, checkpoint=None, unavailable_
     except (ProgressError, KeyError, TypeError, ValueError) as exc:
         return {action: _blocked(direction, str(exc)) for action, direction in
                 (("forward", "forward"), ("reverse", "reverse"), ("resume", None))}
+
+    def assess(cursor, *, new_run):
+        if "candidateAdoption" in document and not unavailable_reason:
+            from scripts.physical_waypoints import check_candidate_start
+            from scripts.movement_controller import Position
+            from scripts.waypoint_candidate_adoption import validate_adopted_route
+            if not candidate_engine:
+                return _summary(cursor, reason="Candidate route requires height-aware continuous movement")
+            try:
+                validate_adopted_route(document, identity, current_context, cursor.direction)
+                if new_run:
+                    first = 0 if cursor.direction == "forward" else -1
+                    current = Position(*(position[axis] for axis in ("x", "y", "z")))
+                    check_candidate_start(current, cursor.remaining_points()[0], cursor.heights[first])
+            except (ValueError, KeyError, TypeError) as exc:
+                return _summary(cursor, reason=str(exc))
+        return _assess(cursor, position, unavailable_reason,
+                       approach_start=new_run and approach_start and "candidateAdoption" not in document)
+
     result = {}
     for direction in ("forward", "reverse"):
         try:
             cursor = RouteProgress(document, direction, identity)
-            result[direction] = _assess(cursor, position, unavailable_reason, approach_start=approach_start)
+            result[direction] = assess(cursor, new_run=True)
         except (ProgressError, OSError, KeyError, TypeError, ValueError) as exc:
             result[direction] = _blocked(direction, unavailable_reason or str(exc) or "invalid route")
 
@@ -108,7 +127,8 @@ def replay_readiness(document, identity, position, checkpoint=None, unavailable_
             result["resume"] = _blocked(None, "no saved playback progress")
         else:
             cursor = RouteProgress.load(path, document, identity)
-            result["resume"] = _assess(cursor, position, unavailable_reason)
+            validate_checkpoint_scope(document, cursor)
+            result["resume"] = assess(cursor, new_run=False)
     except (ProgressError, OSError, KeyError, TypeError, ValueError) as exc:
         result["resume"] = _blocked(None, str(exc) or "saved playback progress is unavailable")
     return result

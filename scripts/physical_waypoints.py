@@ -906,6 +906,48 @@ def validate_route_document(document):
     return document
 
 
+def admit_candidate_route(adapter, document, direction="forward"):
+    """Recheck adopted-route scope against a newly acquired pinned context."""
+    if "candidateAdoption" in document:
+        from scripts.waypoint_candidate_adoption import validate_adopted_route
+        validate_adopted_route(document, adapter.binding["runtimeIdentity"],
+                               read_route_context(adapter), direction)
+
+
+def check_candidate_start(position, waypoint, height):
+    """An adopted section has no evidence for an approach from elsewhere."""
+    if (height is None or abs(finite(position.y) - finite(height)) > .50 + 1e-9
+            or math.hypot(finite(position.x) - waypoint[1],
+                          finite(position.z) - waypoint[2]) > .30 + 1e-9):
+        raise WaypointError("Candidate route requires a stationary start at the selected endpoint and height")
+
+
+def candidate_dispatch(adapter, document, indices, direction, engine):
+    """Derive dispatched coordinates and guards from the same ordered source indices."""
+    from scripts.waypoint_kinds import point_kinds
+    if engine not in ("continuous", "survival"):
+        raise WaypointError("Candidate route requires height-aware continuous movement")
+    rows = route_points(document["waypoints"])
+    step = {"forward": 1, "reverse": -1}.get(direction)
+    if (step is None or not isinstance(indices, (tuple, list)) or not indices
+            or any(type(i) is not int or not 0 <= i < len(rows) for i in indices)
+            or any(b != a + step for a, b in zip(indices, indices[1:]))):
+        raise WaypointError("Candidate route requires a contiguous selection in playback order")
+    kinds = point_kinds(document)
+    heights = document.get("heights")
+    if not isinstance(heights, list) or len(heights) != len(rows) or any(heights[i] is None for i in indices):
+        raise WaypointError("Candidate route requires a known height for every dispatched point")
+    points = [rows[i] for i in indices]
+    selected_heights = [finite(heights[i]) for i in indices]
+
+    def enter(position):
+        admit_candidate_route(adapter, document, direction)
+        check_candidate_start(position, points[0], selected_heights[0])
+
+    return points, {"point_kinds": [kinds[i] for i in indices], "goal_heights": selected_heights,
+                    "entry_check": enter}
+
+
 def read_route_context(adapter):
     """One pinned zone-candidate acquisition; no instance/name inference."""
     from scripts.save_physical_route_view import _zone_context
@@ -1301,7 +1343,7 @@ def launch_window(args):
                                           current_identity() or last_verified_owner)
             if clear_metadata:
                 route_metadata = {key:value for key,value in route_metadata.items()
-                                  if key in ("routeContext", "routeName")}
+                                  if key in ("routeContext", "routeName", "candidateAdoption")}
             playback_view = None
             route_dirty = True
             update_route_status()
@@ -1791,8 +1833,8 @@ def launch_window(args):
                 results, cursor = play_route(adapter, document, stop, emit, runner=runner,
                                              checkpoint=checkpoint, direction=direction,
                                              resume=operation == "resume", face_waypoints=face_walk, approach_start=True,
-                                             height_aware=(engine == "continuous" and "heights" in document),
-                                             pass_through=(engine == "continuous"))
+                                             height_aware=(engine in ("continuous", "survival") and "heights" in document),
+                                             pass_through=(engine in ("continuous", "survival")))
                 outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
                             "nextWaypoint": cursor.next_index, "totalWaypoints": len(cursor.ordered_points),
@@ -1801,9 +1843,15 @@ def launch_window(args):
             else:
                 options = {"face_waypoints": face_walk}
                 if isinstance(points, dict):
-                    if engine == "continuous":
-                        options["point_kinds"] = points["pointKinds"]
-                    points = points["waypoints"]
+                    source = points.get("admissionDocument", {})
+                    if "candidateAdoption" in source:
+                        points, guards = candidate_dispatch(adapter, source, points.get("sourceIndices"),
+                                                            points["admissionDirection"], engine)
+                        options.update(guards)
+                    else:
+                        if engine in ("continuous", "survival"):
+                            options["point_kinds"] = points["pointKinds"]
+                        points = points["waypoints"]
                 results = runner(adapter, points, stop, emit, **options)
                 outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
@@ -1895,6 +1943,9 @@ def launch_window(args):
         route_rows = points.get("waypoints") if isinstance(points, dict) and operation == "go" else points
         if operation in ("go", "teach") and (not route_rows or len(route_rows) > MAX_WAYPOINTS):
             messagebox.showinfo("Choose waypoints", f"Select a waypoint, or add up to {MAX_WAYPOINTS} points for a route.")
+            return
+        if operation == "teach" and "candidateAdoption" in route_metadata:
+            state.set("Candidate route requires height-aware continuous movement")
             return
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
@@ -2343,7 +2394,9 @@ def launch_window(args):
     def direct_route(all_points=False):
         items = table.get_children() if all_points else table.selection()
         return {"waypoints": [table.item(item, "values") for item in items],
-                "pointKinds": [point_kind_by_item.get(item, "pass") for item in items]}
+                "pointKinds": [point_kind_by_item.get(item, "pass") for item in items],
+                "admissionDocument": route_document(), "admissionDirection": "forward",
+                "sourceIndices": [table.index(item) for item in items]}
 
     def playback(direction=None):
         try:
@@ -3401,10 +3454,13 @@ def launch_window(args):
         except OSError:
             checkpoint_key = (str(checkpoint), None)
         position = pose.get("position")
-        key = (route_revision, repr(identity), repr(position), reason, checkpoint_key)
+        current_context = zone_state()["context"] if "candidateAdoption" in route_metadata else None
+        candidate_engine = bool(continuous_travel.get() or survival_enabled.get())
+        key = (route_revision, repr(identity), repr(position), reason, checkpoint_key, repr(current_context), candidate_engine)
         if key != replay_cache["key"]:
             try:
-                readiness = replay_readiness(cli_document(), identity, position, checkpoint, reason, approach_start=True)
+                readiness = replay_readiness(cli_document(), identity, position, checkpoint, reason, approach_start=True,
+                                             current_context=current_context, candidate_engine=candidate_engine)
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 readiness = {action: dict(ready=False, reason=str(exc), direction=None, nextIndex=None,
                                          nextName=None, remainingDistance=None) for action in ("forward", "reverse", "resume")}
@@ -3964,11 +4020,14 @@ def launch_window(args):
                     direction = values.get("direction", "forward")
                     index = values.get("from_point", 1 if direction == "forward" else len(rows))-1
                     if not 0 <= index < len(rows): raise CliError("point-out-of-range", "Choose an existing starting point")
+                    indices = list(range(index, len(rows))) if direction == "forward" else list(range(index, -1, -1))
                     from scripts.waypoint_kinds import point_kinds
                     kinds = point_kinds(route_document())
                     rows = rows[index:] if direction == "forward" else list(reversed(rows[:index+1]))
                     kinds = kinds[index:] if direction == "forward" else list(reversed(kinds[:index+1]))
-                    return cli_begin(rid, "go", {"waypoints": rows, "pointKinds": kinds}, command=command)
+                    return cli_begin(rid, "go", {"waypoints": rows, "pointKinds": kinds,
+                        "admissionDocument": route_document(), "admissionDirection": direction,
+                        "sourceIndices": indices}, command=command)
                 else: raise CliError("unsupported-command", command)
                 return cli_ok(dict(revision=route_revision, document=cli_document()))
             if command.startswith("radar."):
@@ -5138,6 +5197,8 @@ def main(argv=None):
                                                       and "heights" in document),
                                         pass_through=(args.movement_engine == "continuous"))
                 elif args.record_to:
+                    if "candidateAdoption" in document:
+                        raise WaypointError("Candidate route requires height-aware continuous movement")
                     from scripts.waypoint_playback import teach_route
                     legs, recorded = teach_route(adapter, points, stop, emit, runner=run_route,
                                                  face_waypoints=args.face_waypoints)
@@ -5145,7 +5206,11 @@ def main(argv=None):
                     emit({"status": "recorded", "path": str(args.record_to), "points": len(recorded["waypoints"])})
                 else:
                     options = {"face_waypoints": args.face_waypoints}
-                    if args.movement_engine == "continuous":
+                    if "candidateAdoption" in document:
+                        points, guards = candidate_dispatch(adapter, document, list(range(len(points))),
+                                                            "forward", args.movement_engine)
+                        options.update(guards)
+                    elif args.movement_engine == "continuous":
                         from scripts.waypoint_kinds import point_kinds
                         options["point_kinds"] = point_kinds(document)
                         if "heights" in document:

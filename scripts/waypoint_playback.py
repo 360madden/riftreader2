@@ -103,13 +103,23 @@ def validate_playback_document(document, identity):
                 raise ProgressError("Measured waypoint belongs to another host, build or player")
 
 
+def validate_checkpoint_scope(document, cursor):
+    if document.get("candidateAdoption") != cursor.document.get("candidateAdoption"):
+        raise ProgressError("Candidate route checkpoint belongs to a different adoption scope")
+
+
 def play_route(adapter, document, stop, emit, *, runner, checkpoint,
                direction="forward", resume=False, face_waypoints=True,
                height_aware=False, approach_start=False, pass_through=False):
     identity = adapter.binding["runtimeIdentity"]
     validate_playback_document(document, identity)
+    adopted = "candidateAdoption" in document
+    if adopted and not (height_aware and pass_through):
+        raise ProgressError("Candidate route requires height-aware continuous movement")
     cursor = (RouteProgress.load(checkpoint, document, identity) if resume else
               RouteProgress(document, direction, identity))
+    if resume:
+        validate_checkpoint_scope(document, cursor)
     if cursor.direction != direction:
         raise ProgressError("Resume direction does not match saved progress")
     if cursor.next_index >= len(cursor.ordered_points):
@@ -121,8 +131,14 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
 
     def enter(position):
         nonlocal approach
+        if adopted:
+            from scripts.physical_waypoints import admit_candidate_route, check_candidate_start
+            admit_candidate_route(adapter, document, direction)
+            if not resume:
+                first = 0 if direction == "forward" else -1
+                check_candidate_start(position, cursor.remaining_points()[0], cursor.heights[first])
         actual = asdict(position)
-        if approach_start and not resume:
+        if approach_start and not resume and not adopted:
             assessment = assess_start_approach(cursor, actual)
             if assessment["required"]:
                 approach = assessment

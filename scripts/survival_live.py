@@ -794,7 +794,8 @@ class SurvivalLiveConsumer:
         }
         self.attempts.append(receipt)
         if selected is None:
-            raise SurvivalLiveError("survival-frame-not-advanced")
+            raise SurvivalLiveError("survival-baseline-frame-unavailable"
+                                    if not self.accepted else "survival-frame-not-advanced")
         if self.accepted:
             _require(selected["frame"]["epoch"] == self.accepted[0]["frame"]["epoch"],
                      "survival-frame-epoch-changed")
@@ -918,7 +919,8 @@ def acquire(expected_host, physical_pid, session_id, seed_index=None, output=Non
         try:
             latest = consumer.snapshot()
         except SurvivalLiveError as exc:
-            if str(exc) != "survival-frame-not-advanced":
+            if str(exc) not in ("survival-baseline-frame-unavailable",
+                                "survival-frame-not-advanced"):
                 raise
             continue
         if latest["telemetryReady"]:

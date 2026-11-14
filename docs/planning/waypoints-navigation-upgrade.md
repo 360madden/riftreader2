@@ -86,3 +86,27 @@ without a changed hypothesis or acquisition window.
 Hypothesis, Ruff, Pyright, py-spy, dotnet-trace and PerfView were installed locally
 at the user's request. They must remain unused until the user authorizes running
 them. Existing unittest checks remain available.
+
+## Scoped adoption and first physical acceptance
+
+Scoped publication now uses actual candidate geometry and original continuous
+movement receipts with all observed samples. The short courtyard pilot compares
+independent forward/reverse Detour queries to outbound/return native traces;
+different vertex densities are compared in order. Mandatory stops and complete
+evidence remain bound. GUI normalization, edits, direct-Go selection/origin,
+headless playback, cached readiness and fresh runtime context are gated.
+The combined admission/consumer/playback check passed 126 tests.
+
+The authorized three-minute movement attempt used the user's unchanged 24-point
+route on AMD-DESKTOP, PID 21672. Deliberate STOP retained four confirmed points;
+Resume reached all 24 and ended 0.173633 units from the destination. Independent
+post-phase poses had zero position/yaw drift and native receipts verified release.
+Reverse reached 12/24, then a one-shot pose acquisition refused changed
+player-system XYZ between reads. The last completed span had released input;
+post-halt poses were stationary. The reverse checkpoint remains at
+`artifacts/navigation-live-1794688667521253000/progress.json`.
+
+This is partial physical acceptance: reverse completion, visual camera
+smoothness, survival recovery/rejoin and swept clearance remain open. The
+reader's existing bounded whole-sample reacquisition policy is being evaluated
+for one-shot reads. No stale sample reuse or drift-limit relaxation is intended.

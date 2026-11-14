@@ -556,6 +556,38 @@ class SurvivalLiveTests(unittest.TestCase):
         with self.assertRaisesRegex(live.SurvivalLiveError, "cancel-reference-expired"):
             consumer.cancel_reference(max_age_seconds=5)
 
+    def test_missing_baseline_is_distinct_and_acquire_retries_it(self):
+        calls = 0
+        def scout(*_args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return []
+            return [({"address": "0x200000"}, wire(frame(calls - 1, 10 + calls)))]
+        result = live.acquire(
+            "AMD-DESKTOP", 21672, NONCE, self.seed, self.root / "baseline-retry",
+            interval_milliseconds=0, max_attempts=3, selector=self.selector,
+            adapter_factory=Adapter, scout_once=scout, capture_known=lambda *_args: [])
+        self.assertEqual(3, calls)
+        self.assertTrue(result["telemetry"]["ready"])
+        self.assertEqual(0, result["attempts"][0]["validMatchingFrameCount"])
+
+    def test_consumer_distinguishes_no_baseline_from_no_advancement(self):
+        calls = 0
+        def scout(*_args):
+            nonlocal calls
+            calls += 1
+            return [] if calls == 1 else [({"address": "0x200000"}, wire(frame(1, 10)))]
+        consumer = live.SurvivalLiveConsumer(
+            "AMD-DESKTOP", 21672, NONCE, self.seed, self.root / "baseline-distinct",
+            selector=self.selector, adapter_factory=Adapter, scout_once=scout,
+            capture_known=lambda *_args: [])
+        with self.assertRaisesRegex(live.SurvivalLiveError, "survival-baseline-frame-unavailable"):
+            consumer.snapshot()
+        self.assertTrue(consumer.snapshot()["baseline"])
+        with self.assertRaisesRegex(live.SurvivalLiveError, "survival-frame-not-advanced"):
+            consumer.snapshot()
+
     def test_history_in_one_scan_does_not_replace_second_acquisition(self):
         history = [({"address": "0x1"}, wire(frame(1, 10))),
                    ({"address": "0x2"}, wire(frame(2, 11)))]
