@@ -4,7 +4,7 @@ import math
 import threading
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from contextlib import nullcontext, redirect_stdout
 from dataclasses import dataclass
 from pathlib import Path
@@ -609,6 +609,15 @@ class ContinuousMoveTests(unittest.TestCase):
                 self.assertEqual(expected, move.route_spans(rows, [None]*len(rows),
                                                             ["pass"]*len(rows)))
 
+    def test_measured_response_can_increase_corner_runout(self):
+        rows = [("A", 0, 0), ("B", .8, 0),
+                ("C", .8 + .8*math.cos(math.radians(25)), .8*math.sin(math.radians(25)))]
+        self.assertEqual([(0, 2, False)], move.route_spans(rows, [None]*3, ["pass"]*3))
+        self.assertEqual([(0, 1, True), (2, 2, False)],
+                         move.route_spans(rows, [None]*3, ["pass"]*3, response_delay=.4))
+        self.assertEqual([(0, 1, True), (2, 2, False)],
+                         move.route_spans(rows, [None]*3, ["pass"]*3, observed_coast=.5))
+
     def test_sampled_feasible_curve_remains_continuous(self):
         rows = [(str(i), 4 * math.sin(i * .16), 4 * (1-math.cos(i * .16)))
                 for i in range(12)]
@@ -841,6 +850,81 @@ class ContinuousMoveTests(unittest.TestCase):
         executed.assert_called_once()
         previewed.assert_not_called()
         self.assertEqual([state for state, _ in entered], ["enter", "exit"])
+
+
+class ResponseEstimateTests(unittest.TestCase):
+    def example(self, key="W"):
+        base = datetime(2026, 11, 14, tzinfo=timezone.utc)
+        def t(seconds):
+            return (base + timedelta(seconds=seconds)).isoformat()
+        def pose(seconds, x, bearing=90):
+            return {"observedAtUtc": t(seconds), "x": x, "z": 0, "bearing": bearing}
+        def event(seconds, phase, selected=key):
+            return {"key": selected, "phase": phase, "inserted": True,
+                    "callStartedAtUtc": t(seconds), "callCompletedAtUtc": t(seconds+.001)}
+        if key == "W":
+            path = [pose(0,0), pose(.05,0), pose(.15,0), pose(.22,.1),
+                    pose(.30,.55), pose(.40,1.0), pose(.45,1.05), pose(.52,1.05)]
+        else:
+            path = [pose(0,0,179), pose(.05,0,179), pose(.15,0,179), pose(.22,0,-176),
+                    pose(.30,0,-166), pose(.40,0,-156), pose(.45,0,-155), pose(.52,0,-155)]
+        return {"status": "arrived", "path": path,
+                "keySendEvents": [event(.10,"key-down"), event(.42,"key-up")]}
+
+    def test_sampled_onset_and_censored_coast_are_reported(self):
+        estimate = move.response_estimate(self.example())
+        onset = estimate["onsetIntervalsSeconds"][0]
+        self.assertEqual("W", onset["key"])
+        self.assertEqual(0, onset["lower"])
+        self.assertAlmostEqual(.049, onset["thresholdLower"], places=5)
+        self.assertAlmostEqual(.12, onset["upper"], places=5)
+        coast = estimate["coastObservations"][0]
+        self.assertAlmostEqual(.05, coast["sampledDistance"])
+        self.assertTrue(coast["censored"])
+
+    def test_wraparound_turn_rates_update_only_conservative_seed(self):
+        sample = self.example("A")
+        delay, rate, estimate = move.merge_response_seed(sample, .1, 175)
+        self.assertGreater(delay, .1)
+        self.assertLess(rate, 175)
+        self.assertGreater(len(estimate["turnRatesDegreesPerSecond"]), 1)
+        self.assertAlmostEqual(.12, delay, places=5)
+
+    def test_evolving_coast_and_wrong_sign_turn(self):
+        sample = self.example()
+        final = sample["path"][-1]
+        base = datetime.fromisoformat(final["observedAtUtc"])
+        sample["path"][-2]["x"] = 1.1
+        final["x"] = 1.2
+        sample["path"].append(dict(final, observedAtUtc=(base + timedelta(seconds=.07)).isoformat()))
+        coast = move.response_estimate(sample)["coastObservations"][0]
+        self.assertFalse(coast["immediate"])
+        self.assertAlmostEqual(.2, coast["sampledDistance"])
+        turn = self.example("D")  # Fixture turns in A's positive direction.
+        observation = move.response_estimate(turn)
+        self.assertEqual([], observation["onsetIntervalsSeconds"])
+        self.assertEqual([], observation["turnRatesDegreesPerSecond"])
+        self.assertEqual([], observation["coastObservations"])
+
+    def test_stationary_before_release_does_not_train_coast(self):
+        sample = self.example()
+        sample["path"][4]["x"] = sample["path"][5]["x"]
+        self.assertEqual([], move.response_estimate(sample)["coastObservations"])
+
+    def test_unmoving_unordered_truncated_stopped_and_overlap_are_not_overclaimed(self):
+        sample = self.example()
+        for pose in sample["path"]:
+            pose["x"] = 0
+        self.assertEqual([], move.response_estimate(sample)["onsetIntervalsSeconds"])
+        sample = self.example(); sample["path"][2], sample["path"][3] = sample["path"][3], sample["path"][2]
+        self.assertEqual([], move.response_estimate(sample)["coastObservations"])
+        sample = self.example(); sample["path"] *= 100
+        self.assertEqual([], move.response_estimate(sample)["onsetIntervalsSeconds"])
+        sample = self.example(); sample["status"] = "stopped"
+        self.assertEqual([], move.response_estimate(sample)["coastObservations"])
+        sample = self.example(); first, last = sample["keySendEvents"]
+        sample["keySendEvents"] = [first, dict(first, key="A"), dict(last, key="A"), last]
+        self.assertEqual([], move.response_estimate(sample)["onsetIntervalsSeconds"])
 
 
 if __name__ == "__main__":

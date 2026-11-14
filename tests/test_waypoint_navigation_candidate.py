@@ -29,6 +29,14 @@ def sample():
         "evidence": {"geometry": "render-mesh-approximation", "walkability": "estimated", "traversal": "unverified", "sourceRequestCoverage": {"navigationEligible": True}}, "sourceRefs": {"navigationBuild": "retained"}})
 
 
+def cast_evidence(c):
+    return {"schema": "riftworld.finite-route-casts/1", "obj": {"sha256": "A" * 64},
+            "settings": {"heightsAbovePath": [1], "lateralOffsets": [0], "twoSidedTriangles": True},
+            "routes": [{"candidateId": c["candidateId"], "patchId": c["patchId"], "candidateStatus": c["status"],
+                        "sha256": "B" * 64, "segments": [{"segment": 0, "casts": [{"castId": 0, "heightAbovePath": 1, "lateralOffset": 0}]}]}],
+            "casts": [{"startXYZ": [0, 2, 2], "endXYZ": [2, 2, 2], "hits": [], "clearAtSampledLines": True}]}
+
+
 class CandidateTests(unittest.TestCase):
     def test_preserves_context_and_never_authorizes(self):
         c = sample()
@@ -111,6 +119,60 @@ class CandidateTests(unittest.TestCase):
         c = sample()
         c["sourceRefs"] = {"navigationBuild": "Z:/definitely-missing/not-a-command"}
         self.assertEqual(inspect_candidate(c)["candidate"]["sourceRefs"], c["sourceRefs"])
+
+    def test_attach_sampled_evidence_and_keep_qualifications(self):
+        c = sample()
+        result = inspect_candidate(c, casts=cast_evidence(c), candidate_sha256="B" * 64)
+        evidence = result["clearanceEvidence"]
+        self.assertEqual(evidence["candidateFileHashStatus"], "matched")
+        self.assertEqual(evidence["sourceIdentityStatus"], "reported-only")
+        self.assertEqual(evidence["segments"][0]["state"], "clear-at-sampled-lines")
+        self.assertEqual(evidence["usableWidth"], "unknown")
+        self.assertEqual(evidence["navmeshWalkability"], "estimated")
+        self.assertEqual(evidence["liveTraversal"], "unverified")
+        self.assertFalse(result["executionEligible"])
+
+    def test_mismatched_and_incomplete_evidence_refused(self):
+        c = sample()
+        for mutation in ("candidate", "coordinates", "duplicate", "missing", "geometry", "hash"):
+            d = cast_evidence(c)
+            kwargs = {"candidate_sha256": "B" * 64}
+            if mutation == "candidate":
+                d["routes"][0]["candidateId"] = "f" * 64
+            elif mutation == "coordinates":
+                d["casts"][0]["endXYZ"][0] = 3
+            elif mutation == "duplicate":
+                d["routes"].append(copy.deepcopy(d["routes"][0]))
+            elif mutation == "missing":
+                d["routes"][0]["segments"][0]["casts"] = []
+            elif mutation == "geometry":
+                kwargs["geometry_sha256"] = "C" * 64
+            else:
+                kwargs["candidate_sha256"] = "C" * 64
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                inspect_candidate(c, casts=d, **kwargs)
+
+    def test_cast_dimensions_are_bounded_before_expansion(self):
+        c = sample()
+        d = cast_evidence(c)
+        d["settings"]["heightsAbovePath"] = [1] * 129
+        with self.assertRaisesRegex(ValueError, "settings exceed"):
+            inspect_candidate(c, casts=d)
+        d = cast_evidence(c)
+        d["settings"]["lateralOffsets"] = [0, 0, 0]
+        self.assertEqual(inspect_candidate(c, casts=d)["clearanceEvidence"]["segments"][0]["state"], "clear-at-sampled-lines")
+
+    def test_hits_and_zero_length_remain_distinct(self):
+        c = sample()
+        d = cast_evidence(c)
+        d["casts"][0].update({"clearAtSampledLines": False, "hits": [{"group": "wall", "objTriangleIndex": 3, "segmentFraction": .5, "pointXYZ": [1, 2, 2]}]})
+        e = inspect_candidate(c, casts=d)["clearanceEvidence"]
+        self.assertEqual(e["segments"][0]["state"], "hits-at-sampled-lines")
+        c["points"][1]["xyz"] = c["points"][0]["xyz"][:]
+        sign(c)
+        d = cast_evidence(c)
+        d["routes"][0]["segments"][0] = {"segment": 0, "casts": [], "assessment": "not-assessed-zero-length-segment"}
+        self.assertEqual(inspect_candidate(c, casts=d)["clearanceEvidence"]["segments"][0]["state"], "not-assessed-zero-length")
 
 
 if __name__ == "__main__":

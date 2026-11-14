@@ -142,7 +142,45 @@ class SurvivalWaypointsTests(unittest.TestCase):
         self.assertIs(observed["options"]["runner"].__self__, self.runtimes[0])
         self.assertEqual("reverse", observed["options"]["direction"])
         self.assertFalse(observed["options"]["resume"])
+        self.assertTrue(observed["options"]["pass_through"])
+        self.assertTrue(observed["options"]["height_aware"])
         self.assertEqual(self.checkpoint, observed["options"]["checkpoint"])
+
+    def test_real_playback_advances_guide_once_and_passes_kinds_and_heights(self):
+        self.route.write_text(json.dumps({"waypoints": [["Start", 1, 2],
+                                                         ["Stop", 2, 2],
+                                                         ["End", 3, 2]],
+                                          "heights": [5, 5, 5],
+                                          "pointKinds": ["pass", "stop", "pass"]}),
+                              encoding="utf-8")
+        observed = {}
+        class RecordingRuntime(Runtime):
+            def route_runner(self, adapter, points, stop, emit, **options):
+                observed.update(options)
+                from dataclasses import make_dataclass
+                position = make_dataclass("Position", ["x", "y", "z"])
+                options["entry_check"](position(1, 5, 2))
+                for index, (name, x, z) in enumerate(points):
+                    passed = index == 0
+                    emit({"status": "passed" if passed else "arrived", "name": name,
+                          "goal": {"x": x, "z": z},
+                          "position": {"x": x, "y": 5, "z": z},
+                          "passageVerified": passed, "releaseSucceeded": True,
+                          "desktopInputsDown": []})
+                return [{"status": "arrived", "inputSent": True}]
+        args = self.parse("run", "--expected-host", "AMD-DESKTOP", "--physical-pid", "21672",
+                          "--profile", str(self.profile), "--route", str(self.route),
+                          "--checkpoint", str(self.checkpoint), "--execute")
+        code, result = cli.execute(args, adapter_factory=lambda *_: Adapter(),
+                                   runtime_factory=RecordingRuntime, emit=self.outputs.append,
+                                   receipt_root=self.root)
+        self.assertEqual(0, code)
+        self.assertEqual(3, result["nextIndex"])
+        self.assertEqual(["pass", "stop", "pass"], observed["point_kinds"])
+        self.assertEqual([5, 5, 5], observed["goal_heights"])
+        advances = [e["nextWaypoint"] for e in self.outputs
+                    if e.get("status") in ("passed", "arrived") and e.get("type") == "event"]
+        self.assertEqual([1, 2, 3], advances)
 
     def test_resume_requires_existing_checkpoint_and_sets_resume(self):
         values = ("resume", "--expected-host", "AMD-DESKTOP", "--physical-pid", "21672",
@@ -164,6 +202,8 @@ class SurvivalWaypointsTests(unittest.TestCase):
                     runtime_factory=runtime, playback=playback,
                     emit=self.outputs.append)
         self.assertTrue(seen["resume"])
+        self.assertTrue(seen["pass_through"])
+        self.assertTrue(seen["height_aware"])
 
     def test_sigint_and_sigbreak_handlers_latch_without_raising(self):
         stop = threading.Event()

@@ -184,8 +184,9 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         raise Stopped("Stopped; no movement helper launched")
     started = clock()
     initial = read_stationary(adapter, stop)
-    from scripts.continuous_move import route_motion_seed, _receipt_speed_seed
+    from scripts.continuous_move import route_motion_seed, _receipt_speed_seed, merge_response_seed
     motion_speed, motion_turn_rate = route_motion_seed(adapter, initial)
+    response_delay, observed_coast = .10, 0.0
     if entry_check is not None:
         entry_check(initial.position)
     current = _position(initial)
@@ -325,7 +326,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
 
     def move(row, *, forward, expected_height=None, guard_mode=True,
              operation_max_seconds=None, guides=None, on_pass=None, arrival_as_pass=False):
-        nonlocal current, movement_release, auxiliary_distance, motion_speed
+        nonlocal current, movement_release, auxiliary_distance, motion_speed, motion_turn_rate, response_delay, observed_coast
         label, x, z = row
         movement_start = dict(current)
         if not forward:
@@ -405,6 +406,11 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             for point in traversed:
                 policy.record_route_trail_point((point["x"], point["y"], point["z"]))
             motion_speed = _receipt_speed_seed(movement_release, motion_speed)
+            response_delay, motion_turn_rate, response = merge_response_seed(
+                movement_release, response_delay, motion_turn_rate)
+            for coast in response["coastObservations"]:
+                if coast["key"] == "W" and 0 <= coast["sampledDistance"] <= 5:
+                    observed_coast = max(observed_coast, coast["sampledDistance"])
             if on_pass is not None:
                 on_pass(passed_events, guides or [])
             evidence.update(traversedPath=traversed,
@@ -441,6 +447,11 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             # the native movement path's final sample; retain both.
             policy.record_route_trail_point((current["x"], current["y"], current["z"]))
         motion_speed = _receipt_speed_seed(result, motion_speed)
+        response_delay, motion_turn_rate, response = merge_response_seed(
+            result, response_delay, motion_turn_rate)
+        for coast in response["coastObservations"]:
+            if coast["key"] == "W" and 0 <= coast["sampledDistance"] <= 5:
+                observed_coast = max(observed_coast, coast["sampledDistance"])
         if on_pass is not None:
             expected = list(guides or [])
             if len(passed_events) != len(expected):
@@ -506,7 +517,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 aux_heights = [p[1] for p, _ in pending]
                 _, end, _ = route_spans(aux_rows, aux_heights,
                                         ["pass"] * len(pending), origin=(current["x"], current["z"]),
-                                        speed=motion_speed, turn_rate=motion_turn_rate)[0]
+                                        speed=motion_speed, turn_rate=motion_turn_rate,
+                                        response_delay=response_delay, observed_coast=observed_coast)[0]
                 coordinates, retained_index = pending[end]
                 x, expected_height, z = coordinates
                 guides = [{"name": aux_rows[i][0], "x": p[0], "y": p[1], "z": p[2]}
@@ -608,7 +620,7 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         _, relative_end, automatic_corner = route_spans(
             rows[index:], heights[index:], kinds[index:],
             origin=(current["x"], current["z"]), speed=motion_speed,
-            turn_rate=motion_turn_rate)[0]
+            turn_rate=motion_turn_rate, response_delay=response_delay, observed_coast=observed_coast)[0]
         end = index + relative_end
         row, goal_y = rows[end], heights[end]
         policy.pending_leg = list(rows[index])

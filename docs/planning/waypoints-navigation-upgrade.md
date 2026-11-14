@@ -58,3 +58,31 @@ acceptance when authorized; (2) actual per-run delay/coast calibration and furth
 curve tuning from retained traces; (3) qualify geometry/alignment and integrate
 explicit sampled clearance evidence. The review adapter always disables movement
 and automatic rejoin. Full clearance and live acceptance are not complete.
+
+## Continued implementation
+
+Response planning now consumes same-run validated key/pose receipts in normal
+and survival spans. Onset includes sampling delay; release displacement remains
+censored evidence, not a certified stopping bound. Standalone survival run and
+resume now explicitly enable pass-through guides and measured heights.
+
+The candidate inspector accepts explicitly supplied finite-cast evidence, patch
+and geometry inputs and binds hashes, ordered segments, settings and hit records.
+The actual short courtyard query has eight segments and forty unique sampled
+casts without hits; two vertical segments have collapsed lateral coverage.
+Usable width, full body sweep, floor authority and live traversal stay separate.
+
+Scoped candidate publication/admission is being integrated using original
+outbound/return receipts and independently queried directions. It must survive
+GUI normalization, retain its marker on edits, and guard direct-Go subsections
+and approach origins before it is accepted as finished.
+
+Survival acceptance remains unavailable: the old admitted 16 MiB currently
+contains marker-prefix collisions and no decoded baseline frame. A bounded
+four-snapshot diagnostic established this without input; it did not establish
+producer state or the cause of missing frames. Do not repeat that same scan
+without a changed hypothesis or acquisition window.
+
+Hypothesis, Ruff, Pyright, py-spy, dotnet-trace and PerfView were installed locally
+at the user's request. They must remain unused until the user authorizes running
+them. Existing unittest checks remain available.

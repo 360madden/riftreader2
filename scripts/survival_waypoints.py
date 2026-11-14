@@ -303,7 +303,8 @@ def execute(args, *, adapter_factory=None, runtime_factory=None,
                     adapter, document, shared_stop, event,
                     runner=runtime.route_runner, checkpoint=checkpoint,
                     direction=args.direction, resume=args.command == "resume",
-                    face_waypoints=args.face_waypoints)
+                    face_waypoints=args.face_waypoints,
+                    pass_through=True, height_aware=True)
                 if shared_stop.is_set():
                     from scripts.physical_waypoints import Stopped
                     raise Stopped("STOP requested; owned cleanup completed")

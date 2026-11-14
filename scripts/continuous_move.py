@@ -735,7 +735,142 @@ def _receipt_speed_seed(receipt, speed):
     return speed
 
 
-def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.0):
+def response_estimate(receipt):
+    """Summarize observed response intervals, not guaranteed response limits.
+
+    Requires a current trusted, release-validated receipt supplied by caller.
+    Onset includes sampling latency; coast uses sampled positions and may be
+    censored by sparse samples or prior settling.
+    """
+    result = {"onsetIntervalsSeconds": [], "coastObservations": [],
+              "turnRatesDegreesPerSecond": [], "limitations":
+              "Onset includes sampling latency; coast is sampled and may be censored."}
+    try:
+        raw_path, raw_events = receipt["path"], receipt["keySendEvents"]
+        if len(raw_path) < 3 or len(raw_path) >= 500:
+            return result
+        def stamp(value):
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                raise ValueError("timestamp missing timezone")
+            return dt.timestamp()
+        poses = [(stamp(p["observedAtUtc"]), float(p["x"]), float(p["z"]),
+                  float(p["bearing"])) for p in raw_path]
+        if any(not all(math.isfinite(v) for v in p) for p in poses):
+            return result
+        if any(a[0] >= b[0] or b[0] - a[0] > .5 for a, b in zip(poses, poses[1:])):
+            return result
+        events = []
+        for e in raw_events:
+            key, phase = e["key"].upper(), e["phase"]
+            if key not in ("W", "A", "D") or phase not in ("key-down", "key-up"):
+                continue
+            if e.get("inserted") is not True:
+                return result
+            start, end = stamp(e["callStartedAtUtc"]), stamp(e["callCompletedAtUtc"])
+            if end < start:
+                return result
+            events.append((start, end, key, phase))
+        if any(a[0] > b[0] for a, b in zip(events, events[1:])):
+            return result
+        active, holds = {}, []
+        for start, end, key, phase in events:
+            if phase == "key-down":
+                if key in active:
+                    return result
+                active[key] = (start, end)
+            else:
+                if key not in active:
+                    return result
+                down = active.pop(key)
+                holds.append((key, down[0], down[1], start, end))
+        if active:
+            return result
+        def planar(a, b):
+            return math.hypot(b[1]-a[1], b[2]-a[2])
+        def angular(a, b):
+            return (b[3]-a[3]+180) % 360 - 180
+        for key, ds, de, us, ue in holds:
+            # A simultaneous key can produce the motion under examination.
+            if any(other != key and ods < ue and ous > ds
+                   for other, ods, _, ous, _ in holds):
+                continue
+            before = [p for p in poses if p[0] <= ds]
+            if not before or ds - before[-1][0] > .2:
+                continue
+            baseline = before[-1]
+            if len(before) < 2 or before[-1][0]-before[-2][0] > .2:
+                continue
+            if planar(before[-2], baseline) > .02 or abs(angular(before[-2], baseline)) > 1:
+                continue
+            current = [p for p in poses if ds < p[0] <= us]
+            previous = baseline
+            for pose in current:
+                if key == "W":
+                    heading = math.radians(baseline[3])
+                    delta = ((pose[1]-baseline[1])*math.sin(heading) +
+                             (pose[2]-baseline[2])*math.cos(heading))
+                else:
+                    delta = angular(baseline, pose) * (1 if key == "A" else -1)
+                if delta > (.04 if key == "W" else 1.0):
+                    result["onsetIntervalsSeconds"].append({"key": key,
+                        "lower": 0.0, "upper": max(0.0, pose[0]-ds),
+                        "thresholdLower": max(0.0, previous[0]-de)})
+                    break
+                previous = pose
+            if key in ("A", "D"):
+                for a, b in zip(current, current[1:]):
+                    dt = b[0]-a[0]
+                    if .05 <= dt <= .2 and planar(a, b) <= .02:
+                        rate = angular(a, b) * (1 if key == "A" else -1) / dt
+                        if 20 <= rate <= 1000:
+                            result["turnRatesDegreesPerSecond"].append(rate)
+            # Pre-up to settled displacement is sampled and is not a stop guarantee.
+            # Require prior correct-axis movement and inspect successive post-up
+            # pairs until settled or another input makes attribution ambiguous.
+            pre = [p for p in poses if p[0] <= us]
+            next_action = min((e[0] for e in events if e[0] > us), default=float("inf"))
+            post = [p for p in poses if ue <= p[0] < min(next_action, ue + 1)]
+            if (receipt.get("status") == "arrived" and len(pre) >= 2 and
+                    us-pre[-1][0] <= .2 and pre[-1][0]-pre[-2][0] <= .2):
+                if key == "W":
+                    heading = math.radians(baseline[3])
+                    prior = ((pre[-1][1]-pre[-2][1])*math.sin(heading) +
+                             (pre[-1][2]-pre[-2][2])*math.cos(heading))
+                else:
+                    prior = angular(pre[-2], pre[-1]) * (1 if key == "A" else -1)
+                if prior > (.02 if key == "W" else 1.0):
+                    for p, q in zip(post, post[1:]):
+                        if q[0]-p[0] > .2:
+                            break
+                        stable = planar(p, q) <= .02 and abs(angular(p, q)) <= 1
+                        if stable:
+                            result["coastObservations"].append({"key": key,
+                                "sampledDistance": planar(pre[-1], q) if key == "W" else abs(angular(pre[-1], q)),
+                                "firstPostUpDistance": planar(post[0], q) if key == "W" else abs(angular(post[0], q)),
+                                "immediate": p is post[0], "censored": True})
+                            break
+        return result
+    except (KeyError, TypeError, ValueError, OverflowError, OSError):
+        return {"onsetIntervalsSeconds": [], "coastObservations": [],
+                "turnRatesDegreesPerSecond": [], "limitations": result["limitations"]}
+
+
+def merge_response_seed(receipt, delay, turn_rate):
+    """Keep conservative seeds; qualified observations can only tighten them."""
+    estimate = response_estimate(receipt)
+    intervals = [v["upper"] for v in estimate["onsetIntervalsSeconds"]
+                 if v["key"] in ("W", "A", "D") and 0 <= v["upper"] <= .5]
+    if intervals:
+        delay = max(delay, max(intervals))
+    rates = sorted(estimate["turnRatesDegreesPerSecond"])
+    if len(rates) >= 2:
+        turn_rate = min(turn_rate, max(20.0, rates[math.floor((len(rates)-1)*.1)]))
+    return delay, turn_rate, estimate
+
+
+def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.0,
+                response_delay=.10, observed_coast=0.0):
     """Plan inclusive guide spans; automatic boundaries retain pass semantics.
 
     The default 6.25 units/s and 175 degrees/s are bootstrap estimates, not
@@ -749,6 +884,12 @@ def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.
     turn_rate = _finite(turn_rate, "route turn rate")
     if not 0.1 <= speed <= 30 or not 1 <= turn_rate <= 1000:
         raise ValueError("Route motion seed outside supported bounds")
+    response_delay = _finite(response_delay, "response delay")
+    if not 0 <= response_delay <= .5:
+        raise ValueError("Response delay outside supported bounds")
+    observed_coast = _finite(observed_coast, "observed coast")
+    if not 0 <= observed_coast <= 5:
+        raise ValueError("Observed coast outside supported bounds")
     radius = speed / math.radians(turn_rate)
     runout = [0.0] * count
     turns = [0.0] * count
@@ -777,7 +918,7 @@ def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.
         tangent = radius * math.tan(angle / 2)
         # Allow for bounded input response and release travel, without assuming
         # a walk toggle or a verified instantaneous turn rate.
-        needed = tangent + speed * .10 * math.sin(angle / 2)
+        needed = tangent + max(speed * response_delay * math.sin(angle / 2), observed_coast)
         if radius * (1 / cosine - 1) > .5 or needed > min(a, b):
             automatic.add(i)
         else:
@@ -854,12 +995,14 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
             raise WaypointError(f"Route exceeds {MAX_ROUTE_DISTANCE:g} world units")
         legs = []
         speed, turn_rate = route_motion_seed(adapter, initial)
+        response_delay, observed_coast = .10, 0.0
         batch_start = 0
         origin = (initial.position.x, initial.position.z)
         while batch_start < len(rows):
             _, relative_end, automatic_corner = route_spans(
                 rows[batch_start:], heights[batch_start:], kinds[batch_start:],
-                origin=origin, speed=speed, turn_rate=turn_rate)[0]
+                origin=origin, speed=speed, turn_rate=turn_rate, response_delay=response_delay,
+                observed_coast=observed_coast)[0]
             end = batch_start + relative_end
             label, x, z = rows[end]
             goal_y = heights[end]
@@ -910,8 +1053,15 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
             if automatic_corner:
                 leg.update(status="passed", passageVerified=True)
                 emit(dict(leg, index=end, source="settled-corner"))
+            trusted_receipt = adapter.last_input_receipt or {}
+            speed = _receipt_speed_seed(trusted_receipt, speed)
+            response_delay, turn_rate, response = merge_response_seed(
+                trusted_receipt, response_delay, turn_rate)
+            for coast in response["coastObservations"]:
+                if coast["key"] == "W" and 0 <= coast["sampledDistance"] <= 5:
+                    observed_coast = max(observed_coast, coast["sampledDistance"])
+            leg["responseEstimate"] = response
             legs.append(leg)
-            speed = _receipt_speed_seed(adapter.last_input_receipt or {}, speed)
             origin = (float(leg["position"]["x"]), float(leg["position"]["z"])) if (
                 isinstance(leg.get("position"), dict) and
                 all(type(leg["position"].get(k)) in (int, float) and
