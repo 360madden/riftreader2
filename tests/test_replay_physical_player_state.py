@@ -102,6 +102,14 @@ class StateReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "vitals-burst-pin-mismatch"):
             replay.verified_state(self.summary)
 
+    def test_vitals_burst_build_pin_mismatch_rejected(self):
+        # The source may be SHA-valid, but its saved derived burst must not
+        # claim a different executable build than the exact process epoch.
+        self.edit_summary(lambda x: x["sources"]["vitals"]["burstSummary"].update(
+            sourceBuildSha256="F" * 64))
+        with self.assertRaisesRegex(ValueError, "vitals-burst-pin-mismatch"):
+            replay.verified_state(self.summary)
+
     def test_saved_candidate_value_tamper_rejected(self):
         self.edit_summary(lambda x: x["sources"]["position"]["candidateValues"].update(x=999))
         with self.assertRaisesRegex(ValueError, "position-candidate-projection-mismatch"):

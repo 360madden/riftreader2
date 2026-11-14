@@ -90,6 +90,7 @@ def verified_state(filename):
             burst = saved["burstSummary"]
             require(isinstance(burst, dict)
                     and str(burst.get("sourceReportSha256", "")).upper() == actual_sha
+                    and str(burst.get("sourceBuildSha256", "")).upper() == state.BUILD_SHA
                     and burst.get("processId") == owner["processId"]
                     and str(burst.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
                     and str(burst.get("unitKey")) == receipt["selfKeyCandidate"]
