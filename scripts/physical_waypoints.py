@@ -1076,7 +1076,7 @@ def launch_window(args):
         entry.grid(row=1, column=column, sticky="ew", padx=(0, 10))
         editable.append(entry)
         point_entries.append(entry)
-    live_pose_option = ttk.Checkbutton(header_actions, text="Live pose (2 s)", variable=live_pose)
+    live_pose_option = ttk.Checkbutton(header_actions, text="Live pose (1 s)", variable=live_pose)
     live_pose_option.pack(anchor="e", pady=(7, 0))
     summary = tk.StringVar(value="Refresh position to preview the route.")
     summary_label = ttk.Label(telemetry, textvariable=summary, style="Base.Muted.TLabel", wraplength=900)
@@ -1201,7 +1201,7 @@ def launch_window(args):
     map_render = {"nodes": [], "offscreen": [], "visible_count": 0, "offscreen_count": 0, "total_count": 0}
     map_hover = [None]
     observing = False
-    next_live_at = time.monotonic() + 2
+    next_live_at = time.monotonic() + 1
     operation_gate = threading.Lock()
     record_stop, record_cancel = threading.Event(), threading.Event()
     checkpoint = ROOT / "artifacts" / "waypoint-current-progress.json"
@@ -3389,7 +3389,7 @@ def launch_window(args):
             replay_hints[action].set(title+"\n"+shorten(detail,width=62,placeholder="…"))
             replay_full_hints[action]=full
             button.configure(state="normal" if item["ready"] else "disabled",
-                             style="Primary.TButton" if item["ready"] else "TButton")
+                             style="TButton")
             replay_hint_labels[("forward","reverse","resume").index(action)].configure(
                 foreground=PALETTE["mint"] if item["ready"] else PALETTE["gold"] if item.get("complete") else PALETTE["muted"])
         view = playback_view if playback_active else cursor
@@ -4692,7 +4692,7 @@ def launch_window(args):
                 exploration_sample = None
                 explore_controls.unavailable("Live pose paused")
         else:
-            live_pose_option.configure(text="Live pose (2 s)")
+            live_pose_option.configure(text="Live pose (1 s)")
             if beacon_display_active:
                 exploration_sample = None
                 explore_controls.unavailable("beacon reader ended")
@@ -4705,7 +4705,7 @@ def launch_window(args):
         if (live_pose.get() and not busy and not observing and not closing
                 and time.monotonic() >= next_live_at and not markers.running()):
             observing = True
-            next_live_at = time.monotonic() + 2
+            next_live_at = time.monotonic() + 1
             threading.Thread(target=worker, args=("live",), daemon=False).start()
         if (adapter is not None and not busy and not observing and not zone_observing and not closing
                 and time.monotonic() >= next_zone_at):
@@ -4786,7 +4786,7 @@ def launch_window(args):
         json.dumps(getattr(adapter,"target",None),indent=2) if adapter is not None else "Waiting for a verified local RIFT process.")
     attach_path_tooltip(pose_label,lambda:json.dumps(cli_pose(),indent=2))
     attach_path_tooltip(pose_badge_label,lambda:json.dumps(cli_pose(),indent=2))
-    attach_path_tooltip(live_pose_option,lambda:"Use the existing beacon reader while it runs; otherwise read pose every 2 seconds. Pausing keeps a clearly cached display and sends no game input.")
+    attach_path_tooltip(live_pose_option,lambda:"Use the existing beacon reader while it runs; otherwise read pose every second. Pausing keeps a clearly cached display and sends no game input.")
     attach_path_tooltip(stop_button,lambda:cli_controls()["qualification"]+"\n"+
         "STOP also cancels recording and hides this helper's overlays. Stop Recording saves instead. Esc works while this app has focus; F8 is registered only for an owned movement action.")
     table.bind("<Motion>",lambda event:table_hover.__setitem__(0,table.identify_row(event.y)))

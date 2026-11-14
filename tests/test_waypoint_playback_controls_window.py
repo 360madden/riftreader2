@@ -63,6 +63,24 @@ class PlaybackControlsWindowTests(unittest.TestCase):
             time.sleep(.01)
         self.fail("Fake playback did not settle")
 
+    def test_reverse_button_stays_steady_across_idle_refresh_cycles(self):
+        self.launch_route(direction="reverse", completed=0)
+        reverse = self.button("Play Reverse")
+        states, styles = set(), set()
+        deadline = time.monotonic() + 3.2
+        while time.monotonic() < deadline:
+            self.window.update()
+            states.add(str(reverse["state"]))
+            styles.add(str(reverse["style"]))
+            time.sleep(.02)
+        self.assertEqual({"normal"}, states)
+        self.assertEqual({"TButton"}, styles)
+        self.assertGreaterEqual(self.reader.call_count, 3)
+        self.pose_toggle().invoke()
+        self.window.update()
+        self.assertEqual("disabled", str(reverse["state"]))
+        self.assertEqual("TButton", str(reverse["style"]))
+
     def test_direction_endpoints_and_reverse_resume_original_point_are_in_playback_group(self):
         self.launch_route(direction="reverse", completed=1)
         before = self.reader.call_count
