@@ -1152,6 +1152,7 @@ def launch_window(args):
     events, stop = queue.Queue(), threading.Event()
     busy = False
     recording = False
+    recording_restore = None
     recording_progress = None
     pending_recorded = None
     closing = False
@@ -1754,7 +1755,7 @@ def launch_window(args):
                         if compare_context(observed_context, read_route_context(adapter)) != "matching":
                             raise WaypointError("Zone candidate changed while recording; no mixed-zone route saved")
                         next_record_zone = time.monotonic()+3
-                    events.put({"status": "recording", "position": asdict(pose.position),
+                    events.put({"status": "recording", "preview": recorder.preview(), "position": asdict(pose.position),
                                 "bearing": pose.bearing, **recorder.progress})
                     record_stop.wait(.15)
                 if record_cancel.is_set():
@@ -1853,6 +1854,7 @@ def launch_window(args):
                             "receipt": str(receipt_path) if receipt_path else None})
 
     def start(operation, points=None, *, face_walk=None, check_route_zone=True):
+        nonlocal recording_restore
         nonlocal busy, foreground_stop, recording, recording_progress, playback_view, playback_active
         nonlocal stop_waiting_operation
         if busy or closing or nearby_picker is not None:
@@ -1910,6 +1912,8 @@ def launch_window(args):
             recording_progress = {"sampleCount": 0, "observedPathLength": 0.0}
             redraw()
         if operation == "record":
+            recording_restore = ([(item, table.item(item, "values")) for item in table.get_children()],
+                                 tuple(table.selection()), deepcopy(route_metadata))
             recording = True
             recording_progress = {"sampleCount": 0, "observedPathLength": 0.0}
             record_stop.clear()
@@ -4345,6 +4349,7 @@ def launch_window(args):
         height=200 if workflow.select()==str(edit_tab) else 230 if workflow.select()==str(replay_tab) else 220 if workflow.select() in (str(library_tab),str(scene_tab),str(activity_tab)) else 184))
 
     def poll():
+        nonlocal recording_restore, route_metadata
         nonlocal busy, recording, recording_progress, pending_recorded, foreground_stop, last_pose, last_y, saved_view, saved_rerun, saved_unit_sample, observing, next_live_at, playback_view, playback_active, marker_identity, pending_progress_selection, verified_adapter, verified_at, identity_unavailable, last_verified_owner
         nonlocal beacon_display_active, beacon_pose_token, beacon_pose_available, beacon_pose_stamp, exploration_sample
         nonlocal cli_action, cli_record_output, cli_last_operation, cli_last_record_file
@@ -4461,6 +4466,14 @@ def launch_window(args):
                         playback_view = None
                         progress_text.set("No saved progress; choose Play Forward or Play Reverse.")
                 select_pending_progress()
+                if recording_restore is not None:
+                    old_rows, old_selection, route_metadata = recording_restore
+                    table.delete(*table.get_children())
+                    for item, values in old_rows:
+                        table.insert("", "end", iid=item, values=values)
+                    table.selection_set(old_selection)
+                    recording_restore = None
+                    update_route_status()
                 recording = False
                 recording_progress = None
                 record_end_button.configure(state="disabled")
@@ -4543,6 +4556,16 @@ def launch_window(args):
             if "position" in event:
                 point = event["position"]
                 if status == "recording":
+                    preview = event.get("preview")
+                    if recording and not record_cancel.is_set() and isinstance(preview, dict):
+                        table.delete(*table.get_children())
+                        for index, row in enumerate(preview["waypoints"]):
+                            table.insert("", "end", iid=f"record-preview-{index}", values=row)
+                        if table.get_children():
+                            table.see(table.get_children()[-1])
+                        route_metadata = {**preview, "routeName": "Recording in progress"}
+                        route_metadata.pop("waypoints", None)
+                        route_status.set("Recording — live preview (not saved yet)")
                     recording_progress = {"sampleCount": event["sampleCount"],
                                           "observedPathLength": event["observedPathLength"]}
                 display_pose(point, event.get("bearing"),acquired=event.get("acquired"))

@@ -117,8 +117,17 @@ class RouteRecorder:
         if self._failed or self._finished:
             raise RecordingError("Recording is incomplete or already finished")
         self._finished = True
+        return self._document(complete=True)
+
+    def preview(self):
+        """Current retained route, using exactly the final simplification rules."""
+        if not self._points:
+            return {"waypoints": [], "heights": []}
+        return self._document(complete=False)
+
+    def _document(self, *, complete):
         points = self._points
-        if len(points) < 2 or self._length < .05:
+        if complete and (len(points) < 2 or self._length < .05):
             raise RecordingError("Recording has no useful movement")
         # Iterative bounded-error simplification between mandatory boundaries.
         # Retain practical intervals along actual accumulated travel.  When a
@@ -169,14 +178,14 @@ class RouteRecorder:
             if deduped and _distance(deduped[-1], point) < 1e-6:
                 continue
             deduped.append(point)
-        if len(deduped) < 2 or len(deduped) > MAX_WAYPOINTS:
+        if (complete and len(deduped) < 2) or len(deduped) > MAX_WAYPOINTS:
             raise RecordingError(f"Recording requires 2–{MAX_WAYPOINTS} distinct waypoints")
         route_length = sum(_distance(a, b) for a, b in zip(deduped, deduped[1:]))
         if route_length > MAX_ROUTE_DISTANCE:
             raise RecordingError(f"Recorded route exceeds {MAX_ROUTE_DISTANCE:g} units")
         return {"waypoints": [[f"Recorded {i + 1}", round(p["x"], 6), round(p["z"], 6)] for i, p in enumerate(deduped)],
                 "heights": [round(p["y"], 6) for p in deduped],
-                "recording": {"version": 1, "complete": True, "identity": deepcopy(self.identity),
+                "recording": {"version": 1, "complete": complete, "identity": deepcopy(self.identity),
                               "sampleCount": len(points), "retainedCount": len(deduped),
                               "observedPathLength": self._length, "routeLength": route_length,
                               "maxDeviation": .05, "maxHeightDeviation": .30,

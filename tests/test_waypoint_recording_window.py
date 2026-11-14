@@ -156,6 +156,10 @@ class RecordingWindowTests(unittest.TestCase):
 
     def test_normal_stop_publishes_and_loads_recorded_route(self):
         self.start_pending_recording()
+        table = next(w for w in self.widgets() if isinstance(w, ttk.Treeview)
+                     and tuple(w["columns"]) == ("name", "x", "z"))
+        self.assertEqual([0., 2.], [float(table.item(item, "values")[1]) for item in table.get_children()])
+        self.assertEqual([], self.saved(), "Live preview must appear before the file is saved")
         self.record_toggle.invoke()
         self.release_capture.set()
         self.wait_for(lambda: bool(self.saved()))
@@ -179,6 +183,9 @@ class RecordingWindowTests(unittest.TestCase):
         self.release_capture.set()
         self.wait_for(lambda: str(self.button("Record")["text"]) == "Record" and str(self.button("Record")["state"]) != "disabled")
         self.assertEqual([], self.saved())
+        table = next(w for w in self.widgets() if isinstance(w, ttk.Treeview)
+                     and tuple(w["columns"]) == ("name", "x", "z"))
+        self.assertEqual((), table.get_children(), "Cancel restores the original empty route")
 
     def test_toggle_saves_to_selected_new_route_file(self):
         chosen = self.root_path / "my-walk.json"
