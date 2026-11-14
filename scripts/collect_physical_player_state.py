@@ -93,6 +93,16 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
         if self_key is None:
             self_key = values["unitKey"]
         require(values["unitKey"] == self_key, "self-key-changed")
+        if kind == "vitals" and "nativeBurstSummary" in result:
+            burst = result["nativeBurstSummary"]
+            require(isinstance(burst, dict)
+                    and str(burst.get("sourceReportSha256", "")).upper() == source_sha
+                    and str(burst.get("sourceBuildSha256", "")).upper() == BUILD_SHA
+                    and burst.get("processId") == pid
+                    and str(burst.get("processStartUtcTicks")) == owner["processStartUtcTicks"]
+                    and str(burst.get("unitKey")) == self_key
+                    and burst.get("sampleCount") == samples,
+                    "vitals-burst-source-mismatch")
         require(pin(pid)["target"] == owner, "epoch-changed-after-read")
         results[kind] = {
             "path": str(path), "sourceSha256": source_sha,

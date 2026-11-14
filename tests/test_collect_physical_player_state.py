@@ -30,10 +30,16 @@ class StateTests(unittest.TestCase):
         }
         path.write_text(json.dumps({"status": "complete", "identity": identity,
                                     "completedSamples": samples}), encoding="utf-8")
+        source_sha = hashlib.sha256(path.read_bytes()).hexdigest().upper()
+        burst = {"status": "candidate-only", "sourceReportSha256": source_sha,
+                 "sourceBuildSha256": state.BUILD_SHA,
+                 "processId": OWNER["processId"],
+                 "processStartUtcTicks": OWNER["processStartUtcTicks"],
+                 "unitKey": key, "sampleCount": samples}
         return {"status": "complete", "nativeRead": kind, "target": selection["target"],
                 "nativeOutput": str(path),
                 "nativeValues": {"unitKey": key, "x": 5.2},
-                **({"nativeBurstSummary": {"status": "candidate-only"}}
+                **({"nativeBurstSummary": burst}
                    if kind == "vitals" else {})}
 
     def test_three_existing_native_readers_produce_hashed_same_owner_receipt(self):
@@ -149,6 +155,40 @@ class StateTests(unittest.TestCase):
              patch.object(state.physical_rift, "read_native", side_effect=nonfinite):
             dest = Path(temp) / "out"
             with self.assertRaisesRegex(ValueError, "nonfinite-json"):
+                state.collect(123, dest)
+            self.assertFalse((dest / "summary.json").exists())
+
+    def test_vitals_burst_claiming_another_source_is_rejected_before_summary(self):
+        def fake(selection, kind, path, *, samples, interval_ms):
+            result = self.fake_read(selection, kind, path, samples=samples,
+                                    interval_ms=interval_ms)
+            if kind == "vitals":
+                result["nativeBurstSummary"]["sourceReportSha256"] = "0" * 64
+            return result
+
+        with TemporaryDirectory() as temp, \
+             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
+             patch.object(state.physical_rift, "read_native", side_effect=fake):
+            dest = Path(temp) / "out"
+            with self.assertRaisesRegex(ValueError, "vitals-burst-source-mismatch"):
+                state.collect(123, dest)
+            self.assertFalse((dest / "summary.json").exists())
+
+    def test_vitals_burst_claiming_different_process_epoch_is_rejected(self):
+        def fake(selection, kind, path, *, samples, interval_ms):
+            result = self.fake_read(selection, kind, path, samples=samples,
+                                    interval_ms=interval_ms)
+            if kind == "vitals":
+                result["nativeBurstSummary"]["processStartUtcTicks"] = "111"
+            return result
+
+        with TemporaryDirectory() as temp, \
+             patch.object(state.socket, "gethostname", return_value=state.HOST), \
+             patch.object(state.physical_rift, "select_physical", return_value=SELECTION), \
+             patch.object(state.physical_rift, "read_native", side_effect=fake):
+            dest = Path(temp) / "out"
+            with self.assertRaisesRegex(ValueError, "vitals-burst-source-mismatch"):
                 state.collect(123, dest)
             self.assertFalse((dest / "summary.json").exists())
 
