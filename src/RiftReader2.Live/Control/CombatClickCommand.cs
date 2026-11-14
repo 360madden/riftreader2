@@ -322,7 +322,7 @@ internal static class CombatClickCommand
         public void Wheel(int _) => throw new NotSupportedException();
     }
 
-    private static Process ExactProcess(int pid, long ticks, string? name)
+    internal static Process ExactProcess(int pid, long ticks, string? name)
     {
         var process = Process.GetProcessById(pid);
         process.Refresh();

@@ -35,11 +35,21 @@ public sealed class BoundedControlExecutor
                 this.timeProvider, cancellationToken));
     }
 
-    public async Task<ControlExecutionResult> ExecuteAsync(
+    public Task<ControlExecutionResult> ExecuteAsync(
         ControlAction action,
         CancellationToken cancellationToken = default)
     {
         Validate(action);
+        return ExecuteValidatedAsync(action, cancellationToken);
+    }
+
+    // Dedicated operation, intentionally outside the generic control-agent key allowlist.
+    public Task<ControlExecutionResult> TapTargetCycleAsync(CancellationToken cancellationToken = default) =>
+        ExecuteValidatedAsync(new(["tab"], 40), cancellationToken);
+
+    private async Task<ControlExecutionResult> ExecuteValidatedAsync(
+        ControlAction action, CancellationToken cancellationToken)
+    {
 
         var startedAt = timeProvider.GetTimestamp();
         var deliverySucceeded = false;

@@ -75,6 +75,7 @@ public static class WindowsControlDesktop
 
     private static readonly (int VirtualKey, string Name)[] DiagnosticInputs =
     [
+        (0x09, "tab"),
         (VirtualKeyShift, "shift"),
         (VirtualKeyControl, "control"),
         (VirtualKeyAlt, "alt"),
@@ -558,6 +559,7 @@ public static class WindowsControlDesktop
 
     public static ushort ScanCodeFor(char key) => char.ToLowerInvariant(key) switch
     {
+        '\t' => 0x0F,
         'q' => 0x10,
         'w' => 0x11,
         'e' => 0x12,

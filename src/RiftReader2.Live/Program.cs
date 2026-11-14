@@ -23,6 +23,8 @@ internal static class Program
                 return await Control.MoveKeyCommand.RunAsync(args[1..], commandCancellation.Token);
             if (args[0] == "follow-route")
                 return await Control.FollowRouteCommand.RunAsync(args[1..], commandCancellation.Token);
+            if (args[0] == "target-cycle")
+                return await Control.TargetCycleCommand.RunAsync(args[1..], commandCancellation.Token);
             if (args[0] == "combat-click")
                 return await Control.CombatClickCommand.RunAsync(args[1..], commandCancellation.Token);
             if (args[0] == "sample-current-survival")
