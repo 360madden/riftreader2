@@ -77,6 +77,15 @@ class UnitPlotTests(unittest.TestCase):
         self.assertEqual(result["drawnCount"], 0)
         self.assertEqual(result["rows"][1]["reason"], "unit-position-changed-across-frame")
 
+    def test_reused_unit_key_with_changed_entity_owner_is_withheld(self):
+        # A unit key can be reused for a different entity between the two reads.
+        # Equal coordinates alone cannot authorize a map marker for that owner.
+        row = self.after["observation"]["rows"][1]
+        row["entityAddressDecimal"] = str(int(row["entityAddressDecimal"]) + 0x10000)
+        result = self.render()
+        self.assertEqual(result["drawnCount"], 0)
+        self.assertEqual(result["rows"][1]["reason"], "unit-entity-owner-changed-across-frame")
+
     def test_missing_unit_withheld(self):
         self.after["observation"]["rows"].pop()
         self.after["observation"]["examined"] -= 1

@@ -112,6 +112,8 @@ def render(bracket_path, output, *, limit=18, max_distance=35):
             result["reason"] = "self-excluded"
         elif a is None or b is None:
             result["reason"] = "unit-not-present-in-both-scans"
+        elif a["entityAddressDecimal"] != b["entityAddressDecimal"]:
+            result["reason"] = "unit-entity-owner-changed-across-frame"
         elif a["rawBits"] != b["rawBits"]:
             result["reason"] = "unit-position-changed-across-frame"
         else:
