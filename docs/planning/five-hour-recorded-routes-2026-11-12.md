@@ -4,6 +4,10 @@ Updated November 13, 2026. Scope: the Waypoints app in `C:\work\riftreader2`
 on verified **AMD-DESKTOP**, using physical RIFT. This is the current capability
 and priority list; it does not activate a timed goal or start game input.
 
+The [overall ranked RR2 roadmap](implementation-roadmap.md) owns cross-project
+priority. This document owns the Waypoints inventory and its remaining gaps,
+including the longer-route implementation through `b91e2b4`.
+
 The original November 12 five-hour run and its extension through 19:44 EST are
 historical. The recorded-route baseline and overlay extension have delivered the
 capabilities below. Keep this existing filename so incoming links remain useful.
@@ -12,12 +16,14 @@ capabilities below. Keep this existing filename so incoming links remain useful.
 
 Make saved routes useful during normal play: see where you are, identify the next
 waypoint, record paths you actually walk, and explicitly replay a nearby recorded
-route when appropriate. Reuse the current readers, radar, recorder and beacons.
+route when appropriate. Routes can now contain up to 1,000 world units and 500
+points. Reuse the current readers, radar, recorder and beacons.
 
 ## What is done
 
 | Capability | Result and evidence |
 | --- | --- |
+| Longer routes | Implemented in `b91e2b4`: shared 1,000-unit / 500-point limits, 30,000 recording samples, 30-minute trip budget, longer CLI deadlines/transport and preview Fit to 1,500 units. Complete routes/progress are retained while display annotations are bounded. 386 focused offline tests passed, including simulated full-capacity execution and long STOP/Resume. Live longer-route acceptance remains next; old short-route trials do not qualify the new envelope. |
 | Native position/facing and same-build restart recovery | Fresh process/player binding and movement-basis reuse work without manually rebuilding the basis. Full-game restart cases were exercised; this does not establish recovery after an arbitrary game patch. |
 | Recording and route files | Record/Stop Recording captures actual visited points and corners; save/load retains order, heights and observation provenance. Existing manually authored routes remain usable. |
 | Forward/reverse playback and STOP/Resume | GUI and CLI playback, saved progress, explicit Resume, waiting-state launch and run receipts are implemented. Live forward/reverse and F8/Resume cases passed, including full-game restart recovery. One final reverse trial ended 0.04980 units from its endpoint with all 34 pulses released. |
@@ -111,18 +117,38 @@ route parser loaded the export with original sample times/heights. Focused check
 cover sampling gaps, owner changes, vertical corners, retention and no false
 connecting segment. Full saved world mapping remains later work.
 
+## Remaining Waypoints work, ranked
+
+1. **One useful longer taught route in the real game.** Record a known-clear
+   50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
+   and Reverse. Include full-game restart/Resume when appropriate and authorized.
+   Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
+   trial and a broad stress sweep are not required.
+2. **Location and height context for saved-route reuse.** Test actual slopes,
+   different floors and zone/world/instance transitions. Keep measured and
+   estimated heights distinct; reject inappropriate context before movement.
+3. **Resolve observed presentation/recovery failures during use.** Large-route
+   display limiting is implemented; extended sessions, camera/window variations
+   and mixed-DPI transitions have incomplete live coverage. Address a concrete
+   failing case when it affects the next useful route rather than starting
+   another general UI-polish project.
+
+These are planning recommendations, not new game-input or restart authority.
+
 ## Limits and later work
 
-- Preserve current movement budgets, fresh target/player/build checks, exclusive
+- Preserve the shared 1,000-unit / 500-point / 30-minute trip envelope and
+  short per-segment movement checks, fresh target/player/build checks, exclusive
   input ownership, foreground checks and STOP/key release. Playback remains an
   explicit action; reconnecting or showing a radar never starts movement.
 - Keep display pose separate from movement admission. Route/marker display can
-  remain useful even when a route exceeds the existing playback distance limit.
+  remain useful even when a route is not ready for movement.
 - Estimated beacon heights are display approximations. Slopes and other floors
   can place them above/below terrain. Qualified world/instance and floor identity, occlusion, walkability
   and obstacle clearance remain unresolved; a projected point proves none of them.
 - Defer automatic obstacle avoidance, terrain extraction/navmeshes, automatic
-  stuck detours, combat/quests, indefinite patrol and increased movement budgets.
+  stuck detours, combat/quests and indefinite patrol. Longer taught routes are
+  already implemented; they do not add terrain or obstacle clearance.
   Revisit terrain tooling when actual usable geometry is available.
 - Black captures alone are not proof that RIFT is black or crashed. Joey reported
   recovery when the main monitor was powered back on; fresh capture then worked

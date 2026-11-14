@@ -104,7 +104,9 @@ movement. **Save Route / Load** retain the path; **Play Forward / Play Reverse**
 replay it from the appropriate endpoint. **F8** stops playback, and **Resume**
 explicitly continues unfinished progress after a stop or same-build/player RIFT
 restart. The window reconnects while idle and freshly pins the new game process.
-Travel is limited to 20 units on supervised open ground, without obstacle avoidance.
+Routes support up to 1,000 world units and 500 waypoints on a known clear path,
+without obstacle avoidance. The longer envelope is implemented and offline
+verified; earlier short-route live evidence remains scoped to those trials.
 For console control of the open app, use **[`rr2-waypoints.cmd`](rr2-waypoints.cmd)**:
 `rr2-waypoints status`, `rr2-waypoints radar show`, or `rr2-waypoints help`.
 PowerShell prefixes the launcher with `.\`. The [CLI reference and examples](docs/planning/five-hour-recorded-routes-2026-11-12.md#waypoints-cli--november-13)
@@ -278,7 +280,7 @@ AUTOMATION       ███░░░░░░░  Supervised experiments only; pl
 
 Current priorities emphasize **useful discovery and reliable on-demand retrieval**, **reuse of complementary RRE work**, **changed-state evidence**, **session/restart identity**, and **self-contained RR2-owned telemetry**. Build useful retrieval paths with the existing tools; refinement can follow actual use when needed. Older RiftReader and probe work can inform research but are **not runtime requirements**.
 
-📍 [Current discovery roadmap](docs/planning/discovery-roadmap-2026-11-06.md) · [Implementation roadmap](docs/planning/implementation-roadmap.md) · [Current status and validation notes](docs/status.md)
+📍 [Current ranked RR2 roadmap](docs/planning/implementation-roadmap.md) · [Waypoints roadmap](docs/planning/five-hour-recorded-routes-2026-11-12.md) · [Current status and validation notes](docs/status.md)
 
 ## 📚 Documentation hub
 

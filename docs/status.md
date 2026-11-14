@@ -1,5 +1,10 @@
 # Current status
 
+Planning: the [current ranked RR2 roadmap](planning/implementation-roadmap.md)
+and [Waypoints roadmap](planning/five-hour-recorded-routes-2026-11-12.md) were
+reconciled November 13 with the longer-route release and physical-reader record.
+Their ranked follow-ups replace older lab/foundation dispatch priorities.
+
 **NOVEMBER 13 — LONGER WAYPOINT ROUTES IMPLEMENTED (OFFLINE VERIFIED):**
 On verified AMD-DESKTOP, recording, saved routes, Forward/Reverse playback,
 explicit Resume and Explore trail export now share 1,000-world-unit / 500-point

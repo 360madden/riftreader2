@@ -1,5 +1,10 @@
 # Parallel discovery backlog — November 6, 2026
 
+**Historical research backlog.** Use the [current ranked RR2 roadmap](implementation-roadmap.md)
+for completed capabilities and remaining priorities as of November 13. The field
+packages below preserve useful leads; their three-target/lab dispatch instructions
+are superseded by the physical-only, one-host policy in `AGENTS.md`.
+
 Deliver useful native readers now; refine semantics, continuity and restart evidence
 as separate work. This backlog replaces the sequential discovery plan. Packages
 can finish independently; an unavailable live reference must not idle implementation

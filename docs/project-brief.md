@@ -75,12 +75,13 @@ offline evidence workflow as documented in the
 [architecture decision](decisions/0001-modular-offline-foundation.md).
 Git author identity is repository-local: `360madden <360madden@gmail.com>`.
 
-## Next discussion
+## Current planning
 
-Use the [implementation roadmap](planning/implementation-roadmap.md) to extend
-the verified external offline foundation with the required Lua/C# contract and
-addon producer. The saved V1 wall-motion reproduction remains
-a proposed next evidence case; the synthetic fixture does not reproduce it.
-Live target collection and field qualification require their own evidence.
+Use the [ranked RR2 roadmap](planning/implementation-roadmap.md) for completed
+capabilities and remaining work. The Lua/C# producer/contract and selected saved
+wall-motion replay have been delivered; the original October starting tasks
+are historical. Current priorities include useful longer routes, physical
+player/resource retrieval and dependable route context. Live qualification is
+specific to each field/build/session and does not follow from offline tests.
 
 Source: Joey's requests in the RiftReader v2 conversation on 2026-10-18.

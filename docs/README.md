@@ -3,20 +3,24 @@
 Use [current status](status.md) to resume substantive work. Follow the relevant
 topic below instead of loading every document for each task.
 
+For what is done and what to work on next, start with the
+[current ranked RR2 roadmap](planning/implementation-roadmap.md), refreshed
+November 13 with the longer-route release and current physical-reader evidence.
+
 | Area | Document | Status or role |
 |---|---|---|
 | Direction | [Project brief](project-brief.md) | User goals and scope. |
 | Architecture | [Modular foundation](architecture.md) | Implemented module boundaries and data contracts. |
 | Development | [Development guide](workflows/development.md) | Build, validate, configure, and extend. |
 | Live prototype | [Physical waypoints](workflows/physical-waypoints.md) | Record or teach a route, save/load, forward/reverse replay, STOP/Resume and same-build restart recovery. |
-| Live projection candidate | [Physical world-to-screen markers](workflows/physical-world-screen.md) | Guarded native/WGC capture with projected recorded XYZ markers/beacons; live overlay and occlusion qualification pending. |
+| Live projection candidate | [Physical world-to-screen markers](workflows/physical-world-screen.md) | Live beacons/radar and scoped camera/window checks implemented; occlusion and terrain clearance remain unqualified. |
 | Continuity | [Movement handoff](workflows/movement-handoff-2026-10-29.md) | Verified partial trial, cleanup, exact build, reusable bootstrap and remaining acquisition work. |
 | Postmortem | [Move-key focus failure and recovery (2026-11-11)](validation/move-key-focus-failure-postmortem-2026-11-11.md) | Full assistant failure analysis, known-good A/B evidence, successful fix, and prevention rules. |
 | Continuity | [Movement resume prompt](workflows/movement-resume-prompt-2026-10-29.md) | Research-informed future-run instructions and measurable acceptance; not executed by saving it. |
-| Planning | [Current discovery roadmap](planning/discovery-roadmap-2026-11-06.md) | Parallel development packages, concrete worker ownership, useful outputs and real dependencies. |
-| Planning | [Five-hour recorded-route goal](planning/five-hour-recorded-routes-2026-11-12.md) | Active goal; core workflow and follow-ups verified live. Current evidence is in the linked recorded-route handoff. |
-| Planning | [Implementation roadmap](planning/implementation-roadmap.md) | Incremental work and efficient model handoffs. |
-| Planning | [Bidirectional hybrid prompt and two-lab roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md) | Saved implementation prompt; both labs authorized for parallel discovery/validation; return-channel feasibility first. |
+| Planning | [Current ranked RR2 roadmap](planning/implementation-roadmap.md) | Delivered capabilities, live/offline distinctions, ordered remaining work and deferred scope. |
+| Planning | [Waypoints roadmap](planning/five-hour-recorded-routes-2026-11-12.md) | Current app capability inventory and ranked follow-ups; original timed goal is historical. |
+| Planning archive | [November 6 discovery packages](planning/discovery-roadmap-2026-11-06.md) | Useful field-specific leads; old three-target dispatch is superseded. |
+| Planning archive | [Bidirectional hybrid prompt and two-lab roadmap](planning/bidirectional-hybrid-two-lab-roadmap.md) | Historical prompt and return-channel feasibility work; labs are retired as active targets. |
 | Planning | [Two-lab feasibility checkpoint](planning/bidirectional-feasibility-2026-10-28.md) | Fresh VM/guest limits, ownership and first manual-feedback acceptance. |
 | Reference | [Manual external guidance](reference/addon-guidance.md) | Lab/nonce-bound external calculations and expiring addon display; scoped live results in the two-lab hour report. |
 | Validation | [Automated two-lab movement trial](validation/automated-movement-two-lab-2026-10-29.md) | Bounded feedback movement, measured calibration, live scan failures and remaining waypoint acceptance. |

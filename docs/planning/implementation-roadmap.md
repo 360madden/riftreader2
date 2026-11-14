@@ -1,4 +1,87 @@
-# Implementation roadmap
+# RR2 roadmap
+
+Updated **November 13, 2026 (America/New_York)** from checkout
+`C:\work\riftreader2`, branch `codex/modular-foundation`, implementation through
+`b91e2b4`. Review host: **AMD-DESKTOP**. This is the current overall roadmap;
+older discovery dispatch plans and the foundation history below are references.
+Existing uncommitted native research is work in progress, not a delivered result.
+
+RR2's purpose remains useful RIFT discovery and repeatable retrieval for other
+programs. The authorized Waypoints work is a working consumer of those readers.
+The order below is a recommended development priority, not new permission for
+game input, casting, process restarts or cross-host operation. Live work still
+requires its existing authority and fresh identity/ownership checks.
+
+## Completed capabilities
+
+| Area | What is delivered | Evidence boundary |
+| --- | --- | --- |
+| Foundation and retained knowledge | Modular .NET core/CLI/Windows reader, bounded native capture, field catalog, pointer/value searches, deterministic replay, source-hashed compilation, JSON/CSV/JSONL exports and offline Discovery Explorer. | Implemented and tested; old captures preserve their original build/session, not current live qualification. [Compilation milestone](discovery-compilation-roadmap.md). |
+| Hybrid addon | RR2-owned Lua producer, strict C# decoder, typed frames, nonce/freshness lifecycle and shared contract checks. | Historical Lab 1 RR2R1 acceptance passed 64/64 advancing comparisons. Physical RR2R1 loaded/bound producer and advancing-reference acceptance remain separate. [Standalone reference](../reference/self-contained-api-reference.md). |
+| Physical acquisition | Exact-host/PID native commands, position/body-facing/camera readers and reusable same-build movement calibration. | AMD physical movement/turning, feedback and specific full-game restart recovery cases are recorded; other fields retain their own limits. [Waypoints workflow](../workflows/physical-waypoints.md). |
+| Native player-state retrieval | Composite context/XYZ/vitals acquisition, SHA-verified replay, same-epoch histories and explicit cross-epoch comparisons; raw stat/vitals comparison tools. | Latest Nov 13 AMD composite observed XYZ and HP candidates; target, Mana and Energy were unavailable. Unchanged HP is not changed-state proof. [Composite record](../workflows/rre-discovery-intake.md), [stat comparison](../handoff-2026-11-10-player-stats-offline.md). |
+| Waypoints core | Actual-path recording, save/load, Forward/Reverse, STOP/F8, persistent progress, explicit Resume and idle reconnect. | Short-route live trials and specific same-build restart/Resume cases passed. [Recorded-route evidence](../handoff-2026-11-12-recorded-routes.md). |
+| Waypoints daily use | Six-tab GUI and CLI controls, draft-safe editing/Undo, route Library, zone tags, live-pose status, Activity/error diagnostics, scene capture, beacons, compact radar, manual guidance and breadcrumb export. | Local live cases and native normal/compact UI checks recorded; zone/floor identity and universal display continuity remain limited. [Waypoints capability inventory](five-hour-recorded-routes-2026-11-12.md#what-is-done). |
+| Longer routes | Shared 1,000-unit / 500-waypoint envelope, 30,000 recording samples, 30-minute trip budget, larger CLI transport, preview Fit to 1,500 units and bounded display annotations. | **Implemented and offline verified**, including simulated 1,000-unit/500-point execution and long STOP/Resume; no long-route live trip was performed. Existing files/checkpoints are compatible. [Longer routes](../workflows/physical-waypoints.md#longer-routes). |
+| Other native research | Ability/catalog/name, stats/XP, target/unit, buff and cost/cooldown/cast candidates and locating tools exist. | Field-specific partial readers/static findings and historical samples; not a fully qualified live combat/telemetry API. [Earlier discovery packages](discovery-roadmap-2026-11-06.md). |
+
+## Remaining work, ranked
+
+The first item is the next useful Waypoints outcome. Native data work can proceed
+independently when it does not contend for the same live reader or input owner.
+Accept useful candidate output with its limits; do not require every field or
+the entire 1,000-unit envelope to be qualified before using the next result.
+
+| Rank | Work | Current gap and useful completion point |
+| --- | --- | --- |
+| **1** | **Use longer taught routes in the real game** | Start with one useful known-clear 50–100-unit route with corners: record, save/load, Forward, STOP during an unfinished leg, Resume and Reverse. Check released/stationary behavior and useful arrival accuracy. Exercise full-game restart/Resume during an appropriate authorized run. Fix actual failures, then extend distance/route complexity as useful. The 1,000-unit maximum is capacity, not a mandatory first live test. |
+| **2** | **Improve useful native player stats and resource retrieval** | Reuse the existing composite/stat/vitals readers. Establish which resource is applicable to the selected player, return its value or a precise unavailable reason, and compare actual changes using an available independent reference. Current AMD HP is an unchanged candidate; Mana/Energy availability and broad stat meanings are incomplete. Keep resource kinds distinct. Health-change experiments remain deferred unless Joey resumes them; no casting/combat authority is implied. |
+| **3** | **Make route location and height context dependable** | Zone tagging and measured/estimated height cues already work. Remaining work is actual different-floor/elevation and zone/world/instance cases, preserving measured path corners and refusing an inappropriate route/Resume. Prefer the smallest useful context checks; candidate zone IDs and projected beacons do not establish traversability. |
+| **4** | **Make selected-target and nearby-unit retrieval repeatable** | Reuse current unit lookup, target and name/position readers. Return coherent key/name/position and available detail under fresh owner identity, including target switches, no-target, despawn and process changes. Existing target/name/nearby bookmarks are partial candidates, not proof that all target fields are live or that template names identify a unique unit. |
+| **5** | **Make delivered data easier for another program to request** | Extend the existing physical commands, composite reader, catalog and export contracts to cover useful fields from ranks 2–4 with consistent source/time/identity/availability output. Prove one real consumer can request the needed data without reconstructing dated artifact scripts. Do not build another general service/SDK/framework before a consumer requires it. |
+| **6** | **Turn ability, cooldown, cast and buff findings into useful field outputs** | Reuse existing catalog/static maps and partial readers. Deliver one concrete field at a time with player ownership, timer/ID meaning, availability and changed-state evidence where required. Definitions differ from active casts; a buff's raw records differ from a timed live effect. Any active cast/combat experiment needs its own applicable authority. |
+| **7** | **Finish physical-host addon reference acceptance where it adds value** | Establish the actual loaded RR2R1 producer, nonce/session binding and advancing same-player observations on the physical host. Disk hashes and old lab success are insufficient. Use this independent API path for validation/fallback when useful; native candidate work need not wait for it. |
+
+## Conditional work and deferred scope
+
+- **Reliability and performance:** fix a concrete failure or measured bottleneck
+  when encountered. Large-route display work is implemented; longer live sessions,
+  camera/window changes and mixed-DPI cases remain partially untested. These are
+  targeted follow-ups, not a compulsory stress/review program before every result.
+- **Same-build restart durability:** retain/reacquire locating recipes as each
+  useful field is delivered. Waypoints restart evidence does not qualify all
+  stats/target/resource fields. Reuse normal game restarts for additional evidence
+  instead of repeating completed baselines without a reason.
+- **Patch/update recovery:** explicitly deferred. Exact-build checks continue;
+  another executable hash requires new evidence.
+- **Terrain/navmesh, obstacle avoidance and automatic stuck detours:** not
+  implemented. Longer routes still require a known clear taught path. Dedicated
+  autonomous navigation, patrol, combat and quest automation are future-program
+  work, beyond the current Waypoints route-following scope.
+- **VMware labs:** retired as active RR2 targets. Their code/evidence remains
+  historical; this roadmap does not restart them or authorize another physical
+  host. A session operates only its verified local host.
+- **SQLite, broad refactoring, more dashboards, extra process/frameworks and
+  cosmetic polish:** optional only when a concrete use or failure justifies them.
+
+## Keeping this roadmap current
+
+Update this document when a useful capability ships or its remaining gap changes.
+Keep detailed receipts in [status](../status.md) and the owning workflow/reference.
+Use **implemented**, **observed live in stated cases**, **candidate/partial**, and
+**deferred** accurately. A ranked item is a recommendation; completed work and
+user scope decisions take precedence over this list.
+
+The detailed [Waypoints roadmap](five-hour-recorded-routes-2026-11-12.md) owns that
+app's capability inventory. The [November 6 discovery backlog](discovery-roadmap-2026-11-06.md)
+retains field-specific research leads; its multi-lab dispatch order is historical.
+
+<details>
+<summary>Historical foundation plan and acceptance record (October–November 6)</summary>
+
+The original implementation plan is preserved below for evidence and old links.
+Its priority lists, target allocations and pending descriptions are historical;
+the ranked roadmap above governs current planning.
 
 Status: prioritized plan adopted for the authorized foundation; later increments
 remain subject to their evidence and safety gates.
@@ -322,3 +405,5 @@ identity/provenance, schema compatibility, I/O durability, streaming or
 concurrency, native access, unsafe code, module boundaries, and experiment
 controls. Always prefer a local deterministic check over spending tokens to
 re-evaluate the same artifact.
+
+</details>
