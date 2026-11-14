@@ -245,6 +245,46 @@ def _validate_positive_events(frame):
         _validate_last_event(event, frame, positive=True)
 
 
+def _validate_last_death(frame):
+    event = frame.get("lastDeath")
+    scope = frame.get("deathScope")
+    _require(scope in (None, "exact-unit-death/1"),
+             "unexpected-survival-death-scope")
+    if event is None:
+        return
+    _require(scope == "exact-unit-death/1" and isinstance(event, dict),
+             "invalid-survival-last-death")
+    _positive_int(event.get("sequence"), "invalid-survival-last-death")
+    clock = _finite(event.get("clock"), "invalid-survival-last-death")
+    _require(0 <= frame["frameTime"] - clock <= 5,
+             "stale-or-future-survival-death")
+    target = event.get("target")
+    _require(isinstance(target, str) and UNIT.fullmatch(target),
+             "invalid-survival-last-death")
+    caster = event.get("caster")
+    _require(caster is None or isinstance(caster, str) and UNIT.fullmatch(caster),
+             "invalid-survival-last-death")
+    for name in ("targetName", "casterName"):
+        value = event.get(name)
+        _require(value is None or isinstance(value, str)
+                 and 0 < len(value) <= 128,
+                 "invalid-survival-last-death")
+
+
+def _validate_death_progression(previous, current):
+    """Reject a retained death receipt that rewinds or mutates in one epoch."""
+    if not isinstance(current, dict):
+        return
+    if not isinstance(previous, dict):
+        return
+    prior_generation = (previous["sequence"], previous["clock"])
+    generation = (current["sequence"], current["clock"])
+    _require(generation >= prior_generation,
+             "survival-death-generation-regressed")
+    if current["sequence"] == previous["sequence"]:
+        _require(current == previous, "conflicting-survival-death-generation")
+
+
 def decode_frame(data: bytes, expected_nonce: str, expected_player: str) -> dict:
     _require(isinstance(data, bytes), "invalid-survival-frame-bytes")
     _require(data.startswith(MARKER), "survival-frame-marker-missing")
@@ -266,7 +306,7 @@ def decode_frame(data: bytes, expected_nonce: str, expected_player: str) -> dict
     _require(isinstance(frame, dict), "invalid-survival-frame-object")
     _require(frame.get("schemaVersion") == 1
              and frame.get("addon") == "RiftReader2Casting"
-             and frame.get("addonVersion") in ("0.4.2", "0.5.0")
+             and frame.get("addonVersion") in ("0.4.2", "0.5.0", "0.5.1")
              and frame.get("source") == "rift-api",
              "unexpected-survival-frame-contract")
     _require(frame.get("eventScope") in (None, "selected-or-self/1"),
@@ -309,6 +349,7 @@ def decode_frame(data: bytes, expected_nonce: str, expected_player: str) -> dict
     _validate_last_event(frame.get("lastIncoming"), frame, incoming=True)
     _validate_last_event(frame.get("lastPositiveEvent"), frame, positive=True)
     _validate_positive_events(frame)
+    _validate_last_death(frame)
     canonical = json.dumps(frame, sort_keys=True, separators=(",", ":"),
                            ensure_ascii=True, allow_nan=False).encode("ascii")
     return {"frame": frame, "frameBytes": total,
@@ -646,6 +687,7 @@ class SurvivalLiveConsumer:
         self.seen = {}
         self.known_addresses = []
         self.latest_reference = None
+        self.latest_death_reference = None
 
     def _decode_candidates(self, candidates):
         decoded, failures = [], []
@@ -756,6 +798,10 @@ class SurvivalLiveConsumer:
         if self.accepted:
             _require(selected["frame"]["epoch"] == self.accepted[0]["frame"]["epoch"],
                      "survival-frame-epoch-changed")
+        death = selected["frame"].get("lastDeath")
+        _validate_death_progression(self.latest_death_reference, death)
+        if isinstance(death, dict):
+            self.latest_death_reference = death
         accepted_at = self.monotonic()
         relative_lag = None
         if self.latest_reference is not None:
@@ -797,6 +843,8 @@ class SurvivalLiveConsumer:
             "lastPositiveEvent": selected["frame"].get("lastPositiveEvent"),
             "positiveEvents": selected["frame"].get("positiveEvents", {}),
             "lastIncoming": selected["frame"].get("lastIncoming"),
+            "lastDeath": selected["frame"].get("lastDeath"),
+            "deathScope": selected["frame"].get("deathScope"),
             "eventScope": selected["frame"]["eventScope"],
             "controlCoordinateSpace": selected["frame"]["controls"].get("space"),
             "engagement": {"ready": False, "reasons": list(UNSUPPORTED)},

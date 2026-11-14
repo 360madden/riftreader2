@@ -13,8 +13,10 @@ local bytes = {}
 local lastEvent, lastPositiveEvent, eventSequence = nil, nil, 0
 local positives = {}
 local lastIncoming, incomingSequence = nil, 0
+local lastDeath, deathSequence = nil, 0
 local EVENT_MAX_AGE = 2
 local POSITIVE_MAX_AGE = 5
+local DEATH_MAX_AGE = 5
 RiftReader2SurvivalFrames = bytes
 
 local function invoke(fn, ...)
@@ -39,6 +41,7 @@ local function clear()
     lastEvent,lastPositiveEvent,eventSequence=nil,nil,0
     positives={}
     lastIncoming,incomingSequence=nil,0
+    lastDeath,deathSequence=nil,0
     for i = 1, 8 do bytes[i] = nil end
     RiftReader2SurvivalWire = nil
 end
@@ -142,6 +145,20 @@ function S.ObserveCombat(kind, info)
         end
     end
 end
+function S.ObserveDeath(info)
+    if not nonce or type(info) ~= "table" then return end
+    local target = text(info.target,128)
+    if not target then return end
+    local clock = invoke(api.Time.Frame)
+    if not finite(clock) or clock < 0 or (lastDeath and clock < lastDeath.clock) then return end
+    local e = project(info,"","caster target casterName targetName","")
+    -- The documented event requires target; caster is genuinely optional for
+    -- environmental, pet, or otherwise unattributed deaths.
+    e.target=target
+    deathSequence=deathSequence+1
+    e.sequence,e.clock=deathSequence,clock
+    lastDeath=e
+end
 local function currentEvent(e, clock, selectedId, maxAge)
     return e and e.selectedTargetId == selectedId and clock >= e.clock and clock-e.clock <= maxAge
 end
@@ -173,6 +190,7 @@ function S.Publish(r)
     local frame = {schemaVersion=1, addon="RiftReader2Casting", addonVersion=info.toc.Version, source="rift-api",
         sessionId=nonce, epoch=epoch, sequence=sequence, frameTime=r.clock,eventScope="selected-or-self/1",
         positiveEventScope="last-effective-damage-or-heal/1",positiveEventsScope="per-ability/1",
+        deathScope="exact-unit-death/1",
         status="unavailable", reason="player-or-target-changed-or-unavailable",
         player={}, target={}, ability={}, cast={status="unavailable"}, catalog={status="unavailable",entries={}},
         controls={}, trial={}, readiness={status="blocked",reason="unavailable"}}
@@ -208,6 +226,9 @@ function S.Publish(r)
             end
             if currentEvent(lastIncoming,r.clock,t,EVENT_MAX_AGE) and lastIncoming.caster == t and
                     lastIncoming.target == p then frame.lastIncoming=lastIncoming end
+            if lastDeath and r.clock >= lastDeath.clock and r.clock-lastDeath.clock <= DEATH_MAX_AGE then
+                frame.lastDeath=lastDeath
+            end
             if c.status == "observed" then
                 local names, complete = {}, true
                 for _,id in ipairs(c.ids) do

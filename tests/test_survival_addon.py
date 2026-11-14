@@ -32,6 +32,7 @@ class SurvivalAddonTests(unittest.TestCase):
                          "target":"u0000000000000002","currentCooldownRemaining":0}},
             "abilityList":{"A01":True}, "legacyAbilities":{}}, recursive=True)
         self.g.Inspect, _ = self.lua.execute(casting.API_FACTORY)(self.st)
+        self.g.Event.Combat.Death = self.lua.table()
         self.private = self.lua.table()
         metadata = self.lua.table(identifier="RiftReader2Casting", toc=self.lua.table(Version="0.4.2"))
         for filename in ("model.lua","ability_reference.lua","survival.lua","main.lua"):
@@ -215,6 +216,39 @@ class SurvivalAddonTests(unittest.TestCase):
         self.assertEqual(self.observe(28)["lastPositiveEvent"]["target"],p)
         self.st.targetId=None
         self.assertNotIn("lastPositiveEvent",self.observe(29))
+
+    def test_exact_death_persists_after_selection_clear_and_resets_with_session(self):
+        p,t=self.st.playerId,self.st.targetId
+        self.command("bind "+NONCE)
+        self.observe(22)
+        death=self.g.TEST_HANDLERS["RR2 casting death"]
+        death(None,self.lua.table(target=t,targetName="Hostile"))
+        self.st.targetId=None
+        frame=self.observe(22.5)
+        self.assertEqual(frame["deathScope"],"exact-unit-death/1")
+        self.assertEqual((frame["lastDeath"]["sequence"],frame["lastDeath"]["target"],
+                          frame["lastDeath"]["targetName"]),(1,t,"Hostile"))
+        self.assertNotIn("caster",frame["lastDeath"])
+        self.st.clock=23
+        death(None,self.lua.table(caster=p,target=t,casterName="Player",targetName="Hostile"))
+        killed=self.observe(23.25)["lastDeath"]
+        self.assertEqual((killed["sequence"],killed["caster"],killed["target"]),(2,p,t))
+        self.assertNotIn("lastDeath",self.observe(28.25))
+        self.command("bind "+"a"*32)
+        self.assertNotIn("lastDeath",self.observe(29))
+
+    def test_death_rejects_invalid_target_and_regressing_clock(self):
+        p,t=self.st.playerId,self.st.targetId
+        self.command("bind "+NONCE)
+        death=self.g.TEST_HANDLERS["RR2 casting death"]
+        death(None,self.lua.table(caster=p))
+        self.assertNotIn("lastDeath",self.observe(22))
+        self.st.clock=23
+        death(None,self.lua.table(caster=p,target=t))
+        self.st.clock=22.5
+        death(None,self.lua.table(caster=p,target="u0000000000000003"))
+        frame=self.observe(23.25)
+        self.assertEqual((frame["lastDeath"]["sequence"],frame["lastDeath"]["target"]),(1,t))
 
     def test_later_different_proc_preserves_exact_ability_receipt(self):
         p,t=self.st.playerId,self.st.targetId

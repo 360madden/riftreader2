@@ -155,6 +155,86 @@ class RuntimeTests(unittest.TestCase):
             facing_runner=lambda *_args, **kwargs: self.facing_calls.append(kwargs["point"]) or {
                 "status": "facing", "allPulsesReleased": True})
 
+    def stationary(self, *, death_caster=PLAYER, target_x=3, area=(3,4), after_click=None, death_clock=5.5):
+        adapter, stop = Adapter(), threading.Event()
+        self.runtime.configure(self.profile, adapter)
+        # Start out of combat, then clear the selected unit immediately at death.
+        Consumer.reports = [frame(index) for index in range(1,9)]
+        for report in Consumer.reports:
+            f = report["snapshot"]
+            f["target"]["coordX"] = target_x
+            if f["sequence"] >= 6:
+                f.update(targetId=None,target={},deathScope="exact-unit-death/1",
+                         lastDeath={"caster":death_caster, "target":TARGET,
+                                    "sequence":1,"clock":death_clock})
+        def read_native(_):
+            value = native()
+            value["player"]["combat"]["value"] = False
+            if self.actions.calls and self.actions.calls[-1][0] in {"cast","cancel"}:
+                value["selectedTarget"].update(key=None,available=False)
+            return value
+        self.runtime.native_context_reader = read_native
+        def cast(ability):
+            # Production action backend independently samples the fresh hook twice.
+            self.factory_calls[-1]["snapshot"]()
+            admitted = self.factory_calls[-1]["snapshot"]()["snapshot"]
+            self.actions.calls.append(("cast",ability))
+            if after_click:
+                after_click(stop)
+            return {"admissionSequence":admitted["sequence"],"admissionEpoch":admitted["epoch"],
+                    "admissionFrameTime":admitted["frameTime"],"outcomeBaseline":None}
+        self.actions.cast = cast
+        return self.runtime.selected_encounter(adapter, stop=stop, deadline=self.runtime.clock()+2,
+            emit=lambda event:None, expected_target_id=TARGET, hunt_center=area, hunt_radius=5)
+
+    def test_stationary_pull_exact_player_kill_survives_immediate_selection_clear(self):
+        result = self.stationary()
+        self.assertEqual(result.get("reason"), None)
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["killProof"]["kind"],"player-kill-confirmed")
+        self.assertTrue(result["killProof"]["qualified"])
+        self.assertTrue(result["recovered"] and result["releaseSucceeded"])
+        self.assertEqual(result["desktopInputsDown"], [])
+        self.assertEqual(self.actions.calls,[("begin-encounter",),("cast",ABILITY),("cancel",)])
+
+    def test_stationary_death_credit_is_never_inferred_from_another_caster(self):
+        result = self.stationary(death_caster="u0000000000000002")
+        self.assertEqual(result["reason"],"kill-credit-unverified")
+        self.assertTrue(result["encounterEnded"] and result["recovered"])
+        self.assertFalse(result["killProof"]["qualified"])
+
+    def test_stationary_clear_with_stale_death_has_no_kill_credit(self):
+        result = self.stationary(death_clock=2.0)
+        self.assertFalse(result["killProof"]["qualified"])
+        self.assertEqual(result["killProof"]["kind"],"selection-cleared")
+        self.assertEqual(result["reason"],"kill-credit-unverified")
+        self.assertTrue(result["recovered"])
+
+    def test_stationary_unknown_cleanup_latches_and_blocks_return(self):
+        def fail_cleanup():
+            self.actions.calls.append(("cancel",))
+            raise RuntimeError("release receipt missing")
+        self.actions.cancel = fail_cleanup
+        result = self.stationary()
+        self.assertEqual(result["status"],"halted")
+        self.assertFalse(result["releaseSucceeded"])
+        self.assertEqual(result["desktopInputsDown"],["unknown"])
+        self.assertEqual(self.actions.calls.count(("cancel",)),1)
+
+    def test_stationary_refuses_outside_area_before_facing_or_click(self):
+        result = self.stationary(target_x=9)
+        self.assertEqual(result["reason"],"selected-target-outside-hunt-area")
+        self.assertEqual(self.facing_calls, [])
+        self.assertEqual(self.actions.calls, [])
+        self.assertFalse(result["killProof"]["qualified"])
+
+    def test_stationary_stop_during_click_finalizes_without_return_authority(self):
+        result = self.stationary(after_click=lambda stop:stop.set())
+        self.assertEqual(result["status"],"stopped")
+        self.assertTrue(result["releaseSucceeded"])
+        self.assertEqual(self.actions.calls[-1],("cancel",))
+        self.assertFalse(result["killProof"]["qualified"])
+
     def test_configure_and_two_frame_preflight_build_one_shared_backend_without_input(self):
         configured = self.runtime.configure(self.profile, Adapter())
         self.assertTrue(configured["configured"])

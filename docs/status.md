@@ -1,5 +1,32 @@
 # Current status
 
+**November 14 — Casting 0.5.1 activated; camp approach stopped safely before the hunt.**
+On AMD-DESKTOP, the backed-up local installation loaded 0.5.1 and published two
+advancing nonce/player-bound survival frames, including `deathScope=exact-unit-death/1`.
+The exact Death event retains optional kill credit after selection clears; its
+combat acceptance remains pending. Two continuous approach legs arrived with
+verified release. A subsequent 12.79-unit leg missed the 0.30-unit arrival radius
+and halted on the unchanged drift guard, 0.635 units from its goal. Its native
+receipt reports successful release and no pressed inputs; two later poses were
+identical. No deliberate encounter was started, and movement remains stopped
+pending diagnosis and explicit Resume. The cached RiftWorld detour is preview
+context; only actual native walked receipts can become the retreat corridor.
+Evidence: `artifacts/hunt-loop-20261114/live-051-report.json`,
+`artifacts/waypoint-run-e701dbbbf36b4e168809545dd5d5c97d.json` and its input receipt.
+
+**November 14 — bounded hunt mission CLI implemented offline; physical acceptance pending.**
+The new CLI validates a hash-bound safe anchor, outbound route, survival profile,
+exact selected target and bounded hunt area; runs the survival-aware outbound
+route; and returns over the verified native path actually walked. It credits
+only a fresh exact-player kill proof. A safe round trip without that proof is
+reported as `returned-no-qualified-kill`, not a completed hunt. STOP and the
+overall trip deadline share one latch across every stage, and an ambiguous
+encounter checkpoint cannot be resumed automatically. General nearby-target
+selection is not implemented. Focused and neighboring offline tests pass; no
+physical safe-to-hunt-to-safe acceptance has occurred.
+[Operational reference](reference/hunt-mission.md) ·
+[Survival evidence and limits](reference/waypoint-survival-2026-11-14.md).
+
 **November 14 — incoming damage measured in a physical Coastal Stalker encounter.**
 On AMD-DESKTOP, run 09 captured Maul from the selected hostile to the exact
 player. Native HP reached 18,049 then returned to 18,208/18,208, while separately

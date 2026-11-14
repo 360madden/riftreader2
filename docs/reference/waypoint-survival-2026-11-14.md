@@ -59,13 +59,16 @@ python scripts/waypoints_cli.py survival preflight --json
 
 Run preflight with the intended route loaded and player idle. It checks the current telemetry, geometry, ownership and STOP state without sending game input. The live route entry points are `survival run --execute` and explicit `survival resume --execute`. Global STOP latches across the handoff. A route checkpoint advances only after the original route leg arrives. [CLI](../../scripts/waypoints_cli.py) · [Route runner](../../scripts/survival_route_runner.py)
 
-## Next mission: safe-area round trip
+## Next mission acceptance: safe-area round trip
 
 Joey's November 14 direction makes the next acceptance a deliberate loop:
 verified safe anchor → recorded outbound corridor → small bounded hunt area →
 recorded return corridor → verified safe-anchor arrival and recovery. This is
-the next mission definition, not an implemented hunt mode or a qualified route.
-The concrete corridor and safe anchor still need current physical verification.
+now implemented as an offline-tested, explicit-selected-target CLI orchestrator;
+it is not yet a physically accepted mission or a qualified route. The concrete
+corridor, safe anchor and selected target still need current physical
+verification. See the [hunt mission CLI reference](hunt-mission.md) for the
+document schema, commands, checkpoint behavior and evidence limits.
 
 At the hunt area, select currently observed hostile targets whose suitability
 and action checks pass. Skip friendly, neutral/unknown, unsuitable or otherwise
@@ -83,9 +86,10 @@ HP/resource recovery thresholds are met. An operator STOP always interrupts the
 mission and remains latched until explicit Resume. The initial trial requires
 one complete successful hostile encounter; a second kill is a bound, not a quota.
 
-The hunt/target-selection stage is additional work beyond the existing reactive
-travel/fight/retreat/rejoin runner. Existing recorded retreat and rejoin paths
-are reuse candidates, not proof that an outbound hunting corridor is safe.
+The initial hunt stage handles one exact target already selected by the operator;
+general nearby-target discovery and selection remain unsupported. Existing
+recorded retreat and rejoin paths are reuse candidates, not proof that an
+outbound hunting corridor is safe.
 
 ### Shared live evidence for this mission
 

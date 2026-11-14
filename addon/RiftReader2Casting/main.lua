@@ -1,5 +1,5 @@
 local addonInfo, private = ...
-local FALLBACK_VERSION = "0.5.0"
+local FALLBACK_VERSION = "0.5.1"
 local function versionFromMetadata(info)
     local toc = type(info) == "table" and info.toc
     local value = type(toc) == "table" and toc.Version
@@ -798,6 +798,11 @@ for _, spec in ipairs({{"Damage","damage"},{"Heal","heal"},{"Miss","miss"},{"Imm
             if private.Survival then private.Survival.ObserveCombat(kind, info) end
         end, "RR2 casting " .. kind)
     end
+end
+if Event.Combat.Death then
+    Command.Event.Attach(Event.Combat.Death, function(_, info)
+        if private.Survival then private.Survival.ObserveDeath(info) end
+    end, "RR2 casting death")
 end
 if Event.Ability and Event.Ability.New and Event.Ability.New.Cooldown then
     for _, name in ipairs({"Begin", "End"}) do

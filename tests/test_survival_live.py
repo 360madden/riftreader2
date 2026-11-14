@@ -73,6 +73,8 @@ class SurvivalLiveTests(unittest.TestCase):
             live.decode_frame(wire(value), NONCE, PLAYER)
         value["sessionId"] = NONCE
         value["addonVersion"] = "0.5.1"
+        self.assertEqual("0.5.1", live.decode_frame(wire(value), NONCE, PLAYER)["frame"]["addonVersion"])
+        value["addonVersion"] = "0.5.2"
         with self.assertRaisesRegex(live.SurvivalLiveError, "unexpected-survival-frame-contract"):
             live.decode_frame(wire(value), NONCE, PLAYER)
 
@@ -156,6 +158,52 @@ class SurvivalLiveTests(unittest.TestCase):
         with self.assertRaisesRegex(live.SurvivalLiveError,
                                     "stale-or-future-survival-event"):
             live.decode_frame(wire(value), NONCE, PLAYER)
+
+    def test_exact_death_survives_cleared_selection_and_caster_is_optional(self):
+        hostile = "u0000000000000002"
+        value = frame(clock=40)
+        value.update(addonVersion="0.5.1", deathScope="exact-unit-death/1",
+                     targetId=None,
+                     lastDeath={"sequence": 3, "clock": 39, "target": hostile,
+                                "targetName": "Hostile"})
+        decoded = live.decode_frame(wire(value), NONCE, PLAYER)["frame"]
+        self.assertEqual(hostile, decoded["lastDeath"]["target"])
+        self.assertNotIn("caster", decoded["lastDeath"])
+        value["lastDeath"]["caster"] = PLAYER
+        self.assertEqual(PLAYER, live.decode_frame(wire(value), NONCE, PLAYER)
+                         ["frame"]["lastDeath"]["caster"])
+
+    def test_death_scope_identity_and_freshness_are_strict(self):
+        hostile = "u0000000000000002"
+        value = frame(clock=40)
+        value.update(addonVersion="0.5.1", deathScope="exact-unit-death/1",
+                     lastDeath={"sequence": 1, "clock": 39, "target": hostile})
+        for mutation, reason in (
+                ({"deathScope": "selected-target-death/1"}, "unexpected-survival-death-scope"),
+                ({"lastDeath": {"sequence": 1, "clock": 34.9, "target": hostile}},
+                 "stale-or-future-survival-death"),
+                ({"lastDeath": {"sequence": 1, "clock": 41, "target": hostile}},
+                 "stale-or-future-survival-death"),
+                ({"lastDeath": {"sequence": 1, "clock": 39, "target": "bad"}},
+                 "invalid-survival-last-death")):
+            candidate=deepcopy(value); candidate.update(mutation)
+            with self.assertRaisesRegex(live.SurvivalLiveError, reason):
+                live.decode_frame(wire(candidate), NONCE, PLAYER)
+
+    def test_death_generation_cannot_rewind_or_mutate(self):
+        hostile = "u0000000000000002"
+        previous = {"sequence": 2, "clock": 39, "target": hostile}
+        live._validate_death_progression(previous, deepcopy(previous))
+        live._validate_death_progression(
+            previous, {"sequence": 3, "clock": 39.5, "target": hostile})
+        with self.assertRaisesRegex(live.SurvivalLiveError,
+                                    "death-generation-regressed"):
+            live._validate_death_progression(
+                previous, {"sequence": 1, "clock": 38, "target": hostile})
+        changed = dict(previous, caster=PLAYER)
+        with self.assertRaisesRegex(live.SurvivalLiveError,
+                                    "conflicting-survival-death-generation"):
+            live._validate_death_progression(previous, changed)
 
     def test_legacy_frame_can_support_cleanup_but_not_contextual_outcome(self):
         value = frame(clock=50)

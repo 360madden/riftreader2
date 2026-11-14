@@ -8,8 +8,10 @@ an explicitly qualified UIParent-to-client coordinate basis.
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 import json
 import math
+import re
 from pathlib import Path
 import subprocess
 import threading
@@ -108,6 +110,22 @@ def _binding(adapter):
     return result
 
 
+def _selected_death(frame, scope):
+    """A death survives selection clear. Bind it to a strictly later producer generation and event clock."""
+    event = frame.get("lastDeath")
+    if (frame.get("deathScope") != "exact-unit-death/1" or not isinstance(event, dict)
+            or not _same(event.get("target"), scope["targetId"])
+            or frame.get("epoch") != scope.get("admissionEpoch")
+            or type(frame.get("sequence")) is not int or type(event.get("sequence")) is not int
+            or frame["sequence"] <= scope["admissionSequence"]
+            or event["sequence"] <= scope["baselineDeathSequence"]
+            or type(event.get("clock")) not in (int, float)
+            or not math.isfinite(event["clock"]) or event["clock"] <= scope["admissionClock"]
+            or not 0 <= frame["frameTime"] - event["clock"] <= 5):
+        return None
+    return deepcopy(event)
+
+
 class _PolicyBackend:
     """Complete policy port built over the single protected action owner."""
 
@@ -182,6 +200,10 @@ class _PolicyBackend:
                  and type(baseline.get("sequence")) is int
                  and type(baseline.get("clock")) in (int, float)),
                  "survival-action-outcome-baseline-unavailable")
+        scope = self.runtime._deliberate
+        if scope is not None and "admissionEpoch" not in scope:
+            scope.update(admissionEpoch=receipt["admissionEpoch"],
+                         admissionSequence=receipt["admissionSequence"], admissionClock=baseline_clock)
         self.recovery_cast = self.mode == "recovery"
         wall_deadline = self.runtime.clock() + deadline_seconds
         outcome = {"status": "unavailable", "reason": "outcome-window-not-sampled"}
@@ -207,11 +229,23 @@ class _PolicyBackend:
                     and event["clock"] >= baseline_clock)
                 accepted = selection_bound and outcome.get("status") in {
                     "intended-hit-confirmed", "intended-heal-confirmed"}
+                if scope is not None:
+                    death = _selected_death(frame, scope)
+                    if death is not None:
+                        scope["death"] = death
+                        scope["deathFrame"] = (frame["sequence"],frame["frameTime"])
+                        return {"accepted": accepted, "encounterEnded": True,
+                                "delivery": receipt, "outcome": outcome, "death": death}
+                    if (not post["player"]["inCombat"] and not post["encounter"]["present"]
+                            and post["encounter"]["selectedTargetId"] is None):
+                        return {"accepted": False, "encounterEnded": True, "delivery": receipt,
+                                "reason": "selection-cleared-no-death-observed", "outcome": outcome}
                 if accepted:
                     return {"accepted": True, "delivery": receipt, "outcome": outcome}
                 source_expired = (type(frame.get("frameTime")) in (int, float)
                                   and frame["frameTime"] >= baseline_clock + deadline_seconds)
-                if post["player"]["dead"] or source_expired or self.runtime.clock() >= wall_deadline:
+                if (post["player"]["dead"] or source_expired or self.runtime.clock() >= wall_deadline
+                        or scope is not None and self.runtime.clock() >= scope["deadline"]):
                     break
                 if self.runtime._stop.wait(
                         self.runtime._profile["timing"]["pollMilliseconds"] / 1000):
@@ -336,6 +370,7 @@ class WaypointSurvivalRuntime:
         self._player_id = None
         self._target_id = None
         self._stop = None
+        self._deliberate = None
         self._no_action_since = None
         self._health_observation = None
         self._active = False
@@ -649,7 +684,11 @@ class WaypointSurvivalRuntime:
             encounter_target_id=target_id).get("status") == "incoming-damage-observed")
         # Combat without the configured live hostile target is deliberately an
         # unknown encounter: policy retreats and cannot select a cast role.
-        present = combat and not target_dead
+        deliberate = self._deliberate
+        exact_candidate = (deliberate is not None and selected_exists
+                           and _same(target_id, deliberate["targetId"]) and hostile
+                           and target_health > 0 and not target_dead)
+        present = (combat or exact_candidate) and not target_dead
         if (present and selected_exists and self._target_id is None
                 and (hostile or incoming_exact)):
             self._target_id = target_id
@@ -657,6 +696,10 @@ class WaypointSurvivalRuntime:
         threat_known = bool(present and selected_exists and configured and known
                             and (hostile or incoming_exact))
         encounter = {"present": present, "casting": False,
+                     "selectedTargetId": target_id, "hostileRelation": hostile,
+                     "nativeTargetDead": target_dead if selected_exists else None,
+                     "addonTargetDeadOrZero": bool(selected_exists and
+                         (target.get("dead") is True or target_health == 0)),
                      "threatKnown": threat_known,
                      "levelDelta": (float(target_level - player_level)
                                     if threat_known else None),
@@ -726,6 +769,11 @@ class WaypointSurvivalRuntime:
     def _fresh_action_report(self):
         """Acquire and publish a newer admitted frame immediately before an action."""
         telemetry = self._next_telemetry()
+        if self._deliberate is not None:
+            self._check_selected_admission(telemetry)
+            if "admissionEpoch" not in self._deliberate:
+                previous = self._latest_report["snapshot"].get("lastDeath") or {}
+                self._deliberate["baselineDeathSequence"] = previous.get("sequence", 0)
         _require(telemetry["encounter"]["present"] is True,
                  "survival-action-encounter-ended")
         return deepcopy(self._latest_report)
@@ -817,6 +865,150 @@ class WaypointSurvivalRuntime:
             recover_resource=thresholds["recoverResourcePct"],
             recover_resource_absolute=thresholds.get("recoverResourceAbsolute", 20),
             maximum_level_delta=thresholds["maximumLevelDelta"])
+
+    def _check_selected_admission(self, telemetry):
+        scope = self._deliberate
+        _require(not self._stop.is_set() and self.clock() < scope["deadline"],
+                 "selected-encounter-stopped-or-expired")
+        player, encounter = telemetry["player"], telemetry["encounter"]
+        target = self._latest_report["snapshot"].get("target") or {}
+        _require(_same(encounter["selectedTargetId"], scope["targetId"])
+                 and not encounter["nativeTargetDead"] and not encounter["addonTargetDeadOrZero"]
+                 and encounter["hostileRelation"] and encounter["threatKnown"]
+                 and not player["dead"], "selected-hostile-alive-target-required")
+        x = _finite(target.get("coordX"), "target-position-unavailable")
+        z = _finite(target.get("coordZ"), "target-position-unavailable")
+        distance = math.hypot(x-scope["center"][0], z-scope["center"][1])
+        scope.update(targetPosition=[x,z], targetDistance=distance)
+        _require(distance <= scope["radius"], "selected-target-outside-hunt-area")
+        limits = self._profile["thresholds"]
+        _require(encounter["levelDelta"] <= limits["maximumLevelDelta"]
+                 and player["healthPct"] > limits["retreatBelowPct"]
+                 and not encounter["losing"], "selected-encounter-unsafe")
+
+    def selected_encounter(self, adapter, *, stop, deadline, emit, expected_target_id,
+                           hunt_center, hunt_radius):
+        """Fight one already selected hostile from rest. The caller owns the mission stop and route."""
+        result = {"status": "blocked", "selectedTargetId": expected_target_id, "receipts": [],
+                  "killProof": {"qualified": False}, "releaseSucceeded": True,
+                  "desktopInputsDown": []}
+        _require(isinstance(expected_target_id, str)
+                 and re.fullmatch(r"u[0-9a-fA-F]{16}", expected_target_id)
+                 and int(expected_target_id[1:],16) != 0, "exact-selected-target-required")
+        _require(isinstance(hunt_center,(list,tuple)) and len(hunt_center)==2,
+                 "hunt-center-required")
+        center = tuple(_finite(value,"invalid-hunt-center") for value in hunt_center)
+        radius = _finite(hunt_radius,"invalid-hunt-radius")
+        _require(radius > 0, "invalid-hunt-radius")
+        _finite(deadline,"invalid-encounter-deadline")
+        scope = dict(targetId=expected_target_id, center=center, radius=radius,
+                     deadline=deadline, baselineDeathSequence=0)
+        backend = None
+        hit = None
+        released = False
+        cleanup_attempted = False
+        try:
+            with self._lock:
+                _require(not self._active and self._deliberate is None, "survival-runtime-busy")
+                self._deliberate = scope
+            _require(not stop.is_set() and self.clock() < deadline, "selected-encounter-stopped-or-expired")
+            self.preflight(adapter, stop)
+            self._target_id = expected_target_id
+            backend = self._backend
+            poll = self._profile["timing"]["pollMilliseconds"] / 1000
+            damage = self._profile["abilities"]["damage"]
+            thresholds = self._profile["thresholds"]
+            while not stop.is_set() and self.clock() < deadline:
+                value = backend.telemetry()
+                frame = self._latest_report["snapshot"]
+                player, target = value["player"], value["encounter"]
+                _require(not stop.is_set() and self.clock() < deadline,
+                         "selected-encounter-stopped-or-expired")
+                _require(not player["dead"], "player-dead")
+                if not released:
+                    death = scope.get("death") or (
+                        _selected_death(frame, scope) if "admissionEpoch" in scope else None)
+                    observed_dead = (_same(target["selectedTargetId"],expected_target_id)
+                                     and target["nativeTargetDead"] and target["addonTargetDeadOrZero"])
+                    cleared = ("admissionEpoch" in scope and target["selectedTargetId"] is None
+                               and not player["inCombat"])
+                    if death is not None or observed_dead or cleared:
+                        result["encounterEnded"] = True
+                        sequence, clock = scope.get("deathFrame",(frame["sequence"],frame["frameTime"]))
+                        qualified = death is not None and _same(death.get("caster"), self._player_id)
+                        kind = ("player-kill-confirmed" if qualified else
+                                "target-death-observed" if death or observed_dead else "selection-cleared")
+                        result["killProof"] = {"qualified":qualified, "kind":kind,
+                            "targetId":expected_target_id, "observedAtUtc":datetime.now(timezone.utc).isoformat(),
+                            "sequence":sequence, "frameTime":clock, "event":death, "lastConfirmedHit":hit}
+                        cleanup_attempted = True
+                        result.update(releaseSucceeded=False, desktopInputsDown=["unknown"])
+                        cleanup = backend.finalize("selected-target-ended")
+                        result["receipts"].append(cleanup)
+                        result.update(releaseSucceeded=cleanup["releaseSucceeded"],
+                                      desktopInputsDown=cleanup["desktopInputsDown"])
+                        _require(cleanup["releaseSucceeded"] and cleanup["desktopInputsDown"] == [],
+                                 "selected-encounter-release-unverified")
+                        released = True
+                        emit({"status":"selected-target-ended","killProof":result["killProof"]})
+                    else:
+                        self._check_selected_admission(value)
+                        ability = value["abilities"][damage]
+                        if ability["learned"] and ability["ready"] and ability["usable"] and (
+                                player["resourceCurrent"] >= ability["resourceCost"]):
+                            if backend.mode is None:
+                                scope["baselineDeathSequence"] = (frame.get("lastDeath") or {}).get("sequence",0)
+                                backend.start_combat()
+                            action = backend.cast(damage)
+                            result["receipts"].append(action)
+                            if action.get("encounterEnded"):
+                                if action.get("accepted") and action["outcome"]["status"] == "intended-hit-confirmed":
+                                    hit = action["outcome"]["event"]
+                                continue
+                            _require(action.get("accepted") is True and
+                                     action["outcome"]["status"] == "intended-hit-confirmed",
+                                     "player-damage-unconfirmed")
+                            hit = action["outcome"]["event"]
+                            emit({"status":"selected-target-hit", "targetId": expected_target_id,
+                                  "event":deepcopy(hit)})
+                            continue
+                if released:
+                    _require(target["selectedTargetId"] is None or
+                             _same(target["selectedTargetId"], expected_target_id),
+                             "selection-changed-during-recovery")
+                    if (not player["inCombat"] and player["healthPct"] >= thresholds["recoverHealthPct"]
+                            and player["resourceCurrent"] >= thresholds["recoverResourceAbsolute"]):
+                        result["recovered"] = True
+                        result["status"] = "completed" if result["killProof"]["qualified"] else "blocked"
+                        if not result["killProof"]["qualified"]:
+                            result["reason"] = "kill-credit-unverified"
+                        break
+                stop.wait(min(poll,max(0, deadline-self.clock())))
+            if not result.get("recovered"):
+                result["reason"] = "operator-stop" if stop.is_set() else "encounter-deadline"
+        except Exception as exc:
+            result["reason"] = str(exc)
+        finally:
+            if backend is not None and backend.mode is not None and not cleanup_attempted:
+                try:
+                    cleanup = backend.finalize("selected-encounter-finally")
+                    result["receipts"].append(cleanup)
+                    result.update(releaseSucceeded=cleanup["releaseSucceeded"],
+                                  desktopInputsDown=cleanup["desktopInputsDown"])
+                except Exception as exc:
+                    result.update(releaseSucceeded=False, desktopInputsDown=["unknown"],
+                                  reason="selected-encounter-cleanup: "+str(exc))
+            if self._deliberate is scope:
+                self._deliberate, self._target_id = None, None
+        if result["releaseSucceeded"] is not True or result["desktopInputsDown"] != []:
+            result["status"] = "halted"
+            stop.set()
+        elif stop.is_set():
+            result["status"] = "stopped"
+        for key in ("targetPosition","targetDistance"):
+            if key in scope:
+                result[key] = scope[key]
+        return result
 
     def route_runner(self, adapter, points, stop, emit, face_waypoints=True,
                      entry_check=None):
