@@ -26,7 +26,9 @@ Use the Casting addon bound to the physical client. Out of combat, prepare up to
 /rr2surv setup <nonce> <ability-id-1>,<ability-id-2>
 ```
 
-The secure toolbar is anchored at UIParent X 20, Y 180. Slots use two columns and Cancel/STOP sits at X 20, Y 352. All five deployed addon files matched the source hashes. After reload and setup, the ability buttons and Cancel/STOP were visibly clear of the minimap at the normal 1266×714 client size.
+The redesigned **Survival** toolbar defaults to UIParent X 72, Y 270. Drag the title out of combat to save a different character-specific position. Each configured ability has a full-width row with its name and current API readiness. The red **STOP** control stays at the top right of the group as rows are added or removed. It sends the existing secure cancel/stopattack macro. Waypoints' global STOP remains the control for halting the route.
+
+The redesigned toolbar was deployed and visually checked at 1266×714 on AMD-DESKTOP. Both configured ability rows and STOP were visible and readable. Dragging the title down 56 physical pixels placed the group below the FPS display and left of chat, at about UIParent Y 269. The revised default rounds that position to Y 270. The saved position (X 72, Y 269) was restored after an addon reload and explicit action setup. Eight-slot layout and resize handling have offline test coverage; their physical checks are pending. No ability was cast and no route was run during this UI check.
 
 Create a schema-version-1 JSON profile using the same nonce. Set `abilities.damage` to the exact intended damage ID and `actions` to the list of one to eight allowed IDs. Optional heal, defense and interrupt roles accept exact IDs or null. Supply the current host/process/player binding and a measured `coordinateBasis` in `UIParent-to-client-pixels` space with viewport and client dimensions, X/Y scale and offsets. The profile contains no macro text. The addon prepares its own secure controls. [Profile schema and validation](../../scripts/survival_profile.py)
 

@@ -265,21 +265,102 @@ class SurvivalAddonTests(unittest.TestCase):
         self.assertTrue(self.command("setup "+new+" A01")[0])
         self.assertEqual(set(self.observe(28)["controls"]["actions"]),{"A01"})
 
-    def test_all_secure_profile_buttons_fit_left_of_chat_below_character_frame(self):
-        self.lua.execute("UIParent.GetHeight=function() return 1024 end")
-        ids=[f"A{i:02}" for i in range(1,9)]
-        for key in ids:
+    def setup_toolbar(self, count):
+        ids=[f"A{i:02}" for i in range(1,count+1)]
+        for i,key in enumerate(ids,1):
             self.st.abilityList[key]=True
-            self.st.abilities[key]=self.lua.table(id=key,name=key)
+            self.st.abilities[key]=self.lua.table(id=key,idNew=key,name=f"Ability {i}",
+                target=self.st.targetId,costPower=0 if i==1 else 20)
         self.assertTrue(self.command("setup "+NONCE+" "+",".join(ids))[0])
-        for i in range(8):
-            frame=self.g.TEST_FRAMES[f"RR2SurvivalSlot{i+1}"]
-            self.assertEqual((frame.SetPointValue[4],frame.SetPointValue[5],
-                              frame.SetWidthValue[1],frame.SetHeightValue[1]),
-                             (20+120*(i%2),180+43*(i//2),116,40))
-        cancel=self.g.TEST_FRAMES.RR2SurvivalCancel
-        self.assertEqual((cancel.SetPointValue[4],cancel.SetPointValue[5],
-                          cancel.SetWidthValue[1],cancel.SetHeightValue[1]),(20,352,236,40))
+        # Read the real anchor hierarchy through RIFT's geometry accessors.
+        self.lua.execute("""
+            local function geometry(f)
+                f.GetLeft=function(self) return self.SetPointValue[2]:GetLeft()+self.SetPointValue[4] end
+                f.GetTop=function(self) return self.SetPointValue[2]:GetTop()+self.SetPointValue[5] end
+                f.GetWidth=function(self) return self.SetWidthValue[1] end
+                f.GetHeight=function(self) return self.SetHeightValue[1] end
+            end
+            geometry(TEST_FRAMES.RR2SurvivalToolbar)
+            geometry(TEST_FRAMES.RR2SurvivalCancel)
+            for i=1,8 do
+                local f=TEST_FRAMES["RR2SurvivalSlot"..i]
+                if f then geometry(f) end
+            end
+        """)
+        return self.g.TEST_FRAMES.RR2SurvivalToolbar
+
+    def test_toolbar_packs_two_or_eight_actions_with_a_stable_stop_and_readable_status(self):
+        for count in (2,8):
+            bar=self.setup_toolbar(count)
+            controls=self.observe(21+count)["controls"]
+            actions=controls["actions"]
+            self.assertEqual((bar.SetWidthValue[1],bar.SetHeightValue[1]),(248,44+50*count))
+            self.assertEqual((controls["cancel"]["left"],controls["cancel"]["top"]),(232,272))
+            self.assertEqual(controls["cancel"]["macro"],"stopcasting\nstopattack")
+            for i in range(1,count+1):
+                action=actions[f"A{i:02}"]
+                self.assertEqual((action["left"],action["top"],action["width"],action["height"]),
+                                 (76,314+(i-1)*50,240,48))
+                self.assertTrue(action["mapped"])
+                status=self.g.TEST_FRAMES[f"RR2SurvivalSlot{i}Status"]
+                self.assertEqual(status.SetTextValue[1],"Ready" if i==1 else "Blocked")
+            self.assertGreaterEqual(self.g.TEST_FRAMES.RR2SurvivalSlot1Label.SetFontSizeValue[1],20)
+        self.command("slot 2 clear")
+        compact=self.observe(32)["controls"]
+        self.assertEqual(compact["actions"]["A03"]["top"],364)
+        self.assertEqual(compact["cancel"]["top"],272)
+
+    def test_toolbar_drag_persists_and_resize_waits_for_combat_unlock(self):
+        bar=self.setup_toolbar(8)
+        self.lua.execute("TEST_MOUSE={x=82,y=275,Left=true}")
+        self.g.TEST_HANDLERS["RR2 casting drag start survival"]()
+        self.lua.execute("TEST_MOUSE={x=1700,y=890,Left=true}")
+        self.g.TEST_HANDLERS["RR2 casting drag move survival"]()
+        self.g.TEST_HANDLERS["RR2 casting drag end survival"]()
+        self.assertEqual((bar.SetPointValue[4],bar.SetPointValue[5]),(1672,636))
+        self.g.TEST_HANDLERS["RR2 casting saved evidence"](None,"RiftReader2Casting")
+        saved=self.g.RiftReader2CastingEvidence.survivalToolbarPosition
+        self.assertEqual((saved.x,saved.y),(1672,636))
+        self.st.units[self.st.playerId].combat=True
+        self.lua.execute("TEST_VIEWPORT={width=320,height=450}")
+        self.assertFalse(self.command("slot 1 clear")[0])
+        self.assertFalse(self.observe(22)["controls"]["actions"]["A01"]["mapped"])
+        self.assertEqual((bar.SetPointValue[4],bar.SetPointValue[5]),(1672,636))
+        self.st.units[self.st.playerId].combat=False
+        self.st.secure=True
+        self.lua.execute("TEST_VIEWPORT={width=320,height=450}; TEST_MOUSE={x=100,y=30,Left=true}")
+        self.g.TEST_HANDLERS["RR2 casting drag start survival"]()
+        self.g.TEST_HANDLERS["RR2 casting drag move survival"]()
+        locked=self.observe(23)["controls"]
+        self.assertFalse(locked["cancel"]["mapped"])
+        self.assertFalse(locked["actions"]["A08"]["mapped"])
+        self.assertEqual((bar.SetPointValue[4],bar.SetPointValue[5]),(1672,636))
+        self.st.secure=False
+        clamped=self.observe(24)["controls"]
+        self.assertEqual((bar.SetPointValue[4],bar.SetPointValue[5]),(72,6))
+        self.assertTrue(clamped["cancel"]["mapped"])
+        self.assertTrue(clamped["actions"]["A08"]["mapped"])
+        self.assertLessEqual(clamped["actions"]["A08"]["top"]+48,450)
+
+    def test_toolbar_restores_only_position_and_refuses_an_oversized_profile(self):
+        self.lua.execute("RiftReader2CastingEvidence={survivalToolbarPosition={x=110,y=90}}")
+        self.g.TEST_HANDLERS["RR2 casting saved evidence"](None,"RiftReader2Casting")
+        bar=self.setup_toolbar(2)
+        self.assertEqual((bar.SetPointValue[4],bar.SetPointValue[5]),(110,90))
+        self.lua.execute("TEST_VIEWPORT={width=280,height=100}")
+        self.assertFalse(self.command("setup "+NONCE+" A01,A02")[0])
+        self.assertIsNone(self.observe(22))
+        self.assertFalse(bar.SetVisibleValue[1])
+
+    def test_toolbar_decorations_cannot_interrupt_producer_and_stale_readiness_expires(self):
+        self.setup_toolbar(2)
+        self.assertEqual(self.observe(22)["controls"]["actions"]["A01"]["readiness"]["status"],"ready")
+        self.lua.execute('TEST_FRAMES.RR2SurvivalSlot1Status.SetText=function() error("restricted") end')
+        self.st.abilities.A01.unusable=True
+        self.assertEqual(self.observe(23)["controls"]["actions"]["A01"]["readiness"]["status"],"blocked")
+        self.command("clear")
+        self.assertIsNone(self.observe(25))
+        self.assertEqual(self.g.TEST_FRAMES.RR2SurvivalSlot2Status.SetTextValue[1],"Unknown")
 
 
 if __name__ == "__main__":

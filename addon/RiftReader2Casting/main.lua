@@ -170,20 +170,24 @@ local savedLoaded = false -- Preserve saved evidence until its exact load-end ev
 -- proxies. Text and accents have no mouse handlers; only EventMacroSet casts.
 local castContext = UI.CreateContext("RR2CastingSecure")
 castContext:SetSecureMode("restricted")
-local function secureButton(name, value, left, top, width, role)
-    local frame = UI.CreateFrame("Frame", name, castContext)
+local function secureButton(name, value, left, top, width, role, parent, height)
+    height = height or 40
+    local frame = UI.CreateFrame("Frame", name, parent or castContext)
     frame:SetSecureMode("restricted")
-    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", left, top)
-    frame:SetWidth(width); frame:SetHeight(40)
+    frame:SetPoint("TOPLEFT", parent or UIParent, "TOPLEFT", left, top)
+    frame:SetWidth(width); frame:SetHeight(height)
     frame:SetMouseMasking("full")
     background(frame, colors.border)
-    local fill = block(name .. "Fill", frame, 1, 1, width - 2, 38,
+    local fill = block(name .. "Fill", frame, 1, 1, width - 2, height - 2,
         role == "danger" and colors.dangerButton or colors.primaryButton)
     fill:SetMouseMasking("limited")
-    local accent = block(name .. "Accent", frame, 1, 1, 4, 38,
+    local accent = block(name .. "Accent", frame, 1, 1, 4, height - 2,
         role == "danger" and colors.red or colors.accent)
     accent:SetLayer(1); accent:SetMouseMasking("limited")
-    return frame, centeredLabel(name .. "Label", frame, width, 40, value)
+    if parent and role=="primary" then
+        return frame, label(name.."Label",frame,12,0,width-16,20,value)
+    end
+    return frame, centeredLabel(name .. "Label", frame, width, height, value)
 end
 local castButton, castCaption = secureButton("RR2CastingSecureButton",
     "SELECT AN ABILITY", PX + 16, PY + 552, 350, "primary")
@@ -293,7 +297,7 @@ local function moveDrag()
     if not ok then drag.active = false end
 end
 local function endDrag() drag.active = false end
-local function attachDrag(handle, suffix)
+local function attachDrag(handle, suffix, begin, move, finish)
     local mouse = Event.UI and Event.UI.Input and Event.UI.Input.Mouse
     local left = mouse and mouse.Left
     local cursor = mouse and mouse.Cursor
@@ -301,11 +305,11 @@ local function attachDrag(handle, suffix)
         evidence.dragWarning = "rift-mouse-events-unavailable"
         return
     end
-    handle:EventAttach(left.Down, beginDrag, "RR2 casting drag start" .. suffix)
-    handle:EventAttach(cursor.Move, moveDrag, "RR2 casting drag move" .. suffix)
-    handle:EventAttach(left.Up, endDrag, "RR2 casting drag end" .. suffix)
+    handle:EventAttach(left.Down, begin or beginDrag, "RR2 casting drag start" .. suffix)
+    handle:EventAttach(cursor.Move, move or moveDrag, "RR2 casting drag move" .. suffix)
+    handle:EventAttach(left.Up, finish or endDrag, "RR2 casting drag end" .. suffix)
     if left.Upoutside then
-        handle:EventAttach(left.Upoutside, endDrag, "RR2 casting drag cancel" .. suffix)
+        handle:EventAttach(left.Upoutside, finish or endDrag, "RR2 casting drag cancel" .. suffix)
     end
 end
 attachDrag(dragHandle, "")
@@ -368,20 +372,84 @@ local function actionRect(frame, mapped)
     return rect
 end
 local profileSlots, profileCancel = {}, nil
-local profileLeft, profileTop = 20, 180
-local function prepareSlot(index, id)
+local toolbar = {x=72,y=270,width=248,height=44,visible=false}
+local function toolbarUnlocked()
     if not nonSecure() then return false end
+    local ok,p=pcall(Inspect.Unit.Lookup,"player")
+    if not ok or not p then return false end
+    local valid,detail=pcall(Inspect.Unit.Detail,p)
+    return valid and type(detail)=="table" and detail.combat~=true
+end
+local function placeToolbar(x,y)
+    local w,h=viewport()
+    if not toolbarUnlocked() or not w or w<toolbar.width or h<toolbar.height then return false end
+    x=math.max(0,math.min(math.floor(x+.5),math.floor(w-toolbar.width)))
+    y=math.max(0,math.min(math.floor(y+.5),math.floor(h-toolbar.height)))
+    if not safePoint(toolbar.frame,x,y) then return false end
+    toolbar.x,toolbar.y=x,y
+    return true
+end
+local function initToolbar()
+    local frame=UI.CreateFrame("Frame","RR2SurvivalToolbar",castContext)
+    frame:SetSecureMode("restricted")
+    frame:SetWidth(toolbar.width); background(frame,colors.background)
+    frame:SetMouseMasking("limited")
+    toolbar.frame=frame
+    safeVisible(frame,false)
+    local handle=block("RR2SurvivalHandle",frame,2,2,155,40,colors.header)
+    handle:SetMouseMasking("full")
+    label("RR2SurvivalTitle",handle,12,4,138,22,"Survival",colors.text)
+    attachDrag(handle," survival",function()
+        toolbar.drag=nil
+        local pos=mousePosition()
+        if toolbarUnlocked() and pos then toolbar.drag={x=pos.x-toolbar.x,y=pos.y-toolbar.y} end
+    end,function()
+        if not toolbar.drag then return end
+        local pos=mousePosition()
+        if not pos or pos.Left~=true or not placeToolbar(pos.x-toolbar.drag.x,pos.y-toolbar.drag.y) then
+            toolbar.drag=nil; return
+        end
+        evidence.survivalToolbarPosition={x=toolbar.x,y=toolbar.y}
+    end,function() toolbar.drag=nil end)
+    local caption
+    profileCancel,caption=secureButton("RR2SurvivalCancel","STOP",160,2,86,"danger",frame)
+    caption:SetFontSize(20)
+end
+local function layoutToolbar()
+    if not nonSecure() then return false end
+    if not toolbar.frame then return true end
+    local n=0
+    for i=1,8 do
+        local slot=profileSlots[i]
+        if slot and slot.id then
+            local ok,accepted=pcall(slot.frame.SetPoint,slot.frame,"TOPLEFT",toolbar.frame,"TOPLEFT",4,44+n*50)
+            if not ok or accepted==false then return false end
+            n=n+1
+        end
+    end
+    toolbar.height=44+n*50
+    toolbar.frame:SetHeight(toolbar.height)
+    local show=n>0
+    if show and not placeToolbar(toolbar.x,toolbar.y) then return false end
+    if not safeVisible(toolbar.frame,show) then return false end
+    toolbar.visible=show
+    return true
+end
+local function refreshToolbarSize()
+    if not toolbar.frame or not toolbar.visible then return end
+    local w,h=viewport()
+    if w and (toolbar.x+toolbar.width>w or toolbar.y+toolbar.height>h) then
+        placeToolbar(toolbar.x,toolbar.y)
+    end
+end
+local function prepareSlot(index, id)
+    if not toolbarUnlocked() then return false end
     local entry = profileSlots[index]
     if id == "clear" then
         if not entry then return true end
         if not safeVisible(entry.frame,false) then return false end
         entry.id, entry.name, entry.monitor = nil,nil,nil
-        if profileCancel then
-            local used = false
-            for _, item in pairs(profileSlots) do if item.id then used=true end end
-            if not used then safeVisible(profileCancel,false) end
-        end
-        return true
+        return layoutToolbar()
     end
     local learned = Inspect.Ability.New.List()
     if type(learned) ~= "table" or not learned[id] then return false end
@@ -389,35 +457,50 @@ local function prepareSlot(index, id)
     if type(d) ~= "table" or type(d.name) ~= "string" or #d.name == 0 or #d.name > 120
             or d.name:find("[%z\1-\31]") or d.positioned or d.autoattack or d.passive then return false end
     for i, existing in pairs(profileSlots) do if i ~= index and existing.id == id then return false end end
-    local w,h = viewport()
-    local cancelTop = profileTop + 172
-    if not w or w < profileLeft + 236 or h < cancelTop + 40 then return false end
-    local x = profileLeft + ((index-1)%2)*120
-    local y = profileTop + math.floor((index-1)/2)*43
     local monitor = private.Casting.New(Inspect)
     if not monitor:Select(id) then return false end
     if not profileCancel then
-        profileCancel = secureButton("RR2SurvivalCancel","CANCEL / STOP",profileLeft,cancelTop,236,"danger")
-        if not safeVisible(profileCancel,false) then profileCancel=nil; return false end
+        initToolbar()
     end
     local cancelOk,cancelResult = pcall(profileCancel.EventMacroSet,profileCancel,
         Event.UI.Input.Mouse.Left.Click,"stopcasting\nstopattack")
     if not cancelOk or cancelResult == false or not safeVisible(profileCancel,true) then return false end
     if not entry then
-        local f, caption = secureButton("RR2SurvivalSlot"..index,"UNBOUND",x,y,116,"primary")
-        entry={frame=f,caption=caption}; profileSlots[index]=entry
+        local name="RR2SurvivalSlot"..index
+        local f, caption = secureButton(name,"",4,44,240,"primary",toolbar.frame,48)
+        local status=label(name.."Status",f,12,25,224,15,"Checking",colors.muted)
+        entry={frame=f,caption=caption,status=status}; profileSlots[index]=entry
         if not safeVisible(f,false) then return false end
     end
     local macro = "cast "..d.name.."\nstopattack"
     local ok,accepted = pcall(entry.frame.EventMacroSet,entry.frame,Event.UI.Input.Mouse.Left.Click,macro)
     if not ok or accepted == false then return false end
     entry.id,entry.name,entry.macro,entry.monitor = id,d.name,macro,monitor
-    entry.caption:SetText(shortName(d.name,13))
-    if not safeVisible(entry.frame,true) then
+    entry.caption:SetText(shortName(d.name,23))
+    entry.lastStatus=nil; entry.status:SetText("Checking")
+    if not layoutToolbar() or not safeVisible(entry.frame,true) then
         entry.id,entry.name,entry.monitor=nil,nil,nil
+        safeVisible(entry.frame,false); layoutToolbar()
         return false
     end
     return true
+end
+local function toolbarRect(frame,w,h)
+    local rect=actionRect(frame,true)
+    rect.mapped=toolbar.visible and w~=nil and rect.left~=nil and rect.left>=0 and rect.top>=0
+        and rect.left+rect.width<=w and rect.top+rect.height<=h
+    return rect
+end
+local function toolbarStatus(slot,state)
+    if slot.lastStatus==state then return end
+    local tint=state=="ready" and colors.green or (state=="waiting" and colors.amber or colors.muted)
+    local text=state=="ready" and "Ready" or (state=="waiting" and "Waiting" or (state=="blocked" and "Blocked" or "Unknown"))
+    -- A client that restricts text decoration in combat must still publish the exact action observation.
+    local ok=pcall(function()
+        slot.status:SetText(text)
+        slot.status:SetFontColor(tint[1],tint[2],tint[3],tint[4])
+    end)
+    if ok then slot.lastStatus=state end
 end
 local function survivalControls(playerId,targetId)
     local bound = evidence.castButton
@@ -429,32 +512,32 @@ local function survivalControls(playerId,targetId)
     local actions = {}
     for i, slot in pairs(profileSlots) do
         if slot.id then
-            local v = actionRect(slot.frame,true)
-            v.slot,v.abilityId,v.abilityName,v.macro,v.visible = i,slot.id,slot.name,slot.macro,true
+            local v = toolbarRect(slot.frame,width,height)
+            if toolbar.drag or not width or toolbar.x+toolbar.width>width or toolbar.y+toolbar.height>height then
+                v.mapped=false
+            end
+            v.slot,v.abilityId,v.abilityName,v.macro,v.visible = i,slot.id,slot.name,slot.macro,v.mapped
             local r = slot.monitor:Read(true)
             if r.playerId == playerId and r.targetId == targetId and r.abilityId == slot.id then
                 v.readiness = {status=r.status,reason=r.reason}
                 v.ability = {target=r.ability.target,idNew=r.ability.idNew,currentCooldownRemaining=r.ability.currentCooldownRemaining,
                     outOfRange=r.ability.outOfRange,unusable=r.ability.unusable,costPower=r.ability.costPower}
             else v.readiness={status="blocked",reason="profile-identity-changed"}; v.ability={} end
+            slot.lastRead=r.clock
+            toolbarStatus(slot,v.readiness.status)
             actions[slot.id]=v
         end
     end
     local cancel
     if profileCancel and next(actions) then
-        cancel = actionRect(profileCancel,true); cancel.visible=true
+        cancel = toolbarRect(profileCancel,width,height); cancel.visible=cancel.mapped
         cancel.macro="stopcasting\nstopattack"; cancel.effectQualification="unverified"
     end
     return {visible = panelVisible, space = "UIParent", viewportWidth = width, viewportHeight = height,
         actions=actions,cancel=cancel,cast = cast, stop = actionRect(stopButton, stopOk and stopResult ~= false)}
 end
 if private.Survival then
-    private.Survival.Start(Inspect, model, selectAbility, survivalControls, prepareSlot,function()
-        if not nonSecure() then return false end
-        local p=Inspect.Unit.Lookup("player")
-        local detail=p and Inspect.Unit.Detail(p)
-        return type(detail)=="table" and detail.combat~=true
-    end)
+    private.Survival.Start(Inspect, model, selectAbility, survivalControls, prepareSlot,toolbarUnlocked)
 end
 
 -- Retain the installed game's API descriptions as offline evidence.
@@ -616,8 +699,12 @@ local function update()
     if now < lastUpdate then lastUpdate = -1 end
     if now - lastUpdate < .1 then return end
     lastUpdate = now
+    refreshToolbarSize()
     local r = model:Read()
     if private.Survival and private.Survival.Publish then private.Survival.Publish(r) end
+    for _,slot in pairs(profileSlots) do
+        if slot.id and slot.lastRead and (now<slot.lastRead or now-slot.lastRead>1) then toolbarStatus(slot,"unknown") end
+    end
     evidence.last = r; evidence.trial = model.trial
     if savedLoaded then RiftReader2CastingEvidence = evidence end
 
@@ -789,6 +876,12 @@ Command.Event.Attach(Event.Addon.SavedVariables.Load.End, function(_, id)
         else
             loadWarnings[#loadWarnings + 1] = "invalid-saved-hud-position"
         end
+    end
+    local savedBar=type(prior)=="table" and prior.survivalToolbarPosition
+    if not evidence.survivalToolbarPosition and type(savedBar)=="table" and coordinate(savedBar.x) and coordinate(savedBar.y) then
+        evidence.survivalToolbarPosition={x=savedBar.x,y=savedBar.y}
+        if not toolbar.frame then toolbar.x,toolbar.y=savedBar.x,savedBar.y
+        elseif nonSecure() then placeToolbar(savedBar.x,savedBar.y) end
     end
     if #loadWarnings > 0 then evidence.loadWarnings = loadWarnings end
     savedLoaded = true
