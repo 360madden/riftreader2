@@ -212,6 +212,29 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
                     with self.assertRaisesRegex(summary.AcceptanceError, "duplicate-json-key"):
                         summary._rows(path)
 
+    def test_strict_route_gate_blocks_interruption_without_release_proof(self):
+        arrived = {"status": "arrived", "nextWaypoint": 2, "waypointCount": 2,
+                   "releaseSucceeded": True, "allInputsReleased": True,
+                   "desktopInputsDown": []}
+        cases = (
+            {"status": "encounter-interrupted"},
+            {"status": "encounter-interrupted", "releaseSucceeded": True},
+        )
+        for interrupted in cases:
+            with self.subTest(interrupted=interrupted):
+                result = summary.summarize([interrupted, arrived])
+                self.assertEqual("prior-release-unverified",
+                                 result["route"]["completionGate"]["reason"])
+                self.assertFalse(result["route"]["allRetainedReleasesVerified"])
+                self.assertFalse(result["route"]["encounterReleaseVerified"])
+
+    def test_strict_route_gate_rejects_earlier_arrival_followed_by_active_work(self):
+        arrived = {"status": "arrived", "nextWaypoint": 2, "waypointCount": 2,
+                   "releaseSucceeded": True, "allInputsReleased": True,
+                   "desktopInputsDown": []}
+        result = summary.summarize([arrived, {"status": "moving", "nextWaypoint": 1}])
+        self.assertEqual("terminal-not-final", result["route"]["completionGate"]["reason"])
+
     def test_strict_route_gate_admits_only_full_final_arrival_with_release(self):
         route = [{"status": "moving", "nextWaypoint": 2, "waypointCount": 3},
                  {"status": "arrived", "nextWaypoint": 3, "waypointCount": 3,

@@ -225,10 +225,12 @@ def _verified_release(row):
             and ("allInputsReleased" not in row or row["allInputsReleased"] is True))
 
 
-def _completion_gate(terminal, receipts):
+def _completion_gate(terminal, receipts, terminal_final):
     """Offline admission only; retained route receipts are not live game proof."""
     if terminal is None:
         reason = "terminal-missing"
+    elif not terminal_final:
+        reason = "terminal-not-final"
     elif terminal.get("status") != "arrived":
         reason = "terminal-not-arrived"
     elif not _verified_release(terminal):
@@ -253,8 +255,11 @@ def summarize(route_rows, telemetry_rows=None):
                      if type(row.get("nextWaypoint")) is int
                      or type(row.get("nextIndex")) is int), {})
     interrupted = [row for row in route_rows if row.get("status") == "encounter-interrupted"]
-    receipts = [row for row in route_rows if any(
-        key in row for key in ("releaseSucceeded", "allInputsReleased", "desktopInputsDown"))]
+    # Every interruption must carry its own release proof. Otherwise a later
+    # successful arrival could hide an earlier encounter with unknown held keys.
+    receipts = [row for row in route_rows if row.get("status") == "encounter-interrupted"
+                or any(key in row for key in
+                       ("releaseSucceeded", "allInputsReleased", "desktopInputsDown"))]
     release_ok = bool(receipts) and all(_verified_release(row) for row in receipts)
     summary = {
         "version": 1, "kind": "survival-acceptance-summary",
@@ -265,7 +270,7 @@ def summarize(route_rows, telemetry_rows=None):
                 _verified_release(row) for row in interrupted),
             "allRetainedReleasesVerified": release_ok,
             "terminalInputsReleased": bool(terminal and _verified_release(terminal)),
-            "completionGate": _completion_gate(terminal, receipts),
+            "completionGate": _completion_gate(terminal, receipts, terminal is route_rows[-1]),
             "finalNextIndex": (progress.get("nextWaypoint")
                                if type(progress.get("nextWaypoint")) is int
                                else progress.get("nextIndex")),
