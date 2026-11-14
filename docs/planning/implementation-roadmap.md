@@ -13,8 +13,10 @@ Its focused checks and retained-source replay passed; it adds no new live field
 semantics or game observation. See the Nov 13 23:54 entry in the
 [RRE intake record](../workflows/rre-discovery-intake.md).
 
-RR2's purpose remains useful RIFT discovery and repeatable retrieval for other
-programs. Waypoints is a working consumer. **Joey's November 14 correction:
+RR2's intended product is a **local automated player**, supported by useful RIFT
+discovery and repeatable retrieval. Waypoints is an existing consumer and control
+tool; its manual/supervised workflow is not the final player-control model.
+**Joey's November 14 correction:
 route travel must account for combat and survival; reaching a destination is not
 useful if the character dies on the way.** Combat is now a first-class roadmap
 priority, rather than merely a source of telemetry or deferred future work.
@@ -35,6 +37,13 @@ order using damage, cooldowns, resource costs, downtime and related constraints.
 Build progression and combat decisions must use the same current character
 state. A leveling loop that leaves skill points/abilities unmanaged or repeats
 a fixed attack sequence does not satisfy this goal.
+
+**Autonomous decisions and compute efficiency, November 14:** The automated
+player chooses its own ordinary movement, targets, combat actions, recovery and
+skill/progression steps locally. AI/humans develop, configure and tune the system
+or investigate exceptions; they must not decide each gameplay action. Normal
+operation has no dependency on per-action LLM calls or human approvals. Effective
+decisions and low compute/token overhead are product requirements.
 
 This updates planning direction; it does not start combat implementation or
 grant new game-input, casting, restart or cross-host authority. Live work still
@@ -69,11 +78,11 @@ specific freshness/meaning and action feedback they depend on.
 
 | Rank | Work | Current gap and useful completion point |
 | --- | --- | --- |
-| **1** | **Combat essentials and encounter assessment** | Reuse player/vitals, target/unit, ability and casting work for alive/dead state, usable HP/resource/combat state, player/enemy levels, relevant enemy identity/health/range and a small ability set. Before voluntarily engaging, consider level difference, ordinary/elite/group status where known, nearby additional enemies, current readiness and observed fight outcomes. Initially prefer isolated ordinary enemies near the player's level; avoid stronger, elite, grouped or unknown-risk targets. Choose a safer known route or appropriate leveling area when needed. Establish a bounded normal-input action path with actual target/cast feedback. Missing/stale/unqualified decision data is not permission to assume a fight is safe. |
+| **1** | **Local runtime, combat essentials and encounter assessment** | Reuse current readers and input controls in a small local observe/decide/act/verify loop; no model/human decisions per action. Supply usable alive/HP/resource/combat/level/target/readiness state. Assess level difference, known hostility/elite/group status, nearby enemies, readiness and outcomes before engaging. Prefer suitable isolated targets and safer known routes/leveling areas. Establish bounded normal-input actions with actual target/cast feedback. Missing/stale decision data halts the dependent action; it is not evidence that an encounter is safe. |
 | **2** | **Plan skills and build progression for the actual character** | Establish the current class/soul/role/build, learned abilities/ranks, unspent points and applicable prerequisites. Start with one solo-leveling/survival build and a per-level plan for skill/talent choices, passives, unlocks and training where applicable. Balance useful damage, sustain, defense and synergy; a future unlock is not currently usable. Detect level-up/build changes, reconcile the plan with actual learned state and refresh action choices. Applying a plan requires a supported, verified game interaction; proposing an allocation does not prove allocation automation exists. |
 | **3** | **Choose effective combat actions and recover** | Implement a conditional priority policy for the initial build: emergency survival, necessary defensive/healing/interrupt actions, useful setup, damage/finishing actions and sustainable fallback as applicable. Consider actual learned rank, target state, expected useful damage/healing, cast/channel/GCD time, cooldowns/charges, resources and recovery cost. Re-evaluate after confirmed outcomes/state changes instead of blindly repeating a sequence. Win and recover from one suitable encounter, with bounded retreat/help for a losing fight. Use the detailed requirements below; expand after useful operation. |
 | **4** | **A bounded leveling loop with observed progress** | Select suitable reachable XP targets; fight, verify XP, recover and continue while ready and within the trip objective/limits. Detect level-up, reconcile skill/build progression and newly available abilities, refresh stats/resources and reassess suitable enemies. Do not assume every kill rewards XP or that accumulated XP is monotonic across a level-up. Track whole-cycle progress and downtime rather than kills or peak damage alone. |
-| **5** | **Connect travel, threat avoidance, leveling and Resume** | Share one input owner across movement, combat and recovery. Preserve the genuine unfinished route checkpoint while fighting or taking a bounded XP detour. Skipping dangerous encounters requires a known traversable alternative; no planner/escape path is assumed. Return to a valid route admission point through known traversable ground rather than loosening Resume checks or advancing the cursor for kills. Recheck alive/out-of-combat state, readiness and route context before explicit Resume. STOP overrides every mode; death or failed recovery stops without automatic retrials. |
+| **5** | **Autonomous travel, threat avoidance, leveling and continuation** | Share one input owner across movement, combat and recovery. Preserve genuine route progress during fights/XP detours. Use known traversable alternatives/return paths; kills do not advance the route cursor. Within an authorized run, automatically continue ordinary combat/recovery/travel transitions only when alive/out-of-combat, readiness, identity, freshness, path/context and budgets pass. Operator STOP, safety latch, death, unavailable critical state or failed recovery halts all modes; explicit Resume/new run is required after the halt. Never auto-clear STOP. |
 | **6** | **Prove useful longer travel and progression** | Use a recorded known-traversable 50–100-unit route with corners: record/save/load, reject an unsuitable encounter, win a suitable one using the build's action policy, observe XP, recover and Resume. Success means arriving alive with valid progress and released input, with actual XP reported separately from level-up. Include level-up/build reconciliation when one occurs. Retain STOP-mid-leg, Reverse and same-build restart/Resume as useful. Fix real failures, then expand; full 1,000-unit capacity is not a mandatory first trial. |
 | **7** | **Make route location and height context dependable** | Zone tags and measured/estimated height cues already work. Cover actual floors/elevation and zone/world/instance changes; preserve measured corners and refuse inappropriate route/Resume. Move a specific context check earlier when an XP detour requires it. Combat/level advantage does not establish walkability. |
 | **8** | **Broaden retrieval and expose useful data to consumers** | Extend beyond the survival/build/progression essentials with coherent nearby-unit detail, more stats and ability/cooldown/cast/buff outputs, retaining consistent source/time/identity/availability contracts. Reuse physical commands, the composite reader, catalog and exports. Prove useful requests before adding a service/SDK/framework. |
@@ -82,6 +91,43 @@ specific freshness/meaning and action feedback they depend on.
 For ranks 1–6, current input/health-change deferrals and action authority must be
 resolved for the specific live experiment before it runs. The roadmap correction
 does not itself initiate an attack, health-change test or uncontrolled run.
+
+## Autonomous runtime and compute requirements
+
+Use a small local state machine with conditional priorities/scoring over the
+existing readers, build profiles and one input owner. Each cycle acquires or
+updates the needed state, checks the objective and threats, selects a legal
+action, executes it, verifies the result and updates the next decision. Movement,
+combat and recovery decisions belong to this runtime, not to a chat session.
+
+Cache build plans and stable mechanics; refresh them on relevant changes.
+Recompute choices when observations, readiness or objectives change, using
+bounded local polling/timers for time-dependent state. Separate fast combat
+reactions from slower route/build planning so unchanged data does not trigger
+expensive work. Begin with explicit local rules and measured action values;
+bounded look-ahead is useful only when it improves actual decisions. A generic
+agent framework or online model training is not a prerequisite.
+
+Developers can use AI for research, code, offline log analysis and policy tuning.
+Send compact exception/evaluation summaries when useful, not a token-consuming
+conversation for every move/cast/level-up. Missing data triggers a locally defined
+safe halt/recovery outcome; consulting AI must not be a required way to keep
+ordinary gameplay moving. Measure decision latency, CPU/memory/read overhead,
+external model calls/tokens, intervention count and gameplay outcomes. The target
+for ordinary action selection is zero model calls and zero operator decisions.
+
+Optimize actions for the configured survival/progression/travel objective using
+reliable available data. Validate improvements against whole-cycle results;
+"optimal" is the design aim under that model and constraints, not a claim of a
+globally proven perfect policy. Revalidate after level/build changes locally.
+
+Keep the current Waypoints explicit-Resume tool separate from future autonomous
+continuation semantics. Normal completion of a fight and recovery need not ask
+the operator to resume each time. Operator STOP and safety latches always take
+precedence, remain latched, and require explicit Resume/new run after fresh
+admission. Supervised development trials can test the automated runtime without
+the supervisor making its routine decisions. None of this asserts that the
+autonomous runtime or its combat/progression features is implemented today.
 
 ## Skill progression and combat decision requirements
 

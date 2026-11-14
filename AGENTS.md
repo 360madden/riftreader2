@@ -58,12 +58,29 @@ that need it or claims of full-repository validation.
 
 ## Purpose and current scope
 
-RiftReader2 is a practical discovery and retrieval framework for wide-ranging
-RIFT data, serving other programs. Its purpose includes discovering information
-and reliably retrieving it again on demand. Optimize for discovery speed,
-usable retrieval, efficiency, durable knowledge, restart recovery, update recovery,
-and less repetitive AI work. Movement and turning support controlled tests.
-Dedicated navigation, combat, and player automation belong to a future program.
+RiftReader2 develops the discovery/retrieval infrastructure and local automated
+player described by the current brief and roadmap. Preserve useful repeatable
+RIFT readers and durable findings, and use them in the runtime's movement,
+survival, combat, recovery and progression decisions. Earlier instructions that
+put dedicated player automation wholly outside this product are historical;
+Joey's November 14 clarifications below own the current product direction.
+
+**Autonomous-player requirement (Joey, 2026-11-14; explicitly remember):** The
+player makes routine decisions locally. AI/Codex and humans develop, configure,
+diagnose and tune it; they do not directly select each move, target, ability,
+recovery step or per-level skill during normal operation. Use existing readers
+and input controls with a small local state/priority loop, cached mechanics and
+policies, and outcome feedback. Minimize unnecessary compute and model tokens;
+no routine gameplay dependency on LLM calls, screenshots or per-action approval.
+Choose effective actions for survival, progression and the objective using
+available evidence; do not claim mathematically global optimality.
+
+Within an authorized run, normal encounter/combat/recovery/route continuation
+can be automatic once identity, freshness, readiness, path and budget checks
+pass. Operator STOP or a safety latch must halt all modes and remain latched
+until explicit Resume/new run; never automatically clear STOP. Current manual
+Waypoints behavior and historical supervised evidence do not establish the
+future autonomous runtime. This requirement does not itself launch live play.
 
 **Travel-survival planning correction (Joey, 2026-11-14):** Combat and survival
 must be included in the route-travel roadmap: arriving at a destination is not
@@ -79,7 +96,7 @@ must not blindly engage high-level hostiles. Include pre-engagement threat
 assessment, avoidance/safer known routes, suitable combat encounters and bounded
 XP/level progression along the way in the roadmap. If a destination is too
 dangerous, consider a suitable leveling area before attempting it. Preserve
-route checkpoints, one input owner, STOP and explicit Resume; kills/detours do
+route checkpoints, one input owner and latched STOP; kills/detours do
 not silently advance route progress. This is planning direction, not an order
 to start combat/grinding or expand live-action authority.
 

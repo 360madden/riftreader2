@@ -1,5 +1,14 @@
 # Current status
 
+Product clarification November 14: the target is a **local automated player**,
+making its own gameplay decisions without AI/human control per action. Local
+policies own movement/combat/build/progression decisions to reduce compute and
+model tokens. Ordinary in-run recovery/continuation can be automatic; operator
+STOP/safety latches still require explicit Resume/new run. The
+[runtime requirements](planning/implementation-roadmap.md#autonomous-runtime-and-compute-requirements)
+and brief/guidance now distinguish this goal from existing manual/supervised
+tools. This is recorded product direction, not an implemented runtime or live run.
+
 Planning clarification November 14: **per-level skill/build choices and
 conditional combat ability priorities** are required parts of progression.
 The [roadmap](planning/implementation-roadmap.md#skill-progression-and-combat-decision-requirements)

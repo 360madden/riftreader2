@@ -29,6 +29,13 @@
 
 **RiftReader2 (RR2)** is a practical **discovery and retrieval framework** for wide-ranging data from the **RIFT MMORPG**. It brings together a versioned **in-game Lua addon**, a modular **.NET 10** codebase, read-only native readers, repeatable acquisition commands, and retained research artifacts for other tools and programs.
 
+**Product direction, November 14:** those capabilities support a **local automated
+player** that chooses movement, encounters, combat actions, recovery and skill/
+level progression itself. AI/humans develop and tune the software; ordinary play
+must not require model calls or direct human decisions per action. The current
+manual/supervised tools are foundations; the complete autonomous runtime is
+planned, not delivered. See the [current roadmap](docs/planning/implementation-roadmap.md).
+
 Its central question is simple:
 
 > **How do we find useful information, retrieve it again when requested, and know what the result represents?**
@@ -273,7 +280,7 @@ The bounded experiment layer supports explicitly supervised movement/turning val
 FOUNDATION       ██████████  Versioned offline analysis and strict contracts
 LIVE REFERENCE   ███████░░░  Identified-session transport; RR2R1 acceptance pending
 NATIVE RESEARCH  ██████░░░░  Candidate sampling; per-field qualification ongoing
-AUTOMATION       ███░░░░░░░  Supervised experiments only; player bot out of scope
+AUTOMATION       ███░░░░░░░  Supervised tools delivered; local automated player planned
 ```
 
 *These bars are an **illustrative stage map**, not measured completion percentages.*

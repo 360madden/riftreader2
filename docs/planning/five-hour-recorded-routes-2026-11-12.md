@@ -19,6 +19,12 @@ waypoint, record paths you actually walk, and explicitly replay a nearby recorde
 route when appropriate. Routes can now contain up to 1,000 world units and 500
 points. Reuse the current readers, radar, recorder and beacons.
 
+**Intended player-control model:** the local automated runtime makes normal
+travel, combat, recovery and skill/leveling decisions without AI/human action
+selection. Existing manual Waypoints and supervised trials remain useful tools
+and evidence, not the final product architecture. See the
+[autonomous-runtime requirements](implementation-roadmap.md#autonomous-runtime-and-compute-requirements).
+
 ## What is done
 
 | Capability | Result and evidence |
@@ -119,14 +125,15 @@ connecting segment. Full saved world mapping remains later work.
 
 ## Remaining Waypoints work, ranked
 
-1. **Threat-aware combat and route execution.** A route is not successful if the
+1. **Local autonomous decisions, combat and route execution.** A route is not successful if the
    character dies along the way. Assess encounters before engagement; low-level
    characters must avoid high-level hostiles rather than blindly fight them.
    Enemy level alone is insufficient: consider current readiness, additional
    enemies and elite/hostility information where available; do not assume unknown
    targets are safe. Supply state/actions for a suitable first fight, then connect
    travel interruption, checkpoint preservation,
-   one shared input owner, combat, recovery and explicit Resume. STOP must
+   one shared input owner, combat, recovery and normal automatic continuation.
+   Operator STOP/safety halts require explicit Resume/new run. STOP must
    override every mode. This capability is missing; casting diagnostics and
    ability catalogs do not supply a working combat controller. The
    [overall roadmap](implementation-roadmap.md#remaining-work-ranked) ranks its
@@ -144,14 +151,17 @@ connecting segment. Full saved world mapping remains later work.
    Measure survival and XP over travel, fights and recovery. An unsafe
    destination may need a safer known route or leveling in a suitable area first.
    Preserve the travel objective and genuine checkpoint during bounded detours;
-   return through known traversable ground before normal Resume admission.
+   return through known traversable ground and pass route admission before
+   automatic continuation within the authorized run. Never auto-clear STOP.
    Existing level/XP candidates are not yet a functioning progression system.
 4. **One useful longer taught route in the real game.** Record a known-traversable
    50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
    and Reverse. Add unsuitable-target rejection plus suitable combat, measured XP,
-   recovery and Resume before calling it dependable leveling travel;
+   recovery and automatic continuation before calling it dependable leveling travel.
+   Ordinary decisions must be local, without AI/human action selection;
    distance-only clear-ground checks remain separately useful.
-   Include full-game restart/Resume when appropriate and authorized.
+   Check operator STOP/explicit Resume and full-game restart/Resume separately
+   when appropriate and authorized.
    Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
    trial and a broad stress sweep are not required.
 5. **Location and height context for saved-route reuse.** Test actual slopes,

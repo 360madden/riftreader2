@@ -4,6 +4,14 @@ Status: goals and modular foundation implementation authorized on 2026-10-18.
 
 ## Purpose
 
+**Current product target — Joey's November 14 clarification:** a local automated
+player that makes its own movement, encounter, combat, recovery, leveling and
+skill/build decisions. RR2's discovery/retrieval work supplies its observations
+and durable knowledge. AI/humans build, configure, diagnose and tune the software;
+they are not the routine action controller. Normal gameplay must run without
+model calls or human decisions per action, reducing latency, compute and tokens.
+This states the intended product, not completed autonomous-player capability.
+
 RiftReader2 should collect information about RIFT so that future programs can
 build on dependable, reusable findings. Joey's priorities are speed, efficiency,
 reliability, and persistence across full game exits and relaunches. Recovery when
@@ -33,6 +41,8 @@ parts of V2. See [the hybrid decision](decisions/0002-hybrid-addon-and-reader.md
 6. Move time-consuming, repetitive, and numerical work into local tools where
    that produces measurable benefit.
 7. Make the resulting knowledge useful to other programs.
+8. Operate an automated player with local outcome-driven decisions and minimal
+   repeated AI/human involvement during ordinary travel, combat and progression.
 
 Reliable validation matters alongside acquisition speed. A faster scan that
 promotes incorrect fields does not meet the goal.
@@ -68,6 +78,13 @@ account for damage/healing, costs, cooldown/GCD/cast timing, defensive needs,
 useful combinations and downtime. Useful progress is measured across travel,
 fights and recovery, rather than maximizing isolated damage numbers. No live
 point spending, training or respec is performed by documenting that requirement.
+
+The runtime observes, chooses legal actions, executes through one input owner,
+checks outcomes and replans locally. Normal combat/recovery can return to travel
+automatically within an authorized run when all required checks pass. Operator
+STOP and safety faults halt every mode and require explicit Resume/new run.
+Existing manual/supervised tools remain useful for development and acceptance;
+their control model does not define the automated-player goal.
 
 ## What should survive
 
