@@ -32,8 +32,9 @@
 **Product direction, November 14:** those capabilities support a **local automated
 player** that chooses movement, encounters, combat actions, recovery and skill/
 level progression itself. AI/humans develop and tune the software; ordinary play
-must not require model calls or direct human decisions per action. The current
-manual/supervised tools are foundations; the complete autonomous runtime is
+should run locally once the relevant behavior is supported. Temporary ChatGPT/AI
+control can bridge gaps or insufficient local decisions when it offers better
+overall benefits. The current manual/supervised tools are foundations; the complete autonomous runtime is
 planned, not delivered. See the [current roadmap](docs/planning/implementation-roadmap.md).
 
 Its central question is simple:

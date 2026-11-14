@@ -41,9 +41,17 @@ a fixed attack sequence does not satisfy this goal.
 **Autonomous decisions and compute efficiency, November 14:** The automated
 player chooses its own ordinary movement, targets, combat actions, recovery and
 skill/progression steps locally. AI/humans develop, configure and tune the system
-or investigate exceptions; they must not decide each gameplay action. Normal
-operation has no dependency on per-action LLM calls or human approvals. Effective
+or bridge capability gaps. The completed local runtime should not depend on
+per-action LLM calls or human approvals for supported routine behavior. Effective
 decisions and low compute/token overhead are product requirements.
+
+**Temporary AI-control scaffolding:** ChatGPT/AI can directly control the player
+when local behavior is missing, blocked or insufficient, and may be preferred
+when the overall benefit is better. Compare useful progress, reliability,
+latency, compute and tokens; zero model calls is a target for mature local
+behavior, not a reason to leave useful work blocked. Assisted operation uses the
+same authorized action scope, input owner, STOP and identity/freshness/release
+checks. Build reusable local behavior from recurring assisted cases when useful.
 
 This updates planning direction; it does not start combat implementation or
 grant new game-input, casting, restart or cross-host authority. Live work still
@@ -98,7 +106,8 @@ Use a small local state machine with conditional priorities/scoring over the
 existing readers, build profiles and one input owner. Each cycle acquires or
 updates the needed state, checks the objective and threats, selects a legal
 action, executes it, verifies the result and updates the next decision. Movement,
-combat and recovery decisions belong to this runtime, not to a chat session.
+combat and recovery decisions normally belong to this runtime. The temporary
+AI-assisted mode below can bridge behavior it cannot yet handle effectively.
 
 Cache build plans and stable mechanics; refresh them on relevant changes.
 Recompute choices when observations, readiness or objectives change, using
@@ -109,12 +118,23 @@ bounded look-ahead is useful only when it improves actual decisions. A generic
 agent framework or online model training is not a prerequisite.
 
 Developers can use AI for research, code, offline log analysis and policy tuning.
-Send compact exception/evaluation summaries when useful, not a token-consuming
-conversation for every move/cast/level-up. Missing data triggers a locally defined
-safe halt/recovery outcome; consulting AI must not be a required way to keep
-ordinary gameplay moving. Measure decision latency, CPU/memory/read overhead,
-external model calls/tokens, intervention count and gameplay outcomes. The target
-for ordinary action selection is zero model calls and zero operator decisions.
+Use compact summaries for assistance when sufficient; direct ChatGPT control is
+also valid scaffolding when needed. A gap in local decisions can hand control to
+AI after the current action releases and its state/checkpoint are retained; the
+two controllers must not act concurrently. AI uses fresh observations and the
+existing authorized controls, then can return ownership once local operation is
+ready. Missing telemetry needed by both controllers remains a real blocker;
+AI assistance must not invent it or bypass its checks.
+
+Choose AI assistance when its practical benefit exceeds the extra latency,
+compute/token cost and development effort of alternatives. Do not insist on
+finishing an entire local subsystem before a useful assisted experiment. Record
+the missing local capability and useful outcomes concisely; implement repeatable
+local policies for recurring cases rather than requiring the same model work
+indefinitely. Measure decision latency, CPU/memory/read overhead, model calls/
+tokens, intervention count and gameplay outcomes. Mature routine local action
+selection targets zero model calls/operator decisions; incomplete cases may
+legitimately use AI until a local implementation is more beneficial.
 
 Optimize actions for the configured survival/progression/travel objective using
 reliable available data. Validate improvements against whole-cycle results;

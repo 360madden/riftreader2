@@ -66,14 +66,27 @@ put dedicated player automation wholly outside this product are historical;
 Joey's November 14 clarifications below own the current product direction.
 
 **Autonomous-player requirement (Joey, 2026-11-14; explicitly remember):** The
-player makes routine decisions locally. AI/Codex and humans develop, configure,
-diagnose and tune it; they do not directly select each move, target, ability,
-recovery step or per-level skill during normal operation. Use existing readers
+player's intended default is routine local decisions. AI/Codex and humans develop,
+configure, diagnose and tune it; temporary AI control is allowed as described
+below when local capability is insufficient or assistance offers better benefits.
+Use existing readers
 and input controls with a small local state/priority loop, cached mechanics and
 policies, and outcome feedback. Minimize unnecessary compute and model tokens;
-no routine gameplay dependency on LLM calls, screenshots or per-action approval.
+the completed local policies should not require LLM calls, screenshots or
+per-action approval for the behavior they support.
 Choose effective actions for survival, progression and the objective using
 available evidence; do not claim mathematically global optimality.
+
+**AI scaffolding clarification (Joey, 2026-11-14):** Local autonomy is the target,
+not a blanket prohibition on ChatGPT/AI directly controlling the player. Where
+gaps, blockers or insufficient local decisions prevent a useful result, AI
+control can bridge the gap and may be preferred if it offers better overall
+progress/reliability/latency versus compute/token cost. Use judgment; do not
+reject useful AI control merely because the local runtime is unfinished.
+Use existing authorized controls, one action owner and an explicit handoff;
+preserve STOP, identity, freshness and release checks. Convert recurring useful
+assisted behavior into local capability when worthwhile. This clarification
+allows the approach; it does not start a live run or expand host/action scope.
 
 Within an authorized run, normal encounter/combat/recovery/route continuation
 can be automatic once identity, freshness, readiness, path and budget checks

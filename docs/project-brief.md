@@ -8,9 +8,18 @@ Status: goals and modular foundation implementation authorized on 2026-10-18.
 player that makes its own movement, encounter, combat, recovery, leveling and
 skill/build decisions. RR2's discovery/retrieval work supplies its observations
 and durable knowledge. AI/humans build, configure, diagnose and tune the software;
-they are not the routine action controller. Normal gameplay must run without
-model calls or human decisions per action, reducing latency, compute and tokens.
+the completed runtime should handle supported routine gameplay without model
+calls or human decisions per action, reducing latency, compute and tokens.
 This states the intended product, not completed autonomous-player capability.
+
+**AI scaffolding clarification:** ChatGPT/AI may temporarily control the player
+when there are gaps, blockers or insufficient local decisions, and can be the
+preferred approach when it provides better overall benefits. Compare useful
+progress, reliability, latency, compute and token costs. Local autonomy remains
+the target; it is not a reason to refuse effective assistance during development.
+Use the existing authorized controls and one input owner, with a clear handoff
+and preserved STOP/identity/freshness/release behavior. No live run is initiated
+by recording this requirement.
 
 RiftReader2 should collect information about RIFT so that future programs can
 build on dependable, reusable findings. Joey's priorities are speed, efficiency,

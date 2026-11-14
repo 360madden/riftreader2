@@ -1,5 +1,12 @@
 # Current status
 
+AI-scaffolding clarification November 14: local autonomy remains the target,
+but ChatGPT/AI may temporarily control the player for missing/blocked/insufficient
+local behavior and may be preferred when overall benefits justify it. Maintain
+one action owner, explicit handoffs and existing STOP/identity/freshness/release
+checks. The [runtime requirements](planning/implementation-roadmap.md#autonomous-runtime-and-compute-requirements)
+now reflect this exception. No gameplay run was started.
+
 Product clarification November 14: the target is a **local automated player**,
 making its own gameplay decisions without AI/human control per action. Local
 policies own movement/combat/build/progression decisions to reduce compute and

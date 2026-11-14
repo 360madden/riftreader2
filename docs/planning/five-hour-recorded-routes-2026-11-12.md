@@ -21,7 +21,9 @@ points. Reuse the current readers, radar, recorder and beacons.
 
 **Intended player-control model:** the local automated runtime makes normal
 travel, combat, recovery and skill/leveling decisions without AI/human action
-selection. Existing manual Waypoints and supervised trials remain useful tools
+selection once supported. Temporary ChatGPT/AI control is valid scaffolding for
+gaps, blockers or insufficient local decisions when it provides better benefits.
+Existing manual Waypoints and supervised trials remain useful tools
 and evidence, not the final product architecture. See the
 [autonomous-runtime requirements](implementation-roadmap.md#autonomous-runtime-and-compute-requirements).
 
@@ -158,7 +160,8 @@ connecting segment. Full saved world mapping remains later work.
    50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
    and Reverse. Add unsuitable-target rejection plus suitable combat, measured XP,
    recovery and automatic continuation before calling it dependable leveling travel.
-   Ordinary decisions must be local, without AI/human action selection;
+   Label AI-assisted versus locally autonomous decisions accurately; use AI
+   scaffolding where useful, and verify local decisions once implemented;
    distance-only clear-ground checks remain separately useful.
    Check operator STOP/explicit Resume and full-game restart/Resume separately
    when appropriate and authorized.
