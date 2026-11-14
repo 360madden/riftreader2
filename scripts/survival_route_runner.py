@@ -97,6 +97,27 @@ def _coalesce_retained_corridor(points, planar_tolerance=.2, height_tolerance=.3
         start_index, end_index = pending.pop()
         if end_index <= start_index + 1:
             continue
+        # Geometric closeness alone collapses an out-and-back along one line.
+        # Split at the first meaningful backward projection so the retained
+        # points preserve the order in which the corridor was traversed.
+        dx = points[end_index][0] - points[start_index][0]
+        dz = points[end_index][2] - points[start_index][2]
+        length = math.hypot(dx, dz)
+        if length > 1e-12:
+            peak, peak_index = 0.0, start_index
+            reversal = None
+            for index in range(start_index + 1, end_index + 1):
+                projection = ((points[index][0] - points[start_index][0]) * dx
+                              + (points[index][2] - points[start_index][2]) * dz) / length
+                if projection > peak:
+                    peak, peak_index = projection, index
+                elif peak - projection > planar_tolerance and peak_index > start_index:
+                    reversal = peak_index
+                    break
+            if reversal is not None and reversal < end_index:
+                retained.add(reversal)
+                pending.extend(((start_index, reversal), (reversal, end_index)))
+                continue
         worst_index, worst_error = max(
             ((index, error(points[index], points[start_index], points[end_index]))
              for index in range(start_index + 1, end_index)),
@@ -113,7 +134,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                        clock=time.monotonic, wait_seconds=.05,
                        max_seconds=MAX_TRIP_SECONDS, retreat_max_seconds=30,
                        minimum_trail_points=1, initial_retreat_trail=None,
-                       assess_before_travel=False, finish_after_retreat=False):
+                       assess_before_travel=False, finish_after_retreat=False,
+                       goal_heights=None, point_kinds=None):
     """Run one pending real route leg at a time with a shared trip budget.
 
     The injected mover has ``continuous_move.move_to``'s contract. Encounter
@@ -132,6 +154,28 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             or not 1 <= minimum_trail_points <= 256):
         raise WaypointError("Invalid configured retreat bounds")
     rows = route_points(points)
+    if goal_heights is None:
+        heights = [None] * len(rows)
+    elif not isinstance(goal_heights, (list, tuple)) or len(goal_heights) != len(rows):
+        raise WaypointError("Survival goal heights must match its waypoints")
+    else:
+        heights = []
+        for value in goal_heights:
+            if value is None:
+                heights.append(None)
+            elif (isinstance(value, bool) or not isinstance(value, (int, float))
+                  or not math.isfinite(value)):
+                raise WaypointError("Survival goal height must be finite")
+            else:
+                heights.append(float(value))
+    if point_kinds is None:
+        kinds = ["stop"] * len(rows)  # Preserve the legacy one-leg interface.
+    elif (not isinstance(point_kinds, (list, tuple)) or len(point_kinds) != len(rows)
+          or any(kind not in ("pass", "stop") for kind in point_kinds)):
+        raise WaypointError("Survival point kinds must match its waypoints")
+    else:
+        kinds = list(point_kinds)
+    kinds[-1] = "stop"
     callbacks = ("cast", "start_combat", "release_combat", "start_recovery",
                  "release_recovery", "corridor_reachable")
     if any(not callable(getattr(action_backend, name, None)) for name in callbacks):
@@ -140,6 +184,8 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         raise Stopped("Stopped; no movement helper launched")
     started = clock()
     initial = read_stationary(adapter, stop)
+    from scripts.continuous_move import route_motion_seed, _receipt_speed_seed
+    motion_speed, motion_turn_rate = route_motion_seed(adapter, initial)
     if entry_check is not None:
         entry_check(initial.position)
     current = _position(initial)
@@ -180,41 +226,50 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                         {"releaseSucceeded": False,
                          "reason": "No verified native encounter release"})
 
+    retreat_frontier = None
+    latest_player_position = None
+
     def request_move(mode, requested, pending):
+        nonlocal current
         if mode == "rejoin":
-            nearby = []
-            for index, point in enumerate(requested):
-                if not isinstance(point, (list, tuple)) or len(point) != 3:
-                    continue
-                try:
-                    x, y, z = (float(value) for value in point)
-                except (TypeError, ValueError):
-                    continue
-                planar = math.hypot(x - current["x"], z - current["z"])
-                height = abs(y - current["y"])
-                if (all(math.isfinite(value) for value in (x, y, z))
-                        and planar <= .5 and height <= .5):
-                    nearby.append((planar, height, index))
-            if not nearby:
-                raise WaypointError(
-                    "Current pose is not on the retained rejoin corridor")
-            # The policy supplies interruption->origin reverse trail order.
-            # Begin at the nearest current sample and replay that exact
-            # retained corridor forward to the interruption point before the
-            # pending real route leg may resume.
-            nearest_index = min(nearby, key=lambda item: item[:2])[2]
-            requested = list(reversed(requested[:nearest_index + 1]))
+            # A released encounter can displace the player after the movement
+            # receipt. Use the policy's latest fresh telemetry, never that old pose.
+            if latest_player_position is not None:
+                current = dict(latest_player_position)
+            else:
+                current = _position(read_stationary(adapter, stop))
+            # The frontier is advanced only by verified retreat arrivals.  A
+            # nearby but nonadjacent branch of a loop is not a connector.
+            if retreat_frontier is None:
+                frontier = len(policy.trail) - 1
+            else:
+                frontier = retreat_frontier
+            if not 0 <= frontier < len(policy.trail):
+                raise WaypointError("Retained rejoin frontier is unavailable")
+            point = policy.trail[frontier]
+            if not _corridor_arrival(current, point[0], point[1], point[2]):
+                raise WaypointError("Current pose is not at the retained rejoin frontier")
+            # requested is interruption-to-origin; replay frontier-to-interruption.
+            count = len(policy.trail) - frontier
+            requested = list(reversed(requested[:count]))
         requested_moves.append((mode, requested, pending))
 
     def release_move(reason):
         return dict(movement_release, reason=movement_release.get("reason", reason))
 
     def guarded_telemetry():
+        nonlocal latest_player_position
         if stop.is_set():
             raise _OperatorStopped("Stopped before survival telemetry")
         value = telemetry()
         if stop.is_set():
             raise _OperatorStopped("Stopped after survival telemetry; no action started")
+        player = value.get("player", {}) if isinstance(value, dict) else {}
+        try:
+            latest_player_position = _position({axis: player["coord" + axis.upper()]
+                                                for axis in ("x", "y", "z")})
+        except (KeyError, TypeError, ValueError):
+            latest_player_position = None
         return value
 
     def guarded(action):
@@ -269,21 +324,30 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
         return remaining
 
     def move(row, *, forward, expected_height=None, guard_mode=True,
-             operation_max_seconds=None):
-        nonlocal current, movement_release, auxiliary_distance
+             operation_max_seconds=None, guides=None, on_pass=None, arrival_as_pass=False):
+        nonlocal current, movement_release, auxiliary_distance, motion_speed
         label, x, z = row
         movement_start = dict(current)
         if not forward:
-            auxiliary_distance += math.hypot(x - current["x"], z - current["z"])
+            path = [(current["x"], current["z"])] + [
+                (guide["x"], guide["z"]) for guide in (guides or [])] + [(x, z)]
+            auxiliary_distance += sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                                      for a, b in zip(path, path[1:]))
             if original_distance + auxiliary_distance > MAX_ROUTE_DISTANCE:
                 raise WaypointError(
                     f"Survival travel exceeds {MAX_ROUTE_DISTANCE:g} world units")
 
+        passed_events = []
+
         def named(event):
-            event = dict(event, name=label)
+            event = dict(event)
+            if event.get("status") not in ("passed", "route-progress"):
+                event["name"] = label
             # The mover emits arrival before its final receipt is validated.
             # Never publish an unverified route or auxiliary arrival.
-            if event.get("status") != "arrived":
+            if event.get("status") == "passed":
+                passed_events.append(event)
+            elif event.get("status") not in ("arrived", "route-progress"):
                 emit(event)
 
         try:
@@ -292,8 +356,28 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                 limit = min(limit, operation_max_seconds)
             if limit < 1:
                 raise WaypointError("Configured retreat time was exceeded")
-            result = mover(adapter, x, z, stop, named,
-                           max_seconds=limit, survival_guard=guard_mode)
+            options = {"max_seconds": limit, "survival_guard": guard_mode,
+                       "goal_y": expected_height}
+            if guides:
+                options["path_points"] = guides
+            result = mover(adapter, x, z, stop, named, **options)
+        except Stopped as exc:
+            # A validated native STOP can contain a completed guide prefix.
+            # Publish only after the same release and actual-path checks as an
+            # encounter; STOP stays latched and the exception is re-raised.
+            receipt = getattr(exc, "receipt", None)
+            if forward and passed_events and _release_confirmed(receipt):
+                try:
+                    stopped_position = _position(receipt.get("position"))
+                    traversed = _traversed_path(receipt, stopped_position, movement_start)
+                except (TypeError, ValueError):
+                    pass  # Keep the checkpoint unchanged if evidence is incomplete.
+                else:
+                    for point in traversed:
+                        policy.record_route_trail_point((point["x"], point["y"], point["z"]))
+                    if on_pass is not None:
+                        on_pass(passed_events, guides or [])
+            raise
         except encounter_error as exc:
             movement_release = (exc.receipt if isinstance(exc.receipt, dict) else
                                 {"releaseSucceeded": False,
@@ -320,6 +404,9 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                     + str(invalid)) from invalid
             for point in traversed:
                 policy.record_route_trail_point((point["x"], point["y"], point["z"]))
+            motion_speed = _receipt_speed_seed(movement_release, motion_speed)
+            if on_pass is not None:
+                on_pass(passed_events, guides or [])
             evidence.update(traversedPath=traversed,
                             corridorQualification="native-retained traversed samples")
             return None
@@ -334,10 +421,10 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             policy.coordinator.critical("critical-unavailable")
             policy.state = "halt"
             raise WaypointError("Survival arrived leg is not at the requested destination")
-        if (not forward and expected_height is not None
+        if (expected_height is not None
                 and not _corridor_arrival(current, x, expected_height, z)):
             raise WaypointError(
-                "Survival rejoin did not confirm the retained corridor distance and height")
+                "Survival movement did not confirm the retained destination height")
         movement_release = result
         if forward:
             try:
@@ -353,12 +440,28 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
             # The post-release stationary endpoint may be slightly newer than
             # the native movement path's final sample; retain both.
             policy.record_route_trail_point((current["x"], current["y"], current["z"]))
+        motion_speed = _receipt_speed_seed(result, motion_speed)
+        if on_pass is not None:
+            expected = list(guides or [])
+            if len(passed_events) != len(expected):
+                raise WaypointError("Survival span omitted a required passage")
+            if arrival_as_pass:
+                guide = {"name": label, "x": x, "z": z}
+                if expected_height is not None:
+                    guide["y"] = expected_height
+                passed_events.append({"status": "passed", "index": len(expected),
+                    "name": label, "goal": guide, "position": dict(current),
+                    "passageVerified": True, "releaseSucceeded": True,
+                    "desktopInputsDown": []})
+                expected.append(guide)
+            on_pass(passed_events, expected)
         verified = dict(result, name=label)
-        if forward:
+        if forward and not arrival_as_pass:
             emit(verified)
         return verified
 
     def execute_requested_moves():
+        nonlocal retreat_frontier
         while requested_moves:
             mode, requested, _ = requested_moves.pop(0)
             if mode not in {"retreat", "rejoin"}:
@@ -379,22 +482,66 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                     raise WaypointError("Survival policy returned an invalid route point")
                 normalized.append(point)
             execution_points = _coalesce_retained_corridor(normalized)
+            # Carry each retained point's ordered trail index through
+            # coalescing; equal coordinates may occur on separate loop visits.
+            indexed_points = []
+            search_from = 0
+            for point in execution_points:
+                match = next((i for i in range(search_from, len(normalized))
+                              if normalized[i] == point), None)
+                if match is None:
+                    raise WaypointError("Retained corridor order is unavailable")
+                indexed_points.append((point, len(policy.trail) - 1 - match))
+                search_from = match + 1
             retreat_started = clock() if mode == "retreat" else None
-            for number, coordinates in enumerate(execution_points, 1):
+            # Follow retained samples with the same continuous spans as forward
+            # travel; auxiliary passages never reach the playback checkpoint.
+            from scripts.continuous_move import route_spans
+            pending = list(indexed_points)
+            if pending and _corridor_arrival(current, *pending[0][0]):
+                pending.pop(0)
+            while pending:
+                aux_rows = [(f"{mode} {i + 1}", p[0], p[2])
+                            for i, (p, _) in enumerate(pending)]
+                aux_heights = [p[1] for p, _ in pending]
+                _, end, _ = route_spans(aux_rows, aux_heights,
+                                        ["pass"] * len(pending), origin=(current["x"], current["z"]),
+                                        speed=motion_speed, turn_rate=motion_turn_rate)[0]
+                coordinates, retained_index = pending[end]
                 x, expected_height, z = coordinates
-                if math.hypot(x - current["x"], z - current["z"]) <= .30:
-                    continue
+                guides = [{"name": aux_rows[i][0], "x": p[0], "y": p[1], "z": p[2]}
+                          for i, (p, _) in enumerate(pending[:end])]
                 retreat_remaining = None
                 if retreat_started is not None:
                     retreat_remaining = math.floor(
                         retreat_max_seconds - (clock() - retreat_started))
-                if move((f"{mode} {number}", x, z), forward=False,
-                        expected_height=expected_height,
+
+                def accept_auxiliary(events, expected):
+                    for offset, event in enumerate(events):
+                        guide = expected[offset]
+                        actual = _position(event.get("position"))
+                        if (event.get("index") != offset or event.get("name") != guide["name"]
+                                or event.get("passageVerified") is not True
+                                or not _release_confirmed(event)
+                                or not _corridor_arrival(actual, guide["x"], guide["y"], guide["z"])):
+                            raise WaypointError("Unverified retained corridor passage")
+
+                if move(aux_rows[end], forward=False, expected_height=expected_height,
                         guard_mode="retreat" if mode == "retreat" else True,
-                        operation_max_seconds=retreat_remaining) is None:
+                        operation_max_seconds=retreat_remaining, guides=guides,
+                        on_pass=accept_auxiliary) is None:
                     policy.coordinator.critical("critical-unavailable")
                     policy.state = "halt"
                     raise WaypointError("Encounter recurred during survival rejoin")
+                if mode == "retreat":
+                    if (not 0 <= retained_index < len(policy.trail)
+                            or tuple(policy.trail[retained_index]) != tuple(coordinates)
+                            or (retreat_frontier is not None and retained_index > retreat_frontier)):
+                        raise WaypointError("Retreat frontier is not in retained trail order")
+                    retreat_frontier = retained_index
+                pending = pending[end + 1:]
+            if mode == "rejoin":
+                retreat_frontier = None
 
     def handle_encounter():
         for _ in range(1000):
@@ -454,21 +601,60 @@ def run_survival_route(adapter, points, stop, emit=lambda event: None, *,
                                       "auxiliaryDistance":auxiliary_distance})
             emit(verified)
             return [verified]
-    for index, row in enumerate(rows):
-        policy.pending_leg = list(row)
+    index = 0
+    encounter_start = 0
+    while index < len(rows):
+        from scripts.continuous_move import route_spans
+        _, relative_end, automatic_corner = route_spans(
+            rows[index:], heights[index:], kinds[index:],
+            origin=(current["x"], current["z"]), speed=motion_speed,
+            turn_rate=motion_turn_rate)[0]
+        end = index + relative_end
+        row, goal_y = rows[end], heights[end]
+        policy.pending_leg = list(rows[index])
+        guides = []
+        for number in range(index, end):
+            guide = {"name": rows[number][0], "x": rows[number][1], "z": rows[number][2]}
+            if heights[number] is not None:
+                guide["y"] = heights[number]
+            guides.append(guide)
+
+        def accept_passes(events, expected_guides):
+            nonlocal index
+            for offset, event in enumerate(events):
+                if offset >= len(expected_guides):
+                    raise WaypointError("Unexpected survival route passage")
+                guide = expected_guides[offset]
+                actual = _position(event.get("position"))
+                if (event.get("index") != offset or event.get("name") != guide["name"]
+                    or event.get("passageVerified") is not True
+                    or not _release_confirmed(event)
+                    or math.hypot(actual["x"] - guide["x"], actual["z"] - guide["z"]) > .5 + 1e-9
+                    or ("y" in guide and abs(actual["y"] - guide["y"]) > 1)):
+                    raise WaypointError("Unverified survival route passage")
+                emit(event)
+                index += 1
+                if index < len(rows):
+                    policy.route_checkpoint_advanced(index, list(rows[index]))
+
+        result = move(row, forward=True, expected_height=goal_y,
+                      guides=guides, on_pass=accept_passes,
+                      arrival_as_pass=automatic_corner)
+        if result is None:
+            policy.pending_leg = list(rows[index])
+            handle_encounter()
+            continue
+        if index != end + int(automatic_corner):
+            raise WaypointError("Survival span omitted a required passage")
+        result["survival"] = {"encounters": all_encounters[encounter_start:],
+                              "state": policy.snapshot(),
+                              "sharedElapsedSeconds": round(clock() - started, 3),
+                              "plannedRouteDistance": original_distance,
+                              "auxiliaryDistance": auxiliary_distance}
+        results.append(result)
+        if not automatic_corner:
+            index += 1
+            if index < len(rows):
+                policy.route_checkpoint_advanced(index, list(rows[index]))
         encounter_start = len(all_encounters)
-        while True:
-            result = move(row, forward=True)
-            if result is None:
-                handle_encounter()
-                continue  # The cursor and pending leg are deliberately unchanged.
-            result["survival"] = {"encounters": all_encounters[encounter_start:],
-                                  "state": policy.snapshot(),
-                                  "sharedElapsedSeconds": round(clock() - started, 3),
-                                  "plannedRouteDistance": original_distance,
-                                  "auxiliaryDistance": auxiliary_distance}
-            results.append(result)
-            if index + 1 < len(rows):
-                policy.route_checkpoint_advanced(index + 1, list(rows[index + 1]))
-            break
     return results

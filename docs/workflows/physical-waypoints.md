@@ -1,6 +1,6 @@
 # Joey D's Waypoints
 
-The desktop helper and console frontend share **Joey D's Waypoints v1.3.0**
+The desktop helper and console frontend share **Joey D's Waypoints v1.4.0**
 branding. The red panda in the header is also the window icon. Existing
 `Waypoints.cmd` and `rr2-waypoints.cmd` entry points stay compatible.
 
@@ -14,6 +14,29 @@ route list. The radar is a player-relative reference diagram; its dots and lines
 do not establish terrain visibility or clearance.
 
 ## Longer routes
+
+The [navigation upgrade plan](../planning/waypoints-navigation-upgrade.md)
+tracks shared survival spans, automatic control pauses at difficult corners,
+distance-based route progress and preserved raw recordings. A control pause
+retains the waypoint's pass semantics; it does not create a user stop/action.
+The planner uses available calibration candidates and validated prior-span speed;
+its response-delay allowance remains an estimate, not per-run latency measurement.
+
+New GUI recordings and teaching runs retain all accepted observations in a
+separate `artifacts/waypoint-recordings` JSON file. The route contains only its
+`recording.rawSource` reference, hash and sample count. Preview remains compact;
+old recordings do not acquire reconstructed raw data automatically.
+
+RiftWorld candidates can be inspected without game input:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/waypoint_navigation_candidate.py inspect C:\work\RiftWorld\artifacts\architecture\candidate-final.json
+```
+
+This validates candidate self-consistency, not authenticity or backing source
+files. References remain inert. Execution and automatic rejoin remain disabled
+in this review tool. Estimated navigation, sampled render casts, physical
+clearance and verified traversal remain separate evidence.
 
 Routes now support **1,000 world units of planned travel and 500 waypoints**.
 Recording accepts up to 30,000 fresh observations; saved routes, Library,

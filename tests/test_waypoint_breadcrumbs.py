@@ -176,8 +176,10 @@ class BreadcrumbTests(unittest.TestCase):
         source=segment["points"]
         document=trail.export_segment()
         self.assertGreater(segment["observedPathLength"],20)
-        self.assertEqual([row[1] for row in document["waypoints"]],[source[0]["x"],source[-1]["x"]])
-        self.assertEqual([row[2] for row in document["waypoints"]],[source[0]["z"],source[-1]["z"]])
+        self.assertEqual([row[1] for row in document["waypoints"]], [1, 6, 11, 16, 21, 26, 31])
+        actual_positions = {(point["x"], point["y"], point["z"]) for point in source}
+        for row, height in zip(document["waypoints"], document["heights"]):
+            self.assertIn((row[1], height, row[2]), actual_positions)
         parse_projection_route(document)
 
     def test_stationary_heartbeat_keeps_walk_and_real_source_times(self):

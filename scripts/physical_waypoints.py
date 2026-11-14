@@ -1776,7 +1776,7 @@ def launch_window(args):
                     record_stop.wait(.15)
                 if record_cancel.is_set():
                     raise WaypointError("Recording cancelled; no route saved")
-                document = recorder.finish()
+                document = recorder.finish(raw_output_dir=ROOT / "artifacts" / "waypoint-recordings")
                 if observed_context is not None:
                     document["routeContext"] = observed_context
                 events.put({"status": "recorded-pending", "document": document})
@@ -4631,7 +4631,14 @@ def launch_window(args):
                 observed = event.get("observedWaypoint")
                 if isinstance(observed, int):
                     playback_view["observedWaypoint"] = observed
-                    progress_text.set(f"Passing guide {observed} / {event.get('waypointCount', '?')} · live observation")
+                    text = f"Passing guide {observed} / {event.get('waypointCount', '?')} · live observation"
+                    distance = event.get("observedProgress")
+                    if (isinstance(distance, dict) and distance.get("trusted") is False
+                            and all(type(distance.get(key)) in (int, float)
+                                    and math.isfinite(distance[key]) and distance[key] >= 0
+                                    for key in ("distanceAlong", "remainingDistance"))):
+                        text += f" · {distance['distanceAlong']:.1f}u along / {distance['remainingDistance']:.1f}u remaining"
+                    progress_text.set(text)
                     redraw()
             if "nextWaypoint" in event and status != "route-progress":
                 count = event.get("totalWaypoints", event.get("waypointCount"))

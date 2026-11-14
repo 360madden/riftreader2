@@ -28,12 +28,20 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts import physical_rift
+from scripts.physical_waypoints import Stopped
 from scripts.waypoint_limits import MAX_ROUTE_DISTANCE, MAX_TRIP_SECONDS, MAX_WAYPOINTS
 
 _DOTNET_FILETIME_OFFSET = 504911232000000000
 _RELEASE_GRACE_SECONDS = 10.0
 _FORCED_EXIT_GRACE_SECONDS = 15.0
 _UNTRUSTED_OUTPUT_CHARACTERS = 16_384
+
+
+class ContinuousStopped(Stopped):
+    """STOP with the current release-validated movement result attached."""
+    def __init__(self, message, receipt):
+        super().__init__(message)
+        self.receipt = receipt
 
 
 class EncounterInterrupted(RuntimeError):
@@ -630,12 +638,20 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
                   "source": item.get("source", "pose"),
                   "desktopInputsDown": [], "passageVerified": True,
                   "inputReceiptPath": str(receipt_path)})
+        def stopped_with_receipt(message):
+            # This is the current identity-bound, release-validated native result,
+            # never a cached adapter receipt. Callers may validate its path.
+            return ContinuousStopped(message, result)
+
         if receipt["status"] == "arrived":
             if stop.is_set():
-                raise Stopped("Stopped after native arrival; native release verified")
-            settled = read_stationary(adapter, stop)
+                raise stopped_with_receipt("Stopped after native arrival; native release verified")
+            try:
+                settled = read_stationary(adapter, stop)
+            except Stopped as exc:
+                raise stopped_with_receipt(str(exc)) from exc
             if stop.is_set():
-                raise Stopped("Stopped during post-arrival verification; native release verified")
+                raise stopped_with_receipt("Stopped during post-arrival verification; native release verified")
             settled_distance = math.hypot(x - settled.position.x, z - settled.position.z)
             if settled_distance > .30 + 1e-9:
                 raise WaypointError("Fresh post-release pose no longer confirms destination arrival")
@@ -652,10 +668,10 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         emit(final_event)
         # Operator STOP always wins, including a race with an encounter receipt.
         if stop.is_set():
-            raise Stopped((receipt.get("reason") if receipt["status"] == "stopped" else None)
-                          or "operator STOP; native movement release verified")
+            raise stopped_with_receipt((receipt.get("reason") if receipt["status"] == "stopped" else None)
+                                       or "operator STOP; native movement release verified")
         if receipt["status"] == "stopped":
-            raise Stopped(receipt.get("reason") or "Stopped; native release verified")
+            raise stopped_with_receipt(receipt.get("reason") or "Stopped; native release verified")
         if (survival_guard and receipt["status"] == "halted"
                 and receipt.get("reason") in {"survival-hp-drop", "survival-combat"}):
             raise EncounterInterrupted(result)
@@ -665,9 +681,134 @@ def move_to(adapter, x, z, stop, emit=lambda event: None, *, popen=subprocess.Po
         return result
 
 
+def route_motion_seed(adapter, snapshot):
+    """Bound calibration candidates against the conservative bootstrap seed."""
+    speed, turn_rate = 6.25, 175.0
+    if callable(getattr(adapter, "calibrations", None)):
+        try:
+            calibration = adapter.calibrations(snapshot)["w"]
+            candidate = math.hypot(calibration.dx_per_ms, calibration.dz_per_ms) * 1000
+            if math.isfinite(candidate) and 0.1 <= candidate <= 30:
+                speed = max(speed, candidate)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            pass  # Optional candidate is unavailable; keep the bootstrap seed.
+    if callable(getattr(adapter, "turn_rates", None)):
+        try:
+            rates = adapter.turn_rates()
+            candidate = min(abs(rates["a"]), abs(rates["d"])) * 1000
+            if math.isfinite(candidate) and 1 <= candidate <= 1000:
+                turn_rate = min(turn_rate, candidate)
+        except (KeyError, TypeError, ValueError, AttributeError):
+            pass  # Native follower also estimates turns independently.
+    return speed, turn_rate
+
+
+def _receipt_speed_seed(receipt, speed):
+    """Raise the next span's speed seed from validated in-hold path samples."""
+    try:
+        intervals, down = [], None
+        for event in receipt.get("keySendEvents", []):
+            if event.get("key", "").upper() != "W":
+                continue
+            if event.get("phase") == "key-down":
+                down = datetime.fromisoformat(event["callCompletedAtUtc"].replace("Z", "+00:00"))
+            elif event.get("phase") == "key-up" and down is not None:
+                up = datetime.fromisoformat(event["callStartedAtUtc"].replace("Z", "+00:00"))
+                intervals.append((down, up))
+                down = None
+        samples = []
+        for item in receipt.get("path", []):
+            t = datetime.fromisoformat(item["observedAtUtc"].replace("Z", "+00:00"))
+            samples.append((t, float(item["x"]), float(item["z"])))
+        rates = []
+        for a, b in zip(samples, samples[1:]):
+            dt = (b[0] - a[0]).total_seconds()
+            if .05 <= dt <= 1 and any(start <= a[0] < b[0] <= end for start, end in intervals):
+                candidate = math.hypot(b[1] - a[1], b[2] - a[2]) / dt
+                if math.isfinite(candidate) and .1 <= candidate <= 30:
+                    rates.append(candidate)
+        if rates:
+            rates.sort()
+            speed = max(speed, rates[math.floor((len(rates) - 1) * .9)])
+    except (KeyError, TypeError, ValueError, OverflowError):
+        pass
+    return speed
+
+
+def route_spans(rows, heights, kinds, *, origin=None, speed=6.25, turn_rate=175.0):
+    """Plan inclusive guide spans; automatic boundaries retain pass semantics.
+
+    The default 6.25 units/s and 175 degrees/s are bootstrap estimates, not
+    measurements of the current run. Feasibility is geometric,
+    not a guarantee of physical passage or obstacle clearance.
+    """
+    count = len(rows)
+    if count == 0 or len(heights) != count or len(kinds) != count:
+        raise ValueError("Route span inputs must have matching nonempty lengths")
+    speed = _finite(speed, "route speed")
+    turn_rate = _finite(turn_rate, "route turn rate")
+    if not 0.1 <= speed <= 30 or not 1 <= turn_rate <= 1000:
+        raise ValueError("Route motion seed outside supported bounds")
+    radius = speed / math.radians(turn_rate)
+    runout = [0.0] * count
+    turns = [0.0] * count
+    automatic = set()
+    for i in range(0 if origin is not None else 1, count - 1):
+        if kinds[i] != "pass":
+            continue
+        previous = origin if i == 0 else (rows[i-1][1], rows[i-1][2])
+        ax, az = rows[i][1] - previous[0], rows[i][2] - previous[1]
+        bx, bz = rows[i+1][1] - rows[i][1], rows[i+1][2] - rows[i][2]
+        a, b = math.hypot(ax, az), math.hypot(bx, bz)
+        if a < 1e-9 or b < 1e-9:
+            # A duplicate cannot conceal a reversal. A guide at the fresh
+            # origin needs no incoming tangent; native admission handles it.
+            if not (i == 0 and a < 1e-9 and b >= 1e-9):
+                automatic.add(i)
+            continue
+        angle = math.acos(max(-1.0, min(1.0, (ax*bx + az*bz)/(a*b))))
+        if angle < 1e-6:
+            continue
+        turns[i] = math.copysign(angle, ax*bz - az*bx)
+        cosine = math.cos(angle / 2)
+        if cosine < 1e-6:
+            automatic.add(i)
+            continue
+        tangent = radius * math.tan(angle / 2)
+        # Allow for bounded input response and release travel, without assuming
+        # a walk toggle or a verified instantaneous turn rate.
+        needed = tangent + speed * .10 * math.sin(angle / 2)
+        if radius * (1 / cosine - 1) > .5 or needed > min(a, b):
+            automatic.add(i)
+        else:
+            runout[i] = needed
+    # Adjacent corners cannot both consume the same short segment.
+    for i in range(0, count - 2):
+        if runout[i] and runout[i+1]:
+            length = math.hypot(rows[i+1][1] - rows[i][1], rows[i+1][2] - rows[i][2])
+            if runout[i] + runout[i+1] > length:
+                # Samples along one smooth arc share steering rather than
+                # executing two independent fillets. Require consistent turn
+                # direction and sufficient radius for the shared segment.
+                shared_angle = (abs(turns[i]) + abs(turns[i+1])) / 2
+                smooth_arc = (turns[i] * turns[i+1] > 0 and shared_angle > 0
+                              and max(abs(turns[i]), abs(turns[i+1]))
+                                  <= 1.5 * min(abs(turns[i]), abs(turns[i+1]))
+                              and length / shared_angle >= radius * 1.15)
+                if not smooth_arc:
+                    automatic.add(i)
+                    automatic.add(i+1)
+    spans, start = [], 0
+    for i, kind in enumerate(kinds):
+        if kind == "stop" or i in automatic or i == count - 1:
+            spans.append((start, i, i in automatic and kind != "stop" and i != count - 1))
+            start = i + 1
+    return spans
+
+
 def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                          face_waypoints=True, entry_check=None, survival_guard=False,
-                         goal_heights=None, point_kinds=None):
+                         goal_heights=None, point_kinds=None, reservation=None, deadline=None):
     """Follow real route waypoints with one reservation and one shared deadline.
 
     Ordinary guides share one native forward run. Explicit stops and the final
@@ -698,7 +839,10 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
         kinds = list(point_kinds)
     kinds[-1] = "stop"
     started = time.monotonic()
-    with adapter.reserve() as lease:
+    if deadline is not None:
+        deadline = _finite(deadline, "route deadline")
+    deadline = min(started + MAX_TRIP_SECONDS, deadline) if deadline is not None else started + MAX_TRIP_SECONDS
+    with (adapter.reserve() if reservation is None else nullcontext(reservation)) as lease:
         initial = read_stationary(adapter, stop)
         lease.check()
         if entry_check is not None:
@@ -709,10 +853,14 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
         if planned > MAX_ROUTE_DISTANCE:
             raise WaypointError(f"Route exceeds {MAX_ROUTE_DISTANCE:g} world units")
         legs = []
+        speed, turn_rate = route_motion_seed(adapter, initial)
         batch_start = 0
-        for end, kind in enumerate(kinds):
-            if kind != "stop":
-                continue
+        origin = (initial.position.x, initial.position.z)
+        while batch_start < len(rows):
+            _, relative_end, automatic_corner = route_spans(
+                rows[batch_start:], heights[batch_start:], kinds[batch_start:],
+                origin=origin, speed=speed, turn_rate=turn_rate)[0]
+            end = batch_start + relative_end
             label, x, z = rows[end]
             goal_y = heights[end]
             guides = []
@@ -723,7 +871,7 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                 guides.append(guide)
             if stop.is_set():
                 raise Stopped("Stopped; no further input")
-            remaining = math.floor(MAX_TRIP_SECONDS - (time.monotonic() - started))
+            remaining = math.floor(deadline - time.monotonic())
             if remaining < 1:
                 raise WaypointError(f"Trip exceeded {MAX_TRIP_SECONDS} seconds")
 
@@ -747,7 +895,7 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                     emit(dict(event, batchIndex=index, index=batch_start + index,
                               waypointCount=len(rows), observedPointNumber=batch_start + index + 1,
                               source=event.get("source", "pose")))
-                else:
+                elif not (automatic_corner and event.get("status") == "arrived"):
                     emit(dict(event, name=label))
 
             leg = move_to(adapter, x, z, stop, named, reservation=lease,
@@ -759,7 +907,15 @@ def run_continuous_route(adapter, points, stop, emit=lambda event: None, *,
                                     if (type(leg.get("heldInputMilliseconds")) in (int, float)
                                         and math.isfinite(leg["heldInputMilliseconds"])) else None),
                        nativeReceipt=adapter.last_input_receipt)
+            if automatic_corner:
+                leg.update(status="passed", passageVerified=True)
+                emit(dict(leg, index=end, source="settled-corner"))
             legs.append(leg)
+            speed = _receipt_speed_seed(adapter.last_input_receipt or {}, speed)
+            origin = (float(leg["position"]["x"]), float(leg["position"]["z"])) if (
+                isinstance(leg.get("position"), dict) and
+                all(type(leg["position"].get(k)) in (int, float) and
+                    math.isfinite(leg["position"][k]) for k in ("x", "z"))) else (x, z)
             batch_start = end + 1
         return legs
 

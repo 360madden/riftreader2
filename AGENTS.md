@@ -37,6 +37,16 @@ Do not infer permission to operate the physical desktop from target availability
 
 ## Default: results-first development (Joey, 2026-11-08)
 
+**Planning and worker assignments (Joey, 2026-11-14):** Operate from a concrete,
+proportional plan. Use ultra reasoning for architecture planning. Select worker
+models and reasoning levels for the task; give bounded outcomes, dependencies,
+exclusive file ownership and relevant validation. Keep useful work queued,
+including targeted research when implementation is blocked or no independent
+implementation is ready. Research should resolve a current or upcoming decision;
+do not create speculative filler. Use best coding practices and defensive input,
+state and failure handling. Reassess assignments as dependencies and findings
+change. One coordinator retains all live input ownership.
+
 Build a functional RR2 capability, not a process around it. Use this short loop:
 
 1. Pick one working outcome; reuse existing tools and code.

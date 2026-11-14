@@ -366,6 +366,7 @@ class WaypointSurvivalRuntime:
         self._adapter = None
         self._latest_report = None
         self._latest_telemetry = None
+        self._latest_native = None
         self._backend = None
         self._player_id = None
         self._target_id = None
@@ -445,7 +446,7 @@ class WaypointSurvivalRuntime:
             }
             self._basis = deepcopy(basis)
             self._consumer = self._backend = self._latest_report = None
-            self._latest_telemetry = None
+            self._latest_telemetry = self._latest_native = None
             self._target_id = None
             self._health_observation = None
             self._active = False
@@ -762,9 +763,50 @@ class WaypointSurvivalRuntime:
                  "survival-preflight-required")
         report = self._consumer.snapshot()
         self._validate_report(report)
-        telemetry = self._normalize(report, self._native_context(self._adapter))
+        native = self._native_context(self._adapter)
+        telemetry = self._normalize(report, native)
         self._latest_report, self._latest_telemetry = report, telemetry
+        self._latest_native = deepcopy(native)
         return deepcopy(telemetry)
+
+    def selection_observation(self, adapter, stop):
+        """Return one fresh, read-only API/native selection observation."""
+        _require(hasattr(stop,"is_set") and not stop.is_set(),
+                 "survival-stopped-before-selection-observation")
+        with self._lock:
+            self._assert_identity(adapter)
+            _require(self._consumer is not None and self._backend is not None
+                     and self._adapter is adapter, "survival-preflight-required")
+            actions=getattr(self._backend,"actions",None)
+            release_fault=bool(any(getattr(adapter,name,False) for name in (
+                "_continuous_input_release_fault","_survival_cleanup_uncertain",
+                "_survival_input_release_fault")) or
+                getattr(actions,"input_release_fault",False))
+            _require(not self._active and self._owner is None and self._deliberate is None
+                     and getattr(self._backend,"mode",None) is None,
+                     "selection-observation-runtime-busy")
+            _require(not release_fault,"selection-observation-release-fault")
+            _require(not stop.is_set(),"survival-stopped-before-selection-observation")
+            telemetry=self._next_telemetry()
+            _require(not stop.is_set(),"survival-stopped-during-selection-observation")
+            report=deepcopy(self._latest_report)
+            native=deepcopy(self._latest_native)
+            selected=(native or {}).get("selectedTarget")
+            _require(isinstance(selected,dict),"native-survival-context-unavailable")
+            try: key=int(selected.get("key") or 0)
+            except (TypeError,ValueError,OverflowError): key=0
+            target_id=f"u{key:016X}" if 0 < key < 2**64 else None
+            health=selected.get("health") or {}
+            level=selected.get("level") or {}
+            native_selection={"available":target_id is not None,"targetId":target_id,
+                "healthCurrent":health.get("current") if target_id else None,
+                "healthMaximum":health.get("maximum") if target_id else None,
+                "dead":health.get("dead") if target_id else None,
+                "level":level.get("value") if target_id else None}
+            return {"runtimeIdentity":deepcopy(adapter.binding["runtimeIdentity"]),
+                    "telemetry":telemetry,"api":deepcopy(report["snapshot"]),
+                    "nativeSelection":native_selection,"releaseFault":False,
+                    "inputSent":False}
 
     def _fresh_action_report(self):
         """Acquire and publish a newer admitted frame immediately before an action."""
@@ -831,7 +873,9 @@ class WaypointSurvivalRuntime:
             self._consumer = consumer
             self._latest_report = current
             self._validate_report(current)
-            telemetry = self._normalize(current, self._native_context(adapter))
+            native = self._native_context(adapter)
+            telemetry = self._normalize(current, native)
+            self._latest_native = deepcopy(native)
             self._latest_telemetry = telemetry
             frame = current["snapshot"]
             controls = frame.get("controls") or {}
@@ -1012,7 +1056,8 @@ class WaypointSurvivalRuntime:
 
     def route_runner(self, adapter, points, stop, emit, face_waypoints=True,
                      entry_check=None, initial_retreat_trail=None,
-                     assess_before_travel=False, finish_after_retreat=False):
+                     assess_before_travel=False, finish_after_retreat=False,
+                     goal_heights=None, point_kinds=None):
         self.preflight(adapter, stop)
         with self._lock:
             self._active, self._state, self._owner = True, "travel", "movement"
@@ -1031,6 +1076,7 @@ class WaypointSurvivalRuntime:
                 wait_seconds=self._profile["timing"]["pollMilliseconds"] / 1000,
                 retreat_max_seconds=self._profile["retreat"]["maximumSeconds"],
                 minimum_trail_points=self._profile["retreat"]["minimumTrailPoints"],
+                goal_heights=goal_heights, point_kinds=point_kinds,
                 initial_retreat_trail=initial_retreat_trail,
                 assess_before_travel=assess_before_travel,
                 finish_after_retreat=finish_after_retreat)

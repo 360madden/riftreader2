@@ -25,7 +25,7 @@ class PlaybackTests(unittest.TestCase):
         def runner(adapter, points, stop, emit, **options):
             self.assertEqual(["pass"]*3, options["point_kinds"])
             options["entry_check"](Position(0, 10, 0))
-            emit({"status": "route-progress", "index": 1})
+            emit({"status": "route-progress", "index": 0, "name": "A", "position": {"x": 0, "y": 10, "z": 0}})
             self.assertEqual(0, json.loads(self.checkpoint.read_bytes())["nextIndex"])
             for index, (name, x, z) in enumerate(points):
                 emit({"status": "passed" if index < 2 else "arrived", "name": name,
@@ -35,7 +35,28 @@ class PlaybackTests(unittest.TestCase):
         _, cursor = play_route(BoundSim(), document, threading.Event(), events.append,
             runner=runner, checkpoint=self.checkpoint, pass_through=True)
         self.assertEqual(3, cursor.next_index)
-        self.assertEqual(2, next(e for e in events if e["status"]=="route-progress")["observedWaypoint"])
+        observed = next(e for e in events if e["status"]=="route-progress")
+        self.assertEqual(1, observed["observedWaypoint"])
+        self.assertEqual({"waypointIndex": 0, "distanceAlong": 0, "remainingDistance": 2,
+                          "trusted": False}, observed["observedProgress"])
+        self.assertNotIn("routeProgress", observed)
+
+    def test_provisional_guides_track_order_without_advancing_checkpoint(self):
+        document = {"waypoints": [["A", 0, 0], ["B", 3, 0], ["C", 6, 0], ["End", 9, 0]],
+                    "heights": [10, 10, 10, 10]}
+        events = []
+        def runner(adapter, points, stop, emit, **options):
+            options["entry_check"](Position(0, 10, 0))
+            for index, x in [(0, 0), (2, 6), (1, 3), (2, 6)]:
+                emit({"status": "route-progress", "index": index, "name": points[index][0],
+                      "position": {"x": x, "y": 10, "z": 0}, "trusted": False})
+            self.assertEqual(0, json.loads(self.checkpoint.read_bytes())["nextIndex"])
+            return []
+        _, cursor = play_route(BoundSim(), document, threading.Event(), events.append,
+                               runner=runner, checkpoint=self.checkpoint, pass_through=True)
+        self.assertEqual(0, cursor.next_index)
+        self.assertEqual([0, None, 3, 6], [event.get("observedProgress", {}).get("distanceAlong") for event in events])
+        self.assertTrue(all("routeProgress" not in event for event in events))
 
     def test_flow_stop_saves_verified_guides_but_unverified_passage_cannot_advance(self):
         document = {"waypoints": [["A", 0, 0], ["End", 2, 0]]}

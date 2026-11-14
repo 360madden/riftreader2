@@ -3,8 +3,11 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
 import math
+from pathlib import Path
 import time
+import uuid
 
 from scripts.waypoint_limits import MAX_RECORDING_SAMPLES, MAX_ROUTE_DISTANCE, MAX_WAYPOINTS
 
@@ -113,11 +116,44 @@ class RouteRecorder:
             self._failed = True
             raise
 
-    def finish(self):
+    def finish(self, *, raw_output_dir=None):
+        """Finish the derived path, optionally preserving its full observed input.
+
+        Explicit archival keeps previews and historical converters input/output
+        free. Real record/teach callers supply an artifacts directory. Only the
+        compact reference crosses their GUI/CLI event transport. Failed writes
+        leave the recorder retryable; no completed route is returned without its
+        requested raw archive.
+        """
         if self._failed or self._finished:
             raise RecordingError("Recording is incomplete or already finished")
+        document = self._document(complete=True)
+        if raw_output_dir is not None:
+            from scripts.waypoint_progress import write_json_atomic
+
+            directory = Path(raw_output_dir)
+            output = directory / ("recording-" + uuid.uuid4().hex + ".json")
+            raw = {"version": 1, "kind": "recorded-route-observations",
+                   "complete": True, "identity": deepcopy(self.identity),
+                   "sampleCount": len(self._points),
+                   "clock": "process-monotonic-seconds; historical, not live freshness",
+                   "samples": deepcopy(self._points)}
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                write_json_atomic(output, raw)
+                digest = hashlib.sha256(output.read_bytes()).hexdigest()
+            except OSError as exc:
+                # UUID destinations never replace an earlier recording.
+                try:
+                    output.unlink(missing_ok=True)
+                except OSError:
+                    pass  # Preserve the original publication failure.
+                raise RecordingError(f"Raw recording could not be saved: {exc}") from exc
+            document["recording"]["rawSource"] = {
+                "version": 1, "path": str(output.resolve()), "sha256": digest,
+                "sampleCount": len(self._points)}
         self._finished = True
-        return self._document(complete=True)
+        return document
 
     def preview(self):
         """Current retained route, using exactly the final simplification rules."""
@@ -175,7 +211,8 @@ class RouteRecorder:
         # Co-located mandatory boundaries do not need multiple identical waypoints.
         deduped = []
         for point in retained:
-            if deduped and _distance(deduped[-1], point) < 1e-6:
+            if (deduped and _distance(deduped[-1], point) < 1e-6
+                    and abs(deduped[-1]["y"] - point["y"]) < 1e-6):
                 continue
             deduped.append(point)
         if (complete and len(deduped) < 2) or len(deduped) > MAX_WAYPOINTS:

@@ -42,9 +42,9 @@ def frame(sequence, *, event=None):
                 "sessionId": NONCE, "playerId": PLAYER,
                 "targetId": TARGET, "epoch": 7, "sequence": sequence,
                 "frameTime": float(sequence),
-                "player": {"health": 100, "healthMax": 100, "power": 50,
+                "player": {"id": PLAYER, "health": 100, "healthMax": 100, "power": 50,
                            "level": 3, "coordX": 1.0, "coordY": 5.0, "coordZ": 2.0},
-                "target": {"health": 80, "healthMax": 100, "level": 3,
+                "target": {"id": TARGET, "health": 80, "healthMax": 100, "level": 3,
                            "dead": False, "relation": "hostile",
                            "coordX": 3.0, "coordZ": 4.0},
                 "catalog": {"entries": {ABILITY: "Spark"}},
@@ -77,6 +77,8 @@ class Adapter:
     target = {"machineName": host, "processId": pid,
               "processStartUtcTicks": 639302305454629980,
               "executableSha256": "A" * 64, "hwnd": 0x1234}
+    binding = {"runtimeIdentity":{"machine":host,"gameBuildSha256":"A"*64,
+                                  "unitKey":str(PLAYER_KEY)}}
 
     def reserve(self):
         raise AssertionError("withdrawn preflight must not reserve input")
@@ -253,6 +255,38 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("resourcePct", telemetry["player"])
         self.assertTrue(telemetry["player"]["inCombat"])
 
+    def test_public_selection_observation_reuses_one_validated_api_native_pair(self):
+        reads=[]
+        self.runtime.native_context_reader=lambda _adapter: reads.append("native") or native()
+        adapter=Adapter(); stop=threading.Event()
+        self.runtime.configure(self.profile,adapter); self.runtime.preflight(adapter,stop)
+        before=len(reads)
+        value=self.runtime.selection_observation(adapter,stop)
+        self.assertEqual(before+1,len(reads))
+        self.assertEqual(adapter.binding["runtimeIdentity"],value["runtimeIdentity"])
+        self.assertEqual((TARGET,80,100,False,3),(
+            value["nativeSelection"]["targetId"],value["nativeSelection"]["healthCurrent"],
+            value["nativeSelection"]["healthMaximum"],value["nativeSelection"]["dead"],
+            value["nativeSelection"]["level"]))
+        self.assertEqual(TARGET,value["api"]["targetId"])
+        self.assertEqual(TARGET,value["api"]["target"]["id"])
+        self.assertTrue(value["telemetry"]["fresh"])
+        self.assertFalse(value["releaseFault"])
+
+    def test_selection_observation_refuses_busy_fault_and_stop_during_read(self):
+        adapter=Adapter(); stop=threading.Event()
+        self.runtime.configure(self.profile,adapter); self.runtime.preflight(adapter,stop)
+        self.runtime._backend.mode="combat"
+        with self.assertRaisesRegex(WaypointSurvivalRuntimeError,"runtime-busy"):
+            self.runtime.selection_observation(adapter,stop)
+        self.runtime._backend.mode=None; adapter._survival_input_release_fault=True
+        with self.assertRaisesRegex(WaypointSurvivalRuntimeError,"release-fault"):
+            self.runtime.selection_observation(adapter,stop)
+        adapter._survival_input_release_fault=False
+        self.runtime.native_context_reader=lambda _adapter:(stop.set() or native())
+        with self.assertRaisesRegex(WaypointSurvivalRuntimeError,"stopped-during"):
+            self.runtime.selection_observation(adapter,stop)
+
     def test_stop_and_identity_or_basis_mismatch_refuse_before_backend(self):
         self.runtime.configure(self.profile, Adapter())
         stop = threading.Event(); stop.set()
@@ -358,12 +392,15 @@ class RuntimeTests(unittest.TestCase):
         with patch("scripts.waypoint_survival_runtime.run_survival_route",
                    return_value=expected) as run:
             result = self.runtime.route_runner(
-                Adapter(), [("one", 1, 2)], threading.Event(), events.append)
+                Adapter(), [("one", 1, 2)], threading.Event(), events.append,
+                goal_heights=[7.5], point_kinds=["stop"])
         self.assertIs(result, expected)
         options = run.call_args.kwargs
         self.assertEqual("absolute-power", options["profile"].resource_kind)
         self.assertEqual(20, options["profile"].recover_resource_absolute)
         self.assertIs(options["action_backend"], self.runtime._backend)
+        self.assertEqual([7.5], options["goal_heights"])
+        self.assertEqual(["stop"], options["point_kinds"])
         self.assertEqual("completed", events[-1]["survival"]["state"])
         status = self.runtime.status()
         self.assertFalse(status["active"])

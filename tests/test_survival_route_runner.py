@@ -30,9 +30,12 @@ class Backend:
         self.calls = []
 
     def telemetry(self):
-        if len(self.observations) > 1:
-            return self.observations.pop(0)
-        return self.observations[0]
+        value = (self.observations.pop(0) if len(self.observations) > 1
+                 else self.observations[0])
+        if hasattr(self, "position"):
+            value = dict(value, player=dict(value["player"], coordX=self.position[0],
+                                            coordY=5, coordZ=self.position[1]))
+        return value
 
     def cast(self, binding):
         self.calls.append(("cast", binding))
@@ -106,13 +109,115 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
 
         backend = Backend([observed()])
         results, events, entered = self.invoke(
-            [("one", 4, 0), ("two", 8, 0)], backend, mover)
+            [("one", 4, 0), ("two", 8, 0)], backend, mover,
+            goal_heights=[5, 5])
         self.assertEqual([(4.0, 0.0), (8.0, 0.0)], [(x, z) for x, z, _ in calls])
         self.assertTrue(all(call[2]["survival_guard"] is True for call in calls))
+        self.assertEqual([5.0, 5.0], [call[2]["goal_y"] for call in calls])
         self.assertEqual(1, len(entered))
         self.assertEqual(["one", "two"], [event["name"] for event in events
                                            if event["status"] == "arrived"])
         self.assertEqual(2, len(results))
+
+    def test_span_interruption_keeps_verified_prefix_and_retries_unfinished_guides(self):
+        calls, events = [], []
+        current = [0.0, 0.0]
+
+        def mover(adapter, x, z, stop, emit, **options):
+            guides = options.get("path_points", [])
+            calls.append((x, [g["name"] for g in guides]))
+            for number, guide in enumerate(guides[:1] if len(calls) == 1 else guides):
+                emit({"status": "passed", "index": number, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": []})
+            if len(calls) == 1:
+                current[:] = [1.5, 0]
+                receipt = {"status": "halted", "releaseSucceeded": True, "desktopInputsDown": [],
+                           "path": [{"x": 0, "y": 5, "z": 0},
+                                    {"x": 1.5, "y": 5, "z": 0}]}
+                raise Interrupted(receipt, {"x": 1.5, "y": 5, "z": 0})
+            result = arrived(x, z, *current)
+            current[:] = [x, z]
+            return result
+
+        backend = Backend([observed(present=True, combat=True), observed(), observed(on=True)])
+        backend.position = current
+        results, _, _ = self.invoke([("one", 1, 0), ("two", 2, 0), ("end", 3, 0)],
+                                    backend, mover, events=events,
+                                    point_kinds=["pass", "pass", "stop"])
+        self.assertEqual([(3.0, ["one", "two"]), (3.0, ["two"])], calls)
+        self.assertEqual([("passed", "one"), ("passed", "two"), ("arrived", "end")],
+                         [(e["status"], e["name"]) for e in events
+                          if e["status"] in ("passed", "arrived")])
+        self.assertEqual(1, len(results[-1]["survival"]["encounters"]))
+
+    def test_interrupted_span_does_not_publish_passage_without_retained_path(self):
+        events = []
+        def mover(adapter, x, z, stop, emit, **options):
+            guide = options["path_points"][0]
+            emit({"status": "passed", "index": 0, "name": guide["name"], "goal": guide,
+                  "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                  "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": []})
+            raise Interrupted({"releaseSucceeded": True, "desktopInputsDown": [], "path": []},
+                              {"x": 1, "y": 5, "z": 0})
+        with self.assertRaisesRegex(Exception, "known traversed corridor"):
+            self.invoke([("one", 1, 0), ("end", 2, 0)], Backend([observed()]), mover,
+                        events=events, point_kinds=["pass", "stop"])
+        self.assertFalse(any(e.get("status") == "passed" for e in events))
+
+    def test_displacement_to_another_trail_point_does_not_authorize_rejoin(self):
+        events, calls = [], []
+        backend = Backend([observed(present=True, combat=True), observed()])
+        # This is on the retained trail, but not at the interruption frontier.
+        backend.position = [0, 0]
+        def mover(adapter, x, z, stop, emit, **options):
+            calls.append((x, z))
+            receipt = {"releaseSucceeded": True, "desktopInputsDown": [],
+                       "path": [{"x": 0, "y": 5, "z": 0},
+                                {"x": 2, "y": 5, "z": 0},
+                                {"x": 4, "y": 5, "z": 0}]}
+            raise Interrupted(receipt, {"x": 4, "y": 5, "z": 0})
+        with self.assertRaisesRegex(Exception, "retained rejoin frontier"):
+            self.invoke([("end", 5, 0)], backend, mover, events=events)
+        self.assertEqual([(5.0, 0.0)], calls)
+        self.assertFalse(any(e.get("status") in ("arrived", "passed") for e in events))
+
+    def test_retained_corridor_preserves_collinear_reversals_in_both_directions(self):
+        points = [(0, 0, z) for z in (0, 1, 2, 1, 2, 3)]
+        for trail in (points, list(reversed(points))):
+            retained = _coalesce_retained_corridor(trail)
+            self.assertEqual([trail[0], trail[2], trail[3], trail[-1]], retained)
+
+    def test_stop_commits_only_verified_prefix_and_never_restarts(self):
+        from scripts.physical_waypoints import Stopped
+        from scripts.continuous_move import ContinuousStopped
+
+        for valid_path in (True, False):
+            with self.subTest(valid_path=valid_path):
+                events, calls, stop = [], [], threading.Event()
+                def mover(adapter, x, z, shared_stop, emit, **options):
+                    calls.append((x, z))
+                    for index, guide in enumerate(options["path_points"]):
+                        emit({"status": "passed", "index": index, "name": guide["name"],
+                              "goal": guide, "position": {"x": guide["x"], "y": 5, "z": guide["z"]},
+                              "passageVerified": True, "releaseSucceeded": True,
+                              "desktopInputsDown": []})
+                    shared_stop.set()
+                    raise ContinuousStopped("operator STOP", {"status": "stopped", "releaseSucceeded": True,
+                        "desktopInputsDown": [], "position": {"x": 2.5, "y": 5, "z": 0},
+                        "path": ([{"x": 0, "y": 5, "z": 0},
+                                  {"x": 1.5, "y": 5, "z": 0},
+                                  {"x": 2.5, "y": 5, "z": 0}] if valid_path else [])})
+                backend = Backend([observed()])
+                with self.assertRaises(Stopped):
+                    self.invoke([("one", 1, 0), ("two", 2, 0), ("end", 3, 0)],
+                                backend, mover, events=events, stop=stop,
+                                point_kinds=["pass", "pass", "stop"])
+                self.assertTrue(stop.is_set())
+                self.assertEqual([(3.0, 0.0)], calls)
+                self.assertEqual(["one", "two"] if valid_path else [],
+                                 [e["name"] for e in events if e.get("status") == "passed"])
+                self.assertEqual([], backend.calls)
 
     def test_arrived_without_confirmed_key_release_must_not_complete_route(self):
         def mover(adapter, x, z, stop, emit, **options):
@@ -180,6 +285,7 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
             observed(present=False, combat=False),
             observed(present=False, combat=False, on=True),
         ])
+        backend.position = [5, 0]
         results, events, _ = self.invoke([("pending", 10, 0)], backend, mover)
         self.assertEqual([(10.0, 0.0), (10.0, 0.0)], calls)
         self.assertEqual(1, len([event for event in events if event["status"] == "arrived"]))
@@ -323,7 +429,8 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                             for x in range(11)]}
 
         def mover(adapter, x, z, stop, emit, **options):
-            calls.append((x, z, options["survival_guard"], options["max_seconds"]))
+            calls.append((x, z, options["survival_guard"], options["max_seconds"],
+                          options["goal_y"]))
             if len(calls) == 1:
                 current[:] = [5.0, 0.0]
                 raise Interrupted(receipt, {"x": 5, "y": 5, "z": 0})
@@ -340,12 +447,13 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
         ])
         self.invoke([("pending", 10, 0)], backend, mover,
                     retreat_max_seconds=12, minimum_trail_points=4)
-        guards = [guard for _x, _z, guard, _limit in calls[1:-1]]
+        guards = [call[2] for call in calls[1:-1]]
         self.assertIn("retreat", guards)
         self.assertIs(calls[-1][2], True)
-        retreat_limits = [limit for _x, _z, guard, limit in calls if guard == "retreat"]
+        retreat_limits = [call[3] for call in calls if call[2] == "retreat"]
         self.assertEqual(1, len(retreat_limits))
         self.assertTrue(all(limit <= 12 for limit in retreat_limits))
+        self.assertTrue(all(call[4] == 5.0 for call in calls[1:-1]))
 
     def test_configured_minimum_retreat_trail_is_enforced(self):
         receipt = {"releaseSucceeded": True, "desktopInputsDown": [],
@@ -482,6 +590,10 @@ class SurvivalRouteRunnerTests(unittest.TestCase):
                 current.update(x=2.0, z=5.0)
                 raise Interrupted(receipt, dict(current))
             start_x, start_z = current["x"], current["z"]
+            for index, guide in enumerate(options.get("path_points", [])):
+                emit({"status": "passed", "index": index, "name": guide["name"],
+                      "goal": guide, "position": {"x": guide["x"], "y": guide.get("y", 5), "z": guide["z"]},
+                      "passageVerified": True, "releaseSucceeded": True, "desktopInputsDown": []})
             current.update(x=x, z=z)
             result = arrived(x, z, start_x, start_z)
             emit(result)

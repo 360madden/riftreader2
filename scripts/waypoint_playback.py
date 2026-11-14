@@ -1,5 +1,6 @@
 """Record and explicitly replay routes through the existing bounded runner."""
 from dataclasses import asdict
+from pathlib import Path
 import math
 
 from scripts.waypoint_recording import RouteRecorder
@@ -58,7 +59,7 @@ def teach_route(adapter, points, stop, emit, *, runner, face_waypoints=True):
         emit(dict(event, recordingProgress=recorder.progress))
 
     legs = runner(wrapped, points, stop, progress, face_waypoints=face_waypoints)
-    return legs, recorder.finish()
+    return legs, recorder.finish(raw_output_dir=Path(__file__).resolve().parents[1] / "artifacts" / "waypoint-recordings")
 
 
 def validate_playback_document(document, identity):
@@ -116,6 +117,7 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
 
     approach = None
     initial_index = cursor.next_index
+    observed_next = initial_index
 
     def enter(position):
         nonlocal approach
@@ -132,12 +134,42 @@ def play_route(adapter, document, stop, emit, *, runner, checkpoint,
         cursor.save(checkpoint)
 
     def progress(event):
-        nonlocal approach
+        nonlocal approach, observed_next
+        # This is observational only: unavailable/off-leg poses do not alter
+        # the cursor, admission, or the runner's release checks.
+        event = dict(event)
+        event.pop("routeProgress", None)
+        event.pop("observedProgress", None)
+        if event["status"] != "route-progress" and cursor.start is not None and isinstance(event.get("position"), dict):
+            try:
+                event["routeProgress"] = cursor.locate(event["position"])
+            except ProgressError:
+                pass
         if event["status"] == "route-progress":
             index = event.get("index")
             if type(index) is not int or not 0 <= index < len(cursor.ordered_points)-initial_index:
                 raise ProgressError("Observed route progress index is invalid")
-            emit(dict(event, observedWaypoint=initial_index+index+1,
+            ordered_index = initial_index + index
+            observed_next = max(observed_next, cursor.next_index)
+            # Only contiguous native guide reports are useful for display; they
+            # are provisional until the runner verifies release and passage.
+            view = cursor.route_view
+            point = view[ordered_index]
+            try:
+                pos = _position(event.get("position"))
+                valid = (ordered_index == observed_next and not point["effectiveStop"]
+                         and event.get("name") == point["name"]
+                         and math.hypot(pos["x"] - point["x"], pos["z"] - point["z"]) <= .50 + 1e-9
+                         and (point["y"] is None or ("y" in pos and abs(pos["y"] - point["y"]) <= 1.0)))
+            except ProgressError:
+                valid = False
+            if valid:
+                event["observedProgress"] = {"waypointIndex": ordered_index,
+                    "distanceAlong": point["distanceAlong"],
+                    "remainingDistance": view[-1]["distanceAlong"] - point["distanceAlong"],
+                    "trusted": False}
+                observed_next += 1
+            emit(dict(event, observedWaypoint=ordered_index+1,
                       nextWaypoint=cursor.next_index, waypointCount=len(cursor.ordered_points)))
             return
         passed = event["status"] == "passed"

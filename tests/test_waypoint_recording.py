@@ -1,3 +1,7 @@
+import hashlib
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace as NS
 from unittest.mock import patch
@@ -156,6 +160,77 @@ class RecorderTests(unittest.TestCase):
         self.assertEqual(points[0][1:], [1.123457, 2.123457])
         self.assertEqual(points[1][1:], [2.123457, 2.987654])
         self.assertEqual(points, [[name, float(f"{x:.6f}"), float(f"{z:.6f}")] for name, x, z in points])
+
+    def test_explicit_raw_archive_preserves_order_boundary_and_exact_poses(self):
+        samples = [pose(0, 0, 97, y=10), pose(1, .01, 98, y=10.1),
+                   pose(2, 0, 99, y=10.2), pose(2, 1, 100, y=10.3)]
+        for point in samples:
+            self.rec.observe(point)
+        self.rec.observe(samples[-1], boundary=True)
+        preview = self.rec.preview()
+        self.assertNotIn("rawSource", preview["recording"])
+        with tempfile.TemporaryDirectory() as tmp:
+            route = self.rec.finish(raw_output_dir=Path(tmp) / "raw")
+            reference = route["recording"]["rawSource"]
+            archive = Path(reference["path"])
+            raw = json.loads(archive.read_text(encoding="utf-8"))
+            self.assertEqual(reference["sha256"], hashlib.sha256(archive.read_bytes()).hexdigest())
+            self.assertEqual(reference["sampleCount"], 4)
+            self.assertEqual(raw["identity"], self.rec.identity)
+            self.assertEqual(raw["samples"], self.rec._points)
+            self.assertEqual([p["acquired"] for p in raw["samples"]], [97, 98, 99, 100])
+            self.assertTrue(raw["samples"][-1]["boundary"])
+            self.assertEqual(route["waypoints"], preview["waypoints"])
+            self.assertNotIn("samples", route["recording"])
+            with self.assertRaises(RecordingError):
+                self.rec.finish(raw_output_dir=tmp)
+            self.assertEqual(len(list(archive.parent.glob("*.json"))), 1)
+
+    def test_finish_without_archive_does_not_write(self):
+        self.rec.observe(pose(0, 0, 99))
+        self.rec.observe(pose(1, 0, 100))
+        with patch("scripts.waypoint_progress.write_json_atomic") as writer:
+            route = self.rec.finish()
+        writer.assert_not_called()
+        self.assertNotIn("rawSource", route["recording"])
+
+    def test_archive_failure_can_be_retried_and_never_returns_complete_route(self):
+        self.rec.observe(pose(0, 0, 99))
+        self.rec.observe(pose(1, 0, 100))
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("scripts.waypoint_progress.write_json_atomic", side_effect=OSError("disk unavailable")):
+                with self.assertRaisesRegex(RecordingError, "Raw recording could not be saved"):
+                    self.rec.finish(raw_output_dir=tmp)
+            self.assertEqual(list(Path(tmp).glob("*.json")), [])
+            route = self.rec.finish(raw_output_dir=tmp)
+            self.assertTrue(Path(route["recording"]["rawSource"]["path"]).is_file())
+
+    def test_invalid_recording_does_not_publish_raw_archive(self):
+        self.rec.observe(pose(0, 0, 99))
+        self.rec.observe(pose(0, 0, 100))
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(RecordingError):
+                self.rec.finish(raw_output_dir=tmp)
+            self.assertEqual(list(Path(tmp).iterdir()), [])
+
+    def test_vertical_boundary_at_same_planar_position_is_preserved(self):
+        for i, (x, y) in enumerate(((0, 0), (1, 0), (1, 1), (2, 1))):
+            self.rec.observe(pose(x, 0, 97+i, y=y), boundary=i in (1, 2))
+        route = self.rec.finish()
+        self.assertEqual([point[1] for point in route["waypoints"]], [0, 1, 1, 2])
+        self.assertEqual(route["heights"], [0, 0, 1, 1])
+
+    def test_raw_reference_does_not_invalidate_existing_checkpoint_hash(self):
+        from scripts.waypoint_progress import RouteProgress
+        self.rec.observe(pose(0, 0, 99))
+        self.rec.observe(pose(1, 0, 100))
+        preview = self.rec.preview()
+        identity = dict(machine="AMD-DESKTOP", gameBuildSha256="abc", unitKey="123")
+        with tempfile.TemporaryDirectory() as tmp:
+            route = self.rec.finish(raw_output_dir=tmp)
+            for direction in ("forward", "reverse"):
+                self.assertEqual(RouteProgress(preview, direction, identity).route_hash,
+                                 RouteProgress(route, direction, identity).route_hash)
 
     def test_collinear_reversal_preserves_turn(self):
         for i, x in enumerate((0, 1, 2, 1, 3)):

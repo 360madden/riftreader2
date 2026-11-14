@@ -15,6 +15,43 @@ ROUTE = {"waypoints": [["A", 0, 0], ["B", 3, 0], ["C", 3, 4]]}
 
 
 class ProgressTests(unittest.TestCase):
+    def test_locate_is_bounded_to_unfinished_leg_even_at_crossings(self):
+        route = {"waypoints": [["A", 0, 0], ["B", 4, 0], ["C", 4, .4],
+                               ["D", 0, .4], ["E", 0, 0]],
+                 "pointKinds": ["pass", "stop", "pass", "pass", "pass"]}
+        p = RouteProgress(route, identity=IDENTITY)
+        p.begin({"x": 0, "z": 0})
+        p.confirm_arrival(0, p.ordered_points[0])
+        result = p.locate({"x": 2, "z": .4})
+        self.assertEqual((1, 2.0, .4), (result["legIndex"], result["distanceAlong"], result["crossTrack"]))
+        self.assertEqual("B", result["nextRequiredStop"]["name"])
+        self.assertEqual(1, p.next_index)
+        with self.assertRaisesRegex(ProgressError, "unfinished leg"):
+            p.locate({"x": 4, "z": 1})
+        # Returned records are defensive copies, not cursor state.
+        result["nextRequiredStop"]["name"] = "changed"
+        self.assertEqual("B", p.locate({"x": 2, "z": 0})["nextRequiredStop"]["name"])
+
+    def test_locate_interpolates_height_and_handles_reverse_and_colocation(self):
+        route = {"waypoints": [["A", 0, 0], ["B", 4, 0], ["C", 4, 0]],
+                 "heights": [0, 4, 4], "pointKinds": ["pass", "stop", "pass"]}
+        p = RouteProgress(route, "reverse", IDENTITY)
+        view = p.route_view
+        self.assertEqual([2, 1, 0], [point["originalIndex"] for point in view])
+        self.assertEqual([0, 0, 4], [point["distanceAlong"] for point in view])
+        self.assertTrue(view[-1]["effectiveStop"])
+        p.begin({"x": 4, "z": 0, "y": 4})
+        p.confirm_arrival(0, p.ordered_points[0])
+        self.assertEqual("B", p.locate({"x": 4, "z": 0, "y": 4})["nextRequiredStop"]["name"])
+        p.confirm_arrival(1, p.ordered_points[1])
+        located = p.locate({"x": 2, "z": .2, "y": 2})
+        self.assertEqual((2, 2, 2), (located["legIndex"], located["distanceAlong"], located["remainingDistance"]))
+        with self.assertRaisesRegex(ProgressError, "different height"):
+            p.locate({"x": 2, "z": 0, "y": 4})
+        with self.assertRaisesRegex(ProgressError, "height is required"):
+            p.begin({"x": 2, "z": 0})
+        self.assertEqual(2, p.next_index)
+
     def test_passage_keeps_order_corridor_and_stop_semantics(self):
         route = {**ROUTE, "pointKinds": ["pass", "stop", "pass"]}
         cursor = RouteProgress(route, identity=IDENTITY)

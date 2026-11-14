@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import threading
 import time
 import unittest
@@ -202,11 +203,16 @@ class ContinuousMoveTests(unittest.TestCase):
         def popen(command, **kwargs):
             child = StoppingProcess(command, final); created.append(child); return child
         with patch("scripts.physical_waypoints.read_stationary", return_value=self.start):
-            with self.assertRaisesRegex(Exception, "operator STOP"):
+            with self.assertRaisesRegex(move.ContinuousStopped, "operator STOP") as caught:
                 move.move_to(self.adapter, 100, 0, stopped, popen=popen,
                              native_exe=self.root / "native.exe", owner_identity=(55, 66),
                              stop_path=stop_path)
         self.assertTrue(stop_path.exists())
+        from scripts.physical_waypoints import Stopped
+        self.assertIsInstance(caught.exception, Stopped)
+        self.assertEqual("stopped", caught.exception.receipt["status"])
+        self.assertTrue(caught.exception.receipt["releaseSucceeded"])
+        self.assertEqual(final["path"], caught.exception.receipt["path"])
         self.assertEqual(self.adapter.last_input_receipt["status"], "stopped")
 
     def test_stop_racing_post_arrival_verification_never_emits_arrived(self):
@@ -591,6 +597,78 @@ class ContinuousMoveTests(unittest.TestCase):
                          [guide["y"] for guide in calls[0][5]] + [calls[0][4]])
         self.assertEqual((75, .1), (legs[-1]["totalHoldMs"], legs[-1]["elapsedSeconds"]))
         entry.assert_called_once_with(self.start.position)
+
+    def test_corner_planner_splits_sharp_bend_but_not_gentle_or_collinear(self):
+        sharp = [("A", 0, 0), ("B", 10, 0), ("C", 10, 10)]
+        gentle = [("A", 0, 0), ("B", 10, 0), ("C", 19.063, 4.226)]
+        dense = [(str(i), i * .1, 0) for i in range(40)]
+        for rows, expected in ((sharp, [(0, 1, True), (2, 2, False)]),
+                               (gentle, [(0, 2, False)]),
+                               (dense, [(0, 39, False)])):
+            with self.subTest(rows=rows):
+                self.assertEqual(expected, move.route_spans(rows, [None]*len(rows),
+                                                            ["pass"]*len(rows)))
+
+    def test_sampled_feasible_curve_remains_continuous(self):
+        rows = [(str(i), 4 * math.sin(i * .16), 4 * (1-math.cos(i * .16)))
+                for i in range(12)]
+        self.assertEqual([(0, 11, False)],
+                         move.route_spans(rows, [None]*12, ["pass"]*12))
+
+    def test_motion_seed_uses_slower_turn_and_faster_calibrated_speed(self):
+        adapter = SimpleNamespace(
+            calibrations=lambda _: {"w": SimpleNamespace(dx_per_ms=.007, dz_per_ms=0)},
+            turn_rates=lambda: {"a": .15, "d": -.18})
+        self.assertEqual((7, 150), move.route_motion_seed(adapter, object()))
+
+    def test_sharp_corner_releases_then_continues_with_same_lease(self):
+        events, calls = [], []
+        def mover(adapter, x, z, stop, emit, **kwargs):
+            calls.append((x, z, kwargs["reservation"], kwargs["path_points"]))
+            for index, guide in enumerate(kwargs["path_points"]):
+                emit({"status": "passed", "name": guide["name"], "index": index})
+            adapter.last_input_receipt = {"status": "arrived"}
+            emit({"status": "arrived", "name": "CLI destination"})
+            return {"status": "arrived", "position": {"x": x, "y": 10, "z": z},
+                    "releaseSucceeded": True, "desktopInputsDown": []}
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             patch.object(move, "move_to", side_effect=mover):
+            legs = move.run_continuous_route(self.adapter,
+                [["A", 0, 0], ["B", 10, 0], ["C", 10, 10]],
+                threading.Event(), events.append)
+        self.assertEqual([(10, 0), (10, 10)], [(x, z) for x, z, _, _ in calls])
+        self.assertIs(calls[0][2], calls[1][2])
+        self.assertEqual(1, self.adapter.reservations)
+        self.assertEqual(["passed", "passed", "arrived"], [e["status"] for e in events])
+        self.assertEqual(["A", "B", "C"], [leg["name"] for leg in legs])
+
+    def test_auto_corner_preserves_pass_and_stop_between_spans(self):
+        events, calls = [], []
+        stop = threading.Event()
+        lease = SimpleNamespace(check=lambda: None)
+        def mover(adapter, x, z, stop_flag, emit, **kwargs):
+            calls.append((x, z, kwargs))
+            adapter.last_input_receipt = {"status": "arrived"}
+            emit({"status": "arrived", "name": "CLI destination"})
+            return {"status": "arrived", "position": {"x": x, "y": 10, "z": z},
+                    "releaseSucceeded": True, "desktopInputsDown": []}
+        def observed(event):
+            events.append(event)
+            if event.get("source") == "settled-corner":
+                stop.set()
+        with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \
+             patch.object(move, "move_to", side_effect=mover):
+            with self.assertRaisesRegex(Exception, "Stopped"):
+                move.run_continuous_route(self.adapter,
+                    [["A", 0, 0], ["B", 10, 0], ["C", 10, 10]], stop, observed,
+                    reservation=lease, deadline=time.monotonic()+20)
+        self.assertEqual(1, len(calls))
+        self.assertIs(lease, calls[0][2]["reservation"])
+        self.assertLessEqual(calls[0][2]["max_seconds"], 20)
+        self.assertEqual(0, self.adapter.reservations)
+        self.assertEqual(["passed"], [e["status"] for e in events])
+        self.assertEqual("B", events[0]["name"])
+        self.assertTrue(events[0]["releaseSucceeded"])
 
     def test_continuous_route_rejects_total_distance_before_native_launch(self):
         with patch("scripts.physical_waypoints.read_stationary", return_value=self.start), \

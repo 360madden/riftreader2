@@ -136,6 +136,59 @@ class RouteProgress:
     def ordered_points(self):
         return [tuple(self.points[i]) for i in self._ordered()]
 
+    @property
+    def route_view(self):
+        """Ordered, direction-specific route geometry; distances are planar."""
+        view = []
+        distance = 0.0
+        for ordered_index, original_index in enumerate(self._ordered()):
+            name, x, z = self.points[original_index]
+            if view:
+                distance += math.hypot(x - view[-1]["x"], z - view[-1]["z"])
+            kind = self.kinds[original_index]
+            view.append({"originalIndex": original_index, "name": name, "x": x, "z": z,
+                         "y": self.heights[original_index] if self.heights is not None else None,
+                         "kind": kind, "distanceAlong": distance,
+                         "effectiveStop": kind == "stop" or ordered_index == len(self.points) - 1})
+        return view
+
+    def locate(self, position):
+        """Project onto the current unfinished leg without advancing the cursor.
+
+        A match on another leg, even at a crossing, never changes this leg. A
+        projection outside the planar corridor or known height is rejected.
+        """
+        current = _position(position)
+        if self.start is None:
+            raise ProgressError("begin before locating progress")
+        if self.next_index >= len(self.points):
+            raise ProgressError("route already complete")
+        goal = self._point(self.next_index)
+        start = self.start if self.next_index == 0 else self._point(self.next_index - 1)
+        dx, dz = goal["x"] - start["x"], goal["z"] - start["z"]
+        length2 = dx * dx + dz * dz
+        t = 0.0 if not length2 else max(0.0, min(1.0,
+            ((current["x"] - start["x"]) * dx + (current["z"] - start["z"]) * dz) / length2))
+        projection = {"x": start["x"] + t * dx, "z": start["z"] + t * dz}
+        cross_track = _distance(current, projection)
+        if cross_track > .50 + 1e-9:
+            raise ProgressError("position is too far from the unfinished leg")
+        if "y" in goal:
+            if "y" not in current:
+                raise ProgressError("height is required for this route")
+            expected_y = (start["y"] + t * (goal["y"] - start["y"])) if "y" in start else goal["y"]
+            if abs(current["y"] - expected_y) > 1.0:
+                raise ProgressError("position is on a different height")
+        view = self.route_view
+        # The initial approach from the saved start to waypoint zero is not
+        # part of the route's cumulative geometry.
+        along = (view[self.next_index - 1]["distanceAlong"] + t * math.sqrt(length2)
+                 if self.next_index else 0.0)
+        next_stop = next(point for point in view[self.next_index:] if point["effectiveStop"])
+        return {"legIndex": self.next_index, "distanceAlong": along,
+                "remainingDistance": view[-1]["distanceAlong"] - along,
+                "crossTrack": cross_track, "nextRequiredStop": next_stop}
+
     def begin(self, current_position, *, pass_through=False):
         """Admit a fresh stationary pose; no movement starts here."""
         current = _position(current_position)
@@ -149,24 +202,12 @@ class RouteProgress:
                 raise ProgressError("start is too far from the route endpoint")
             start = current
         else:
-            start = self.start if self.next_index == 0 else self._point(self.next_index - 1)
-            dx, dz = goal["x"] - start["x"], goal["z"] - start["z"]
-            length2 = dx * dx + dz * dz
-            t = 0.0 if not length2 else ((current["x"] - start["x"]) * dx + (current["z"] - start["z"]) * dz) / length2
-            projection = {"x": start["x"] + max(0.0, min(1.0, t)) * dx,
-                          "z": start["z"] + max(0.0, min(1.0, t)) * dz}
-            if _distance(current, projection) > 0.50 + 1e-9:
-                raise ProgressError("position is too far from the unfinished leg")
-        if "y" in goal:
+            self.locate(current)
+            start = None  # Height and corridor admission were checked by locate.
+        if self.start is None and "y" in goal:
             if "y" not in current:
                 raise ProgressError("height is required for this route")
-            expected_y = goal["y"]
-            if "y" in start and self.start is not None:
-                dx, dz = goal["x"] - start["x"], goal["z"] - start["z"]
-                length2 = dx * dx + dz * dz
-                t = 0.0 if not length2 else max(0.0, min(1.0, ((current["x"] - start["x"]) * dx + (current["z"] - start["z"]) * dz) / length2))
-                expected_y = start["y"] + t * (goal["y"] - start["y"])
-            if abs(current["y"] - expected_y) > 1.0:
+            if abs(current["y"] - goal["y"]) > 1.0:
                 raise ProgressError("position is on a different height")
         remaining = self.remaining_points()
         distance = _distance(current, goal)

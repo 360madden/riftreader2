@@ -115,6 +115,15 @@ their earlier per-point movement; propagating flow into survival is remaining
 integration work, not covered by prior combat acceptance. Offline checks do not
 establish physical camera or traversal acceptance for this new controller.
 
+The [active navigation upgrade plan](waypoints-navigation-upgrade.md) now orders
+distance-based progress and raw recording retention, calibrated automatic corner
+pauses, shared survival/retreat spans, and review-only reuse of existing Recast
+candidates. Its offline implementation does not close live acceptance, measured
+per-run response/coast, or geometry-derived corridor clearance. Qualify those
+specific gaps without stalling useful recorded-route travel or the bounded
+combat outcome below. Architecture planning uses ultra reasoning; implementation
+and research workers have bounded ownership and dependency-ready assignments.
+
 The subsequently reported camera-shake defect was brought forward under that
 failure-driven rule. Sparse travel steering and settled initial alignment now
 have a complete live 72.802-unit courtyard loop with eight legs/corners, zero
