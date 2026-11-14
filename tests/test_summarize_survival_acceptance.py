@@ -121,6 +121,57 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         self.assertFalse(value["acceptance"]["incomingDamage"])
         self.assertFalse(value["telemetry"]["selfHealthDrops"][0]["attributionEligible"])
 
+    def test_native_to_normalized_health_fallback_cannot_claim_damage(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        incoming = {"sequence": 7, "clock": 10.4, "kind": "damage", "damage": 12,
+                    "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        before = self.sample(10, 100, 100)
+        before["native"] = {"player": {"health": {"current": 18208, "maximum": 18208}}}
+        after = self.sample(11, 90, 100, incoming=incoming)
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        self.assertFalse(result["acceptance"]["incomingDamage"])
+        self.assertEqual([], result["telemetry"]["selfHealthDrops"])
+        self.assertEqual("unavailable", result["telemetry"]["incomingCorrelation"]["status"])
+
+    def test_same_native_health_basis_preserves_exact_damage_correlation(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        incoming = {"sequence": 7, "clock": 10.4, "kind": "damage", "damage": 12,
+                    "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        before = self.sample(10, 100, 100)
+        before["native"] = {"player": {"health": {"current": 18208, "maximum": 18208}}}
+        after = self.sample(11, 90, 100, incoming=incoming)
+        after["native"] = {"player": {"health": {"current": 18196, "maximum": 18208}}}
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        self.assertTrue(result["acceptance"]["incomingDamage"])
+        self.assertEqual(12, result["telemetry"]["selfHealthDrops"][0]["amount"])
+
+    def test_native_to_snapshot_target_fallback_cannot_claim_outgoing_damage(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        outgoing = {"sequence": 7, "clock": 10.4, "kind": "damage", "damage": 20,
+                    "caster": player_id, "target": target_id,
+                    "selectedTargetId": target_id}
+        before = self.sample(10, 100, 100)
+        before["native"] = {"selectedTarget": {"health": {"current": 577, "maximum": 577}}}
+        after = self.sample(11, 100, 80, outgoing=outgoing)
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        self.assertFalse(result["acceptance"]["outgoingDamage"])
+        self.assertEqual([], result["telemetry"]["targetHealthDrops"])
+
+    def test_maximum_health_change_cannot_claim_damage(self):
+        player_id, target_id = "u0000000000000001", "u0000000000000002"
+        incoming = {"sequence": 7, "clock": 10.4, "kind": "damage", "damage": 12,
+                    "caster": target_id, "target": player_id,
+                    "selectedTargetId": target_id}
+        before = self.sample(10, 100, 100)
+        before["native"] = {"player": {"health": {"current": 100, "maximum": 100}}}
+        after = self.sample(11, 90, 100, incoming=incoming)
+        after["native"] = {"player": {"health": {"current": 90, "maximum": 120}}}
+        result = summary.summarize([{"status": "encounter-interrupted"}], [before, after])
+        self.assertFalse(result["acceptance"]["incomingDamage"])
+        self.assertEqual([], result["telemetry"]["selfHealthDrops"])
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

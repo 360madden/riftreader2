@@ -78,13 +78,22 @@ def _telemetry_sample(row):
     self_maximum = _number(health.get("maximum"))
     target_current = _number(target_health.get("current"))
     target_maximum = _number(target_health.get("maximum"))
-    # A normalized-only wrapper still provides useful percentage trends.
+    self_basis = "native-absolute" if self_current is not None else None
+    target_basis = "native-absolute" if target_current is not None else None
+    # A normalized-only wrapper still provides useful percentage trends, but
+    # percentages and absolute HP must never form one apparent damage drop.
     if self_current is None:
         self_current, self_maximum = _number(player.get("healthPct")), 100.0
+        if self_current is not None:
+            self_basis = "telemetry-percent"
     if self_current is None:
         self_current, self_maximum = _number(raw_player.get("health")), _number(raw_player.get("healthMax"))
+        if self_current is not None:
+            self_basis = "snapshot-absolute"
     if target_current is None:
         target_current, target_maximum = _number(raw_target.get("health")), _number(raw_target.get("healthMax"))
+        if target_current is not None:
+            target_basis = "snapshot-absolute"
 
     incoming = snapshot.get("lastIncoming")
     outgoing = snapshot.get("lastPositiveEvent")
@@ -103,7 +112,9 @@ def _telemetry_sample(row):
         "sessionId": snapshot.get("sessionId", report.get("sessionId")),
         "playerId": player_id, "targetId": target_id,
         "selfCurrent": self_current, "selfMaximum": self_maximum,
+        "selfBasis": self_basis,
         "targetCurrent": target_current, "targetMaximum": target_maximum,
+        "targetBasis": target_basis,
         "combat": player.get("inCombat", _nested(native_player, "combat", "value")),
         "dead": player.get("dead", _nested(health, "dead")),
         "incoming": incoming if isinstance(incoming, dict) else None,
@@ -118,8 +129,17 @@ def _telemetry_sample(row):
 
 def _drops(samples, field):
     result = []
+    basis_key = "selfBasis" if field == "selfCurrent" else "targetBasis"
+    max_key = "selfMaximum" if field == "selfCurrent" else "targetMaximum"
     for before, after in zip(samples, samples[1:]):
         left, right = before.get(field), after.get(field)
+        # A change of native/Lua/normalized source or maximum is not evidence
+        # of damage. Avoid comparing 18,208 absolute HP with 90 percent.
+        if not before.get(basis_key) or before[basis_key] != after.get(basis_key):
+            continue
+        left_max, right_max = before.get(max_key), after.get(max_key)
+        if left_max != right_max and (left_max is not None or right_max is not None):
+            continue
         if left is not None and right is not None and right < left:
             # A health decline remains observable, but is not attributable to
             # one selected opponent across an owner/target switch, epoch
@@ -137,6 +157,7 @@ def _drops(samples, field):
                 and after.get("clock") is not None
                 and before["clock"] < after["clock"])
             result.append({"amount": left - right, "from": left, "to": right,
+                           "basis": before[basis_key],
                            "startClock": before.get("clock"), "endClock": after.get("clock"),
                            "attributionEligible": context_stable})
     return result
