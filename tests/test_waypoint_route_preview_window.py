@@ -8,7 +8,7 @@ import re
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from scripts import physical_waypoints as app
 from tests import test_waypoint_playback_window_state as fixture
@@ -206,6 +206,40 @@ class RoutePreviewWindowTests(unittest.TestCase):
         self.button("Fit").invoke()
         self.root.update()
         self.assertEqual(30, len(self.canvas.find_withtag("waypoint-node")))
+
+    def test_owned_map_move_uses_separate_backend_and_preserves_route(self):
+        self.prepare()
+        original = [self.table.item(item, "values") for item in self.table.get_children()]
+        toggle = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
+                      and str(w["text"]).startswith("Click to move"))
+        target = self.blank_point()
+        def move(adapter, payload, stop, emit):
+            self.assertEqual("map-world-xz", payload["kind"])
+            self.assertFalse(payload["heightKnown"])
+            self.assertFalse(payload["terrainAvailable"])
+            return {"status": "arrived", "position": {"x": payload["x"], "y": 10, "z": payload["z"]},
+                    "bearing": 0, "distance": 0, "releaseSucceeded": True}
+        with patch.object(app, "run_map_move", side_effect=move) as backend, \
+             patch.object(app, "ForegroundStop", return_value=SimpleNamespace(close=lambda: None)), \
+             patch.object(app, "run_route", side_effect=AssertionError("pulse route must not be used")):
+            toggle.invoke()
+            self.click(*target)
+            self.settle()
+            self.assertEqual(1, backend.call_count)
+        self.assertEqual(original, [self.table.item(item, "values") for item in self.table.get_children()])
+        self.button("STOP").invoke()
+        self.assertFalse(self.root.getvar(toggle["variable"]))
+
+    def test_armed_map_rejects_outside_click_without_dispatch_or_route_edit(self):
+        self.prepare()
+        original = self.table.get_children()
+        toggle = next(w for w in self.widgets(self.root) if isinstance(w, fixture.ttk.Checkbutton)
+                      and str(w["text"]).startswith("Click to move"))
+        with patch.object(app, "run_map_move") as backend:
+            toggle.invoke()
+            self.click(5, 5)
+            backend.assert_not_called()
+        self.assertEqual(original, self.table.get_children())
 
     def test_empty_route_disables_fit_and_compact_toolbar_fits_budget(self):
         self.prepare(points=[], heights=[])

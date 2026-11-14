@@ -21,6 +21,8 @@ internal static class Program
                 return await Control.ControlAgent.RunAsync(args, commandCancellation.Token);
             if (args[0] == "move-key")
                 return await Control.MoveKeyCommand.RunAsync(args[1..], commandCancellation.Token);
+            if (args[0] == "follow-route")
+                return await Control.FollowRouteCommand.RunAsync(args[1..], commandCancellation.Token);
             if (args[0] == "position-panel")
                 return PositionPanelCommand.Run(args[1..]);
             return await NativeCommandRunner.RunAsync(args, Console.Out, Console.Error, commandCancellation.Token);

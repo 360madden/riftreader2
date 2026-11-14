@@ -31,11 +31,12 @@ and evidence, not the final product architecture. See the
 
 | Capability | Result and evidence |
 | --- | --- |
-| Longer routes | Implemented in `b91e2b4`: shared 1,000-unit / 500-point limits, 30,000 recording samples, 30-minute trip budget, longer CLI deadlines/transport and preview Fit to 1,500 units. Complete routes/progress are retained while display annotations are bounded. 386 focused offline tests passed, including simulated full-capacity execution and long STOP/Resume. Live longer-route acceptance remains next; old short-route trials do not qualify the new envelope. |
+| Longer routes | Implemented in `b91e2b4`: shared 1,000-unit / 500-point limits, 30,000 recording samples, 30-minute trip budget, longer CLI deadlines/transport and preview Fit to 1,500 units. Complete routes/progress are retained while display annotations are bounded; the full envelope is offline verified. One live nine-point STOP/Resume case covered 23.10184156 planned units on a repeated 2.89-unit clear segment. A separate ten-unit clear-path out-and-back used one W hold per leg (1.601/1.560 seconds), ended 0.243274/0.252260 units from its goals, released all input and settled with zero drift. These cases do not qualify obstacle travel, arbitrary longer routes or the 1,000-unit envelope. |
+| Continuous movement helper and owned map destinations | **Waypoints v1.2.0 implements** continuous held-W travel as the GUI/headless default, legacy pulse fallback, RR2-owned Click-to-move and CLI `preview project`, `move pick` and `move mode`. Existing identity, freshness, foreground, progress, STOP/release and explicit playback Resume checks remain. Offline tests pass. **Scoped live acceptance passed for continuous clear-path route/STOP/Resume plus CLI and physical-GUI owned-map movement.** The resumed route reached nine of nine over 23.10184156 planned units; a separate ten-unit out-and-back used one W hold per leg, arrived within 0.253 units, released input and settled with zero drift. CLI `preview project`/`move pick` used the actual mapped 411×182 rendered map and arrived within 0.203314 units. In the physical GUI test, the first stale-origin click was refused before input; after an explicit new click at screen pixel 879,390, shared `map-go` arrived within 0.2644456 units. Both map cases left the original six-point route, revision 1, selection 6 and clean state unchanged; final restoration returned within 0.166 units of the original position with STOP latched and no release fault. These are clear-path controls, not obstacle navigation or NumLock autorun; the flat X/Z map has no terrain, height, obstacle or clearance knowledge. [Route result](../../artifacts/movement-upgrade/long-route-resumed.json); [ten-unit result](../../artifacts/movement-upgrade/10-unit-out-and-back.json); [CLI map result](../../artifacts/movement-upgrade/map-click-move.json); [GUI status](../../artifacts/movement-upgrade/gui-click-status.json); [usage and limits](../workflows/physical-waypoints.md#movement-modes-and-map-destinations). |
 | Native position/facing and same-build restart recovery | Fresh process/player binding and movement-basis reuse work without manually rebuilding the basis. Full-game restart cases were exercised; this does not establish recovery after an arbitrary game patch. |
 | Recording and route files | Record/Stop Recording captures actual visited points and corners; save/load retains order, heights and observation provenance. Existing manually authored routes remain usable. |
 | Forward/reverse playback and STOP/Resume | GUI and CLI playback, saved progress, explicit Resume, waiting-state launch and run receipts are implemented. Live forward/reverse and F8/Resume cases passed, including full-game restart recovery. One final reverse trial ended 0.04980 units from its endpoint with all 34 pulses released. |
-| Everyday Waypoints controls | Joey D's Waypoints v1.1.0 adds red panda header/window artwork, Replay readiness explanations and direction/progress, shared with CLI playback status. Resume checks the unfinished leg; Play/Resume consistently face before each leg. Compact/normal native screenshots and a zero-input colocated playback check passed. Existing organized controls, readable recent-route names and full-path hover text remain. |
+| Everyday Waypoints controls | Joey D's Waypoints v1.2.0 retains the red panda header/window artwork, Replay readiness explanations and direction/progress shared with CLI playback status. Resume checks the unfinished leg; Play/Resume consistently face before each leg. Compact/normal native screenshots and a zero-input colocated playback check passed. Existing organized controls, readable recent-route names and full-path hover text remain. |
 | Header, live pose and STOP | Fresh/cached/unavailable badges expose acquisition age and paused refresh; Details opens full Activity. STOP displays real F8 registration state and separates owned-action completion, pulse receipt references and measured stationary evidence. Idle STOP never reuses an earlier action receipt. `pose status/refresh/set --live` matches the header. Native normal/compact screenshots and live refresh/pause/idle STOP passed without game input; original route/settings restored. |
 | Playback action reliability | Forward/Reverse/Resume now own their adjacent endpoint/readiness details, share saved-evidence validation with execution, retain original reverse numbering and full completed progress. Verified STOP samples enable Resume without extra Refresh. Invalid/completed/wrong-direction Resume leaves checkpoint selection unchanged. Live 2.5-unit forward/reverse/STOP/Resume returned within 0.0455 units and 0.173°; all 20 pulses released. Normal/compact layouts and full restoration passed. |
 | End-to-end usability consistency | Unapplied edits remain visible across tabs and immediately update action readiness. New point/CLI selection clearing separate addition from editing; repeated named measured additions work. Capture readiness shares real refusal reasons between Scene and CLI. All six tabs were inspected in native normal/compact captures; temporary measured/manual route add/edit/reorder/Undo and full restoration passed without game input. Follow-up live three-unit CLI playback/STOP/Resume passed with three released 150 ms W pulses, zero post-STOP drift and 0.128-unit final error; original route/settings/progress restored. |
@@ -127,20 +128,23 @@ connecting segment. Full saved world mapping remains later work.
 
 ## Remaining Waypoints work, ranked
 
-1. **Local autonomous decisions, combat and route execution.** A route is not successful if the
+1. **Local autonomous combat and survival decisions.** A route is not successful if the
    character dies along the way. Assess encounters before engagement; low-level
    characters must avoid high-level hostiles rather than blindly fight them.
    Enemy level alone is insufficient: consider current readiness, additional
    enemies and elite/hostility information where available; do not assume unknown
-   targets are safe. Supply state/actions for a suitable first fight, then connect
-   travel interruption, checkpoint preservation,
-   one shared input owner, combat, recovery and normal automatic continuation.
-   Operator STOP/safety halts require explicit Resume/new run. STOP must
-   override every mode. This capability is missing; casting diagnostics and
+   targets are safe. Supply state/actions for a suitable first fight and bounded
+   recovery. This capability is missing; casting diagnostics and
    ability catalogs do not supply a working combat controller. The
    [overall roadmap](implementation-roadmap.md#remaining-work-ranked) ranks its
    prerequisite and implementation slices first.
-2. **Skill progression and effective ability priorities.** Use one actual
+2. **One shared local runtime and input owner.** Connect travel interruption,
+   checkpoint preservation, combat, recovery and normal automatic continuation
+   behind one coordinator. The continuous held-W helper is one bounded actuator,
+   not an independent controller, game autorun or terrain navigator. STOP must
+   override every mode and remain latched until explicit Resume/new run; no
+   subsystem may silently clear it or advance unrelated route progress.
+3. **Skill progression and effective ability priorities.** Use one actual
    character/build profile with a valid per-level skill/point plan and actual
    learned/unlocked state. Choose combat actions conditionally using survival,
    target health, useful damage/healing, costs, cast/channel/GCD occupancy,
@@ -148,7 +152,7 @@ connecting segment. Full saved world mapping remains later work.
    level-up/build changes. Existing catalogs/readiness panels do not provide a
    build planner or an action-selection engine. Follow the
    [detailed build/combat requirements](implementation-roadmap.md#skill-progression-and-combat-decision-requirements).
-3. **Useful leveling along the way.** Select suitable reachable XP targets,
+4. **Useful leveling along the way.** Select suitable reachable XP targets,
    verify actual XP gain, recover and reconcile skills/abilities after level-up.
    Measure survival and XP over travel, fights and recovery. An unsafe
    destination may need a safer known route or leveling in a suitable area first.
@@ -156,7 +160,7 @@ connecting segment. Full saved world mapping remains later work.
    return through known traversable ground and pass route admission before
    automatic continuation within the authorized run. Never auto-clear STOP.
    Existing level/XP candidates are not yet a functioning progression system.
-4. **One useful longer taught route in the real game.** Record a known-traversable
+5. **One useful longer taught route in the real game.** Record a known-traversable
    50–100-unit path with corners, save/load it, run Forward, STOP mid-leg, Resume
    and Reverse. Add unsuitable-target rejection plus suitable combat, measured XP,
    recovery and automatic continuation before calling it dependable leveling travel.
@@ -167,10 +171,10 @@ connecting segment. Full saved world mapping remains later work.
    when appropriate and authorized.
    Fix actual failures and expand distance/complexity as useful; a 1,000-unit first
    trial and a broad stress sweep are not required.
-5. **Location and height context for saved-route reuse.** Test actual slopes,
+6. **Location and height context for saved-route reuse.** Test actual slopes,
    different floors and zone/world/instance transitions. Keep measured and
    estimated heights distinct; reject inappropriate context before movement.
-6. **Resolve observed presentation/recovery failures during use.** Large-route
+7. **Resolve observed presentation/recovery failures during use.** Large-route
    display limiting is implemented; extended sessions, camera/window variations
    and mixed-DPI transitions have incomplete live coverage. Address a concrete
    failing case when it affects the next useful route rather than starting

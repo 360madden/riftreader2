@@ -1,6 +1,6 @@
 # Joey D's Waypoints
 
-The desktop helper and console frontend share **Joey D's Waypoints v1.1.0**
+The desktop helper and console frontend share **Joey D's Waypoints v1.2.0**
 branding. The red panda in the header is also the window icon. Existing
 `Waypoints.cmd` and `rr2-waypoints.cmd` entry points stay compatible.
 
@@ -21,18 +21,20 @@ Forward/Reverse playback, explicit Resume and Explore trail export share the
 same route limits. Existing route files and checkpoints retain their format and
 hashes. No conversion is required.
 
-Each explicit trip has a shared 30-minute, 8,192-pulse and 600-second requested
-key-hold budget. STOP/F8 still prevents the next pulse, preserves unfinished
-playback progress and lets the current bounded pulse release. Resume rechecks
-the saved route, direction, host/build/player, current position and height before
-continuing, with a fresh trip budget. Reconnection never auto-resumes.
+Each explicit trip has a shared **30-minute** limit. The legacy pulse engine also
+has an 8,192-pulse and 600-second requested key-hold budget. STOP/F8 requests
+release of this helper's owned input, preserves unfinished playback progress and
+prevents further movement. Resume rechecks the saved route, direction,
+host/build/player, current position and height before continuing, with a fresh
+trip budget. Reconnection never auto-resumes.
 
-These larger trip budgets do not enlarge individual movements: requested pulses
-remain at most 150 ms; intermediate targets remain at most four units apart;
-per-target progress, drift, freshness, ownership and release checks remain in
-force. Use a clear taught path: there is still no obstacle avoidance or terrain
-planner. The longer envelope is covered by simulated runner and withdrawn-window
-checks; the earlier short-route live trials do not qualify a 1,000-unit live trip.
+These larger trip budgets do not relax the existing progress, drift, freshness,
+ownership and release checks. In legacy pulse mode, requested pulses remain at
+most 150 ms and intermediate targets remain at most four units apart. Use a
+clear taught path: there is still no obstacle avoidance or terrain planner. The
+longer envelope is covered by simulated runner and withdrawn-window checks; live
+acceptance of continuous travel, map-click movement and a 1,000-unit trip is
+still pending.
 
 To keep large routes responsive, world beacons display at most 64 route markers
 per frame, favoring nearby points and retaining the saved next waypoint and
@@ -41,6 +43,98 @@ preview offers larger zoom ranges and Fit. It draws every waypoint and connector
 while displaying up to 64 number badges, prioritizing selected/active points,
 nearby points and route coverage. All true nodes remain selectable. Explore's
 compact radar retains its separate local ranges.
+
+## Movement modes and map destinations
+
+New Waypoints windows start with **Continuous travel** enabled. Continuous mode
+holds RR2's owned forward key while repeatedly checking fresh position, progress,
+drift, identity, foreground ownership, deadlines and cancellation. It does not
+turn on, detect or cancel RIFT's NumLock autorun. The legacy bounded-pulse engine
+remains available as a fallback: clear the **Continuous travel** checkbox, or
+change the running helper's setting from the CLI. Changing the setting sends no
+game input and applies to subsequent route, playback and direct-move runs.
+
+```powershell
+.\rr2-waypoints.cmd move mode --engine continuous
+.\rr2-waypoints.cmd move mode --engine pulse
+```
+
+The local preview also has an explicit **Click to move · clear path only** mode.
+When it is off, clicking a route node selects it and clicking open map space adds
+a waypoint. When it is on, a click chooses a flat world X/Z destination and
+starts a guarded direct move without editing the route or clicking inside RIFT.
+Map-click movement uses the continuous mover. It rejects stale map origins when
+the player moved more than 0.05 units or turned more than 0.5 degrees since the
+map was rendered, and it repeats the normal identity, freshness, ownership,
+progress and release checks.
+
+The CLI can inspect the same RR2-owned map projection before committing to the
+move. Canvas coordinates are physical pixels in the helper's local preview:
+
+```powershell
+.\rr2-waypoints.cmd preview project --canvas-x 220 --canvas-y 120
+.\rr2-waypoints.cmd move pick --canvas-x 220 --canvas-y 120 --execute
+```
+
+`preview project` uses the existing rendered map and cached pose; it performs no
+new RIFT read and sends no game input. `move pick` requires `--execute`, obtains
+fresh admission evidence and runs the guarded direct move. A numbered badge
+projects to its actual waypoint rather than to the ground drawn beneath the
+badge.
+
+This map is a player-relative **flat X/Z reference**, not navigable terrain.
+Height, floors, slopes, walls, obstacles and clearance are unavailable. Choose
+only a destination with a known clear open-ground path. The practical per-trip
+envelope remains 1,000 planned world units, 500 waypoints and 1,800 seconds; map
+projection and zoom do not expand it.
+
+**STOP**, Esc in the focused helper, or the temporary F8 listener requests
+release of RR2-owned movement and latches cancellation for the active action.
+STOP does not cancel arbitrary game autorun or manual input. For interrupted
+route playback, use explicit **Resume** after the helper reports it ready;
+Resume re-runs admission checks and continues from the saved checkpoint. It does
+not automatically resume a one-off map click or direct destination.
+
+These controls and guards are implemented and covered by offline tests. One live
+clear-path route/STOP/Resume case passed after the native near-goal correction:
+STOP retained `nextIndex: 1`, then Resume completed the remaining seven legs and
+the final nine-point cursor over **23.10184156 planned route units** on a repeated
+2.89-unit clear segment. Retry-leg errors were 0.135–0.240 units, stationary
+verification passed with zero drift, and all seven native receipts reported
+successful release with no pressed inputs. This was not a single 23-unit leg and
+does not establish obstacle navigation. See the
+[retained result](../../artifacts/movement-upgrade/long-route-resumed.json).
+
+A separate straight **ten-unit clear-path out-and-back** passed with one W hold
+per leg: 1.601 and 1.560 seconds, ending 0.243274 and 0.252260 units from the two
+goals. Both native results released successfully with no pressed inputs, and the
+final stationary check measured zero XYZ and yaw drift. See the
+[ten-unit result](../../artifacts/movement-upgrade/10-unit-out-and-back.json).
+
+CLI owned-map movement also passed live. `preview project` and `move pick` used
+the exact rendered map from an actual mapped **411×182** Waypoints helper and the
+same `map-go` backend as the GUI callback. The move arrived 0.203314 units from
+the projected destination and left the loaded route's file, revision, count,
+selection and clean state unchanged. See the
+[map-click result](../../artifacts/movement-upgrade/map-click-move.json) and its
+[run receipt](../../artifacts/waypoint-run-1b25a6f82e1b42da9540e8bcd4cdace7.json).
+
+An actual GUI pointer trial also passed. CUA armed **Click to move** and clicked
+the owned map. The first stale-origin click was refused before input. After an
+explicit new click at screen pixel 879,390, the shared `map-go` backend arrived
+0.2644456 units from its goal. The original six-point route, revision 1,
+selection 6 and clean state remained unchanged, and the visible UI reported the
+saved run receipt and new pose. See the
+[GUI status](../../artifacts/movement-upgrade/gui-click-status.json) and
+[run receipt](../../artifacts/waypoint-run-18ceec53f31d4b948e6c2fdadf11d197.json).
+These scoped live cases accept the v1.2.0 movement helper. Final restoration
+returned the character within 0.166 units of the original position and left the
+helper visible and idle in continuous mode, Click-to-move off, STOP latched and
+no release fault. The original six-point route remained revision 1, point 6
+selected and clean; range 10, live pose on and overlays off were restored. Do
+not treat these cases as qualified autonomous terrain navigation or a complete
+automated player. See the
+[final restoration state](../../artifacts/movement-upgrade/final-state.json).
 
 ## Header, live pose and STOP
 
@@ -77,10 +171,11 @@ independent fresh-pose and identity checks.
 **STOP** always remains available. Its adjacent hint reports whether the global
 F8 listener is actually active, unavailable, or inactive; it is registered only
 for this helper's movement action. **Esc** invokes STOP while this app has focus.
-STOP prevents the next pulse and waits for the bounded current pulse to release;
-it cancels recording (use Stop Recording to save) and hides owned overlays. It
-does not cancel arbitrary game autorun or manual input. An idle STOP explicitly
-says game motion is unverified. A later explicit action can clear the latch.
+STOP requests release of the helper's owned continuous hold or prevents the next
+legacy pulse, then waits for release evidence; it cancels recording (use Stop
+Recording to save) and hides owned overlays. It does not cancel arbitrary game
+autorun or manual input. An idle STOP explicitly says game motion is unverified.
+A later explicit action can clear the latch.
 
 CLI STOP and `status.controls` separate the latch, owned-action state, actual F8
 availability, key-release receipt references and stationary evidence. Only the
@@ -98,14 +193,14 @@ full name, coordinates, cached player distance and measured/estimated height
 context. Double-click or F2 opens Edit waypoint while preserving unapplied fields.
 Save Route/Save As require a nonempty route and applied/reset fields.
 
-**Click a preview node or number badge to select its route row.** This does not
-add a point or obtain another pose. Click open space inside the preview to add a
-waypoint; when an existing row is selected the new point gets a fresh `Point N`
-name. Pending fields must be applied/reset before either action. Addition reuses
-the existing live pose check: if the player moved or turned since the plotted
-sample, the map refreshes and asks for another click instead of placing the point
-against the wrong origin. Added map points retain estimated, rather than measured,
-height evidence until explicitly measured.
+With **Click to move** off, click a preview node or number badge to select its
+route row. This does not add a point or obtain another pose. Click open space
+inside the preview to add a waypoint; when an existing row is selected the new
+point gets a fresh `Point N` name. Pending fields must be applied/reset before
+either action. Addition reuses the existing live pose check: if the player moved
+or turned since the plotted sample, the map refreshes and asks for another click
+instead of placing the point against the wrong origin. Added map points retain
+estimated, rather than measured, height evidence until explicitly measured.
 
 The header reports visible/off-screen point counts for the local viewport.
 **+**, **−** and **Fit** affect this reference display only. Fit needs a cached
@@ -897,6 +992,11 @@ For the same backend without the window:
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --go 7422.455078125 2948.04931640625 --execute
 ```
 
+Headless `--go`, `--run-route` and `--play-route` use continuous held-forward
+travel by default. Add `--movement-engine pulse` to choose the legacy bounded
+pulse runner for that command; `--movement-engine continuous` is accepted when
+an explicit setting is useful in a script.
+
 CLI outcomes retain run receipts under `artifacts/waypoint-run-*.json`. Failed or
 stopped runs retain the original reason, completed-leg events, checkpoint and
 native pulse-file paths. STOP also retains the same two-pose `stopVerification`
@@ -911,8 +1011,11 @@ python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid 
 ```
 
 To save observations from an explicitly commanded `--go` or `--run-route`, add
-`--record-to` with a new output path. This teaches from that bounded run; it is
-not the passive window recording control. Replay and resume use `--play-route`:
+`--record-to` with a new output path. This teaching operation deliberately uses
+the bounded pulse runner, even though continuous is the normal headless default;
+`--movement-engine continuous` does not override that recording exception. It
+is not the passive window recording control. Replay and resume use
+`--play-route`:
 
 ```powershell
 python scripts/physical_waypoints.py --expected-host AMD-DESKTOP --physical-pid $riftPid --run-route my-route.json --record-to taught-route.json --face-waypoints --execute

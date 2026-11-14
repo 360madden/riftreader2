@@ -16,6 +16,8 @@ namespace RiftReader2.Live.Control;
 /// </summary>
 internal static class MoveKeyCommand
 {
+    internal static string ControlOwnerName => "Local\\RiftReader2-Control-" +
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("rift_x64")))[..16];
     internal sealed record Options(
         int Pid, string[] Keys, int HoldMilliseconds, bool Focus, bool Execute,
         bool Json, long? ExpectedStartTicks, string? ExpectedSha256, bool MeasureXyz,
@@ -380,9 +382,7 @@ internal static class MoveKeyCommand
             if (!OperatingSystem.IsWindows() || !Environment.Is64BitProcess)
                 throw new PlatformNotSupportedException("This helper requires 64-bit Windows.");
 
-            var ownerName = "Local\\RiftReader2-Control-" +
-                Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("rift_x64")))[..16];
-            using var owner = new Semaphore(1, 1, ownerName);
+            using var owner = new Semaphore(1, 1, ControlOwnerName);
             if (!owner.WaitOne(0))
                 throw new InvalidOperationException("Another RR2 control helper already owns game input.");
             try
@@ -778,7 +778,7 @@ internal static class MoveKeyCommand
             planar, planar >= 0.03, gap);
     }
 
-    private sealed class KeyInput(
+    internal sealed class KeyInput(
         WindowsControlDesktop.PinnedInputTarget pinned, KeySendTimeline timeline)
         : IControlInput, IDisposable
     {
@@ -826,7 +826,7 @@ internal static class MoveKeyCommand
         public void Dispose() => pinned.Dispose();
     }
 
-    private static void Report(bool json, object result)
+    internal static void Report(bool json, object result)
     {
         var serialized = JsonSerializer.Serialize(result, new JsonSerializerOptions
         {
@@ -835,7 +835,7 @@ internal static class MoveKeyCommand
         Console.WriteLine(serialized);
     }
 
-    private static async Task<bool> WaitForForegroundAsync(
+    internal static async Task<bool> WaitForForegroundAsync(
         Func<DesktopTarget> inspect, int timeoutMilliseconds, CancellationToken token)
     {
         var timer = Stopwatch.StartNew();
@@ -850,7 +850,7 @@ internal static class MoveKeyCommand
         return false;
     }
 
-    private static FocusAttempt RequestForegroundWithAttachedThreads(IntPtr window, int expectedPid)
+    internal static FocusAttempt RequestForegroundWithAttachedThreads(IntPtr window, int expectedPid)
     {
         var targetThread = GetWindowThreadProcessId(window, out var actualPid);
         if (targetThread == 0 || actualPid != (uint)expectedPid)

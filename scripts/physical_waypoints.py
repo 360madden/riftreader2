@@ -339,7 +339,7 @@ class ForegroundStop:
                 while self.api.GetMessageW(ctypes.byref(message), None, 0, 0) > 0:
                     if message.message == 0x0312:
                         stop.set()
-                        events.put({"status": "stopping", "reason": "F8 STOP requested; waiting for the bounded pulse to finish."})
+                        events.put({"status": "stopping", "reason": "F8 STOP requested; waiting for owned movement to release."})
             except Exception:
                 stop.set()
                 events.put({"status": "notice", "reason": "F8 listener failed; STOP requested."})
@@ -862,6 +862,23 @@ def run_route(adapter, points, stop, emit=lambda event: None, *, face_waypoints=
         return results
 
 
+def run_map_move(adapter, payload, stop, emit=lambda event: None, *, mover=None):
+    """Admit one owned-map destination without clicking the game or editing a route."""
+    from scripts.waypoint_click_move import validate_map_origin
+    if not isinstance(payload, dict) or not payload.get("owner"):
+        raise WaypointError("Map owner unavailable; refresh before choosing a destination")
+    if adapter.binding["runtimeIdentity"] != payload["owner"]:
+        raise WaypointError("Map player/process changed; refresh before choosing a destination")
+    view = payload["view"]
+    pose = read_stationary(adapter, stop)
+    validate_map_origin(view, pose.position, pose.bearing)
+    if mover is None:
+        from scripts.continuous_move import move_to
+        mover = move_to
+    return mover(adapter, payload["x"], payload["z"], stop, emit,
+                 expected_origin={"x": view.x, "z": view.z, "bearing": view.bearing})
+
+
 def validate_route_document(document):
     """Validate route/provenance without requiring measured heights for map points."""
     from scripts.waypoint_progress import _route
@@ -1027,6 +1044,7 @@ def launch_window(args):
     edit_buttons = {}
     last_edit_change = None
     walk_facing = tk.BooleanVar(value=args.face_waypoints)
+    continuous_travel = tk.BooleanVar(value=getattr(args, "movement_engine", "pulse") == "continuous")
     target_beacon = tk.BooleanVar(value=False)
     landmark_guide = tk.BooleanVar(value=False)
     appearance_path = (ROOT / "artifacts" / "waypoint-marker-style.json").absolute()
@@ -1100,6 +1118,11 @@ def launch_window(args):
     map_frame.grid(row=0, column=1, sticky="nsew")
     map_title = tk.StringVar(value="LOCAL PREVIEW")
     ttk.Label(map_frame, textvariable=map_title, style="Eyebrow.TLabel").pack(anchor="w", pady=(0, 10))
+    click_move = tk.BooleanVar(value=False)
+    click_move_button = ttk.Checkbutton(map_frame, text="Click to move · clear path only",
+        variable=click_move, command=lambda: update_preview_hint())
+    click_move_button.pack(anchor="w", pady=(0, 4))
+    editable.append(click_move_button)
     canvas = tk.Canvas(map_frame, width=330, height=220, bg="#0b1723", highlightthickness=0)
     map_hint = ttk.Frame(map_frame, style="Surface.TFrame")
     # Reserve the toolbar before the expandable canvas consumes compact height.
@@ -1520,6 +1543,14 @@ def launch_window(args):
         if draft_pending():
             state.set("Apply or Reset fields before selecting or adding a waypoint.")
             return
+        if click_move.get():
+            try:
+                payload = map_destination(event.x, event.y)
+            except (ValueError, TypeError) as exc:
+                state.set(str(exc))
+                return
+            start("map-go", payload, check_route_zone=False)
+            return
         from scripts.waypoint_map import hit_test_route
         hit=hit_test_route(map_render,event.x,event.y)
         if hit is not None:
@@ -1543,16 +1574,38 @@ def launch_window(args):
 
     diagnostic_failures = {}
 
-    def worker(operation, points=None, face_walk=False, route_context=None, request_id=None):
+    def project_destination(canvas_x, canvas_y):
+        from scripts.waypoint_click_move import project_map_click
+        if map_view is None:
+            raise WaypointError("Refresh position before choosing a map destination")
+        projected = project_map_click(map_view, canvas_x, canvas_y)
+        from scripts.waypoint_map import hit_test_route
+        hit = hit_test_route(map_render, canvas_x, canvas_y)
+        if hit is not None:
+            # Displaced number badges are UI annotations: choose their actual
+            # waypoint, not the different ground underneath the badge pixels.
+            values = table.item(hit["identifier"], "values")
+            projected.update(x=finite(values[1]), z=finite(values[2]),
+                             waypointNumber=hit["number"], selectedFrom=hit["part"])
+        return projected
+
+    def map_destination(canvas_x, canvas_y):
+        owner = current_identity()
+        if owner is None:
+            raise WaypointError("Refresh position before choosing a map destination")
+        projected = project_destination(canvas_x, canvas_y)
+        return dict(projected, view=map_view, owner=owner)
+
+    def worker(operation, points=None, face_walk=False, route_context=None, request_id=None, engine="pulse"):
         with operation_gate:
             if operation == "live" and closing:
                 events.put({"status": "live-idle"})
                 return
-            perform_operation(operation, points, face_walk, route_context, request_id)
+            perform_operation(operation, points, face_walk, route_context, request_id, engine)
 
-    def perform_operation(operation, points=None, face_walk=False, route_context=None, request_id=None):
+    def perform_operation(operation, points=None, face_walk=False, route_context=None, request_id=None, engine="pulse"):
         nonlocal adapter, published_adapter
-        retain = operation in ("go", "face", "face-bearing", "play", "resume", "teach")
+        retain = operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go", "release")
         history, outcome, failure = [], None, None
         stop_verification = None
         receipt_path = None
@@ -1566,6 +1619,10 @@ def launch_window(args):
             events.put(event)
 
         try:
+            runner = run_route
+            if engine == "continuous" and operation in ("go", "play", "resume"):
+                from scripts.continuous_move import run_continuous_route
+                runner = run_continuous_route
             if adapter is None:
                 if operation not in ("refresh", "save", "map", "live", "target"):
                     raise WaypointError("RIFT is not connected; wait for a fresh pose")
@@ -1636,6 +1693,14 @@ def launch_window(args):
                 if operation=="target" and result.get("newLabel") and result.get("waypoint"):
                     result["waypoint"]=(result["newLabel"],*result["waypoint"][1:])
                 events.put(result)
+            elif operation == "release":
+                from scripts.continuous_move import retry_release
+                outcome = retry_release(adapter)
+                stop_verification = verify_stopped_pose(adapter, after="release retry")
+                emit({"status": "notice", "reason": "Owned key release verified. STOP remains latched; choose an explicit new run or Resume."})
+            elif operation == "map-go":
+                outcome = run_map_move(adapter, points, stop, emit)
+                events.put(dict(outcome, status="route-complete", waypointCount=1))
             elif operation == "face":
                 outcome = run_facing(adapter, stop, emit, point=points[0][1:])
             elif operation == "face-bearing":
@@ -1691,7 +1756,7 @@ def launch_window(args):
                 events.put({"status": "recorded-pending", "document": document, "operation": "teach"})
             elif operation in ("play", "resume"):
                 document, direction = points
-                results, cursor = play_route(adapter, document, stop, emit, runner=run_route,
+                results, cursor = play_route(adapter, document, stop, emit, runner=runner,
                                              checkpoint=checkpoint, direction=direction,
                                              resume=operation == "resume", face_waypoints=face_walk)
                 outcome = results
@@ -1700,7 +1765,7 @@ def launch_window(args):
                             "position": results[-1]["position"], "bearing": results[-1]["bearing"],
                             "distance": results[-1]["distance"]})
             else:
-                results = run_route(adapter, points, stop, emit, face_waypoints=face_walk)
+                results = runner(adapter, points, stop, emit, face_waypoints=face_walk)
                 outcome = results
                 events.put({"status": "route-complete", "waypointCount": len(results),
                             "position": results[-1]["position"], "bearing": results[-1]["bearing"],
@@ -1728,6 +1793,8 @@ def launch_window(args):
             failure = {"status": "zone-unavailable" if operation == "zone-live" else "live-unavailable" if operation == "live" else "view-failed" if operation == "view" else
                        "stopped" if isinstance(exc, Stopped) else "halted", "reason": str(exc),
                        "originalReason": original_reason,
+                       "inputReleaseFault": bool(getattr(adapter, "_continuous_input_release_fault", False)),
+                       "inputRecovery": deepcopy(getattr(adapter, "_continuous_move_recovery", None)),
                        **({"position": stopped_position, "bearing": stopped_bearing,"acquired":stopped_acquired} if stopped_position else {}),
                        "inputReceiptPath": str(getattr(adapter, "input_receipt_path", None)) if getattr(adapter, "input_receipt_path", None) else None}
             emit(failure)
@@ -1739,12 +1806,15 @@ def launch_window(args):
                            "direction": points[1] if operation in ("play", "resume") and points else None,
                            "status": failure["status"] if failure else "completed",
                            "failure": failure, "result": outcome, "events": history,
+                           "movementEngine": "continuous" if operation == "map-go" else "pulse" if operation == "teach" else engine,
+                           "inputReleaseFault": bool(getattr(adapter, "_continuous_input_release_fault", False)),
+                           "inputRecovery": deepcopy(getattr(adapter, "_continuous_move_recovery", None)),
                            "completedLegs": [event for event in history if event.get("status") == "arrived"],
                            "calibrationBinding": getattr(adapter, "binding", None),
                            "inputReceiptPath": str(getattr(adapter, "input_receipt_path", None)) if getattr(adapter, "input_receipt_path", None) else None,
                            "inputReceiptPresent": bool(getattr(adapter, "input_receipt_path", None) and adapter.input_receipt_path.exists()),
                            "stopVerification": stop_verification,
-                           "releaseVerification": ("see individual native pulse receipts for key release; measured stationary evidence is separate in stopVerification"
+                           "releaseVerification": ("see individual native input receipts for key release; measured stationary evidence is separate in stopVerification"
                                                    if failure else "see completed result and pulse receipts")}
                 receipt_path = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
                 try:
@@ -1761,6 +1831,8 @@ def launch_window(args):
             if operation not in ("live", "zone-live"):
                 events.put({"status": "operation-finished", "operation": operation,
                             "failure": failure, "result": outcome,
+                            "inputReleaseFault": bool(getattr(adapter, "_continuous_input_release_fault", False)),
+                            "inputRecovery": deepcopy(getattr(adapter, "_continuous_move_recovery", None)),
                             "stopVerification":stop_verification,
                             "inputReceiptPath":str(adapter.input_receipt_path) if retain and getattr(adapter,"input_receipt_path",None) and adapter.input_receipt_path.exists() else None,
                             "receipt": str(receipt_path) if receipt_path else None})
@@ -1770,10 +1842,14 @@ def launch_window(args):
         nonlocal stop_waiting_operation
         if busy or closing or nearby_picker is not None:
             return
+        if (operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go")
+                and getattr(adapter, "_continuous_input_release_fault", False)):
+            state.set("Movement blocked: the last owned key release is unverified. Restore RIFT focus and retry STOP cleanup.")
+            return
         if marker_restart_pending:
             state.set("Wait while the overlay reader restarts.")
             return
-        if draft_pending() and operation in ("go", "face", "face-bearing", "play", "resume", "teach", "record", "map", "target", "save"):
+        if draft_pending() and operation in ("go", "face", "face-bearing", "play", "resume", "teach", "record", "map", "target", "save", "map-go"):
             state.set("Apply or Reset fields before starting another action.")
             return
         if operation in ("go", "teach") and (not points or len(points) > MAX_WAYPOINTS):
@@ -1782,19 +1858,21 @@ def launch_window(args):
         if operation == "face" and (not points or len(points) != 1):
             state.set("Select one waypoint to face.")
             return
-        if operation in ("go", "face", "face-bearing", "teach", "record") and markers.running():
+        if operation in ("go", "face", "face-bearing", "teach", "record", "map-go", "play", "resume") and markers.running():
             if stop_markers():
                 state.set("Markers are closing; try the action again when they are hidden.")
             return
         busy = True
-        stop.clear()
-        stop_waiting_operation=False
+        if operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go", "record"):
+            stop.clear()
+        if operation != "release":
+            stop_waiting_operation=False
         stop_context.update(hadOwnedAction=False,activeRequestIdAtStop=None,result=None,
                             keyReleaseEvidence="not-measured",stationaryEvidence="not-measured")
         if operation == "teach":
             record_cancel.clear()
             record_stop.clear()
-        if operation in ("go", "face", "face-bearing", "play", "resume", "teach"):
+        if operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go"):
             try:
                 foreground_stop = ForegroundStop(window, stop, events)
             except Exception as exc:
@@ -1823,20 +1901,22 @@ def launch_window(args):
             record_cancel.clear()
             record_end_button.configure(state="normal")
             redraw()
-        state.set(("Starting action — F8 or STOP prevents the next pulse." if getattr(foreground_stop,"registered",False)
-                   else "Starting action — use STOP; F8 is unavailable.") if operation in ("go", "face", "face-bearing", "play", "resume", "teach")
+        state.set(("Starting action — F8 or STOP releases owned movement." if getattr(foreground_stop,"registered",False)
+                   else "Starting action — use STOP; F8 is unavailable.") if operation in ("go", "face", "face-bearing", "play", "resume", "teach", "map-go")
                   else "Recording your movement; choose Stop Recording to save." if operation == "record"
                   else "Saving view…" if operation == "view"
                   else "Reading current RIFT pose…")
         context = deepcopy(route_metadata.get("routeContext")) if check_route_zone and (operation in ("go", "face", "play", "resume", "teach") or operation == "save" and isinstance(points, dict)) else None
         mode = True if operation in ("play", "resume") else walk_facing.get() if face_walk is None else face_walk
         request_id = cli_action["id"] if cli_action is not None else None
-        threading.Thread(target=worker, args=(operation, points, mode, context, request_id), daemon=False).start()
+        engine = "continuous" if continuous_travel.get() else "pulse"
+        threading.Thread(target=worker, args=(operation, points, mode, context, request_id, engine), daemon=False).start()
         return True
 
     def request_stop():
         nonlocal cli_stop_at, cli_record_output, stop_waiting_operation
         cli_stop_at = time.time()
+        click_move.set(False)
         # Evidence belongs to this STOP, never an unrelated previous receipt.
         if not stop.is_set() or not stop_waiting_operation:
             stop_context.update(hadOwnedAction=bool(busy),
@@ -1853,7 +1933,12 @@ def launch_window(args):
             state.set("Recording cancelled — no route will be saved.")
             return
         markers_stopped = stop_markers()
-        text = ("STOP requested — waiting for the current bounded pulse to release." if busy
+        if not busy and getattr(adapter, "_continuous_input_release_fault", False):
+            stop_waiting_operation = True
+            if start("release", check_route_zone=False):
+                state.set("STOP latched — retrying exact-target key release without changing focus.")
+            return
+        text = ("STOP requested — waiting for owned movement to release." if busy
                 else "STOP latched — no owned action active; game motion unverified.")
         state.set(text if markers_stopped else text + " Could not hide markers.")
 
@@ -1896,6 +1981,7 @@ def launch_window(args):
         points=table.get_children()
         map_hint_text.set("No pose · Refresh" if last_pose is None else "Apply / Reset first" if draft_pending()
             else "Preview only" if busy or closing or cli_action is not None else "Select · list full" if len(points)>=MAX_WAYPOINTS
+            else "Click: move · clear path" if click_move.get()
             else "Click: select / add" if points else "Click to add")
 
     def update_direct_state():
@@ -2553,6 +2639,9 @@ def launch_window(args):
     face_option = ttk.Checkbutton(controls, text="Face before direct / auto-walk", variable=walk_facing)
     face_option.grid(row=2, column=0, columnspan=2, sticky="w")
     editable.append(face_option)
+    engine_option = ttk.Checkbutton(controls, text="Continuous travel", variable=continuous_travel)
+    engine_option.grid(row=3, column=0, columnspan=2, sticky="w")
+    editable.append(engine_option)
     teach_button = ttk.Button(recording_controls, text="Auto-walk + record", command=lambda: start("teach", selected_points(True)))
     teach_button.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(7, 0))
     editable.append(teach_button)
@@ -2733,7 +2822,7 @@ def launch_window(args):
     recent_load_button = ttk.Button(recent_controls, text="Load recent", command=load_recent, state="disabled")
     recent_load_button.grid(row=0, column=2)
     editable.append(recent_load_button)
-    footer_label = ttk.Label(frame, text=f"Clear path · route ≤ {MAX_ROUTE_DISTANCE:g} units / {MAX_WAYPOINTS} points · pulses ≤ 150 ms · STOP/F8 prevents the next pulse. "
+    footer_label = ttk.Label(frame, text=f"Clear path · route ≤ {MAX_ROUTE_DISTANCE:g} units / {MAX_WAYPOINTS} points · continuous or pulse travel · STOP/F8 releases owned movement. "
               "Stop Recording saves; STOP cancels recording. Play starts within 0.30 units of Start (Forward) or End (Reverse).",
               style="Base.Micro.TLabel", wraplength=900)
     footer_label.grid(row=5, column=0, sticky="w")
@@ -2986,8 +3075,10 @@ def launch_window(args):
     def cli_controls():
         listener=foreground_stop is not None
         return dict(stop_context,stopLatched=stop.is_set(),ownedActionActive=busy,recording=recording,
+            inputReleaseFault=bool(getattr(adapter, "_continuous_input_release_fault", False)),
+            inputRecovery=deepcopy(getattr(adapter, "_continuous_move_recovery", None)),
             f8="active" if listener and getattr(foreground_stop,"registered",False) else "unavailable" if listener else "inactive",
-            qualification="STOP cancels this helper's work and waits for its bounded pulse release. Key release and observed stationary pose are separate evidence; other game movement is not cancelled.")
+            qualification="STOP cancels this helper's work and waits for owned input release. Key release and observed stationary pose are separate evidence; other game movement is not cancelled.")
 
     def update_header_state():
         nonlocal replay_pose_key
@@ -3021,6 +3112,8 @@ def launch_window(args):
         hidden=[dict(number=p["number"],name=table.item(p["identifier"],"values")[0])
                 for p in map_render.get("offscreen",[]) if table.exists(p["identifier"])]
         return dict(radius=map_radius,allowedRadii=list(ZOOM_RADII),poseAvailable=available,
+            clickToMoveEnabled=click_move.get(),
+            canvasSize={"width":map_view.width,"height":map_view.height} if available else None,
             poseStatus="fresh" if fresh else "cached" if available else "unavailable",poseAgeSeconds=age,
             fitAvailable=available and bool(points),fitLimited=bool(fit and fit["capped"]),
             requiredRadius=fit["required_radius"] if fit else None,
@@ -3227,6 +3320,8 @@ def launch_window(args):
                     preview=cli_preview_status(),
                     recording={"active": recording, "progress": recording_progress},
                     playback=cli_playback_status(),
+                    movementEngine="continuous" if continuous_travel.get() else "pulse",
+                    clickMovementEngine="continuous",
                     activeRequestId=cli_action["id"] if cli_action else None,
                     recentResults=deepcopy(cli_recent), inputSent=False)
 
@@ -3293,7 +3388,7 @@ def launch_window(args):
         job = {"id": rid, "command": command or operation, "operation": operation,
                "started": False, "finished": None, "recordedFile": None, "cancelled": False}
         cli_action = job
-        if operation in ("go", "face", "face-bearing", "record") and markers.running():
+        if operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume") and markers.running():
             stop_markers()
 
         def advance():
@@ -3302,7 +3397,7 @@ def launch_window(args):
                 if job["cancelled"]:
                     cli_action = None
                     return cli_error("cancelled", "Cancelled before starting", exit_code=130)
-                if markers.running() and operation in ("go", "face", "face-bearing", "record"):
+                if markers.running() and operation in ("go", "face", "face-bearing", "record", "map-go", "play", "resume"):
                     return None
                 if not start(operation, payload, face_walk=True, check_route_zone=command not in ("move.to", "face")):
                     cli_action = None
@@ -3359,6 +3454,11 @@ def launch_window(args):
                 if result is None: raise CliError("log-directory-unavailable", state.get())
                 return cli_ok(result)
             if command.startswith("preview."):
+                if command == "preview.project":
+                    if map_view is None:
+                        raise CliError("preview-unavailable", "Refresh position before projecting a map destination", exit_code=3)
+                    return cli_ok(dict(project_destination(values["canvas_x"], values["canvas_y"]),
+                                       pose=cli_pose(), canvasSize={"width":map_view.width,"height":map_view.height}))
                 if command == "preview.set":
                     radius=values.get("range")
                     if type(radius) not in (int,float) or radius not in ZOOM_RADII:
@@ -3377,6 +3477,13 @@ def launch_window(args):
                     live_pose.set(values["live"]=="on")
                     change_live_pose()
                 return cli_ok(cli_pose())
+            if command == "move.mode":
+                if busy or closing or cli_action is not None:
+                    raise CliError("busy", "Wait for movement to finish before changing its engine", exit_code=4)
+                if values.get("engine") not in ("continuous", "pulse"):
+                    raise CliError("invalid-movement-engine", "Engine must be continuous or pulse", exit_code=2)
+                continuous_travel.set(values["engine"] == "continuous")
+                return cli_ok({"movementEngine": values["engine"], "inputSent": False})
             if command == "zone.status": return cli_ok(zone_state())
             if command == "zone.refresh": return cli_begin(rid, "zone", command=command)
             if command == "route.context":
@@ -3508,7 +3615,7 @@ def launch_window(args):
                 cli_close_id = rid
                 close(discard_trail=bool(values.get("discard")))
                 return Deferred()
-            if command in ("move.to", "face", "route.run", "playback.start", "playback.resume", "record.start"):
+            if command in ("move.to", "move.pick", "face", "route.run", "playback.start", "playback.resume", "record.start"):
                 if rid in cli_cancelled_requests:
                     cli_cancelled_requests.discard(rid)
                     return cli_error("cancelled-by-stop", "This request was cancelled before admission", exit_code=130)
@@ -3819,8 +3926,11 @@ def launch_window(args):
                         return cli_ok({"file": cli_last_record_file, "saved": True})
                     return cli_error("recording-failed", state.get())
                 return cli_wait(rid, record_done)
-            if command in ("move.to", "face", "playback.start", "playback.resume"):
+            if command in ("move.to", "move.pick", "face", "playback.start", "playback.resume"):
                 if values.get("execute") is not True: raise CliError("execute-required", "Movement requires --execute", exit_code=2)
+                if command == "move.pick":
+                    if draft_pending(): raise CliError("unapplied-edit", "Apply or Reset fields before moving", exit_code=4)
+                    return cli_begin(rid, "map-go", map_destination(values["canvas_x"], values["canvas_y"]), command=command)
                 if command == "move.to":
                     return cli_begin(rid, "go", [("CLI destination", finite(values["x"]), finite(values["z"]))], command=command)
                 if command == "face":
@@ -4148,7 +4258,10 @@ def launch_window(args):
                 if stop_waiting_operation:
                     stop_context["result"]={k:v for k,v in event.items() if k not in ("result","status")}
                     stop_context["stationaryEvidence"]=(event.get("stopVerification") or {}).get("status","not-measured")
-                    stop_context["keyReleaseEvidence"]="see-pulse-receipts" if event.get("inputReceiptPath") else "not-measured"
+                    recovery = event.get("inputRecovery")
+                    stop_context["keyReleaseEvidence"] = ("unverified" if event.get("inputReleaseFault") else
+                        "verified-recovery" if isinstance(recovery, dict) and recovery.get("releaseSucceeded") is True else
+                        "see-native-input-receipts" if event.get("inputReceiptPath") else "not-measured")
                     stop_waiting_operation=False
                 if cli_action is not None and cli_action["operation"] == event["operation"]:
                     cli_action["finished"] = event
@@ -4288,7 +4401,8 @@ def launch_window(args):
                     recording_progress = {"sampleCount": event["sampleCount"],
                                           "observedPathLength": event["observedPathLength"]}
                 display_pose(point, event.get("bearing"),acquired=event.get("acquired"))
-                if status in ("refresh", "live", "save", "target", "map") or status=="stopped" and type(event.get("acquired")) in (int,float):
+                if (status in ("refresh", "live", "save", "target", "map")
+                        or status in ("stopped", "arrived") and type(event.get("acquired")) in (int, float)):
                     verified_adapter, verified_at = adapter, event.get("acquired")
                     identity_unavailable = False
                     owner = current_identity()
@@ -4682,6 +4796,8 @@ def main(argv=None):
     mode.add_argument("--play-route", type=Path, help="replay a recorded route from its endpoint with --execute")
     mode.add_argument("--face-bearing", type=float, help="face this +Z-to-+X bearing without walking")
     parser.add_argument("--face-waypoints", action="store_true", help="turn toward each waypoint and walk forward")
+    parser.add_argument("--movement-engine", choices=("continuous", "pulse"), default="continuous",
+                        help="continuous forward travel (default) or the original bounded pulse controller; teaching uses pulse")
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--record-to", type=Path, help="save observed movement from this --go/--run-route")
     parser.add_argument("--reverse", action="store_true", help="replay from recorded end toward start")
@@ -4713,6 +4829,10 @@ def main(argv=None):
         if args.record_to is not None and args.record_to.exists():
             raise WaypointError("Recording output already exists; choose a new path")
         adapter = PhysicalAdapter(args.expected_host, args.physical_pid, args.basis)
+        runner = run_route
+        if args.movement_engine == "continuous" and args.record_to is None:
+            from scripts.continuous_move import run_continuous_route
+            runner = run_continuous_route
         with cli_stop_controls(stop):
             if args.run_route is not None or args.play_route is not None or args.record_to is not None:
                 path = args.play_route or args.run_route
@@ -4722,7 +4842,7 @@ def main(argv=None):
                 if args.play_route:
                     from scripts.waypoint_playback import play_route
                     checkpoint = args.progress or args.play_route.with_suffix(".progress.json")
-                    legs, _ = play_route(adapter, document, stop, emit, runner=run_route,
+                    legs, _ = play_route(adapter, document, stop, emit, runner=runner,
                                         checkpoint=checkpoint, direction="reverse" if args.reverse else "forward",
                                         resume=args.resume, face_waypoints=args.face_waypoints)
                 elif args.record_to:
@@ -4732,19 +4852,22 @@ def main(argv=None):
                     args.record_to.write_text(json.dumps(recorded, indent=2), encoding="utf-8")
                     emit({"status": "recorded", "path": str(args.record_to), "points": len(recorded["waypoints"])})
                 else:
-                    legs = run_route(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
+                    legs = runner(adapter, points, stop, emit, face_waypoints=args.face_waypoints)
+                held = [leg.get("totalHoldMs") for leg in legs]
                 result = {"status": "arrived", "waypointCount": len(legs),
                           "position": legs[-1]["position"], "bearing": legs[-1]["bearing"],
                           "distance": legs[-1]["distance"], "legs": legs,
-                          "pulses": sum(leg["pulses"] for leg in legs),
-                          "totalHoldMs": sum(leg["totalHoldMs"] for leg in legs),
+                          "pulses": sum(leg.get("pulses", 0) for leg in legs),
+                          "totalHoldMs": sum(held) if all(type(value) in (int, float) for value in held) else None,
+                          "movementEngine": "pulse" if args.record_to else args.movement_engine,
                           "elapsedSeconds": round(time.monotonic()-started, 3),
                           "calibrationBinding": getattr(adapter, "binding", None),
-                          "allPulsesReleased": True}
+                          "allInputsReleased": True,
+                          "allPulsesReleased": True if args.record_to or args.movement_engine == "pulse" else None}
             else:
                 result = (run_facing(adapter, stop, emit, bearing=args.face_bearing)
                           if args.face_bearing is not None else
-                          run_route(adapter, [("Waypoint", *args.go)], stop, emit,
+                          runner(adapter, [("Waypoint", *args.go)], stop, emit,
                                     face_waypoints=args.face_waypoints)[0])
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         output.write_text(json.dumps(result, indent=2), encoding="utf-8")
@@ -4766,7 +4889,7 @@ def main(argv=None):
         receipt = {**failure, "failure": dict(failure), "events": history,
                    "completedLegs": [event for event in history if event.get("status") == "arrived"],
                    "calibrationBinding": getattr(adapter, "binding", None), "stopVerification": verification,
-                   "releaseVerification": "see individual native pulse receipts for key release; measured stationary evidence is separate in stopVerification"}
+                   "releaseVerification": "see individual native input receipts for key release; measured stationary evidence is separate in stopVerification"}
         output = ROOT / "artifacts" / ("waypoint-run-" + uuid.uuid4().hex + ".json")
         try:
             write_json_atomic(output, receipt)

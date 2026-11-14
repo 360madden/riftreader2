@@ -20,8 +20,8 @@ from scripts.waypoint_limits import MAX_TRIP_SECONDS
 from scripts.waypoint_map import ZOOM_RADII
 
 VERSION = APP_VERSION
-MOVEMENT = {"move.to", "face", "route.run", "playback.start", "playback.resume"}
-LONG_ROUTE_MOVEMENT = {"move.to", "route.run", "playback.start", "playback.resume"}
+MOVEMENT = {"move.to", "move.pick", "face", "route.run", "playback.start", "playback.resume"}
+LONG_ROUTE_MOVEMENT = {"move.to", "move.pick", "route.run", "playback.start", "playback.resume"}
 COMMON = {"session", "timeout", "json", "jsonl", "no_color"}
 LONG_ROUTE_TIMEOUT = MAX_TRIP_SECONDS + 30
 PREVIEW_RANGES = ", ".join(str(radius) for radius in ZOOM_RADII[:-1]) + f" or {ZOOM_RADII[-1]}"
@@ -126,7 +126,9 @@ def example(operation):
         "diagnostics.status":"diagnostics status", "diagnostics.show":"diagnostics show",
         "diagnostics.events":"diagnostics events --level warning --limit 50",
         "diagnostics.copy":"diagnostics copy", "diagnostics.open":"diagnostics open",
-        "move.to":"move to 123 456 --execute", "face":"face 90 --execute",
+        "move.to":"move to 123 456 --execute", "move.pick":"move pick --canvas-x 220 --canvas-y 120 --execute",
+        "move.mode":"move mode --engine continuous",
+        "face":"face 90 --execute",
         "playback.start":"playback start --direction forward --execute",
         "playback.resume":"playback resume --execute", "route.run":"route run --execute",
         "view.save":"view save view.json", "view.load":"view load view.json", "view.open":"view open view.json",
@@ -138,7 +140,7 @@ def example(operation):
         "library.load":"library load camp --discard", "library.show":"library show camp",
         "library.select":"library select camp",
         "preview.status":"preview status", "preview.set":"preview set --range 10",
-        "preview.fit":"preview fit",
+        "preview.fit":"preview fit", "preview.project":"preview project --canvas-x 220 --canvas-y 120",
         "pose.status":"pose status", "pose.set":"pose set --live on", "pose.refresh":"pose refresh",
     }.get(operation, operation.replace(".", " "))
 
@@ -182,11 +184,11 @@ def build_parser():
     for group, verbs in {
         "app":"list open show hide close", "route":"list load save new add update remove reorder select undo validate run context tag-zone",
         "zone":"status refresh", "library":"list save import load show select",
-        "preview":"status set fit", "pose":"status set refresh",
+        "preview":"status set fit project", "pose":"status set refresh",
         "diagnostics":"status show events copy open",
         "radar":"status show hide set move reset-position lock unlock", "beacons":"status show hide set reset",
         "guide":"status start stop", "trail":"status start stop list save clear", "record":"status start stop cancel",
-        "move":"to", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
+        "move":"to pick mode", "playback":"start resume status", "view":"status save load open open-3d", "receipt":"list show"
     }.items():
         gp = groups.add_parser(group, help=f"{group.capitalize()} controls", description=f"{group.capitalize()} commands")
         common(gp)
@@ -194,7 +196,7 @@ def build_parser():
         sub = gp.add_subparsers(dest="verb", title="Commands")
         for verb in verbs.split():
             operation = f"{group}.{verb}"
-            read_only = verb in {"status", "list", "validate"} or operation in {"receipt.show", "diagnostics.show", "diagnostics.events"}
+            read_only = verb in {"status", "list", "validate"} or operation in {"receipt.show", "diagnostics.show", "diagnostics.events", "preview.project"}
             purpose = {
                 "app.open":"Open Waypoints, or reuse the selected existing helper without replacing its route.",
                 "app.show":"Show the selected helper window.", "app.hide":"Hide the selected helper window.",
@@ -215,6 +217,7 @@ def build_parser():
                 "preview.status":"Show the local route preview range, cached-pose availability and off-screen point summary.",
                 "preview.set":"Set the local route preview range without reading RIFT or sending game input.",
                 "preview.fit":f"Fit the local route preview to the loaded route using only the helper's cached finite pose; the preview remains capped at {ZOOM_RADII[-1]} units.",
+                "preview.project":"Project owned-preview canvas pixels to flat world X/Z without reading RIFT or sending game input.",
                 "pose.status":"Show Live pose refresh, current or cached sample freshness and the existing reader source.",
                 "pose.set":"Turn the helper's Live pose refresh on or off; retained samples remain subject to freshness checks.",
                 "pose.refresh":"Refresh pose with one fresh read through the existing native reader; sends no game input.",
@@ -247,13 +250,17 @@ def build_parser():
                 "playback.status":"Show Forward, Reverse and Resume readiness from the helper's existing pose; execution rechecks live admission.",
                 "route.run":"Run the loaded route from a one-based point using face-then-walk mode, with the full bounded long-route deadline.",
                 "move.to":"Move to world X/Z using guarded face-then-walk mode.",
+                "move.pick":"Project owned-preview canvas pixels and move there through the guarded route runner.",
+                "move.mode":"Choose continuous held-forward or legacy pulse movement for subsequent runs.",
             }.get(operation, f"{verb.capitalize()} {group}.")
             effects = ("Read-only native candidate refresh; sends no game input." if operation in {"zone.refresh", "pose.refresh"}
                        else "Read-only; sends no game input." if read_only or operation in {"route.context", "library.show"}
                        else "Attaches fresh candidate provenance to the loaded route; sends no game input." if operation == "route.tag-zone"
                        else "Changes the helper's library selection only; sends no game input." if operation == "library.select"
+                       else "Projects the helper's owned local map only; reads no new pose and sends no game input." if operation == "preview.project"
                        else "Changes only the local preview display; reads no new pose and sends no game input." if operation in {"preview.set", "preview.fit"}
                        else "Changes the helper's idle pose refresh setting; sends no game input." if operation == "pose.set"
+                       else "Changes the helper's movement engine setting; sends no game input." if operation == "move.mode"
                        else "Writes a copy in the owned route library; sends no game input." if operation in {"library.save", "library.import"}
                        else "Sends guarded game input only with --execute; uses face-then-walk and waits for a terminal result." if operation in MOVEMENT
                        else "Starts the owned shared reader when needed; sends no game input." if operation in {"beacons.show", "radar.show", "guide.start", "trail.start"}
@@ -287,6 +294,11 @@ def build_parser():
     arg("library.load", "--discard", action="store_true", help="explicitly discard unsaved route changes")
     arg("preview.set", "--range", dest="range", type=number, choices=tuple(float(radius) for radius in ZOOM_RADII), required=True,
         help=f"preview radius in world units: {PREVIEW_RANGES}")
+    for op in ("preview.project", "move.pick"):
+        arg(op, "--canvas-x", dest="canvas_x", type=number, required=True,
+            help="physical X pixel in the helper-owned local preview canvas")
+        arg(op, "--canvas-y", dest="canvas_y", type=number, required=True,
+            help="physical Y pixel in the helper-owned local preview canvas")
     arg("diagnostics.events", "--level", choices=("all", "warning", "error"), default="all",
         help="minimum severity: all, warning (includes errors), or error; default all")
     arg("diagnostics.events", "--limit", type=bounded_integer(1, 200), default=100,
@@ -348,6 +360,8 @@ def build_parser():
     arg("trail.clear", "--discard", action="store_true", required=True, help="explicitly discard trail history")
     arg("move.to", "x", type=number, help="destination world X")
     arg("move.to", "z", type=number, help="destination world Z")
+    arg("move.mode", "--engine", choices=("continuous", "pulse"), required=True,
+        help="movement engine for subsequent runs: continuous (default) or legacy pulse")
     arg("face", "bearing", type=bounded(0, 359.999999999), help="absolute bearing degrees [0,360)")
     arg("app.open", "--pid", type=positive, help="explicit physical RIFT process ID")
     arg("app.open", "--route", type=Path)
@@ -538,6 +552,8 @@ def human_data(command, data):
               f"{'visible' if app.get('visible') else 'hidden'} | {app.get('state', '')}"
               + (f" | tab {app['tab']}" if app.get("tab") else ""))
         print(f"Route: {route.get('count', 0)} points | {'unsaved changes' if route.get('dirty') else 'saved'} | {route.get('file') or 'no file'}")
+        if isinstance(data.get("movementEngine"), str):
+            print("Movement engine: " + data["movementEngine"])
         human_edit_draft(route.get("editDraft"))
         human_pose(data.get("pose") or {})
         if isinstance(data.get("controls"), dict):
@@ -594,6 +610,12 @@ def human_data(command, data):
         if data.get("revision") is not None: print(f"Route revision: {data['revision']}")
     elif command in {"preview.status", "preview.set", "preview.fit"}:
         human_preview(data)
+    elif command == "preview.project":
+        projection = data.get("projection", data)
+        print(f"Map projection: canvas X {projection.get('canvasX', '?')} / Y {projection.get('canvasY', '?')}"
+              f" -> world X {projection.get('x', '?')} / Z {projection.get('z', '?')}")
+        print("Height: unknown | terrain/clearance: unavailable | no game input")
+        if projection.get("qualification"): print(str(projection["qualification"]))
     elif command in {"zone.status", "zone.refresh"}:
         human_zone(data.get("context"))
         age = data.get("currentAgeSeconds")
@@ -772,6 +794,8 @@ def human_data(command, data):
                 print(f"  Segment {segment.get('number', '?')}: {points} samples{detail} | {readiness}{reason}")
     elif command == "playback.status":
         human_playback(data)
+    elif command == "move.mode":
+        print("Movement engine: " + str(data.get("movementEngine", data.get("engine", "unknown"))))
     elif command in MOVEMENT:
         print(f"Movement: {data.get('operation', command)} | {data.get('state', '')}")
         if data.get("receipt"): print("Receipt: " + str(data["receipt"]))

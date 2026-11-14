@@ -26,6 +26,8 @@ def main(argv=None):
     parser.add_argument("--background", action="store_true", help="start with the helper window hidden")
     parser.add_argument("--cli", action="store_true", help="report startup errors without modal dialogs")
     parser.add_argument("--launch-token", help=argparse.SUPPRESS)
+    parser.add_argument("--movement-engine", choices=("continuous", "pulse"), default="continuous",
+                        help="continuous travel (default) or the original bounded pulse controller")
     args = parser.parse_args(argv)
     host = socket.gethostname().upper()
     from scripts.waypoint_diagnostics import Diagnostics
@@ -66,6 +68,7 @@ def main(argv=None):
                                           face_waypoints=True, auto_reconnect=args.physical_pid is None,
                                           initial_adapter=adapter, initial_reason=waiting_reason,
                                           background=args.background, cli=args.cli, launch_token=args.launch_token,
+                                          movement_engine=args.movement_engine,
                                           diagnostics=diagnostics))
         return 0
     except Exception as exc:

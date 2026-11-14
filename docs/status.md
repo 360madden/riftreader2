@@ -1,5 +1,63 @@
 # Current status
 
+## November 14, 2026 — Waypoints v1.2.0 movement helper
+
+On AMD-DESKTOP, the CLI can now select a destination on the Waypoints map or
+follow a saved route by holding W and steering with A/D from native pose reads.
+`move pick` previews the map destination before execution. Route playback visits
+the recorded waypoints and advances its checkpoint only after a settled arrival.
+The pulse engine remains selectable, and `Waypoints-Legacy.cmd` launches the
+preserved `a4711ed` helper.
+
+On physical RIFT, a 3-unit forward move finished 0.112274 units from its goal.
+It used two W holds separated by a 309 ms correction gap. A separate trial
+requested STOP 120 ms after observing W held. The native receipt reported
+release, Windows showed no monitored inputs down, two post-STOP poses showed
+zero drift, and the route retained cursor 1. Evidence is in
+`artifacts/movement-upgrade/short-forward.json` and `long-route-stopped.json`.
+
+The first Resume reached cursor 2 and halted when the character did not settle
+at point 3. After adjustments to steering and braking, Resume completed the
+seven remaining legs and saved cursor 9 of 9. The route totalled 23.10184
+planned units across eight traversals of the same clear 2.89-unit segment,
+with turns between legs. Final error was 0.240193 units. The stationary check
+passed, the helper reported release, and Windows showed no monitored input down.
+See `artifacts/movement-upgrade/long-route-resumed.json`.
+
+A separate single-leg trial targeted a point 10.000 units ahead and then the
+original position, 9.757 units from the settled outbound point. Each leg used
+one W hold. Final errors were 0.243274 and 0.252260 units respectively. Both
+receipts confirmed release and no monitored inputs down. Two final poses had
+zero position and bearing drift. See `artifacts/movement-upgrade/10-unit-out-and-back.json`.
+
+The Waypoints CLI projected a pixel on its 411 × 182 map and executed `move pick`.
+The character settled 0.203314 units from the projected destination, and the
+saved route was unchanged. The preserved v1.1.0 helper also started without
+game input and closed its own session with its workers released. See
+`artifacts/movement-upgrade/map-click-move.json` and `legacy-smoke.json`.
+
+With **Click to move** enabled in the GUI, the first pointer click was refused
+before input because the rendered map origin was stale. A later click on the
+refreshed map reached its destination with 0.264446 units of error. The loaded
+six-point route remained clean at revision 1 with point 6 selected. See
+`artifacts/waypoint-run-18ceec53f31d4b948e6c2fdadf11d197.json` and
+`artifacts/movement-upgrade/gui-click-status.json`.
+
+The final `move.to` returned the character within 0.166 units of the original
+position. Waypoints v1.2.0 was visible and idle in continuous mode with STOP
+latched, no release fault and click-to-move off. The original six-point route
+was clean at revision 1 with point 6 selected. Map range was 10, live pose was
+on and overlays were off. See `artifacts/movement-upgrade/final-state.json`.
+
+All 202 focused Python tests and 114 focused native tests passed. The native
+Release build completed with zero warnings and errors. Optional Qt checks
+were unavailable because PySide6 was absent.
+
+The native helper pins the process, window and player, checks the travel corridor
+and releases its held keys on a halt. These trials covered clear ground.
+Num Lock autorun cancellation remains unqualified.
+[CLI usage](workflows/physical-waypoints.md) · [Upgrade and acceptance plan](planning/movement-helper-upgrade-2026-11-14.md)
+
 AI-scaffolding clarification November 14: local autonomy remains the target,
 but ChatGPT/AI may temporarily control the player for missing/blocked/insufficient
 local behavior and may be preferred when overall benefits justify it. Maintain

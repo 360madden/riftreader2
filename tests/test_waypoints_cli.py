@@ -35,7 +35,7 @@ class CliTests(unittest.TestCase):
         self.assertIn("Control Joey D's Waypoints", help_text)
         version = self.call('--version')
         self.assertEqual(version[0], 0)
-        self.assertIn("Joey D's Waypoints 1.1.0", version[1])
+        self.assertIn(f"Joey D's Waypoints {cli.VERSION}", version[1])
         self.assertIn('rr2-waypoints', version[1])
         alias = self.call('help', 'radar', 'set')
         direct = self.call('radar', 'set', '--help')
@@ -50,10 +50,10 @@ class CliTests(unittest.TestCase):
                         'radar.hide radar.set radar.move radar.reset-position radar.lock radar.unlock beacons.status beacons.show '
                         'beacons.hide beacons.set beacons.reset guide.status guide.start guide.stop trail.status trail.start '
                         'trail.stop trail.list trail.save trail.clear record.status record.start record.stop '
-                        'record.cancel move.to face playback.start playback.resume playback.status '
+                        'record.cancel move.to move.pick move.mode face playback.start playback.resume playback.status '
                         'view.status view.save view.load view.open view.open-3d receipt.list receipt.show '
                         'zone.status zone.refresh route.context route.tag-zone '
-                        'preview.status preview.set preview.fit pose.status pose.set pose.refresh '
+                        'preview.status preview.set preview.fit preview.project pose.status pose.set pose.refresh '
                         'diagnostics.status diagnostics.show diagnostics.events diagnostics.copy diagnostics.open '
                         'library.list library.save library.import library.load library.show library.select').split():
             with self.subTest(command=command):
@@ -146,6 +146,8 @@ class CliTests(unittest.TestCase):
             (("preview", "status"), "preview.status", {}),
             (("preview", "set", "--range", "5"), "preview.set", {"range": 5.0}),
             (("preview", "fit"), "preview.fit", {}),
+            (("preview", "project", "--canvas-x", "220", "--canvas-y", "120"),
+             "preview.project", {"canvas_x": 220.0, "canvas_y": 120.0}),
         ]
         for argv, operation, payload in cases:
             with self.subTest(argv=argv), patch.object(protocol, "resolve_session", return_value={}), patch.object(
@@ -158,6 +160,64 @@ class CliTests(unittest.TestCase):
         fit_help = self.call("preview", "fit", "--help")[1]
         self.assertIn("cached finite pose", fit_help)
         self.assertIn("capped at 1500 units", fit_help)
+        project_help = self.call("preview", "project", "--help")[1]
+        self.assertIn("flat world X/Z", project_help)
+        self.assertIn("sends no game input", project_help)
+
+    def test_map_pick_dispatch_and_human_projection(self):
+        projection = {"x": 123.5, "z": 456.25, "canvasX": 220.0, "canvasY": 120.0,
+                      "kind":"map-world-xz", "heightKnown":False, "terrainAvailable":False,
+                      "inputSent":False, "qualification":"flat owned-map candidate"}
+        with patch.object(protocol, "resolve_session", return_value={}), patch.object(
+                protocol, "request", return_value=cli.result("move.pick", data={})) as request:
+            self.assertEqual(self.call("move", "pick", "--canvas-x", "220", "--canvas-y", "120",
+                                       "--execute", "--json")[0], 0)
+        self.assertEqual(request.call_args.args[1:3], ("move.pick", {
+            "canvas_x":220.0, "canvas_y":120.0, "execute":True}))
+        self.assertEqual(cli.LONG_ROUTE_TIMEOUT, request.call_args.kwargs["timeout"])
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            cli.emit(cli.result("preview.project", data={"projection":projection}))
+        for phrase in ("canvas X 220.0 / Y 120.0", "world X 123.5 / Z 456.25",
+                       "Height: unknown", "no game input", "flat owned-map candidate"):
+            self.assertIn(phrase, out.getvalue())
+
+    def test_move_mode_is_input_free_configuration_with_short_timeout(self):
+        for engine in ("continuous", "pulse"):
+            with self.subTest(engine=engine), patch.object(
+                    protocol, "resolve_session", return_value={}), patch.object(
+                    protocol, "request", return_value=cli.result(
+                        "move.mode", data={"movementEngine": engine})) as request:
+                self.assertEqual(self.call("move", "mode", "--engine", engine, "--json")[0], 0)
+                self.assertEqual(request.call_args.args[1:3],
+                                 ("move.mode", {"engine": engine}))
+                self.assertEqual(request.call_args.kwargs["timeout"], 10)
+        help_text = self.call("move", "mode", "--help")[1]
+        self.assertIn("continuous (default) or legacy pulse", " ".join(help_text.split()))
+        self.assertIn("sends no game input", help_text)
+        self.assertNotIn("--execute", help_text)
+
+    def test_move_mode_requires_a_known_engine_before_session_dispatch(self):
+        for argv in (("move", "mode"), ("move", "mode", "--engine", "steps")):
+            with self.subTest(argv=argv), patch.object(protocol, "resolve_session") as resolve:
+                self.assertEqual(self.call(*argv)[0], 2)
+                resolve.assert_not_called()
+
+    def test_move_mode_and_status_render_the_selected_engine(self):
+        for command, data in (("move.mode", {"movementEngine": "continuous"}),
+                              ("status", {"movementEngine": "pulse"})):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                cli.emit(cli.result(command, data=data))
+            self.assertIn("Movement engine: " + data["movementEngine"], out.getvalue())
+
+    def test_map_projection_arguments_and_execute_are_required(self):
+        for argv in (("preview","project","--canvas-x","1"),
+                     ("preview","project","--canvas-x","nan","--canvas-y","2"),
+                     ("move","pick","--canvas-x","1","--canvas-y","2")):
+            with self.subTest(argv=argv), patch.object(protocol,"resolve_session") as resolve:
+                self.assertEqual(self.call(*argv)[0], 2)
+                resolve.assert_not_called()
 
     def test_preview_range_is_validated_before_dispatch(self):
         with patch.object(protocol, "resolve_session") as resolve:
@@ -343,6 +403,7 @@ class CliTests(unittest.TestCase):
         expected = cli.MAX_TRIP_SECONDS + 30
         self.assertEqual(expected, cli.LONG_ROUTE_TIMEOUT)
         for argv, operation in ((('move','to','500','0','--execute'), 'move.to'),
+                                (('move','pick','--canvas-x','220','--canvas-y','120','--execute'), 'move.pick'),
                                 (('route','run','--execute'), 'route.run'),
                                 (('playback','start','--execute'), 'playback.start'),
                                 (('playback','resume','--execute'), 'playback.resume')):
