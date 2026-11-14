@@ -5,7 +5,6 @@ owner. Not an atomic snapshot, live Lua reference or qualified gameplay telemetr
 """
 from __future__ import annotations
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import socket
@@ -16,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from scripts import physical_rift
+from scripts import compare_physical_player_context_pair as context
 from scripts.compare_physical_player_context_pair import BUILD_SHA
 
 HOST = "AMD-DESKTOP"
@@ -68,8 +68,9 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
         require(path.is_file() and not path.is_symlink()
                 and 0 < path.stat().st_size <= 8_000_000,
                 kind + "-source-unavailable")
-        raw = path.read_bytes()
-        report = json.loads(raw.decode("utf-8-sig"))
+        # Use the same duplicate-key/nonfinite-rejecting source parser as replay.
+        # Never publish a receipt that a subsequent independent replay must refuse.
+        report, source_sha = context.load(path)
         identity = report.get("identity")
         require(isinstance(identity, dict)
                 and identity.get("processId") == pid
@@ -94,7 +95,7 @@ def collect(pid, output_dir, *, samples=3, interval_ms=200):
         require(values["unitKey"] == self_key, "self-key-changed")
         require(pin(pid)["target"] == owner, "epoch-changed-after-read")
         results[kind] = {
-            "path": str(path), "sourceSha256": hashlib.sha256(raw).hexdigest().upper(),
+            "path": str(path), "sourceSha256": source_sha,
             "samples": samples, "candidateValues": values,
             **({"burstSummary": result["nativeBurstSummary"]}
                if "nativeBurstSummary" in result else {}),
