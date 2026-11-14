@@ -923,7 +923,7 @@ def read_route_context(adapter):
 
 def launch_window(args):
     import tkinter as tk
-    from tkinter import filedialog, messagebox, simpledialog, ttk
+    from tkinter import filedialog, messagebox, ttk
 
     from scripts.waypoint_diagnostics import Diagnostics
     from scripts.waypoint_brand import APP_NAME, APP_VERSION, APP_TITLE
@@ -2143,6 +2143,9 @@ def launch_window(args):
         path = route_path
         if save_as or path is None:
             options = {"defaultextension": ".json", "initialfile": path.name if path else "rift-waypoints.json"}
+            directory = ROOT / "artifacts" / "waypoint-routes"
+            directory.mkdir(parents=True, exist_ok=True)
+            options["initialdir"] = str(directory)
             if path is not None:
                 options["initialdir"] = str(path.parent)
             path = filedialog.asksaveasfilename(**options)
@@ -2212,10 +2215,16 @@ def launch_window(args):
         state.set("New route ready. Add waypoints, then Save Route to create its JSON file.")
 
     def new_route():
+        nonlocal route_path, route_dirty
         if busy or closing or cli_action is not None or draft_pending():
             return
-        label = simpledialog.askstring("New Route", "Route name:", initialvalue="New route", parent=window)
-        if label is None:
+        directory = ROOT / "artifacts" / "waypoint-routes"
+        directory.mkdir(parents=True, exist_ok=True)
+        chosen = filedialog.asksaveasfilename(
+            title="New Waypoint File", parent=window, initialdir=str(directory),
+            initialfile="new-route.json", defaultextension=".json",
+            filetypes=[("Waypoint JSON", "*.json")])
+        if not chosen:
             return
         if route_dirty:
             decision = messagebox.askyesnocancel(
@@ -2223,7 +2232,11 @@ def launch_window(args):
                 parent=window)
             if decision is None or (decision and not save_route()):
                 return
-        begin_new_route(label)
+        route_file = Path(chosen).absolute()
+        begin_new_route(route_file.stem)
+        route_path, route_dirty = route_file, True
+        update_route_status()
+        state.set(f"New file: {route_file} — add waypoints, then Save Route.")
 
     def load_route():
         path = filedialog.askopenfilename(filetypes=[("Waypoint JSON", "*.json")])
