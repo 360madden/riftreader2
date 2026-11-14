@@ -30,9 +30,17 @@ def _rows(path):
                 continue
             if len(result) >= MAX_ROWS:
                 raise AcceptanceError(f"too-many-input-rows:{path}")
+            def unique_keys(pairs):
+                result = {}
+                for key, item in pairs:
+                    if key in result:
+                        raise AcceptanceError(f"duplicate-json-key:{path}:{number}:{key}")
+                    result[key] = item
+                return result
             try:
-                value = json.loads(line, parse_constant=lambda value: (_ for _ in ()).throw(
-                    AcceptanceError("nonfinite-json:" + value)))
+                value = json.loads(line, object_pairs_hook=unique_keys,
+                    parse_constant=lambda value: (_ for _ in ()).throw(
+                        AcceptanceError("nonfinite-json:" + value)))
             except json.JSONDecodeError as exc:
                 raise AcceptanceError(f"invalid-json:{path}:{number}") from exc
             if not isinstance(value, dict):

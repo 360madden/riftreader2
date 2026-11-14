@@ -197,6 +197,21 @@ class SurvivalAcceptanceSummaryTests(unittest.TestCase):
         self.assertTrue(observed["route"]["allRetainedReleasesVerified"])
         self.assertFalse(observed["route"]["terminalInputsReleased"])
 
+    def test_duplicate_json_evidence_keys_are_rejected_before_acceptance(self):
+        ambiguous = (
+            '{"status":"stopped","status":"arrived","releaseSucceeded":false,'
+            '"releaseSucceeded":true,"desktopInputsDown":[]}\n',
+            '{"status":"arrived","telemetry":{"player":{"healthPct":20,'
+            '"healthPct":100}}}\n',
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "ambiguous.jsonl"
+            for payload in ambiguous:
+                with self.subTest(payload=payload):
+                    path.write_text(payload, encoding="utf-8")
+                    with self.assertRaisesRegex(summary.AcceptanceError, "duplicate-json-key"):
+                        summary._rows(path)
+
     def test_route_only_never_claims_damage_and_cli_writes_new_summary(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
